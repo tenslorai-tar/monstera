@@ -15,7 +15,10 @@ import {
 } from './operatorEdit.js';
 import { pageContentStreams } from './pageContent.js';
 import { type PageFont, pageFonts } from './pageFonts.js';
-import { type ShowOperator, joinedContent, showOperators, textObjectCount } from './textOperators.js';
+import { type ShowOperator, joinedContent, operatorsAndDecorations, showOperators, textObjectCount } from './textOperators.js';
+
+/** The marks of one edited block, as the contract carries them. */
+type EditedMarks = NonNullable<Parameters<typeof editOperators>[3][number]['marks']>;
 
 /** The Chromium print committed as Part B's starting material (`scripts/research/chromiumType3Fixture.mjs`). */
 const CHROMIUM = fileURLToPath(new URL('../../testing/fixtures/text-edit/chromium-type3.pdf', import.meta.url));
@@ -647,6 +650,56 @@ describe('editOperators on paragraphs (ADR-0179)', () => {
       // 'bbb' sits after 'aaa ' (20 units) and is three letters at 6.5: the rule starts there and is as wide as they are.
       const under = object({ underline: true });
       expect(under).toMatch(/q 0 0 0 rg 92 [\d.]+ 15 [\d.]+ re f Q/u);
+    });
+
+    describe('an underlined word edited AGAIN keeps its one underline (the owner’s L2, 2026-10-25)', () => {
+      const underlined = (): Uint8Array => {
+        const result = marked({ underline: true });
+        if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+        return result.value.content;
+      };
+      /** PDFium's reading of a page this writer wrote: each operator that shows codes one run, inked where it is drawn. */
+      const reread = (written: Uint8Array): PageRuns => {
+        const ops = showOperators(written).filter((op) => op.object !== null);
+        return {
+          textObjects: Array.from({ length: textObjectCount(showOperators(written)) }, (_, at) => at),
+          runs: ops.map((op) => inked(op.object ?? 0, said(op, fonts), op.state.matrix[4], op.state.matrix[4] + 5 * op.codes.length)),
+        };
+      };
+      const again = (written: Uint8Array, text: string, marks?: EditedMarks) => {
+        const read = reread(written);
+        const result = editOperators(written, fonts, read, [{ lines: [read.runs.map((run) => run.index)], soft: [false], text, ...(marks === undefined ? {} : { marks }) }]);
+        if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+        expect(checkOperatorEdit(written, result.value, fonts).ok).toBe(true);
+        return result.value.content;
+      };
+      const rules = (written: Uint8Array) => operatorsAndDecorations(written).decorations;
+
+      it('writes the rule MARKED, so a read gives it back to the words it is under', () => {
+        expect(rules(underlined())).toMatchObject([{ kind: 'under', left: 92, right: 107 }]);
+      });
+
+      it('takes the old rule away and draws the one rule where the word now stands, when words are typed before it', () => {
+        const moved = again(underlined(), 'zz aaa bbb ccc');
+        // `zz ` is three letters at 5: the word, and its one rule, 15 further on.
+        expect(rules(moved)).toMatchObject([{ kind: 'under', left: 107, right: 122 }]);
+        expect(latin1(moved).match(/ re f /gu)).toHaveLength(1);
+      });
+
+      it('takes it off where a mark says so, and leaves none behind', () => {
+        const off = again(underlined(), 'aaa bbb ccc', [{ from: 4, to: 7, set: { underline: false } }]);
+        expect(rules(off)).toStrictEqual([]);
+        expect(latin1(off)).not.toContain(' re f ');
+      });
+
+      it('CONTROL: a rectangle carrying no mark is a drawing — left where it is, and never drawn again with the words', () => {
+        const unmarked = bytes(latin1(underlined()).replace(/\/Artifact <<\/MonsteraDecoration \(under\)>> BDC (q [^Q]* Q) EMC/u, '$1'));
+        expect(rules(unmarked)).toStrictEqual([]);
+        const moved = again(unmarked, 'zz aaa bbb ccc');
+        expect(rules(moved)).toStrictEqual([]);
+        expect(latin1(moved).match(/ re f /gu)).toHaveLength(1);
+        expect(latin1(moved)).toMatch(/q 0 0 0 rg 92 [\d.]+ 15 [\d.]+ re f Q/u);
+      });
     });
 
     it('draws a line THROUGH struck words at STRIKE_RISE, as wide as they are (ADR-0228)', () => {

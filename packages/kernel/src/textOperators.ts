@@ -21,6 +21,8 @@
  * operator names.
  */
 
+import { DECORATION_KEY, DECORATION_TAG, type DecorationKind, type PageDecoration, type Rgb, decorationKindOf } from './markDecorations.js';
+
 /** A 2D affine matrix `[a b c d e f]`, as a content stream writes one. */
 export type Matrix = readonly [number, number, number, number, number, number];
 
@@ -338,6 +340,16 @@ export interface DrawnObject {
   readonly clip?: { readonly op: 'W' | 'W*'; readonly start: number; readonly end: number };
 }
 
+/**
+ * One rectangle a page-text writer drew for a mark (`markDecorations.ts`): its kind, its box in page space and its fill,
+ * and the marked-content sequence that is all of it, from its tag to past its `EMC`. Only a sequence holding exactly one
+ * painted path and nothing else is one; anything else under the mark is a drawing, which nothing here moves or removes.
+ */
+export interface MarkedDecoration extends PageDecoration {
+  readonly start: number;
+  readonly end: number;
+}
+
 /** One segment of a path as written: its operator, its numbers in the path's own space, and where the instruction is. */
 export interface PathSegment {
   readonly op: string;
@@ -536,9 +548,15 @@ function scan(
   /** Every instruction, with the `q` and marked-content depths before and after it. */
   readonly depths: readonly { readonly op: string; readonly start: number; readonly end: number; readonly q: number; readonly m: number; readonly qAfter: number; readonly mAfter: number }[];
   readonly states: readonly StateAt[];
+  readonly decorations: readonly MarkedDecoration[];
 } {
   const found: ShowOperator[] = [];
   const drawn: DrawnObject[] = [];
+  /** Each open marked-content sequence's decoration where its tag and properties name one, and what it holds so far. */
+  const openDecorations: ({ readonly kind: DecorationKind; readonly start: number; readonly paths: DrawnObject[]; other: number } | null)[] = [];
+  const decorations: MarkedDecoration[] = [];
+  /** The innermost open decoration, which what is drawn or shown now belongs to. */
+  const holder = (): (typeof openDecorations)[number] => openDecorations.findLast((open) => open !== null) ?? null;
   const counts = { path: 0, image: 0, form: 0, shading: 0 };
   /** The path being built: where its first segment began, its points in page space, its segments, and its clip. */
   let path: { start: number; points: (readonly [number, number])[]; clips: boolean; segments: PathSegment[]; clip?: NonNullable<DrawnObject['clip']> } | null = null;
@@ -546,8 +564,14 @@ function scan(
   let windows: (ClipWindow & { start: number; end: number; depth: number })[] = [];
   const draw = (kind: DrawnObject['kind'], start: number, end: number, ctmNow: Matrix, clips = false, points: DrawnObject['points'] = [], extra: Pick<DrawnObject, 'paint' | 'clip'> & { segments?: readonly PathSegment[] } = {}): void => {
     // THE RECORDS THEMSELVES, not copies: a window's end is known only at the `Q` that ends it, after what it holds.
-    drawn.push({ kind, ordinal: counts[kind], start, end, ctm: ctmNow, clips, points, windows: [...windows], segments: extra.segments ?? [], settings, ...(extra.paint === undefined ? {} : { paint: extra.paint }), ...(extra.clip === undefined ? {} : { clip: extra.clip }) });
+    const object: DrawnObject = { kind, ordinal: counts[kind], start, end, ctm: ctmNow, clips, points, windows: [...windows], segments: extra.segments ?? [], settings, ...(extra.paint === undefined ? {} : { paint: extra.paint }), ...(extra.clip === undefined ? {} : { clip: extra.clip }) };
+    drawn.push(object);
     counts[kind] += 1;
+    const open = holder();
+    if (open !== null) {
+      if (kind === 'path') open.paths.push(object);
+      else open.other += 1;
+    }
   };
   const containers: { start: number; end: number }[] = [];
   const openQ: number[] = [];
@@ -601,12 +625,32 @@ function scan(
         openQ.push(token.start);
         break;
       case 'BDC':
-      case 'BMC':
+      case 'BMC': {
         openMarked.push(start);
+        const kind = op === 'BDC' ? decorationNamed(content, operands) : undefined;
+        openDecorations.push(kind === undefined ? null : { kind, start, paths: [], other: 0 });
         break;
+      }
       case 'EMC': {
         const opened = openMarked.pop();
         if (opened !== undefined) containers.push({ start: opened, end: token.end });
+        // A DECORATION IS ITS WHOLE SEQUENCE: one painted path and nothing else, or it is a drawing left as it is.
+        const decoration = openDecorations.pop() ?? null;
+        const only = decoration?.paths[0];
+        if (decoration !== null && only !== undefined && decoration.paths.length === 1 && decoration.other === 0 && only.points.length > 0) {
+          const xs = only.points.map(([x]) => x);
+          const ys = only.points.map(([, y]) => y);
+          decorations.push({
+            kind: decoration.kind,
+            start: decoration.start,
+            end: token.end,
+            left: Math.min(...xs),
+            right: Math.max(...xs),
+            bottom: Math.min(...ys),
+            top: Math.max(...ys),
+            colour: fillOf(content, only.settings),
+          });
+        }
         break;
       }
       case 'Q': {
@@ -759,6 +803,8 @@ function scan(
         settings: settings.map(({ start: from, end: to }) => ({ start: from, end: to })),
       });
       if (codes.length > 0) numbered += 1;
+      const open = holder();
+      if (open !== null) open.other += 1;
     } else if (SETTINGS.has(op)) {
       const slot = SETTINGS.get(op) ?? null;
       const gone = new Set([slot, ...(SUPERSEDES.get(op) ?? [])]);
@@ -771,7 +817,57 @@ function scan(
     states.push({ ctm, settings, windows: [...windows] });
     probe += 1;
   }
-  return { operators: found, depth: saved.length, baseCtm: saved[0]?.ctm ?? ctm, ends, drawn, containers, depths, states };
+  return { operators: found, depth: saved.length, baseCtm: saved[0]?.ctm ?? ctm, ends, drawn, containers, depths, states, decorations };
+}
+
+/**
+ * The kind a `BDC`'s tag and properties name a decoration (`markDecorations.ts`): `/Artifact` with its
+ * {@link DECORATION_KEY} a string naming a kind, written inline as both writers write it. A property list named from the
+ * resources is not read, and is then not a decoration.
+ */
+function decorationNamed(content: Uint8Array, operands: readonly Token[]): DecorationKind | undefined {
+  const [tag, properties] = operands;
+  if (tag?.kind !== 'name' || tag.value !== DECORATION_TAG || properties?.kind !== 'other') return undefined;
+  if (content[properties.start] !== 0x3c || content[properties.start + 1] !== 0x3c) return undefined;
+  const inside = [...tokenise(content.subarray(properties.start + 2, Math.max(properties.start + 2, properties.end - 2)))];
+  for (const [at, token] of inside.entries()) {
+    const value = inside[at + 1];
+    if (token.kind === 'name' && token.value === DECORATION_KEY && value?.kind === 'string') {
+      return decorationKindOf(new TextDecoder('latin1').decode(value.bytes));
+    }
+  }
+  return undefined;
+}
+
+/** The fill colour `settings` leave in force, in 0 to 255, by the operator that set it: black where none did. */
+function fillOf(content: Uint8Array, settings: readonly Setting[]): Rgb {
+  const fill = settings.findLast((setting) => setting.slot === 'fill');
+  if (fill === undefined) return { r: 0, g: 0, b: 0 };
+  const said = [...tokenise(content.subarray(fill.start, fill.end))];
+  const values = said.flatMap((token) => (token.kind === 'number' ? [Math.min(1, Math.max(0, token.value))] : []));
+  const channel = (value: number): number => Math.round(value * 255);
+  if (values.length === 1) {
+    const grey = channel(values[0] ?? 0);
+    return { r: grey, g: grey, b: grey };
+  }
+  if (values.length === 3) return { r: channel(values[0] ?? 0), g: channel(values[1] ?? 0), b: channel(values[2] ?? 0) };
+  if (values.length === 4) {
+    const [c = 0, m = 0, y = 0, k = 0] = values;
+    return { r: channel((1 - c) * (1 - k)), g: channel((1 - m) * (1 - k)), b: channel((1 - y) * (1 - k)) };
+  }
+  return { r: 0, g: 0, b: 0 };
+}
+
+/**
+ * The page's marked decorations ({@link MarkedDecoration}) beside its text-showing operators, from the one pass: what a
+ * writer that sets a block's words again needs to take the block's old rules away with its old words.
+ */
+export function operatorsAndDecorations(content: Uint8Array): {
+  readonly operators: readonly ShowOperator[];
+  readonly decorations: readonly MarkedDecoration[];
+} {
+  const { operators, decorations } = scan(content);
+  return { operators, decorations };
 }
 
 /** The operator PDFium's text object `object` is, or `undefined` where the content shows fewer. */

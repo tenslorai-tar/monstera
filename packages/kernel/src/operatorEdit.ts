@@ -16,16 +16,18 @@ import {
 import type { MovedBlock } from './engineSeam.js';
 import type { PageFont } from './pageFonts.js';
 import { type BlockPlan, type FlowLine, type Measure, NO_MARK, type Row, largestFit, planBlock } from './paragraphFlow.js';
-import { type DecorationKind, decorationBand } from './markDecorations.js';
+import { DECORATION_KEY, DECORATION_TAG, type DecorationKind, decorationBand, decorationsOf } from './markDecorations.js';
 import { JUSTIFY_CAP, RISE_SCALE, SUBSCRIPT_DROP, SUPERSCRIPT_RISE, spaceable, spacedBy } from './markFigures.js';
 import { carried, neighbourSpan } from './contentCarry.js';
 import {
+  type MarkedDecoration,
   type Matrix,
   type ShowOperator,
   type XObjectKind,
   contentEnd,
   contentLayout,
   multiply,
+  operatorsAndDecorations,
   showOperators,
   textObjectCount,
   textObjectEnds,
@@ -379,6 +381,33 @@ interface SegmentStyle {
   readonly highlight: readonly [number, number, number] | undefined;
   /** User-space units `Tc` adds after every code shown. */
   readonly spacing: number;
+  /** The colour a rule the words already carried keeps, where no mark colours the words (the owner's L2). */
+  readonly underInk?: readonly [number, number, number];
+  readonly throughInk?: readonly [number, number, number];
+}
+
+/** The marked decorations a run's words carry on the page, each by its colour in 0 to 255: present only where they are. */
+interface Carries {
+  readonly under: readonly [number, number, number] | undefined;
+  readonly through: readonly [number, number, number] | undefined;
+  readonly behind: readonly [number, number, number] | undefined;
+}
+
+const CARRIES_NOTHING: Carries = { under: undefined, through: undefined, behind: undefined };
+
+/**
+ * A run's look under `set`, a mark over it or none: the mark's underline, line through and highlight where it names them,
+ * else what the run's words carry (`Carries`). A highlight set to `null` is one taken off.
+ */
+function decoratedBy(set: BlockMarkSet | undefined, carries: Carries): Pick<SegmentStyle, 'underline' | 'strike' | 'highlight' | 'underInk' | 'throughInk'> {
+  const asked = set?.highlight;
+  return {
+    underline: set?.underline ?? carries.under !== undefined,
+    strike: set?.strike ?? carries.through !== undefined,
+    highlight: asked === undefined ? carries.behind : asked === null ? undefined : [asked.r, asked.g, asked.b],
+    ...(carries.under === undefined ? {} : { underInk: carries.under }),
+    ...(carries.through === undefined ? {} : { throughInk: carries.through }),
+  };
 }
 
 interface Segment {
@@ -540,7 +569,9 @@ function write(
   inserts: readonly PageInsert[],
   arrangeWith: ArrangeContext,
 ): OperatorEdit {
-  const real = showOperators(content);
+  const { operators: real, decorations: pageDecorations } = operatorsAndDecorations(content);
+  /** The marked decorations that go with old words set again, taken away where they stood (the owner's L2). */
+  const decorationsGone = new Set<MarkedDecoration>();
   const objectEnds = textObjectEnds(content);
   const counted = textObjectCount(real);
   if (counted !== page.textObjects.length) {
@@ -887,6 +918,27 @@ function write(
     const unit = characterUnit(extents);
     const spacing = paragraphSpacing(baselines, soft);
     const byId = new Map(lines.flat().map((run) => [run.run.index, run]));
+    /**
+     * THE MARKED DECORATIONS EACH RUN CARRIES, by the one resolver the read takes (`decorationsOf`), from where its words
+     * are before anything moves (the owner's L2). A run set again or carried draws them again where its words go, in their
+     * own colour, and its old ones go with its old words; a mark changes them only where it names them, since the editor
+     * sends what differs from the run's own look.
+     */
+    const claimedBy = new Map(
+      lines.flat().map((run) => {
+        const geometry = { left: run.run.left, right: run.run.right, baseline: run.origin.y, size: sourceOf(run).state.size * run.origin.unit };
+        const claimed = pageDecorations.filter((decoration) => Object.keys(decorationsOf(geometry, [decoration])).length > 0);
+        return [run.run.index, claimed] as const;
+      }),
+    );
+    const carriesOf = (run: (typeof firstLine)[number]): Carries => {
+      const claimed = claimedBy.get(run.run.index) ?? [];
+      const colourOf = (kind: DecorationKind): readonly [number, number, number] | undefined => {
+        const found = claimed.find((decoration) => decoration.kind === kind);
+        return found === undefined ? undefined : [found.colour.r, found.colour.g, found.colour.b];
+      };
+      return { under: colourOf('under'), through: colourOf('through'), behind: colourOf('behind') };
+    };
     // WHERE A LINE SET AFRESH STARTS: the origin of the line that keeps the paragraph's left edge, since the shape's edge
     // is where ink begins and an operator is placed by its origin.
     const blockLeft = Math.min(...lines.map((line) => line[0]?.origin.x ?? 0));
@@ -966,6 +1018,26 @@ function write(
       answers.set(key, pieces);
       return pieces;
     };
+    /**
+     * The glyph a tab's marked gap stands on (ADR-0228 Decision 2): the run's own space where its font draws one, else a
+     * face's. `piecesOf` answers a space no page font carries with NO piece, since a space between words is a gap and
+     * needs none; a tab's mark does — `/ActualText` names the text of the glyphs inside it, and with none inside, the tab
+     * is gone from the saved words. Measured 2026-10-25 on the text walk's sample, whose Helvetica holds no code for a
+     * space: every tab typed there was written as a gap with no mark (step 11, 0 marks). Where no face is given either,
+     * the tab is named as a character the edit needs a face for, so the caller gives it one and it is never dropped
+     * unsaid.
+     */
+    const tabGapOf = (source: ShowOperator, restyle?: Restyle): FacePiece | undefined => {
+      const own = piecesOf(source, TAB_GAP, restyle);
+      if (own !== null && own.length === 1) return own[0];
+      const key = `${String(indexOf.get(source))}|${JSON.stringify(restyle ?? null)}|tab`;
+      if (answers.has(key)) return answers.get(key)?.[0];
+      const faced = faces?.set(TAB_GAP, source, () => null, restyle) ?? null;
+      const piece = faced !== null && faced.length === 1 ? faced[0] : undefined;
+      if (piece === undefined) uncarried.add('\t');
+      answers.set(key, piece === undefined ? null : [piece]);
+      return piece;
+    };
     /** What a mark makes of the words of run `run`: the face it asks, the size it ends at, and where it sits. */
     const markStyle = (run: (typeof firstLine)[number], mark: number) => {
       const set: BlockMarkSet = block.marks?.[mark]?.set ?? {};
@@ -990,17 +1062,26 @@ function write(
       return { set, source, font, sizePt, restyle, size, factor, rise, spacing };
     };
     const changes = (runId: number, mark: number): boolean => {
-      const { set, font, sizePt } = markStyle(byId.get(runId) ?? firstRun, mark);
-      // WHAT A PAGE'S OPERATORS DO NOT SAY — its slant, its colour, whether a line is under it — a mark that names is a change.
+      const run = byId.get(runId) ?? firstRun;
+      const { set, font, sizePt } = markStyle(run, mark);
+      // A DECORATION A MARK NAMES differs from what the words carry, put on or taken off (the owner's L2).
+      const carries = carriesOf(run);
+      const decorated = decoratedBy(set, carries);
+      const undecorated = decoratedBy(undefined, carries);
+      if (
+        decorated.underline !== undecorated.underline ||
+        decorated.strike !== undecorated.strike ||
+        JSON.stringify(decorated.highlight) !== JSON.stringify(undecorated.highlight)
+      ) {
+        return true;
+      }
+      // WHAT A PAGE'S OPERATORS DO NOT SAY — its slant, its colour — a mark that names is a change.
       return (
         (set.bold !== undefined && set.bold !== (font.weight !== null && font.weight >= 600)) ||
         set.italic === true ||
         (set.size !== undefined && Math.abs(set.size - sizePt) > 0.05) ||
         set.colour !== undefined ||
         (set.family !== undefined && !(font.face ?? '').toLowerCase().includes(set.family.toLowerCase())) ||
-        set.underline === true ||
-        set.strike === true ||
-        (set.highlight !== undefined && set.highlight !== null) ||
         (set.spacing !== undefined && set.spacing !== 0) ||
         set.rise !== undefined
       );
@@ -1053,22 +1134,21 @@ function write(
       line: VisualLine,
       marked?: ReturnType<typeof markStyle>,
       perSpace = 0,
+      carries: Carries = CARRIES_NOTHING,
     ): number => {
       const unit = placed(indexOf.get(source) ?? -1).unit * (marked?.factor ?? 1) * shrink;
       // NO SPACING NOR STRETCH IN A JOINED RIGHT-TO-LEFT SCRIPT, the measure's own rule (`spacedBy`).
       const spacing = spaceable(words) ? (marked?.spacing ?? 0) * shrink : 0;
       const stretch = spaceable(words) ? perSpace : 0;
-      const highlight = marked?.set.highlight ?? null;
+      const decorated = decoratedBy(marked?.set, carries);
       const style: SegmentStyle | undefined =
-        marked === undefined && shrink === 1
+        marked === undefined && shrink === 1 && !decorated.underline && !decorated.strike && decorated.highlight === undefined
           ? undefined
           : {
               colour: marked?.set.colour === undefined ? undefined : [marked.set.colour.r, marked.set.colour.g, marked.set.colour.b],
               factor: (marked?.factor ?? 1) * shrink,
               rise: (marked?.rise ?? 0) * shrink,
-              underline: marked?.set.underline === true,
-              strike: marked?.set.strike === true,
-              highlight: highlight === null ? undefined : [highlight.r, highlight.g, highlight.b],
+              ...decorated,
               spacing,
             };
       let cursor = x;
@@ -1081,8 +1161,7 @@ function write(
         // `/Span <</ActualText (tab)>>`, and the next words at the next stop from the block's left edge. A font with no
         // space draws nothing there, and the gap is still the stop's.
         if (token === '\t') {
-          const gap = piecesOf(source, TAB_GAP, restyleOf(marked));
-          const piece = gap?.length === 1 ? gap[0] : undefined;
+          const piece = tabGapOf(source, restyleOf(marked));
           if (piece !== undefined) {
             faces?.drawn([piece]);
             line.segments.push({ source, font: piece.font, codes: [...piece.codes], text: '\t', x: cursor, style, actual: '\t' });
@@ -1176,12 +1255,21 @@ function write(
     const replay = (line: (typeof firstLine), dy: number): boolean => {
       const carried = carriedOf(line);
       if (carried === null) return false;
-      // A BLOCK RECOLOURED WHOLE carries its colour on every operator (ADR-0264 Decision 5); nothing else about it changes.
-      const style: SegmentStyle | undefined =
-        carriedColour === undefined
-          ? undefined
-          : { colour: carriedColour, factor: 1, rise: 0, underline: false, strike: false, highlight: undefined, spacing: 0 };
+      // A BLOCK RECOLOURED WHOLE carries its colour on every operator (ADR-0264 Decision 5), and every run the decorations
+      // its words carry (the owner's L2); nothing else about it changes. One look per run, so its operators join.
+      const looks = new Map<number, SegmentStyle | undefined>();
+      const lookOf = (run: (typeof firstLine)[number]): SegmentStyle | undefined => {
+        if (looks.has(run.run.index)) return looks.get(run.run.index);
+        const decorated = decoratedBy(undefined, carriesOf(run));
+        const look: SegmentStyle | undefined =
+          carriedColour === undefined && !decorated.underline && !decorated.strike && decorated.highlight === undefined
+            ? undefined
+            : { colour: carriedColour, factor: 1, rise: 0, ...decorated, spacing: 0 };
+        looks.set(run.run.index, look);
+        return look;
+      };
       for (const { op, at, font, run } of carried) {
+        const style = lookOf(run);
         const origin = placed(at);
         const shown = op.elements.map((element) => (typeof element === 'number' ? num(element) : hexOfBytes(element)));
         const codes = codesOf(font, op.codes);
@@ -1360,7 +1448,7 @@ function write(
           if (previousEnd !== null) cursor += (run.origin.x - previousEnd) * shrink;
           // A TRAILING SPACE OF A RUN WITH A RUN AFTER IT is the gap that run keeps.
           const words = index === line.length - 1 ? run.run.text : run.run.text.replace(/ +$/u, '');
-          cursor = layOut(sourceOf(run), words, cursor, placedLine);
+          cursor = layOut(sourceOf(run), words, cursor, placedLine, undefined, 0, carriesOf(run));
           previousEnd = run.right;
         }
         laid.push(text);
@@ -1435,6 +1523,7 @@ function write(
           placedLine,
           piece.mark === NO_MARK ? undefined : markStyle(run, piece.mark),
           perSpace,
+          carriesOf(run),
         );
       }
       laid.push(row.pieces.map((piece) => piece.text).join(''));
@@ -1442,12 +1531,18 @@ function write(
     }
     // EVERY OLD LINE THE PLAN DID NOT KEEP is emptied from its first run that was set again: a line set afresh stands in
     // for it, or the person removed it.
+    // ITS OLD DECORATIONS GO WITH IT, drawn again above where its words now are; one a run left untouched also carries
+    // stays, since taking it away would take it from words nobody set again.
+    const staying = new Set<MarkedDecoration>();
+    const going = new Set<MarkedDecoration>();
     for (const [at, line] of lines.entries()) {
+      const from = kept.has(at) ? line.length : (keptRuns.get(at) ?? 0);
+      for (const [index, run] of line.entries()) for (const decoration of claimedBy.get(run.run.index) ?? []) (index < from ? staying : going).add(decoration);
       if (kept.has(at)) continue;
-      const from = keptRuns.get(at) ?? 0;
       for (const run of line.slice(from)) empty(run.members);
       emptyBetween(line[from]?.first ?? 0, line.at(-1)?.last ?? -1);
     }
+    for (const decoration of going) if (!staying.has(decoration)) decorationsGone.add(decoration);
     const lastLine = lines.at(-1) ?? firstLine;
     const lastRun = lastLine.at(-1) ?? firstRun;
     if (uncarried.size > 0) continue;
@@ -1573,25 +1668,29 @@ function write(
       // A MARKED GAP SAYS WHAT IT IS: marked content around its spaces, its text the tab or the spaces in UTF-16 (ADR-0228
       // Decision 2 and its correction of 2026-10-16).
       parts.push(segment.actual === undefined ? shown : `/Span <</ActualText ${actualTextString(segment.actual)}>> BDC ${shown} EMC`);
-      // A RECTANGLE AS WIDE AS THE SEGMENT from `bottom` to `top` above the baseline, in the space the words are written in.
-      const drawn = (bottom: number, top: number, colour: readonly number[]): string => {
+      // A RECTANGLE AS WIDE AS THE SEGMENT from `bottom` to `top` above the baseline, in the space the words are written in,
+      // MARKED AS WHAT IT IS (`markDecorations.ts`): an artifact of its kind, as the PDFium writer marks one, so a later read
+      // gives it back to these words and a later edit takes it away with them (the owner's L2).
+      const drawn = (kind: DecorationKind, bottom: number, top: number, colour: readonly number[]): string => {
         const [x0, y0] = apply(toBt, segment.x, raised + bottom);
         const [x1, y1] = apply(toBt, segment.x + segmentWidth(segment), raised + top);
-        return `q ${colour.map((channel) => num(channel / 255)).join(' ')} rg ${[Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0)].map(num).join(' ')} re f Q`;
+        const box = [Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0)].map(num).join(' ');
+        return `${pdfName(DECORATION_TAG)} <<${pdfName(DECORATION_KEY)} (${kind})>> BDC q ${colour.map((channel) => num(channel / 255)).join(' ')} rg ${box} re f Q EMC`;
       };
       if (style !== undefined && (style.underline || style.strike || style.highlight !== undefined)) {
         // THE RULES: this thick, under the baseline and through the words, in the words' colour where a mark set one and
         // else black — the page's own fill is not something its operators can be asked. The highlight in its own colour.
         const pointSize = segment.source.state.size * unit * (style.factor === 0 ? 1 : style.factor);
-        const ink = style.colour ?? [0, 0, 0];
+        // A RULE THE WORDS ALREADY CARRIED keeps its own colour where no mark colours them.
+        const ink = (carried: readonly [number, number, number] | undefined): readonly number[] => style.colour ?? carried ?? [0, 0, 0];
         // THE ONE BAND each kind is drawn in (`decorationBand`, B3a), here from the baseline at nought.
-        const band = (kind: DecorationKind): [number, number] => {
+        const rule = (kind: DecorationKind, colour: readonly number[]): string => {
           const { bottom, top } = decorationBand(kind, 0, pointSize);
-          return [bottom, top];
+          return drawn(kind, bottom, top, colour);
         };
-        if (style.underline) rules.push(drawn(...band('under'), ink));
-        if (style.strike) rules.push(drawn(...band('through'), ink));
-        if (style.highlight !== undefined) behind.push(drawn(...band('behind'), style.highlight));
+        if (style.underline) rules.push(rule('under', ink(style.underInk)));
+        if (style.strike) rules.push(rule('through', ink(style.throughInk)));
+        if (style.highlight !== undefined) behind.push(rule('behind', style.highlight));
       }
     }
     parts.push(...(rules.length === 0 ? ['ET Q\n'] : ['ET', ...rules, 'Q\n']));
@@ -1697,6 +1796,8 @@ function write(
           : spacing;
     splices.push({ start: op.start, end: op.end, text, inserted: false });
   }
+  // A DECORATION THAT WENT WITH ITS WORDS is taken away whole, from its tag to past its `EMC`, where nothing else stands.
+  for (const decoration of decorationsGone) splices.push({ start: decoration.start, end: decoration.end, text: '', inserted: false });
   for (const insertion of insertions) splices.push({ start: insertion.at, end: insertion.at, text: insertion.text, inserted: true, drawn: insertion.drawn });
   // AN INSERTION SITS BEFORE AN EMPTIED OPERATOR AT THE SAME OFFSET, and two blocks' insertions keep their order.
   splices.sort((left, right) => left.start - right.start || Number(right.inserted) - Number(left.inserted));
@@ -1752,8 +1853,16 @@ export function checkOperatorEdit(
   }
   if (!same(before.subarray(readBefore), after.subarray(readAfter))) return err('a byte outside the edit changed');
 
-  const was = showOperators(before);
+  const { operators: was, decorations } = operatorsAndDecorations(before);
   const now = showOperators(after);
+  // EVERY SPAN TAKEN AWAY is an emptied operator's or a whole marked decoration's: the edit names nothing else it changed.
+  const emptiedSpans = new Set(edit.emptied.map((at) => `${String(was[at]?.start)}-${String(was[at]?.end)}`));
+  const decorationSpans = new Set(decorations.map((decoration) => `${String(decoration.start)}-${String(decoration.end)}`));
+  for (const change of edit.changes) {
+    if (change.inserted) continue;
+    const span = `${String(change.before.start)}-${String(change.before.end)}`;
+    if (!emptiedSpans.has(span) && !decorationSpans.has(span)) return err('a span the edit took away is neither an emptied operator nor a decoration');
+  }
   const insertedSpans = edit.changes.filter((change) => change.inserted).map((change) => change.after);
   const inside = (op: ShowOperator): boolean => insertedSpans.some((span) => op.start >= span.start && op.end <= span.end);
   const kept = now.filter((op) => !inside(op));
