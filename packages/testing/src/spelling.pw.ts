@@ -1,4 +1,5 @@
 import { AxeBuilder } from '@axe-core/playwright';
+import { blocksOfEdit } from '@monstera/contract';
 import { asDocId, asDocVersion, tokensOf } from '@monstera/shared';
 import { PDFDocument } from '@cantoo/pdf-lib';
 import { type Page, expect, test } from '@playwright/test';
@@ -8,16 +9,16 @@ import { runCommand } from './palette.js';
 
 /**
  * The Spelling tab (ADR-0156) on a rendered page, against the shim: the review opens beside the page, the word is
- * marked ON the page through the find highlight, the panel fits the window in every look, and Replace sends a point
- * that lies inside the word as PDF.js placed the page. The kernel half of the pair is `pdfiumReplaceAt.test.ts` and
- * `proof:pdfiumcommand`'s `replaceTextAt` records.
+ * marked ON the page through the find highlight, the panel fits the window in every look, and Replace edits the block at
+ * a point that lies inside the word as PDF.js placed the page (ADR-0267). The kernel half of the pair is the block
+ * writer's: `operatorEdit.test.ts`' replace and spelling case and `proof:edittext`'s spelling corrections.
  *
  * ## The two numbers meet here
  *
  * The word's box is stated in the page's display space at scale 1 (the shim answers it as the engine would), and the
- * point the renderer sends is in PDF user space, converted through the crop PDF.js drew the page with. On a 612 x 792
- * page at rotation 0 the two are related by y = 792 - y, so the case asserts the point is inside the word's box under
- * that relation: a point converted through the wrong box, or not converted at all, lands outside it.
+ * blocks in PDF user space, as the engine answers them. On a 612 x 792 page at rotation 0 the two are related by
+ * y = 792 - y, so the case asserts the edit names the block the word lies in under that relation: a point converted
+ * through the wrong box, or not converted at all, falls in the block below or in none.
  */
 
 const DOC = asDocId('00000000-0000-4000-8000-0000000005e3');
@@ -49,6 +50,23 @@ async function onePagePdf(): Promise<Uint8Array> {
   return document.save();
 }
 
+const RUN = { size: 12, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false, italic: false, bold: false } as const;
+
+/**
+ * {@link LINES} as Edit text's blocks, one each, in PDF user space (y = 792 - y on this page): what a spelling replacement
+ * edits since ADR-0267, the block at the word's point. The run indices differ, so the block edited is named by its run.
+ */
+const TEXT_BLOCKS = LINES.map((line, at) => {
+  const box = { x0: line.box.x0, y0: 792 - line.box.y1, x1: line.box.x1, y1: 792 - line.box.y0 };
+  return {
+    box,
+    lines: [{ runs: [{ index: 3 + 4 * at, text: line.text, style: RUN }], box, soft: false, baseline: box.y0 + 3 }],
+    style: RUN,
+    shape: { align: 'left' as const, firstIndent: 0 },
+    push: { below: [], room: 0 },
+  };
+});
+
 async function opened(page: Page, look: Look, size: { width: number; height: number }, executed: Executed[]): Promise<void> {
   await page.setViewportSize(size);
   const bytes = await onePagePdf();
@@ -60,6 +78,7 @@ async function opened(page: Page, look: Look, size: { width: number; height: num
       documentBytes: new Map([[DOC, bytes]]),
       pageLinesPlaced: [LINES],
       pageWordBoxes: [WORD_BOXES],
+      textBlocks: TEXT_BLOCKS,
     },
     (channel, params) => {
       if (channel === 'document.execute') executed.push(params as Executed);
@@ -118,7 +137,7 @@ for (const look of LOOKS) {
   }
 }
 
-test('REPLACE sends replaceTextAt with a point INSIDE the word as PDF.js placed the page, and the review goes on to the next', async ({
+test('REPLACE edits the block at a point INSIDE the word as PDF.js placed the page, and the review goes on to the next', async ({
   page,
 }) => {
   const executed: Executed[] = [];
@@ -128,19 +147,16 @@ test('REPLACE sends replaceTextAt with a point INSIDE the word as PDF.js placed 
 
   await page.getByRole('button', { name: 'Replace', exact: true }).click();
   await expect.poll(() => executed.length).toBe(1);
-  const command = executed[0]?.command as { kind: string; page: number; find: string; replace: string; at: { x: number; y: number } };
-  expect({ kind: command.kind, page: command.page, find: command.find, replace: command.replace }).toStrictEqual({
-    kind: 'replaceTextAt',
-    page: 0,
-    find: 'documnet',
-    replace: 'document',
-  });
-  // `documnet` is at offset 14 of line 0: x from 72 + 14 x 6 = 156 to 72 + 22 x 6 = 204, and the line runs from y 100
-  // to 114 in display space, which is 678 to 692 in PDF user space on a 792-point page.
-  expect(command.at.x).toBeGreaterThan(156);
-  expect(command.at.x).toBeLessThan(204);
-  expect(command.at.y).toBeGreaterThan(678);
-  expect(command.at.y).toBeLessThan(692);
+  // THE BLOCK EDIT (ADR-0267), as the renderer sends every block edit and main routes to the block writer, of the block
+  // the word's point falls in: line 0's, run 3, with the word replaced.
+  // `documnet` lies at x 156 to 204 and display y 100 to 114, PDF y 678 to 692; a point converted through the wrong box,
+  // or not at all, falls in the block below (run 7) or in none, and the edit names another run or is never sent.
+  const command = executed[0]?.command as Parameters<typeof blocksOfEdit>[0] & { kind: string; page: number };
+  expect({ kind: command.kind, page: command.page }).toStrictEqual({ kind: 'editTextBlock', page: 0 });
+  // READ AS THE WRITER READS IT (`blocksOfEdit`, the contract's one unpacker), never by a second reading of the wire.
+  expect(blocksOfEdit(command).map((block) => ({ runs: block.lines.flat(), text: block.text }))).toStrictEqual([
+    { runs: [3], text: 'spelling page document' },
+  ]);
 
   // THE NEXT WORD, read again after the edit: the shim does not change its text, so the same `documnet` is still there,
   // and the review goes on past it rather than offering it again.

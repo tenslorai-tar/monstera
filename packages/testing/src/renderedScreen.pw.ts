@@ -853,21 +853,16 @@ for (const look of LOOKS) {
   });
 }
 
-// A REPLACEMENT THAT CHANGED NOTHING, in every theme, for each reason: NOTHING TO REPLACE (ADR-0169 Decision 6), which
-// the shim answers as main answers a find no text object holds whole, and one that WOULD MOVE ITS LINE (the owner's
-// answer of 2026-10-05, `replaceLineRule.ts`). The sentence is said, the bar does not say the replacement happened, and
-// the words the person typed are still in both fields.
+// A REPLACEMENT THAT CHANGED NOTHING, in every theme: NOTHING TO REPLACE (ADR-0169 Decision 6), which the find bar says
+// when no page's blocks held the query. The sentence is said, the bar does not say the replacement happened, and the
+// words the person typed are still in both fields. A replacement that WOULD MOVE ITS LINE is no longer a refusal a
+// person can meet: since ADR-0267 Replace writes through the block writer, which moves the line, and only PDFium's
+// `replaceAllText` and `replaceTextAt`, which no surface sends, still answer `replace-moves-line`.
 const REPLACE_REFUSALS = [
   {
     name: 'NOTHING TO REPLACE',
     code: 'nothing-to-replace',
     sentence: 'Nothing was changed: no text Monstera can replace matched. A word drawn in two pieces can be changed with Edit text.',
-  },
-  {
-    name: 'A MOVED LINE',
-    code: 'replace-moves-line',
-    sentence:
-      'Nothing was changed: the new words are a different width, and the text after them on the line would have to move, which Replace cannot do yet. Edit text can change this line.',
   },
 ] as const;
 for (const refusal of REPLACE_REFUSALS) for (const look of LOOKS) {
