@@ -964,6 +964,67 @@ block. Plan: a deliberate busy-wait in each, with the first-launch stall item.
 **XXXXXXXX-12** — `promoteFormObjects` is still a command the renderer may send, and nothing sends it since *Unpack it*
 went (ADR-0269). The owner's decision whether to keep or retire it.
 
+### Correction, 2026-10-25, later — the checklist this entry left out
+
+The entry recorded its findings and answered none of the eleven items, which `check:docs` requires and Guards refused at
+`e2d94365`. The answers, for the same range, written after the push that showed two of the range's defects to CI:
+
+### 1. Root cause or workaround?
+
+Each fix states its mechanism in its commit; none is a retry, a raised bound or an exception. One loosened check is in
+the range and is recorded, not passed: XXXXXXXX-4, the fidelity fixture's box allowance raised from 0.5 to 1.5 pt.
+
+### 2. Easy shape only?
+
+Yes, twice. The encoding reading was proven on fonts the file does not carry and broke embedded subsets, found by the
+closing count (`744a80b6`). And Unifont's shipping (`3fa6dc60`) was proven against the kernel's cases, which moved to
+U+F0000, while five instruments outside the kernel kept U+0378, which Unifont now draws (`131a1c8a`).
+
+### 2a.
+
+No assertion moved from asserted to derived in the diffs read; the limitation above applies to the files not read whole.
+
+### 3. Would CI have caught it?
+
+It did, once pushed: at `e2d94365` CI failed `proof:type3edit` and the compose host on U+0378, and the Node floor job's
+`saveDepth.test.ts` on `formText.ts` calling `saveToBuffer` directly (`6bc833a2`, in this range; `646d6da6`). Neither was
+run here: the first two are proofs no changed file's test imports, and the third scans source text, which `vitest
+related` cannot reach. The corpus findings are outside CI by construction, since the owner's documents never leave
+this machine.
+
+### 4. Non-vacuous?
+
+XXXXXXXX-2's case is red with the notes dropped, and XXXXXXXX-9 was demonstrated on a real run. The closing fixes are red
+without them. The reviewer ran no mutation, as stated above.
+
+### 4a.
+
+`startupWalk.mjs`' main-loop and long-task readings have no resolution control (XXXXXXXX-8, recorded).
+
+### 4b.
+
+The corpus count's defect log reads past clips (`clip=no`), so it cannot see words written out of sight (XXXXXXXX-6);
+the count's own *unseen* column, comparing the block's pixels, is what can, and it found document 6's one.
+
+### 4c.
+
+`editText.proof.mjs` declares its 13 cases as a literal beside the list; the corpus table's counts come from each run.
+
+### 5. Executed or asserted?
+
+Executed: the corpus count at `8db42b52`, every case named above, and the CI runs at `e2d94365`. Asserted: nothing
+recorded as found.
+
+### 6. Architecture before the feature?
+
+ADR-0269 (`dc70fe89`) and its three corrections, ADR-0270 (`5389bcf0`) and its two, and ADR-0096's and ADR-0179's
+corrections (`d1145d36`) each landed in their own commit ahead of their code.
+
+### 7. Documents?
+
+XXXXXXXX-1, -5, -6, -10 and -11 above. Swept for U+0378 across the repository when CI named it: five instruments, all
+moved to one constant.
+
 ---
 
 ## 2026-10-24 — Stage audit of `eda0c9ea..6b29f80f` — findings WWWWWWWW-1 to WWWWWWWW-9
