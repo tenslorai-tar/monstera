@@ -59,3 +59,22 @@ operators through one form with no group; the brochure fixture draws its pull qu
 - **Inlining the form into the page's content**: it rewrites the page's stream for every form it touches, and drops what
   a transparency group composites as one.
 - **PDFium's page rewrite**: ADR-0266.
+
+## Correction, 2026-10-25 — a form's `/BBox` grows to hold the words written in it
+
+Decision 2 wrote only the form's stream, and measured on the brochure fixture that is not enough: its pull-quote form
+has `/BBox [0 -4 260 18]`, 22 points round one 14-point line, and a form draws nothing outside its `/BBox` (ISO 32000-2,
+8.10.1). A replacement that made the line longer wrapped its last word to a second line below −4, and that word was
+written and not drawn — the person's typing, out of sight, which the owner's rule of ADR-0270 forbids as surely as a
+refusal.
+
+**So the form's `/BBox` is the one other value an edit in a form writes**: after the stream, it becomes the union of the
+box it had and every character the form's content now draws, read by MuPDF from the form's content alone in its own
+space. It only ever grows, and only where the form's own text lies; nothing that was drawn stops being drawn. What it
+can show that was not shown before is content of the same form lying inside the grown strip and outside the old box —
+content the form's author clipped — and that is stated rather than ruled out: none of the 9 placements in the corpus and
+the brochure (scratch `formDepth.mjs`, 2026-10-25) is a case of it, and a form edited is copied first (Decision 3), so no
+other placement shows it.
+
+Rejected: wrapping at the box's width and stopping at its foot, which drops words; and moving the text up to stay inside
+the box, which moves the words the person did not edit.
