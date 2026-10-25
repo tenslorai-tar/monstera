@@ -23,7 +23,10 @@ export const DECORATION_TAG = 'Artifact';
 /** The parameter of that mark naming the decoration's kind. */
 export const DECORATION_KEY = 'MonsteraDecoration';
 
-const KINDS: ReadonlySet<string> = new Set<DecorationKind>(['under', 'through', 'behind']);
+/** Every kind, in the order a writer considers them. */
+export const DECORATION_KINDS: readonly DecorationKind[] = ['under', 'through', 'behind'];
+
+const KINDS: ReadonlySet<string> = new Set<string>(DECORATION_KINDS);
 
 /** A mark parameter's value as a decoration's kind, or `undefined` for anything else. */
 export function decorationKindOf(value: string | null | undefined): DecorationKind | undefined {

@@ -692,6 +692,28 @@ describe('editOperators on paragraphs (ADR-0179)', () => {
         expect(latin1(off)).not.toContain(' re f ');
       });
 
+      it('draws ONE rule under underlined words across a space their font cannot draw, as the editor draws it', () => {
+        // A FONT WITH NO SPACE: the space between the words moves the pen and is no segment.
+        const spaceless: PageFont = { ...regular, toUnicode: { text: new Map([...(regular.toUnicode?.text ?? [])].filter(([code]) => code !== 32)), bytes: 1 }, draws: (code) => code !== 32 && regular.draws(code) };
+        const two = bytes('BT /F1 10 Tf 1 0 0 1 72 100 Tm (aaa) Tj ET\nBT /F1 10 Tf 1 0 0 1 92 100 Tm (bbb) Tj ET');
+        const read: PageRuns = { textObjects: [0, 1], runs: [inked(0, 'aaa ', 72, 87), inked(1, 'bbb', 92, 107)] };
+        const under = (marks: EditedMarks): Uint8Array => {
+          const result = editOperators(two, new Map([['F1', spaceless]]), read, [{ lines: [[0, 1]], soft: [false], text: 'aaa bbb', marks }]);
+          if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+          return result.value.content;
+        };
+        const one = rules(under([{ from: 0, to: 7, set: { underline: true } }]));
+        expect(one).toHaveLength(1);
+        expect(one[0]?.left).toBe(72);
+        expect(one[0]?.right).toBeGreaterThan(100);
+        // CONTROL: two words underlined in two colours are two rules, so the case above joined them for being one stretch.
+        const twoColours = under([
+          { from: 0, to: 3, set: { underline: true, colour: { r: 255, g: 0, b: 0 } } },
+          { from: 4, to: 7, set: { underline: true, colour: { r: 0, g: 0, b: 255 } } },
+        ]);
+        expect(rules(twoColours)).toHaveLength(2);
+      });
+
       it('CONTROL: a rectangle carrying no mark is a drawing — left where it is, and never drawn again with the words', () => {
         const unmarked = bytes(latin1(underlined()).replace(/\/Artifact <<\/MonsteraDecoration \(under\)>> BDC (q [^Q]* Q) EMC/u, '$1'));
         expect(rules(unmarked)).toStrictEqual([]);

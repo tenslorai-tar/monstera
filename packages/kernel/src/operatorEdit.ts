@@ -16,7 +16,7 @@ import {
 import type { MovedBlock } from './engineSeam.js';
 import type { PageFont } from './pageFonts.js';
 import { type BlockPlan, type FlowLine, type Measure, NO_MARK, type Row, largestFit, planBlock } from './paragraphFlow.js';
-import { DECORATION_KEY, DECORATION_TAG, type DecorationKind, decorationBand, decorationsOf } from './markDecorations.js';
+import { DECORATION_KEY, DECORATION_KINDS, DECORATION_TAG, type DecorationKind, decorationBand, decorationsOf } from './markDecorations.js';
 import { JUSTIFY_CAP, RISE_SCALE, SUBSCRIPT_DROP, SUPERSCRIPT_RISE, spaceable, spacedBy } from './markFigures.js';
 import { carried, neighbourSpan } from './contentCarry.js';
 import {
@@ -1615,10 +1615,13 @@ function write(
     let fontSize = 0;
     /** Whether the fill colour in force is a mark's, so the next segment starts from the source's own again. */
     let tinted = false;
-    /** The rules under and through marked words, drawn after the text object, in the same space. */
-    const rules: string[] = [];
-    /** The colours behind highlighted words, drawn BEFORE the text object, in the same space, so the words are over them. */
-    const behind: string[] = [];
+    /**
+     * Each decoration of the block as stretches of one kind and colour on one line, in user space: a rule under or through
+     * words is drawn after the text object, a highlight BEFORE it, so the words are over it.
+     */
+    const stretches: { readonly kind: DecorationKind; readonly colour: readonly number[]; readonly baseline: number; readonly left: number; right: number; readonly bottom: number; readonly top: number }[] = [];
+    /** The stretch of each kind the last segment drew, which the next continues where it is the same. */
+    const open = new Map<DecorationKind, (typeof stretches)[number]>();
     /**
      * The `Tc` this writer last said, or `null` while it has said none and the page's own is in force. Once said it is
      * said again wherever it differs from what the next segment needs: a source's settings replayed need not name a `Tc`,
@@ -1668,31 +1671,55 @@ function write(
       // A MARKED GAP SAYS WHAT IT IS: marked content around its spaces, its text the tab or the spaces in UTF-16 (ADR-0228
       // Decision 2 and its correction of 2026-10-16).
       parts.push(segment.actual === undefined ? shown : `/Span <</ActualText ${actualTextString(segment.actual)}>> BDC ${shown} EMC`);
-      // A RECTANGLE AS WIDE AS THE SEGMENT from `bottom` to `top` above the baseline, in the space the words are written in,
-      // MARKED AS WHAT IT IS (`markDecorations.ts`): an artifact of its kind, as the PDFium writer marks one, so a later read
-      // gives it back to these words and a later edit takes it away with them (the owner's L2).
-      const drawn = (kind: DecorationKind, bottom: number, top: number, colour: readonly number[]): string => {
-        const [x0, y0] = apply(toBt, segment.x, raised + bottom);
-        const [x1, y1] = apply(toBt, segment.x + segmentWidth(segment), raised + top);
-        const box = [Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0)].map(num).join(' ');
-        return `${pdfName(DECORATION_TAG)} <<${pdfName(DECORATION_KEY)} (${kind})>> BDC q ${colour.map((channel) => num(channel / 255)).join(' ')} rg ${box} re f Q EMC`;
+      // THE RULES: this thick, under the baseline and through the words, in the words' colour where a mark set one and else
+      // black — the page's own fill is not something its operators can be asked; a rule the words already carried keeps its
+      // own colour. The highlight in its own colour. Each in the ONE band its kind is drawn in (`decorationBand`, B3a).
+      const pointSize = segment.source.state.size * unit * (style === undefined || style.factor === 0 ? 1 : style.factor);
+      const ink = (carried: readonly [number, number, number] | undefined): readonly number[] => style?.colour ?? carried ?? [0, 0, 0];
+      const decorations: Partial<Record<DecorationKind, readonly number[]>> = {
+        ...(style?.underline === true ? { under: ink(style.underInk) } : {}),
+        ...(style?.strike === true ? { through: ink(style.throughInk) } : {}),
+        ...(style?.highlight === undefined ? {} : { behind: style.highlight }),
       };
-      if (style !== undefined && (style.underline || style.strike || style.highlight !== undefined)) {
-        // THE RULES: this thick, under the baseline and through the words, in the words' colour where a mark set one and
-        // else black — the page's own fill is not something its operators can be asked. The highlight in its own colour.
-        const pointSize = segment.source.state.size * unit * (style.factor === 0 ? 1 : style.factor);
-        // A RULE THE WORDS ALREADY CARRIED keeps its own colour where no mark colours them.
-        const ink = (carried: readonly [number, number, number] | undefined): readonly number[] => style.colour ?? carried ?? [0, 0, 0];
-        // THE ONE BAND each kind is drawn in (`decorationBand`, B3a), here from the baseline at nought.
-        const rule = (kind: DecorationKind, colour: readonly number[]): string => {
-          const { bottom, top } = decorationBand(kind, 0, pointSize);
-          return drawn(kind, bottom, top, colour);
-        };
-        if (style.underline) rules.push(rule('under', ink(style.underInk)));
-        if (style.strike) rules.push(rule('through', ink(style.throughInk)));
-        if (style.highlight !== undefined) behind.push(rule('behind', style.highlight));
+      for (const kind of DECORATION_KINDS) {
+        const colour = decorations[kind];
+        if (colour === undefined) {
+          open.delete(kind);
+          continue;
+        }
+        const { bottom, top } = decorationBand(kind, raised, pointSize);
+        const right = segment.x + segmentWidth(segment);
+        // ONE STRETCH ACROSS THE GAPS BETWEEN DECORATED WORDS, as the editor draws it: a space no font carries moves the pen
+        // and is no segment, and a rule per segment left the page's underline broken at every space (the walk's L2).
+        const going = open.get(kind);
+        if (
+          going?.baseline === segment.baseline &&
+          going.colour.join() === colour.join() &&
+          Math.abs(going.bottom - bottom) <= SAME &&
+          Math.abs(going.top - top) <= SAME &&
+          segment.x >= going.right - SAME
+        ) {
+          going.right = right;
+          continue;
+        }
+        const stretch = { kind, colour, baseline: segment.baseline, left: segment.x, right, bottom, top };
+        stretches.push(stretch);
+        open.set(kind, stretch);
       }
     }
+    /**
+     * A stretch as a rectangle in the space the words are written in, MARKED AS WHAT IT IS (`markDecorations.ts`): an
+     * artifact of its kind, as the PDFium writer marks one, so a later read gives it back to these words and a later edit
+     * takes it away with them (the owner's L2).
+     */
+    const drawnStretch = (stretch: (typeof stretches)[number]): string => {
+      const [x0, y0] = apply(toBt, stretch.left, stretch.bottom);
+      const [x1, y1] = apply(toBt, stretch.right, stretch.top);
+      const box = [Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0)].map(num).join(' ');
+      return `${pdfName(DECORATION_TAG)} <<${pdfName(DECORATION_KEY)} (${stretch.kind})>> BDC q ${stretch.colour.map((channel) => num(channel / 255)).join(' ')} rg ${box} re f Q EMC`;
+    };
+    const rules = stretches.filter((stretch) => stretch.kind !== 'behind').map(drawnStretch);
+    const behind = stretches.filter((stretch) => stretch.kind === 'behind').map(drawnStretch);
     parts.push(...(rules.length === 0 ? ['ET Q\n'] : ['ET', ...rules, 'Q\n']));
     // THE COLOURS BEHIND go between the `q` (and the placement's `cm`) and the `BT`, so they are drawn first.
     if (behind.length > 0) {
