@@ -82,7 +82,7 @@ show, so a switch renders the two layers it moves. Proof: `tabSwitchRenders.pw.t
 ## Correction, 2026-10-14 — a layer behind keeps its parser and its layout, and gives back its pages
 
 The owner's run 4 item 13c, on the measurement this ADR's *Cost* section was waiting for: 759 MB with seven documents
-open in the dev build, against 325 MB for PDF-XChange on the same files, whose cache frees what is not in use. The
+open in the dev build, against 325 MB for a widely used PDF editor on the same files, whose cache frees what is not in use. The
 owner's order: *"A tab not on screen keeps only what it needs to come back quickly. Its page canvases and full-size
 page images are released, and redrawn when the tab is shown again."*
 
@@ -126,7 +126,7 @@ hold, so its first frames draw in.
 
 ## Correction, 2026-10-17 — a layer behind for a minute gives back its parse too (the owner's addendum 2, item 4)
 
-The owner's order: background tabs free their memory, as PDF-XChange's do; measure first, then, where a background tab
+The owner's order: background tabs free their memory, as a widely used PDF editor's do; measure first, then, where a background tab
 still holds a significant amount, a tab behind for about a minute drops its parsed document, renderer and engine session,
 and rebuilds it when shown at the same page, zoom and selection. A tab with unsaved changes, undo history or a pending
 write never drops its state. The switch back is a gate: fully drawn within 1 s, median.

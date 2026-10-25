@@ -11,7 +11,7 @@
   extraction path), [ADR-0089](0089-a-two-document-ask-carries-one-window-per-document-inside-one-bound.md) (the
   two-document ask, whose second document came from the compare pane).
 - **Context:** the owner's decisions of 2 October. Compare is to be the old app's *Side by Side*, and its differences a
-  real comparison as Acrobat's is: today it compares words only, page *i* against page *i*, so one inserted page marks
+  real comparison as another widely used PDF editor's is: today it compares words only, page *i* against page *i*, so one inserted page marks
   every page after it as different.
 
 ## Decision

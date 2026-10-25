@@ -161,7 +161,7 @@ written, and have since been verified properly:**
   only concern affected, and MuPDF's low-level `PDFObject` API is the fallback
   — building an AcroForm field dictionary by hand, which the spike confirms is
   possible but which readers may disagree about, so it would need testing
-  against Acrobat and PDF-XChange before adoption.
+  against two widely used PDF editors before adoption.
 - The spike found this in one afternoon at Stage 0. Finding it at Stage 4, with
   page management and forms already built on pdf-lib, would have meant
   rewriting both.

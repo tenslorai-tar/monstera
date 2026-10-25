@@ -45,7 +45,7 @@ lead-ins from any of them turned into a sans in the editor the moment a block op
 
 PDFium 155.0.8044.0's Linux build and the pinned Chromium 151.0.7922.34:
 
-- a simple font over pdf.js' Foxit Serif Bold (bare CFF, `FontFile3 /Type1C`) and one over URW's Nimbus Roman Bold
+- a simple font over pdf.js' own serif bold font (bare CFF, `FontFile3 /Type1C`) and one over URW's Nimbus Roman Bold
   (Type 1, `FontFile`), each setting `Findings keep it.`: `runFonts` answered no font for either before this decision,
   and a 2,276- and 2,352-byte font after it;
 - HarfBuzz reads both, a thousand units to the em, each character's advance PDFium's;

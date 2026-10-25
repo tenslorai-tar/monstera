@@ -25,7 +25,7 @@ So neither engine draws a border style or a check style; both store them and dra
 ## Decision
 
 1. **The style is the file's own keys**, written by pdf-lib's edit, the field-style writer: `/BS /S` (and `/D [3]` for
-   dashed) for the border, `/MK /CA` with the ZapfDingbats character Acrobat writes for the check. A reader that draws
+   dashed) for the border, `/MK /CA` with the ZapfDingbats character another widely used PDF editor writes for the check. A reader that draws
    its own reads the same keys.
 2. **A text field or a dropdown whose border is not solid is drawn by ADR-0229's step**, the one that draws a value in a
    real family: before the redraw's update the border colour is lifted with the value, so MuPDF's base is the

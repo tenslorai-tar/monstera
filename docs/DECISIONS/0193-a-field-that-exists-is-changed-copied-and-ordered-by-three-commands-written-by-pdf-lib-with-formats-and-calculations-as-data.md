@@ -6,7 +6,7 @@
   operations on a field that already exists. Fill, delete and flatten stay MuPDF's.
 - **Relates:** [ADR-0041](0041-an-annotation-is-named-by-its-place-in-a-walk-and-a-version.md) (a handle is a place in a
   walk at one version), invariant 24 (opening a document runs none of its content).
-- **Context:** The owner's Part C, forms rebuild. Every forms tool has to work as PDF-XChange Editor's does, and its
+- **Context:** The owner's Part C, forms rebuild. Every forms tool has to work as a widely used PDF editor's does, and its
   Properties pane changes a field after it exists: name, tooltip, required, read-only, default value, face and size, border
   and fill, choices, a format, a calculation, and where the field is. The owner also asked for align, same size, duplicating
   a field across pages and a tab order. None of this can be registered into an existing seam: `createFormField` makes a
@@ -23,7 +23,7 @@ which is `/DV` (pdf-lib's) and never `/V` (MuPDF's, the fill).
 
 A second question hides inside the first: *does a format need a script engine?* A format is `AFNumber_Format(2, 0, 0, 0,
 "£", true)` and a calculation is `AFSimple_Calculate("SUM", new Array ("a", "b"))`, which every reader understands because
-they are the actions Acrobat itself writes. They are JavaScript to a reader and data to us.
+they are the actions another widely used PDF editor itself writes. They are JavaScript to a reader and data to us.
 
 ## Decision
 

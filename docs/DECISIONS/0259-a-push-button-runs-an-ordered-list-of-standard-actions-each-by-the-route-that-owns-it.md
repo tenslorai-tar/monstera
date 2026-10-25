@@ -17,7 +17,7 @@
 ISO 32000-1 §12.6 gives an annotation one action in `/A`, run when it is activated (a mouse up), more actions after it
 through each action's `/Next`, and further triggers in `/AA`: `/D` mouse down, `/E` the pointer entering, `/X` it
 leaving, `/U` mouse up. The standard actions a form button uses are `GoTo`, `URI`, `ResetForm`, `Hide`, `Named`
-(`/Print` is Acrobat's and every major reader's), `ImportData`, `SubmitForm`, `GoToR` and `Launch`; `JavaScript` is a
+(`/Print` is another widely used PDF editor's and every major reader's), `ImportData`, `SubmitForm`, `GoToR` and `Launch`; `JavaScript` is a
 script.
 
 Today `formFieldPropertiesSchema.buttonAction` is `none` or `reset`, written as a bare `/A /ResetForm` by pdf-lib, read

@@ -79,15 +79,15 @@ were measured wrong for the job.
 
 ## Correction, 2026-09-21 — the first files from another program
 
-Decisions 1 and 5 were written against files this build and a second library wrote. PDF-XChange
+Decisions 1 and 5 were written against files this build and a second library wrote. A widely used PDF editor
 Editor 10.7.5's exports (JOURNAL, 2026-09-21) showed three of their clauses narrower than the format:
 
 - **Decision 1's `/DA` "of one font, one size and one colour"** was a pattern of MuPDF's own
   output. The format fixes no order and allows text-state operators; a colour-first `/DA` refused a
   whole file. The record now takes one `Tf`, at most one fill and one stroke colour and one of each
   text-state operator, in any order, written back canonically — every other operator still refused.
-- **Decision 5's "rich text … is walked past"** dropped a note's whole text when, as PDF-XChange
-  and Acrobat do, the file carries only `<contents-richtext>`. Its words are now read, with no
+- **Decision 5's "rich text … is walked past"** dropped a note's whole text when, as a widely used PDF editor
+  and another widely used PDF editor do, the file carries only `<contents-richtext>`. Its words are now read, with no
   markup interpreted; formatting is still not exchanged.
 - **An absent `/C` is kept absent** for the subtypes whose `/C` is a stroke, where it had taken
   MuPDF's red.

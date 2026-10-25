@@ -10,7 +10,7 @@ amendment is this commit; the builds follow in their own (B4).
 
 ## The problem, in one sentence
 
-The owner's rule (2026-10-01): Monstera works the way Acrobat and PDF-XChange do, and a person is never told an action
+The owner's rule (2026-10-01): Monstera works the way two widely used PDF editors do, and a person is never told an action
 cannot be done because of their document — and three caps here do exactly that.
 
 | cap | where | what a real document meets |

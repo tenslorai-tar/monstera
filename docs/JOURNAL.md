@@ -892,6 +892,17 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-25 — Other PDF products' names removed from every record, by the owner's decision
+
+The owner had the names of other PDF products and their makers removed from every tracked file, these records included:
+*"I dont want to invite trouble"*. By the owner's decision the ADRs, this journal and the audit watermark's text were
+reworded **in place** — an exception to *records are never edited*, made once and for this reason only. Each passage
+keeps its meaning: a product is now *a widely used PDF editor*, two are *two widely used PDF editors*, and a comparison
+names no product. **No decision changed**, and no measurement. Names the PDF format itself defines (CMap and registry
+names, signature filters, a registered type, a library's own font files) and licence texts stay word for word.
+
+---
+
 ## 2026-10-25 — Stage audit of `6b29f80f..8db42b52` — findings XXXXXXXX-1 to XXXXXXXX-12
 
 Local fix session 4's round 3: the cloud-19 merge (editor fidelity), ADR-0270 (Unifont, never refuse), ADR-0269 (text
@@ -11545,9 +11556,9 @@ or a build whose pipe name sits under `LOCAL\` — or drop Office import.
 
 ## 2026-09-21 — Another program's comment files, live: three defects, one limit
 
-The annotation import/export row owed *a file from Acrobat* and was blocked for want of one. The
-owner supplied exports from **PDF-XChange Editor 10.7.5, build 403, dated 27 October 2025, by
-PDF-XChange Co Ltd** (read from the owner's About screen), and ruled that an independent, widely
+The annotation import/export row owed *a file from another widely used PDF editor* and was blocked for want of one. The
+owner supplied exports from **a widely used PDF editor** (its version and build read from the owner's About screen), and
+ruled that an independent, widely
 used implementation satisfies the check's purpose — reading a dialect that is not ours. The files
 sit in `packages/testing/fixtures/generated/`, which is gitignored, and none is committed:
 
@@ -11557,7 +11568,7 @@ sit in `packages/testing/fixtures/generated/`, which is gitignored, and none is 
 | `text-page.xfdf` | 4,355 | `1c147a979a9bae74eea3448cdd61f78ac1bb62d7186ec6b922f289b516aab45f` |
 | `pdf_test_page.fdf` | 4,320 | `87c02184d8dcc489cbc92919796e708bd23db5df5d72fc9ceb09f1c4c57952e9` |
 
-All three hashes matched before anything was read. **Acrobat itself is still untested.**
+All three hashes matched before anything was read. **The other widely used PDF editor is still untested.**
 
 **The fixture would have passed an import that did nothing.** `text-page.pdf` already carries the
 seven comments — in object streams, so a byte search for `/Annots` counted zero. The comparison
@@ -11576,7 +11587,7 @@ which keeps what the schema accepts, had silently dropped that box's appearance 
 
 **Then two fidelity defects, found by dumping both dictionaries side by side:**
 
-- **A sticky note arrived with no text.** PDF-XChange, like Acrobat, writes a note's text only in
+- **A sticky note arrived with no text.** Two widely used PDF editors write a note's text only in
   `<contents-richtext>`, and the reader read `<contents>` alone. It now reads the rich text's
   WORDS — a line per paragraph, entities decoded, no markup interpreted — when no plain text exists.
 - **An area highlight gained a red border.** Its author wrote a fill, no `/C` and a zero-width
@@ -11588,12 +11599,12 @@ which keeps what the schema accepts, had silently dropped that box's appearance 
 **Result, read by MuPDF from the saved files after a close and reopen in the app**: seven of seven
 from each of XFDF and FDF. Highlight, both squares and the typewriter box within 0.0001 pt; the
 underline's quadrilaterals and the line's endpoints exact, their boxes grown by the line width,
-which MuPDF recomputes; the note's corner exact and its box 18 pt wide against PDF-XChange's 20,
-MuPDF's own icon. **One thing is not carried**: PDF-XChange draws the area highlight with Multiply
+which MuPDF recomputes; the note's corner exact and its box 18 pt wide against a widely used PDF editor's 20,
+MuPDF's own icon. **One thing is not carried**: a widely used PDF editor draws the area highlight with Multiply
 blending, and MuPDF's annotation API has no blend mode — its appearance is Normal — so the fill
 arrives opaque over the text. A stated limit, not a fix.
 
-**The owner's in-document sample** (`Acrobat_test.pdf`, never committed, content never quoted):
+**The owner's in-document sample** (a file the owner named for the editor it came from, never committed, content never quoted):
 two highlights, an ink drawing and a free-text box. The app lists all four; the kernel's reader
 returns four records; exported and imported through XFDF, FDF and JSON into a copy with none, all
 four return with quadrilaterals and strokes exact, text and appearance unchanged, colour within
@@ -12110,8 +12121,8 @@ live-saved file; the engine-surface figures; the board at `a948cf3`; 3500 unit t
 rendered-screen cases, 4 visual cases. **Asserted and not executed:** that *open side by
 side* behaves in the packaged shell — it is proven at rendered-screen level only, because
 a second document can be opened solely through a native file dialog no instrument drives,
-and that is recorded on the row rather than implied. Also asserted: that the `Acrobat_test.pdf`
-in the project root came from Acrobat — it carries no producer string, so the filename is
+and that is recorded on the row rather than implied. Also asserted: that the owner's in-document sample file
+in the project root came from another widely used PDF editor — it carries no producer string, so the filename is
 a name somebody chose and the annotation-interchange row stays blocked.
 
 ### 6. Did architecture change before the feature, or underneath it?
@@ -12552,7 +12563,7 @@ selection's **start**.
 
 **The question that had to be answered first was what a comment IS here**, and the record answered
 it rather than a preference. Two readings lead to materially different work: a text markup carrying
-`/Contents`, which is what Acrobat's *Add note to text* makes, or a sticky note anchored at the
+`/Contents`, which is what another widely used PDF editor's *Add note to text* makes, or a sticky note anchored at the
 selection. `textMarkupDraft` in `packages/contract` carries `from`, `to`, `colour` and `opacity` and
 **no text field**, so the first reading is a contract change with no row asking for one. The second
 is a feature this platform already has, reached a second way. So the second.
@@ -13039,15 +13050,15 @@ own commit.
 
 ---
 
-## 2026-09-19 — Annotation import: no public Acrobat-exported file found
+## 2026-09-19 — Annotation import: no public file exported by another widely used PDF editor found
 
-The row owes an XFDF or FDF that Acrobat exported, published with its source. Searched: the web
-for Acrobat-exported XFDF samples (vendor guides and SDK pages, no files); Apache PDFBox's issue
+The row owes an XFDF or FDF that another widely used PDF editor exported, published with its source. Searched: the web
+for XFDF samples exported by another widely used PDF editor (vendor guides and SDK pages, no files); Apache PDFBox's issue
 tracker, where XFDF attachments sit beside import defects — PDFBOX-4628 (`c0.xfdf`, 19 kB) and
 PDFBOX-3646 (`sample.xfdf`, 2 kB) both carry one, and **neither says which application exported
 it**. XFDF has no producer field, so a file's origin is only what its publisher states; inferring
-Acrobat from its shape would be the guess the row exists to avoid. Blocked on a source, not on
-code. What would clear it: a file the owner exports from Acrobat, or a publisher that says so.
+another widely used PDF editor from its shape would be the guess the row exists to avoid. Blocked on a source, not on
+code. What would clear it: a file the owner exports from another widely used PDF editor, or a publisher that says so.
 
 The Office font-loss measurement is **not blocked and not started**, deliberately: it matters only
 once a contained import runs, and the second contained cause is still unnamed.
@@ -13580,7 +13591,7 @@ to your documents…"). Something else wrote the clipboard between the tool's co
 Windows refused it as a file name and nothing was written. Every later name was checked by
 zoom before Enter.
 
-**Still owed in section 3**: Print, PNG and JPEG, an Acrobat XFDF file, and the Email click
+**Still owed in section 3**: Print, PNG and JPEG, an XFDF file from another widely used PDF editor, and the Email click
 list for the owner.
 
 ---
@@ -15506,11 +15517,11 @@ commit reopened the row. Corrected in place, which costs the row no words.
 
 ## 2026-09-16 — Edit page in another app: the live run passes
 
-Screen control, owner-approved, against the development build (`npm start`) at `631ff46`, with PDF-XChange Editor as
+Screen control, owner-approved, against the development build (`npm start`) at `631ff46`, with a widely used PDF editor as
 the operating system's PDF handler.
 
 **The run.** A three-page test document (widths 400, 500 and 600 points), opened by path. Page 2 sent out with *Edit
-page in another app…* from the command search, to a file under the system temp folder. PDF-XChange opened it at 500 ×
+page in another app…* from the command search, to a file under the system temp folder. A widely used PDF editor opened it at 500 ×
 600; *Rotate Pages*, 90° counterclockwise, then Ctrl+S — the file changed at 01:00:06. Monstera offered *"Put the edited
 page back? Page 2 was saved in the other app."*; *Put it back* gave no refusal and opened the edited file as a tab, as
 ADR-0062 Decision 5 says. Ctrl+S saved the document at 01:00:58. `shell.log` gained no entry.
@@ -16294,7 +16305,7 @@ reader 1,623–3,533 ms contained. At 09:14 the project's own probe read 1,793 a
 machine earlier was not captured and is not asserted. **No code and no bound changed on this evidence.**
 
 Second attempt, 09:17–09:23, after close-and-reopen: the page went out (`live-external-edit-page.pdf`, 141,786 bytes).
-Windows opened it in the older installed Monstera 2.1.8 rather than PDF-XChange Editor, which the registry's
+Windows opened it in the older installed Monstera 2.1.8 rather than a widely used PDF editor, which the registry's
 `UserChoice` names; an already-installed editor either way. *Rotate Clockwise*, *Ctrl+S* rewrote the file at 09:22:54,
 and the development build then offered *"Put the edited page back?"* — so the send-out, the watch and the
 announcement all worked live. **Put it back was refused**: *"Something went wrong inside Monstera. Reference i1."*
@@ -20575,7 +20586,7 @@ was believed at the time is the record.
 Measured while choosing what `open` should refuse on. A document written with a
 **user password and no owner password** answers `access: 0` to the empty attempt
 and **still reads 24 blocks**: MuPDF derives the key from the empty *owner*
-password, then zeroes `access` to match Acrobat, which refuses an empty owner
+password, then zeroes `access` to match another widely used PDF editor, which refuses an empty owner
 password. So `0` is *this application declines to open it*, which is stricter
 than *the engine could not*.
 
@@ -27796,7 +27807,7 @@ detector's proposal-not-detection.
 - **An apply's refusal reason does not cross the host boundary**, so the
   import's `unreadable` covers three causes. That limit is older than this stage
   and `fillFormField` has it too.
-- **`pruneEmptyFields`' behaviour against Acrobat and PDF-XChange is
+- **`pruneEmptyFields`' behaviour against two widely used PDF editors is
   unverified** — impossible on this machine, and still owed.
 
 ### Stage 5's baseline: 3 working days
@@ -28196,10 +28207,10 @@ a second case pins the ORDER: a nine-megabyte internal subset is refused in
 under 50 ms, because a reader that consumed the subset and refused afterwards
 would have done the work already — the same defect with a refusal on the end.
 
-### 2. What the reader accepts is decided by what Acrobat writes
+### 2. What the reader accepts is decided by what another widely used PDF editor writes
 
 **Both spellings of a hierarchical name.** This build writes
-`<field name="applicant.name">` and Acrobat writes
+`<field name="applicant.name">` and another widely used PDF editor writes
 `<field name="applicant"><field name="name">`; a reader taking only the flat
 form would refuse every file the feature exists for. The nested one is joined
 with dots, which is what a fully-qualified name is — the create row measured
@@ -29168,7 +29179,7 @@ correction is supposed to catch and nearly did not.
 says of writing the `/AcroForm` tree through the low-level `PDFObject` API:
 
 > possible, unsupported, and an easy way to produce output that different
-> readers disagree about. **Adobe Acrobat and PDF-XChange must both be checked
+> readers disagree about. **Two widely used PDF editors must both be checked
 > against any such output**, since "renders in our own viewer" is not evidence.
 
 `pruneEmptyFields` is that write. It is narrower than what H3 was warning about

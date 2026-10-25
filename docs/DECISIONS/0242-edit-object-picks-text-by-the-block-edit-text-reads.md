@@ -6,7 +6,7 @@
   object is a mode on the page), whose unit was one object of PDFium's walk; and the note on `placePageObjectSchema`
   that moving several objects is several commands.
 - **Decided by:** the owner's cloud run 4, Part 4 item E4: *"Text is selected as single words or even single letters
-  (clicking 'overview' selected only the final 'w'). Select a line or paragraph block, as PDF-XChange does."*
+  (clicking 'overview' selected only the final 'w'). Select a line or paragraph block, as a widely used PDF editor does."*
 
 ## The mechanism
 

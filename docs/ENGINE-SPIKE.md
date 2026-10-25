@@ -68,7 +68,7 @@ Partial escape hatch to evaluate: `"Widget"` *is* a member of
 object — but nothing in the API sets field type, name or default value, or
 registers it in the AcroForm `/Fields` tree. Doing that by hand through the
 low-level `PDFObject` API is possible, unsupported, and an easy way to produce
-output that different readers disagree about. **Adobe Acrobat and PDF-XChange
+output that different readers disagree about. **Two widely used PDF editors
 must both be checked against any such output**, since "renders in our own
 viewer" is not evidence.
 

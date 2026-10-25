@@ -54,6 +54,10 @@ Each contains:
 - **Consequences** — including the unpleasant ones. An ADR that lists only
   benefits is marketing.
 
+**Note, 2026-10-25.** By the owner's decision, the names of other PDF products and their makers were removed from every
+record on this day, these ADRs included, reworded in place to *a widely used PDF editor* and the like — an exception to
+records never being edited, made once. No decision changed. Names the PDF format itself defines stay.
+
 ## Index
 
 | ADR | Title | Status |

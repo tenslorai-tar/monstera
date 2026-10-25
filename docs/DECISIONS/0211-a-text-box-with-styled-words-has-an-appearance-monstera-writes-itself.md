@@ -26,7 +26,7 @@ on `writeWordsStyle` in `pageAnnotations.ts`):
 - there is no per-word run at all: `/RC` (rich text, PDF 32000 §12.7.3.4 and §12.5.6.6) is not read, and `/DS` is not read.
 
 So a bold word, a red word or a filled box is **not representable through the engine**, and writing `/RC` alone would be a mark
-that looks different in every reader: readers that draw `/RC` (Acrobat) would show the styles, and readers that draw `/AP`
+that looks different in every reader: readers that draw `/RC` (another widely used PDF editor) would show the styles, and readers that draw `/AP`
 (everything else, MuPDF and PDF.js among them) would show plain words. A mark that looks different in different readers is the
 defect the help article was written to avoid.
 

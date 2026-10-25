@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-10-04
 - **Decided by:** the owner, in the 0.1.10.0 addition to the cloud-4 list, item 14g: *"EDIT OBJECT: replace list
-  dialog with direct editing on the page (PDF-XChange Edit Objects): button dropdown All/Text/Images/Shapes; chosen
+  dialog with direct editing on the page (another editor's object-editing mode): button dropdown All/Text/Images/Shapes; chosen
   kind outlined; click to select; drag move, handles resize, colour/remove from Properties or right-click; no dialog.
   Page with two photos listed only Text and Shape: prove pictures found and editable."*
 - **Amends:** ARCHITECTURE §7's `Placement` union, whose context menu takes four contexts and gains a fifth,

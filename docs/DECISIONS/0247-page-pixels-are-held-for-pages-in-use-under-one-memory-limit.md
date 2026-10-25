@@ -6,7 +6,7 @@
   show holds), and `PageList.tsx`'s margin of one viewport either side.
 - **Decided by:** the owner's cloud run 4, item 13d, and addendum 4's item 7: *"one app-wide memory limit (Automatic =
   25% of physical memory, adjustable in Settings); only pages in use are cached, plus one page ahead; thumbnails and
-  search data are made on first use. Set no absolute figures."* The model is PDF-XChange's documented one. The shapes
+  search data are made on first use. Set no absolute figures."* The model is a widely used PDF editor's documented one. The shapes
   below are this run's.
 
 ## Where it stood
