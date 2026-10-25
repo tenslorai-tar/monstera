@@ -774,6 +774,25 @@ describe('editOperators on paragraphs (ADR-0179)', () => {
     });
   });
 
+  it('does not wrap a line of code that grows past the block: it widens, one command one line (ADR-0096, corrected 2026-10-25)', () => {
+    // TWO COMMANDS, hard-ended, in a fixed-pitch face: `aaa bbb` (35 wide) over `ccc` (15 wide). A word added to the first
+    // makes it 60 wide, past the block's 35.
+    const content = bytes(['BT /F1 10 Tf 1 0 0 1 72 100 Tm (aaa bbb) Tj ET', 'BT /F1 10 Tf 1 0 0 1 72 88 Tm (ccc) Tj ET'].join('\n'));
+    const baselines = (fixed: boolean): string[] => {
+      const run = (index: number, text: string, right: number): PageRun => ({ ...inked(index, text, 72, right), ...(fixed ? { fixedPitch: true as const } : {}) });
+      const page: PageRuns = { textObjects: [0, 1], runs: [run(0, 'aaa bbb', 107), run(1, 'ccc', 87)] };
+      const result = editOperators(content, fonts, page, [{ lines: [[0], [1]], soft: [false, false], text: 'aaa bbb ddddd\nccc' }]);
+      if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+      expect(checkOperatorEdit(content, result.value, fonts).ok).toBe(true);
+      // EACH LINE'S BASELINE, by the y of the matrices the new object sets.
+      return [...new Set([...(inserted(result.value)[0] ?? '').matchAll(/1 0 0 1 [\d.]+ ([\d.]+) Tm/gu)].map((match) => match[1] ?? ''))];
+    };
+    // ONE LINE for the grown command, on its own baseline: `ccc` is not set again, so only the first line's is written.
+    expect(baselines(true)).toStrictEqual(['100']);
+    // CONTROL: the same runs not fixed pitch are prose, and the grown line wraps onto a second baseline.
+    expect(baselines(false).length).toBeGreaterThan(1);
+  });
+
   it('JUSTIFIES a wrapped line by widening its spaces, capped, and leaves the paragraph’s last line alone (ADR-0228)', () => {
     // `aaa bbb` (35 wide) over `cccccccccccc` (60 wide), one paragraph: the measure is 60, so the first line has 25 to
     // spare over its one space, which the cap holds to 0.6 of the size, 6.

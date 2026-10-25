@@ -762,20 +762,39 @@ export function textRuns(session: PdfiumSession, page: number): Promise<PageText
 }
 
 /**
+ * Whether a font is FIXED PITCH, the read's one rule: the descriptor's flag where it is set, and the family's class where
+ * it is not (`familyClass`). A run's `mono` and the writer's `fixedPitch` both take it (ADR-0096's correction of
+ * 2026-10-25), so the grouping and the writer never read a line's pitch apart.
+ */
+function isMono(flags: number, name: string): boolean {
+  return (flags & 1) !== 0 || familyClass(name) === 'mono';
+}
+
+/** {@link isMono} for a text object's font: no font is not fixed pitch. */
+function objectIsMono(bindings: Bound, object: unknown): boolean {
+  const font: unknown = bindings.textFont(object);
+  if (font === null) return false;
+  const flags = numberFrom(bindings.fontFlags(font), 'FPDFFont_GetFlags');
+  return isMono(flags < 0 ? 0 : flags, baseNameOf(bindings, font));
+}
+
+/**
  * The page's joined runs WITH their members, and its text objects' page indices: what ADR-0176's writer needs to find
  * in a content stream the objects a run is (its 2026-10-06 correction, the `pageRuns` pre-read).
  *
  * {@link textRuns}' walk and join, the same calls, so the runs the writer is handed are the runs the editor named
  * (B3a); only the members, which the editor's wire leaves here, and the text object list are added. No style: the
- * writer reads each run's state from its own operators.
+ * writer reads each run's state from its own operators — but for whether every object of a run is fixed pitch, which no
+ * operator says and the writer's wrap needs (ADR-0096's correction of 2026-10-25).
  */
 export function pageRuns(session: PdfiumSession, page: number): Promise<PageRuns> {
   return promised(() =>
     onPage(session, page, (handle) => {
       const bindings = api();
-      const runs = joinedWalk(bindings, handle, walkRuns(bindings, handle)).map(
-        ({ index, members, text, left, right, bottom, top }) => ({ index, members, text, left, right, bottom, top }),
-      );
+      const runs = joinedWalk(bindings, handle, walkRuns(bindings, handle)).map(({ index, members, text, left, right, bottom, top }) => {
+        const fixed = members.every((member) => objectIsMono(bindings, bindings.getObject(handle, member)));
+        return { index, members, text, left, right, bottom, top, ...(fixed ? { fixedPitch: true as const } : {}) };
+      });
       return { textObjects: textObjectsOn(bindings, handle), runs };
     }),
   );
@@ -1192,7 +1211,7 @@ function styleOf(bindings: Bound, object: unknown, programs: Map<string, Program
     // clear says nothing by it (pdfTeX writes `/Flags 4`, symbolic, for Computer Modern and Times alike), and a serif
     // run read as sans was drawn sans while edited (the owner's A1). The name is read by the resolver's own class.
     serif: (flags & 2) !== 0 || ((flags & 1) === 0 && familyClass(name) === 'serif'),
-    mono: (flags & 1) !== 0 || familyClass(name) === 'mono',
+    mono: isMono(flags, name),
     bold: face.bold,
     italic: face.italic,
     orientation: orientationOf(a, b, c, d),

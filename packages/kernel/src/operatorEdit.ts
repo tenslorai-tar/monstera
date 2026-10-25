@@ -86,6 +86,8 @@ export interface PageRun {
   readonly right: number;
   readonly bottom: number;
   readonly top: number;
+  /** Present where every object of it is set in a fixed-pitch face, by the read's one rule (`isMono`, `pdfiumFfi.ts`). */
+  readonly fixedPitch?: true | undefined;
 }
 
 /**
@@ -904,6 +906,16 @@ function write(
     // THE BLOCK AS PARAGRAPHS (ADR-0179): the soft-ended lines are one paragraph, and `planBlock` says which lines stay,
     // which are set again and in which run's state each word is, the PDFium writer's own plan (B3a).
     const soft = lines.map((_, at) => at < lines.length - 1 && block.soft[at] === true);
+    /** Each old paragraph, by place: whether every run of every line of it is fixed pitch (`PageRun.fixedPitch`). */
+    const fixedParagraphs: boolean[] = [];
+    let fixedSoFar = true;
+    for (const [at, line] of lines.entries()) {
+      fixedSoFar &&= line.every((run) => run.run.fixedPitch === true);
+      if (soft[at] !== true) {
+        fixedParagraphs.push(fixedSoFar);
+        fixedSoFar = true;
+      }
+    }
     const flow: FlowLine[] = lines.map((line, at) => ({
       runs: line.map((run) => ({ id: run.run.index, text: run.run.text })),
       soft: soft[at] === true,
@@ -1308,6 +1320,9 @@ function write(
       return { align, leftEdge, first, centre };
     };
     const limits = (place: number, shapedBy: number): { first: number; rest: number } => {
+      // CODE IS NOT A WRAPPED PARAGRAPH (ADR-0096's correction of 2026-10-25): one set wholly in a fixed-pitch face widens
+      // past the block, as the editor draws it, and a command that grows stays one line.
+      if (fixedParagraphs[shapedBy] === true) return { first: Number.POSITIVE_INFINITY, rest: Number.POSITIVE_INFINITY };
       const set = setFor(place, shapedBy);
       if (set.align === 'center') {
         const across = Math.max(1, 2 * Math.min(blockRight - set.centre, set.centre - set.leftEdge));
