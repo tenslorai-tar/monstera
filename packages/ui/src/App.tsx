@@ -4811,6 +4811,12 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       mode: 'text',
       version: open.version,
       read: async (page) => {
+        // THE PAGE'S REDRAW FIRST. A document's reads run one at a time, first come first served, and a page's blocks take
+        // a second or two to read on a page of drawn letters; asked at the moment a write lands, beside the view model the
+        // redraw waits for, they went first and the editor stayed open 2.8 to 5.3 s after a 0.7 to 1.6 s write (measured
+        // 2026-10-25 on the owner's document 2). Asking the page's view model first puts every read the redraw made in
+        // the same moment ahead of this one; it answers in about 10 ms.
+        await client['document.viewModel']({ docId, pages: [page] });
         // EVERY PART, read whole at one version (ADR-0130): a dense page is thousands of blocks.
         const answer = await readWholeList(
           (from) => client['document.textBlocks']({ docId, page, from }),

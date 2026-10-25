@@ -2884,6 +2884,34 @@ describe('App', () => {
       expect(starts()).toBe(2);
     });
 
+    it('EDIT TEXT: a page’s blocks are asked AFTER its view model, so the redraw is never queued behind them', async () => {
+      // A DOCUMENT'S READS RUN ONE AT A TIME, first come first served: a block read asked first made the redraw wait
+      // 1.3 to 2.3 s behind it on the owner's document 2 (2026-10-25). CONTROL, by construction: choosing the tool makes
+      // the viewer ask nothing, so a view model asked after the press and before the blocks is the read's own.
+      const calls: { readonly id: string; readonly params: unknown }[] = [];
+      const client = createClient(channels, (id, params) => {
+        calls.push({ id, params });
+        if (id === 'document.textBlocks') return Promise.resolve(err({ code: 'document-poisoned' as const }));
+        const answers: Readonly<Record<string, unknown>> = OPEN_DOCUMENT_ANSWERS;
+        const answer = answers[id];
+        if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
+        return Promise.resolve(ok(answer));
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await withDocumentOpen();
+      const pressed = calls.length;
+      await pressCommand('Edit text', 'Edit');
+      await act(async () => {
+        await Promise.resolve();
+      });
+      const after = calls.slice(pressed);
+      const blocks = after.findIndex((call) => call.id === 'document.textBlocks');
+      const model = after.findIndex((call) => call.id === 'document.viewModel' && JSON.stringify((call.params as { pages?: unknown }).pages) === '[0]');
+      expect(blocks).toBeGreaterThan(-1);
+      expect(model).toBeGreaterThan(-1);
+      expect(model).toBeLessThan(blocks);
+    });
+
     it('EDIT TEXT: a POISONED document ends the mode, since every page of it refuses (VVVVVVV-20)', async () => {
       vi.mocked(reportProblem).mockClear();
       const blockReads: string[] = [];
