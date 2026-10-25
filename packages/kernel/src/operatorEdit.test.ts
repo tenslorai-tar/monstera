@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
+import { blocksReplaced } from '@monstera/contract';
 import { describe, expect, it } from 'vitest';
 
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
@@ -90,26 +91,90 @@ async function chromium<T>(read: (content: Uint8Array, fonts: ReadonlyMap<string
   }
 }
 
+/**
+ * The resolver as a caller adds it: a two-byte font as `cidFont.ts` writes one, a code per letter it is asked for, each
+ * letter the page's own carrier gives taken from it first. Answers the faces and the words they were asked for.
+ */
+function resolverFaces(): { readonly faces: OperatorFaces; readonly face: PageFont; readonly asked: string[] } {
+  const added = new Map<number, string>();
+  const face: PageFont = {
+    resource: 'MonsteraFace1',
+    subtype: 'Type0',
+    toUnicode: { text: added, bytes: 2 },
+    codeBytes: 2,
+    width: (code) => (added.has(code) ? 0.5 : null),
+    draws: (code) => added.has(code),
+    face: 'Resolver',
+    weight: 400,
+  };
+  const codeFor = (character: string): number => {
+    for (const [code, text] of added) if (text === character) return code;
+    added.set(added.size + 1, character);
+    return added.size;
+  };
+  const asked: string[] = [];
+  const faces: OperatorFaces = {
+    set: (word, _source, own) => {
+      asked.push(word);
+      return Array.from(word, (character) => own(character) ?? { font: face, codes: [codeFor(character)] });
+    },
+    drawn: () => undefined,
+  };
+  return { faces, face, asked };
+}
+
 describe('editOperators on the Chromium print', () => {
-  it('rewrites the edited line in its own Type 3 font and changes no other byte of the page', async () => {
+  /**
+   * THE OWNER'S FONT PRINCIPLE (ADR-0176's correction of 2026-10-25): a word the run did not already say is never set in
+   * the page's drawn letters. The heading is a Type 3 subset (F4); its sibling of the same face (F5) is an ordinary Type0
+   * font, and carries every letter of `reading.`.
+   */
+  it('keeps the line’s own words in its Type 3 font, sets a NEW word in an ordinary face, and changes no other byte', async () => {
     await chromium((content, fonts) => {
       const page = runsOf(content, fonts);
       const heading = page.runs[0];
       expect(heading?.text).toBe('Monstera fixture heading.');
+      expect([fonts.get('F4')?.subtype, fonts.get('F5')?.subtype]).toStrictEqual(['Type3', 'Type0']);
       const result = editOperators(content, fonts, page, [{ lines: [[heading?.index ?? -1]], soft: [false], text: 'Monstera fixture reading.' }]);
       if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
       const edit = result.value;
       expect(checkOperatorEdit(content, edit, fonts)).toStrictEqual({ ok: true, value: undefined });
       expect(edit.drawn).toStrictEqual(['Monstera fixture reading.']);
-      const [object] = inserted(edit);
-      // THE STATE AT THE LINE, replayed: its gs and colour from outside the BT, its own font and size.
-      expect(object).toMatch(/^q BT\n0 0 0 RG\n0 0 0 rg\n\/G3 gs\n\/F4 28 Tf\n1 0 0 -1 72 97 Tm <30[0-9A-F]*> Tj\nET Q\n$/su);
+      const [object = ''] = inserted(edit);
+      // THE STATE AT THE LINE, replayed: its gs and colour from outside the BT, its own font and size, for its own words.
+      expect(object).toMatch(/^q BT\n0 0 0 RG\n0 0 0 rg\n\/G3 gs\n\/F4 28 Tf\n1 0 0 -1 72 97 Tm <30[0-9A-F]*> Tj\n/su);
+      // THE NEW WORD in the ordinary sibling, after the line's own words in their drawn letters. CONTROL, the route before
+      // the correction: every letter of `reading.` is in F4 too, so it was written there, and this line would not appear.
+      expect(object.indexOf('/F5 28 Tf')).toBeGreaterThan(object.indexOf('/F4 28 Tf'));
+      const holds = (name: string) => Array.from('reading.').every((character) => [...(fonts.get(name)?.toUnicode?.text.values() ?? [])].includes(character));
+      expect([holds('F4'), holds('F5')]).toStrictEqual([true, true]);
       // INSIDE THE SAME MARKED CONTENT, immediately before the line's own BT.
       expect(latin1(edit.content)).toContain('/NonStruct <</MCID 0 >>BDC\nq BT');
       // EVERY GLYPH OF THE LINE emptied, its spaces with it; nothing of the other two lines.
       const ops = showOperators(content);
       expect(edit.emptied.map((at) => ops[at]?.textObject)).toStrictEqual(edit.emptied.map(() => ops[0]?.textObject));
       expect(edit.emptied).toHaveLength(ops.filter((op) => op.textObject === ops[0]?.textObject).length);
+    });
+  });
+
+  it('Find & replace and a spelling correction put the new word in an ordinary face too: one writer, every route', async () => {
+    await chromium((content, fonts) => {
+      const page = runsOf(content, fonts);
+      const heading = page.runs[0];
+      const block = { lines: [{ runs: [{ index: heading?.index ?? -1, text: heading?.text ?? '' }], soft: false }], push: { below: [], room: 0 } };
+      const matchesIn = (words: string) => {
+        const at = words.indexOf('heading');
+        return at < 0 ? [] : [{ offset: at, length: 'heading'.length }];
+      };
+      // REPLACE ALL, and a SPELLING CORRECTION of the one occurrence: the routes' own builder of what the writer is sent.
+      for (const only of [undefined, { block: 0, occurrence: 0 }]) {
+        const edits = blocksReplaced([block], matchesIn, 'reading', only);
+        expect(edits.map((each) => each.text)).toStrictEqual(['Monstera fixture reading.']);
+        const result = editOperators(content, fonts, page, edits);
+        if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+        const [object = ''] = inserted(result.value);
+        expect(object.indexOf('/F5 28 Tf')).toBeGreaterThan(object.indexOf('/F4 28 Tf'));
+      }
     });
   });
 
@@ -157,30 +222,7 @@ describe('editOperators on the Chromium print', () => {
     await chromium((content, fonts) => {
       const page = runsOf(content, fonts);
       // THE CALLER'S ADDED FONT, a two-byte font as `cidFont.ts` writes one: a code per letter it is asked for.
-      const added = new Map<number, string>();
-      const face: PageFont = {
-        resource: 'MonsteraFace1',
-        subtype: 'Type0',
-        toUnicode: { text: added, bytes: 2 },
-        codeBytes: 2,
-        width: (code) => (added.has(code) ? 0.5 : null),
-        draws: (code) => added.has(code),
-        face: 'Resolver',
-        weight: 400,
-      };
-      const codeFor = (character: string): number => {
-        for (const [code, text] of added) if (text === character) return code;
-        added.set(added.size + 1, character);
-        return added.size;
-      };
-      const asked: string[] = [];
-      const faces: OperatorFaces = {
-        set: (word, _source, own) => {
-          asked.push(word);
-          return Array.from(word, (character) => own(character) ?? { font: face, codes: [codeFor(character)] });
-        },
-        drawn: () => undefined,
-      };
+      const { faces, face, asked } = resolverFaces();
       const result = editOperators(content, fonts, page, [{ lines: [[page.runs[0]?.index ?? -1]], soft: [false], text: 'Monstera fixture zap.' }], faces);
       if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
       // ONLY THE WORD THE PAGE CANNOT CARRY was asked for; the rest of the line stayed in the run's font.
@@ -202,14 +244,20 @@ describe('editOperators on the Chromium print', () => {
     });
   });
 
-  it('wraps a line typed past its block onto a new line a pitch below, in the same font', async () => {
+  it('wraps a line typed past its block onto a new line a pitch below', async () => {
     await chromium((content, fonts) => {
       const page = runsOf(content, fonts);
-      const result = editOperators(content, fonts, page, [
-        { lines: [[page.runs[0]?.index ?? -1]], soft: [false], text: 'Monstera fixture heading reads the same reading' },
-      ]);
+      // THE NEW WORDS go to an ordinary face (ADR-0176's correction of 2026-10-25), so the resolver is given, as the app gives it.
+      const { faces, face } = resolverFaces();
+      const result = editOperators(
+        content,
+        fonts,
+        page,
+        [{ lines: [[page.runs[0]?.index ?? -1]], soft: [false], text: 'Monstera fixture heading reads the same reading' }],
+        faces,
+      );
       if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
-      expect(checkOperatorEdit(content, result.value, fonts).ok).toBe(true);
+      expect(checkOperatorEdit(content, result.value, new Map([...fonts, ['MonsteraFace1', face]])).ok).toBe(true);
       const tms = [...(inserted(result.value)[0] ?? '').matchAll(/1 0 0 -1 \S+ (\S+) Tm/gu)].map((match) => Number(match[1]));
       // ONE LINE, NO LEADING: the pitch is 1.2 of 28 in text space, which the flipped CTM draws downward.
       expect(new Set(tms)).toStrictEqual(new Set([97, 97 + 1.2 * 28]));

@@ -734,7 +734,7 @@ function write(
    * sibling is the same face by name less its subset tag, and a weight disagrees only where BOTH fonts state one: the
    * committed Chromium print's Type0 body font states none beside its Type 3 heading's 400, of the same face.
    */
-  const carrier = (own: PageFont, word: string): { readonly font: PageFont; readonly codes: number[] } | null => {
+  const carrier = (own: PageFont, word: string, drawn: boolean): { readonly font: PageFont; readonly codes: number[] } | null => {
     const siblings = [...fonts.values()]
       .filter(
         (font) =>
@@ -744,7 +744,9 @@ function write(
           (font.weight === null || own.weight === null || font.weight === own.weight),
       )
       .sort((a, b) => (a.resource < b.resource ? -1 : 1));
-    for (const font of [own, ...siblings]) {
+    // A FONT OF DRAWN LETTERS IS NO FACE FOR A NEW WORD (ADR-0176's correction of 2026-10-25, the owner's font principle):
+    // `drawn` is false for a word the run did not already say, and such a word goes to an ordinary face.
+    for (const font of [own, ...siblings].filter((each) => drawn || each.subtype !== 'Type3')) {
       const codes = font.toUnicode === null ? null : codesFor(font.toUnicode, word);
       if (codes?.every((code) => font.draws(code) && font.width(code) !== null) === true) return { font, codes };
     }
@@ -755,16 +757,16 @@ function write(
    * `word` in the page's fonts, the longest stretch first, each stretch in the first of `own` and its siblings that
    * carries all of it; `null` where some character is carried by none of them.
    */
-  const acrossPageFonts = (own: PageFont, word: string): FacePiece[] | null => {
+  const acrossPageFonts = (own: PageFont, word: string, drawn: boolean): FacePiece[] | null => {
     const characters = Array.from(word);
     const pieces: FacePiece[] = [];
     let at = 0;
     while (at < characters.length) {
       let end = characters.length;
-      let hit = carrier(own, characters.slice(at, end).join(''));
+      let hit = carrier(own, characters.slice(at, end).join(''), drawn);
       while (hit === null && end > at + 1) {
         end -= 1;
-        hit = carrier(own, characters.slice(at, end).join(''));
+        hit = carrier(own, characters.slice(at, end).join(''), drawn);
       }
       if (hit === null) return null;
       pieces.push(hit);
@@ -1003,26 +1005,33 @@ function write(
      * caller records: the plan measures a word and the layout writes it, and both must hear the same answer.
      */
     const answers = new Map<string, readonly FacePiece[] | null>();
+    /**
+     * The words each run already said, by its operator, compared whole (ADR-0176's correction of 2026-10-25): only these
+     * may be set in a font of drawn letters, so a line set again keeps its old words' glyphs and a new word — typed,
+     * replaced, corrected or translated — goes to an ordinary face.
+     */
+    const ownWords = new Map<ShowOperator, ReadonlySet<string>>(lines.flat().map((run) => [sourceOf(run), new Set(tokens(run.run.text))] as const));
     const piecesOf = (source: ShowOperator, token: string, restyle?: Restyle): readonly FacePiece[] | null => {
       const key = `${String(indexOf.get(source))}|${JSON.stringify(restyle ?? null)}|${token}`;
       if (answers.has(key)) return answers.get(key) ?? null;
       const font = fontOf(source);
+      const drawn = token === ' ' || (ownWords.get(source)?.has(token) ?? false);
       // A RESTYLED WORD is not looked for in the run's own font: only white space is, which has no style to be wrong in.
-      const found = restyle !== undefined && token !== ' ' ? null : carrier(font, token);
+      const found = restyle !== undefined && token !== ' ' ? null : carrier(font, token, drawn);
       // A WORD NO ONE PAGE FONT CARRIES, set across them in the longest stretches each carries (ADR-0176's correction of
       // 2026-10-19, later): a letter typed before a full stop Chromium drew in a subset holding only `.`.
-      const across = found !== null || restyle !== undefined || token === ' ' ? null : acrossPageFonts(font, token);
+      const across = found !== null || restyle !== undefined || token === ' ' ? null : acrossPageFonts(font, token, drawn);
       const pieces: readonly FacePiece[] | null =
         found !== null
           ? [found]
           : token === ' '
             ? []
             : (across ??
-              faces?.set(token, source, restyle === undefined ? (stretch) => carrier(font, stretch) : () => null, restyle) ??
+              faces?.set(token, source, restyle === undefined ? (stretch) => carrier(font, stretch, drawn) : () => null, restyle) ??
               null);
       if (pieces === null) {
         const before = uncarried.size;
-        for (const character of token) if (restyle !== undefined || carrier(font, character) === null) uncarried.add(character);
+        for (const character of token) if (restyle !== undefined || carrier(font, character, drawn) === null) uncarried.add(character);
         // NEVER DROPPED UNSAID: a word that yields no pieces names its characters, so the edit is refused by name or the
         // caller gives it a face, and its words cannot vanish with nothing reported.
         if (uncarried.size === before) for (const character of token) uncarried.add(character);
