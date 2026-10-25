@@ -1,6 +1,6 @@
 /**
  * How many page draws the renderer runs at once (the owner's run 4 item 13d: *"a cap on concurrent render and
- * thumbnail work"*, after PDF-XChange's documented model). Every draw — the reading list's pages, the thumbnail strip,
+ * thumbnail work"*, after a widely used PDF editor's documented model). Every draw — the reading list's pages, the thumbnail strip,
  * Compare and the loupe — goes through `renderPage`, which takes a slot here for the length of the draw, so the cap is
  * one number for all of them (B3a).
  *

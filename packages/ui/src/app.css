@@ -2162,7 +2162,7 @@ optgroup {
   font: inherit;
 }
 
-/* A PAGE'S GROUP, its number as a small heading, as PDF-XChange's tree is grouped. */
+/* A PAGE'S GROUP, its number as a small heading, as a widely used PDF editor's tree is grouped. */
 .m-forms-page + .m-forms-page {
   margin-block-start: var(--space-8);
 }
@@ -6375,7 +6375,7 @@ optgroup {
   cursor: text;
 }
 
-/* THE FIELDS A PERSON CAN FILL, washed light blue as PDF-XChange washes them (`forms.highlight`), so a form shows
+/* THE FIELDS A PERSON CAN FILL, washed light blue as a widely used PDF editor washes them (`forms.highlight`), so a form shows
    where to write before anything is pressed. Under the document's own appearance it would be hidden, so it is a
    multiplied wash over it: the field's words and edge stay as dark as the document drew them. */
 .m-page-field--tint {

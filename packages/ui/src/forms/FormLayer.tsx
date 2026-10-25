@@ -132,7 +132,7 @@ export function FormLayer({
   /** Tab or Shift+Tab in a field, which has been left and filled: the form's order decides where the focus goes next. */
   readonly onTab?: ((index: number, backwards: boolean, filled: boolean) => void) | undefined;
   /**
-   * Fields drawn with a light tint and required ones outlined in red, as PDF-XChange shows a form (`forms.highlight`,
+   * Fields drawn with a light tint and required ones outlined in red, as a widely used PDF editor shows a form (`forms.highlight`,
    * on by default). Off, a field shows only the document's own appearance until the pointer is over it.
    */
   readonly highlight?: boolean;

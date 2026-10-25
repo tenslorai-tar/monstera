@@ -485,7 +485,7 @@ export interface UiTool {
   readonly ended?: () => void;
   /**
    * The command for a TEXT SELECTION, for a tool whose gesture is selecting text rather than dragging a shape — a
-   * highlighter, Acrobat's way: the words light up as they are selected and the mark lands on release.
+   * highlighter, another widely used PDF editor's way: the words light up as they are selected and the mark lands on release.
    *
    * A tool that has this is never given the drawing surface: the page's own text layer takes the drag, so the
    * selection is the browser's, glyph by glyph, and `PageList` hands the finished selection here when the pointer is

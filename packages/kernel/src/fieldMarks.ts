@@ -34,7 +34,7 @@ const polygon = (points: readonly (readonly [number, number])[]): Op[] => [
   { op: 'h', args: [] },
 ];
 
-/** The two shades a bevelled or inset border lays inside its edge, the lit side first: Acrobat's look, by Acrobat's grays. */
+/** The two shades a bevelled or inset border lays inside its edge, the lit side first: the look widely used PDF editors give it, by their grays. */
 const BEVEL: Readonly<Record<'beveled' | 'inset', readonly [number, number]>> = {
   beveled: [1, 0.75],
   inset: [0.5, 0.75],

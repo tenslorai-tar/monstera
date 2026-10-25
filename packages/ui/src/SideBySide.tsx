@@ -162,7 +162,7 @@ const ignorePage = (_page: number): void => undefined;
  *
  * ## The comparison runs when asked
  *
- * A walk reads every page of both documents. That is a cost a reader chooses, as Acrobat's Compare is, so it starts
+ * A walk reads every page of both documents. That is a cost a reader chooses, as another widely used PDF editor's Compare is, so it starts
  * on *Compare*, reports how far it has got, can be cancelled, and is dropped when either half changes document.
  */
 export function SideBySide({

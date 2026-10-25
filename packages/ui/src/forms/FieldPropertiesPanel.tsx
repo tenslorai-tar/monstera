@@ -155,7 +155,7 @@ import { useRunCommand } from '../registries/useRunCommand.js';
 import { propertiesModel } from '../surfaces/projections.js';
 
 /**
- * The Properties tab for the form fields that are selected (ADR-0193), as PDF-XChange Editor's is.
+ * The Properties tab for the form fields that are selected (ADR-0193), as a widely used PDF editor's is.
  *
  * ## It shows the FIRST selected field, and a change reaches ALL of them
  *

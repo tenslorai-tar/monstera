@@ -6,7 +6,7 @@
  *
  * ## What it reads
  *
- * ISO 32000 §9.10.3 and Adobe's CMap specification (Technical Note 5014) as a ToUnicode stream uses them:
+ * ISO 32000 §9.10.3 and the CMap specification (Technical Note 5014) as a ToUnicode stream uses them:
  * `begincodespacerange`, which fixes how many bytes a code is, `beginbfchar` and `beginbfrange` in both of its forms (a
  * starting destination incremented in its last byte, and an array of destinations). Destinations are UTF-16BE, so a
  * character past the BMP arrives as its surrogate pair and is read whole. Everything else in the stream — the PostScript

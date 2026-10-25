@@ -1199,7 +1199,7 @@ async function doubleSpaceRestyleCases() {
  * A serif page's bold lead-in is read as bold and serif, though its descriptor says neither (the owner's A1,
  * 2026-10-14: a serif page with bold lead-ins turned plain sans while edited).
  *
- * The run is a simple font over a bare CFF program (pdf.js' Foxit Serif Bold, `FontFile3 /Type1C`) whose descriptor
+ * The run is a simple font over a bare CFF program (pdf.js' bundled Serif Bold, `FontFile3 /Type1C`) whose descriptor
  * states a stem width, no weight and flags 32 — nonsymbolic only, the serif bit clear. PDFium estimates the weight from
  * the stems, 400, and the editor drew the run regular, in a sans kind of face. The program states its weight in its
  * Top DICT and the family's name says serif; both are now read. THE CONTROL is the regular face on the same line under

@@ -77,7 +77,7 @@ export function measureLabel(kind: MeasuredKind, points: readonly AnnotationPoin
 export const MEASURE_LABEL_SIZE = 12;
 
 /**
- * Helvetica's advance widths, in thousandths of the size, for the characters a reading is made of (Adobe's
+ * Helvetica's advance widths, in thousandths of the size, for the characters a reading is made of (the format's original publisher's
  * `Helvetica.afm`). Any other character takes a digit's width, which is the widest a reading's characters run.
  */
 const HELVETICA_WIDTHS: Readonly<Record<string, number>> = {

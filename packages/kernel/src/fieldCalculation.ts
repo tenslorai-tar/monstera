@@ -96,7 +96,7 @@ export function calculatedValues(document: PDFDocument): readonly CalculatedValu
 
 /**
  * Writes a text into a field and draws what it shows: the formatted text where the field has a format this application
- * reads, which is how Acrobat writes a formatted field (the appearance shows `£1,234.50` and `/V` keeps `1234.5`). The
+ * reads, which is how another widely used PDF editor writes a formatted field (the appearance shows `£1,234.50` and `/V` keeps `1234.5`). The
  * appearance is drawn from the shown text by MuPDF, then `/V` is put back to the stored text on the field's own
  * dictionary, with no redraw after it.
  */

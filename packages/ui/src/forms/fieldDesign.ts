@@ -148,7 +148,7 @@ function linesOf(boxes: readonly Pixels[], axis: 'x' | 'y'): number[] {
 }
 
 /**
- * A move snapped to the other fields (the owner's B2, as PDF-XChange does): the travel adjusted so the moving selection's
+ * A move snapped to the other fields (the owner's B2, as a widely used PDF editor does): the travel adjusted so the moving selection's
  * left, centre or right meets another field's, and its top, middle or bottom, each axis on its own and only within
  * {@link SNAP_REACH}, with a guide line where it met.
  */

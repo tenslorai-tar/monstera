@@ -245,7 +245,7 @@ export const SPLIT_VIEW_SETTING: SettingDefinition<z.ZodBoolean> = {
 };
 
 /**
- * Whether a form's fields are washed light blue and its required ones outlined in red (ADR-0226), as PDF-XChange shows a
+ * Whether a form's fields are washed light blue and its required ones outlined in red (ADR-0226), as a widely used PDF editor shows a
  * form. **On by default**: a person opening a form sees where to write before anything is pressed. Display only, never
  * written into a document.
  */
@@ -283,7 +283,7 @@ export const GRID_SIZE_SETTING: SettingDefinition<z.ZodEnum<{ [K in GridSize]: K
 };
 
 /**
- * How many faint squares each major square holds, as PDF-XChange draws its grid: a major line, and fainter ones inside it.
+ * How many faint squares each major square holds, as a widely used PDF editor draws its grid: a major line, and fainter ones inside it.
  * Four by default; one is none.
  */
 export const GRID_DIVISIONS_SETTING: SettingDefinition<z.ZodEnum<{ [K in GridDivisions]: K }>> = {

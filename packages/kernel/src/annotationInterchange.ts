@@ -124,7 +124,7 @@ const APPEARANCE_OPERATORS: readonly { readonly slot: string; readonly operators
  * PDF 32000-1 12.7.3.3 makes `/DA` a fragment of content stream that must hold a `Tf`; it fixes
  * no order. This used to be a pattern of MuPDF's own output — font, size, `Tf`, then a colour —
  * which is a second opinion about the format (B3a), and it refused the first file another program
- * wrote: PDF-XChange Editor 10.7.5 puts the colour first, `0 0 0 rg /F1 12 Tf`, and the whole
+ * wrote: a widely used PDF editor puts the colour first, `0 0 0 rg /F1 12 Tf`, and the whole
  * import was refused over one typewriter box (measured 2026-09-21).
  *
  * So the string is read as operands and operators: exactly one `Tf` with a font name and a size,
@@ -791,8 +791,8 @@ function xfdfCandidate(element: XfdfAnnotation): unknown[] {
   if (opacity !== undefined) candidate.opacity = Number(opacity);
   const width = get('width');
   if (width !== undefined) candidate.borderWidth = Number(width);
-  // THE PLAIN TEXT WHEN THERE IS ONE, and otherwise the rich text's words — a note from Acrobat or
-  // PDF-XChange may carry only the rich form, and dropping it lost the note's whole text.
+  // THE PLAIN TEXT WHEN THERE IS ONE, and otherwise the rich text's words — a note from
+  // another PDF editor may carry only the rich form, and dropping it lost the note's whole text.
   if (element.contents !== undefined) candidate.contents = element.contents;
   else if (element.richText !== undefined && element.richText !== '') candidate.contents = element.richText;
   const title = get('title');
@@ -964,7 +964,7 @@ const STROKE_COLOURED: ReadonlySet<InterchangeSubtype> = new Set(['Square', 'Cir
 /**
  * The record's entries, onto a dictionary MuPDF just created. Every entry the record lacks is left
  * as MuPDF made it, EXCEPT a stroke colour (above): MuPDF gives a new square a red border, and an
- * area highlight from PDF-XChange — a fill with no `/C` and a zero-width border — arrived outlined
+ * area highlight from a widely used PDF editor — a fill with no `/C` and a zero-width border — arrived outlined
  * in red that its author never drew (measured 2026-09-21).
  */
 function writeEntries(document: PDFDocument, dictionary: PDFObject, record: InterchangeAnnotation): void {

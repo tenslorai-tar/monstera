@@ -7,10 +7,10 @@ import type { FieldCalculation, FieldFormat } from './commands.js';
  *
  * ONE MODULE for the engine host, which works calculations out and draws a field's shown text, and for the renderer,
  * which checks a value when a person leaves the field (B3a). The grammar of the scripts these mean is `fieldActions.ts`'
- * in the kernel; the meaning is Acrobat's own `AFNumber_Format`, `AFPercent_Format`, `AFDate_FormatEx`, `AFTime_Format`
+ * in the kernel; the meaning is another widely used PDF editor's own `AFNumber_Format`, `AFPercent_Format`, `AFDate_FormatEx`, `AFTime_Format`
  * and `AFSimple_Calculate`, which every reader of the file applies, so what is shown here is what a reader shows.
  *
- * The stored value is never formatted: `/V` keeps what was typed, as Acrobat keeps it, and the format is how it is SHOWN.
+ * The stored value is never formatted: `/V` keeps what was typed, as another widely used PDF editor keeps it, and the format is how it is SHOWN.
  */
 
 type Separators = Extract<FieldFormat, { kind: 'number' }>['separators'];

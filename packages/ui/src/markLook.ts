@@ -246,7 +246,7 @@ const NOTE_SIZE = 20;
 /**
  * A text highlight over one line's box, as MuPDF 1.28.0 draws it (`pdf_write_highlight_appearance`, read in
  * `source/pdf/pdf-appearance.c`): the box filled, its two ends bulged out by cubic curves whose control points sit
- * `h / 4.2425` beyond and inside each corner — *"magic number that matches adobe's appearance"*. In the page's pixels,
+ * `h / 4.2425` beyond and inside each corner, a constant MuPDF's source says matches a widely used editor's look. In the page's pixels,
  * where y runs down, for an upright line.
  */
 export function highlightOutline(box: LookBox): string {
@@ -268,7 +268,7 @@ export function highlightOutline(box: LookBox): string {
 /**
  * An underline (`share` 1/7) or a strikeout (3/7) of one line's box, as MuPDF 1.28.0 sets it
  * (`pdf_write_underline_appearance`, `pdf_write_strike_out_appearance`): a line that share of the box's height above its
- * bottom, `h / 16` thick — *"Acrobat draws the line at 1/7 of the box width from the bottom"*.
+ * bottom, `h / 16` thick — *"another widely used PDF editor draws the line at 1/7 of the box width from the bottom"*.
  */
 export function ruleUnder(box: LookBox, share: number): { x1: number; x2: number; y: number; width: number } {
   return { x1: box.x, x2: box.x + box.width, y: box.y + box.height - box.height * share, width: box.height / 16 };

@@ -627,7 +627,7 @@ function setBorderStyle(widget: PDFDict, style: (typeof FIELD_BORDER_STYLES)[num
   else bs.delete(PDFName.of('D'));
 }
 
-/** The mark a tick box or a radio shows when on (`/MK /CA`, ADR-0230): Acrobat's ZapfDingbats character for the style. */
+/** The mark a tick box or a radio shows when on (`/MK /CA`, ADR-0230): another widely used PDF editor's ZapfDingbats character for the style. */
 function setCheckStyle(widget: PDFDict, style: (typeof FIELD_CHECK_STYLES)[number]): void {
   let mk = widget.lookupMaybe(PDFName.of('MK'), PDFDict);
   if (mk === undefined) {

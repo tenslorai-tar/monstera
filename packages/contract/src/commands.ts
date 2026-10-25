@@ -2600,7 +2600,7 @@ void _everyNameIsWritten;
 export const FIELD_BORDER_STYLES = ['solid', 'dashed', 'beveled', 'inset', 'underline'] as const;
 export const BORDER_STYLE_FIELD_KINDS = ['text', 'dropdown', 'checkbox', 'radio'] as const;
 
-/** The mark a tick box or a radio shows when on (`/MK /CA`, ZapfDingbats as Acrobat writes it), drawn by Monstera (ADR-0230). */
+/** The mark a tick box or a radio shows when on (`/MK /CA`, ZapfDingbats as another widely used PDF editor writes it), drawn by Monstera (ADR-0230). */
 export const FIELD_CHECK_STYLES = ['check', 'circle', 'cross', 'diamond', 'square', 'star'] as const;
 
 /** The most a validation range may name either way: past any number a form holds, short of what loses integer precision. */
@@ -5686,7 +5686,7 @@ export const FLAT_FIELD_KINDS = ['text', 'checkbox', 'radio'] as const;
 /** How a text field's words sit across it: `/Q` 0, 1 and 2, in that order. */
 export const FIELD_ALIGNMENTS = ['left', 'centre', 'right'] as const;
 
-/** Whether a widget shows: on screen and on paper, on neither, or on screen only (PDF-XChange's three). */
+/** Whether a widget shows: on screen and on paper, on neither, or on screen only (a widely used PDF editor's three). */
 export const FIELD_VISIBILITIES = ['visible', 'hidden', 'no-print'] as const;
 
 /**
@@ -5702,7 +5702,7 @@ export const MAX_FIELD_LENGTH = 65_536;
  *
  * `null` where the property can be taken away: a tooltip, a default value, a border or a fill, a format, a calculation.
  */
-/** The most an `/XYZ` destination's zoom is read as: 64 is 6,400%, Acrobat's own ceiling. */
+/** The most an `/XYZ` destination's zoom is read as: 64 is 6,400%, another widely used PDF editor's own ceiling. */
 export const MAX_DESTINATION_ZOOM = 64;
 
 /** How many fields one action may name. A reset or a submission of more names every field, or every field but some. */
@@ -5797,7 +5797,7 @@ export const fieldActionSchema = z.discriminatedUnion('kind', [
   z
     .object({
       /**
-       * `/Named /N /Print`, the named action every major reader runs as its own Print (Acrobat's menu item, which the
+       * `/Named /N /Print`, the named action every major reader runs as its own Print (another widely used PDF editor's menu item, which the
        * standard's table 212 leaves to the reader). It opens the application's Print, whose dialogs are the question.
        */
       kind: z.literal('print'),

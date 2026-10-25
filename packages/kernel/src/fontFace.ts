@@ -109,8 +109,8 @@ export function programFace(bytes: Uint8Array): ProgramFace | undefined {
  *
  * - TrueType: `head.macStyle`, bit 0 bold and bit 1 italic — read only where a bit is SET, since a font that leaves
  *   both clear may be either and the descriptor is the better witness then;
- * - Type 1: its clear text's `/Weight` string and `/ItalicAngle` (Adobe Type 1 Font Format, 2.3);
- * - bare CFF: its Top DICT's `Weight` and `ItalicAngle` (Adobe TN 5176, Table 9).
+ * - Type 1: its clear text's `/Weight` string and `/ItalicAngle` (the Type 1 Font Format specification, 2.3);
+ * - bare CFF: its Top DICT's `Weight` and `ItalicAngle` (Technical Note 5176, Table 9).
  */
 
 /** A weight name as Type 1 and CFF state one, as the `usWeightClass` it stands for. */
@@ -150,7 +150,7 @@ function type1Face(bytes: Uint8Array): ProgramFace | undefined {
 }
 
 /**
- * A slant in a program's OWN font name, where it states no angle: measured 2026-10-14, pdf.js' Foxit fixed-pitch italic
+ * A slant in a program's OWN font name, where it states no angle: measured 2026-10-14, pdf.js' bundled fixed-pitch italic
  * CFF has no `ItalicAngle` in its Top DICT and is named `ChromFixedOTF-Italic`.
  */
 const SLANTED = /italic|oblique/iu;

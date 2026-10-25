@@ -163,7 +163,7 @@ describe('a field’s border style, check style and number range (A3.1)', () => 
     }
   });
 
-  it('a range is written as the script Acrobat runs, listed for the fill check, and taken away with null', async () => {
+  it('a range is written as the script another widely used PDF editor runs, listed for the fill check, and taken away with null', async () => {
     const bytes = await applyPdfLibWithFaces(await form(), editing(HANDLE('name', 0), { validation: { min: 1, max: null } }), undefined);
     const read = await readOne(bytes, HANDLE('name', 0));
     expect(read.validation).toStrictEqual({ min: 1, max: null });

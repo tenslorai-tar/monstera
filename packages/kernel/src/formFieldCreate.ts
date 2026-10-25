@@ -58,7 +58,7 @@ import { appendRevision, openForWriting } from './pdfLibSession.js';
  *
  * A new field has to be SEEN. With a width of 0 and no colours pdf-lib writes an appearance that paints nothing
  * (measured 2026-10-07: 0 dark pixels inside a new text field, tick box, radio and dropdown, and only the option text of
- * a list box), so a field was created, listed and invisible on the page. One point in dark grey is what PDF-XChange
+ * a list box), so a field was created, listed and invisible on the page. One point in dark grey is what a widely used PDF editor
  * draws a new field with, and the Properties pane changes it afterwards.
  */
 const FIELD_BORDER = 1;

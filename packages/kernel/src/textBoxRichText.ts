@@ -20,7 +20,7 @@ import {
  *
  * **It reads only what it writes.** A box Monstera did not style carries no marker (`textBoxAppearance.ts`) and its `/RC` is
  * never parsed here (Decision 4): a foreign box's rich text is KEPT, and shown in the readers that draw it. The parser is
- * tolerant of the shapes Acrobat and this module produce and answers `undefined` for anything else, so a box it cannot read
+ * tolerant of the shapes another widely used PDF editor and this module produce and answers `undefined` for anything else, so a box it cannot read
  * keeps the plain words and says so rather than guessing.
  */
 
@@ -37,7 +37,7 @@ function familyName(family: Family): string {
 
 /** The family a `/DS` `font` names, its first family where it lists several, quotes taken off; `undefined` where it names none. */
 export function familyOfStyleString(font: string, legacy: boolean): Family | undefined {
-  // THE SIZE ENDS THE FAMILY in the shape this module and Acrobat write (`Helvetica,sans-serif 12.0pt`); CSS's own order
+  // THE SIZE ENDS THE FAMILY in the shape this module and another widely used PDF editor write (`Helvetica,sans-serif 12.0pt`); CSS's own order
   // puts it first (`12pt Helvetica`), and either is read.
   const withoutSize = font.replace(/\d+(?:\.\d+)?\s*pt/iu, ' ').trim();
   const first = withoutSize.split(',')[0]?.trim().replace(/^['"]|['"]$/gu, '').trim() ?? '';

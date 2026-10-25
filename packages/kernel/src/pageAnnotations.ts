@@ -1790,7 +1790,8 @@ const LABEL_FONT = 'MonsteraHelv';
 
 /**
  * The reading's size, in points: the contract's, MuPDF's distance caption's, so the three readings are one family on the
- * page. Black for the same reason, and MuPDF's own: *"Acrobat always draws captions in black"*.
+ * page. Black for the same reason, and MuPDF's own: its source draws captions in black because widely used PDF editors
+ * always do.
  */
 const LABEL_SIZE = MEASURE_LABEL_SIZE;
 

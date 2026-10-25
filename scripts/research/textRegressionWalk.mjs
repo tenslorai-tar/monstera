@@ -58,9 +58,9 @@ const SERIF = { lead: 'Findings.', body: ' The serif page keeps its look while e
 
 /**
  * A SERIF PAGE AS A PRODUCER THAT WRITES COMPACT FONTS SETS ONE (the owner's A1): a bold lead-in and a regular sentence,
- * each a simple font over a bare CFF program (`FontFile3 /Type1C`, PDFium's Foxit Serif and Serif Bold from pdf.js'
+ * each a simple font over a bare CFF program (`FontFile3 /Type1C`, PDFium's bundled serif and Serif Bold from pdf.js'
  * standard fonts), WinAnsi, and a descriptor that states the serif flag and a stem width but NO weight — the shape that
- * run 3's fixture (a TrueType program, `FontWeight 700`) could not fail on. Foxit Serif is metric-compatible with Times,
+ * run 3's fixture (a TrueType program, `FontWeight 700`) could not fail on. The bundled serif is metric-compatible with Times,
  * so the widths are Times', from pdf-lib's own metrics.
  */
 async function compactSerifPage() {

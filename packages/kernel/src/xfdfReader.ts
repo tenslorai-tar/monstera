@@ -39,7 +39,7 @@
  * ```
  *
  * **Both spellings of a hierarchical name**, and that is not generosity: this
- * build writes the flat one and Acrobat writes the nested one, so a reader that
+ * build writes the flat one and another widely used PDF editor writes the nested one, so a reader that
  * took only the flat form would refuse every file the feature exists for. A
  * nested name is joined with dots, which is what a fully-qualified field name
  * is.
@@ -88,9 +88,9 @@ export interface XfdfAnnotation {
   readonly attributes: ReadonlyMap<string, string>;
   readonly contents: string | undefined;
   /**
-   * The WORDS of `<contents-richtext>`, one line per paragraph, with none of its markup. Acrobat
-   * and PDF-XChange Editor write a note's text there and may write no `<contents>` at all —
-   * measured 2026-09-21, PDF-XChange 10.7.5's sticky note — so a reader of `<contents>` alone
+   * The WORDS of `<contents-richtext>`, one line per paragraph, with none of its markup. Widely used PDF
+   * editors write a note's text there and may write no `<contents>` at all —
+   * measured 2026-09-21, one such editor's sticky note — so a reader of `<contents>` alone
    * drops the text, which is worse than the formatting this build does not exchange.
    */
   readonly richText: string | undefined;
@@ -455,7 +455,7 @@ function readChildren(
     // EVERY OTHER ELEMENT IS A CONTAINER we walk through — `<fields>`, and the
     // vocabulary an XFDF carries beside the fields (annotations, `<f>`, `<ids>`)
     // which this build reads nothing from. Walking rather than refusing is what
-    // lets a real Acrobat file import; the fields are found wherever they are.
+    // lets a real file import; the fields are found wherever they are.
     readChildren(cursor, found, path, depth + 1);
   }
 }

@@ -1814,7 +1814,7 @@ function openButtonLinkHandler(
   };
 }
 
-/** The media type each encoding is posted with: the FDF and XFDF types Adobe registered, and a browser form's. */
+/** The media type each encoding is posted with: the FDF and XFDF types registered for the format, and a browser form's. */
 const SUBMIT_MEDIA_TYPES: Readonly<Record<SubmitFormat, string>> = {
   fdf: 'application/vnd.fdf',
   xfdf: 'application/vnd.adobe.xfdf',

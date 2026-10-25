@@ -17,7 +17,7 @@
  * - Liberation Sans (SIL OFL 1.1, `pdfjs-dist/standard_fonts/LICENSE_LIBERATION`) for TrueType and CID;
  * - URW Nimbus Roman (SIL OFL 1.1, the `OFL.txt` beside it), a raw Type 1 program with its AFM, from the MuPDF source
  *   the MuPDF provisioning extracts under `.tools`;
- * - PDFium's Foxit Serif (BSD-3, `pdfjs-dist/standard_fonts/LICENSE_FOXIT`) for the compact Type 1 kind. pdf.js names
+ * - PDFium's bundled serif (BSD-3, `pdfjs-dist/standard_fonts/LICENSE_FOXIT`) for the compact Type 1 kind. pdf.js names
  *   it `.pfb`, and it is a bare CFF — its header is `01 00 04 02` — which is exactly what `FontFile3 /Type1C` holds.
  *
  * ## Every page says the same three things, in our own words
@@ -255,7 +255,7 @@ function urwDirectory() {
   throw new Error('No URW Type 1 fonts under .tools/mupdf. Run `node scripts/provision/mupdf.mjs`, which extracts them.');
 }
 
-/** Type 1 encryption (Adobe Type 1 Font Format §7.1). @param {Buffer} data @param {number} key */
+/** Type 1 encryption (the Type 1 Font Format specification §7.1). @param {Buffer} data @param {number} key */
 function decrypt(data, key) {
   const out = Buffer.alloc(data.length);
   let r = key;
@@ -365,7 +365,7 @@ export const FONT_KINDS = [
   { id: 'type1-standard14', kind: 'Type 1, standard 14, not embedded', note: 'Helvetica, WinAnsiEncoding' },
   { id: 'type1-embedded', kind: 'Type 1, embedded', note: 'URW Nimbus Roman program in FontFile, WinAnsiEncoding' },
   { id: 'type1-subset', kind: 'Type 1, embedded subset', note: 'the same program with only the glyphs drawn, AAAAAA+ name' },
-  { id: 'type1c-embedded', kind: 'Type 1, embedded compact (CFF)', note: 'PDFium’s Foxit Serif CFF in FontFile3 /Type1C' },
+  { id: 'type1c-embedded', kind: 'Type 1, embedded compact (CFF)', note: 'PDFium’s bundled serif CFF in FontFile3 /Type1C' },
   { id: 'truetype-embedded', kind: 'TrueType, embedded', note: 'Liberation Sans in FontFile2, WinAnsiEncoding' },
   { id: 'truetype-subset', kind: 'TrueType, embedded subset', note: 'every glyph not drawn emptied, AAAAAA+ name' },
   { id: 'truetype-not-embedded', kind: 'TrueType, not embedded', note: 'BaseFont Arial, Liberation Sans widths' },

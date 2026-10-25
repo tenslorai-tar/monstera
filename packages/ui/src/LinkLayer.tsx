@@ -122,7 +122,7 @@ export interface LinkPointer {
 
 /**
  * A page's links under the pointer IN EVERY TOOL (the owner's E1, 2026-10-14, by the reviewer's decision, the convention
- * of Acrobat, PDF-XChange and Word): a hand, and a hover saying where the link goes; a plain click follows it where the
+ * of widely used PDF editors and Word): a hand, and a hover saying where the link goes; a plain click follows it where the
  * page is being read, and where a click is a tool's (Select, the link tools, a drawing tool, a mode) Ctrl+click does.
  *
  * ## On the page slot, in the capture phase

@@ -5,7 +5,7 @@
  *
  * MuPDF draws a FreeText in three faces with one style and nothing more (measured 2026-10-08, 1.28.0), so bold on a word, a
  * fill, justified lines and the line pitch are written here: the words as `/Contents`, the styled runs as `/RC`, the box's own
- * style as `/DS`, the fill as `/IC` — and the appearance, which every reader but Acrobat draws instead of the others, as a
+ * style as `/DS`, the fill as `/IC` — and the appearance, which every reader but another widely used PDF editor draws instead of the others, as a
  * function of those.
  *
  * ## This module is PURE, and the faces are a {@link Typesetter} handed in

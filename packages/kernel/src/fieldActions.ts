@@ -2,13 +2,13 @@ import type { FIELD_BORDER_STYLES, FIELD_CHECK_STYLES, FIELD_FONTS, FieldCalcula
 import { fieldRangeSchema } from '@monstera/contract/host';
 
 /**
- * A field's format and calculation, as the standard Acrobat calls every reader knows, written and read as DATA.
+ * A field's format and calculation, as the standard calls every reader knows, written and read as DATA.
  *
  * ## No script is run, here or anywhere (ADR-0193, invariant 24)
  *
  * A format is the `/AA` `/F` action's JavaScript string, `AFNumber_Format(2, 0, 0, 0, "£", true)`, and its keystroke
  * partner under `/K`; a calculation is `/AA` `/C`'s `AFSimple_Calculate("SUM", new Array ("a", "b"))`. Writing these makes
- * the form behave in Acrobat, PDF-XChange and a browser's reader. READING them is a parser that accepts exactly the
+ * the form behave in widely used PDF editors and a browser's reader. READING them is a parser that accepts exactly the
  * grammar this module writes, and everything it does not recognise is left exactly as the file had it and reported as no
  * format here: a custom script is kept and never interpreted, which is also what stops this being a way to run one.
  *
@@ -240,7 +240,7 @@ export function parseKeystroke(script: string): FieldFormat | undefined {
 }
 
 /**
- * Each border style by its `/BS /S` name, and each check style by the ZapfDingbats character Acrobat writes in `/MK /CA`
+ * Each border style by its `/BS /S` name, and each check style by the ZapfDingbats character another widely used PDF editor writes in `/MK /CA`
  * (ADR-0230): ONE table, which the writer writes from and the reader reads back through.
  */
 export const BORDER_STYLE_NAME: Readonly<Record<FieldBorderStyle, string>> = {
@@ -264,7 +264,7 @@ export function borderStyleOfName(name: string | undefined): FieldBorderStyle {
   return (Object.entries(BORDER_STYLE_NAME) as [FieldBorderStyle, string][]).find(([, each]) => each === name)?.[0] ?? 'solid';
 }
 
-/** The check style a `/MK /CA` character is; a check for none or one Acrobat does not offer. */
+/** The check style a `/MK /CA` character is; a check for none or one another widely used PDF editor does not offer. */
 export function checkStyleOfCharacter(character: string | undefined): FieldCheckStyle {
   return (Object.entries(CHECK_CHARACTER) as [FieldCheckStyle, string][]).find(([, each]) => each === character)?.[0] ?? 'check';
 }
@@ -273,7 +273,7 @@ type FieldBorderStyle = (typeof FIELD_BORDER_STYLES)[number];
 type FieldCheckStyle = (typeof FIELD_CHECK_STYLES)[number];
 
 /**
- * The script a validation range is written as (ADR-0230 Decision 5): Acrobat's `AFRange_Validate(bGreaterThan,
+ * The script a validation range is written as (ADR-0230 Decision 5): another widely used PDF editor's `AFRange_Validate(bGreaterThan,
  * nGreaterThan, bLessThan, nLessThan)`, an open end written `false, 0`.
  */
 export function rangeScript(range: FieldRange): string {

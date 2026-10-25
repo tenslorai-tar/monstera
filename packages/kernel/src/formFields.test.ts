@@ -545,7 +545,7 @@ describe('readFormFields', () => {
     const sex = fields.createRadioGroup('applicant.sex');
     sex.addOptionToPage('Male', page, { x: 20, y: 500, width: 16, height: 16 });
     sex.addOptionToPage('Female', page, { x: 60, y: 500, width: 16, height: 16 });
-    // A GROUP WHOSE WIDGETS ARE NAMED BY NUMBER and labelled by `/Opt`, as Acrobat writes one.
+    // A GROUP WHOSE WIDGETS ARE NAMED BY NUMBER and labelled by `/Opt`, as another widely used PDF editor writes one.
     const plan = fields.createRadioGroup('applicant.plan');
     plan.addOptionToPage('0', page, { x: 20, y: 400, width: 16, height: 16 });
     plan.addOptionToPage('1', page, { x: 60, y: 400, width: 16, height: 16 });

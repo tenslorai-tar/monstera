@@ -43,7 +43,7 @@ import { readWholeList } from './readWholeList.js';
  *
  * ## A tree by page, a kind's icon, the name, the value
  *
- * PDF-XChange's shape: the fields grouped under the page they sit on, each row the field's kind as an icon and its own
+ * a widely used PDF editor's shape: the fields grouped under the page they sit on, each row the field's kind as an icon and its own
  * name, and its value beside it. A radio group is ONE row with its options under it, because the options are one
  * field. A search box at the top narrows the rows by name. There is no Delete on a row: removing a field is the Delete
  * key and the right-click menu, which are the registered command every other surface uses (`annotate.delete-selection`).

@@ -371,7 +371,7 @@ export type ExecutionSession<W extends keyof WriterSession> = W extends HostedWr
  * declarations warns about. A document written with a user password and no
  * owner password answers `0` to the empty attempt and **still reads 24 blocks**:
  * MuPDF derives the key from the empty *owner* password, then zeroes `access`
- * to match Acrobat, which refuses an empty owner password. So `0` is *this
+ * to match another widely used PDF editor, which refuses an empty owner password. So `0` is *this
  * application declines to open it*, which is stricter than *the engine could
  * not*. Stricter is the right direction — it asks for a password the engine
  * would not have required — and it is recorded because the permission rows must

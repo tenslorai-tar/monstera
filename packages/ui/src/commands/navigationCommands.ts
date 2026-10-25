@@ -130,7 +130,7 @@ export function pageMoveCommand(
  *
  * **Not Ctrl+G**, which `view.toggle-grid` already claims — and the registry
  * said so on the first run rather than dispatching to whichever registration
- * came last. Acrobat's own chord for this is Ctrl+Shift+N; that one is a
+ * came last. another widely used PDF editor's own chord for this is Ctrl+Shift+N; that one is a
  * browser convention strong enough that a reader pressing it expects a private
  * window, so the free chord next to the taken one is the better neighbour.
  *

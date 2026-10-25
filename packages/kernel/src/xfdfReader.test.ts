@@ -82,8 +82,8 @@ describe('readXfdf, the six measured shapes', () => {
 
   it('CONTROL: nesting UNDER the bound is accepted, so the rule is a depth and not a nesting ban', () => {
     // Without this the case above is satisfied by a reader that refuses any
-    // nesting at all — which would refuse every hierarchical XFDF Acrobat
-    // writes, and the case below proves those are the ones that matter.
+    // nesting at all — which would refuse every hierarchical XFDF other editors
+    // write, and the case below proves those are the ones that matter.
     const nested = `<xfdf><fields>${'<field name="a">'.repeat(8)}<value>x</value>${'</field>'.repeat(8)}</fields></xfdf>`;
     expect(readXfdf(nested)).toStrictEqual([{ name: 'a.a.a.a.a.a.a.a', values: ['x'] }]);
   });
@@ -91,7 +91,7 @@ describe('readXfdf, the six measured shapes', () => {
 
 describe('readXfdf, the shapes a real file has', () => {
   it('JOINS A NESTED NAME WITH DOTS, because that is what a qualified name is', () => {
-    // THIS BUILD WRITES THE FLAT FORM AND ACROBAT WRITES THIS ONE, so a reader
+    // THIS BUILD WRITES THE FLAT FORM AND OTHER EDITORS WRITE THIS ONE, so a reader
     // taking only the flat spelling would refuse every file the feature exists
     // for. The create row measured that a dot in a name makes a parent in the
     // field tree, so the two spellings describe the same field.
@@ -133,8 +133,8 @@ describe('readXfdf, the shapes a real file has', () => {
 
   it('WALKS PAST the vocabulary an XFDF carries beside its fields', () => {
     // A real file has `<f href="...">`, `<ids>` and often annotations. Refusing
-    // an element this build reads nothing from would refuse every Acrobat
-    // export; the fields are found wherever they are.
+    // an element this build reads nothing from would refuse every other
+    // editor's export; the fields are found wherever they are.
     const rich =
       '<xfdf xmlns="http://ns.adobe.com/xfdf/"><f href="form.pdf"/><ids original="AB" modified="CD"/><fields><field name="a"><value>x</value></field></fields><annots><square page="0"/></annots></xfdf>';
     expect(readXfdf(rich)).toStrictEqual([{ name: 'a', values: ['x'] }]);

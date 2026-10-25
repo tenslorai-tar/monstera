@@ -1,5 +1,5 @@
 /**
- * Two documents compared as Acrobat's Compare does: pages matched by their content, then each matched pair compared
+ * Two documents compared as another widely used PDF editor's Compare does: pages matched by their content, then each matched pair compared
  * for text, layout, annotations and pictures, every change boxed on BOTH pages (ADR-0131).
  *
  * ## Pure, and where its inputs come from

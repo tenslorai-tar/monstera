@@ -72,7 +72,7 @@ function check(at, held, detail) {
  * How far a BOX coordinate may lie from the committed one, in points: the platform's measure of a glyph and nothing else.
  *
  * PDFium answers a character's box from the font it draws with, and for a font the page names and does not carry that is
- * the platform's substitute — the Foxit faces it bundles on Linux, the system's on Windows — so the same page's boxes
+ * the platform's substitute — the standard faces it bundles on Linux, the system's on Windows — so the same page's boxes
  * differ by platform while its words, breaks, styles and baselines (the text matrix's, not a glyph's) do not.
  *
  * Read on windows-latest against the committed Linux reading, 2026-10-24, in two runs because the first printed 40 of

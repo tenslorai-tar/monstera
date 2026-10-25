@@ -81,7 +81,7 @@ describe('programFace: where a program has no OS/2', () => {
     expect(programFace(type1('/ItalicAngle -12 def'))).toBeUndefined();
   });
 
-  it('reads a bare CFF program’s Top DICT weight and slant (pdf.js’ Foxit faces)', () => {
+  it('reads a bare CFF program’s Top DICT weight and slant (pdf.js’ bundled standard faces)', () => {
     const standard = join(dirname(createRequire(import.meta.url).resolve('pdfjs-dist/package.json')), 'standard_fonts');
     const read = (file: string) => programFace(new Uint8Array(readFileSync(join(standard, file))));
     expect(read('FoxitSerif.pfb')).toStrictEqual({ weightClass: 400, italic: false });

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 
 /**
  * How long the window may be hidden (minimised, or covered on a platform that reports it) before the page area gives its
- * pixels back: the owner's run 4 item 13d, after PDF-XChange's documented *"about 30 s after the window is minimised"*.
+ * pixels back: the owner's run 4 item 13d, after a widely used PDF editor's documented *"about 30 s after the window is minimised"*.
  * NOT MEASURED HERE: the figure is the reference application's, not a reading of this one.
  */
 export const HIDDEN_RELEASE_MS = 30_000;

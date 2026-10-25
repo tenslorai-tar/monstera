@@ -241,17 +241,17 @@ describe('Go to a page, as a push button action (ADR-0259)', () => {
   });
 
   it('keeps the place and zoom another tool wrote, through a read and an edit that changes another action', async () => {
-    const acrobat = await withAction(await buttonForm(), 'go', (document) => {
+    const otherTool = await withAction(await buttonForm(), 'go', (document) => {
       const page = document.getPages()[1];
       if (page === undefined) throw new Error('no page 2');
       return document.context.obj({ S: 'GoTo', D: [page.ref, 'XYZ', 36, 700, 1.5] });
     });
-    const handle = await handleOf(acrobat, 'go');
-    const [read] = (await onSession(acrobat, (session) => readButtonActions(session, handle))) ?? [];
+    const handle = await handleOf(otherTool, 'go');
+    const [read] = (await onSession(otherTool, (session) => readButtonActions(session, handle))) ?? [];
     const goTo = { kind: 'goTo', page: 1, view: 'keep', at: { left: 36, top: 700, zoom: 1.5 } } as const;
     expect(read).toStrictEqual({ trigger: 'up', step: 0, action: goTo });
     // AN EDIT ADDING A RESET AFTER IT writes the go-to back with its numbers.
-    const again = await written(acrobat, 'go', [{ trigger: 'up', action: goTo }, { trigger: 'up', action: { kind: 'reset', fields: null } }]);
+    const again = await written(otherTool, 'go', [{ trigger: 'up', action: goTo }, { trigger: 'up', action: { kind: 'reset', fields: null } }]);
     expect((await pdfjsWidget(again, 'go'))['dest']).toMatchObject([{}, { name: 'XYZ' }, 36, 700, 1.5]);
   });
 

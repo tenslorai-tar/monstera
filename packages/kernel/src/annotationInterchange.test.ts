@@ -132,7 +132,7 @@ beforeAll(async () => {
       [310, 310, 490, 310],
     ],
   });
-  // NOT EXCHANGED: a link is navigation, not a comment.
+  // NOT EOTHER_EDITORD: a link is navigation, not a comment.
   add(upright, { Subtype: 'Link', Rect: [10, 10, 60, 30], Border: [0, 0, 0] });
   add(rotated, {
     Subtype: 'Line',
@@ -360,12 +360,12 @@ describe('annotation interchange — exported and imported through all three for
   }, 60_000);
 
   /**
-   * ANOTHER PROGRAM'S FILE, in the shapes PDF-XChange Editor 10.7.5 wrote (measured 2026-09-21 on
+   * ANOTHER PROGRAM'S FILE, in the shapes a widely used PDF editor wrote (measured 2026-09-21 on
    * the owner's export; the file itself is not committed). Written inline so the case carries the
    * shape and not the file.
    */
   describe('another program’s XFDF', () => {
-    const XCHANGE = new TextEncoder().encode(
+    const OTHER_EDITOR = new TextEncoder().encode(
       '<?xml version="1.0" encoding="UTF-8"?><xfdf xmlns="http://ns.adobe.com/xfdf/" xml:space="preserve"><annots>' +
         '<text icon="Comment" page="0" rect="69.36,695.9,89.36,713.9" color="#FFEE58">' +
         '<contents-richtext><body xmlns="http://www.w3.org/1999/xhtml" style="font-size:12pt"><p><span>first &amp; line</span></p><p>second   line</p></body></contents-richtext>' +
@@ -377,7 +377,7 @@ describe('annotation interchange — exported and imported through all three for
 
     async function importedDictionaries(): Promise<{ subtype: string; hasC: boolean; contents: string | null }[]> {
       return withSession(blank, async (session) => {
-        await applyImportAnnotations(session, { kind: 'importAnnotations', format: 'xfdf', bytes: XCHANGE });
+        await applyImportAnnotations(session, { kind: 'importAnnotations', format: 'xfdf', bytes: OTHER_EDITOR });
         return withDocument(session, (document) =>
           document
             .loadPage(0)
@@ -493,7 +493,7 @@ describe('annotation interchange — exported and imported through all three for
     });
 
     it('reads a default appearance in ANOTHER PROGRAM’S ORDER, and stores the one canonical form', () => {
-      // PDF-XChange Editor 10.7.5's typewriter box, as its XFDF export writes it (measured 2026-09-21):
+      // a widely used PDF editor's typewriter box, as its XFDF export writes it (measured 2026-09-21):
       // colour before font. The format fixes no order, and this whole file was refused over it.
       const text = new TextEncoder().encode(
         '<?xml version="1.0"?><xfdf><annots><freetext page="0" rect="182.7,741.6,276.3,755.2">' +

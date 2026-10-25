@@ -72,12 +72,12 @@
  * field names no colour of its own (`/DA` `0 g`), and the page's field editor types in it on `--page` (ADR-0168).
  *
  * `--field-required` and `--field-tint` are one value in every theme for `--field-ink`'s reason: they are drawn on the
- * paper, which is white in every theme. The tint is the light blue PDF-XChange washes a fillable field with, a fill that
+ * paper, which is white in every theme. The tint is the light blue a widely used PDF editor washes a fillable field with, a fill that
  * carries no meaning by contrast (the field's own edge and appearance do); the red outlines a required field and owes
  * 3:1 on the paper as a graphic (ADR-0226).
  *
  * `--field-chosen` is the row a list box on the page has chosen, one value in every theme for the same reason: the blue
- * Acrobat and MuPDF draw a chosen option on (`0.6 0.75 0.85 rg`), under the field's own text (the owner's F1).
+ * another widely used PDF editor and MuPDF draw a chosen option on (`0.6 0.75 0.85 rg`), under the field's own text (the owner's F1).
  */
 
 /* ─── roles ─────────────────────────────────────────────────────────────────

@@ -1319,7 +1319,7 @@ export function placeSignatureToolCommand(deps: ToolCommandDeps): UiCommand {
  * The place-barcode tool's command.
  *
  * **Edit › Text, at 55** (the owner's order of 2026-10-07): adding a barcode puts CONTENT on the page, as an image or a
- * text box does, and Organize is about the pages themselves. PDF-XChange puts *Add QR Code* under Home › Add. *Read
+ * text box does, and Organize is about the pages themselves. A widely used PDF editor puts *Add QR Code* under Home › Add. *Read
  * barcodes* is Tools › OCR's, beside the other recognition.
  */
 export function placeBarcodeToolCommand(deps: ToolCommandDeps): UiCommand {
