@@ -5,6 +5,7 @@ import type { PDFDocument, PDFObject } from './mupdfRaw.js';
 import { bufferBytes, newDocument, withDocument } from './mupdfWriter.js';
 import { pageContentStreams, xobjectKinds } from './pageContent.js';
 import { freeName, resourceDictionaryOf } from './pageResources.js';
+import { savedBuffer } from './saveDepth.js';
 import { type PageBox, boxOfPoints, inverse, written as numberWritten } from './contentCarry.js';
 import { type ClipWindow, type Matrix, type Setting, drawnObjects, joinedContent, multiply, showOperators } from './textOperators.js';
 
@@ -248,7 +249,7 @@ export function formPagesDocument(document: PDFDocument, page: number): { readon
       const grafted = pages.graftObject(resources.isNull() ? placement.holder.getInheritable('Resources') : resources);
       pages.insertPage(-1, pages.addPage(mediabox, rotate, grafted, wrappedForm(placement).bytes));
     }
-    return { bytes: bufferBytes(pages.saveToBuffer('')), paths: placements.map((placement) => placement.path) };
+    return { bytes: bufferBytes(savedBuffer(pages, '')), paths: placements.map((placement) => placement.path) };
   } finally {
     pages.destroy();
   }
