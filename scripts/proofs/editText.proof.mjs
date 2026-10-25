@@ -25,6 +25,13 @@
  * must leave every other line as it was and merge none — and its CONTROL, the same edit sent with the lines as one
  * paragraph, must be seen to merge them.
  *
+ * ## Text inside a form (ADR-0269)
+ *
+ * Every page's walk offers each form placement's blocks after the page's own, as `main` does, and edits each with its
+ * path and its placement's pre-read; the pixels and characters judged are the real page's. A scaled form's lines must be
+ * offered and edited cleanly, and a form drawn in two places, its first placement's words changed, must read back with
+ * the second's words as they were — which only the copy the writer makes first keeps true.
+ *
  * ## The counts, and the pixels
  *
  * A REFUSAL is any edit the writer did not make, named by its error and step. Every edit that was made is drawn by MuPDF
@@ -109,8 +116,8 @@ const CASES = [
   'numbered paragraphs: a paragraph that grows moves the lines below by one line’s pitch, every gap below kept (within 1 px)',
   'a code block: a word changed in one line leaves every other line as it was, and no line is merged',
   'CONTROL: the same code edit with its lines sent as one paragraph merges them, and the check above sees it',
-  'Unpack it IS offered on a page of plain text in a scaled form, which its promotion keeps (the check can say yes)',
-  'Unpack it is NOT offered on the brochure, where its promotion moves text (ADR-0232’s correction)',
+  'text inside a form: the brochure’s pull quote and a scaled form’s lines are offered as blocks (ADR-0269), so the gate above covers them',
+  'a form drawn in two places: every edit of one placement is made and leaves the other as it was — the form is copied first',
 ];
 
 /**
@@ -168,12 +175,23 @@ async function walkPage(pdfium, kernel, bytes, index, quotes) {
   } finally {
     await pdfium.pdfiumWriter.close(session);
   }
-  const grouped = kernel.groupIntoBlocks(
-    read.runs.filter((/** @type {any} */ run) => kernel.isEditedInPlace(run.style)).map((/** @type {any} */ run) => kernel.blockableOf(run)),
-  );
-  // WHAT EACH BLOCK PUSHES, as `main` adds it to the read (`pushesOfPage`, ADR-0249): a replacement sends it.
+  const groupedOf = (/** @type {any} */ found) =>
+    kernel.groupIntoBlocks(
+      found.runs.filter((/** @type {any} */ run) => kernel.isEditedInPlace(run.style)).map((/** @type {any} */ run) => kernel.blockableOf(run)),
+    );
+  const grouped = groupedOf(read);
+  // WHAT EACH BLOCK PUSHES, as `main` adds it to the read (`pushesOfPage`, ADR-0249): a replacement sends it. Each block
+  // carries the pre-read its edit is written against, and a form's block its path (ADR-0269).
   const pushes = kernel.pushesOfPage(grouped.map((/** @type {any} */ block) => block.box), read);
-  const blocks = grouped.map((/** @type {any} */ block, /** @type {number} */ at) => ({ ...block, push: pushes[at] ?? { below: [], room: 0 } }));
+  /** @type {any[]} */
+  const blocks = grouped.map((/** @type {any} */ block, /** @type {number} */ at) => ({ ...block, push: pushes[at] ?? { below: [], room: 0 }, runs }));
+  // TEXT INSIDE A FORM (ADR-0269), as `main` offers it: each placement read by PDFium as a page of its own, its blocks after
+  // the page's own, pushing nothing. Only on the application's route: the PDFium writer edits no form.
+  if (rewrite === 'operators') {
+    for (const placement of await formPlacementsOf(pdfium, kernel, bytes, index)) {
+      for (const block of groupedOf(placement.read)) blocks.push({ ...block, push: { below: [], room: 0 }, runs: placement.runs, form: placement.path });
+    }
+  }
   const before = render(kernel, bytes, index);
   const beforeCharacters = charactersOf(kernel, bytes, index);
   // A CHARACTER IS ITSELF by its place AND its size: a heading made larger keeps its first letter's pen position, and that
@@ -217,11 +235,13 @@ async function walkPage(pdfium, kernel, bytes, index, quotes) {
 
   /**
    * One edit of `entries` on a fresh copy of the page, which may change the blocks at `touched`: made or refused, and
-   * what its pixels say outside where those blocks may draw.
+   * what its pixels say outside where those blocks may draw. `stream` is the touched blocks' own: the page's content, or
+   * a form placement's path, and the pre-read of that stream's page.
    * @param {string} name @param {string} edit @param {any[]} entries @param {number[]} touched
    */
   const attempt = async (name, edit, entries, touched) => {
-    const wire = { page: index, ...kernel.blockEditOf(entries), fit: 'reflow', version: 1 };
+    const first = blocks[touched[0] ?? 0];
+    const wire = { page: index, ...kernel.blockEditOf(entries), fit: 'reflow', version: 1, ...(first?.form === undefined ? {} : { form: first.form }) };
     /** @type {Uint8Array} */
     let after;
     /** @type {readonly string[]} */
@@ -230,7 +250,7 @@ async function walkPage(pdfium, kernel, bytes, index, quotes) {
       if (rewrite === 'operators') {
         const copy = await kernel.mupdfWriter.open(bytes);
         try {
-          ({ noted } = await kernel.applyEditTextOperators(copy, { kind: 'editTextOperators', ...wire }, runs));
+          ({ noted } = await kernel.applyEditTextOperators(copy, { kind: 'editTextOperators', ...wire }, first?.runs ?? runs));
           after = await kernel.mupdfWriter.serialise(copy);
         } finally {
           await kernel.mupdfWriter.close(copy);
@@ -292,8 +312,10 @@ async function walkPage(pdfium, kernel, bytes, index, quotes) {
     const soft = block.lines.map((/** @type {any} */ line) => line.soft);
     const text = kernel.paragraphsOfLines(block.lines.map((/** @type {any} */ line) => ({ text: kernel.lineText(line.runs), soft: line.soft })));
     if (text.trim().length === 0) continue;
-    // A BLOCK OF THE OWNER'S CORPUS IS NAMED BY ITS NUMBER: its words are the owner's and are never printed.
-    const name = quotes ? `block ${String(at)} “${text.slice(0, 24)}”` : `block ${String(at)}`;
+    // A BLOCK OF THE OWNER'S CORPUS IS NAMED BY ITS NUMBER: its words are the owner's and are never printed. A form's
+    // block says so, so the table counts the two apart.
+    const kind = block.form === undefined ? 'block' : 'form block';
+    const name = quotes ? `${kind} ${String(at)} “${text.slice(0, 24)}”` : `${kind} ${String(at)}`;
     const size = Number(block.lines[0]?.runs[0]?.style.size ?? 10);
     const whole = (/** @type {Record<string, unknown>} */ set) => ({ text, marks: [{ from: 0, to: text.length, set }] });
     /** @type {Record<(typeof EDITS)[number], Record<string, unknown> | null>} */
@@ -337,15 +359,19 @@ async function walkPage(pdfium, kernel, bytes, index, quotes) {
   if (typeof frequent === 'string') {
     const compiled = kernel.compileQuery(frequent, { caseSensitive: true, wholeWord: true, normalise: 'none' });
     const matchesIn = compiled.ok ? compiled.value.matchesIn : () => [];
-    const touchedBy = (/** @type {any[]} */ entries) =>
-      blocks.flatMap((/** @type {any} */ each, /** @type {number} */ at) =>
-        entries.some((entry) => entry.lines[0]?.[0] === each.lines[0]?.runs[0]?.index) ? [at] : []);
-    const all = kernel.blocksReplaced(blocks, matchesIn, 'Altered');
-    const label = quotes ? `the page’s “${frequent}”` : 'the page’s most frequent word';
-    if (all.length > 0) await attempt(label, 'replace all', all, touchedBy(all));
-    const first = blocks.findIndex((/** @type {any} */ each) => matchesIn(kernel.wordsOf(each)).length > 0);
-    const one = first === -1 ? [] : kernel.blocksReplaced(blocks, matchesIn, 'Altered', { block: first, occurrence: 0 });
-    if (one.length > 0) await attempt(label, 'spelling', one, touchedBy(one));
+    // ONE COMMAND PER STREAM, as `replaceInDocument` sends them (ADR-0269): the page's own blocks, then each form's.
+    for (const stream of kernel.streamsOf(blocks)) {
+      const touchedBy = (/** @type {any[]} */ entries) =>
+        stream.blocks.flatMap((/** @type {any} */ each) =>
+          entries.some((entry) => entry.lines[0]?.[0] === each.lines[0]?.runs[0]?.index) ? [blocks.indexOf(each)] : []);
+      const all = kernel.blocksReplaced(stream.blocks, matchesIn, 'Altered');
+      const where = stream.form === null ? '' : ' in a form';
+      const label = quotes ? `the page’s “${frequent}”${where}` : `the page’s most frequent word${where}`;
+      if (all.length > 0) await attempt(label, 'replace all', all, touchedBy(all));
+      const first = stream.blocks.findIndex((/** @type {any} */ each) => matchesIn(kernel.wordsOf(each)).length > 0);
+      const one = first === -1 ? [] : kernel.blocksReplaced(stream.blocks, matchesIn, 'Altered', { block: first, occurrence: 0 });
+      if (one.length > 0) await attempt(label, 'spelling', one, touchedBy(one));
+    }
   }
   return tries;
 }
@@ -485,29 +511,48 @@ function onePage(kernel, bytes, index) {
 }
 
 /**
- * The page's text held inside forms, which Edit text does not offer (ADR-0266's correction): how many characters, how
- * many blocks that text would make where PDFium can take it out of its forms, and whether *Unpack it* is offered there
- * (`unpackKeepsThePage`, ADR-0232's correction).
+ * Page `index`'s form placements that show text, as `main` reads them (ADR-0269): MuPDF's document of one page per
+ * placement (`formPagesDocument`), and PDFium's runs and pre-read of each of its pages, with its path.
  * @param {any} pdfium @param {any} kernel @param {Uint8Array} bytes @param {number} index
- * @returns {Promise<{ characters: number, blocks: number, unpackable: boolean }>}
+ * @returns {Promise<{ path: unknown, read: any, runs: any }[]>}
  */
-async function packedOf(pdfium, kernel, bytes, index) {
-  const session = await pdfium.pdfiumWriter.open(bytes);
+async function formPlacementsOf(pdfium, kernel, bytes, index) {
+  const document = kernel.mupdf.PDFDocument.openDocument(bytes, 'application/pdf');
+  /** @type {{ bytes: Uint8Array, paths: readonly unknown[] }} */
+  let placed;
   try {
-    const plain = await pdfium.textRuns(session, index);
-    if (plain.unaddressable === 0) return { characters: 0, blocks: 0, unpackable: false };
-    const count = (/** @type {any} */ read) =>
-      kernel.groupIntoBlocks(read.runs.filter((/** @type {any} */ run) => kernel.isEditedInPlace(run.style)).map((/** @type {any} */ run) => kernel.blockableOf(run))).length;
-    const before = count(plain);
-    await pdfium.unpackedIfAsked(session, index, true);
-    const blocks = Math.max(0, count(await pdfium.textRuns(session, index)) - before);
-    return { characters: plain.unaddressable, blocks, unpackable: await pdfium.unpackKeepsThePage({ bytes, opensWith: undefined }, index) };
+    placed = kernel.formPagesDocument(document, index);
+  } finally {
+    document.destroy();
+  }
+  if (placed.paths.length === 0) return [];
+  const session = await pdfium.pdfiumWriter.open(placed.bytes);
+  try {
+    const found = [];
+    for (const [at, path] of placed.paths.entries()) {
+      found.push({ path, read: await pdfium.textRuns(session, at), runs: await pdfium.pageRuns(session, at) });
+    }
+    return found;
   } finally {
     await pdfium.pdfiumWriter.close(session);
   }
 }
 
-/** Two lines of plain text inside a form placed scaled on the page, beside a line of its own: a promotion that keeps it. */
+/**
+ * How many of page `index`'s form placements that show text are NOT offered — deeper or named longer than the contract's
+ * bounds (ADR-0269), counted from the placements and the paths offered.
+ * @param {any} kernel @param {Uint8Array} bytes @param {number} index @returns {number}
+ */
+function formsNotOffered(kernel, bytes, index) {
+  const document = kernel.mupdf.PDFDocument.openDocument(bytes, 'application/pdf');
+  try {
+    return kernel.textPlacements(document.findPage(index)).length - kernel.formPagesDocument(document, index).paths.length;
+  } finally {
+    document.destroy();
+  }
+}
+
+/** Two lines of plain text inside a form placed scaled on the page, beside a line of its own. */
 async function textInAForm() {
   const inner = await PDFDocument.create({ updateMetadata: false });
   const innerPage = inner.addPage([300, 120]);
@@ -520,6 +565,21 @@ async function textInAForm() {
   const page = outer.addPage([400, 300]);
   page.drawText('On the page', { x: 30, y: 260, size: 14, font: await outer.embedFont(StandardFonts.Helvetica) });
   page.drawPage(form, { x: 40, y: 80, xScale: 1.2, yScale: 1.2 });
+  return new Uint8Array(await outer.save());
+}
+
+/** {@link textInAForm}'s form drawn TWICE on one page, one above the other: one XObject in two placements. */
+async function oneFormTwice() {
+  const inner = await PDFDocument.create({ updateMetadata: false });
+  const innerPage = inner.addPage([300, 80]);
+  const innerFont = await inner.embedFont(StandardFonts.Helvetica);
+  innerPage.drawText('Drawn in two places', { x: 10, y: 40, size: 14, font: innerFont });
+  const outer = await PDFDocument.create({ updateMetadata: false });
+  const [form] = await outer.embedPdf(await inner.save());
+  if (form === undefined) throw new Error('embedPdf produced no page');
+  const page = outer.addPage([400, 300]);
+  page.drawPage(form, { x: 40, y: 180 });
+  page.drawPage(form, { x: 40, y: 40 });
   return new Uint8Array(await outer.save());
 }
 
@@ -739,12 +799,43 @@ async function run(pdfium, kernel) {
   process.stdout.write(`  the code block's control, its lines sent as one paragraph: ${mergeCheck === '' ? 'read back as the page’s own lines' : mergeCheck}\n`);
   check(CASES[10] ?? '', mergeCheck !== '', 'the merged edit read back as the page’s own lines, so the check cannot see a merge');
 
-  // UNPACK IT, OFFERED ONLY WHERE IT KEEPS THE PAGE: the check says yes where it should, and no on the brochure.
-  const clean = await packedOf(pdfium, kernel, await textInAForm(), 0);
-  check(CASES[11] ?? '', clean.characters > 0 && clean.unpackable, JSON.stringify(clean));
-  const brochurePacked = await packedOf(pdfium, kernel, await brochure(1), 0);
-  process.stdout.write(`  Unpack it: a page of text in a form ${clean.unpackable ? 'offered' : 'NOT offered'}; the brochure ${brochurePacked.unpackable ? 'OFFERED' : 'not offered'}\n`);
-  check(CASES[12] ?? '', brochurePacked.characters > 0 && !brochurePacked.unpackable, JSON.stringify(brochurePacked));
+  // TEXT INSIDE A FORM IS OFFERED (ADR-0269): the brochure's pull quote, already in the gate above, and a scaled form's
+  // lines, walked here — each edit made, nothing disturbed, nothing logged. Offered at all is what keeps the gate's
+  // *disturbs nothing* from being true of no form block.
+  const inForm = (/** @type {Try[]} */ each) => each.filter((one) => one.block.startsWith('form block'));
+  const scaled = await walkPage(pdfium, kernel, await textInAForm(), 0, true);
+  const scaledCounts = counts(inForm(scaled));
+  const brochureForms = inForm(gate);
+  check(
+    CASES[11] ?? '',
+    brochureForms.length > 0 && scaledCounts.tries > 0 && scaledCounts.refused === 0 && scaledCounts.disturbed === 0 && scaledCounts.logged === 0,
+    `${String(brochureForms.length)} brochure form edit(s); scaled form: ${JSON.stringify(scaledCounts)}`,
+  );
+  // A FORM IN TWO PLACES: the first placement's words changed, read back with MuPDF, and the second's still as they were.
+  const twice = await oneFormTwice();
+  const placements = await formPlacementsOf(pdfium, kernel, twice, 0);
+  const [firstPlaced] = placements;
+  let twiceCheck = `${String(placements.length)} placement(s) read`;
+  if (placements.length === 2 && firstPlaced !== undefined) {
+    const [block] = kernel.groupIntoBlocks(
+      firstPlaced.read.runs.filter((/** @type {any} */ run) => kernel.isEditedInPlace(run.style)).map((/** @type {any} */ run) => kernel.blockableOf(run)),
+    );
+    const lines = block.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index));
+    const soft = block.lines.map((/** @type {any} */ line) => line.soft);
+    const copy = await kernel.mupdfWriter.open(twice);
+    try {
+      // AS LONG AS THE WORDS IT REPLACES, so the line does not wrap and reads back as one.
+      const edit = { kind: 'editTextOperators', page: 0, ...kernel.blockEditOf([{ lines, soft, text: 'Drawn in ten places' }]), fit: 'reflow', version: 1, form: firstPlaced.path };
+      await kernel.applyEditTextOperators(copy, edit, firstPlaced.runs);
+      const read = linesOf(kernel, await kernel.mupdfWriter.serialise(copy)).map((line) => line.text);
+      twiceCheck = read.includes('Drawnintenplaces') && read.includes('Drawnintwoplaces') ? '' : `read back as ${String(read.length)} line(s), the edited one ${read.includes('Drawnintenplaces') ? 'present' : 'MISSING'}, the other ${read.includes('Drawnintwoplaces') ? 'present' : 'CHANGED'}`;
+    } catch (error) {
+      twiceCheck = `refused: ${reasonOf(error)}`;
+    } finally {
+      await kernel.mupdfWriter.close(copy);
+    }
+  }
+  check(CASES[12] ?? '', twiceCheck === '', twiceCheck);
 
   if (CORPUS !== null) corpus();
 
@@ -764,7 +855,7 @@ async function walkPageRouted(pdfium, kernel, bytes, old) {
 
 /**
  * The owner's corpus, every page of every document, each page in a process of its own and edited as a document of its
- * own (`onePage`); reported per document number, with the text held in forms that is not offered, and a table at the
+ * own (`onePage`); reported per document number, with the form placements not offered, and a table at the
  * end. Not gated: CI has no corpus, and the owner reads the counts.
  */
 function corpus() {
@@ -775,8 +866,8 @@ function corpus() {
   const all = [];
   /** @type {string[]} */
   const table = [
-    '| document | pages | blocks offered | edits | refused | disturbed | logged | packed characters | packed blocks not offered | Unpack it offered on |',
-    '|---|---|---|---|---|---|---|---|---|---|',
+    '| document | pages | blocks offered | form blocks offered | edits | refused | disturbed | logged | form placements not offered |',
+    '|---|---|---|---|---|---|---|---|---|',
   ];
   for (const [at, file] of files.entries()) {
     // BY NUMBER, NEVER BY NAME: the number is the file's place in the folder sorted by name.
@@ -786,17 +877,18 @@ function corpus() {
     const pages = childRun([path, '--count']);
     if (typeof pages !== 'number') {
       process.stdout.write(`  ${label}: could not be opened, not counted\n`);
-      table.push(`| ${String(at + 1)} | not opened | | | | | | | | |`);
+      table.push(`| ${String(at + 1)} | not opened | | | | | | | |`);
       continue;
     }
     /** @type {Try[]} */
     const tries = [];
     let failed = 0;
-    const packed = { characters: 0, blocks: 0, pages: 0, unpackable: 0 };
     let blocksOffered = 0;
+    let formBlocksOffered = 0;
+    let formsLeft = 0;
     for (let page = 0; page < Math.min(pages, PAGES); page += 1) {
       if (PAGE_LIST !== null && !PAGE_LIST.includes(page + 1)) continue;
-      const answer = /** @type {{ tries: Try[], packed: { characters: number, blocks: number, unpackable: boolean } } | null} */ (
+      const answer = /** @type {{ tries: Try[], formsNotOffered: number } | null} */ (
         childRun([path, '--page', String(page), '--label', `doc${String(at + 1)}-p${String(page + 1)}`, ...(PICTURES === null ? [] : ['--pictures', PICTURES])])
       );
       if (answer === null || !Array.isArray(answer.tries)) {
@@ -804,20 +896,16 @@ function corpus() {
         continue;
       }
       tries.push(...answer.tries.map((each) => ({ ...each, page: page + 1 })));
-      // THE BLOCKS OFFERED ON THE PAGE: each named once per edit, the page's own replacements apart.
-      blocksOffered += new Set(answer.tries.filter((each) => !each.block.startsWith('the page')).map((each) => each.block)).size;
-      packed.characters += answer.packed.characters;
-      packed.blocks += answer.packed.blocks;
-      if (answer.packed.characters > 0) packed.pages += 1;
-      if (answer.packed.unpackable) packed.unpackable += 1;
+      // THE BLOCKS OFFERED ON THE PAGE: each named once per edit, the page's own replacements apart, a form's counted apart.
+      const named = new Set(answer.tries.filter((each) => !each.block.startsWith('the page')).map((each) => each.block));
+      formBlocksOffered += [...named].filter((name) => name.startsWith('form block')).length;
+      blocksOffered += [...named].filter((name) => !name.startsWith('form block')).length;
+      formsLeft += answer.formsNotOffered;
     }
     report(`${label}, ${String(Math.min(pages, PAGES))} of ${String(pages)} page(s)${failed > 0 ? `, ${String(failed)} page(s) whose walk FAILED` : ''}`, tries);
-    if (packed.characters > 0) {
-      process.stdout.write(`      text held in forms, not offered: ${String(packed.characters)} character(s) on ${String(packed.pages)} page(s), ${String(packed.blocks)} block(s) where PDFium can take it out; Unpack it offered on ${String(packed.unpackable)} page(s)\n`);
-    }
     const { tries: edits, refused, disturbed, logged } = counts(tries);
     table.push(
-      `| ${String(at + 1)} | ${String(Math.min(pages, PAGES))}${failed > 0 ? ` (${String(failed)} failed)` : ''} | ${String(blocksOffered)} | ${String(edits)} | ${String(refused)} | ${String(disturbed)} | ${String(logged)} | ${String(packed.characters)} | ${String(packed.blocks)} | ${String(packed.unpackable)} page(s) |`,
+      `| ${String(at + 1)} | ${String(Math.min(pages, PAGES))}${failed > 0 ? ` (${String(failed)} failed)` : ''} | ${String(blocksOffered)} | ${String(formBlocksOffered)} | ${String(edits)} | ${String(refused)} | ${String(disturbed)} | ${String(logged)} | ${String(formsLeft)} |`,
     );
     all.push(...tries);
   }
@@ -857,10 +945,10 @@ async function child(/** @type {any} */ pdfium, /** @type {any} */ kernel) {
     }
     return;
   }
-  // THE PAGE AS A DOCUMENT OF ITS OWN (`onePage`), and its packed text beside its edits.
+  // THE PAGE AS A DOCUMENT OF ITS OWN (`onePage`), and its form placements not offered beside its edits.
   const one = onePage(kernel, bytes, Number(option('--page') ?? 0));
   const tries = await walkPage(pdfium, kernel, one, 0, false);
-  process.stdout.write(`${JSON.stringify({ tries, packed: await packedOf(pdfium, kernel, one, 0) })}\n`);
+  process.stdout.write(`${JSON.stringify({ tries, formsNotOffered: formsNotOffered(kernel, one, 0) })}\n`);
 }
 
 const library = pdfiumLibrary(ROOT);
@@ -883,7 +971,8 @@ if (!existsSync(library) || shim === null || !existsSync(fontsDirectory(ROOT))) 
   // LITERAL SPECIFIERS, so `proof:electronimports` and the freshness scan can read what this loads.
   const pdfium = await import('../../packages/kernel/dist/pdfiumFfi.js');
   pdfium.openPdfium(library);
-  const { blockEditOf, readsUnpacked } = await import('../../packages/contract/dist/commands.js');
+  const { blockEditOf, readsUnpacked, streamsOf } = await import('../../packages/contract/dist/commands.js');
+  const { formPagesDocument, textPlacements } = await import('../../packages/kernel/dist/formText.js');
   const { groupIntoBlocks, isEditedInPlace, blockableOf, pushesOfPage } = await import('../../packages/kernel/dist/textLines.js');
   const { paragraphsOfLines, lineText, compileQuery } = await import('../../packages/shared/dist/index.js');
   const { blocksReplaced, wordsOf } = await import('../../packages/contract/dist/blockReplace.js');
@@ -902,6 +991,9 @@ if (!existsSync(library) || shim === null || !existsSync(fontsDirectory(ROOT))) 
   const kernel = {
     blockEditOf,
     readsUnpacked,
+    streamsOf,
+    formPagesDocument,
+    textPlacements,
     compileQuery,
     blocksReplaced,
     wordsOf,

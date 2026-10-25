@@ -5,7 +5,7 @@ import type { PDFDocument, PDFObject } from './mupdfRaw.js';
 import { bufferBytes, newDocument, withDocument } from './mupdfWriter.js';
 import { pageContentStreams, xobjectKinds } from './pageContent.js';
 import { freeName, resourceDictionaryOf } from './pageResources.js';
-import { type Matrix, drawnObjects, joinedContent, showOperators } from './textOperators.js';
+import { type Matrix, type Setting, drawnObjects, joinedContent, showOperators } from './textOperators.js';
 
 /**
  * Text inside a form XObject, edited in the form's own content as text on the page is
@@ -31,6 +31,11 @@ import { type Matrix, drawnObjects, joinedContent, showOperators } from './textO
 export interface FormPlacement {
   readonly path: FormPath;
   readonly chain: readonly Matrix[];
+  /**
+   * For each step of the path, the instructions in effect at its `Do` that the form inherits and that name nothing in
+   * the stream's resources (`inherited`), as written: one string per step, replayed before that step's matrices.
+   */
+  readonly states: readonly string[];
   /** The form XObject, as its holder's resources name it: what its stream is read from and written to. */
   readonly form: PDFObject;
   /** The page leaf or form whose content draws it. */
@@ -66,6 +71,37 @@ function xobjectNamed(holder: PDFObject, name: string): PDFObject | undefined {
   return found.isNull() ? undefined : found;
 }
 
+/** Names an instruction may carry that are not resources: the device colour spaces and the rendering intents. */
+const NOT_RESOURCES = new Set(['DeviceGray', 'DeviceRGB', 'DeviceCMYK', 'Perceptual', 'RelativeColorimetric', 'AbsoluteColorimetric', 'Saturation']);
+
+/**
+ * What a form drawn under `settings` inherits from its holder, as instructions to replay before it: a form is drawn in
+ * the graphics state in effect at its `Do` (ISO 32000-2, 8.10.1), and its text's place and colour depend on that state —
+ * measured 2026-10-25 on the brochure fixture, whose page sets `0.3 Tc` before its pull quote's `Do`, so the quote is
+ * drawn wider than the same content read on a page of its own, and an edit laid out against the narrower reading moved
+ * its last letter. An instruction that names a resource of the holder is left out (`Tf`, `gs`, a colour space by name,
+ * and the colours set in a space left out): the form's own resources need not hold that name, and those the form uses it
+ * sets itself.
+ */
+function inherited(content: Uint8Array, settings: readonly Setting[]): string {
+  const kept: string[] = [];
+  const dropped = new Set<string>();
+  for (const setting of settings) {
+    const text = LATIN1.decode(content.subarray(setting.start, setting.end));
+    const names = [...text.matchAll(/\/([^\s/<>[\]()%{}]+)/gu)].map((match) => match[1] ?? '');
+    const resource = setting.slot === null || setting.slot === 'Tf' || names.some((name) => !NOT_RESOURCES.has(name));
+    // A COLOUR IN A SPACE LEFT OUT would be read in another space, so it goes with it.
+    const spaceGone = (setting.slot === 'fill' && dropped.has('fill space')) || (setting.slot === 'stroke' && dropped.has('stroke space'));
+    if (resource || spaceGone) {
+      if (setting.slot !== null) dropped.add(setting.slot);
+      continue;
+    }
+    dropped.delete(setting.slot);
+    kept.push(text);
+  }
+  return kept.join(' ');
+}
+
 /** A form's `/Matrix`, or the identity where it states none. */
 function formMatrix(form: PDFObject): Matrix {
   const stated = form.resolve().get('Matrix');
@@ -87,6 +123,7 @@ function placementsUnder(
   holder: PDFObject,
   content: Uint8Array,
   chain: readonly Matrix[],
+  states: readonly string[],
   path: FormPath | readonly [],
   entered: ReadonlySet<number>,
 ): FormPlacement[] {
@@ -106,19 +143,20 @@ function placementsUnder(
     const placement: FormPlacement = {
       path: [...path, { name: operand.name, occurrence }],
       chain: [...chain, drawn.ctm, formMatrix(form)],
+      states: [...states, inherited(content, drawn.settings)],
       form,
       holder,
       content: own,
       operand: { start: operand.start, end: operand.end },
     };
-    found.push(placement, ...placementsUnder(form.resolve(), own, placement.chain, placement.path, new Set([...entered, id])));
+    found.push(placement, ...placementsUnder(form.resolve(), own, placement.chain, placement.states, placement.path, new Set([...entered, id])));
   }
   return found;
 }
 
 /** Every placement of a form on the page, whether it shows text or not. */
 function placementsOn(leaf: PDFObject): FormPlacement[] {
-  return placementsUnder(leaf, joinedContent(pageContentStreams(leaf)), [], [], new Set());
+  return placementsUnder(leaf, joinedContent(pageContentStreams(leaf)), [], [], [], new Set());
 }
 
 /** Every placement on the page of a form whose own content shows text, in the order {@link formPagesDocument} pages them. */
@@ -137,14 +175,20 @@ function written(value: number): string {
   return rounded === 0 ? '0' : String(rounded);
 }
 
-/** The form's content as the page it is read as: inside `q <chain> cm … Q`, and how many bytes either side are the wrapper. */
-export function wrappedForm(placement: Pick<FormPlacement, 'chain' | 'content'>): {
+/**
+ * The form's content as the page it is read as: inside `q … Q`, each step from the page down opening with the state the
+ * form inherits there and the step's two matrices — the CTM at its `Do`, then the form's own — and how many bytes either
+ * side are the wrapper.
+ */
+export function wrappedForm(placement: Pick<FormPlacement, 'chain' | 'content' | 'states'>): {
   readonly bytes: Uint8Array;
   readonly prefix: number;
   readonly suffix: number;
 } {
   const encoder = new TextEncoder();
-  const prefix = encoder.encode(`q ${placement.chain.map((matrix) => `${matrix.map(written).join(' ')} cm`).join(' ')}\n`);
+  const cm = (matrix: Matrix | undefined): string => (matrix === undefined ? '' : `${matrix.map(written).join(' ')} cm`);
+  const steps = placement.states.map((state, at) => [state, cm(placement.chain[2 * at]), cm(placement.chain[2 * at + 1])].filter((part) => part !== '').join(' '));
+  const prefix = encoder.encode(`q ${steps.join(' ')}\n`);
   const suffix = encoder.encode('\nQ\n');
   const bytes = new Uint8Array(prefix.length + placement.content.length + suffix.length);
   bytes.set(prefix, 0);
@@ -203,6 +247,49 @@ export function formPagesDocument(document: PDFDocument, page: number): { readon
 /** {@link formPagesDocument} of a session's document: what the MuPDF host answers `engine/form-pages` with. */
 export function readFormPages(session: MupdfSession, page: number): Promise<{ readonly bytes: Uint8Array; readonly paths: readonly FormPath[] }> {
   return withDocument(session, (document) => formPagesDocument(document, page));
+}
+
+/** The largest page ISO 32000-2 allows (Annex C, 14,400 units), each way from the origin: the room a form is read in. */
+const READ_EXTENT = 14_400;
+
+/**
+ * The form's `/BBox` grown to hold every character its content draws now
+ * ([ADR-0269](../../../docs/DECISIONS/0269-text-inside-a-form-is-edited-in-the-forms-own-content.md)'s correction of
+ * 2026-10-25): a form draws nothing outside its box, so words an edit wrapped below a box drawn round one line were
+ * written and not shown. Read by MuPDF from the form's content alone, in the form's own space, on a page reaching
+ * {@link READ_EXTENT} each way; the box only grows, to the union of what it was and those characters.
+ *
+ * @param resources the resources the content draws with: the form's own, or its holder's where it has none
+ */
+export function growFormBox(form: PDFObject, content: Uint8Array, resources: PDFObject): void {
+  const own = form.resolve();
+  const stated = own.get('BBox');
+  if (!stated.isArray() || stated.length !== 4) return;
+  const [ax = 0, ay = 0, bx = 0, by = 0] = [0, 1, 2, 3].map((at) => stated.get(at).asNumber());
+  // A SIDE MOVES ONLY WHERE A CHARACTER LIES PAST IT, outward to the whole point, so a box nothing outgrew is not rewritten.
+  // A RECORD, written by the walk's callback, so its sides are read after the walk as it left them.
+  const box = { x0: Math.min(ax, bx), y0: Math.min(ay, by), x1: Math.max(ax, bx), y1: Math.max(ay, by), grew: false };
+  const reading = newDocument();
+  try {
+    const grafted = resources.isNull() ? reading.newDictionary() : reading.graftObject(resources);
+    reading.insertPage(-1, reading.addPage([-READ_EXTENT, -READ_EXTENT, READ_EXTENT, READ_EXTENT], 0, grafted, content));
+    // MuPDF'S PAGE SPACE runs down from the page's top-left, so a point (x, y) of it is (x − EXTENT, EXTENT − y) here.
+    reading.loadPage(0).toStructuredText('clip=no').walk({
+      onChar: (_character, _origin, _font, _size, quad) => {
+        for (let at = 0; at + 1 < quad.length; at += 2) {
+          const x = (quad[at] ?? 0) - READ_EXTENT;
+          const y = READ_EXTENT - (quad[at + 1] ?? 0);
+          if (x < box.x0) [box.x0, box.grew] = [Math.floor(x), true];
+          if (x > box.x1) [box.x1, box.grew] = [Math.ceil(x), true];
+          if (y < box.y0) [box.y0, box.grew] = [Math.floor(y), true];
+          if (y > box.y1) [box.y1, box.grew] = [Math.ceil(y), true];
+        }
+      },
+    });
+  } finally {
+    reading.destroy();
+  }
+  if (box.grew) own.put('BBox', [box.x0, box.y0, box.x1, box.y1]);
 }
 
 /** How many placements across the whole document draw `form`'s object: more than one means it is used elsewhere. */

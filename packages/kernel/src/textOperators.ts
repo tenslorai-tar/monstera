@@ -328,6 +328,11 @@ export interface DrawnObject {
    * path's coordinates are rewritten from, in place (ADR-0264 Decision 3). Empty for every other kind.
    */
   readonly segments: readonly PathSegment[];
+  /**
+   * The instructions in effect where it is drawn that set how text and colour are drawn ({@link ShowOperator}'s
+   * `settings`): what a form drawn here inherits from this stream (ADR-0269's correction of 2026-10-25).
+   */
+  readonly settings: readonly Setting[];
   /** A path's painting operator and where it stands, and its clip operator where it has one; absent for other kinds. */
   readonly paint?: { readonly op: string; readonly start: number; readonly end: number };
   readonly clip?: { readonly op: 'W' | 'W*'; readonly start: number; readonly end: number };
@@ -541,7 +546,7 @@ function scan(
   let windows: (ClipWindow & { start: number; end: number; depth: number })[] = [];
   const draw = (kind: DrawnObject['kind'], start: number, end: number, ctmNow: Matrix, clips = false, points: DrawnObject['points'] = [], extra: Pick<DrawnObject, 'paint' | 'clip'> & { segments?: readonly PathSegment[] } = {}): void => {
     // THE RECORDS THEMSELVES, not copies: a window's end is known only at the `Q` that ends it, after what it holds.
-    drawn.push({ kind, ordinal: counts[kind], start, end, ctm: ctmNow, clips, points, windows: [...windows], segments: extra.segments ?? [], ...(extra.paint === undefined ? {} : { paint: extra.paint }), ...(extra.clip === undefined ? {} : { clip: extra.clip }) });
+    drawn.push({ kind, ordinal: counts[kind], start, end, ctm: ctmNow, clips, points, windows: [...windows], segments: extra.segments ?? [], settings, ...(extra.paint === undefined ? {} : { paint: extra.paint }), ...(extra.clip === undefined ? {} : { clip: extra.clip }) });
     counts[kind] += 1;
   };
   const containers: { start: number; end: number }[] = [];

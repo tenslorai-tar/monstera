@@ -14,7 +14,7 @@ import { joinedContent, showOperators, textObjectCount } from './textOperators.j
  * Text inside a form XObject, edited in the form's own content (ADR-0269): a page whose only text is drawn by a form,
  * placed once or twice, built here so every byte of it is known.
  */
-async function formPage(placements: readonly string[], formText = 'Hello form'): Promise<Uint8Array> {
+async function formPage(placements: readonly string[], formText = 'Hello form', box: readonly number[] = [0, 0, 612, 792]): Promise<Uint8Array> {
   const document = await PdfLibDocument.create();
   const page = document.addPage([612, 792]);
   // A FONT THAT STATES ITS WIDTHS AND ITS TEXT, as the operator writer needs to set new words in it (`pageFonts.ts`):
@@ -42,7 +42,7 @@ async function formPage(placements: readonly string[], formText = 'Hello form'):
     document.context.stream(`BT /F1 12 Tf 72 700 Td (${formText}) Tj ET`, {
       Type: 'XObject',
       Subtype: 'Form',
-      BBox: [0, 0, 612, 792],
+      BBox: [...box],
       Resources: { Font: { F1: font } },
     }),
   );
@@ -155,8 +155,49 @@ describe('text inside a form (ADR-0269)', () => {
     }
   });
 
+  it('grows a box drawn round one line, so words an edit wraps below it are shown — and only grows it (correction of 2026-10-25)', async () => {
+    // THE BROCHURE'S SHAPE: a box a few points round one 12-point line at y 700, as its pull quote's is.
+    const session = await mupdfWriter.open(await formPage(['q /Fm1 Do Q'], 'Hello form', [60, 696, 400, 714]));
+    try {
+      const wrapped = await withDocument(session, (document) => {
+        const placement = placementAt(document.findPage(0), FM1);
+        if (placement === undefined) throw new Error('the fixture draws no form');
+        return wrappedForm(placement).bytes;
+      });
+      const runs = formRuns(wrapped, 'Hello form');
+      // LONGER THAN THE BLOCK IS WIDE, so the writer wraps it onto lines below the box.
+      await applyEditTextOperators(session, edit(FM1, runs.runs[0]?.index ?? 0, 'Hello form, and every word typed after it'), runs);
+      const after = await readBack(session);
+      expect(after.words).toContain('Helloform,andeverywordtypedafterit');
+      const box = await withDocument(session, (document) => {
+        const stated = placementAt(document.findPage(0), FM1)?.form.resolve().get('BBox');
+        return stated?.isArray() === true ? [0, 1, 2, 3].map((at) => stated.get(at).asNumber()) : [];
+      });
+      // DOWN, where the wrapped lines are; its other sides where they were.
+      expect(box[1]).toBeLessThan(696);
+      expect([box[0], box[2], box[3]]).toStrictEqual([60, 400, 714]);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('reads a form in the state it inherits at its Do, leaving out what names the page’s resources (correction of 2026-10-25)', async () => {
+    // THE BROCHURE'S SHAPE: the page sets character spacing before the form, which the form's text is drawn with. A
+    // colour and a graphics state by name come too; the name is the page's resource, which the form's need not hold.
+    const session = await mupdfWriter.open(await formPage(['0.3 Tc 0.2 0.4 0.6 rg /GS1 gs q /Fm1 Do Q']));
+    try {
+      const placement = await withDocument(session, (document) => placementAt(document.findPage(0), FM1));
+      expect(placement?.states).toStrictEqual(['0.3 Tc 0.2 0.4 0.6 rg']);
+      const wrapped = placement === undefined ? '' : new TextDecoder().decode(wrappedForm(placement).bytes);
+      // THE STATE FIRST, then the matrices, so the form's text is laid out as the page draws it.
+      expect(wrapped.startsWith('q 0.3 Tc 0.2 0.4 0.6 rg 1 0 0 1 0 0 cm 1 0 0 1 0 0 cm\n')).toBe(true);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
   it('refuses to unwrap an edit that changed the wrapper, which the operator writer never writes', () => {
-    const wrapped = wrappedForm({ chain: [[1, 0, 0, 1, 10, 20]], content: new TextEncoder().encode('BT ET') });
+    const wrapped = wrappedForm({ chain: [[1, 0, 0, 1, 10, 20], [1, 0, 0, 1, 0, 0]], states: ['0.3 Tc'], content: new TextEncoder().encode('BT ET') });
     expect(new TextDecoder().decode(unwrappedForm(wrapped.bytes, wrapped))).toBe('BT ET');
     const changed = new Uint8Array(wrapped.bytes);
     changed[2] = 0x39;
