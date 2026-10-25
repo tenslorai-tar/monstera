@@ -44,6 +44,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { repoRoot } from '../lib/gitScope.mjs';
+import { NO_FACE_CHARACTER } from '../lib/noFaceCharacter.mjs';
 import { formatError } from '../lib/reportError.mjs';
 
 /** The family a new document is set in here: the default the new-PDF window opens on (the owner's L4). */
@@ -60,11 +61,11 @@ const SOURCE_WORDS = 8;
 
 /**
  * A line holding the CJK ideograph for "middle" at column 6, which no BUNDLED face carries and Windows' installed CJK
- * faces do (ADR-0172 Decision 2), and at column 8 U+0378, a code point Unicode leaves unassigned, which NO font carries:
- * the control that the box still draws, in the same line, so the ideograph's absence from the boxes is the installed
- * face's doing and not a box that stopped drawing. Each by its number.
+ * faces do (ADR-0172 Decision 2), and at column 8 a code point NO face carries (`noFaceCharacter.mjs`): the control
+ * that the box still draws, in the same line, so the ideograph's absence from the boxes is the installed face's doing
+ * and not a box that stopped drawing. Each by its number.
  */
-const BOXED_SOURCE = `Text ${String.fromCodePoint(0x4e2d)} ${String.fromCodePoint(0x378)} here.\n`;
+const BOXED_SOURCE = `Text ${String.fromCodePoint(0x4e2d)} ${NO_FACE_CHARACTER} here.\n`;
 
 /** The CSV source, and its six fields, each one word on the composed table. */
 const CSV_SOURCE = 'name,qty\nApples,3\nPears,12\n';

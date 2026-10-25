@@ -32,6 +32,7 @@ import { repoRoot } from '../lib/gitScope.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { developmentEnvironment } from '../lib/launchEnvironment.mjs';
 import { shimBuildState } from '../lib/shimBinary.mjs';
+import { NO_FACE_CHARACTER } from '../lib/noFaceCharacter.mjs';
 import { exitUnverifiable } from '../lib/unverifiable.mjs';
 import { inspect } from '../provision/containerGrants.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
@@ -198,13 +199,13 @@ if (!runnable) {
     seen.boxedComposed?.ok === true &&
       seen.boxedComposed.value?.kind === 'opened-with-boxes' &&
       JSON.stringify(seen.boxedComposed.value?.boxed) ===
-        JSON.stringify([{ character: String.fromCodePoint(0x378), line: 1, column: 8 }]) &&
+        JSON.stringify([{ character: NO_FACE_CHARACTER, line: 1, column: 8 }]) &&
       seen.boxedComposed.value?.more === 0,
     `document.newFromMarkdown answered ${JSON.stringify(seen.boxedComposed)} for a line holding a CJK ideograph no ` +
-      'bundled face carries and an unassigned code point no font carries. `internal` is a host that could not read ' +
+      'bundled face carries and a code point no face carries. `internal` is a host that could not read ' +
       'its fonts folder, a grant that does not reach it. The ideograph AMONG the boxes is a host that could not read ' +
       'the installed fonts, or a machine with no editable face for it (ADR-0172 Decision 2 says which is a correction, ' +
-      'never a wider grant); `opened` with no box at all is the unassigned one drawn as nothing.',
+      'never a wider grant); `opened` with no box at all is that code point drawn as nothing.',
   );
 
   check(

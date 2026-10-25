@@ -28,6 +28,7 @@ import { join } from 'node:path';
 import { TYPE3_EDIT, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { bindNativeEngine } from '../lib/nativeEngine.mjs';
+import { NO_FACE_CHARACTER } from '../lib/noFaceCharacter.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { exitUnverifiable } from '../lib/unverifiable.mjs';
 import { fontsDirectory } from '../provision/fonts.mjs';
@@ -40,9 +41,9 @@ const CHROMIUM = join(ROOT, 'packages', 'testing', 'fixtures', 'text-edit', 'chr
 const HEADING = 'Monstera fixture heading.';
 const EDITED = 'Monstera fixture reading.';
 const BODY = 'Body text in the regular face.';
-/** A code point no font carries (U+0378 is unassigned), so it can only be drawn as the box. */
-const UNASSIGNED = String.fromCodePoint(0x378);
-/** The heading with letters the print's Type 3 subset lacks (z, p) and the unassigned code point. */
+/** A code point no face carries (`noFaceCharacter.mjs`), so it can only be drawn as the box. */
+const UNASSIGNED = NO_FACE_CHARACTER;
+/** The heading with letters the print's Type 3 subset lacks (z, p) and the code point no face carries. */
 const FACED = `Monstera fixture zap ${UNASSIGNED}.`;
 
 const CASES = [
@@ -432,8 +433,9 @@ async function run(pdfium, kernel) {
     CASES[5] ?? '',
     faced.outcome.ok &&
       faced.saved !== null &&
-      // AND NOTHING MOVED (ADR-0249): no block of this edit is pushed.
-      JSON.stringify(faced.outcome.drawn) === JSON.stringify({ boxed: [{ character: UNASSIGNED, page: 0 }], more: 0, moved: [] }),
+      // AND NOTHING MOVED (ADR-0249): no block of this edit is pushed. NOTHING NOTED either (ADR-0270): the writer's
+      // read-backs found no defect to log.
+      JSON.stringify(faced.outcome.drawn) === JSON.stringify({ boxed: [{ character: UNASSIGNED, page: 0 }], more: 0, moved: [], noted: [] }),
     `the edit needing a face answered ${faced.outcome.ok ? JSON.stringify(faced.outcome.drawn) : String(faced.outcome.error)}.`,
   );
   const facedRead = faced.saved === null ? null : await readRuns(faced.saved);

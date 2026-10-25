@@ -20,7 +20,7 @@
  *
  * ## Its controls, on every run
  *
- * A Latin first edit must be saved, and a second edit adding only U+0378 must box exactly it: without both, a refusal
+ * A Latin first edit must be saved, and a second edit adding only a code point no face carries must box exactly it: without both, a refusal
  * below would be the instrument, not the face. An installed folder that holds no face carrying the ideograph throws,
  * since it could not have measured anything.
  *
@@ -35,6 +35,7 @@ import { fileURLToPath } from 'node:url';
 import { PDFDocument, StandardFonts, rgb } from '@cantoo/pdf-lib';
 
 import { NATIVE_ENGINE, PDFIUM_COMMAND, refuseStaleBuild } from '../lib/buildFreshness.mjs';
+import { NO_FACE_CHARACTER } from '../lib/noFaceCharacter.mjs';
 import { withNoPassword } from '../lib/pdfiumNoPassword.mjs';
 import { fontsDirectory } from '../provision/fonts.mjs';
 import { pdfiumLibrary } from '../provision/pdfium.mjs';
@@ -42,7 +43,8 @@ import { pdfiumLibrary } from '../provision/pdfium.mjs';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 const IDEOGRAPH = String.fromCodePoint(0x4e2d);
-const UNASSIGNED = String.fromCodePoint(0x378);
+/** A code point no face carries in either writer's chain (`noFaceCharacter.mjs`), where U+0378 was the case above. */
+const UNASSIGNED = NO_FACE_CHARACTER;
 const LATIN = 'Edited through the real host';
 /** How many installed faces are tried one by one: the resolver's first choices are the ones an edit meets. */
 const TRIED = 5;
@@ -202,7 +204,7 @@ process.stdout.write(`all installed faces, as the hosts read them: ${await twoEd
 original = perGlyph;
 process.stdout.write(`the live case's page, all installed faces: ${await twoEdits(everything, `${IDEOGRAPH} ${UNASSIGNED}`)}\n`);
 process.stdout.write(`  ${IDEOGRAPH} alone: ${await twoEdits(everything, IDEOGRAPH)}\n`);
-process.stdout.write(`  U+0378 alone: ${await twoEdits(everything, UNASSIGNED)}\n`);
+process.stdout.write(`  the box's character alone: ${await twoEdits(everything, UNASSIGNED)}\n`);
 process.stdout.write(`  the bundled set alone, both: ${await twoEdits(bundledSource, `${IDEOGRAPH} ${UNASSIGNED}`)}\n`);
 process.stdout.write(`  through MuPDF between the edits, both: ${await twoEdits(everything, `${IDEOGRAPH} ${UNASSIGNED}`, true)}\n`);
 // THE ROUND TRIP'S CONTROL, ASSERTED (SSSSSSS-22): it was printed, so a MuPDF pass that broke every second edit read the

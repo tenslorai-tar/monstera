@@ -50,6 +50,7 @@ import { HOST_FILE_ANSWERS_LIVE, refuseStaleBuild } from '../lib/buildFreshness.
 import { repoRoot } from '../lib/gitScope.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { developmentEnvironment } from '../lib/launchEnvironment.mjs';
+import { NO_FACE_CHARACTER } from '../lib/noFaceCharacter.mjs';
 import { shimBuildState } from '../lib/shimBinary.mjs';
 import { exitUnverifiable } from '../lib/unverifiable.mjs';
 import { inspect } from '../provision/containerGrants.mjs';
@@ -270,15 +271,15 @@ if (!runnable) {
   check(
     CASES[16] ?? '',
     JSON.stringify(seen.installedBoxes) ===
-      JSON.stringify({ boxed: [{ character: String.fromCodePoint(0x378), page: 0 }], more: 0 }),
+      JSON.stringify({ boxed: [{ character: NO_FACE_CHARACTER, page: 0 }], more: 0 }),
     `the second edit answered ${JSON.stringify(seen.installedBoxes)}. The ideograph AMONG the boxes is a PDFium host that ` +
       'could not read the installed fonts or a machine with no editable face for it, which ADR-0172 Decision 2 answers ' +
-      'with a correction, never a wider grant; no box at all is the unassigned code point drawn as nothing.',
+      'with a correction, never a wider grant; no box at all is the code point no face carries drawn as nothing.',
   );
   check(
     CASES[17] ?? '',
     JSON.stringify(seen.bundledBoxes) ===
-      JSON.stringify({ boxed: [{ character: String.fromCodePoint(0x378), page: 0 }], more: 0 }),
+      JSON.stringify({ boxed: [{ character: NO_FACE_CHARACTER, page: 0 }], more: 0 }),
     `the third edit, the box alone, answered ${JSON.stringify(seen.bundledBoxes)}. Saved here while the case above is ` +
       'refused is a host that misreads what it sets in an installed face. Refused here too says it is not installed ' +
       'faces only, and the next case says whether it is the reopened document (SSSSSSS-1).',
@@ -286,7 +287,7 @@ if (!runnable) {
   check(
     CASES[18] ?? '',
     JSON.stringify(seen.freshBoxes) ===
-      JSON.stringify({ boxed: [{ character: String.fromCodePoint(0x378), page: 0 }], more: 0 }),
+      JSON.stringify({ boxed: [{ character: NO_FACE_CHARACTER, page: 0 }], more: 0 }),
     `the fresh open's first edit, the box alone, answered ${JSON.stringify(seen.freshBoxes)}. Refused here, as the two ` +
       'cases above on the reopened document are, is a host that misreads a font it adds; saved here is one that misreads ' +
       'the document reopened after a save (SSSSSSS-1).',
@@ -294,7 +295,7 @@ if (!runnable) {
   check(
     CASES[19] ?? '',
     JSON.stringify(seen.type3Boxes) ===
-      JSON.stringify({ boxed: [{ character: String.fromCodePoint(0x378), page: 0 }], more: 0 }),
+      JSON.stringify({ boxed: [{ character: NO_FACE_CHARACTER, page: 0 }], more: 0 }),
     `the Type 3 edit answered ${JSON.stringify(seen.type3Boxes)}. A text-not-writable naming z and p is a MuPDF host ` +
       'given no fonts or unable to read them in its container; a rewrite other than "operators" is the page sent to ' +
       'the PDFium writer, so this case measured nothing about the MuPDF host (ADR-0177).',

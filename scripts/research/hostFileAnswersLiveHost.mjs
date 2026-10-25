@@ -35,6 +35,7 @@ import { pathToFileURL } from 'node:url';
 import { PDFDocument, StandardFonts, rgb } from '@cantoo/pdf-lib';
 
 import { repoRoot } from '../lib/gitScope.mjs';
+import { NO_FACE_CHARACTER } from '../lib/noFaceCharacter.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { ABOVE, BELOW, picturedPage } from '../lib/wordPictureFixture.mjs';
 
@@ -57,13 +58,13 @@ const GLYPHS = 1600;
 const EDITED = 'Edited through the real host';
 
 /**
- * The CJK ideograph for "middle", which no bundled face carries and Windows' installed CJK faces do, then U+0378, which
- * Unicode leaves unassigned and no font carries: the control that the box still draws in the same edit. By number.
+ * The CJK ideograph for "middle", which no bundled face carries and Windows' installed CJK faces do, then a code point
+ * no face carries (`noFaceCharacter.mjs`): the control that the box still draws in the same edit. By number.
  */
 /** The Chromium print committed as Part B's starting material, its heading in a Type 3 font (ADR-0176). */
 const TYPE3_PRINT = join(ROOT, 'packages', 'testing', 'fixtures', 'text-edit', 'chromium-type3.pdf');
 
-const INSTALLED_ONLY =`${String.fromCodePoint(0x4e2d)} ${String.fromCodePoint(0x378)}`;
+const INSTALLED_ONLY =`${String.fromCodePoint(0x4e2d)} ${NO_FACE_CHARACTER}`;
 
 /**
  * How many text fields the generated form has: enough that its field list exceeds a frame (3,000 fields measured
@@ -479,7 +480,7 @@ async function main() {
                     {
                       lines: target.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index)),
                       soft: target.lines.map(() => false),
-                      text: `${EDITED} ${String.fromCodePoint(0x378)}`,
+                      text: `${EDITED} ${NO_FACE_CHARACTER}`,
                     },
                   ]),
                   fit: 'reflow',
@@ -652,7 +653,7 @@ async function main() {
                 {
                   lines: block.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index)),
                   soft: block.lines.map(() => false),
-                  text: `${EDITED} ${String.fromCodePoint(0x378)}`,
+                  text: `${EDITED} ${NO_FACE_CHARACTER}`,
                 },
               ]),
               fit: 'reflow',
@@ -693,7 +694,7 @@ async function main() {
                 {
                   lines: heading.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index)),
                   soft: heading.lines.map(() => false),
-                  text: `Monstera fixture zap ${String.fromCodePoint(0x378)}.`,
+                  text: `Monstera fixture zap ${NO_FACE_CHARACTER}.`,
                 },
               ]),
               fit: 'reflow',
