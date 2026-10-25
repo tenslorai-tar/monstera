@@ -19,6 +19,7 @@
 
 import { explainAuditBudget, pendingAuditScope } from '../lib/auditWatermark.mjs';
 import { scan as scanEmittedTemplates } from '../lib/emittedTemplates.mjs';
+import { scan as scanProductNames } from '../lib/productNames.mjs';
 import {
   report as reportTypeOnlyExports,
   scan as scanTypeOnlyExports,
@@ -172,6 +173,18 @@ async function main() {
         `fine. Four occurrences, the third in a file whose own header carried the rule and the\n` +
         `fourth one commit after this scan shipped.\n\n` +
         `Concatenate with + instead, or move the prose out of the emitted body.\n\n`,
+    );
+    return 1;
+  }
+
+  // NO OTHER PDF PRODUCT IS NAMED (the owner's rule of 2026-10-25): the files this commit stages, against the index,
+  // so a name cannot reach a public commit; Guards reads the whole tree.
+  if (scanProductNames({ source: 'staged' }) !== 0) {
+    process.stderr.write(
+      `\nCommit blocked — a staged file names another PDF product or its maker (reported above).\n\n` +
+        `Use generic words: "another PDF editor", "widely used PDF editors", "professional standards".\n` +
+        `A name the PDF format itself defines (a CMap, a registry, a filter, a media type) belongs in\n` +
+        `productNames.mjs' IDENTIFIERS, in its own commit, saying which.\n\n`,
     );
     return 1;
   }
