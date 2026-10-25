@@ -157,6 +157,42 @@ describe('editOperators on the Chromium print', () => {
     });
   });
 
+  it('keeps a JOIN’s moved words in their drawn letters where both blocks are drawn in one font (correction of 2026-10-25, later)', async () => {
+    await chromium((content, fonts) => {
+      const page = runsOf(content, fonts);
+      const ops = showOperators(content);
+      const fontOfRun = (run: (typeof page.runs)[number] | undefined) => ops.find((op) => op.object === run?.members[0])?.state.font;
+      const heading = page.runs[0];
+      const second = page.runs.find((run) => run.text === 'A second heading in the same face.');
+      expect([fontOfRun(heading), fontOfRun(second)]).toStrictEqual(['F4', 'F4']);
+      const result = editOperators(content, fonts, page, [
+        { lines: [[heading?.index ?? -1]], soft: [false], text: `${heading?.text ?? ''} ${second?.text ?? ''}` },
+        { lines: [[second?.index ?? -1]], soft: [false], text: '' },
+      ]);
+      if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+      // EVERY WORD in the Type 3 font: none is new, so none went to the ordinary sibling. CONTROL, the per-run key: the
+      // second heading's words were new to the first heading's run and were set in F5, which F5 carries.
+      expect(inserted(result.value).join('\n')).not.toContain('/F5 28 Tf');
+    });
+  });
+
+  it('CONTROL: words another font drew, joined into a Type 3 line, go to an ordinary face though its subset holds the letters', async () => {
+    await chromium((content, fonts) => {
+      const page = runsOf(content, fonts);
+      const heading = page.runs[0];
+      const body = page.runs.find((run) => run.text === 'Body text in the regular face.');
+      // EVERY LETTER of the words joined is in the Type 3 subset, so a key blind to the font would draw them there.
+      const joined = 'text in the face.';
+      expect(Array.from(joined.replaceAll(' ', '')).every((character) => [...(fonts.get('F4')?.toUnicode?.text.values() ?? [])].includes(character))).toBe(true);
+      const result = editOperators(content, fonts, page, [
+        { lines: [[heading?.index ?? -1]], soft: [false], text: `${heading?.text ?? ''} ${joined}` },
+        { lines: [[body?.index ?? -1]], soft: [false], text: '' },
+      ]);
+      if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+      expect(inserted(result.value)[0]).toContain('/F5 28 Tf');
+    });
+  });
+
   it('Find & replace and a spelling correction put the new word in an ordinary face too: one writer, every route', async () => {
     await chromium((content, fonts) => {
       const page = runsOf(content, fonts);

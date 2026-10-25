@@ -813,6 +813,26 @@ function write(
     ...blocks.map((block) => ({ block, insert: undefined })),
     ...boxes,
   ];
+  /**
+   * The words the edit's runs already said, by the font that drew them, compared whole (ADR-0176's corrections of
+   * 2026-10-25): only these may be set in a font of drawn letters, so a line set again keeps its old words' glyphs
+   * wherever the layout puts them, and a new word — typed, replaced, corrected or translated — goes to an ordinary face.
+   * Read from EVERY block the edit names, a join's emptied block among them, and never across fonts: a word another
+   * font drew is new to this one. A run the loop below cannot place is skipped here, since that loop refuses it by name.
+   */
+  const saidIn = new Map<PageFont, Set<string>>();
+  for (const block of blocks) {
+    for (const index of block.lines.flat()) {
+      const run = runs.get(index);
+      const at = run?.members[0] === undefined ? undefined : opAt.get(run.members[0]);
+      const op = at === undefined ? undefined : ops[at];
+      const font = op === undefined ? undefined : (syntheticFonts.get(op) ?? (op.state.font === null ? undefined : fonts.get(op.state.font)));
+      if (run === undefined || font === undefined) continue;
+      const said = saidIn.get(font) ?? new Set<string>();
+      for (const word of tokens(run.text)) said.add(word);
+      saidIn.set(font, said);
+    }
+  }
 
   for (const [jobAt, { block, insert }] of jobs.entries()) {
     /** This block's emptied operators: where its inserted object goes is the first of their `BT`s. */
@@ -1011,17 +1031,11 @@ function write(
      * caller records: the plan measures a word and the layout writes it, and both must hear the same answer.
      */
     const answers = new Map<string, readonly FacePiece[] | null>();
-    /**
-     * The words each run already said, by its operator, compared whole (ADR-0176's correction of 2026-10-25): only these
-     * may be set in a font of drawn letters, so a line set again keeps its old words' glyphs and a new word — typed,
-     * replaced, corrected or translated — goes to an ordinary face.
-     */
-    const ownWords = new Map<ShowOperator, ReadonlySet<string>>(lines.flat().map((run) => [sourceOf(run), new Set(tokens(run.run.text))] as const));
     const piecesOf = (source: ShowOperator, token: string, restyle?: Restyle): readonly FacePiece[] | null => {
       const key = `${String(indexOf.get(source))}|${JSON.stringify(restyle ?? null)}|${token}`;
       if (answers.has(key)) return answers.get(key) ?? null;
       const font = fontOf(source);
-      const drawn = token === ' ' || (ownWords.get(source)?.has(token) ?? false);
+      const drawn = token === ' ' || (saidIn.get(font)?.has(token) ?? false);
       // A RESTYLED WORD is not looked for in the run's own font: only white space is, which has no style to be wrong in.
       const found = restyle !== undefined && token !== ' ' ? null : carrier(font, token, drawn);
       // A WORD NO ONE PAGE FONT CARRIES, set across them in the longest stretches each carries (ADR-0176's correction of
