@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { MAX_PATH_GLYPHS, type PathGlyph, pathFontFor } from './pathFont.js';
+import { MAX_PATH_GLYPHS, type PathGlyph, pathFontFor, stepsOfOutline } from './pathFont.js';
 import { ShapingFace } from './textShaping.js';
 
 /**
@@ -76,5 +76,40 @@ describe('pathFontFor (ADR-0238)', () => {
     expect(pathFontFor(new Map(), metrics)).toBeNull();
     const many = new Map(Array.from({ length: MAX_PATH_GLYPHS + 1 }, (_, at): [number, PathGlyph] => [0x4e00 + at, square]));
     expect(pathFontFor(many, metrics)).toBeNull();
+  });
+});
+
+describe('stepsOfOutline', () => {
+  it('scales an outline and turns a quadratic into the cubic that draws the same curve', () => {
+    const steps = stepsOfOutline(
+      [
+        { type: 'M', values: [0, 0] },
+        { type: 'Q', values: [30, 60, 90, 0] },
+        { type: 'C', values: [1, 2, 3, 4, 5, 6] },
+        { type: 'Z', values: [] },
+      ],
+      2,
+    );
+    // THE TWO-THIRDS RULE from the current point and from the end toward the control (60, 120): (40, 80) and (100, 80),
+    // at double scale.
+    expect(steps).toStrictEqual([
+      { kind: 'move', x: 0, y: 0 },
+      { kind: 'curve', x1: 40, y1: 80, x2: 100, y2: 80, x: 180, y: 0 },
+      { kind: 'curve', x1: 2, y1: 4, x2: 6, y2: 8, x: 10, y: 12 },
+    ]);
+  });
+
+  it('starts a quadratic after a close from the contour it closed, not from the last point drawn', () => {
+    const steps = stepsOfOutline(
+      [
+        { type: 'M', values: [0, 0] },
+        { type: 'L', values: [90, 0] },
+        { type: 'Z', values: [] },
+        { type: 'Q', values: [0, 30, 0, 90] },
+      ],
+      1,
+    );
+    // From (0, 0), the contour's start: controls (0, 20) and (0, 50). CONTROL: from (90, 0) the first would be (30, 20).
+    expect(steps.at(-1)).toStrictEqual({ kind: 'curve', x1: 0, y1: 20, x2: 0, y2: 50, x: 0, y: 90 });
   });
 });

@@ -3,10 +3,9 @@ import type { CommandOfKind, FormFieldHandle, FormFieldProperties } from '@monst
 import { asDocVersion } from '@monstera/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { bundledFontsFolder } from './bundledFontsForTests.js';
+import { bundledFontsFolder, readCatalogueOnce } from './bundledFontsForTests.js';
 
 import { bindEditFaces, bindEditFolders, loadEditFaces } from './editFaces.js';
-import { readCatalogue } from './fontCatalogue.js';
 import { FieldEditRefusedError } from './fieldEditRefusal.js';
 import { borderOps, checkOps, opsText } from './fieldMarks.js';
 import { readFieldProperties } from './formFieldRead.js';
@@ -97,7 +96,7 @@ const isRefused = (reason: string) => (error: unknown) => error instanceof Field
 
 describe('a field’s border style, check style and number range (A3.1)', () => {
   beforeAll(async () => {
-    bindEditFolders(bundledFontsFolder(), null, readCatalogue);
+    bindEditFolders(bundledFontsFolder(), null, readCatalogueOnce);
     await loadEditFaces();
   });
   afterAll(() => {

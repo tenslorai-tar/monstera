@@ -59,7 +59,10 @@ describe('the edit faces bound by their folders (ADR-0177)', () => {
     editFaces();
     expect(reader.calls()).toBe(1);
     expect(source?.faces.length ?? 0).toBeGreaterThan(0);
-    expect(source?.faces.every((face) => face.origin === 'bundled')).toBe(true);
+    // THE BUNDLED FOLDER'S FACES, and nothing installed: each is `bundled`, but GNU Unifont, which is the `last` (ADR-0270).
+    expect(source?.faces.filter((face) => face.origin !== 'bundled').map((face) => [face.origin, face.family])).toStrictEqual([
+      ['last', 'Unifont'],
+    ]);
   });
 
   it('CONTROL: a binding made while the catalogue loaded is the one that stands', async () => {

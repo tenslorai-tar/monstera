@@ -67,3 +67,12 @@ export function sfntTable(bytes: Uint8Array, faceIndex: number, tag: string): Ui
   const entry = sfntTableEntry(bytes, faceIndex, tag);
   return entry === 'past-end' ? undefined : entry;
 }
+
+/**
+ * Whether face `faceIndex` draws from CFF outlines (a `CFF ` or `CFF2` table) rather than TrueType's `glyf`: THE ONE
+ * reading of it, for a single face and a collection's alike, since a collection's first bytes are `ttcf` whatever its
+ * faces hold. What decides how a face is embedded (`cidFont.ts`) and which writers can embed it (`pdfiumFfi.ts`).
+ */
+export function hasCffOutlines(bytes: Uint8Array, faceIndex: number): boolean {
+  return sfntTableEntry(bytes, faceIndex, 'CFF ') !== undefined || sfntTableEntry(bytes, faceIndex, 'CFF2') !== undefined;
+}

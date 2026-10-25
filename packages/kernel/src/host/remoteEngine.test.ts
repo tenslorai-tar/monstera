@@ -8,9 +8,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type CommandOfKind, createClient, ENGINE_ANSWER_FILE_MAX_BYTES, type Incident, wrapHandlers } from '@monstera/contract';
 import { blockEditOf } from '@monstera/contract/host';
 
-import { bundledFontsFolder } from '../bundledFontsForTests.js';
+import { bundledFontsFolder, readCatalogueOnce } from '../bundledFontsForTests.js';
 import { bindEditFaces } from '../editFaces.js';
-import { faceSourceOf, readCatalogue } from '../fontCatalogue.js';
+import { faceSourceOf } from '../fontCatalogue.js';
 import type { PageRuns } from '../operatorEdit.js';
 import { pageContentStreams } from '../pageContent.js';
 import { joinedContent, showOperators, textObjectCount } from '../textOperators.js';
@@ -1329,7 +1329,7 @@ function headingRuns(content: Uint8Array): PageRuns {
 
 describe('an operator edit over engine/apply-file answers its boxes (ADR-0177 Decision 7)', () => {
   beforeAll(() => {
-    bindEditFaces(() => faceSourceOf([{ path: bundledFontsFolder(), origin: 'bundled' }], readCatalogue));
+    bindEditFaces(() => faceSourceOf([{ path: bundledFontsFolder(), origin: 'bundled' }], readCatalogueOnce));
   });
   afterAll(() => {
     bindEditFaces(null);
@@ -1358,14 +1358,15 @@ describe('an operator edit over engine/apply-file answers its boxes (ADR-0177 De
   }
 
   it('names a character no face carries, with its page, after crossing the pipe', async () => {
-    const unassigned = String.fromCodePoint(0x378);
+    // PAST THE BASIC MULTILINGUAL PLANE, whose every point GNU Unifont, the last face, draws (ADR-0270).
+    const unassigned = String.fromCodePoint(0xf0000);
     expect(await edit(`Monstera fixture ${unassigned}.`)).toStrictEqual({ boxed: [{ character: unassigned, page: 0 }], more: 0, moved: [], noted: [] });
   });
 
   it('names the first sixty-four boxes and counts the rest, by the one cap', async () => {
     // SEVENTY DRAWN, in seven words so every line stays on the page: an answer that skipped the cap is refused by the
     // channel's own schema, and one that dropped the list answers `boxed: []`, which the first case refuses.
-    const unassigned = String.fromCodePoint(0x378);
+    const unassigned = String.fromCodePoint(0xf0000);
     const answer = await edit(`Monstera ${Array.from({ length: 7 }, () => unassigned.repeat(10)).join(' ')}.`);
     expect(answer.boxed).toHaveLength(64);
     expect(answer.more).toBe(6);

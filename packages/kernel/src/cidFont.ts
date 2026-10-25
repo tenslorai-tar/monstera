@@ -2,6 +2,8 @@ import { type PDFDocument, PDFHexString, PDFNumber, type PDFRef, PDFString } fro
 
 import type { FontEmbedding } from './fontFaces.js';
 import { namedSubset, subsetTag } from './fontSubset.js';
+import { cffProgram, stepsOfOutline } from './pathFont.js';
+import { hasCffOutlines } from './sfntTables.js';
 import type { ShapingFace } from './textShaping.js';
 
 /**
@@ -83,8 +85,12 @@ export interface CidFontParts {
   /** The `BaseFont` and `FontName`: the subset's `TAG+Name`, or the whole file's. */
   readonly name: string;
   readonly program: Uint8Array;
-  /** Two bytes per code from 0, each its glyph id. */
-  readonly cidToGid: Uint8Array;
+  /**
+   * The program's outlines, which decide how the font is written under `Identity-H`, each code its own CID (the class
+   * header of {@link CidFont}): TrueType as a `CIDFontType2` whose `CIDToGIDMap`, two bytes per code from 0, sends each to
+   * its glyph id; CFF as a `CIDFontType0` with `FontFile3 /OpenType`, whose program holds each code's glyph AT the code.
+   */
+  readonly outlines: { readonly kind: 'truetype'; readonly cidToGid: Uint8Array } | { readonly kind: 'cff' };
   /** `W`: each code followed by a one-element array of its width. */
   readonly widths: readonly (number | readonly number[])[];
   /** The `ToUnicode` CMap's text. */
@@ -107,10 +113,28 @@ export interface CidFontSink<R> {
   write(ref: R, parts: CidFontParts): void;
 }
 
-/** One font in a document being written, which codes are assigned in as the text is set. */
+/**
+ * One font in a document being written, which codes are assigned in as the text is set.
+ *
+ * ## A CFF face's program is built in code order, each code its own glyph
+ *
+ * A TrueType face is written as a `CIDFontType2` under `Identity-H`: each code is its own CID, and `CIDToGIDMap` sends
+ * the CID to its glyph, so one glyph can stand for two texts or two widths under two codes. A CFF face is written as a
+ * `CIDFontType0` over an OpenType program (`FontFile3 /OpenType`), and a CFF that is not CID-keyed selects its glyph BY
+ * the CID (ISO 32000-2, 9.7.4.2) — there is no map. So the program embedded is BUILT, glyph n drawing code n's glyph from
+ * the face's own outline at its pin (`pathFont.ts`' `cffProgram`): each code its own CID and its own glyph, as for
+ * TrueType, and it holds only the glyphs the text draws.
+ *
+ * Neither shortcut holds, both measured 2026-10-25 on GNU Unifont, whose Thai SARA AM is shaped as NIKHAHIT and SARA AA,
+ * so SARA AA's glyph stands for "ำ" and for "า" in one paragraph. The face's own program with each code its glyph id
+ * cannot give one glyph two codes; an embedded encoding CMap sending two codes to one glyph's CID is legal, and MuPDF
+ * then reads both codes as whichever text it mapped last — "าำาำ" did not read back — because its `ToUnicode` is held
+ * per CID, and `W` is per CID too.
+ */
 export class CidFont<R = PDFRef> {
   readonly ref: R;
   readonly #codes = new Map<string, Code>();
+  readonly #cff: boolean;
   #finished = false;
 
   constructor(
@@ -119,6 +143,7 @@ export class CidFont<R = PDFRef> {
   ) {
     // RESERVED NOW and written at the end, so a page can name the font before anyone knows which glyphs it holds.
     this.ref = sink.reserve();
+    this.#cff = hasCffOutlines(source.bytes, source.faceIndex);
   }
 
   /** How many more codes this font can assign: a piece of at most this many glyphs is sure to fit. */
@@ -160,10 +185,15 @@ export class CidFont<R = PDFRef> {
     const codes = [...this.#codes.values()];
     const program = this.#program(codes);
 
-    const map = new Uint8Array(2 * (codes.length + 1));
-    for (const { code, glyph } of codes) {
-      map[2 * code] = glyph >> 8;
-      map[2 * code + 1] = glyph & 0xff;
+    // A CFF PROGRAM HOLDS EACH CODE'S GLYPH AT THE CODE, so it has no map to write.
+    let outlines: CidFontParts['outlines'] = { kind: 'cff' };
+    if (!this.#cff) {
+      const map = new Uint8Array(2 * (codes.length + 1));
+      for (const { code, glyph } of codes) {
+        map[2 * code] = glyph >> 8;
+        map[2 * code + 1] = glyph & 0xff;
+      }
+      outlines = { kind: 'truetype', cidToGid: map };
     }
     const widths: (number | number[])[] = [];
     for (const { code, width } of codes) widths.push(code, [width]);
@@ -200,7 +230,7 @@ export class CidFont<R = PDFRef> {
     return {
       name: program.name,
       program: program.bytes,
-      cidToGid: map,
+      outlines,
       widths,
       toUnicode: cmap,
       // SYMBOLIC (bit 3), which a CID font's descriptor states because its glyphs are reached by code, not by a
@@ -217,13 +247,20 @@ export class CidFont<R = PDFRef> {
 
   /** The font program to embed and its name: a subset where the licence and the subsetter allow, else the whole file. */
   #program(codes: readonly Code[]): { readonly bytes: Uint8Array; readonly name: string } {
-    const { bytes, faceIndex, axes, postscript, embedding } = this.source;
+    const { bytes, faceIndex, axes, postscript, embedding, shaping } = this.source;
     const base = postscript === '' ? 'Font' : postscript;
-    // A CFF FACE IS NOT A CIDFontType2 program: its codes reach glyphs through the CFF's charset, never through
-    // `CIDToGIDMap`, so writing one here would draw the wrong glyphs. Every bundled face is TrueType; installed CFF
-    // faces join the catalogue only once their own writer exists.
-    if (bytes[0] === 0x4f && bytes[1] === 0x54 && bytes[2] === 0x54 && bytes[3] === 0x4f) {
-      throw new Error(`the face ${base} has CFF outlines, which this writer does not embed`);
+    if (this.#cff) {
+      // BUILT, each code's glyph at the code (the class header), from the outline at the face's pin: only the glyphs
+      // drawn, so it is a subset by construction. A face whose licence forbids embedding is refused here as below.
+      if (embedding === 'never') throw new Error(`the face ${base} (index ${String(faceIndex)}) cannot be embedded: its licence forbids it`);
+      const scale = 1000 / shaping.unitsPerEm;
+      const metrics = shaping.metrics();
+      const program = cffProgram(
+        [{ advance: 0, steps: [] }, ...codes.map((entry) => ({ advance: entry.width, steps: stepsOfOutline(shaping.outline(entry.glyph), scale) }))],
+        { ascender: Math.round(metrics.ascender * scale), descender: Math.round(metrics.descender * scale) },
+        base,
+      );
+      return { bytes: program, name: `${subsetTag(program)}+${base}` };
     }
     if (embedding === 'subset') {
       const subset = namedSubset(bytes, base, {
@@ -251,6 +288,8 @@ export function pdfLibCidSink(document: PDFDocument): CidFontSink<PDFRef> {
   return {
     reserve: () => context.nextRef(),
     write: (ref, parts) => {
+      const { outlines } = parts;
+      const cff = outlines.kind === 'cff';
       const descriptor = context.obj({
         Type: 'FontDescriptor',
         FontName: parts.name,
@@ -261,16 +300,19 @@ export function pdfLibCidSink(document: PDFDocument): CidFontSink<PDFRef> {
         Descent: parts.descent,
         CapHeight: parts.capHeight,
         StemV: parts.stemV,
-        FontFile2: context.register(context.flateStream(parts.program, { Length1: parts.program.length })),
+        // THE PROGRAM BY ITS OUTLINES (`CidFontParts.outlines`): an OpenType CFF program is `FontFile3 /OpenType`.
+        ...(cff
+          ? { FontFile3: context.register(context.flateStream(parts.program, { Subtype: 'OpenType' })) }
+          : { FontFile2: context.register(context.flateStream(parts.program, { Length1: parts.program.length })) }),
       });
       const descendant = context.obj({
         Type: 'Font',
-        Subtype: 'CIDFontType2',
+        Subtype: cff ? 'CIDFontType0' : 'CIDFontType2',
         BaseFont: parts.name,
         CIDSystemInfo: { Registry: PDFString.of('Adobe'), Ordering: PDFString.of('Identity'), Supplement: 0 },
         FontDescriptor: context.register(descriptor),
         W: parts.widths.map((entry) => (typeof entry === 'number' ? entry : [...entry])),
-        CIDToGIDMap: context.register(context.flateStream(parts.cidToGid)),
+        ...(outlines.kind === 'truetype' ? { CIDToGIDMap: context.register(context.flateStream(outlines.cidToGid)) } : {}),
       });
       context.assign(
         ref,

@@ -1,12 +1,11 @@
 import { PDFArray, PDFDict, PDFDocument, PDFName } from '@cantoo/pdf-lib';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { bundledFontsFolder } from './bundledFontsForTests.js';
+import { bundledFontsFolder, readCatalogueOnce } from './bundledFontsForTests.js';
 
 import type { CommandOfKind } from '@monstera/contract';
 
 import { bindEditFaces, bindEditFolders, loadEditFaces } from './editFaces.js';
-import { readCatalogue } from './fontCatalogue.js';
 import { appliedTo } from './mupdfAppliedBytes.js';
 import { applyBatesNumberPages, applyHeaderFooterPages } from './pageStamp.js';
 import { applyWatermarkPages } from './pageWatermark.js';
@@ -107,7 +106,7 @@ const BUNDLED = bundledFontsFolder();
 
 describe('a page stamp is set in the family it names (ADR-0235)', () => {
   beforeEach(async () => {
-    bindEditFolders(BUNDLED, null, readCatalogue);
+    bindEditFolders(BUNDLED, null, readCatalogueOnce);
     await loadEditFaces();
   });
   afterEach(() => {

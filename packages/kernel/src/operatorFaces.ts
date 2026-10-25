@@ -30,9 +30,10 @@ interface Added {
  * would on any other page; the CODES are `cidFont.ts`', written through MuPDF's object model by `mupdfCidSink`; this
  * class only holds the fonts one edit adds and names them on the page.
  *
- * A face piece whose shaping draws a glyph standing for no character (a mark HarfBuzz composed alone) is set by no
- * one here: the composers draw such a glyph as its outline, and this writer would need a second drawing path to do
- * the same. The word is then refused by name, which loses nothing.
+ * A glyph a face's shaping draws standing for no character — NIKHAHIT, when Thai SARA AM is shaped as it and SARA AA —
+ * takes a code with no `ToUnicode` entry, so a reader reads the cluster's text once, from the glyph that carries it
+ * (ADR-0270 Decision 3: a word is never refused for its font). Until 2026-10-25 such a word was refused; measured that
+ * day, MuPDF reads "中ำา" written this way in GNU Unifont back exactly (`textOperatorEdit.test.ts`).
  */
 export class OperatorFaceSet {
   readonly #added = new Map<string, Added>();
@@ -127,7 +128,7 @@ export class OperatorFaceSet {
       shaping,
     }), face);
     const glyphs = shaping.shape(text, false);
-    if (glyphs.some((glyph) => glyph.text === '') || added.font.room < glyphs.length) return null;
+    if (added.font.room < glyphs.length) return null;
     return { font: added.page, codes: glyphs.map((glyph) => this.#code(added, glyph.glyph, glyph.text)) };
   }
 

@@ -517,7 +517,7 @@ describe('the compose host body', () => {
 
   it('lists the font families its catalogue holds, by name and flag, and reads no file to do it (D2)', async () => {
     const files = emptyFiles();
-    const face = { origin: 'installed' as const, embedding: 'subset' as const, unicodes: new Set<number>(), weights: null, path: 'x', faceIndex: 0, localNames: [] };
+    const face = { origin: 'installed' as const, embedding: 'subset' as const, unicodes: new Set<number>(), weights: null, path: 'x', faceIndex: 0, localNames: [], cff: false };
     const held: FaceSource = {
       faces: [
         { ...face, id: 'a', family: 'Calibri', weight: 400, italic: false },
@@ -546,7 +546,7 @@ describe('the compose host body', () => {
 
   it('answers a long list a page at a time, each page from where the last ended', async () => {
     const files = emptyFiles();
-    const face = { origin: 'installed' as const, embedding: 'subset' as const, unicodes: new Set<number>(), weights: null, path: 'x', faceIndex: 0, weight: 400, italic: false, localNames: [] };
+    const face = { origin: 'installed' as const, embedding: 'subset' as const, unicodes: new Set<number>(), weights: null, path: 'x', faceIndex: 0, weight: 400, italic: false, localNames: [], cff: false };
     // PAST ONE PAGE, named so the order they are listed in is the order they were made in.
     const names = Array.from({ length: FONT_FAMILIES_PAGE + 44 }, (_, at) => `Family ${String(at).padStart(4, '0')}`);
     const held: FaceSource = { faces: names.map((family, at) => ({ ...face, id: String(at), family })), read: () => new Uint8Array() };
@@ -567,7 +567,7 @@ describe('the compose host body', () => {
 
   it('carries the count of families past the list’s bound on the page that ends it, through the channel’s schema', async () => {
     const files = emptyFiles();
-    const face = { origin: 'installed' as const, embedding: 'subset' as const, unicodes: new Set<number>(), weights: null, path: 'x', faceIndex: 0, weight: 400, italic: false, localNames: [] };
+    const face = { origin: 'installed' as const, embedding: 'subset' as const, unicodes: new Set<number>(), weights: null, path: 'x', faceIndex: 0, weight: 400, italic: false, localNames: [], cff: false };
     const names = Array.from({ length: MAX_FONT_FAMILIES + 3 }, (_, at) => `Family ${String(at).padStart(4, '0')}`);
     const held: FaceSource = { faces: names.map((family, at) => ({ ...face, id: String(at), family })), read: () => new Uint8Array() };
     const { session } = await openArea(files, undefined, undefined, () => held);

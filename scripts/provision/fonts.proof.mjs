@@ -88,8 +88,8 @@ try {
   const sum = BUNDLED_FONTS.reduce((total, font) => total + font.bytes, 0);
   const files = new Set(BUNDLED_FONTS.map((font) => font.file));
   check(
-    'the table is twenty-one distinct files that weigh the stated total',
-    BUNDLED_FONTS.length === 21 && files.size === 21 && sum === BUNDLED_FONTS_BYTES,
+    'the table is twenty-two distinct files that weigh the stated total',
+    BUNDLED_FONTS.length === 22 && files.size === 22 && sum === BUNDLED_FONTS_BYTES,
     `${String(BUNDLED_FONTS.length)} rows, ${String(files.size)} distinct, ${String(sum)} bytes against ${String(BUNDLED_FONTS_BYTES)}`,
   );
 

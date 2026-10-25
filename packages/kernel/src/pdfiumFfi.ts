@@ -2491,10 +2491,14 @@ function pieceWriter(
        * keeps the standard twin of before. The catalogue itself is read by the first word that needs it (`faces`).
        */
       const inPiecesHere = editFacesBound();
+      // TRUETYPE FACES ONLY: `FPDFText_LoadFont` is handed every face as `FPDF_FONT_TRUETYPE`, and it writes the program
+      // as `FontFile2` under a `CIDFontType2` whatever its outlines are. Measured 2026-10-25 (`proof:pdfiumcommand`): GNU
+      // Unifont's CFF program was saved that way, which ISO 32000-2's 9.9 does not allow and a strict reader need not
+      // draw. A character only a CFF face carries goes on down this writer's chain, to its box.
       const faces = (): FaceSource => {
         const read = editFaces();
         if (read === null) throw new Error('An edit asked for the bundled fonts in a process given none.');
-        return read;
+        return { ...read, faces: read.faces.filter((face) => !face.cff) };
       };
       /** The resolver faces this edit loaded, by face and weight: ours to close, with the standard fonts. */
       const faceFonts = new Map<string, unknown>();

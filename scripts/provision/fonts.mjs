@@ -5,8 +5,12 @@
  *
  * ## One pinned commit, every file by digest, never committed
  *
- * Every face is read from `google/fonts` at one commit, through `raw.githubusercontent.com` with the commit in the
- * path, so the URL names an immutable tree. Each file is pinned by SHA-256 and by size, read 2026-10-05 from the bytes
+ * Every face but one is read from `google/fonts` at one commit, through `raw.githubusercontent.com` with the commit in the
+ * path, so the URL names an immutable tree. The one is GNU Unifont, the face that draws every script and is used only as
+ * the last step of an edit's chain of faces
+ * ([ADR-0270](../../docs/DECISIONS/0270-edit-text-writes-what-the-person-typed-and-never-refuses-it.md)'s correction):
+ * it is read from GNU's own release folder for its version, `ftp.gnu.org/gnu/unifont/unifont-18.0.01/`, whose files a
+ * release never changes, and pinned the same way. Each file is pinned by SHA-256 and by size, read 2026-10-05 from the bytes
  * that commit served; `downloadVerified` refuses another host, a body longer than the pinned size (the cap it is
  * handed) and a digest that differs. The folder is checked as a
  * WHOLE tree (`pinnedTree.mjs`): a font that is in it is a font the resolver embeds, so a file the table does not name
@@ -42,7 +46,7 @@ import { formatError } from '../lib/reportError.mjs';
 /** The `google/fonts` commit every face is read from, by `git ls-remote https://github.com/google/fonts HEAD`, 2026-10-05. */
 export const FONTS_COMMIT = '7085eb89a950e85db5b166b7a58d414544b4140c';
 
-const ALLOWED_HOSTS = ['raw.githubusercontent.com'];
+const ALLOWED_HOSTS = ['raw.githubusercontent.com', 'ftp.gnu.org'];
 
 /**
  * @typedef {object} BundledFont
@@ -50,6 +54,7 @@ const ALLOWED_HOSTS = ['raw.githubusercontent.com'];
  * @property {string} file the font file, as the commit names it
  * @property {string} sha256
  * @property {number} bytes
+ * @property {string} [url] where the file is read from, for a face that is not at the google/fonts commit
  */
 
 /** @type {readonly BundledFont[]} */
@@ -75,16 +80,24 @@ export const BUNDLED_FONTS = [
   { family: 'notosansarabic', file: 'NotoSansArabic[wdth,wght].ttf', sha256: '63111b5b2e074dd48cc67692e0a2726d86ee94c1c37fe8598257b7b4e87e869e', bytes: 844676 },
   { family: 'notonaskharabic', file: 'NotoNaskhArabic[wght].ttf', sha256: '67b5a525a661b607971fbd3f96a81b89d3a768e74534fca84f18ac97e6fab72f', bytes: 307592 },
   { family: 'notosanssymbols2', file: 'NotoSansSymbols2-Regular.ttf', sha256: '7d5fb73b7ca67a6798101741f5d280a3d016a56a197afcd4199dbb57b4b82a21', bytes: 1233128 },
+  // THE LAST FACE (ADR-0270): CFF outlines, the only build GNU Unifont releases; read and pinned 2026-10-25.
+  {
+    family: 'unifont',
+    file: 'unifont-18.0.01.otf',
+    sha256: '88d0a14d4aa9a96419720b39ba5da921a59560d76d4ec7d523acc06ed85cd3c2',
+    bytes: 5320148,
+    url: 'https://ftp.gnu.org/gnu/unifont/unifont-18.0.01/unifont-18.0.01.otf',
+  },
 ];
 
 /** What the set weighs, stated so nobody adds it up; a proof requires the table to sum to it. */
-export const BUNDLED_FONTS_BYTES = 9_965_868;
+export const BUNDLED_FONTS_BYTES = 15_286_016;
 
 /**
  * Each family's committed licence text and its digest. `source` says where it was read; Tinos' is composed as the
  * header says.
  *
- * @type {Readonly<Record<string, { readonly sha256: string, readonly source: string }>>}
+ * @type {Readonly<Record<string, { readonly sha256: string, readonly source: string, readonly from?: string }>>}
  */
 export const FONT_LICENCES = {
   arimo: { sha256: '11cce536cd2f3864d767003af5dcd739e2e15818cf2279b6175edeadd3960992', source: 'ofl/arimo/OFL.txt' },
@@ -98,6 +111,12 @@ export const FONT_LICENCES = {
   notosansarabic: { sha256: '07fc70bfeb985cc1a87a8587d0a0c80bab11c86c9dc3fd95b6f0cb332f983e96', source: 'ofl/notosansarabic/OFL.txt' },
   notonaskharabic: { sha256: 'a7a5a25eb188bf1cd96982030d53e23c33485c69b1044a562254226857ee13af', source: 'ofl/notonaskharabic/OFL.txt' },
   notosanssymbols2: { sha256: 'b118dd41337806a5d4797052c77caf3bd096aed783e5eb21b4d11154351e1ac0', source: 'ofl/notosanssymbols2/OFL.txt' },
+  unifont: {
+    from: 'GNU Unifont 18.0.01',
+    sha256: 'ef80de5a7b2d79c46100a81e8cf7d1c8f08ca74d826f5987d1f85c02fefd23fd',
+    source:
+      "unifont-18.0.01.tar.gz's OFL-1.1.txt (its line ends LF), with unifont-18.0.01.otf's own name record 0 as its copyright line and record 13's dual licence named",
+  },
 };
 
 /** Every file in the folder and its digest, as `pinnedTree.mjs` checks a whole tree. */
@@ -115,7 +134,7 @@ export function fontLicenceRoot(root) {
 
 /** @param {BundledFont} font */
 function urlOf(font) {
-  return `https://raw.githubusercontent.com/google/fonts/${FONTS_COMMIT}/ofl/${font.family}/${encodeURIComponent(font.file)}`;
+  return font.url ?? `https://raw.githubusercontent.com/google/fonts/${FONTS_COMMIT}/ofl/${font.family}/${encodeURIComponent(font.file)}`;
 }
 
 /** @param {string} root */
@@ -124,7 +143,7 @@ async function verifyLicences(root) {
     await verifyFileDigest({
       path: join(fontLicenceRoot(root), `${family}.txt`),
       sha256: licence.sha256,
-      context: `the committed licence text for ${family} (read from google/fonts ${FONTS_COMMIT.slice(0, 12)}: ${licence.source})`,
+      context: `the committed licence text for ${family} (read from ${licence.from ?? `google/fonts ${FONTS_COMMIT.slice(0, 12)}`}: ${licence.source})`,
     });
   }
 }
@@ -142,7 +161,7 @@ export async function provisionFonts({ root, force = false }) {
   if (
     !force &&
     (await fileExists(join(directory, BUNDLED_FONTS[0]?.file ?? ''))) &&
-    (await presentAsPinned({ directory, pins: BUNDLED_FONT_PINS, context: `the bundled fonts at google/fonts ${FONTS_COMMIT.slice(0, 12)}` }))
+    (await presentAsPinned({ directory, pins: BUNDLED_FONT_PINS, context: `the bundled fonts at google/fonts ${FONTS_COMMIT.slice(0, 12)} and GNU Unifont 18.0.01` }))
   ) {
     return { provisioned: false, directory };
   }

@@ -19,7 +19,10 @@ export function mupdfCidSink(document: PDFDocument): CidFontSink<MupdfFontRef> {
   return {
     reserve: () => ({ object: null }),
     write: (ref, parts: CidFontParts) => {
-      const program = document.addStream(parts.program, { Length1: parts.program.length });
+      // THE PROGRAM BY ITS OUTLINES, `pdfLibCidSink`'s rule: a CFF one is `FontFile3 /OpenType` under a `CIDFontType0`.
+      const { outlines } = parts;
+      const cff = outlines.kind === 'cff';
+      const program = document.addStream(parts.program, cff ? { Subtype: 'OpenType' } : { Length1: parts.program.length });
       const descriptor = document.addObject({
         Type: 'FontDescriptor',
         FontName: parts.name,
@@ -30,16 +33,16 @@ export function mupdfCidSink(document: PDFDocument): CidFontSink<MupdfFontRef> {
         Descent: parts.descent,
         CapHeight: parts.capHeight,
         StemV: parts.stemV,
-        FontFile2: program,
+        ...(cff ? { FontFile3: program } : { FontFile2: program }),
       });
       const descendant = document.addObject({
         Type: 'Font',
-        Subtype: 'CIDFontType2',
+        Subtype: cff ? 'CIDFontType0' : 'CIDFontType2',
         BaseFont: parts.name,
         CIDSystemInfo: { Registry: '(Adobe)', Ordering: '(Identity)', Supplement: 0 },
         FontDescriptor: descriptor,
         W: parts.widths.map((entry) => (typeof entry === 'number' ? entry : [...entry])),
-        CIDToGIDMap: document.addStream(parts.cidToGid, {}),
+        ...(outlines.kind === 'truetype' ? { CIDToGIDMap: document.addStream(outlines.cidToGid, {}) } : {}),
       });
       ref.object = document.addObject({
         Type: 'Font',

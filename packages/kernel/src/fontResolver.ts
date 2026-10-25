@@ -27,7 +27,12 @@ import type { FontEmbedding } from './fontFaces.js';
 import { LOOKS_LIKE, STAND_INS, normaliseFamily } from '@monstera/shared';
 
 /** Where a face came from, in the order the resolver tries them. */
-export type FaceOrigin = 'own' | 'sibling' | 'installed' | 'bundled';
+/**
+ * Where a face comes from. `last` is the face that draws every script and is used ONLY for a character no other face
+ * draws ([ADR-0270](../../../docs/DECISIONS/0270-edit-text-writes-what-the-person-typed-and-never-refuses-it.md)'s
+ * correction, GNU Unifont): never chosen for a word, never the face that draws most of one, and never in the font picker.
+ */
+export type FaceOrigin = 'own' | 'sibling' | 'installed' | 'bundled' | 'last';
 
 /** A face the resolver may choose. */
 export interface CandidateFace {
@@ -183,6 +188,8 @@ function workOutOrder(request: FontRequest, catalogue: readonly CandidateFace[])
     near(usable.filter((face) => face.origin === 'bundled' && face.family === classFamily)),
     near(usable.filter((face) => face.origin === 'installed')),
     near(usable.filter((face) => face.origin === 'bundled')),
+    // AND THE LAST FACE LAST, after every other.
+    usable.filter((face) => face.origin === 'last'),
   ];
   const seen = new Set<string>();
   const ordered: CandidateFace[] = [];
@@ -210,7 +217,11 @@ const GRAPHEMES = new Intl.Segmenter('und', { granularity: 'grapheme' });
  * punctuation stays in the face before it when that face carries it, so a line does not change font at every space.
  */
 export function resolveRuns(text: string, request: FontRequest, catalogue: readonly CandidateFace[]): ResolvedRun[] {
-  const candidates = candidatesFor(request, catalogue);
+  // THE LAST FACE APART (`FaceOrigin`'s `last`): every choice below is made among the others, and a grapheme none of them
+  // draws is drawn in the last face before it is a box.
+  const all = candidatesFor(request, catalogue);
+  const candidates = all.filter((candidate) => candidate.origin !== 'last');
+  const lastFaces = all.filter((candidate) => candidate.origin === 'last');
   const runs: { text: string; face: CandidateFace | null; missing: string[] }[] = [];
   // A BOX IS ITS OWN RUN, so the one who draws it knows where it is: runs merge only when both are drawable in one face.
   const append = (piece: string, face: CandidateFace | null, missing: readonly string[]): void => {
@@ -248,7 +259,9 @@ export function resolveRuns(text: string, request: FontRequest, catalogue: reado
         append(grapheme, wordFace, []);
         continue;
       }
-      const other = candidates.find((candidate) => wanted.every((point) => carries(candidate, point)));
+      const other =
+        candidates.find((candidate) => wanted.every((point) => carries(candidate, point))) ??
+        lastFaces.find((candidate) => wanted.every((point) => carries(candidate, point)));
       if (other !== undefined) append(grapheme, other, []);
       else append(grapheme, wordFace, Array.from(grapheme));
     }

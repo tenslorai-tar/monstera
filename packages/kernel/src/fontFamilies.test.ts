@@ -32,6 +32,14 @@ describe('fontFamiliesOf, the one list a font picker shows', () => {
     expect(fontFamiliesOf(names.slice(0, MAX_FONT_FAMILIES).map((family) => face({ family }))).more).toBe(0);
   });
 
+  it('never lists the LAST face, which draws only what no other face does (ADR-0270)', () => {
+    expect(familiesOf([face({ family: 'Unifont', origin: 'last' }), face({ family: 'Arimo', origin: 'bundled' })]).map((family) => family.name)).toStrictEqual([
+      'Arimo',
+    ]);
+    // CONTROL: the same face as bundled is listed, so it is the origin that keeps it out and not its name.
+    expect(familiesOf([face({ family: 'Unifont', origin: 'bundled' })]).map((family) => family.name)).toStrictEqual(['Unifont']);
+  });
+
   it('names an installed family for `local()` by its face nearest an upright regular (ADR-0250 Decision 1)', () => {
     const [family] = familiesOf([
       face({ family: 'Sitka', weight: 700, localNames: ['SitkaText-Bold'] }),

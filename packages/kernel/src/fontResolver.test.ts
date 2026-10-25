@@ -224,6 +224,42 @@ describe('resolveRuns: the grapheme is the unit when a word is split (RRRRRRR-12
  * The catalogue's order is worked out once per catalogue and request, not once per call: a CSV part resolves once per
  * cell, and re-sorting hundreds of installed faces per cell took a 1 MiB part past the host's 120 s deadline.
  */
+describe('resolveRuns: the LAST face draws only what no other face does (ADR-0270)', () => {
+  // GNU Unifont's shape: it carries every character the cases name, Latin included, and ŧ (U+0167), which no other face
+  // here does.
+  const LAST = face('unifont', 'last', 'Unifont', `${ACCENTED}ΩПשם□中文ŧ`);
+
+  it('sets a word an ordinary face carries in that face, though the last face carries it too', () => {
+    expect(summary('Hello world', request({ own: [] }), [LAST, ...CATALOGUE])).toStrictEqual([['Hello world', 'arimo', '']]);
+  });
+
+  it('sets ONE character no other face draws in the last face, and the rest of its word where it was', () => {
+    expect(summary('Hello中', request({ own: [] }), [LAST, ...CATALOGUE])).toStrictEqual([
+      ['Hello', 'arimo', ''],
+      ['中', 'unifont', ''],
+    ]);
+  });
+
+  it('CONTROL: without the last face that character is a box, so the case above is the last face’s doing', () => {
+    expect(summary('Hello中', request({ own: [] }), CATALOGUE)).toStrictEqual([
+      ['Hello', 'arimo', ''],
+      ['中', 'arimo', '中'],
+    ]);
+  });
+
+  it('sets a LETTER inside a word no other face completes in the last face, the word’s other letters where they were', () => {
+    expect(summary('Haŧ', request({ own: [] }), [LAST, ...CATALOGUE])).toStrictEqual([
+      ['Ha', 'arimo', ''],
+      ['ŧ', 'unifont', ''],
+    ]);
+  });
+
+  it('CONTROL: the same face ranked as BUNDLED takes that whole word, which is why the last face is kept apart', () => {
+    const asBundled = { ...LAST, origin: 'bundled' as const };
+    expect(summary('Haŧ', request({ own: [] }), [asBundled, ...CATALOGUE])).toStrictEqual([['Haŧ', 'unifont', '']]);
+  });
+});
+
 describe('candidatesFor: worked out once per catalogue', () => {
   const installed = (count: number): CandidateFace[] =>
     Array.from({ length: count }, (_, at) => face(`installed-${String(at)}`, 'installed', `Family ${String(at % 7)}`, LATIN, { weight: 400 + (at % 4) * 100, italic: at % 5 === 0 }));

@@ -1,5 +1,7 @@
 import { existsSync, readdirSync } from 'node:fs';
 
+import { type Catalogue, type CatalogueReading, readCatalogue } from './fontCatalogue.js';
+
 /**
  * The bundled fonts' folder for a test, as `vitest.config.mjs` passes it in `MONSTERA_FONTS_DIRECTORY`. TEST-ONLY: nothing
  * the application runs imports this.
@@ -18,3 +20,28 @@ export function bundledFontsFolder(): string {
   }
   return folder;
 }
+
+const readings = new Map<string, Catalogue>();
+
+/**
+ * {@link readCatalogue}, read ONCE per folder set for the life of a test worker: the reading a test binds where it binds
+ * before every case. TEST-ONLY, like the rest of this module.
+ *
+ * **AN IN-THREAD READ KEEPS WHAT IT READ.** harfbuzzjs 1.6.2 copies each font file into its WebAssembly heap and frees it
+ * only through a finaliser, which heap pressure never runs, and the heap stops at 2 GiB (`getHeapMax`). Measured
+ * 2026-10-25 by reading the bundled folder the way `readFace` does, in one loop: 15.7 MB kept per read with GNU Unifont
+ * in the folder, and *memory access out of bounds* at read 137 — after which every read in that worker fails, a face
+ * that read a moment earlier included. A file binding before each of its three hundred cases reached that. A host reads
+ * apart for the same reason (`fontCatalogueApart.ts`, whose proof measures the retention); a test reads once, because the
+ * bundled folder does not change during a run.
+ *
+ * `fontCatalogue.test.ts` and `editFaces.test.ts` take {@link readCatalogue} itself: what they test is the reading.
+ */
+export const readCatalogueOnce: CatalogueReading = (folders) => {
+  const key = JSON.stringify(folders);
+  const known = readings.get(key);
+  if (known !== undefined) return known;
+  const read = readCatalogue(folders);
+  readings.set(key, read);
+  return read;
+};

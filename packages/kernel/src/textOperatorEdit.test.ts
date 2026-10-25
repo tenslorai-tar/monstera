@@ -5,10 +5,10 @@ import { blockEditOf, type CommandOfKind } from '@monstera/contract/host';
 import { asDocVersion } from '@monstera/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { bundledFontsFolder } from './bundledFontsForTests.js';
+import { bundledFontsFolder, readCatalogueOnce } from './bundledFontsForTests.js';
 
 import { bindEditFaces, bindEditFolders } from './editFaces.js';
-import { readCatalogue } from './fontCatalogue.js';
+import type { PDFObject } from './mupdfRaw.js';
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
 import type { PageRuns } from './operatorEdit.js';
 import { pageContentStreams } from './pageContent.js';
@@ -304,7 +304,7 @@ describe('applyEditTextOperators', () => {
   describe('with the bundled fonts bound (ADR-0177)', () => {
     // BOUND AS THE MuPDF HOST BINDS THEM, by their folders, so the apply's own load of the catalogue is what runs.
     beforeEach(() => {
-      bindEditFolders(bundledFontsFolder(), null, readCatalogue);
+      bindEditFolders(bundledFontsFolder(), null, readCatalogueOnce);
     });
     afterEach(() => {
       bindEditFaces(null);
@@ -316,6 +316,54 @@ describe('applyEditTextOperators', () => {
         const leaf = document.findPage(0);
         return { fonts: [...pageFonts(leaf).keys()], content: new TextDecoder('latin1').decode(joinedContent(pageContentStreams(leaf))) };
       });
+
+    it('sets a character only the LAST face draws in GNU Unifont, as a CFF subset, and no box (ADR-0270)', async () => {
+      // 中 and Thai: no face of the print and no other bundled face draws them, so they are the last face's. SARA AM (ำ) is
+      // shaped as NIKHAHIT and SARA AA, so SARA AA's glyph stands for "ำ" and for "า" in one font, alternating — which
+      // read back wrong while two codes shared the glyph's CID (`cidFont.ts`, measured 2026-10-25).
+      await withChromium(async (session) => {
+        const runs = headingRuns(await withDocument(session, (document) => joinedContent(pageContentStreams(document.findPage(0)))));
+        const drawn = await applyEditTextOperators(session, command(runs.runs[0]?.index ?? 0, 'Monstera fixture 中าำาำ.'), runs);
+        expect(drawn).toStrictEqual({ boxed: [], more: 0, moved: [], noted: [] });
+        expect(await pageWords(session)).toContain('Monsterafixture中าำาำ.');
+        const written = await withDocument(session, (document) => {
+          const fonts = document.findPage(0).get('Resources').get('Font');
+          const added: { subtype: string; descendant: string; file3: string; program: number; name: string; encoding: string; map: boolean }[] = [];
+          fonts.forEach((value: PDFObject, key: string | number) => {
+            if (!String(key).startsWith('MonsteraF')) return;
+            const font = value.resolve();
+            const descendant = font.get('DescendantFonts').get(0).resolve();
+            const descriptor = descendant.get('FontDescriptor').resolve();
+            const file3 = descriptor.get('FontFile3');
+            const encoding = font.get('Encoding').resolve();
+            added.push({
+              subtype: font.get('Subtype').asName(),
+              descendant: descendant.get('Subtype').asName(),
+              file3: file3.isNull() ? '' : file3.resolve().get('Subtype').asName(),
+              program: file3.isNull() ? 0 : file3.readStream().asUint8Array().length,
+              name: descriptor.get('FontName').asName(),
+              encoding: encoding.isName() ? encoding.asName() : 'not a name',
+              map: !descendant.get('CIDToGIDMap').isNull(),
+            });
+          });
+          return added;
+        });
+        const unifont = written.find((each) => each.name.endsWith('+Unifont'));
+        expect(unifont, JSON.stringify(written)).toBeDefined();
+        expect(unifont?.descendant).toBe('CIDFontType0');
+        expect(unifont?.file3).toBe('OpenType');
+        // EACH CODE ITS OWN CID under Identity-H, and no CIDToGIDMap, which a CIDFontType0 has no use for: its program holds
+        // each code's glyph at the code.
+        expect(unifont?.encoding).toBe('Identity-H');
+        expect(unifont?.map).toBe(false);
+        // CONTROL: a TrueType face beside it is Identity-H over its map, unchanged.
+        const truetype = written.filter((each) => each.descendant === 'CIDFontType2');
+        expect(truetype.every((each) => each.encoding === 'Identity-H' && each.map)).toBe(true);
+        // ONLY THE GLYPHS DRAWN, never the whole 5,320,148-byte face: measured 2026-10-25, 692 bytes for these five, where
+        // HarfBuzz's subset keeping glyph ids was 141,836 for three — so 10,000 tells the built program from either.
+        expect(unifont?.program ?? Number.POSITIVE_INFINITY).toBeLessThan(10_000);
+      });
+    });
 
     it('sets the letters the print has no glyph for in a bundled face, keeps the rest in its Type 3 font, and saves', async () => {
       await withChromium(async (session) => {
@@ -385,14 +433,16 @@ describe('applyEditTextOperators', () => {
       });
     });
 
-    it('draws a character no face carries as a box that still reads as the character', async () => {
+    it('draws a character no face carries, Unifont included, as a box that still reads as the character — never refused', async () => {
+      // A SUPPLEMENTARY PRIVATE-USE POINT: Unifont, the last face (ADR-0270), draws every Basic Multilingual Plane point,
+      // an unassigned one as its hex digits in a dashed box (U+0378 is so drawn), so the box is reached only past it.
       await withChromium(async (session) => {
         const runs = headingRuns(await withDocument(session, (document) => joinedContent(pageContentStreams(document.findPage(0)))));
-        const unassigned = String.fromCodePoint(0x378);
+        const unassigned = String.fromCodePoint(0xf0000);
         const drawn = await applyEditTextOperators(session, command(runs.runs[0]?.index ?? 0, `Monstera fixture ${unassigned}.`), runs);
         // THE PERSON IS TOLD (ADR-0177 Decision 7): the character and its page, answered by the apply.
         expect(drawn).toStrictEqual({ boxed: [{ character: unassigned, page: 0 }], more: 0, moved: [], noted: [] });
-        // THE REAL CHARACTER in MuPDF's reading: the box font's ToUnicode maps its code to U+0378, not to the box.
+        // THE REAL CHARACTER in MuPDF's reading: the box font's ToUnicode maps its code to U+F0000, not to the box.
         expect(await pageWords(session)).toContain(`Monsterafixture${unassigned}.`);
         expect(await pageWords(session)).not.toContain(String.fromCodePoint(0x25a1));
       });

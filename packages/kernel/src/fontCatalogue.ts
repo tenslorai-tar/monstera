@@ -3,6 +3,7 @@ import { extname, join } from 'node:path';
 
 import { readFace } from './fontFaces.js';
 import type { CandidateFace } from './fontResolver.js';
+import { hasCffOutlines } from './sfntTables.js';
 
 /**
  * The faces a host can choose from: the bundled set and the installed fonts, read once by HarfBuzz
@@ -35,6 +36,11 @@ export interface CatalogueFace extends CandidateFace {
    * for a variable face the family Windows draws its default instance as. Empty where it states neither.
    */
   readonly localNames: readonly string[];
+  /**
+   * Whether the face draws from CFF outlines (`sfntTables.ts`' `hasCffOutlines`), read with the face: a writer that can
+   * embed only TrueType is offered only TrueType faces (`pdfiumFfi.ts`).
+   */
+  readonly cff: boolean;
 }
 
 export interface Catalogue {
@@ -44,6 +50,13 @@ export interface Catalogue {
 }
 
 const FONT_FILES = new Set(['.ttf', '.otf', '.ttc', '.otc']);
+
+/**
+ * The bundled family that is the LAST face (`FaceOrigin`'s `last`): GNU Unifont, by the family its `name` table states
+ * (record 1, read 2026-10-25 from unifont-18.0.01.otf). `fontCatalogue.test.ts` holds that the provisioned file reads as
+ * this family, so a release that renamed it is a red test rather than a face quietly ranked among the others.
+ */
+export const LAST_FACE_FAMILY = 'Unifont';
 
 /** How many faces a file holds: a collection's header count, or one. */
 export function faceCount(bytes: Uint8Array): number {
@@ -78,7 +91,8 @@ export function readCatalogue(folders: readonly FontFolder[]): Catalogue {
           const weight = face.axes.find((axis) => axis.tag === 'wght');
           faces.push({
             id: `${folder.origin}:${path}#${String(index)}`,
-            origin: folder.origin,
+            // THE BUNDLED LAST FACE IS `last`: one an installer put on the computer is any installed face.
+            origin: folder.origin === 'bundled' && face.family === LAST_FACE_FAMILY ? 'last' : folder.origin,
             family: face.family,
             weight: face.weight,
             italic: face.italic,
@@ -88,6 +102,7 @@ export function readCatalogue(folders: readonly FontFolder[]): Catalogue {
             path,
             faceIndex: index,
             localNames: [face.postscript, face.instanceFamily].filter((name) => name !== ''),
+            cff: hasCffOutlines(bytes, index),
           });
         }
       } catch (error) {

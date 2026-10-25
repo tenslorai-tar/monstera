@@ -68,12 +68,20 @@ describe('composeCsv', () => {
   });
 
   it('draws a character no face carries as a box and names it on the line a person finds it — after a two-line field', async () => {
-    const { pdf, boxed } = await compose('a,b\n"one\ntwo",x\n中文,y\n');
+    // PLANE 15's PRIVATE USE: GNU Unifont, the last face (ADR-0270), draws every Basic Multilingual Plane point, so a
+    // character no face carries is one past it.
+    const { pdf, boxed } = await compose('a,b\n"one\ntwo",x\n\u{F0000}\u{F0001},y\n');
     expect(boxed).toStrictEqual([
-      { character: '中', line: 4, column: 1 },
-      { character: '文', line: 4, column: 2 },
+      { character: '\u{F0000}', line: 4, column: 1 },
+      { character: '\u{F0001}', line: 4, column: 2 },
     ]);
     // CONTROL: the record is drawn and the boxes copy as the characters written.
+    expect((await shownText(pdf)).join('\n')).toContain('\u{F0000}\u{F0001}');
+  });
+
+  it('draws a character only the LAST face carries in GNU Unifont, boxing nothing (ADR-0270)', async () => {
+    const { pdf, boxed } = await compose('a,b\n中文,y\n');
+    expect(boxed).toStrictEqual([]);
     expect((await shownText(pdf)).join('\n')).toContain('中文');
   });
 
@@ -91,8 +99,8 @@ describe('composeCsv', () => {
   });
 
   it('names a box inside a field that spans lines by the line it is on', async () => {
-    const { boxed } = await compose('a,b\n"one\ntwo 中",x\n');
-    expect(boxed).toStrictEqual([{ character: '中', line: 3, column: 5 }]);
+    const { boxed } = await compose('a,b\n"one\ntwo \u{F0000}",x\n');
+    expect(boxed).toStrictEqual([{ character: '\u{F0000}', line: 3, column: 5 }]);
   });
 
   it('sets Hebrew and Arabic fields as written, boxing nothing', async () => {

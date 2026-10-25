@@ -8,6 +8,7 @@ import { COMPOSED_FAMILY_DEFAULT } from '@monstera/contract';
 import { ComposeRefused } from './composeOutcome.js';
 import { faceSourceOf, readCatalogue } from './fontCatalogue.js';
 import { composeMarkdown } from './markdownCompose.js';
+import * as mupdf from './mupdfRaw.js';
 import { type ReadLine, readLines } from './shownText.js';
 
 /** US Letter, the size a composed document is set at when nothing else decides it. */
@@ -29,6 +30,23 @@ function bytesOf(text: string): Uint8Array {
 
 async function compose(text: string): Promise<{ pdf: Uint8Array; boxed: readonly { character: string; line: number; column: number | null }[] }> {
   return composeMarkdown(bytesOf(text), LETTER, FACES, COMPOSED_FAMILY_DEFAULT);
+}
+
+/** Dark pixels on the first page as MuPDF draws it, so a glyph that reads back and draws nothing is caught. */
+function inkOf(pdf: Uint8Array): number {
+  const document = mupdf.Document.openDocument(pdf, 'application/pdf');
+  try {
+    const pixmap = document.loadPage(0).toPixmap(mupdf.Matrix.identity, mupdf.ColorSpace.DeviceRGB, false, true);
+    const pixels = pixmap.getPixels();
+    let ink = 0;
+    for (let at = 0; at + 2 < pixels.length; at += 3) {
+      if ((pixels[at] ?? 255) + (pixels[at + 1] ?? 255) + (pixels[at + 2] ?? 255) < 600) ink += 1;
+    }
+    pixmap.destroy();
+    return ink;
+  } finally {
+    document.destroy();
+  }
 }
 
 /** Every page's text as a reader copies it, one line per line. */
@@ -157,17 +175,31 @@ describe('composeMarkdown: every character is drawn (ADR-0172)', () => {
   });
 
   it('draws a character no face carries as a box that copies as the character, and names its line and column', async () => {
-    const { pdf, boxed } = await compose('First line.\n\nA word 中文 here.\n');
+    // PLANE 15's PRIVATE USE: GNU Unifont, the last face (ADR-0270), draws every Basic Multilingual Plane point, so a
+    // character no face carries is one past it.
+    const { pdf, boxed } = await compose('First line.\n\nA word \u{F0000}\u{F0001} here.\n');
     expect(boxed).toStrictEqual([
-      { character: '中', line: 3, column: 8 },
-      { character: '文', line: 3, column: 9 },
+      { character: '\u{F0000}', line: 3, column: 8 },
+      { character: '\u{F0001}', line: 3, column: 9 },
     ]);
-    // THE BOX COPIES AS WHAT WAS WRITTEN: the reader gets 中文, never the box character.
+    // THE BOX COPIES AS WHAT WAS WRITTEN: the reader gets the two characters, never the box character.
     const [first = ''] = await pagesOf(pdf);
-    expect(first).toContain('A word 中文 here.');
+    expect(first).toContain('A word \u{F0000}\u{F0001} here.');
     expect(first).not.toContain('□');
     // CONTROL: the text around the box is drawn from the bundled faces, so the case is about the box alone.
     expect(first).toContain('First line.');
+  });
+
+  it('draws characters only the LAST face carries in GNU Unifont, which copy as written and box nothing (ADR-0270)', async () => {
+    const { pdf, boxed } = await compose('First line.\n\nA word 中文 here.\n');
+    expect(boxed).toStrictEqual([]);
+    const [first = ''] = await pagesOf(pdf);
+    expect(first).toContain('A word 中文 here.');
+    // AND THEY ARE DRAWN, which reading cannot see: `ToUnicode` answers the text whatever the program draws. CONTROL: the
+    // same line without them, so the ink counted is theirs. Measured 2026-10-25 at 72 dpi: 83 dark pixels more, and -1
+    // with every built glyph's outline emptied (the words after them move, the same ink), so 40 separates the two.
+    const without = await compose('First line.\n\nA word here.\n');
+    expect(inkOf(pdf) - inkOf(without.pdf)).toBeGreaterThan(40);
   });
 
   it('NEVER REFUSES A WHOLE FILE FOR ONE CHARACTER: emoji, CJK, symbols and box-drawing at line 60 compose, and every one is kept as text', async () => {
@@ -213,24 +245,24 @@ describe('composeMarkdown: every character is drawn (ADR-0172)', () => {
   });
 
   it('names the exact line inside a paragraph that spans several, and every place a character repeats', async () => {
-    const { boxed } = await compose('One line\nthen 中 a second\nand 中 a third.\n');
+    const { boxed } = await compose('One line\nthen \u{F0000} a second\nand \u{F0000} a third.\n');
     expect(boxed).toStrictEqual([
-      { character: '中', line: 2, column: 6 },
-      { character: '中', line: 3, column: 5 },
+      { character: '\u{F0000}', line: 2, column: 6 },
+      { character: '\u{F0000}', line: 3, column: 5 },
     ]);
   });
 
   it('names a character written as an entity by its block, with no column it could point at', async () => {
-    const { boxed } = await compose('Intro.\n\nAn entity &#x4E2D; here.\n');
-    expect(boxed).toStrictEqual([{ character: '中', line: 3, column: null }]);
+    const { boxed } = await compose('Intro.\n\nAn entity &#xF0000; here.\n');
+    expect(boxed).toStrictEqual([{ character: '\u{F0000}', line: 3, column: null }]);
   });
 
   it('names a box in code by the code line it is on — an indented block and a fence both', async () => {
-    const indented = await compose('Intro.\n\n    first code\n    code 中\n');
-    expect(indented.boxed).toStrictEqual([{ character: '中', line: 4, column: 10 }]);
+    const indented = await compose('Intro.\n\n    first code\n    code \u{F0000}\n');
+    expect(indented.boxed).toStrictEqual([{ character: '\u{F0000}', line: 4, column: 10 }]);
     // CONTROL: the same code line in a fence is one line further down, because the fence is a line of its own.
-    const fenced = await compose('Intro.\n\n```\nfirst code\ncode 中\n```\n');
-    expect(fenced.boxed).toStrictEqual([{ character: '中', line: 5, column: 6 }]);
+    const fenced = await compose('Intro.\n\n```\nfirst code\ncode \u{F0000}\n```\n');
+    expect(fenced.boxed).toStrictEqual([{ character: '\u{F0000}', line: 5, column: 6 }]);
   });
 
   it('sets a right-to-left paragraph against the right margin — CONTROL: a left-to-right one against the left', async () => {
@@ -246,9 +278,10 @@ describe('composeMarkdown: every character is drawn (ADR-0172)', () => {
     const sentence = 'ภาษาไทยไม่มีการเว้นวรรคระหว่างคำ';
     const paragraph = Array.from({ length: 12 }, () => sentence).join('');
     const { pdf, boxed } = await compose(`${paragraph}\n`);
-    // NO BUNDLED FACE CARRIES THAI, so every letter is a box here — and the breaks are still between words, because
-    // where a line may end is the text's and not its font's. Each box copies as its letter, which is what is read.
-    expect(boxed.length).toBeGreaterThan(0);
+    // NO BUNDLED SCRIPT FACE CARRIES THAI, so every letter is the last face's, GNU Unifont (ADR-0270), and nothing is
+    // boxed — and the breaks are between words, because where a line may end is the text's and not its font's. SARA AM
+    // is shaped as two glyphs, one of them standing for no character, and still reads once (`cidFont.ts`).
+    expect(boxed).toStrictEqual([]);
     const [lines = []] = await readLines(pdf);
     const texts = lines.map((line: ReadLine) => line.text);
     expect(texts.length).toBeGreaterThan(1);

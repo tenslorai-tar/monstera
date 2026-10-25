@@ -1,4 +1,5 @@
 import { withBrowserTables, withCmap, withTables } from './fontSubset.js';
+import type { OutlineCommand } from './textShaping.js';
 
 /**
  * A font built from the outlines PDFium draws for a run's characters, for the editor to draw that run in
@@ -54,19 +55,9 @@ export function pathFontFor(
   const points = [...glyphs.keys()].sort((left, right) => left - right);
   // GLYPH 0 IS .notdef, drawing nothing; each character's glyph is its place in `points` after it.
   const outlines: PathGlyph[] = [{ advance: 0, steps: [] }, ...points.map((point) => glyphs.get(point) ?? { advance: 0, steps: [] })];
-  const box = boundsOf(outlines);
   const ascender = Math.round(metrics.ascender);
   const descender = Math.round(metrics.descender);
-  const seed = sfntWithHead(headTable(box));
-  const font = withTables(
-    seed,
-    new Map([
-      ['hhea', hheaTable(outlines, ascender, descender)],
-      ['maxp', maxpTable(outlines.length)],
-      ['hmtx', hmtxTable(outlines)],
-      ['CFF ', cffTable(outlines)],
-    ]),
-  );
+  const font = cffProgram(outlines, { ascender, descender }, 'MonsteraRunFont');
   const mapped = withCmap(
     font,
     points.map((point, at) => [point, at + 1] as const),
@@ -77,6 +68,61 @@ export function pathFontFor(
     firstChar: points[0] ?? 0,
     lastChar: points.at(-1) ?? 0,
   });
+}
+
+/**
+ * An OpenType font with CFF outlines holding `outlines` in order — glyph 0 first, which should be `.notdef` — and no
+ * `cmap`: what {@link pathFontFor} gives a browser once it adds one, and what `cidFont.ts` embeds for a CFF face, whose
+ * codes reach their glyphs by number alone.
+ */
+export function cffProgram(
+  outlines: readonly PathGlyph[],
+  metrics: { readonly ascender: number; readonly descender: number },
+  name: string,
+): Uint8Array {
+  const seed = sfntWithHead(headTable(boundsOf(outlines)));
+  return withTables(
+    seed,
+    new Map([
+      ['hhea', hheaTable(outlines, metrics.ascender, metrics.descender)],
+      ['maxp', maxpTable(outlines.length)],
+      ['hmtx', hmtxTable(outlines)],
+      ['CFF ', cffTable(outlines, name)],
+    ]),
+  );
+}
+
+/**
+ * HarfBuzz's outline of a glyph (`ShapingFace.outline`) as {@link PathStep}s, scaled by `scale`: a quadratic segment
+ * becomes the cubic that draws the same curve, and a contour's close is left to whatever fills it, as both a CFF
+ * charstring and a PDF fill close every contour. THE ONE conversion, for the composers' outline glyphs and for a CFF
+ * face's embedded program alike.
+ */
+export function stepsOfOutline(outline: readonly OutlineCommand[], scale: number): PathStep[] {
+  const steps: PathStep[] = [];
+  let current: readonly [number, number] = [0, 0];
+  let start: readonly [number, number] = [0, 0];
+  for (const { type, values } of outline) {
+    const [a = 0, b = 0, c = 0, d = 0, e = 0, f = 0] = values.map((value) => value * scale);
+    if (type === 'M') {
+      steps.push({ kind: 'move', x: a, y: b });
+      current = [a, b];
+      start = current;
+    } else if (type === 'L') {
+      steps.push({ kind: 'line', x: a, y: b });
+      current = [a, b];
+    } else if (type === 'Q') {
+      const [x0, y0] = current;
+      steps.push({ kind: 'curve', x1: x0 + (2 / 3) * (a - x0), y1: y0 + (2 / 3) * (b - y0), x2: c + (2 / 3) * (a - c), y2: d + (2 / 3) * (b - d), x: c, y: d });
+      current = [c, d];
+    } else if (type === 'C') {
+      steps.push({ kind: 'curve', x1: a, y1: b, x2: c, y2: d, x: e, y: f });
+      current = [e, f];
+    } else {
+      current = start;
+    }
+  }
+  return steps;
 }
 
 /** The ink box of every outline together, rounded outward; zero where nothing draws. */
@@ -235,10 +281,10 @@ function charstring(outline: PathGlyph): Uint8Array {
  * The `CFF ` table: one font, its glyphs named `g1`… in the String INDEX (an OpenType font's `post` 3 names none, and a
  * CFF charset needs a name per glyph), widths stated in each charstring over a nominal width of zero.
  */
-function cffTable(outlines: readonly PathGlyph[]): Uint8Array {
+function cffTable(outlines: readonly PathGlyph[], name: string): Uint8Array {
   const encoder = new TextEncoder();
   const header = Uint8Array.from([1, 0, 4, 4]);
-  const names = cffIndex([encoder.encode('MonsteraRunFont')]);
+  const names = cffIndex([encoder.encode(name)]);
   const strings = cffIndex(outlines.slice(1).map((_, at) => encoder.encode(`g${String(at + 1)}`)));
   const globalSubrs = cffIndex([]);
   const charset = Uint8Array.from([0, ...outlines.slice(1).flatMap((_, at) => [((391 + at) >> 8) & 255, (391 + at) & 255])]);

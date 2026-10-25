@@ -4,7 +4,6 @@ import {
   PDFOperator,
   PDFOperatorNames,
   appendBezierCurve,
-  closePath,
   concatTransformationMatrix,
   fill,
   lineTo,
@@ -19,6 +18,7 @@ import { paragraphDirection } from './bidiOrder.js';
 import { CidFont, adjustment, codeString, pdfLibCidSink } from './cidFont.js';
 import type { CatalogueFace, FaceSource } from './fontCatalogue.js';
 import { type FontRequest, resolveRuns } from './fontResolver.js';
+import { stepsOfOutline } from './pathFont.js';
 import { type OutlineCommand, type ShapedGlyph, ShapingFace } from './textShaping.js';
 
 /**
@@ -352,31 +352,13 @@ export class ComposeFonts {
   }
 }
 
-/** A glyph outline as PDF path operators; a quadratic segment becomes the cubic that draws the same curve. */
+/** A glyph outline as PDF path operators, by `stepsOfOutline`'s conversion; the fill that follows closes each contour. */
 function pathOperators(outline: readonly OutlineCommand[]): PDFOperator[] {
-  const operators: PDFOperator[] = [];
-  let current: readonly [number, number] = [0, 0];
-  let start: readonly [number, number] = [0, 0];
-  for (const { type, values } of outline) {
-    const [a = 0, b = 0, c = 0, d = 0, e = 0, f = 0] = values;
-    if (type === 'M') {
-      operators.push(moveTo(a, b));
-      current = [a, b];
-      start = current;
-    } else if (type === 'L') {
-      operators.push(lineTo(a, b));
-      current = [a, b];
-    } else if (type === 'Q') {
-      const [x0, y0] = current;
-      operators.push(appendBezierCurve(x0 + (2 / 3) * (a - x0), y0 + (2 / 3) * (b - y0), c + (2 / 3) * (a - c), d + (2 / 3) * (b - d), c, d));
-      current = [c, d];
-    } else if (type === 'C') {
-      operators.push(appendBezierCurve(a, b, c, d, e, f));
-      current = [e, f];
-    } else {
-      operators.push(closePath());
-      current = start;
-    }
-  }
-  return operators;
+  return stepsOfOutline(outline, 1).map((step) =>
+    step.kind === 'move'
+      ? moveTo(step.x, step.y)
+      : step.kind === 'line'
+        ? lineTo(step.x, step.y)
+        : appendBezierCurve(step.x1, step.y1, step.x2, step.y2, step.x, step.y),
+  );
 }

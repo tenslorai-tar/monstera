@@ -68,6 +68,7 @@ import { fileURLToPath } from 'node:url';
 import { crc32, deflateSync } from 'node:zlib';
 
 import {
+  PDFArray,
   PDFDict,
   PDFDocument,
   PDFName,
@@ -267,7 +268,7 @@ const failures = [];
 // THE COUNT IS MOVED ONLY WITH THE CASES IT COUNTS, and the commit that moves it names the cases it adds or removes. A
 // running ledger of the count was kept here until 2026-10-17 and had stopped at 246 against 274 (VVVVVVV-23): a second
 // copy of the history git already holds, which nothing compared with the count.
-const roster = createRoster(failures, { cases: 299 });
+const roster = createRoster(failures, { cases: 300 });
 
 /**
  * @param {string} name
@@ -296,6 +297,31 @@ async function textOf(bytes) {
   } finally {
     await pdfiumWriter.close(session);
   }
+}
+
+/** A character no bundled face carries, GNU Unifont included: plane 15's first private-use point. */
+const NONE_CARRY_POINT = 0xf0000;
+
+/**
+ * How each font page 0 names holds its program, read with pdf-lib from the saved bytes: `BaseFont`, the descendant's
+ * `Subtype` and the descriptor key the program sits under.
+ *
+ * @param {Uint8Array} bytes
+ * @returns {Promise<string[]>}
+ */
+async function embeddingsOf(bytes) {
+  const document = await PDFDocument.load(bytes, { updateMetadata: false });
+  const resources = document.getPage(0).node.Resources();
+  const fonts = resources?.lookupMaybe(PDFName.of('Font'), PDFDict);
+  if (fonts === undefined) return [];
+  return fonts.entries().map(([, value]) => {
+    const font = document.context.lookup(value, PDFDict);
+    const descendants = font.lookupMaybe(PDFName.of('DescendantFonts'), PDFArray);
+    const described = descendants === undefined ? font : document.context.lookup(descendants.get(0), PDFDict);
+    const descriptor = described.lookupMaybe(PDFName.of('FontDescriptor'), PDFDict);
+    const file = ['FontFile', 'FontFile2', 'FontFile3'].find((key) => descriptor?.has(PDFName.of(key)) === true) ?? 'none';
+    return `${String(font.get(PDFName.of('BaseFont')))} ${String(described.get(PDFName.of('Subtype')))} ${file}`;
+  });
 }
 
 /**
@@ -1633,14 +1659,43 @@ async function pieceCases() {
     // A CHARACTER NO FACE CARRIES IS THE BOX (ADR-0173 Decision 7 as corrected), drawn in a box font of its own whose
     // cmap names the real character, so the reopened page READS the character; and the apply ANSWERS it with its page
     // (ADR-0174), which is how the person is told. The premise is that no bundled face carries it, or the case would be
-    // asking the resolver rather than the box.
-    const NONE_CARRY = String.fromCodePoint(0x4e2d);
+    // asking the resolver rather than the box — GNU Unifont, the last face (ADR-0270), draws every Basic Multilingual
+    // Plane point, so it is one past the plane.
+    const NONE_CARRY = String.fromCodePoint(NONE_CARRY_POINT);
     const catalogue = faceSourceOf([{ path: fonts, origin: 'bundled' }], readCatalogueApart).faces;
     record(
-      'PREMISE: no bundled face carries U+4E2D, and one carries the box U+25A1',
-      !catalogue.some((face) => face.unicodes.has(0x4e2d)) && catalogue.some((face) => face.unicodes.has(0x25a1)),
-      `${String(catalogue.filter((face) => face.unicodes.has(0x4e2d)).length)} carry U+4E2D; ` +
+      'PREMISE: no bundled face carries U+F0000, and one carries the box U+25A1',
+      !catalogue.some((face) => face.unicodes.has(NONE_CARRY_POINT)) && catalogue.some((face) => face.unicodes.has(0x25a1)),
+      `${String(catalogue.filter((face) => face.unicodes.has(NONE_CARRY_POINT)).length)} carry U+F0000; ` +
         `${String(catalogue.filter((face) => face.unicodes.has(0x25a1)).length)} carry U+25A1`,
+    );
+
+    // A CHARACTER ONLY A CFF FACE DRAWS — GNU Unifont, the last face — is this writer's BOX, read from the saved bytes:
+    // `FPDFText_LoadFont` writes any program as `FontFile2` under `CIDFontType2`, and measured 2026-10-25 it saved
+    // Unifont's CFF program exactly so (`pdfiumFfi.ts`). The premise is that a CFF face does carry it, or the box would
+    // be the resolver's answer for a reason that is not this one.
+    const lastTyped = 'The first 中 line of the block';
+    let lastRead = '';
+    /** @type {readonly string[]} */
+    let lastEmbedded = [];
+    /** @type {unknown} */
+    let lastAnswer = null;
+    try {
+      const drawn = await editDrawing(lastTyped);
+      lastAnswer = { boxed: drawn.boxed, more: drawn.more };
+      lastRead = await textOf(drawn.image);
+      lastEmbedded = await embeddingsOf(drawn.image);
+    } catch (error) {
+      lastRead = `refused: ${error instanceof Error ? `${error.name} ${error.message}` : String(error)}`;
+    }
+    record(
+      'a character only a CFF face carries is boxed by the PDFium writer, never saved as a CFF program in FontFile2',
+      catalogue.some((face) => face.cff && face.unicodes.has(0x4e2d)) &&
+        firstLineOf(lastRead) === lastTyped &&
+        !lastEmbedded.some((each) => each.includes('+Unifont')) &&
+        lastEmbedded.some((each) => /^\/[A-Z]{6}\+\S*-Box /u.test(each)) &&
+        JSON.stringify(lastAnswer) === JSON.stringify({ boxed: [{ character: '中', page: 0 }], more: 0 }),
+      `${JSON.stringify(lastRead.slice(0, 60))}; ${JSON.stringify(lastEmbedded)}; ${JSON.stringify(lastAnswer)}`,
     );
     const boxTyped = `The first ${NONE_CARRY} line of the block`;
     let boxText = '';
@@ -1890,7 +1945,7 @@ async function replacePieceCases() {
 
     // A CHARACTER NO FACE CARRIES IS ITS BOX, and the apply answers it with its page (ADR-0174), at a point and across
     // the document. `page` ends page 0's first line and page 1's: both are boxed, each on its own page, in order.
-    const NONE_CARRY = String.fromCodePoint(0x4e2d);
+    const NONE_CARRY = String.fromCodePoint(NONE_CARRY_POINT);
     /** @type {unknown} */
     let pointBoxes = null;
     let pointRead = '';

@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { bundledFontsFolder } from './bundledFontsForTests.js';
 
-import { faceCount, fontFoldersOf, readCatalogue } from './fontCatalogue.js';
+import { LAST_FACE_FAMILY, faceCount, fontFoldersOf, readCatalogue } from './fontCatalogue.js';
 import { readFace } from './fontFaces.js';
 import { subsetFont } from './fontSubset.js';
 
@@ -72,14 +72,28 @@ afterEach(() => {
 });
 
 describe('readCatalogue', () => {
-  it('reads all twenty-one bundled faces, each with its family, weight, slope and range', () => {
+  it('reads all twenty-two bundled faces, each with its family, weight, slope and range', () => {
     const { faces, unreadable } = readCatalogue([{ path: bundledFolder(), origin: 'bundled' }]);
     expect(unreadable).toStrictEqual([]);
-    expect(faces).toHaveLength(21);
+    expect(faces).toHaveLength(22);
     const arimo = faces.find((face) => face.family === 'Arimo' && !face.italic);
     expect(arimo).toMatchObject({ origin: 'bundled', weights: { min: 400, max: 700 }, embedding: 'subset', faceIndex: 0 });
     expect(faces.find((face) => face.path.endsWith('Tinos-BoldItalic.ttf'))).toMatchObject({ weight: 700, italic: true, weights: null });
-    expect(new Set(faces.map((face) => face.id)).size).toBe(21);
+    expect(new Set(faces.map((face) => face.id)).size).toBe(22);
+  });
+
+  it('reads the provisioned GNU Unifont as the LAST face, and only that face (ADR-0270)', () => {
+    const { faces } = readCatalogue([{ path: bundledFolder(), origin: 'bundled' }]);
+    // THE FILE READS AS THE FAMILY THE CATALOGUE KEYS ON, so a release that renamed it is red here, not ranked quietly.
+    expect(faces.filter((face) => face.origin === 'last').map((face) => [face.family, face.path.endsWith('unifont-18.0.01.otf')])).toStrictEqual([
+      [LAST_FACE_FAMILY, true],
+    ]);
+    // ITS OUTLINES ARE CFF, read from its own tables, and every other bundled face's are TrueType: the CONTROL that the
+    // reading is a reading and not a constant.
+    expect(faces.filter((face) => face.cff).map((face) => face.family)).toStrictEqual([LAST_FACE_FAMILY]);
+    // CONTROL: the same file in a folder of INSTALLED fonts is any installed face — a person's own copy is theirs.
+    copyFileSync(join(bundledFolder(), 'unifont-18.0.01.otf'), join(scratch, 'unifont-18.0.01.otf'));
+    expect(readCatalogue([{ path: scratch, origin: 'installed' }]).faces.map((face) => face.origin)).toStrictEqual(['installed']);
   });
 
   it('reads every face of a collection, by its index', () => {
@@ -92,9 +106,9 @@ describe('readCatalogue', () => {
     // CONTROL: a single face is one face, so the count is the header's and not a constant.
     expect(faceCount(regular)).toBe(1);
     const { faces } = readCatalogue([{ path: scratch, origin: 'installed' }]);
-    expect(faces.map((face) => [face.faceIndex, face.weight])).toStrictEqual([
-      [0, 400],
-      [1, 700],
+    expect(faces.map((face) => [face.faceIndex, face.weight, face.cff])).toStrictEqual([
+      [0, 400, false],
+      [1, 700, false],
     ]);
     // The subsetter reaches the second face by the same index.
     const subset = subsetFont(both, { unicodes: [0x41], faceIndex: 1 });
