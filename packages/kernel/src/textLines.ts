@@ -304,11 +304,88 @@ interface Piece<S> {
 }
 
 /**
+ * How far apart two of a line's gaps may be, in ems, and still be spaces justification set alike: measured to within
+ * 0.05 em on document 4's justified lines (ADR-0096's correction of 2026-10-25).
+ */
+const JUSTIFIED_SPACES_EM = 0.1;
+
+/** How near, in points, a piece on a line beside must start to the run after a gap for the gap to be a column's. */
+const COLUMN_START_PT = 0.5;
+
+interface LinePiece<T> {
+  runs: T[];
+  left: number;
+  right: number;
+  bottom: number;
+  top: number;
+}
+
+/** Whether `other` is a line just beside `line`, above or below: closer than the shorter of the two is tall. */
+function besideLine(line: { readonly bottom: number; readonly top: number }, other: { readonly bottom: number; readonly top: number }): boolean {
+  const gap = Math.max(other.bottom - line.top, line.bottom - other.top);
+  return gap >= 0 && gap < Math.min(line.top - line.bottom, other.top - other.bottom);
+}
+
+/**
+ * One line's runs, swept left to right, as pieces: a new piece where the gap from the piece so far is wider than an em of
+ * the smaller neighbour's type and `spaced` does not call it a word space set wide.
+ *
+ * @param spaced given the piece so far, the run after the gap, that run's place in `swept`, and the gap in ems of `size`
+ */
+function splitLine<T extends LineableRun>(
+  swept: readonly T[],
+  sizeOf: (run: T) => number,
+  spaced: (piece: LinePiece<T>, run: T, at: number, em: number, size: number) => boolean,
+): LinePiece<T>[] {
+  const pieces: LinePiece<T>[] = [];
+  let piece: LinePiece<T> | undefined;
+  // THE SIZE OF THE RUN AT THE PIECE'S RIGHT, the one the next gap is beside.
+  let edge = 0;
+  swept.forEach((run, at) => {
+    // A SIZE THAT IS NOT A NUMBER IS REFUSED, never compared: every comparison with it is false, so a gap would never
+    // be wider than it and every line would be one piece, columns and all. A typed caller cannot leave it out; a script
+    // that builds the runs by hand can, and the grouping it is proving would then pass while grouping nothing apart.
+    if (!Number.isFinite(sizeOf(run))) throw new TypeError(`a run's size must be a number of points, not ${String(sizeOf(run))}`);
+    const gap = piece === undefined ? 0 : Math.max(0, run.left - piece.right, piece.left - run.right);
+    // A WORD SPACE IS SET IN THE TYPE AROUND IT, so the gap is measured in an em of the SMALLER neighbour's type, never
+    // against the line's height. The line is every run that overlaps, so its height grows with what says the runs are
+    // apart: two columns whose baselines are offset, and a large figure beside small text. Measured 2026-10-24 in the
+    // owner's document 11: a 13.71 pt gutter between 12 pt columns whose baselines are 3.81 pt apart, against a line
+    // 14.84 pt tall; a 40 pt figure and a 14 pt caption 14.29 and 12.61 pt from an 11.5 pt list. Each was joined, and an
+    // edit of one column's paragraph rewrote a line of the other. Across the corpus every other joined gap is at most
+    // 0.94 em, and the widest space this application justifies to is a space and JUSTIFY_CAP's 0.6 em (`markFigures.ts`),
+    // under an em; those gutters are 1.1 to 1.57.
+    const size = Math.min(edge, sizeOf(run));
+    if (piece === undefined || (gap > size && !spaced(piece, run, at, gap / size, size))) {
+      edge = sizeOf(run);
+      piece = { runs: [run], left: run.left, right: run.right, bottom: run.bottom, top: run.top };
+      pieces.push(piece);
+      return;
+    }
+    piece.runs.push(run);
+    if (run.right >= piece.right) edge = sizeOf(run);
+    piece.left = Math.min(piece.left, run.left);
+    piece.right = Math.max(piece.right, run.right);
+    piece.bottom = Math.min(piece.bottom, run.bottom);
+    piece.top = Math.max(piece.top, run.top);
+  });
+  return pieces;
+}
+
+/**
  * The pieces of a page's runs: each line split where the gap between the piece so far and the next run is wider than an
  * em of the smaller of the two neighbours' type (step 2 of {@link groupIntoBlocks}), in the order the runs came. The ONE place a piece is decided, which
  * the block grouping and the line reading (`readInLineOrder`, in `bidiLine.ts`, which takes the bidirectional algorithm
  * this module must not load into `main`) both take (B3a): two readings of which runs are one line would put a run's words
  * in one and its place in the other.
+ *
+ * ## A justified line's wide spaces are not splits
+ *
+ * Justification stretches a line's spaces, past an em on a short justified line, and no width tells such a space from a
+ * gutter: 1.0 to 1.6 em on document 4's justified page against 1.1 to 1.57 em for document 11's gutters. The lines beside
+ * tell them apart (ADR-0096's correction of 2026-10-25): a wider gap is a word space where another gap on its line is
+ * within {@link JUSTIFIED_SPACES_EM} of it, a run of the same size on a line just beside spans it, and no piece of that
+ * line starts within {@link COLUMN_START_PT} of where the run after it starts. A line with one wide gap stays split.
  *
  * @param sizeOf the size a run is drawn at, in points
  */
@@ -316,66 +393,45 @@ export function piecesOf<T extends LineableRun>(
   runs: readonly T[],
   sizeOf: (run: T) => number,
 ): { runs: T[]; order: number; left: number; right: number; bottom: number; top: number }[] {
-  const pieces: { runs: T[]; order: number; left: number; right: number; bottom: number; top: number }[] = [];
-  for (const line of overlapLines(runs)) {
-    let piece: (typeof pieces)[number] | undefined;
-    // SWEPT LEFT TO RIGHT, whatever order the runs came in: a gap is between two neighbours, and a line read in the order
-    // it was typed visits a right-to-left phrase before the words beside it, which a sweep in that order measures from
-    // the wrong side. The runs of a piece keep the order they came in.
+  // SWEPT LEFT TO RIGHT, whatever order the runs came in: a gap is between two neighbours, and a line read in the order
+  // it was typed visits a right-to-left phrase before the words beside it, which a sweep in that order measures from
+  // the wrong side. The runs of a piece keep the order they came in.
+  const lines = overlapLines(runs).map((line) => {
     const given = new Map(line.runs.map((run, at) => [run, at] as const));
     const swept = [...line.runs].sort((a, b) => a.left - b.left || (given.get(a) ?? 0) - (given.get(b) ?? 0));
-    const first = pieces.length;
-    // THE SIZE OF THE RUN AT THE PIECE'S RIGHT, the one the next gap is beside.
-    let edge = 0;
-    for (const run of swept) {
-      // A SIZE THAT IS NOT A NUMBER IS REFUSED, never compared: every comparison with it is false, so a gap would never
-      // be wider than it and every line would be one piece, columns and all. A typed caller cannot leave it out; a script
-      // that builds the runs by hand can, and the grouping it is proving would then pass while grouping nothing apart.
-      if (!Number.isFinite(sizeOf(run))) throw new TypeError(`a run's size must be a number of points, not ${String(sizeOf(run))}`);
-      const gap =
-        piece === undefined ? 0 : Math.max(0, run.left - piece.right, piece.left - run.right);
-      // A WORD SPACE IS SET IN THE TYPE AROUND IT, so the gap is measured in an em of the SMALLER neighbour's type, never
-      // against the line's height. The line is every run that overlaps, so its height grows with what says the runs are
-      // apart: two columns whose baselines are offset, and a large figure beside small text. Measured 2026-10-24 in the
-      // owner's document 11: a 13.71 pt gutter between 12 pt columns whose baselines are 3.81 pt apart, against a line
-      // 14.84 pt tall; a 40 pt figure and a 14 pt caption 14.29 and 12.61 pt from an 11.5 pt list. Each was joined, and an
-      // edit of one column's paragraph rewrote a line of the other. Across the corpus every other joined gap is at most
-      // 0.94 em, and the widest space this application justifies to is a space and JUSTIFY_CAP's 0.6 em (`markFigures.ts`),
-      // under an em; those gutters are 1.1 to 1.57.
-      if (piece === undefined || gap > Math.min(edge, sizeOf(run))) {
-        edge = sizeOf(run);
-        piece = {
-          runs: [run],
-          order: pieces.length,
-          left: run.left,
-          right: run.right,
-          bottom: run.bottom,
-          top: run.top,
-        };
-        pieces.push(piece);
-        continue;
-      }
-      piece.runs.push(run);
-      if (run.right >= piece.right) edge = sizeOf(run);
-      piece.left = Math.min(piece.left, run.left);
-      piece.right = Math.max(piece.right, run.right);
-      piece.bottom = Math.min(piece.bottom, run.bottom);
-      piece.top = Math.max(piece.top, run.top);
-    }
+    return { ...line, given, swept };
+  });
+  // WHERE EACH LINE'S PIECES START BY THE EM RULE ALONE, which is what a column start is read from.
+  const starts = new Map(lines.map((line) => [line, splitLine(line.swept, sizeOf, () => false).map((piece) => piece.left)] as const));
+  const sameSize = (a: number, b: number): boolean => a.toFixed(2) === b.toFixed(2);
+  const pieces: { runs: T[]; order: number; left: number; right: number; bottom: number; top: number }[] = [];
+  for (const line of lines) {
+    const { swept, given } = line;
+    const beside = lines.filter((other) => other !== line && besideLine(line, other));
+    // EVERY RUN-TO-RUN GAP OF THE LINE, in ems of the smaller of its two runs: the gap before run `at` is `gaps[at]`.
+    const gaps = swept.map((run, at) => {
+      const before = swept[at - 1];
+      if (before === undefined || run.left <= before.right) return undefined;
+      return (run.left - before.right) / Math.min(sizeOf(run), sizeOf(before));
+    });
+    const spaced = (piece: LinePiece<T>, run: T, at: number, em: number, size: number): boolean =>
+      gaps.some((other, k) => k !== at && other !== undefined && Math.abs(other - em) <= JUSTIFIED_SPACES_EM) &&
+      beside.some((other) => other.runs.some((each) => each.left < piece.right && run.left < each.right && sameSize(sizeOf(each), size))) &&
+      !beside.some((other) => (starts.get(other) ?? []).some((start) => Math.abs(start - run.left) < COLUMN_START_PT));
     // THE PIECES KEEP THE ORDER THEIR FIRST RUN CAME IN, which is the order a person Tabs through them, and each keeps its
     // runs in the order they came.
     const at = (run: T): number => given.get(run) ?? 0;
-    const made = pieces.splice(first);
+    const made = splitLine(swept, sizeOf, spaced);
     for (const each of made) each.runs.sort((a, b) => at(a) - at(b));
     const firstAt = (each: { runs: T[] }): number => {
       const [head] = each.runs;
       return head === undefined ? 0 : at(head);
     };
     made.sort((a, b) => firstAt(a) - firstAt(b));
+    const first = pieces.length;
     made.forEach((each, rank) => {
-      each.order = first + rank;
+      pieces.push({ ...each, order: first + rank });
     });
-    pieces.push(...made);
   }
   return pieces;
 }

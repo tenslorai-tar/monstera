@@ -383,6 +383,66 @@ describe('grouping lines into the blocks a person edits in place (ADR-0096)', ()
     expect(large.map((block) => block.lines[0]?.runs.length)).toStrictEqual([2]);
   });
 
+  describe('a justified line’s wide spaces (ADR-0096’s correction of 2026-10-25)', () => {
+    // A JUSTIFIED PARAGRAPH SET ONE WORD TO A RUN, as document 4 page 4 is: 11 pt lines 3 pt apart, the middle line's
+    // spaces stretched to 1.2 em, the lines above and below set tighter.
+    const above = [placed(1, 'Words', 72, 150, 300, 311), placed(2, 'set', 155, 230, 300, 311), placed(3, 'above', 235, 350, 300, 311)];
+    const middle = [
+      placed(4, 'Stretched', 72, 120, 286, 297),
+      placed(5, 'words', 133.2, 180, 286, 297),
+      placed(6, 'wide', 193.2, 240, 286, 297),
+      placed(7, 'apart', 253.4, 350, 286, 297),
+    ];
+    const below = [placed(8, 'Words', 72, 140, 272, 283), placed(9, 'set', 145, 260, 272, 283), placed(10, 'below', 265, 350, 272, 283)];
+
+    it('JOINS a justified line whose spaces are past an em: its spaces match, and words beside span them', () => {
+      expect(groupIntoBlocks([...above, ...middle, ...below]).map((block) => block.lines.map(covers))).toStrictEqual([
+        [[1, 2, 3], [4, 5, 6, 7], [8, 9, 10]],
+      ]);
+      // CONTROL: the same line with no line beside it splits at each space, as the em rule alone splits it.
+      expect(groupIntoBlocks(middle)).toHaveLength(4);
+    });
+
+    it('CONTROL: a line with ONE wide gap stays split, though a word beside spans it — nothing shows it was justified', () => {
+      const blocks = groupIntoBlocks([
+        placed(1, 'One long word above', 72, 350, 300, 311),
+        placed(2, 'Left', 72, 150, 286, 297),
+        placed(3, 'Right', 163.2, 350, 286, 297),
+      ]);
+      expect(blocks.flatMap((block) => block.lines.map(covers))).toContainEqual([2]);
+    });
+
+    it('CONTROL: columns stay split where a line beside STARTS a column after the gap, though a run above bridges it', () => {
+      // A three-column list whose gutters are equal by chance (document 4 page 6), with a run above reaching across both
+      // gutters: the line below starts each column where the middle line's next run does.
+      const blocks = groupIntoBlocks([
+        placed(1, 'A long entry', 72, 170, 300, 311),
+        placed(2, 'reaching over', 180, 270, 300, 311),
+        placed(3, 'First', 72, 150, 286, 297),
+        placed(4, 'Second', 163.2, 250, 286, 297),
+        placed(5, 'Third', 263.2, 350, 286, 297),
+        placed(6, 'Under', 72, 140, 272, 283),
+        placed(7, 'the', 163.2, 230, 272, 283),
+        placed(8, 'columns', 263.2, 320, 272, 283),
+      ]);
+      const middleLine = blocks.flatMap((block) => block.lines.map(covers)).filter((line) => line.some((index) => index >= 3 && index <= 5));
+      expect(middleLine).toStrictEqual([[3], [4], [5]]);
+    });
+
+    it('CONTROL: table cells stay split where the words below reach PAST each gap’s middle but not across it', () => {
+      // Document 5's table: cells whose padding makes the gaps equal, and a cell below ending 0.9 pt past a gap's middle.
+      const blocks = groupIntoBlocks([
+        placed(1, 'Cell one', 72, 150, 286, 297),
+        placed(2, 'Cell two', 163.2, 250, 286, 297),
+        placed(3, 'Cell three', 263.2, 350, 286, 297),
+        placed(4, 'A wider cell', 100, 157.5, 272, 283),
+        placed(5, 'and another', 200, 257.5, 272, 283),
+      ]);
+      const cells = blocks.flatMap((block) => block.lines.map(covers)).filter((line) => line.some((index) => index <= 3));
+      expect(cells).toStrictEqual([[1], [2], [3]]);
+    });
+  });
+
   it('REFUSES a run with no size, which would otherwise join every gap', () => {
     // A script building runs by hand with `{ ...run, setting }` leaves `size` out; compared, it joins the columns above.
     const sizeless = { ...placed(2, 'Right column words', 320, 540, 699.9, 711.1), size: undefined as unknown as number };
