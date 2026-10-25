@@ -78,3 +78,16 @@ other placement shows it.
 
 Rejected: wrapping at the box's width and stopping at its foot, which drops words; and moving the text up to stay inside
 the box, which moves the words the person did not edit.
+
+## Correction, 2026-10-25 — a placement is read in the state the form inherits at its `Do`
+
+Decision 1's wrapper was the placement's matrices alone, and a form is drawn in the whole graphics state in effect at its
+`Do` (ISO 32000-2, 8.10.1), text state and colour included. Measured on the brochure fixture: its page sets `0.3 Tc`
+before the pull quote's `Do`, so the quote is drawn wider on the page than PDFium read it on a page of its own, and an
+edit laid out against the narrower reading moved its last letter — 33 to 35 pixels outside the block on every edit of it.
+
+**The wrapper opens each step with the instructions in effect at that `Do`** — the text state, the line state and the
+colour, as the content scanner already records them for a text operator — before the step's matrices. One that names a
+resource of the holder is left out (`Tf`, `gs`, a colour space by name and the colours set in it), since the form's own
+resources need not hold the name, and a form that uses those sets them itself. Measured after: every edit of the
+brochure's form blocks disturbs nothing.
