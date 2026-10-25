@@ -253,3 +253,22 @@ Every other name is compared as it was.
 installed stand-in is written under, and it would join a light subtitle to a regular line beneath it at the same size
 and colour, which nothing measured asks for. **Stated limit:** a face outside the table whose stand-in's name differs
 from its own beyond the tag and the instance still splits its block.
+
+## Correction, 2026-10-25, later — a line of code that grows is not wrapped (Decision 5)
+
+Decision 5 **wraps a line wider than the block** at a word boundary. Cloud run 19 established that a line set in a
+fixed-pitch face keeps its break, *code is not a wrapped paragraph* (`softEnds`, `textLines.ts`), and the editor already
+widens such a block rather than wrapping it (the owner's A7, `m-text-editor--lines`); the writer still wrapped one.
+Measured 2026-10-25 on the editor-fidelity page in the running application (`scripts/research/editorFidelityWalk.mjs`):
+one character added to the code block's first command, the block's widest, and the saved file held `git clone` and the
+address on two lines — one command become two, which a person copying it would run as two.
+
+**A paragraph every run of which is set in a fixed-pitch face is not wrapped by the writer; it widens past the block, as
+the editor draws it.** Whether a run is fixed pitch is the read's one rule (`mono`: the descriptor's flag, else the
+family's class), which `pageRuns` now carries to the writer beside each run as `fixedPitch`, so the writer and the
+grouping take one reading rather than two (B3a).
+
+**Rejected: the editor's whole A7 rule in the writer** — no block whose lines all end on purpose wrapped. A7 answered the
+editor's own wider face wrapping a label the page did not; a one-line heading whose words grow is wrapped by this
+Decision on purpose (the brochure walk's heading), and widening it would run it off the page. **Stated limit:** a line of
+code inside a paragraph of prose is wrapped as the prose is.
