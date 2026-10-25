@@ -5,7 +5,7 @@ your head. It is not the law.
 
 | Document | Status | Changed by |
 |---|---|---|
-| `BUILD-PROMPT.md` | **Immutable founding record.** Never edited after its first commit. | nobody |
+| `BUILD-PROMPT.md` | **Immutable founding record.** Never edited after its first commit — with one exception, by the owner's decision of 2026-10-25: two benchmark lines that named another product were reworded to *professional standards* (`docs/ARCHITECTURE.md`'s amendment log). The rule is otherwise unchanged. | nobody |
 | `docs/ARCHITECTURE.md` | **Living law.** Wins wherever it diverges from the founding record. | B4 amendment, in its own commit, naming the founding clause it supersedes |
 | `CLAUDE.md` (this file) | Derived digest. | updated in the same commit as any amendment affecting it |
 

@@ -39,8 +39,7 @@ entry there records a mechanism someone found instead of patching around.
 
 Monstera is a **free, open-source, professional-grade PDF editor for Windows**,
 published by Tenslor Inc., distributed through the **Microsoft Store** (primary) and
-**monsterapdf.com**. Target quality: PDF-XChange Editor parity or
-better.
+**monsterapdf.com**. Target quality: professional standards.
 
 The single most important fact about this project: **the codebase is the product as
 much as the app is.** It will be read by thousands of developers, and their judgement
@@ -965,8 +964,8 @@ primitives and tokens exist before the first feature screen does.
 
 ## M1. Identity
 
-- **A calm, professional Windows desktop tool.** Benchmarks: PDF-XChange Editor,
-  Word's ribbon, modern Windows 11 apps. Dense enough for professionals, never
+- **A calm, professional Windows desktop tool.** Benchmarks: professional desktop PDF
+  editors, Word's ribbon, modern Windows 11 apps. Dense enough for professionals, never
   cramped, never playful.
 - **Brand:** Monstera green as the default accent (`#16a34a`, user-customizable
   per the settings registry), neutral gray surfaces, both dark and light themes
