@@ -892,6 +892,69 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-25 — Stage audit of `6b29f80f..8db42b52` — findings XXXXXXXX-1 to XXXXXXXX-12
+
+Local fix session 4's round 3: the cloud-19 merge (editor fidelity), ADR-0270 (Unifont, never refuse), ADR-0269 (text
+in forms edited in place), ADR-0266's every page on the operator writer, the justified-gap rule, the tab and underline
+regressions, the look-alike face rule, and the standard-font and code-line fixes. `npm run audit:scope` at `8db42b52`:
+61 commits, 175 files, within one batch; 12 proofs added, 58 modified, none removed. Audited before cloud-20's merge
+and the competitor-name raid, which together cross the batch (the owner's order of 2026-10-25). **Method:** the modified
+proofs' diffs, the range's fixes and its documents were read by a separate read-only reviewer, and every finding below
+was re-read before it was recorded. **Stated limitation, not a pass:** the diffs of `operatorEdit.test.ts` (+269),
+`textLines.test.ts` (+202), `TextLayer.tsx`, `lineEndMarks.proof.mjs`, `editorFidelity.pw.ts` past its band logic and
+the hosts' `formPages` stubs were not read whole; no mutation was run by the reviewer.
+
+### Fixed
+
+**XXXXXXXX-1** — `docs/ARCHITECTURE.md`'s writer-of-record row still named PDFium for in-place text editing, after
+ADR-0266 moved every Edit text write to MuPDF's operator writer: the false clause sat in the contract position (B3's
+matrix) while the row's own body said the opposite (`14f76d85`).
+**XXXXXXXX-2** — no case sent a writer's note through the MuPDF host's `engine/apply-file`, the host whose writer makes
+them; a handler answering `noted: []` left every case green. `engineApplyNoted.test.ts`, red with the notes dropped
+(`85f18b97`). The kernel side was seen firing on real input the same day: the corpus count at `8db42b52` logged three.
+**XXXXXXXX-5** — three help articles described removed behaviour: *Unpack it* (ADR-0269), and Find & replace and
+spelling leaving a word drawn in pieces or a width change alone (ADR-0267 writes them through the block writer)
+(`14f76d85`).
+**XXXXXXXX-7** — `editorFidelityWalk.mjs` promised each highlight spans its line and asserted only the count; it now
+checks the drag selected the whole paragraph and that the width reading found every rectangle, and claims no more
+(`14f76d85`).
+**XXXXXXXX-9** — the corpus count turned a failed child into a silent `null` and left failed pages out of its total;
+it now names each failure without a file name, counts them, and exits 1 (`85f18b97`). **Demonstrated the same
+afternoon by my own process:** a kernel source touched for a mutation check while a count ran made every later page
+refuse as a stale build, and the run ended *passed* with seven documents uncounted. The rule was on the page (*touch no
+kernel source while a corpus proof runs*) and was reasoned around — *vitest reads the source, not the build* — which
+missed that the build-freshness guard reads file times.
+**XXXXXXXX-10** — `textEditorGeometry.pw.ts`' comment said the words are painted in their own colour; black
+(`14f76d85`).
+**XXXXXXXX-11** — `CLAUDE.md`'s B8 said never reuse a version; `3046b090` orders them per package identity
+(`14f76d85`).
+
+### Found by the closing count, in the tail after the range
+
+The corpus count at `8db42b52` logged three defects and failed one repository case, each from the range's own last
+fixes: the encoding reading applied to embedded subsets, whose words drew nothing (ADR-0176's narrowing `7c6a8821`, code
+`744a80b6`); and the proof grouped code without `fixedPitch`, which main set by hand beside `blockableOf`, so the
+no-wrap rule joined two commands (`c6fabeb3`, now one spelling). Both have cases red without them; the next range
+audits them.
+
+### Recorded, not fixed (the next update)
+
+**XXXXXXXX-3** — text in forms as `main` builds it — `formPagesOf`, `engine/form-pages`, `pageRuns`' form branch and
+the push-index offsets — is crossed by no test, and `editText.proof.mjs` re-implements the same assembly "as `main`
+does": a second opinion (B3a). Plan: one kernel function both call, and a composition-root case across the channel.
+**XXXXXXXX-4** — `editorFidelityFixture.proof.mjs`' `BOX_TOLERANCE` went from 0.5 to 1.5 pt without re-checking the
+argument that made 0.5 harmless (the rendered case's 1 px margin is about 0.75 pt). Plan: confine the allowance to the
+axis and block measured.
+**XXXXXXXX-6** — `docs/FEATURES.md`'s form-text row is *done* while it states an open limit (words added to one table
+cell in a form draw nothing, cause not read), with no trigger; and the defect log reads past clips (`clip=no`), so it
+cannot see that kind of loss. Plan: its own row with a trigger, and a visibility check of set words.
+**XXXXXXXX-8** — `startupWalk.mjs`' main-loop and long-task readings have no control that shows they can see a known
+block. Plan: a deliberate busy-wait in each, with the first-launch stall item.
+**XXXXXXXX-12** — `promoteFormObjects` is still a command the renderer may send, and nothing sends it since *Unpack it*
+went (ADR-0269). The owner's decision whether to keep or retire it.
+
+---
+
 ## 2026-10-24 — Stage audit of `eda0c9ea..6b29f80f` — findings WWWWWWWW-1 to WWWWWWWW-9
 
 Local fix session 4's round 2: the merge of cloud run 17 (Edit object, ADR-0264) and its corpus checks, T1 (the font
