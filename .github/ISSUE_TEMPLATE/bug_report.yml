@@ -14,7 +14,7 @@ body:
     id: version
     attributes:
       label: Monstera version
-      description: Shown in Tools › About, or in Settings › Updates, which has a button to copy it.
+      description: Shown in Help › About or Settings › Updates, which has a button to copy it.
       placeholder: "1.0.2151.0"
     validations:
       required: true
