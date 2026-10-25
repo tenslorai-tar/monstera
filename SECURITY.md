@@ -9,9 +9,12 @@ Report it privately through GitHub's private vulnerability reporting:
 > **[Report a vulnerability](https://github.com/tenslorai-tar/monstera/security/advisories/new)**
 > — or, from the repository, the **Security** tab → **Report a vulnerability**.
 
-This creates a private advisory visible only to you and the maintainers, with a
-place to collaborate on a fix and coordinate disclosure. It needs no email
-address and leaks nothing while the issue is unfixed.
+Private vulnerability reporting is enabled on this repository. A report creates
+a private advisory visible only to you and the maintainers, with a place to
+collaborate on a fix and coordinate disclosure. It needs no email address and
+leaks nothing while the issue is unfixed.
+
+If you cannot use GitHub, email **report@monsterapdf.com** instead.
 
 ### What to include
 
@@ -78,9 +81,8 @@ boundaries are these:
 
 ## Supported versions
 
-No version has been released yet; until then fixes land on `main`. After release,
-the **latest Microsoft Store version** is supported, and Windows updates Store
-apps.
+The **latest Microsoft Store version** is supported. Fixes land on `main` and
+reach you as a Store update, which Windows installs.
 
 ## How this project reduces its own attack surface
 
@@ -97,12 +99,17 @@ Stated so you know where to look, and so the claims are falsifiable:
 - Secrets are encrypted with Windows' own protection via `safeStorage`. If it is
   unavailable the app says so and **refuses to store the key**; there is no
   plaintext fallback.
-- There is no telemetry, and today the app makes no network call on its own. The
-  Store build's update check is built and off until its address is live; it is
-  one request with no query, cookie or body, carrying only the headers the
-  runtime adds itself (its user agent and language among them), and it reads
-  version numbers back. Crash reports are written on your
-  computer and leave it only if you share one.
+- There is no telemetry, and the app makes no network call on its own. The
+  update check it is built with is dormant at launch, because updates come only
+  from the Microsoft Store: while dormant it calls nothing. If it is ever turned
+  on, it is one request with no query, cookie or body, carrying only the headers
+  the runtime adds itself (its user agent and language among them), and it reads
+  version numbers back. Crash reports are written on your computer and leave it
+  only if you share one.
+- Documents are parsed in engine hosts that run as Windows AppContainer
+  processes under a job object, with no network and no file beyond the one they
+  were handed. The external converters (ONLYOFFICE's x2t, Ghostscript and
+  Poppler) are contained the same way.
 - Secret scanning runs on every commit locally and over the full history in CI.
 
 If you find a place where one of those claims is not true, that itself is a
