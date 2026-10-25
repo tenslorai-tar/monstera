@@ -18,10 +18,10 @@ import { type ToUnicode, readToUnicode } from './toUnicode.js';
  * gives every reader, from pdf-lib's tables; any other font that states none answers `null`, and the writer sets the word
  * in another face rather than guess an advance that would move every glyph after it.
  *
- * ## A font with no ToUnicode is read through its encoding where pdf-lib holds its table
+ * ## A font the file does not carry, with no ToUnicode, is read through its encoding where pdf-lib holds its table
  *
- * ISO 32000-1 §9.10.2: the WinAnsi encoding, or Symbol's and ZapfDingbats' own (ADR-0176's correction of 2026-10-25). A
- * font in any other encoding with no ToUnicode has no known characters, as before.
+ * ISO 32000-1 §9.10.2: the WinAnsi encoding, or Symbol's and ZapfDingbats' own (ADR-0176's correction of 2026-10-25). An
+ * embedded font, or one in any other encoding, with no ToUnicode has no known characters, as before.
  */
 
 /** One font resource of a page. */
@@ -231,9 +231,12 @@ function read(resource: string, font: PDFObject): PageFont {
     width = simpleWidths(font, 0.001);
     draws = () => true;
   }
-  // A SIMPLE FONT WITH NO TOUNICODE is read through its encoding, and a standard one with no `/Widths` measured by its AFM.
+  // A SIMPLE FONT THE FILE DOES NOT CARRY, with no ToUnicode, is read through its encoding, and a standard one with no
+  // `/Widths` measured by its AFM. An embedded program may be a subset holding only the glyphs its producer used, so its
+  // encoding promises no glyph: measured in the owner's documents 6 and 8, words written so drew nothing.
   const own = toUnicodeOf(font);
-  const encoded = own === null && subtype !== 'Type3' && descendant === null ? encodedAs(font, nameOf(font.get('BaseFont'))) : null;
+  const carried = descriptor.isDictionary() && ['FontFile', 'FontFile2', 'FontFile3'].some((key) => !descriptor.get(key).isNull());
+  const encoded = own === null && !carried && subtype !== 'Type3' && descendant === null ? encodedAs(font, nameOf(font.get('BaseFont'))) : null;
   if (encoded !== null) {
     const stated = width;
     width = (code) => stated(code) ?? encoded.width(code);

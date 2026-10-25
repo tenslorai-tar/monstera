@@ -115,6 +115,11 @@ describe('pageFonts', () => {
     page.node.setFontDictionary(PDFName.of('F1'), context.register(times));
     page.node.setFontDictionary(PDFName.of('F2'), context.register(mac));
     page.node.setFontDictionary(PDFName.of('F3'), context.register(named));
+    // AN EMBEDDED SUBSET, as a word processor writes one: WinAnsi named, no ToUnicode, a program holding what it used.
+    const program = context.register(context.flateStream('subset'));
+    const descriptor = context.obj({ Type: 'FontDescriptor', FontName: 'ABCDEF+Body', Flags: 32, FontFile2: program });
+    const subset = context.obj({ Type: 'Font', Subtype: 'TrueType', BaseFont: 'ABCDEF+Body', Encoding: 'WinAnsiEncoding', FirstChar: 65, LastChar: 65, Widths: [600], FontDescriptor: context.register(descriptor) });
+    page.node.setFontDictionary(PDFName.of('F4'), context.register(subset));
     page.node.set(PDFName.of('Contents'), context.register(context.flateStream('BT /F1 10 Tf (A) Tj ET')));
     const session = await mupdfWriter.open(await doc.save({ useObjectStreams: false }));
     try {
@@ -130,6 +135,8 @@ describe('pageFonts', () => {
       expect(read('F3')).toStrictEqual({ codes: [65, 233, 128], widths: [0.667, null] });
       // CONTROL: MacRoman is not a table pdf-lib holds, so that font has no known characters and no width, as before.
       expect(read('F2')).toStrictEqual({ codes: null, widths: [null, null] });
+      // CONTROL: an EMBEDDED subset's encoding promises no glyph, so it has no known characters (documents 6 and 8).
+      expect(read('F4')).toStrictEqual({ codes: null, widths: [0.6, null] });
     } finally {
       await mupdfWriter.close(session);
     }
