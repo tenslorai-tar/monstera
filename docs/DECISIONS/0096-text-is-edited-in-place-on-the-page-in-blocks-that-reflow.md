@@ -226,3 +226,30 @@ in document 4; every one on the five pages looked at (4, 8, 9, 13, 35) is a just
 
 **A line with one wide gap stays split**, since no second gap shows it was justified: the conservative direction, which
 is the grouping before this correction.
+
+## Correction, 2026-10-25 — a change of font is a change of the face a person sees: look-alike faces count as one
+
+A block ends at a change of font, size or colour (`settingOf`, `textLines.ts`; the owner's N4 of 2026-10-03), and the
+font was compared by the NAME PDFium answers. A name is not a face, and an edit is what makes the two differ. Measured
+2026-10-25 on the brochure fixture (`scripts/research/brochureFixture.mjs`, page 1): its heading is set in the standard
+Helvetica, which PDFium names `LiberationSans`; replaced by longer words, the letters the page's font cannot draw were
+written in the bundled Arimo that stands in for it, under `QQKGUW+Arimo-Regular-wght400`. The page then read back as two
+blocks, one per line, both 26 pt in one green, and a colour given to the heading afterwards reached one of its lines.
+
+**The key names the face as a person sees it** (`faceSeenAs`, `@monstera/shared`'s `fontNames.ts`, the module that
+already owns what a font's name says):
+
+1. a subset tag says only which subset, so names that differ by it alone are one font — ADR-0173 Decision 4's rule;
+2. the instance suffix this project's writers give a variable face (`-wght400`) names a weight the run's bold already
+   says. The three writers that spelt it by hand now take one `instanceName`, so the rule that strips it reads the
+   spelling that writes it (B3a);
+3. a face the stand-in table pairs with another — Arimo with Arial, Helvetica and Liberation Sans; Tinos; Cousine;
+   Carlito; Caladea — is that family, told apart only by bold and italic. That is the table's own claim, that the two
+   are drawn to one measure; the owner's word for it is *look-alike*, and the table beside it is `LOOKS_LIKE`.
+
+Every other name is compared as it was.
+
+**Rejected: every family folded to its name and weight class.** It would also join `Roboto` to the `Roboto-Regular` an
+installed stand-in is written under, and it would join a light subtitle to a regular line beneath it at the same size
+and colour, which nothing measured asks for. **Stated limit:** a face outside the table whose stand-in's name differs
+from its own beyond the tag and the instance still splits its block.
