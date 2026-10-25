@@ -32,6 +32,7 @@ import {
   withPageRuns,
   withStamp,
   withTargetVersion,
+  type FormPath,
 } from '@monstera/contract';
 import { type DocId, type DocVersion, type Failure, type MessageKey, lineText, paragraphsOfLines } from '@monstera/shared';
 
@@ -4849,19 +4850,6 @@ export function selectTextCommand(deps: {
   };
 }
 
-/**
- * Unpacks a page's blocked-in text so it can be edited — normalize-then-edit,
- * offered by the page's note in Edit text's mode.
- *
- * NO VERSION: a promotion names a page and every form on it, so there is no
- * index for a stale version to point at. The page is read again by itself — the
- * version moves, and the mode reads a moved page's blocks afresh — so the text
- * that was packed is outlined next without a second press.
- */
-export async function promoteTextOnPage(deps: DocumentCommandDeps, docId: DocId, page: number): Promise<boolean> {
-  return applyDocumentCommand(deps, docId, { kind: 'promoteFormObjects', page });
-}
-
 /** One block as `document.textBlocks` answers it: `textBlock.ts`' one definition. */
 export type { TextBlock } from '../textBlock.js';
 
@@ -4999,7 +4987,7 @@ export async function commitTextBlock(
     (formatting.marks?.length ?? 0) === 0 &&
     (formatting.paragraphs?.length ?? 0) === 0 &&
     read.unpacked !== true;
-  return sendBlockEdit(deps, docId, page, onlyPlaced ? { ...read, rewrite: 'operators' } : read, [
+  return sendBlockEdit(deps, docId, page, onlyPlaced ? { ...read, rewrite: 'operators' } : read, block.form ?? null, [
     {
       lines: block.lines.map((line) => line.runs.map((run) => run.index)),
       soft: block.lines.map((line) => line.soft),
@@ -5031,6 +5019,8 @@ async function sendBlockEdit(
   docId: DocId,
   page: number,
   read: BlocksRead,
+  /** The form whose own content holds the blocks, or `null` for the page's (ADR-0269): one stream per command. */
+  form: FormPath | null,
   blocks: Parameters<typeof blockEditOf>[0],
   inserts: PageInsert[] = [],
   /** The undo step a gesture's earlier command produced, joined and moved on (ADR-0200); absent, a step of its own. */
@@ -5051,7 +5041,14 @@ async function sendBlockEdit(
           // THE INDICES NAME THE PAGE AS THE READ SAW IT: unpacked, so the writer unpacks it first (ADR-0232).
           ...(read.unpacked === true ? { unpack: true } : {}),
         }
-      : { kind: BLOCK_EDIT_KIND.operators, page, ...blockEditOf(blocks, inserts), fit: 'reflow', version: read.version },
+      : {
+          kind: BLOCK_EDIT_KIND.operators,
+          page,
+          ...blockEditOf(blocks, inserts),
+          fit: 'reflow',
+          version: read.version,
+          ...(form === null ? {} : { form }),
+        },
     {
       keep: (error) => {
         // A FAILURE THAT CARRIES SOMETHING passes whole, so the editor can name the characters or show the reference.
@@ -5096,10 +5093,12 @@ export function commitReplacement(
   docId: DocId,
   page: number,
   read: BlocksRead,
+  /** The stream the entries' blocks are in (`streamsOf`): the page's own, `null`, or a form's. */
+  form: FormPath | null,
   blocks: Parameters<typeof blockEditOf>[0],
   step: UndoStep,
 ): Promise<BlockCommit> {
-  return sendBlockEdit(deps, docId, page, read, blocks, [], step);
+  return sendBlockEdit(deps, docId, page, read, form, blocks, [], step);
 }
 
 /**
@@ -5113,8 +5112,10 @@ export function commitBlocks(
   page: number,
   blocks: Parameters<typeof blockEditOf>[0],
   read: BlocksRead,
+  /** The stream the blocks are in, which a join or split never leaves (`sameStream`). */
+  form: FormPath | null,
 ): Promise<BlockCommit> {
-  return sendBlockEdit(deps, docId, page, read, blocks);
+  return sendBlockEdit(deps, docId, page, read, form, blocks);
 }
 
 /**
@@ -5132,8 +5133,8 @@ export async function commitPageInsert(
   read: BlocksRead,
 ): Promise<BlockCommit> {
   if (insert.text.trim() === '') return 'unchanged';
-  // NO BLOCK, ONLY A BOX: the encoder's second argument.
-  return sendBlockEdit(deps, docId, page, read, [], [insert]);
+  // NO BLOCK, ONLY A BOX: the encoder's second argument, added to the page's own content.
+  return sendBlockEdit(deps, docId, page, read, null, [], [insert]);
 }
 
 /**

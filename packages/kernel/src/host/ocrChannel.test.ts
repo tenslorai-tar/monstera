@@ -186,6 +186,9 @@ async function joined(ocr: HostOcrReader): Promise<{
       extract: () => {
         throw new Error('a recognition must not build a document');
       },
+      formPages: () => {
+        throw new Error('a recognition must not build a document');
+      },
       applyPdfLib: () => {
         throw new Error('a recognition must not run pdf-lib');
       },

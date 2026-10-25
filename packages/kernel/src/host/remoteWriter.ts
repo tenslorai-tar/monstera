@@ -63,7 +63,7 @@ import {
 export type RemoteMupdfWriter = RegisteredWriter<'mupdf'> &
   Pick<
     RemoteMupdfLifecycle,
-    'close' | 'extract' | 'snapshot' | 'exportFormData' | 'exportAnnotationData' | 'pageImage' | 'stage' | 'word'
+    'close' | 'extract' | 'formPages' | 'snapshot' | 'exportFormData' | 'exportAnnotationData' | 'pageImage' | 'stage' | 'word'
   > & {
     /** pdf-lib, run in this host beside the session (ADR-0121 Decision 3). `hostedPdfLibExecution` takes it. */
     readonly pdfLib: PdfLibHost;
@@ -119,6 +119,7 @@ export function remoteMupdfWriter(
     word,
     close,
     extract,
+    formPages,
     snapshot,
     exportFormData,
     exportAnnotationData,
@@ -131,6 +132,8 @@ export function remoteMupdfWriter(
     word,
     close,
     extract,
+    // A PAGE'S FORMS AS PAGES (ADR-0269), for `extract`'s reason: a document the host builds in the granted area.
+    formPages,
     snapshot,
     exportFormData,
     exportAnnotationData,

@@ -469,8 +469,6 @@ export function remotePdfiumTextRuns(
   readonly unaddressable: number;
   /** The page box the runs are measured in, or `null` (ADR-0249 Decision 2). */
   readonly box: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number } | null;
-  /** Whether *Unpack it* keeps the page, where the host was asked (ADR-0232's correction of 2026-10-24). */
-  readonly unpackable?: boolean | undefined;
 }> {
   return async (image, page, unpack) => {
     const { session, area } = held();

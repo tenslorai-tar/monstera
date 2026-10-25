@@ -26,6 +26,7 @@ import { readFormFields } from '../formFields.js';
 import { readAnnotationWords, readAnnotations } from '../pageAnnotations.js';
 import { findDuplicatePages } from '../pageDuplicates.js';
 import { extractPages } from '../pageExtract.js';
+import { readFormPages } from '../formText.js';
 import { rasterisePageImage } from '../pageImages.js';
 import { snapshotRegion } from '../pageSnapshot.js';
 import { recognisePage } from '../ocrRecognise.js';
@@ -118,6 +119,8 @@ const engineHandlers = createEngineHandlers({
   // RUNS HERE, which is the whole reason `engine/extract` is a channel:
   // `extractPages` reaches MuPDF, and invariant 20 keeps that out of `main`.
   extract: extractPages,
+  // A PAGE'S FORMS AS PAGES (ADR-0269), for `engine/extract`'s reason: it builds a new document with MuPDF.
+  formPages: readFormPages,
   // pdf-lib, RUN HERE beside the session it rewrites (ADR-0121 Decision 3): pure JavaScript, in the process that
   // already holds the document, so `main` neither receives the image nor parses it. LOADED ON THE FIRST pdf-lib
   // command, never at start: a static import charges every MuPDF host pdf-lib's library whether or not the document

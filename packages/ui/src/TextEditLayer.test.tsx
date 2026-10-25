@@ -135,7 +135,6 @@ function mount(overrides: Partial<Parameters<typeof TextEditLayer>[0]> = {}) {
     return Promise.resolve(answer);
   });
   const onLeave = vi.fn();
-  const onPromote = vi.fn();
   const layer = (blocks: PageBlocks) => (
     <Wrapped>
       <TextEditLayer
@@ -143,7 +142,6 @@ function mount(overrides: Partial<Parameters<typeof TextEditLayer>[0]> = {}) {
         geometry={GEOMETRY}
         onCommit={onCommit}
         onLeave={onLeave}
-        onPromote={onPromote}
         page={2}
         paperAt={() => 'rgb(250, 250, 250)'}
         runFonts={() => Promise.resolve(NO_RUN_FONTS)}
@@ -158,7 +156,6 @@ function mount(overrides: Partial<Parameters<typeof TextEditLayer>[0]> = {}) {
     view,
     commits,
     onLeave,
-    onPromote,
     answerWith: (next: BlockCommit) => {
       answer = next;
     },
@@ -757,7 +754,6 @@ describe('Edit text on the page (ADR-0096)', () => {
               geometry={GEOMETRY}
               onCommit={onCommit}
               onLeave={vi.fn()}
-              onPromote={vi.fn()}
               page={2}
               paperAt={() => undefined}
               runFonts={() => Promise.resolve(NO_RUN_FONTS)}
@@ -1481,23 +1477,17 @@ describe('Edit text on the page (ADR-0096)', () => {
     expect(onLeave).toHaveBeenCalledTimes(1);
   });
 
-  it('a page with NO editable text says so, and one with blocked-in text offers to unpack it WHERE THAT KEEPS THE PAGE', () => {
+  it('a page with NO editable text says so, and text inside a form is neither a note nor a button (ADR-0269)', () => {
     const empty = mount({ blocks: { ...BLOCKS, blocks: [] } });
     expect(empty.view.container.textContent).toContain('This page has no text that can be edited.');
     empty.view.unmount();
 
-    // THE READ SAID UNPACKING KEEPS THE PAGE (ADR-0232's correction of 2026-10-24): the button is offered.
-    const packed = mount({ blocks: { ...BLOCKS, unaddressable: 36, unpackable: true } });
-    fireEvent.click(packed.view.getByRole('button', { name: /Unpack it/u }));
-    expect(packed.onPromote).toHaveBeenCalledTimes(1);
-    // CONTROL: a page with blocks and nothing packed says neither sentence.
+    // TEXT INSIDE A FORM IS OFFERED AS BLOCKS (Decision 5): no sentence about it and nothing to press.
+    const packed = mount({ blocks: { ...BLOCKS, unaddressable: 36 } });
+    expect(packed.view.queryByRole('button', { name: /Unpack/u })).toBeNull();
+    expect(packed.view.container.textContent).not.toContain('can’t be edited here');
+    // CONTROL: the page's blocks are there, so the empty page's sentence is not said either.
     expect(packed.view.container.textContent).not.toContain('no text that can be edited');
-    packed.view.unmount();
-
-    // AND WHERE IT WOULD NOT (it moves other text, or takes nothing out): the note says so plainly, and NO button.
-    const kept = mount({ blocks: { ...BLOCKS, unaddressable: 36 } });
-    expect(kept.view.queryByRole('button', { name: /Unpack it/u })).toBeNull();
-    expect(kept.view.container.textContent).toContain('held inside a block that can’t be edited here');
   });
 
   it('a page with no text offers to RECOGNISE it, and only then: a page with blocks does not (ADR-0181 Decision 9)', () => {

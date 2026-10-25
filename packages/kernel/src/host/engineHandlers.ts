@@ -6,6 +6,7 @@ import type {
   FormDataImportFormat,
   FormFieldHandle,
   FormFieldRead,
+  FormPath,
   Handlers,
   PageAdjustment,
   PageAdjustmentOutcome,
@@ -266,6 +267,13 @@ export type HostDuplicatesReader = (
  * reaches MuPDF, which invariant 20 keeps out of `main` (ADR-0026).
  */
 export type HostExtract = (session: MupdfSession, pages: PageSet) => Promise<ByteImage>;
+
+/**
+ * One page's form placements that show text, as a document of one page per placement and each placement's path
+ * ([ADR-0269](../../../../docs/DECISIONS/0269-text-inside-a-form-is-edited-in-the-forms-own-content.md)): `formText.ts`'
+ * `readFormPages` in the host, injected for {@link HostExtract}'s reason.
+ */
+export type HostFormPages = (session: MupdfSession, page: number) => Promise<{ readonly bytes: Uint8Array; readonly paths: readonly FormPath[] }>;
 
 /**
  * A region of one page, as PNG bytes **and the frame they sit in**.
@@ -569,6 +577,8 @@ export interface EngineHandlerParts {
   readonly formFields: HostFormFieldsReader;
   readonly duplicates: HostDuplicatesReader;
   readonly extract: HostExtract;
+  /** How this process reads a page's form placements as pages (ADR-0269). `engine/form-pages`. */
+  readonly formPages: HostFormPages;
   /**
    * How this process runs a pdf-lib command on an image. `applyPdfLibImage` — `engine/applyPdfLib`
    * (ADR-0121 Decision 3).
@@ -656,6 +666,7 @@ export function createEngineHandlers({
   formFields,
   duplicates,
   extract,
+  formPages,
   applyPdfLib,
   protectedWriting,
   protectedImage,
@@ -856,6 +867,20 @@ export function createEngineHandlers({
         // document cannot satisfy comes back as a distinguishable code so the
         // supervisor declines to count it as a host death.
         return failed('extract-failed', error);
+      }
+    },
+
+    'engine/form-pages': async ({ session, page, into }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      try {
+        // `engine/extract`'s route: a new document, built where MuPDF is, written into the granted output directory.
+        const read = await formPages(held.session, page);
+        if (read.paths.length === 0) return { ok: true, value: { bytes: 0, paths: [] } };
+        const written = await files.writeOutput(held.outputDirectory, into, read.bytes);
+        return { ok: true, value: { bytes: written, paths: read.paths } };
+      } catch (error) {
+        return failed('form-pages-failed', error);
       }
     },
 

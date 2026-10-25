@@ -53,6 +53,8 @@ const LIVE_SESSION = ['engine/serialise'] as const;
 /** MuPDF's document model, which is the half a second engine owes none of. */
 const MUPDF_READS = [
   'engine/extract',
+  // A PAGE'S FORMS AS PAGES (ADR-0269), `engine/extract`'s shape: a document MuPDF builds and the host writes out.
+  'engine/form-pages',
   // THE PROPERTIES PANE'S READ (ADR-0193): MuPDF's own, for the field list's reason.
   'engine/field-properties',
   // ONE PUSH BUTTON'S ACTIONS (ADR-0259), the same reading's.

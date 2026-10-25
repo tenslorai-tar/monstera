@@ -198,6 +198,9 @@ async function joined(): Promise<{
       extract: () => {
         throw new Error('unused');
       },
+      formPages: () => {
+        throw new Error('unused');
+      },
       applyPdfLib: () => {
         throw new Error('unused');
       },

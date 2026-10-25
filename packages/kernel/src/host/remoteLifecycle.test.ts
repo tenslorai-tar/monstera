@@ -18,6 +18,7 @@ import { localMupdfExecution } from '../commandSpecs.js';
 import { applySetDocumentProtection } from '../documentProtection.js';
 import * as mupdf from '../mupdfRaw.js';
 import { extractPages } from '../pageExtract.js';
+import { readFormPages } from '../formText.js';
 import { applyPdfLibImage } from '../pdfLibWriter.js';
 import { prepareSignature } from '../signaturePlaceholder.js';
 import {
@@ -308,6 +309,7 @@ function joined(
       // same four steps `serialise` takes, and a stub would make the case about
       // the stub.
       extract: extractPages,
+      formPages: readFormPages,
       // THE REAL pdf-lib RUN, for the same reason (ADR-0121 Decision 3): a hosted apply is this trip with a spec in it.
       applyPdfLib: applyPdfLibImage,
       // AND THE SIGNATURE'S PLACEHOLDER, for pdf-lib's reason (ADR-0148).
@@ -756,6 +758,9 @@ describe('remoteMupdfLifecycle', () => {
           throw new Error('the byte-size case must not export a Word file');
         },
         extract: () => {
+          throw new Error('the byte-size case must not build a document');
+        },
+        formPages: () => {
           throw new Error('the byte-size case must not build a document');
         },
         applyPdfLib: () => {

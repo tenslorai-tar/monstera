@@ -94,8 +94,6 @@ export type HostTextRunsReader = (
   readonly unaddressable: number;
   /** The page box the runs are measured in, or `null`. `PageText`. */
   readonly box: PageText['box'];
-  /** Whether *Unpack it* keeps the page, where it was asked (ADR-0232's correction of 2026-10-24). */
-  readonly unpackable?: boolean;
 }>;
 
 /**
@@ -446,7 +444,6 @@ export function createPdfiumHandlers({
             truncated: found.truncated || truncated,
             unaddressable: found.unaddressable,
             box: found.box,
-            ...(found.unpackable === undefined ? {} : { unpackable: found.unpackable }),
           },
         };
       } catch {

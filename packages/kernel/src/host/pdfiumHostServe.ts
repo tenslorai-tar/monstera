@@ -10,7 +10,6 @@ import {
   renderPageBitmapWithoutText,
   runFonts,
   textRuns,
-  unpackKeepsThePage,
   unpackedIfAsked,
 } from '../pdfium.js';
 import { bindEditFaces } from '../editFaces.js';
@@ -78,11 +77,7 @@ const handlers = createPdfiumHandlers({
       const { kept, truncated } = boundedToAnswer(found.runs);
       // `unaddressable` FORWARDED UNCLIPPED: it counts characters the walk could not place, which the run bound has
       // nothing to do with.
-      const base = { runs: kept, truncated, unaddressable: found.unaddressable, box: found.box };
-      // WHETHER *Unpack it* KEEPS THE PAGE (ADR-0232's correction of 2026-10-24), tried on this read's own copy, and only
-      // for a plain read of a page with text in forms: every other page has no button to offer.
-      if (unpack || found.unaddressable === 0) return base;
-      return { ...base, unpackable: await unpackKeepsThePage(image, page) };
+      return { runs: kept, truncated, unaddressable: found.unaddressable, box: found.box };
     }),
   // THE BITMAP'S OWN BYTES, unconverted. `renderPageBitmap` answers BGRA
   // because that is what PDFium produces and what main's encoder takes; a

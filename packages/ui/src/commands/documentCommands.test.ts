@@ -90,7 +90,6 @@ import {
   NO_RUN_FONTS,
   readRunFonts,
   editTextCommand,
-  promoteTextOnPage,
   readPageContentBoxes,
   importFormDataFdfCommand,
   importFormDataJsonCommand,
@@ -2032,6 +2031,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         { lines: [[4]], soft: [false], text: 'Below.', place: { move: { x: 0, y: -14 } } },
       ],
       { version: asDocVersion(7), rewrite: 'objects' },
+      null,
     );
     expect(outcome).toBe('written');
     expect(sent).toHaveLength(1);
@@ -2226,6 +2226,23 @@ describe('delete pages — the mutation-dialog gate', () => {
     expect(Object.hasOwn(sent[1] as object, 'pushes')).toBe(false);
   });
 
+  it('A BLOCK INSIDE A FORM is sent with its form, so the writer edits that form’s own stream (ADR-0269)', async () => {
+    // THE UI HALF OF THE WIRED PAIR for text inside a form. Its kernel half is `formText.test.ts`, which edits a word in a
+    // form's stream through MuPDF and leaves the page's content byte for byte. CONTROL: the page's own block sends none.
+    const sent: unknown[] = [];
+    const client = createClient(channels, (_id, params) => {
+      sent.push((params as { command: unknown }).command);
+      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
+    });
+    const deps = { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, signatures };
+    const form = [{ name: 'Fm1', occurrence: 0 }, { name: 'Fm2', occurrence: 1 }];
+    const inForm: TextBlock = { ...BLOCK, form };
+    await commitTextBlock(deps, DOC, 3, inForm, 'The quick brown dog jumps over', readOf('operators', false));
+    expect(sent[0]).toMatchObject({ kind: 'editTextOperators', form });
+    await commitTextBlock(deps, DOC, 3, BLOCK, 'The quick brown dog jumps over', readOf('operators', false));
+    expect(Object.hasOwn(sent[1] as object, 'form')).toBe(false);
+  });
+
   it('A BLOCK FROM AN UNPACKED READ is sent with unpack, so the writer unpacks the page first (ADR-0232)', async () => {
     // THE UI HALF OF THE WIRED PAIR for B1.26. Its kernel half is `proof:pdfiumcommand`'s unpack cases, which edit packed
     // text through the real library with this flag and refuse the same indices without it. The case above is its control:
@@ -2388,21 +2405,6 @@ describe('delete pages — the mutation-dialog gate', () => {
     expect(asked).toStrictEqual([]);
   });
 
-  it('UNPACK sends the promotion for the PAGE the note is on, with no version', async () => {
-    // THE UI HALF OF NORMALIZE-THEN-EDIT's pair, on the page now rather than in a
-    // dialog. Its kernel half is `proof:pdfiumcommand`'s promotion cases. The page
-    // is 3 and zero-based, and no conversion happens here.
-    const sent: unknown[] = [];
-    const client = createClient(channels, (id, params) => {
-      sent.push({ id, params });
-      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
-    });
-    await promoteTextOnPage({ client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, signatures }, DOC, 3);
-    expect(sent).toStrictEqual([
-      { id: 'document.execute', params: { docId: DOC, command: { kind: 'promoteFormObjects', page: 3 } } },
-    ]);
-  });
-
   it('EVERY OTHER refusal is the editor’s to say too, so the words stay: no dialog closes over them (ADR-0169)', async () => {
     // THE DEFECT: any refusal but the font's opened the problem dialog and closed the editor, and the words a person
     // typed were gone. Swallowed is not the fix either: the refusal comes back whole, for the editor to say.
@@ -2438,7 +2440,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     const client = createClient(channels, () =>
       Promise.resolve(err({ code: 'edit-refused' as const, detail: { step: 'generate' as const, engineError: 6 } })),
     );
-    const applied = await promoteTextOnPage(
+    const applied = await applyDocumentCommand(
       {
         client,
         stamp,
@@ -2450,7 +2452,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         },
       },
       DOC,
-      3,
+      { kind: 'promoteFormObjects', page: 3 },
     );
     expect(applied).toBe(false);
     expect(asked).toStrictEqual(['dialog.command-problem']);

@@ -1,4 +1,4 @@
-import { type ContractClient, blocksReplaced, wordsOf } from '@monstera/contract';
+import { type ContractClient, blocksReplaced, streamsOf, wordsOf } from '@monstera/contract';
 import { type DocId, type TextMatchOptions, compileQuery, lineText, paragraphsOfLines } from '@monstera/shared';
 
 import type { CommandProblem } from '../dialogs/problemMessages.js';
@@ -64,12 +64,17 @@ export async function replaceInDocument(
     }
     const read = await readPageBlocks(deps.client, docId, page);
     if (!read.ok) return { kind: 'refused', pages: written, problem: read.error };
-    const entries = blocksReplaced(read.value.blocks, compiled.value.matchesIn, replace);
-    if (entries.length === 0) continue;
-    const outcome = await commitReplacement(deps, docId, page, read.value, entries, step);
-    if (outcome === 'written') written += 1;
-    else if (outcome === 'held') return { kind: 'held', pages: written };
-    else if (outcome !== 'unchanged') return { kind: 'refused', pages: written, problem: outcome.refused };
+    // ONE COMMAND PER STREAM (ADR-0269): the page's own blocks, then each form's, all in the same undo step.
+    let changed = false;
+    for (const stream of streamsOf(read.value.blocks)) {
+      const entries = blocksReplaced(stream.blocks, compiled.value.matchesIn, replace);
+      if (entries.length === 0) continue;
+      const outcome = await commitReplacement(deps, docId, page, read.value, stream.form, entries, step);
+      if (outcome === 'written') changed = true;
+      else if (outcome === 'held') return { kind: 'held', pages: written };
+      else if (outcome !== 'unchanged') return { kind: 'refused', pages: written, problem: outcome.refused };
+    }
+    if (changed) written += 1;
   }
   return { kind: 'replaced', pages: written };
 }
@@ -117,9 +122,12 @@ export async function replaceWordAt(
     }
   });
   if (nearest === -1) return { kind: 'not-found' };
-  const entries = blocksReplaced(read.value.blocks, compiled.value.matchesIn, replacement, { block: blockAt, occurrence: nearest });
+  // THE BLOCK'S OWN STREAM (ADR-0269), and the block's place among that stream's blocks.
+  const stream = streamsOf(read.value.blocks).find((each) => each.blocks.includes(block));
+  if (stream === undefined) return { kind: 'not-found' };
+  const entries = blocksReplaced(stream.blocks, compiled.value.matchesIn, replacement, { block: stream.blocks.indexOf(block), occurrence: nearest });
   if (entries.length === 0) return { kind: 'not-found' };
-  const outcome = await commitReplacement(deps, docId, page, read.value, entries, { version: undefined });
+  const outcome = await commitReplacement(deps, docId, page, read.value, stream.form, entries, { version: undefined });
   if (outcome === 'written') return { kind: 'replaced', pages: 1 };
   if (outcome === 'held') return { kind: 'held', pages: 0 };
   if (outcome === 'unchanged') return { kind: 'replaced', pages: 0 };

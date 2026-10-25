@@ -109,6 +109,7 @@ function build(protectedWriting: Protection, protectedImage?: ProtectedImage) {
       textFaces: refuse('read the fonts’ faces'),
       duplicates: refuse('look for duplicates'),
       extract: refuse('build a document'),
+      formPages: refuse('read a page’s forms'),
       applyPdfLib: (image) => {
         trace.appliedTo.push(image);
         return Promise.resolve(RESULT);

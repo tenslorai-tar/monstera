@@ -1,4 +1,4 @@
-import type { CommandKind, CommandOfKind, OutlineEntry } from '@monstera/contract';
+import type { CommandKind, CommandOfKind, FormPath, OutlineEntry } from '@monstera/contract';
 import type { Brand, HeldPassword } from '@monstera/shared';
 
 import type { CaptureResult, CommandPrior } from './commandLog.js';
@@ -792,7 +792,15 @@ export interface PreReadKinds {
    * **The first pre-read handed to a MuPDF writer**, and the reason it is one: the join reads PDFium's glyph boxes, and a
    * host holding MuPDF has no PDFium to read them with. Per page, as `ocr` is, because a run is a property of a page.
    */
-  readonly pageRuns: { readonly needs: { readonly page: number }; readonly value: PageRuns };
+  readonly pageRuns: {
+    /**
+     * `form`, REQUIRED and `null` for the page's own content: the placement whose page the runs are read from
+     * ([ADR-0269](../../../docs/DECISIONS/0269-text-inside-a-form-is-edited-in-the-forms-own-content.md)), so a reader
+     * that dropped it is a compile error rather than a form's edit read against the page's runs.
+     */
+    readonly needs: { readonly page: number; readonly form: FormPath | null };
+    readonly value: PageRuns;
+  };
 }
 
 /**

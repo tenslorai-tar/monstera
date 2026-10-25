@@ -115,6 +115,8 @@ import {
   signaturePlacementSchema,
   drawnBoxesShape,
   embeddableImageTypeSchema,
+  formPathSchema,
+  MAX_FORM_PLACEMENTS,
 } from '@monstera/contract/host';
 import { z } from 'zod';
 
@@ -2359,6 +2361,31 @@ export const engineChannels = {
     // nothing" — otherwise the same empty buffer.
     z.object({ bytes: z.number().int().nonnegative() }).strict(),
     ['no-such-session', 'extract-failed'],
+  ),
+
+  /**
+   * One page's form placements that show text, read as pages of their own
+   * ([ADR-0269](../../../../docs/DECISIONS/0269-text-inside-a-form-is-edited-in-the-forms-own-content.md) Decision 1):
+   * a NEW document of one page per placement, written into the output directory as `engine/extract`'s is, and each
+   * placement's path, in that document's page order. A page with none writes nothing and answers 0 bytes and no path.
+   */
+  'engine/form-pages': channel(
+    'Writes one page’s form placements that show text, each read as a page, into the output directory.',
+    z
+      .object({
+        session: sessionSchema,
+        /** Zero-based index, as `commands.ts` declares them. */
+        page: z.number().int().nonnegative(),
+        into: outputNameSchema,
+      })
+      .strict(),
+    z
+      .object({
+        bytes: z.number().int().nonnegative(),
+        paths: z.array(formPathSchema).max(MAX_FORM_PLACEMENTS).readonly(),
+      })
+      .strict(),
+    ['no-such-session', 'form-pages-failed'],
   ),
 
   /**

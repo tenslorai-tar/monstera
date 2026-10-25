@@ -223,6 +223,9 @@ async function joined(
       extract: () => {
         throw new Error('a field read must not build a document');
       },
+      formPages: () => {
+        throw new Error('a field read must not build a document');
+      },
       applyPdfLib: () => {
         throw new Error('a field read must not run pdf-lib');
       },

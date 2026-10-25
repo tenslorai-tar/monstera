@@ -1,5 +1,5 @@
 import { useLingui } from '@lingui/react';
-import type { BlockFormatting, EditedBlock, PageInsert, WindowEditAction } from '@monstera/contract';
+import type { BlockFormatting, EditedBlock, FormPath, PageInsert, WindowEditAction } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 import {
   type DocVersion,
@@ -35,7 +35,6 @@ import {
   TEXT_EDIT_HELD,
   TEXT_EDIT_NONE,
   TEXT_EDIT_PAST_PAGE,
-  TEXT_EDIT_PROMOTE,
   TEXT_EDIT_RECOGNISE,
   TEXT_EDIT_REFUSED_ESC_HINT,
   TEXT_EDIT_REFUSED_HINT,
@@ -45,8 +44,6 @@ import {
   TEXT_EDIT_VERTICAL,
   TEXT_EDIT_TRUNCATED,
   TEXT_EDIT_COVERS,
-  TEXT_EDIT_UNADDRESSABLE,
-  TEXT_EDIT_PACKED,
   TEXT_EDIT_UNREADABLE,
   TEXT_ADD_SURFACE,
   TEXT_HANDLE_MOVE,
@@ -110,8 +107,6 @@ export interface PageBlocks extends BlocksRead {
   /** `rotated` by kind, which the note names (ADR-0181 Decision 7). */
   readonly angled: { readonly turned: number; readonly vertical: number; readonly slanted: number; readonly mirrored: number };
   readonly unaddressable: number;
-  /** *Unpack it* keeps this page, so its button is offered (ADR-0232's correction of 2026-10-24); absent, it is not. */
-  readonly unpackable?: true;
 }
 
 export interface TextEditLayerProps {
@@ -134,7 +129,7 @@ export interface TextEditLayerProps {
   /** The spelling checker's answers for the editor's right-click menu. */
   readonly spell?: EditorSpelling;
   /** Writes blocks joined or split in one command (ADR-0180 Decision 7), at the version the blocks were read at. */
-  readonly onRestructure?: (edits: EditedBlock[], read: BlocksRead, kept?: boolean) => Promise<BlockCommit>;
+  readonly onRestructure?: (edits: EditedBlock[], read: BlocksRead, form: FormPath | null, kept?: boolean) => Promise<BlockCommit>;
   /**
    * The family each page font name stands for, for a join to carry the lower block's (the owner's decision of 2026-10-18
    * on VVVVVVV-18). Absent, a join carries no family, as before.
@@ -147,8 +142,6 @@ export interface TextEditLayerProps {
   readonly runFonts: (block: TextBlock, read: BlocksRead) => Promise<RunFonts>;
   /** The page's pictures and drawings, for the note that a written block now runs over one (B1.6); absent reads none. */
   readonly objects?: () => Promise<{ readonly version: DocVersion; readonly boxes: readonly TextBlock['box'][] } | undefined>;
-  /** Unpacks the page's blocked-in text so it can be edited. */
-  readonly onPromote: () => void;
   /** Recognises a page that has no text, so a scan's words can be edited (ADR-0181 Decision 9); absent offers nothing. */
   readonly onRecognise?: () => void;
   /** Whether the page's own note already says it is a picture and makes the offer to recognise it (`PageList`, W7). */
@@ -474,7 +467,6 @@ export function TextEditLayer({
   onCommit,
   runFonts,
   objects,
-  onPromote,
   onRecognise,
   pictureNoted = false,
   onLeave,
@@ -678,22 +670,7 @@ export function TextEditLayer({
     if (angled.vertical > 0) notes.push(<p key="vertical">{_(TEXT_EDIT_VERTICAL)}</p>);
     if (angled.slanted > 0) notes.push(<p key="slanted">{_(TEXT_EDIT_SLANTED)}</p>);
     if (angled.mirrored > 0) notes.push(<p key="mirrored">{_(TEXT_EDIT_MIRRORED)}</p>);
-    if (blocks.unaddressable > 0) {
-      // THE BUTTON ONLY WHERE IT KEEPS THE PAGE (ADR-0232's correction of 2026-10-24): where unpacking would move other
-      // text or take nothing out, the note says plainly that the text cannot be edited here, and offers nothing.
-      notes.push(
-        blocks.unpackable === true ? (
-          <p key="unaddressable">
-            {_(TEXT_EDIT_UNADDRESSABLE)}{' '}
-            <button className="m-text-edit__promote" onClick={onPromote} type="button">
-              {_(TEXT_EDIT_PROMOTE)}
-            </button>
-          </p>
-        ) : (
-          <p key="unaddressable">{_(TEXT_EDIT_PACKED)}</p>
-        ),
-      );
-    }
+    // NO NOTE AND NO BUTTON FOR TEXT INSIDE A FORM (ADR-0269 Decision 5): it is offered as blocks, edited in the form.
   }
 
   return (
@@ -757,7 +734,8 @@ export function TextEditLayer({
                         const below = blocks.blocks[index];
                         return below === undefined ? [] : [below];
                       }),
-                      apply: (edits, kept) => onRestructure(edits, blocks, kept),
+                      // THE OPENED BLOCK'S STREAM, which its neighbours share (`neighbourOf`): one command, one stream.
+                      apply: (edits, kept) => onRestructure(edits, blocks, block.form ?? null, kept),
                       families: familiesOf,
                     }
               }
@@ -1025,7 +1003,6 @@ export interface TextEditing {
   ) => Promise<BlockCommit>;
   /** The fonts one block's runs are drawn in, as the host rebuilt them, from the read that named the block (ADR-0175, ADR-0232). */
   readonly runFonts: (page: number, block: TextBlock, read: BlocksRead) => Promise<RunFonts>;
-  readonly onPromote: (page: number) => void;
   /** Recognises a page that has no text (the one `document.ocr` command), so a scan's words can be edited. */
   readonly onRecognise: (page: number) => void;
   readonly onLeave: () => void;
@@ -1040,7 +1017,7 @@ export interface TextEditing {
   /** The spelling checker's answers for the editor's right-click menu. */
   readonly spell: EditorSpelling;
   /** Writes blocks joined or split, in one command; `kept` where a join set words in the upper block's family. */
-  readonly onRestructure: (page: number, edits: EditedBlock[], read: BlocksRead, kept?: boolean) => Promise<BlockCommit>;
+  readonly onRestructure: (page: number, edits: EditedBlock[], read: BlocksRead, form: FormPath | null, kept?: boolean) => Promise<BlockCommit>;
   /** The family each page font name stands for (`listedFamiliesFor`), for a join to carry the lower block's. */
   readonly familiesOf?: () => Promise<(font: string) => string | undefined>;
   /**
@@ -1125,14 +1102,11 @@ export function TextEditPage({
       onAdded={editing.onAdded}
       native={editing.native}
       spell={editing.spell}
-      onRestructure={(edits, read, kept) => editing.onRestructure(page, edits, read, kept)}
+      onRestructure={(edits, read, form, kept) => editing.onRestructure(page, edits, read, form, kept)}
       {...(editing.familiesOf === undefined ? {} : { familiesOf: editing.familiesOf })}
       onInsert={(insert, read) => editing.onInsert(page, insert, read)}
       runFonts={(block, read) => editing.runFonts(page, block, read)}
       objects={pageObjects}
-      onPromote={() => {
-        editing.onPromote(page);
-      }}
       onRecognise={() => {
         editing.onRecognise(page);
       }}

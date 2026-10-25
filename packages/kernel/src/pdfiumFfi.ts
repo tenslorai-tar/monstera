@@ -5798,46 +5798,6 @@ export async function onImage<T>(image: ImageSession, work: (session: PdfiumSess
   }
 }
 
-/** Device pixels per point a page is drawn at to tell whether Unpack it moves anything: 144 dpi, as `proof:edittext`. */
-const UNPACK_CHECK_SCALE = 2;
-
-/**
- * Whether *Unpack it* on `page` would move text out of its forms and leave the page drawn exactly as it was — the owner's
- * rule of 2026-10-24: *offer it only where it promotes the text without changing anything else on the page*. Tried on
- * this read's own copy of the document, which nothing saves: the page drawn, its forms promoted as the command promotes
- * them, the result saved and opened again, and the page drawn again. True only where fewer characters are held in forms
- * than before AND the two drawings are the same in every pixel.
- *
- * Measured before it was built (2026-10-24, the scratch `unpackOnly.mjs`): on the generated brochure a promotion moved
- * 121 of 576 characters 0.3 to 0.9 pt (the page's rewrite drops the gaps a `TJ` writes) and changed 12,574 pixels; on
- * the owner's documents 3 and 6 it changed nothing, the text staying in its forms. Both are a button that does no good,
- * and both answer false here.
- */
-export async function unpackKeepsThePage(image: ImageSession, page: number): Promise<boolean> {
-  return onImage(image, async (session) => {
-    const size = await promised(() =>
-      onPage(session, page, (handle) => {
-        const bindings = api();
-        return {
-          width: Math.max(1, Math.round(numberFrom(bindings.pageWidth(handle), 'FPDF_GetPageWidthF') * UNPACK_CHECK_SCALE)),
-          height: Math.max(1, Math.round(numberFrom(bindings.pageHeight(handle), 'FPDF_GetPageHeightF') * UNPACK_CHECK_SCALE)),
-        };
-      }),
-    );
-    const before = await renderPageBitmap(session, page, size.width, size.height);
-    const packed = (await textRuns(session, page)).unaddressable;
-    if ((await promoteFormObjects(session, page)) === 0) return false;
-    // THE SAVE READS ITSELF BACK (ADR-0169), and a promotion its read-back refuses is one the command would refuse too.
-    const saved = await pdfiumWriter.serialise(session).catch(() => null);
-    if (saved === null) return false;
-    return onImage({ bytes: saved, opensWith: image.opensWith }, async (again) => {
-      if ((await textRuns(again, page)).unaddressable >= packed) return false;
-      const after = await renderPageBitmap(again, page, size.width, size.height);
-      return after.width === before.width && after.height === before.height && after.bgra.every((value, at) => value === before.bgra[at]);
-    });
-  });
-}
-
 /**
  * The second adapter behind the engine seam.
  *

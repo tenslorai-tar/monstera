@@ -733,7 +733,6 @@ describe('PageList', () => {
         }),
       onCommit: () => Promise.resolve('unchanged'),
       runFonts: () => Promise.resolve(NO_RUN_FONTS),
-      onPromote: vi.fn(),
       onRecognise,
       onLeave: vi.fn(),
       adding: false,

@@ -1,4 +1,4 @@
-import type { BlockMark, EditedBlock } from '@monstera/contract';
+import { type BlockMark, type EditedBlock, sameStream } from '@monstera/contract';
 import { joinAfterLine, lineText, normaliseFamily, paragraphsOfLines } from '@monstera/shared';
 
 import type { TextBlock } from './textBlock.js';
@@ -166,7 +166,8 @@ export function neighbourOf(blocks: readonly TextBlock[], at: number, side: 'abo
   const reach = 4 * own.style.size;
   let best: { index: number; gap: number } | undefined;
   for (const [index, other] of blocks.entries()) {
-    if (index === at) continue;
+    // NOT ACROSS STREAMS (ADR-0269): a block in a form and one on the page are written by two commands, never joined.
+    if (index === at || !sameStream(own, other)) continue;
     const across = Math.min(own.box.x1, other.box.x1) - Math.max(own.box.x0, other.box.x0);
     if (across < 0.5 * Math.min(own.box.x1 - own.box.x0, other.box.x1 - other.box.x0)) continue;
     // PDF y RUNS UP: the block above has the larger y, so the gap is this block's top to that one's bottom.

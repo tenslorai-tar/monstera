@@ -40,7 +40,9 @@ import {
   createClient,
   defaultModel,
   readsUnpacked,
+  sameFormPath,
   storedSetting,
+  type FormPath,
   type TextRewrite,
 } from '@monstera/contract';
 import {
@@ -79,6 +81,7 @@ import {
   type HostOcrReader,
   recogniseThroughAzure,
   type HostExtract,
+  type HostFormPages,
   type HostSnapshot,
   type HostAnnotationsReader,
   type HostAnnotationRecordsReader,
@@ -113,7 +116,9 @@ import {
   type PdfiumArea,
   type PdfiumInputKeeper,
   type PdfiumTransfer,
+  type PdfiumReadImage,
   type WrittenImage,
+  EditRefusedError,
   type ProbeTarget,
   type RegisteredWriter,
   type RemoteMupdfWriter,
@@ -1262,6 +1267,21 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
   // serialise only when it does not. With the key the document opens with (ADR-0171's addendum): a document opened with
   // its password is kept, and serialises, in its own encrypted form. Every PDFium read below takes this, so a read of a current document is a file copy,
   // never a whole-document save. Asked when the read writes its input, which is inside the document's lane.
+  /**
+   * A page's form placements that show text, each read as a page (ADR-0269): the document the MuPDF host builds of them,
+   * as a read image PDFium is handed, and each placement's path in its page order. MuPDF saves it unencrypted, so it
+   * opens with no key whatever the document's own.
+   */
+  const formPagesOf = async (
+    docId: DocId,
+    sessions: DocumentSessions,
+    page: number,
+  ): Promise<{ readonly image: PdfiumReadImage; readonly paths: readonly FormPath[] }> => {
+    const session = sessions.mupdf;
+    if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+    const { bytes, paths } = await engineHost.formPages(session, page);
+    return { image: { bytes, opensWith: undefined }, paths };
+  };
   const pdfiumReadImage = (docId: DocId, sessions: DocumentSessions): WrittenImage => ({
     opensWith: engine.opensWith(docId),
     writeInto: async (destination) => {
@@ -1695,23 +1715,18 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       // cannot be placed along an axis the page is not set on, and a block
       // mixing upright and rotated runs would be outlined as a box around
       // neither.
-      const upright = found.runs.filter((run) => isEditedInPlace(run.style));
       // COUNTED BY KIND (ADR-0181 Decision 7), from the one classification the read makes, so the editor names which text
-      // is not its to edit and `rotated` stays the total it always was.
+      // is not its to edit and `rotated` stays the total it always was. The page's runs and every form placement's.
       const counts = new Map<string, number>();
-      for (const run of found.runs) {
-        if (!isEditedInPlace(run.style)) counts.set(run.style.orientation, (counts.get(run.style.orientation) ?? 0) + run.text.length);
-      }
-      const angled = {
-        turned: counts.get('turned') ?? 0,
-        vertical: counts.get('vertical') ?? 0,
-        slanted: counts.get('slanted') ?? 0,
-        mirrored: counts.get('mirrored') ?? 0,
-      };
-      const rotated = angled.turned + angled.vertical + angled.slanted + angled.mirrored;
-      // EACH RUN'S RISE FROM ITS LINE (the owner's N14): grouped with the page's baseline, then sent as the offset from
-      // the line's (`withRises`), which is what the writer keeps and what the editor draws a superscript at.
-      const grouped = withRises(
+      // ONE GROUPING for the page's runs and each form placement's (ADR-0269), so a form's text is grouped as a page's is.
+      const blocksOf = (runs: typeof found.runs) => {
+        for (const run of runs) {
+          if (!isEditedInPlace(run.style)) counts.set(run.style.orientation, (counts.get(run.style.orientation) ?? 0) + run.text.length);
+        }
+        const upright = runs.filter((run) => isEditedInPlace(run.style));
+        // EACH RUN'S RISE FROM ITS LINE (the owner's N14): grouped with the page's baseline, then sent as the offset from
+        // the line's (`withRises`), which is what the writer keeps and what the editor draws a superscript at.
+        return withRises(
           groupIntoBlocks(
             upright.map((run) => ({
               ...blockableOf(run),
@@ -1738,6 +1753,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
           ({ baseline: _baseline, ...style }, rise) => (rise === 0 ? style : { ...style, rise }),
           ({ baseline: _baseline, ...style }) => style,
         );
+      };
+      const grouped = blocksOf(found.runs);
       // WHAT EACH BLOCK PUSHES WHEN IT GROWS (ADR-0249 Decision 2), decided here beside the grouping and nowhere else: the
       // column below it and the room to the footer or the bottom margin, measured against the page box the runs were read
       // in, and nothing on a page with no box or one read in part (`pushesOfPage`).
@@ -1745,8 +1762,32 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         grouped.map((block) => block.box),
         found,
       );
+      // TEXT INSIDE A FORM (ADR-0269 Decision 1): each placement read by PDFium as a page of its own, in the page's user
+      // space, its blocks after the page's own — so the page's blocks keep their places, which `push` names them by — each
+      // carrying its path. They push nothing and are pushed by nothing (Decision 6). NEVER for Edit object's read, which
+      // reads the page as it is (ADR-0264 Decision 5). A Type 3 font inside a form is not named by its descriptor: that
+      // read is the page's (ADR-0256).
+      const placed = asItIs ? null : await formPagesOf(docId, sessions, page);
+      const host = pdfiumHost;
+      const inForms =
+        placed === null
+          ? []
+          : (
+              await Promise.all(
+                placed.paths.map(async (form, at) =>
+                  blocksOf((await host.textRuns(placed.image, at, false)).runs).map((block) => ({ ...block, push: { below: [], room: 0 }, form })),
+                ),
+              )
+            ).flat();
+      const angled = {
+        turned: counts.get('turned') ?? 0,
+        vertical: counts.get('vertical') ?? 0,
+        slanted: counts.get('slanted') ?? 0,
+        mirrored: counts.get('mirrored') ?? 0,
+      };
+      const rotated = angled.turned + angled.vertical + angled.slanted + angled.mirrored;
       return {
-        blocks: grouped.map((block, at) => ({ ...block, push: pushes[at] ?? { below: [], room: 0 } })),
+        blocks: [...grouped.map((block, at) => ({ ...block, push: pushes[at] ?? { below: [], room: 0 } })), ...inForms],
         truncated: found.truncated,
         rotated,
         angled,
@@ -1757,8 +1798,6 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         // THE PAGE'S WRITER (ADR-0266), from MuPDF's reading of its fonts and PDFium's of its packed text above.
         rewrite,
         ...(unpacked ? { unpacked: true as const } : {}),
-        // *Unpack it* OFFERED ONLY WHERE IT KEEPS THE PAGE, the PDFium host's trial on its own copy (ADR-0232's correction).
-        ...(plain.unpackable === true ? { unpackable: true as const } : {}),
       };
     },
     // THE OTHER ENGINE'S SECOND READ, and it groups nothing — an object is what
@@ -1818,9 +1857,14 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // A PAGE'S RUNS WITH THEIR MEMBERS, `editTextOperators`' pre-read (ADR-0176): `textBlocks`' two forced steps, the
     // current image and the PDFium host. A process with no PDFium host cannot name which objects a run is, so the edit
     // is refused for the engine that is missing rather than written against a guess.
-    pageRuns: async (docId, sessions, page) => {
+    pageRuns: async (docId, sessions, { page, form }) => {
       if (pdfiumHost === null) throw new EngineUnavailableError('reading which objects a page’s text is made of');
-      return pdfiumHost.pageRuns(pdfiumReadImage(docId, sessions), page);
+      if (form === null) return pdfiumHost.pageRuns(pdfiumReadImage(docId, sessions), page);
+      // A FORM'S BLOCKS (ADR-0269): its placement's page, from the same build of the placements the read offered them on.
+      const placed = await formPagesOf(docId, sessions, page);
+      const at = placed.paths.findIndex((path) => sameFormPath(path, form));
+      if (at === -1) throw new EditRefusedError('set-text', 0, `page ${String(page)} no longer draws the form the edit names`);
+      return pdfiumHost.pageRuns(placed.image, at);
     },
     // THE EDITABLE POWERPOINT EXPORT'S TWO READS (ADR-0210), composed here for the reads above's reason: a byte-image engine
     // is asked about a document by being handed its bytes, and `currentImage` is the one route to them. The words a scan was
@@ -2521,6 +2565,8 @@ function engineSessionOpener(
    * second path from main to the host holding a session (B3a).
    */
   readonly extract: HostExtract;
+  /** A page's form placements that show text, each read as a page (ADR-0269). On this surface for {@link extract}'s reason. */
+  readonly formPages: HostFormPages;
   /**
    * The session's bytes, left in the host's output directory until placed or discarded — a save's flush, so they
    * never pass through `main` (ADR-0121's addendum). On this surface for {@link extract}'s reason.
@@ -3122,6 +3168,18 @@ function engineSessionOpener(
     return writer.extract(session, pages);
   };
 
+  /** A page's forms as pages (ADR-0269), and {@link extractThroughHost}'s reason word for word. */
+  const formPagesThroughHost: HostFormPages = (session, page) => {
+    if (writer === null) {
+      throw new Error(
+        'A form read reached the engine with no host writer registered. A session was resolved ' +
+          'for this document, so one was issued by a host — the supervisor and the host ' +
+          'connection have diverged.',
+      );
+    }
+    return writer.formPages(session, page);
+  };
+
   /** The snapshot's half, and {@link extractThroughHost}'s reason word for word. */
   const snapshotThroughHost: HostSnapshot = (session, request) => {
     if (writer === null) {
@@ -3673,6 +3731,7 @@ function engineSessionOpener(
     accessibility: checkAccessibilityThroughHost,
     duplicates: readDuplicatesThroughHost,
     extract: extractThroughHost,
+    formPages: formPagesThroughHost,
     // THE SAVE'S FLUSH, staged in the host's output directory and moved into place (ADR-0121's addendum).
     stage: (session, outline) => liveWriter().stage(session, outline),
     // THE WORD EXPORT, `stage`'s route: composed in the host, moved into place (ADR-0072's amendment of 2026-10-01).

@@ -2282,7 +2282,8 @@ const declarations = {
     // THE FIRST MuPDF COMMAND TO DECLARE A PRE-READ (the correction to ADR-0176):
     // which objects each run is, which only the engine that walked them can say.
     reads: 'pageRuns',
-    read: (access, command) => access.pageRuns({ page: command.page }),
+    // AND THE FORM, where the blocks are in one (ADR-0269): its placement's page is what PDFium numbered them on.
+    read: (access, command) => access.pageRuns({ page: command.page, form: command.form ?? null }),
     asset: 'none',
     // ORDINARY, so an incremental save: a removal's collecting save would rewrite
     // every object, where this changes one page's content and adds nothing else.

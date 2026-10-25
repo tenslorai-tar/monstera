@@ -93,6 +93,7 @@ async function joined(parts: {
       formFields: refuse('read the fields'),
       duplicates: refuse('look for duplicates'),
       extract: refuse('build a document'),
+      formPages: refuse('read a page’s forms'),
       applyPdfLib: refuse('run pdf-lib'),
       prepareSignature: refuse('prepare a signature'),
       snapshot: refuse('write a PNG out'),

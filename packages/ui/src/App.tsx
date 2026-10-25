@@ -93,7 +93,6 @@ import {
   handToolCommand,
   HAND_TOOL_ID,
   selectTextCommand,
-  promoteTextOnPage,
   reportProblem,
   readPageContentBoxes,
   pageTransitionCommand,
@@ -4830,8 +4829,6 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
             rewrite: last.rewrite,
             // AND WHETHER IT WAS READ UNPACKED (ADR-0232), which every edit and run-font read of these blocks repeats.
             ...(last.unpacked === true ? { unpacked: true as const } : {}),
-            // AND WHETHER *Unpack it* KEEPS THE PAGE, the one condition the button is offered on (ADR-0232's correction).
-            ...(last.unpackable === true ? { unpackable: true as const } : {}),
           };
         }
         if (!refusal.reported) {
@@ -4859,8 +4856,8 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
         look: (word) => lookUp({ client, settings }, word),
         keep: (word) => keepWord(settings, word),
       },
-      onRestructure: async (page, edits, read, kept) => {
-        const outcome = await commitBlocks(deps, docId, page, edits, read);
+      onRestructure: async (page, edits, read, form, kept) => {
+        const outcome = await commitBlocks(deps, docId, page, edits, read, form);
         // SAID ONCE THE JOIN IS WRITTEN, never for one refused (the owner's decision of 2026-10-18 on VVVVVVV-18).
         if (kept === true && outcome === 'written') toast('done', TEXT_JOIN_FAMILY_KEPT);
         return outcome;
@@ -4874,9 +4871,6 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       // ONE BOX, then back to editing what is on the page.
       onAdded: () => {
         setToolId(EDIT_TEXT_TOOL_ID);
-      },
-      onPromote: (page) => {
-        void promoteTextOnPage(deps, docId, page);
       },
       onRecognise: (page) => {
         recognisePage.current(page);

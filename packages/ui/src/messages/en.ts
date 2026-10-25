@@ -1627,9 +1627,6 @@ export const TEXT_EDIT_NONE = messageKey('surface.text-edit.none');
 export const TEXT_EDIT_UNREADABLE = messageKey('surface.text-edit.unreadable');
 export const TEXT_EDIT_TRUNCATED = messageKey('surface.text-edit.truncated');
 export const TEXT_EDIT_COVERS = messageKey('surface.text-edit.covers');
-export const TEXT_EDIT_UNADDRESSABLE = messageKey('surface.text-edit.unaddressable');
-export const TEXT_EDIT_PACKED = messageKey('surface.text-edit.packed');
-export const TEXT_EDIT_PROMOTE = messageKey('surface.text-edit.promote');
 export const TEXT_EDIT_RECOGNISE = messageKey('surface.text-edit.recognise');
 export const TEXT_EDIT_TURNED = messageKey('surface.text-edit.turned');
 export const TEXT_EDIT_VERTICAL = messageKey('surface.text-edit.vertical');
@@ -4581,14 +4578,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TEXT_EDIT_UNREADABLE]: 'This page’s text could not be read, so it cannot be edited here. Other pages can.',
   [TEXT_EDIT_TRUNCATED]: 'This page has more text than can be outlined at once; some of it is not outlined.',
   [TEXT_EDIT_COVERS]: 'The words you wrote now run over something else on this page. Press Ctrl+Z to put them back as they were.',
-  // NAMES THE CAUSE IN A READER'S WORDS, and does not apologise. *Pasted in as
-  // a block* is how a Form XObject got there to somebody who did not make the
-  // PDF, and the button beside it is what makes the text editable.
-  [TEXT_EDIT_UNADDRESSABLE]: 'Some text on this page was pasted in as a block and is not outlined.',
-  [TEXT_EDIT_PACKED]: 'Some text on this page is held inside a block that can’t be edited here.',
-  // SAYS WHAT IT DOES TO THE PAGE: the block becomes ordinary page content,
-  // which is a change to the document a person is agreeing to.
-  [TEXT_EDIT_PROMOTE]: 'Unpack it so it can be edited',
   // A SCAN HAS NO TEXT TO EDIT UNTIL IT IS READ (ADR-0181 Decision 9): the button runs the recognise command for this page,
   // so the words it finds are the ones the editor then offers.
   [TEXT_EDIT_RECOGNISE]: 'If this is a scan, recognise its words so they can be edited',

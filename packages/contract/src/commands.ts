@@ -7185,8 +7185,21 @@ export const editTextBlockSchema = blockEditCommandObject('editTextBlock')
  * by one function, so the editor sends one block wire to either writer and the two kinds cannot drift apart; the reading
  * says per page which one the page needs (Decision 1), and the renderer picks the kind from it.
  */
+/**
+ * THE THREE BOUNDS OF A FORM PLACEMENT'S PATH, set from the corpus with room, and kept small because every byte a path
+ * may hold is paid at its worst encoding by `editTextOperators`' file ceiling and `engine/form-pages`' frame. Read
+ * 2026-10-25 over the 13-document corpus and the brochure fixture (scratch `formDepth.mjs`): 9 placements of forms showing
+ * text, the deepest 2 steps from the page, the longest resource name 7 characters, the busiest page 6. A placement past
+ * any bound is not offered, which is what every placement was before ADR-0269.
+ */
 /** Steps a form placement's path may take from the page: a form inside a form inside … this many deep. */
-export const MAX_FORM_DEPTH = 8;
+export const MAX_FORM_DEPTH = 4;
+
+/** Characters of one step's resource name; ISO 32000-2 allows 127 bytes, and the corpus's longest is 7. */
+export const MAX_FORM_NAME = 64;
+
+/** Placements of forms showing text read on one page; a page past this offers its first ones. */
+export const MAX_FORM_PLACEMENTS = 64;
 
 /**
  * Where a form is drawn on a page ([ADR-0269](../../../docs/DECISIONS/0269-text-inside-a-form-is-edited-in-the-forms-own-content.md)
@@ -7199,7 +7212,7 @@ export const formPathSchema = z
     z
       .object({
         // A RESOURCE NAME, decoded: printable, since a name with a control character in it names nothing a page draws.
-        name: z.string().min(1).max(127).regex(/^[^\p{Cc}]+$/u),
+        name: z.string().min(1).max(MAX_FORM_NAME).regex(/^[^\p{Cc}]+$/u),
         occurrence: z.number().int().min(0).max(9999),
       })
       .strict()
@@ -7209,6 +7222,36 @@ export const formPathSchema = z
   .max(MAX_FORM_DEPTH)
   .readonly();
 export type FormPath = z.infer<typeof formPathSchema>;
+
+/** Whether two paths name one placement: the same names and occurrences, step for step. The ONE comparison of them. */
+export function sameFormPath(a: FormPath, b: FormPath): boolean {
+  const key = (path: FormPath): string => JSON.stringify(path.map((step) => [step.name, step.occurrence]));
+  return key(a) === key(b);
+}
+
+/**
+ * Whether two blocks of a page are in the same stream — the page's own content, or one form placement's — which is what
+ * one command may write together (ADR-0269 Decision 2): a join, a split or a replacement across two streams is two edits.
+ */
+export function sameStream(a: { readonly form?: FormPath }, b: { readonly form?: FormPath }): boolean {
+  if (a.form === undefined || b.form === undefined) return a.form === b.form;
+  return sameFormPath(a.form, b.form);
+}
+
+/**
+ * A page's blocks by the stream that holds them, in the order each stream's first block comes, each with its blocks in
+ * their order: what a writer of several blocks sends one command per. The page's own blocks come first in a read, so
+ * their stream's blocks keep the places `push.below` names them by.
+ */
+export function streamsOf<B extends { readonly form?: FormPath }>(blocks: readonly B[]): { readonly form: FormPath | null; readonly blocks: readonly B[] }[] {
+  const streams: { readonly form: FormPath | null; readonly blocks: B[] }[] = [];
+  for (const block of blocks) {
+    const held = streams.find((stream) => stream.blocks[0] !== undefined && sameStream(stream.blocks[0], block));
+    if (held === undefined) streams.push({ form: block.form ?? null, blocks: [block] });
+    else held.blocks.push(block);
+  }
+  return streams;
+}
 
 // NO `unpack`: a page whose text is in a Type 3 font is never read unpacked (ADR-0232 Decision 5).
 export const editTextOperatorsSchema = blockEditCommandObject('editTextOperators')

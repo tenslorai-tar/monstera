@@ -166,4 +166,14 @@ describe('neighbourOf', () => {
     if (first === undefined) throw new Error('the fixture lost its first block');
     expect(neighbourOf([first, aside], 1, 'above')).toBeUndefined();
   });
+
+  it('never across streams: a block inside a form is no continuation of the page’s, nor of another form’s (ADR-0269)', () => {
+    const [first, second] = blocks;
+    if (first === undefined || second === undefined) throw new Error('the fixture lost its blocks');
+    const inForm = { ...second, form: [{ name: 'Fm1', occurrence: 0 }] };
+    expect(neighbourOf([first, inForm], 1, 'above')).toBeUndefined();
+    // CONTROL: two blocks of the same form are neighbours as the page's are.
+    expect(neighbourOf([{ ...first, form: [{ name: 'Fm1', occurrence: 0 }] }, inForm], 1, 'above')).toBe(0);
+    expect(neighbourOf([{ ...first, form: [{ name: 'Fm1', occurrence: 1 }] }, inForm], 1, 'above')).toBeUndefined();
+  });
 });

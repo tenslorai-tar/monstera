@@ -1,4 +1,4 @@
-import type { AnnotationDataFormat, ClientApi, EncodedFormDataFormat, PageSet, WordMode } from '@monstera/contract';
+import type { AnnotationDataFormat, ClientApi, EncodedFormDataFormat, FormPath, PageSet, WordMode } from '@monstera/contract';
 
 import type { ByteImage, LockedReason, MupdfSession } from '../engineSeam.js';
 import type { PageImageRequest } from '../pageImages.js';
@@ -122,6 +122,15 @@ function serialiseRefusal(code: string): Error {
  * the DOCUMENT's failure rather than the host's, which is what keeps a
  * rebuild-and-retry loop from following.
  */
+/** `engine/form-pages` refused: the page's forms could not be read as pages. */
+export class EngineFormPagesFailed extends Error {
+  override readonly name = 'EngineFormPagesFailed';
+
+  constructor(detail: string) {
+    super(`The engine host could not read the page's forms as pages: ${detail}.`);
+  }
+}
+
 export class EngineExtractFailed extends Error {
   override readonly name = 'EngineExtractFailed';
 
@@ -326,6 +335,12 @@ export interface RemoteMupdfLifecycle {
    */
   readonly extract: (session: MupdfSession, pages: PageSet) => Promise<ByteImage>;
   /**
+   * One page's form placements that show text, as a document of one page per placement and each placement's path
+   * (ADR-0269), {@link extract}'s route: built in the host, taken from its output directory by count. A page with none
+   * answers no bytes and no path.
+   */
+  readonly formPages: (session: MupdfSession, page: number) => Promise<{ readonly bytes: ByteImage; readonly paths: readonly FormPath[] }>;
+  /**
    * The PNG bytes of a region of one page.
    *
    * {@link extract}'s reason for being here, one step stronger: a raster must
@@ -444,6 +459,16 @@ export function remoteMupdfLifecycle(
       });
       if (!answer.ok) throw new EngineExtractFailed(answer.error.code);
       return takeAnnounced(areas, area, into, answer.value.bytes);
+    },
+
+    formPages: async (session, page) => {
+      const area = sessions.areaFor(session);
+      const into = areas.mintName();
+      const answer = await client['engine/form-pages']({ session: sessions.handleFor(session), page, into });
+      if (!answer.ok) throw new EngineFormPagesFailed(answer.error.code);
+      // NOTHING WRITTEN where the page draws no form showing text, so nothing to take.
+      if (answer.value.paths.length === 0) return { bytes: new Uint8Array(), paths: [] };
+      return { bytes: await takeAnnounced(areas, area, into, answer.value.bytes), paths: answer.value.paths };
     },
 
     snapshot: async (session, request) => {

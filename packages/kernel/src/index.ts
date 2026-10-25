@@ -133,6 +133,7 @@ export {
   type HostDestinationsReader,
   type HostDuplicatesReader,
   type HostExtract,
+  type HostFormPages,
   type HostButtonActionsReader,
   type HostFieldPropertiesReader,
   type HostFormImportPlanner,

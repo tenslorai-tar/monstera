@@ -1,7 +1,8 @@
-import type { FormPath } from '@monstera/contract/host';
+import { type FormPath, MAX_FORM_PLACEMENTS, formPathSchema, sameFormPath } from '@monstera/contract/host';
 
+import type { MupdfSession } from './engineSeam.js';
 import type { PDFDocument, PDFObject } from './mupdfRaw.js';
-import { bufferBytes, newDocument } from './mupdfWriter.js';
+import { bufferBytes, newDocument, withDocument } from './mupdfWriter.js';
 import { pageContentStreams, xobjectKinds } from './pageContent.js';
 import { freeName, resourceDictionaryOf } from './pageResources.js';
 import { type Matrix, drawnObjects, joinedContent, showOperators } from './textOperators.js';
@@ -125,14 +126,9 @@ export function textPlacements(leaf: PDFObject): readonly FormPlacement[] {
   return placementsOn(leaf).filter((placement) => showOperators(placement.content).some((op) => op.object !== null));
 }
 
-function samePath(a: FormPath, b: FormPath): boolean {
-  const key = (path: FormPath): string => JSON.stringify(path.map((step) => [step.name, step.occurrence]));
-  return key(a) === key(b);
-}
-
 /** The placement `path` names on the page now, or `undefined` where it names none. */
 export function placementAt(leaf: PDFObject, path: FormPath): FormPlacement | undefined {
-  return placementsOn(leaf).find((placement) => samePath(placement.path, path));
+  return placementsOn(leaf).find((placement) => sameFormPath(placement.path, path));
 }
 
 /** A number as a content stream writes it: six places, no exponent, no negative zero. */
@@ -181,7 +177,11 @@ export function unwrappedForm(edited: Uint8Array, wrapped: ReturnType<typeof wra
  */
 export function formPagesDocument(document: PDFDocument, page: number): { readonly bytes: Uint8Array; readonly paths: readonly FormPath[] } {
   const leaf = document.findPage(page);
-  const placements = textPlacements(leaf);
+  // ONLY PATHS THE WIRE TAKES, and the first `MAX_FORM_PLACEMENTS` of them: a placement deeper, or named longer, than the
+  // contract's bounds is left unoffered rather than answered with a path the schema refuses, which would fail the read.
+  const placements = textPlacements(leaf)
+    .filter((placement) => formPathSchema.safeParse(placement.path).success)
+    .slice(0, MAX_FORM_PLACEMENTS);
   if (placements.length === 0) return { bytes: new Uint8Array(), paths: [] };
   const pages = newDocument();
   try {
@@ -198,6 +198,11 @@ export function formPagesDocument(document: PDFDocument, page: number): { readon
   } finally {
     pages.destroy();
   }
+}
+
+/** {@link formPagesDocument} of a session's document: what the MuPDF host answers `engine/form-pages` with. */
+export function readFormPages(session: MupdfSession, page: number): Promise<{ readonly bytes: Uint8Array; readonly paths: readonly FormPath[] }> {
+  return withDocument(session, (document) => formPagesDocument(document, page));
 }
 
 /** How many placements across the whole document draw `form`'s object: more than one means it is used elsewhere. */

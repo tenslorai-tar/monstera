@@ -194,6 +194,9 @@ function start(stream: HostByteStream) {
     extract: () => {
       throw new Error('no case here builds a document');
     },
+    formPages: () => {
+      throw new Error('no case here builds a document');
+    },
     applyPdfLib: () => {
       throw new Error('no case here runs pdf-lib');
     },

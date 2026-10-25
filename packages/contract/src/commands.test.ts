@@ -12,6 +12,10 @@ import {
   editTextBlockSchema,
   embeddableImageTypeSchema,
   editTextOperatorsSchema,
+  formPathSchema,
+  MAX_FORM_DEPTH,
+  sameStream,
+  streamsOf,
   ocrPageSchema,
   replaceTextObjectSchema,
   readsUnpacked,
@@ -483,5 +487,34 @@ describe('insertImagePage is removed (ADR-0044’s correction of 2026-10-17)', (
     expect(commandSchema.safeParse({ kind: 'insertBlankPage', at: 0, count: 1 }).success).toBe(true);
     expect(embeddableImageTypeSchema.safeParse('image/png').success).toBe(true);
     expect(embeddableImageTypeSchema.safeParse('image/gif').success).toBe(false);
+  });
+});
+
+describe('a page’s blocks by stream (ADR-0269)', () => {
+  const fm1 = [{ name: 'Fm1', occurrence: 0 }];
+  const fm1Again = [{ name: 'Fm1', occurrence: 1 }];
+
+  it('groups the page’s own blocks and each form’s, in the order each stream first comes', () => {
+    const blocks = [{ id: 'a' }, { id: 'b' }, { id: 'c', form: fm1 }, { id: 'd', form: fm1Again }, { id: 'e', form: fm1 }];
+    expect(streamsOf(blocks).map((stream) => [stream.form, stream.blocks.map((block) => block.id)])).toStrictEqual([
+      [null, ['a', 'b']],
+      [fm1, ['c', 'e']],
+      [fm1Again, ['d']],
+    ]);
+  });
+
+  it('tells two placements of one form apart, and a form from the page', () => {
+    expect(sameStream({ form: fm1 }, { form: [{ name: 'Fm1', occurrence: 0 }] })).toBe(true);
+    expect(sameStream({ form: fm1 }, { form: fm1Again })).toBe(false);
+    expect(sameStream({}, { form: fm1 })).toBe(false);
+    // CONTROL: the page's own blocks are one stream.
+    expect(sameStream({}, {})).toBe(true);
+  });
+
+  it('refuses a path that is empty, too deep, or names a character no resource name holds', () => {
+    expect(formPathSchema.safeParse(fm1).success).toBe(true);
+    expect(formPathSchema.safeParse([]).success).toBe(false);
+    expect(formPathSchema.safeParse(Array.from({ length: MAX_FORM_DEPTH + 1 }, () => fm1[0])).success).toBe(false);
+    expect(formPathSchema.safeParse([{ name: 'F\u0000m', occurrence: 0 }]).success).toBe(false);
   });
 });

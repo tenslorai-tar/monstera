@@ -12,6 +12,7 @@ import {
   type EncodedFormDataFormat,
   type FormDataFormat,
   type FormDataImportFormat,
+  type FormPath,
   MAX_FORM_DATA_BYTES,
   MAX_IMAGE_BYTES,
   MAX_PAGE_IMAGE_BYTES,
@@ -1803,7 +1804,12 @@ export type DocumentOcrReader = (
  * correction). {@link DocumentOcrReader}'s shape, per page for its reason, and read from the bytes the bus is about to
  * apply to, so the runs it names are the ones on the page the edit writes.
  */
-export type DocumentPageRunsReader = (docId: DocId, sessions: DocumentSessions, page: number) => Promise<PageRuns>;
+export type DocumentPageRunsReader = (
+  docId: DocId,
+  sessions: DocumentSessions,
+  // THE WHOLE NEED, one object, so a placement cannot be dropped between the bus and the reader (ADR-0269, ADR-0069's rule).
+  needs: { readonly page: number; readonly form: FormPath | null },
+) => Promise<PageRuns>;
 
 /** The outline, stamped with the version the lane read it at. */
 export interface DocumentDestinations {
@@ -2182,8 +2188,6 @@ export interface DocumentTextBlocks {
    * through a spread no type named, and the channel's handler, which names the fields it passes, dropped it.
    */
   readonly unpacked?: true;
-  /** *Unpack it* keeps this page, so the editor may offer it (ADR-0232's correction of 2026-10-24). */
-  readonly unpackable?: true;
 }
 
 /** One of a page's objects, as the editing engine describes it. */
@@ -4482,7 +4486,7 @@ export class DocumentCommands {
       // document, which is what the bus cannot name.
       ocr: (request) => this.#ocr(docId, live(), request),
       // ADR-0176's member: the page the command names, and this closure adds the document, as `ocr`'s does.
-      pageRuns: ({ page }) => this.#pageRuns(docId, live(), page),
+      pageRuns: (needs) => this.#pageRuns(docId, live(), needs),
       sources: this.#sourcesFor(named),
     };
   }
