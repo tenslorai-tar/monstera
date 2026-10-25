@@ -74,6 +74,8 @@ export const IDENTIFIERS = [
   /PS-AdobeFont/gu,
   /vnd\.adobe\.[\w.+-]*/gu,
   /ns\.adobe\.com\/[\w/.-]*/gu,
+  // THE XMP PACKET'S OWN NAMESPACE, which ISO 16684-1 fixes for `x:xmpmeta`.
+  /adobe:ns:meta\//gu,
   /Foxit(?:Sans|Serif|Fixed|Dingbats|Symbol)[\w-]*(?:\.pfb)?/gu,
   /LICENSE_FOXIT/gu,
   /APIVersion="Acrobat:[\d.]+"/gu,

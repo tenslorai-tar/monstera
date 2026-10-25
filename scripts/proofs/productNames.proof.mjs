@@ -15,7 +15,7 @@ import { DENIED, namedLines } from '../lib/productNames.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 6 });
+const roster = createRoster(failures, { cases: 7 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -38,6 +38,11 @@ const maker = CMAP.split('-')[0] ?? '';
 {
   const found = namedLines(`/CIDSystemInfo << /Registry (${maker}) /Ordering (Japan1) >>\n/Encoding /${CMAP}-UCS2\n`);
   check('CONTROL: the same name inside identifiers the format defines is masked, so the case above found it for being a name', found.length === 0, `found on ${JSON.stringify(found)}`);
+}
+{
+  // THE XMP PACKET'S NAMESPACE, which the standard fixes, against the same maker's name in prose on the next line.
+  const found = namedLines(`<x:xmpmeta xmlns:x="${maker.toLowerCase()}:ns:meta/">\nas ${maker.toLowerCase()} writes it\n`);
+  check('an XMP packet’s fixed namespace is masked and the name beside it is still found', JSON.stringify(found) === '[2]', `found on ${JSON.stringify(found)}`);
 }
 {
   // A TWO-WORD NAME BROKEN ACROSS A LINE, as hard-wrapped prose breaks one: reported on the line it starts on.
