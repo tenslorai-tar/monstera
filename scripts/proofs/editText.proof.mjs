@@ -847,12 +847,12 @@ async function run(pdfium, kernel) {
   }
   check(CASES[12] ?? '', twiceCheck === '', twiceCheck);
 
-  if (CORPUS !== null) corpus();
+  const countedWhole = corpus();
 
   process.stdout.write(
     failures.length > 0 ? `\n${String(failures.length)} Edit text case(s) FAILED:\n\n  - ${failures.join('\n\n  - ')}\n` : roster.format('Edit text case'),
   );
-  process.exitCode = failures.length === 0 ? 0 : 1;
+  process.exitCode = failures.length === 0 && countedWhole ? 0 : 1;
 }
 
 /**
@@ -869,11 +869,14 @@ async function walkPageRouted(pdfium, kernel, bytes, old) {
  * end. Not gated: CI has no corpus, and the owner reads the counts.
  */
 function corpus() {
-  if (CORPUS === null) return;
+  if (CORPUS === null) return true;
   const files = readdirSync(CORPUS).filter((each) => each.toLowerCase().endsWith('.pdf')).sort();
   process.stdout.write(`\n  THE OWNER'S CORPUS, ${OLD_ROUTE ? 'routed as before ADR-0266' : 'routed as the application routes it'}:\n`);
   /** @type {Try[]} */
   const all = [];
+  /** The pages whose walk failed and the documents not opened: counted in the total, never left to a line above it. */
+  let pagesFailed = 0;
+  let notOpened = 0;
   /** @type {string[]} */
   const table = [
     '| document | pages | blocks offered | form blocks offered | edits | refused | disturbed | logged | form placements not offered |',
@@ -886,7 +889,8 @@ function corpus() {
     const path = join(CORPUS, file);
     const pages = childRun([path, '--count']);
     if (typeof pages !== 'number') {
-      process.stdout.write(`  ${label}: could not be opened, not counted\n`);
+      notOpened += 1;
+      process.stdout.write(`  ${label}: could not be opened, not counted — ${lastFailure}\n`);
       table.push(`| ${String(at + 1)} | not opened | | | | | | | |`);
       continue;
     }
@@ -903,6 +907,7 @@ function corpus() {
       );
       if (answer === null || !Array.isArray(answer.tries)) {
         failed += 1;
+        process.stdout.write(`    page ${String(page + 1)} failed: ${lastFailure}\n`);
         continue;
       }
       tries.push(...answer.tries.map((each) => ({ ...each, page: page + 1 })));
@@ -918,16 +923,32 @@ function corpus() {
       `| ${String(at + 1)} | ${String(Math.min(pages, PAGES))}${failed > 0 ? ` (${String(failed)} failed)` : ''} | ${String(blocksOffered)} | ${String(formBlocksOffered)} | ${String(edits)} | ${String(refused)} | ${String(disturbed)} | ${String(logged)} | ${String(formsLeft)} |`,
     );
     all.push(...tries);
+    pagesFailed += failed;
   }
   const total = counts(all);
   process.stdout.write(
-    `\n  CORPUS: ${String(total.tries)} edit(s), ${String(total.refused)} refused, ${String(total.disturbed)} disturbed, ${String(total.unseen)} unseen, ${String(total.logged)} logged\n\n`,
+    `\n  CORPUS: ${String(total.tries)} edit(s), ${String(total.refused)} refused, ${String(total.disturbed)} disturbed, ${String(total.unseen)} unseen, ${String(total.logged)} logged, ${String(pagesFailed)} page(s) failed, ${String(notOpened)} document(s) not opened\n\n`,
   );
   process.stdout.write(`${table.join('\n')}\n\n`);
+  // A RUN THAT COUNTED LESS THAN IT WAS ASKED TO is not a result: it ends in failure, whatever the cases said.
+  if (pagesFailed > 0 || notOpened > 0) {
+    process.stdout.write('  THE CORPUS WAS NOT COUNTED WHOLE: the figures above leave out what failed.\n');
+    return false;
+  }
+  return true;
 }
 
 /**
- * This script on one page of one file, in a process of its own: its answer, or `null` where the walk failed.
+ * Why the last child failed, by its own error's first line with the document's path put as its number: printed where the
+ * failure is counted, so a run that failed says WHY rather than reading as a quieter answer (the stage audit's AUD-9 —
+ * on 2026-10-25 every page after a kernel source was touched mid-run refused as a stale build, and the run ended
+ * "passed" with seven documents uncounted).
+ */
+let lastFailure = '';
+
+/**
+ * This script on one page of one file, in a process of its own: its answer, or `null` where the walk failed, with
+ * {@link lastFailure} saying why.
  * @param {string[]} rest @returns {unknown}
  */
 function childRun(rest) {
@@ -936,10 +957,26 @@ function childRun(rest) {
     maxBuffer: 64 * 1024 * 1024,
   });
   const last = (child.stdout ?? '').trim().split('\n').at(-1) ?? '';
-  try {
-    return child.status === 0 ? JSON.parse(last) : null;
-  } catch {
+  const failedWith = () => {
+    const path = rest[0] ?? '';
+    const said = (child.stderr ?? '').split('\n').find((line) => /\b(Error|refused|failed)\b/u.test(line)) ?? `exit ${String(child.status)}`;
+    // NEVER A FILE'S NAME: the document's path, and its folder, are put as what they are.
+    const name = path.split(/[\\/]/u).at(-1) ?? path;
+    lastFailure = said
+      .split(path)
+      .join('<this document>')
+      .split(name)
+      .join('<this document>')
+      .split(CORPUS ?? '\u0000')
+      .join('<the corpus>')
+      .slice(0, 200)
+      .trim();
     return null;
+  };
+  try {
+    return child.status === 0 ? JSON.parse(last) : failedWith();
+  } catch {
+    return failedWith();
   }
 }
 
