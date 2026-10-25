@@ -100,3 +100,29 @@ page's own content in the same place pushes that cell down (ADR-0249) and distur
 the page's do, among the blocks of its own placement**: `pushesOfPage` over that placement's blocks, read in the same
 page box, the blocks below named by their place in the page's whole list. A push never crosses a stream, for the reason
 a join does not (one command writes one stream). Nothing outside the form pushes into it or is pushed by it.
+
+## Correction, 2026-10-25 — the clips that frame a placement grow with its box
+
+The first correction grew the form's `/BBox`, and measured on document 6 that is one of two frames. Its page draws the
+form as `x y w h re W* n <cm> /name Do Q`: a clip rectangle that is the form's box on the page, 512.25 × 157.44 points,
+the box's 601.5 × 121.51 under the placement's matrices. A line an edit added below the form's last block grew the box
+and stayed outside the clip — written, and not one pixel shown (`proof:edittext --documents 6 --detail`: form block 53's
+added line, the run's one unseen edit). A clip the holder sets is not in the wrapper a placement is read in, so nothing
+the writer does inside the form can reach it: ADR-0266's correction places words past a clip the content sets, never
+past one set outside it.
+
+**So an edit in a form grows, with its box, every frame of its placement.** Along the path from the page down, at each
+`Do`, each clip window in force there that frames that `Do` alone — nothing else drawn between its path and the `Q` that
+ends it — and whose path is one rectangle grows to the union of what it was and the characters the form now draws,
+carried into the space the rectangle is built in. Each form along the path above the edited one grows its `/BBox` by the
+first correction's rule, to hold the same characters. The bytes written outside the form are those rectangles' numbers
+and those boxes, and Decision 2's *not the page's content* is narrowed by exactly that.
+
+A window that holds anything else drawn is not grown, since that would show the other drawing where its author clipped
+it; nor is a path that is not one rectangle, whose union is not four numbers. Words written behind such a window stay out
+of sight, and that is stated rather than ruled out: measured across the corpus (scratch `formFrames.mjs`, 2026-10-25,
+every placement a page's own content draws), 4 forms are drawn by a page, 3 of them behind a clip, and all 3 clips frame
+their form alone with one rectangle (documents 3 and 6).
+
+Rejected: writing the added words in the holder past the frame, which takes them out of the form they were typed in and
+out of its reading order; and taking the frame away, which shows whatever else of the form it clipped.
