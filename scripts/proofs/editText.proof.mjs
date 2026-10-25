@@ -186,10 +186,17 @@ async function walkPage(pdfium, kernel, bytes, index, quotes) {
   /** @type {any[]} */
   const blocks = grouped.map((/** @type {any} */ block, /** @type {number} */ at) => ({ ...block, push: pushes[at] ?? { below: [], room: 0 }, runs }));
   // TEXT INSIDE A FORM (ADR-0269), as `main` offers it: each placement read by PDFium as a page of its own, its blocks after
-  // the page's own, pushing nothing. Only on the application's route: the PDFium writer edits no form.
+  // the page's own, each pushing the blocks below it among its own placement's, named by their place in the whole list.
+  // Only on the application's route: the PDFium writer edits no form.
   if (rewrite === 'operators') {
     for (const placement of await formPlacementsOf(pdfium, kernel, bytes, index)) {
-      for (const block of groupedOf(placement.read)) blocks.push({ ...block, push: { below: [], room: 0 }, runs: placement.runs, form: placement.path });
+      const own = groupedOf(placement.read);
+      const ownPushes = kernel.pushesOfPage(own.map((/** @type {any} */ block) => block.box), placement.read);
+      const first = blocks.length;
+      own.forEach((/** @type {any} */ block, /** @type {number} */ at) => {
+        const push = ownPushes[at] ?? { below: [], room: 0 };
+        blocks.push({ ...block, push: { ...push, below: push.below.map((/** @type {number} */ under) => under + first) }, runs: placement.runs, form: placement.path });
+      });
     }
   }
   const before = render(kernel, bytes, index);
@@ -283,9 +290,11 @@ async function walkPage(pdfium, kernel, bytes, index, quotes) {
     const drawnAfter = render(kernel, after, index);
     const zonesAllowed = [...areas.map((area) => area.ink), ...grown];
     const { outside, inside, farthest } = compare(before, drawnAfter, zonesAllowed);
-    if (PICTURES !== null && (outside > 0 || lost > 0)) {
+    // AN UNSEEN EDIT TOO: words written that draw nothing are the person's typing out of sight.
+    if (PICTURES !== null && (outside > 0 || lost > 0 || inside === 0)) {
       // NAMED BY NUMBERS: the child's label (document and page), the block's number and the edit.
-      const blockNumber = /^block (\d+)/u.exec(name)?.[1] ?? 'page';
+      const numbered = /^(form )?block (\d+)/u.exec(name);
+      const blockNumber = numbered === null ? 'page' : `${numbered[1] === undefined ? '' : 'form'}${numbered[2] ?? ''}`;
       differencePicture(join(PICTURES, `${LABEL}-block${blockNumber}-${edit.replace(/\s/gu, '-')}.png`), before, drawnAfter, zonesAllowed);
     }
     tries.push({
@@ -685,7 +694,8 @@ function report(document, tries) {
   for (const [key, count] of reasons) process.stdout.write(`      ${String(count)} × ${key}\n`);
   // `--detail`: every try that was not clean, with its numbers (never a corpus block's words: those are named by number).
   if (argv.includes('--detail')) {
-    for (const each of tries.filter((one) => one.outcome !== 'made' || one.disturbed > 0 || one.lost > 0 || one.logged > 0)) {
+    // AND EVERY UNSEEN ONE, made with no pixel changed in its block, which `counts` counts and nothing else named.
+    for (const each of tries.filter((one) => one.outcome !== 'made' || one.disturbed > 0 || one.lost > 0 || one.logged > 0 || one.inside === 0)) {
       process.stdout.write(`        ${each.page === undefined ? '' : `page ${String(each.page)} `}${each.block} ${each.edit}: ${each.outcome}, ${String(each.disturbed)} pixel(s); ${each.why}\n`);
     }
   }
