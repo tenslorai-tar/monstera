@@ -1,0 +1,70 @@
+name: Bug report
+description: Something in Monstera does not work the way it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for taking the time to report this. A clear report is the most useful thing you can send.
+
+        **Never attach a confidential document.** Anything attached to a public issue is public for good. Use a harmless sample document, or redact the file first. If only a private file shows the problem, say so and do not attach it.
+
+        For a security vulnerability, do not open an issue. Use the Security tab's private reporting instead (see SECURITY.md).
+  - type: input
+    id: version
+    attributes:
+      label: Monstera version
+      description: Shown in Tools › About, or in Settings › Updates, which has a button to copy it.
+      placeholder: "1.0.2151.0"
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      description: For example Windows 11 24H2. Press Windows + R, type winver and press Enter to see it.
+      placeholder: "Windows 11 24H2"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: In order, starting from opening Monstera.
+      placeholder: |
+        1. Open a document
+        2. Choose ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead
+      description: The exact message if there was one, or a screenshot. Check that a screenshot shows nothing private.
+    validations:
+      required: true
+  - type: dropdown
+    id: sample
+    attributes:
+      label: Does it happen with a harmless sample document?
+      description: For example a new blank PDF, or a document you made yourself to test this.
+      options:
+        - "Yes, it happens with a sample document too"
+        - "No, only with one particular document"
+        - "I have not tried"
+    validations:
+      required: true
+  - type: checkboxes
+    id: confidential
+    attributes:
+      label: Before you submit
+      options:
+        - label: I have not attached a confidential document, and anything I attached is a sample or has been redacted.
+          required: true

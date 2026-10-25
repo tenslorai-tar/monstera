@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/tenslorai-tar/monstera/security/advisories/new
+    about: Please report vulnerabilities privately through the Security tab, never in a public issue.
+  - name: Ask a question
+    url: https://github.com/tenslorai-tar/monstera/discussions
+    about: Questions and ideas that are not bug reports belong in Discussions.
+  - name: Get help using Monstera
+    url: https://monsterapdf.com/help
+    about: How to use every tool. The same help is built into the app; press F1.

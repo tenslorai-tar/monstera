@@ -1,0 +1,33 @@
+name: Feature request
+description: Suggest something Monstera should do, starting from the problem it solves.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Start with the problem, then the idea. A clear problem helps us find the best answer, which is sometimes a different one from the first idea.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do, and what gets in the way today?
+      placeholder: "When I ..., I have to ..., because ..."
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Your idea
+      description: What would you like Monstera to do?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you do now instead
+      description: Any workaround or other tool you use today.
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else
+      description: Screenshots or examples. Never attach a confidential document.
