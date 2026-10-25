@@ -164,3 +164,22 @@ is written as the person typed it and kept, and a difference either read-back fi
 diagnostics log. Decision 4's rule — the lines the edit set, read by place, U+FFFD standing for any one character — is
 still the rule that decides whether there is a difference to log. Decision 1's guarantee is unchanged and is the one
 check ADR-0270 keeps on every write, as a logged defect proven 0, never a refusal.
+
+## Correction, 2026-10-25 — a line set where the page's own clip would hide it is written past that clip
+
+Measured 2026-10-25 in the corpus count (the one *unseen* edit of 5,307): words added to a table cell one character
+wide, inside a form whose own content clips every row to the table's edge (its window's bottom at the form's bottom, the
+cell's baseline 3.8 pt above it). The added words wrap onto lines a pitch lower, below the clip; they are written, MuPDF
+reads them, nothing is logged, and they change no pixel. Growing the form's `/BBox` (ADR-0269) cannot help: the clip is in
+the content. The owner's gate is 0 unseen: words a person typed are never written where they cannot be seen.
+
+**Where the block's new object goes now depends on the clips in force there.** Where every clip window in force at the
+place Decision 2 names holds the box of the lines the edit set, nothing changes. Where one does not, the object goes past
+the end of the outermost such window — after the `Q` that ends it — carrying the state its first line was drawn under
+(`contentCarry.ts`, the carry an arrange already takes, ADR-0264) and the windows that do hold it, **but not the window
+that would hide it**. The words are then drawn over what lies past the producer's clip, as typed text that outgrows its
+cell would be in any editor. Content order moves the object after the clipped run, so a reader takes it after that
+content; MuPDF's read-back holds it, as before.
+
+**Rejected: refusing**, which ADR-0270 forbids. **Rejected: shrinking or rewrapping into the clip**, which changes the
+size a person chose to fit a box nobody told them about.
