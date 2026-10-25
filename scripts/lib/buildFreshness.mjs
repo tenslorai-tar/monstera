@@ -370,6 +370,14 @@ export const EDIT_OBJECT = [
 ];
 
 /**
+ * What `editText.proof.mjs` runs: Edit object's edges, and the contract's one builder of what Find & replace and a
+ * spelling correction send the writer (`blockReplace.ts`), which its replace-all and spelling cases import.
+ *
+ * @type {BuildEdge[]}
+ */
+export const EDIT_TEXT = [...EDIT_OBJECT, ['packages/contract/src/blockReplace.ts', 'packages/contract/dist/blockReplace.js', 'tsc']];
+
+/**
  * What `textSpaces.proof.mjs` runs (ADR-0228's correction of 2026-10-16): the PDFium writer and reading, the grouping,
  * the contract's encoder, the shared paragraph join, and MuPDF's page-text read as the second reader.
  *
@@ -733,7 +741,7 @@ export const ARTEFACT_EDGES = {
   // MuPDF writing. (The line here named ADR-0240's drawn-object proof, removed with Edit object on 2026-10-21.)
   'proof:editobject': EDIT_OBJECT,
   // EDIT TEXT'S WRITER on every block (ADR-0266): the same reading, grouping, encoder and MuPDF writer, and the route.
-  'proof:edittext': EDIT_OBJECT,
+  'proof:edittext': EDIT_TEXT,
   'proof:shimpassword': SHIM_PASSWORD,
   // THE WORD EXPORT'S PICTURES, read back by a zip reader and a PNG decoder that are not the writer's.
   'proof:wordpictures': WORD_PICTURES,

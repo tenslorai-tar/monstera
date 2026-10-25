@@ -69,7 +69,7 @@ import { fileURLToPath } from 'node:url';
 
 import { PDFDocument, PDFName, StandardFonts } from '@cantoo/pdf-lib';
 
-import { EDIT_OBJECT, refuseStaleBuild } from '../lib/buildFreshness.mjs';
+import { EDIT_TEXT, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { bindNativeEngine } from '../lib/nativeEngine.mjs';
 import { compare, charactersOf, differencePicture, inkOf, render } from '../lib/pageDisturbance.mjs';
@@ -1014,7 +1014,7 @@ if (!existsSync(library) || shim === null || !existsSync(fontsDirectory(ROOT))) 
     flag: '--require-engines',
   });
 } else {
-  refuseStaleBuild(ROOT, EDIT_OBJECT, 4);
+  refuseStaleBuild(ROOT, EDIT_TEXT, 5);
   // LITERAL SPECIFIERS, so `proof:electronimports` and the freshness scan can read what this loads.
   const pdfium = await import('../../packages/kernel/dist/pdfiumFfi.js');
   pdfium.openPdfium(library);
