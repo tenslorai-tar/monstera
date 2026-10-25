@@ -36,12 +36,10 @@ using your own key with any of ten providers.
 
 <table>
   <tr>
-    <!-- uncomment when .github/assets/start-screen.png is added
     <td width="50%" valign="top">
       <img src=".github/assets/start-screen.png" alt="The start screen with the main tools and recent files">
       <br><sub>The start screen: open a PDF or drop one anywhere, the main tools one click away, and your recent files.</sub>
     </td>
-    -->
     <td width="50%" valign="top">
       <img src=".github/assets/editor-1.png" alt="The AI assistant answering a question about a supply agreement">
       <br><sub>Monstera's AI assistant answers a question about a supply agreement with page citations, beside a highlighted clause and the page thumbnails.</sub>
@@ -72,12 +70,10 @@ using your own key with any of ten providers.
       <img src=".github/assets/editor-6.png" alt="Compare showing two drafts of an agreement side by side">
       <br><sub>Compare places two drafts of an agreement side by side and marks each change, with a list of the differences.</sub>
     </td>
-    <!-- uncomment when .github/assets/editor-7.png is added
     <td width="50%" valign="top">
       <img src=".github/assets/editor-7.png" alt="The page organiser showing every page of a long document as a card">
       <br><sub>The page organiser shows every page of a long document as a card, ready to rearrange, rotate, insert or delete.</sub>
     </td>
-    -->
   </tr>
 </table>
 
