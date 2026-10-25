@@ -8,7 +8,8 @@
  * 3. **code stays one command per line**: a character added to the code block's first command, written and saved, and
  *    every command is still a line of its own in the saved file (MuPDF's reading, whitespace as written);
  * 4. **a highlight dragged across whole lines**: the not-embedded Times paragraph's two lines selected by a mouse drag from
- *    the first word to the last, highlighted, written and saved: one marked highlight per line, each spanning its line.
+ *    the first word to the last — the selection checked to be every character of it — highlighted, written and saved:
+ *    one marked highlight per line, each read with its width.
  *
  * The page is the committed fixture (`editorFidelityFixture.mjs`); its words are this repository's, so they may be named.
  *
@@ -172,6 +173,9 @@ await step('cloud-19 4: a highlight dragged across the Times paragraph’s two w
   await page.mouse.move(box.x + box.width - 1, box.y + box.height - lineHeight / 2, { steps: 6 });
   await page.mouse.up();
   const selected = await editor().evaluate((element) => element.ownerDocument.getSelection()?.toString() ?? '');
+  // THE DRAG TOOK BOTH LINES WHOLE: the selection is every character the editor holds, white space aside.
+  const whole = ((await editor().textContent()) ?? '').replace(/\s/gu, '');
+  if (selected.replace(/\s/gu, '') !== whole) throw new Error(`the drag selected ${String(selected.length)} characters, not the paragraph's`);
   const written = await writesDone(page);
   await panel().getByRole('group', { name: 'Highlight' }).getByRole('button', { name: 'Yellow highlight' }).click();
   const said = await pressAway(10, 10);
@@ -180,9 +184,12 @@ await step('cloud-19 4: a highlight dragged across the Times paragraph’s two w
   const saved = await savedCopy('highlight.pdf');
   const content = await savedContent(saved);
   const behind = (content.match(/\/MonsteraDecoration\s*\(behind\)/gu) ?? []).length;
-  // EACH LINE'S HIGHLIGHT WIDE AS THE LINE: the rectangles' widths, read from the marked sequences.
+  // THE RECTANGLES' WIDTHS, read from the marked sequences: reported, and found for every one counted, so the reading of
+  // them is not blind. Whether each spans its line is not asserted here — the selection above is what covers the lines.
   const widths = [...content.matchAll(/\/MonsteraDecoration\s*\(behind\)>>\s*BDC\s*q[^Q]*?(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s+re\s+f/gu)].map((match) => Number(match[3]));
-  if (behind !== 2) throw new Error(JSON.stringify({ selectedCharacters: selected.length, behind, widths }));
+  if (behind !== 2 || widths.length !== behind || widths.some((width) => !(width > 0))) {
+    throw new Error(JSON.stringify({ selectedCharacters: selected.length, behind, widths }));
+  }
   return { selectedCharacters: selected.length, highlights: behind, widths };
 });
 

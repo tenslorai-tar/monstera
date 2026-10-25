@@ -154,7 +154,9 @@ patching around. Add to it; do not re-pay for it.
   file-level lint disable. No premature abstractions inside modules.
 - **B8 Commit discipline.** Commit after each working, proven unit — never in
   stage-sized batches. Bump the version on every packaged build; never reuse a
-  number. Never build installers unless asked. Never commit binaries.
+  number within one package identity — the test and Store flavours are two
+  identities, so one version may be packed once in each (3046b090). Never build
+  installers unless asked. Never commit binaries.
 - **B9 i18n and a11y are substrate, not features.** A lint rule bans literal
   user-facing strings in JSX. Every dialog uses the one `<Dialog>` primitive.
   These cannot be retrofitted across tens of thousands of lines.

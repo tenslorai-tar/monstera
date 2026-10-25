@@ -24,7 +24,7 @@ Spell check goes through the document's text a word at a time. Each word it does
 - Under **Also check**, choose whether comments and form fields are checked too. Both are on unless you turn them off, here or in Settings.
 - Words are checked against English.
 - Words you add are kept in your personal dictionary and used in every later check.
-- A word is replaced where it is printed. If a word cannot be changed on its own there, for example because it is split across two pieces of text, the tab says so and nothing changes; use "Edit text on the page" to change the line.
+- A word is replaced where it is printed, inside its paragraph, as if you had changed it with "Edit text on the page": if the new spelling is wider or narrower, the rest of the paragraph is set again around it.
 - In a signed document, replacing a word is treated like any other edit: you are warned first that it breaks the signatures, unless you have turned that warning off.
 - A comment or field too long to change here is still checked, and the tab says when one cannot be changed.
 
