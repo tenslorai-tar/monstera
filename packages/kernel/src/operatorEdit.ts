@@ -18,7 +18,7 @@ import type { PageFont } from './pageFonts.js';
 import { type BlockPlan, type FlowLine, type Measure, NO_MARK, type Row, largestFit, planBlock } from './paragraphFlow.js';
 import { DECORATION_KEY, DECORATION_KINDS, DECORATION_TAG, type DecorationKind, decorationBand, decorationsOf } from './markDecorations.js';
 import { JUSTIFY_CAP, RISE_SCALE, SUBSCRIPT_DROP, SUPERSCRIPT_RISE, spaceable, spacedBy } from './markFigures.js';
-import { carried, neighbourSpan } from './contentCarry.js';
+import { carried, holds, neighbourSpan } from './contentCarry.js';
 import {
   type MarkedDecoration,
   type Matrix,
@@ -572,6 +572,12 @@ function write(
   arrangeWith: ArrangeContext,
 ): OperatorEdit {
   const { operators: real, decorations: pageDecorations } = operatorsAndDecorations(content);
+  /**
+   * Whether the content sets a clip at all (a `W` or `W*` operator): only then can a clip hide the words a block sets, and
+   * only then is the content read again for the windows in force (ADR-0266's correction of 2026-10-25). A false yes costs a
+   * read; a false no is impossible, since a clip has no other operator.
+   */
+  const setsAClip = /(?:^|[\s\])>])W\*?(?=\s)/u.test(new TextDecoder('latin1').decode(content));
   /** The marked decorations that go with old words set again, taken away where they stood (the owner's L2). */
   const decorationsGone = new Set<MarkedDecoration>();
   const objectEnds = textObjectEnds(content);
@@ -1785,6 +1791,42 @@ function write(
       insertions.push({ at, text: `\n${carry.before}${parts.join('\n')}${carry.after}`, drawn: drawnWords });
       continue;
     }
+    /**
+     * WHERE THE PAGE'S OWN CLIP WOULD HIDE THE LINES (ADR-0266's correction of 2026-10-25): `text` placed at `at`, or, where
+     * a clip window in force there does not hold the lines' box, past the end of the outermost such window, carrying the
+     * state there and the windows that do hold it — never the one that would hide the words. A placed block's box is its
+     * placement's, which this does not work out, so it is placed as before.
+     */
+    const pastHidingClip = (at: number, text: string): { readonly at: number; readonly text: string } => {
+      if (cm !== null || visual.length === 0 || !setsAClip) return { at, text };
+      const extents = visual.map((line) => {
+        const size = Math.max(...line.segments.map((segment) => segment.source.state.size * placed(indexOf.get(segment.source) ?? -1).unit * (segment.style?.factor ?? 1)));
+        return {
+          left: Math.min(...line.segments.map((segment) => segment.x)),
+          right: Math.max(...line.segments.map((segment) => segment.x + segmentWidth(segment))),
+          bottom: line.baseline - DESCENT_EM * size,
+          top: line.baseline + ASCENT_EM * size,
+        };
+      });
+      const box = {
+        left: Math.min(...extents.map((each) => each.left)),
+        bottom: Math.min(...extents.map((each) => each.bottom)),
+        right: Math.max(...extents.map((each) => each.right)),
+        top: Math.max(...extents.map((each) => each.top)),
+      };
+      const [here] = contentLayout(content, arrangeWith.kinds, [at]).states;
+      const hiding = here?.windows.find((window) => !holds(window, box));
+      // A WINDOW NEVER CLOSED has no end to be placed past: the words stay where they were, as before.
+      if (here === undefined || hiding === undefined || hiding.end >= content.length) return { at, text };
+      // PAST ITS `Q`, which `end` names the first byte of.
+      const past = hiding.end + 1;
+      const [there] = contentLayout(content, arrangeWith.kinds, [past]).states;
+      if (there === undefined) return { at, text };
+      const carry = carried(content, { ...here, windows: here.windows.filter((window) => holds(window, box)) }, there, box, arrangeWith.plainState);
+      if (carry === 'cropped') return { at, text };
+      plain ||= carry.plain;
+      return { at: past, text: `\n${carry.before}${text}${carry.after}` };
+    };
     // BEFORE THE FIRST EDITED OPERATOR'S BT, so inside its marked content; for lines only added below the block, before
     // its last run's, whose marked content they continue.
     if (insert !== undefined) {
@@ -1803,7 +1845,7 @@ function write(
       const after = objectEnds.get(ops[lastRun.last]?.textObject ?? -1);
       if (after !== undefined) {
         // A LINE BREAK FIRST: the text object it follows ends at its `ET`, and a `q` set against it would be one token.
-        insertions.push({ at: after, text: `\n${parts.join('\n')}`, drawn: drawnWords });
+        insertions.push({ ...pastHidingClip(after, `\n${parts.join('\n')}`), drawn: drawnWords });
         continue;
       }
     }
@@ -1821,10 +1863,10 @@ function write(
     const ends = objectEnds.get(anchor);
     if (own.size > 0 && keptBefore && !keptAfter && ends !== undefined) {
       // A LINE BREAK FIRST, for the reason the lines added below give: a `q` set against the `ET` would be one token.
-      insertions.push({ at: ends, text: `\n${parts.join('\n')}`, drawn: drawnWords });
+      insertions.push({ ...pastHidingClip(ends, `\n${parts.join('\n')}`), drawn: drawnWords });
       continue;
     }
-    insertions.push({ at: anchor, text: parts.join('\n'), drawn: drawnWords });
+    insertions.push({ ...pastHidingClip(anchor, parts.join('\n')), drawn: drawnWords });
   }
   if (uncarried.size > 0) throw new Refused({ reason: 'needs-a-face', characters: [...uncarried] });
   if (emptied.size === 0 && insertions.length === 0) throw new Refused({ reason: 'unchanged' });

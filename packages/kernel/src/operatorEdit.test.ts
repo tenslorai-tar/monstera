@@ -841,6 +841,28 @@ describe('editOperators on paragraphs (ADR-0179)', () => {
     expect(baselines(false).length).toBeGreaterThan(1);
   });
 
+  it('writes words past the page’s own clip where it would hide them (ADR-0266, corrected 2026-10-25)', () => {
+    // A ONE-LETTER CELL just above its clip's bottom edge, as the corpus's table cell sat: words added wrap below the clip.
+    const cell = (clip: string) => bytes(`q ${clip} re W n BT /F1 10 Tf 1 0 0 1 72 52 Tm (a) Tj ET Q\nBT /F1 10 Tf 1 0 0 1 300 400 Tm (z) Tj ET`);
+    const read: PageRuns = { textObjects: [0, 1], runs: [inked(0, 'a', 72, 77), inked(1, 'z', 300, 305)] };
+    const placedAt = (clip: string) => {
+      const content = cell(clip);
+      const result = editOperators(content, fonts, read, [{ lines: [[0]], soft: [false], text: 'a bbb ccc' }]);
+      if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+      expect(checkOperatorEdit(content, result.value, fonts).ok).toBe(true);
+      const written = latin1(result.value.content);
+      // THE ADDED WORDS' FIRST LETTER: in a cell one letter wide each letter is a line of its own.
+      return { object: written.indexOf('<62> Tj'), clipEnds: written.indexOf('Q\n') };
+    };
+    // THE CELL'S CLIP, its bottom at 50: the wrapped lines fall below it, so the object goes past its `Q`.
+    const hidden = placedAt('0 50 200 30');
+    expect(hidden.object).toBeGreaterThan(hidden.clipEnds);
+    // CONTROL: a clip that holds every line — the letters run down to y = -20 — and the object stays inside it, before its
+    // `Q`, as always.
+    const held = placedAt('0 -100 612 892');
+    expect(held.object).toBeLessThan(held.clipEnds);
+  });
+
   it('JUSTIFIES a wrapped line by widening its spaces, capped, and leaves the paragraph’s last line alone (ADR-0228)', () => {
     // `aaa bbb` (35 wide) over `cccccccccccc` (60 wide), one paragraph: the measure is 60, so the first line has 25 to
     // spare over its one space, which the cap holds to 0.6 of the size, 6.

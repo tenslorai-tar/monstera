@@ -123,8 +123,11 @@ const SAME = 1e-9;
 /** How far a window may fall short of the box and still hold it: below a hundredth of a point, the listing's rounding. */
 const HOLDS = 0.01;
 
-/** Whether a clip window lets all of `box` through. Its path's box is what is known of it, which a curve may overstate. */
-function holds(window: ClipWindow, box: PageBox): boolean {
+/**
+ * Whether a clip window lets all of `box` through. Its path's box is what is known of it, which a curve may overstate.
+ * The one rule for it: a carry asks it, and so does the operator writer before it places words a clip could hide.
+ */
+export function holds(window: ClipWindow, box: PageBox): boolean {
   const around = boxOfPoints(window.points);
   return around.left <= box.left + HOLDS && around.bottom <= box.bottom + HOLDS && around.right >= box.right - HOLDS && around.top >= box.top - HOLDS;
 }
