@@ -83,7 +83,7 @@ describe('pageFonts', () => {
     }
   });
 
-  it('scales a Type 3 font’s widths by its FontMatrix, reads both forms of /W, and has none for a standard font', async () => {
+  it('scales a Type 3 font’s widths by its FontMatrix, reads both forms of /W, and has none for a standard font in its built-in encoding', async () => {
     const session = await mupdfWriter.open(await threeFonts());
     try {
       const fonts = await withDocument(session, (document) => pageFonts(document.findPage(0)));
@@ -93,8 +93,43 @@ describe('pageFonts', () => {
       const near = (value: number | null | undefined) => (value === null || value === undefined ? value : Number(value.toFixed(6)));
       expect([width('F1', 65), width('F1', 67), width('F1', 68)].map(near)).toStrictEqual([1, 1.4, null]);
       expect([width('F2', 4), width('F2', 11), width('F2', 99)].map(near)).toStrictEqual([0.3, 0.64, 0.9]);
-      // NO /Widths: a width this module would have to guess, so it answers none.
+      // NO /Widths AND NO ENCODING NAMED: Helvetica's built-in StandardEncoding is a table pdf-lib does not hold, so which
+      // glyph a code is, and its width, would be a guess, and it answers none (ADR-0176's correction of 2026-10-25).
       expect(width('F3', 65)).toBeNull();
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  /**
+   * ADR-0176's correction of 2026-10-25: a standard font the file does not carry, written as pdf-lib writes one — WinAnsi
+   * named, no ToUnicode, no `/Widths`, no program — is read through its encoding and measured by its AFM widths.
+   */
+  it('reads a standard font with no ToUnicode through its WinAnsi encoding, and measures it by its AFM widths', async () => {
+    const doc = await PDFDocument.create({ updateMetadata: false });
+    const page = doc.addPage([300, 300]);
+    const context = doc.context;
+    const times = context.obj({ Type: 'Font', Subtype: 'Type1', BaseFont: 'Times-Roman', Encoding: 'WinAnsiEncoding' });
+    const mac = context.obj({ Type: 'Font', Subtype: 'Type1', BaseFont: 'Times-Roman', Encoding: 'MacRomanEncoding' });
+    const named = context.obj({ Type: 'Font', Subtype: 'TrueType', BaseFont: 'Arial', Encoding: 'WinAnsiEncoding', FirstChar: 65, LastChar: 65, Widths: [667] });
+    page.node.setFontDictionary(PDFName.of('F1'), context.register(times));
+    page.node.setFontDictionary(PDFName.of('F2'), context.register(mac));
+    page.node.setFontDictionary(PDFName.of('F3'), context.register(named));
+    page.node.set(PDFName.of('Contents'), context.register(context.flateStream('BT /F1 10 Tf (A) Tj ET')));
+    const session = await mupdfWriter.open(await doc.save({ useObjectStreams: false }));
+    try {
+      const fonts = await withDocument(session, (document) => pageFonts(document.findPage(0)));
+      const read = (name: string) => {
+        const font = fonts.get(name);
+        const map = font?.toUnicode ?? null;
+        return { codes: map === null ? null : codesFor(map, 'Aé€'), widths: [65, 233].map((code) => font?.width(code) ?? null) };
+      };
+      // TIMES' OWN AFM: A is 722 and é is 444 thousandths; WinAnsi puts é at 233 and the euro at 128.
+      expect(read('F1')).toStrictEqual({ codes: [65, 233, 128], widths: [0.722, 0.444] });
+      // A FONT THAT IS NOT STANDARD keeps its own /Widths, and is read through the encoding it names; it states no other.
+      expect(read('F3')).toStrictEqual({ codes: [65, 233, 128], widths: [0.667, null] });
+      // CONTROL: MacRoman is not a table pdf-lib holds, so that font has no known characters and no width, as before.
+      expect(read('F2')).toStrictEqual({ codes: null, widths: [null, null] });
     } finally {
       await mupdfWriter.close(session);
     }

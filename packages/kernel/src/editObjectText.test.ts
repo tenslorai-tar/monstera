@@ -277,10 +277,13 @@ describe('a text block recoloured whole is carried as it was (ADR-0264 Decision 
     expect(text).toContain('1 0 0 1 52 160 Tm [] TJ ET EMC');
   });
 
-  it('CONTROL: a colour over PART of the words is a mark like any other, set again in a face, which this font cannot give', async () => {
-    // HELVETICA HERE CARRIES NO ToUnicode, so words set again need a face: the writer is asked for one, which is the
-    // route a whole-block colour no longer takes.
-    await expect(written([heading('Garden', { marks: [{ from: 0, to: 3, set: { colour: RED } }] })])).rejects.toThrow(/needs-a-face/u);
+  it('CONTROL: a colour over PART of the words is a mark like any other: the words are set again, not carried', async () => {
+    // SET AGAIN from their codes, each part its own showing operator, in the page's Helvetica read through its WinAnsi
+    // encoding (ADR-0176's correction of 2026-10-25) — and the page's kerned array, which the case above carries, is gone.
+    const text = await written([heading('Garden', { marks: [{ from: 0, to: 3, set: { colour: RED } }] })]);
+    expect(text).toMatch(/1 0 0 rg\n1 0 0 1 52 160 Tm <476172> Tj/u);
+    expect(text).toContain('<64656E> Tj');
+    expect(text).not.toContain('[<47> -12 <61> 8 <72> 8 <64> -12 <65> 8 <6E>] TJ');
   });
 
   it('PDF.js reads the heading in red and the body line in its own grey, and MuPDF reads both lines, after a save', async () => {

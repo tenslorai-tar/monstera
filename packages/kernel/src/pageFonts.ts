@@ -1,3 +1,5 @@
+import { StandardFontEmbedder, StandardFonts, isStandardFont } from '@cantoo/pdf-lib';
+
 import type { PDFObject } from './mupdfRaw.js';
 import { bufferBytes } from './mupdfWriter.js';
 import { withoutSubsetTag } from './subsetName.js';
@@ -12,9 +14,14 @@ import { type ToUnicode, readToUnicode } from './toUnicode.js';
  * ## Widths are the font's OWN, and a font without them says so
  *
  * A simple font's `/Widths` and `/FirstChar`, a Type 3 font's scaled by its `/FontMatrix`, a Type0 font's descendant
- * `/W` and `/DW`. A standard font written with no `/Widths` has its widths in the reader's built-in metrics, which this
- * module does not hold: `width` answers `null` for it, and the writer refuses an edit that needs an advance it cannot
- * know rather than guess one and move every glyph after it.
+ * `/W` and `/DW`. A standard font written with no `/Widths` is measured by its AFM widths, which ISO 32000-1 §9.6.2.2
+ * gives every reader, from pdf-lib's tables; any other font that states none answers `null`, and the writer sets the word
+ * in another face rather than guess an advance that would move every glyph after it.
+ *
+ * ## A font with no ToUnicode is read through its encoding where pdf-lib holds its table
+ *
+ * ISO 32000-1 §9.10.2: the WinAnsi encoding, or Symbol's and ZapfDingbats' own (ADR-0176's correction of 2026-10-25). A
+ * font in any other encoding with no ToUnicode has no known characters, as before.
  */
 
 /** One font resource of a page. */
@@ -65,6 +72,70 @@ function numbers(object: PDFObject): number[] | null {
 function nameOf(object: PDFObject): string | null {
   const value = resolved(object);
   return value.isName() ? value.asName() : null;
+}
+
+/** A standard 14 font's name (ISO 32000-1 §9.6.2.2), in the type pdf-lib's embedder takes. */
+type StandardName = Parameters<typeof StandardFontEmbedder.for>[0];
+
+/** `name` where it is a standard font's, by pdf-lib's own rule (`isStandardFont`, which its `embedStandardFont` asks). */
+function standardName(name: string | null): StandardName | null {
+  return name !== null && isStandardFont(name) ? name : null;
+}
+
+/** The two standard fonts whose built-in encoding is their own rather than a Latin one. */
+const SYMBOLIC = new Set<string>([StandardFonts.Symbol, StandardFonts.ZapfDingbats]);
+
+/** pdf-lib's tables for a standard font, read once a process: parsing one is its metrics file decompressed. */
+const embedders = new Map<string, StandardFontEmbedder>();
+function embedderFor(name: StandardName): StandardFontEmbedder {
+  const held = embedders.get(name);
+  if (held !== undefined) return held;
+  const made = StandardFontEmbedder.for(name);
+  embedders.set(name, made);
+  return made;
+}
+
+/**
+ * A simple font with no ToUnicode, read through its encoding (ISO 32000-1 §9.10.2, ADR-0176's correction of 2026-10-25):
+ * each code's character and glyph name, from pdf-lib's table for the encoding — the WinAnsi encoding named, or the
+ * built-in encoding of Symbol or ZapfDingbats with none named — and, for a standard font, the font's own AFM tables.
+ * `null` for any other encoding (MacRoman, Standard, `/Differences`), which pdf-lib holds no table for: the stated limit.
+ */
+function encodedAs(font: PDFObject, base: string | null): { readonly toUnicode: ToUnicode; readonly width: (code: number) => number | null } | null {
+  const encoding = resolved(font.get('Encoding'));
+  const differences = encoding.isDictionary() ? resolved(encoding.get('Differences')) : null;
+  const named = encoding.isName() ? encoding.asName() : encoding.isDictionary() && differences?.isNull() === true ? nameOf(encoding.get('BaseEncoding')) : null;
+  const standard = standardName(base);
+  let table: StandardFontEmbedder;
+  if (named === 'WinAnsiEncoding') {
+    // THE WINANSI TABLE is one for every Latin standard font; a symbolic one's own is not it.
+    const latin = standard !== null && !SYMBOLIC.has(standard) ? standard : standardName(StandardFonts.Helvetica);
+    if (latin === null) return null;
+    table = embedderFor(latin);
+  } else if (encoding.isNull() && standard !== null && SYMBOLIC.has(standard)) {
+    table = embedderFor(standard);
+  } else {
+    return null;
+  }
+  const text = new Map<number, string>();
+  const glyphs = new Map<number, string>();
+  for (const point of table.encoding.supportedCodePoints) {
+    const { code, name } = table.encoding.encodeUnicodeCodePoint(point);
+    // THE FIRST CHARACTER A CODE IS READ AS keeps it: a code two characters encode to is one glyph.
+    if (text.has(code)) continue;
+    text.set(code, String.fromCodePoint(point));
+    glyphs.set(code, name);
+  }
+  // A STANDARD FONT'S WIDTHS from its AFM, in thousandths, where the table it is read through is its own.
+  const metrics = standard !== null && table === embedderFor(standard) ? table.font : null;
+  return {
+    toUnicode: { text, bytes: 1 },
+    width: (code) => {
+      const glyph = glyphs.get(code);
+      const width = metrics === null || glyph === undefined ? undefined : metrics.getWidthOfGlyph(glyph);
+      return typeof width === 'number' ? width / 1000 : null;
+    },
+  };
 }
 
 /** A simple font's widths: `/FirstChar` and `/Widths`, each scaled by `scale`. */
@@ -160,10 +231,17 @@ function read(resource: string, font: PDFObject): PageFont {
     width = simpleWidths(font, 0.001);
     draws = () => true;
   }
+  // A SIMPLE FONT WITH NO TOUNICODE is read through its encoding, and a standard one with no `/Widths` measured by its AFM.
+  const own = toUnicodeOf(font);
+  const encoded = own === null && subtype !== 'Type3' && descendant === null ? encodedAs(font, nameOf(font.get('BaseFont'))) : null;
+  if (encoded !== null) {
+    const stated = width;
+    width = (code) => stated(code) ?? encoded.width(code);
+  }
   return {
     resource,
     subtype,
-    toUnicode: toUnicodeOf(font),
+    toUnicode: own ?? encoded?.toUnicode ?? null,
     codeBytes: subtype === 'Type0' ? 2 : 1,
     width,
     draws,
