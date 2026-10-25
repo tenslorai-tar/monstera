@@ -91,3 +91,12 @@ colour, as the content scanner already records them for a text operator — befo
 resource of the holder is left out (`Tf`, `gs`, a colour space by name and the colours set in it), since the form's own
 resources need not hold the name, and a form that uses those sets them itself. Measured after: every edit of the
 brochure's form blocks disturbs nothing.
+
+## Correction, 2026-10-25 — a form's block pushes the blocks below it in the same form
+
+Decision 6 had a form's block push nothing, and measured on document 6 that is the page's rule left out rather than a
+rule: 7 of its form blocks' added words wrapped onto the table cell below, up to 11 points away, where a block of the
+page's own content in the same place pushes that cell down (ADR-0249) and disturbs nothing. **A form's block pushes as
+the page's do, among the blocks of its own placement**: `pushesOfPage` over that placement's blocks, read in the same
+page box, the blocks below named by their place in the page's whole list. A push never crosses a stream, for the reason
+a join does not (one command writes one stream). Nothing outside the form pushes into it or is pushed by it.
