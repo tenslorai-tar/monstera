@@ -52,7 +52,7 @@
 
 import { MAX_PUSHED_BLOCKS } from '@monstera/contract/host';
 
-import { blockShape } from '@monstera/shared';
+import { blockShape, faceSeenAs } from '@monstera/shared';
 
 /** How a text object's matrix sets it (`orientationOf`, `pdfiumFfi.ts`): `upright` is the only one an editor is placed along. */
 export type Orientation = 'upright' | 'turned' | 'vertical' | 'slanted' | 'mirrored';
@@ -239,19 +239,25 @@ export interface BlockableRun<S> extends LineableRun {
 }
 
 /**
- * A run's SETTING as one key: which font, the size it is drawn at, and the colour it is filled with. Two runs set
+ * A run's SETTING as one key: which face, the size it is drawn at, and the colour it is filled with. Two runs set
  * alike have equal keys, and a block never continues across a change of key (`groupIntoBlocks`, step 3).
+ *
+ * The face as a person sees it (`faceSeenAs`), not the font's name: an edit writes letters a subset lacks in the face
+ * that stands in for it, and a heading whose last word went into Arimo beside the page's Liberation Sans read back as two
+ * blocks (ADR-0096's correction of 2026-10-25).
  *
  * The size to a hundredth of a point: the glyphs of one line come back with sizes equal to the last digit, and a
  * hundredth is far below any two sizes a designer sets apart.
  */
 export function settingOf(style: {
   readonly font: string;
+  readonly bold: boolean;
+  readonly italic: boolean;
   readonly size: number;
   readonly colour: { readonly r: number; readonly g: number; readonly b: number };
 }): string {
   const { r, g, b } = style.colour;
-  return `${style.font}|${style.size.toFixed(2)}|${String(r)},${String(g)},${String(b)}`;
+  return `${faceSeenAs(style.font, style.bold, style.italic)}|${style.size.toFixed(2)}|${String(r)},${String(g)},${String(b)}`;
 }
 
 /**

@@ -1,3 +1,5 @@
+import { instanceName } from '@monstera/shared';
+
 import { boxFont } from './boxFont.js';
 import { readFace } from './fontFaces.js';
 import { namedSubset } from './fontSubset.js';
@@ -33,7 +35,7 @@ export type FaceProgramRequest =
 export function faceProgram(request: FaceProgramRequest): Uint8Array | null {
   const named = readFace(request.whole, request.faceIndex).postscript;
   // A VARIABLE FACE'S NAME says which instance it is, as the composers name one (`composeFonts.ts`).
-  const postscript = request.variable ? `${named === '' ? 'Font' : named}-wght${String(request.weight)}` : named;
+  const postscript = request.variable ? instanceName(named, request.weight) : named;
   const axes = request.variable ? { wght: request.weight } : {};
   if (request.kind === 'box') return boxFont(request.whole, request.faceIndex, axes, postscript, request.point)?.bytes ?? null;
   const subset = namedSubset(request.whole, postscript, { unicodes: [...request.unicodes], faceIndex: request.faceIndex, axes });

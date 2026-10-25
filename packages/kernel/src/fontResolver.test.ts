@@ -1,3 +1,4 @@
+import { instanceName, withoutInstance } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import { type CandidateFace, type FontRequest, candidatesFor, familyClass, normaliseFamily, resolveRuns } from './fontResolver.js';
@@ -141,6 +142,14 @@ describe('normaliseFamily and familyClass', () => {
     expect(normaliseFamily('Courier New')).toBe('couriernew');
     // CONTROL: a family whose own name ends in a style word keeps the rest.
     expect(normaliseFamily('Helvetica')).toBe('helvetica');
+  });
+
+  it('removes the instance suffix this project’s writers give a variable face, by the one spelling they take', () => {
+    expect(instanceName('Arimo-Regular', 700)).toBe('Arimo-Regular-wght700');
+    expect(withoutInstance(instanceName('Arimo-Regular', 700))).toBe('Arimo-Regular');
+    expect(normaliseFamily(`QQKGUW+${instanceName('Arimo-Regular', 400)}`)).toBe('arimo');
+    // CONTROL: a name that only mentions an axis is its own.
+    expect(withoutInstance('Wght-Display')).toBe('Wght-Display');
   });
 
   it('reads a family’s class from its name', () => {

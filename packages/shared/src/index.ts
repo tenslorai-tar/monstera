@@ -137,7 +137,16 @@ export {
 // THE ONE RULE for whether a field can be called a name, taken by the create (kernel) and by the surface that asks first.
 export { fieldNameClash, nextFieldName } from './fieldNames.js';
 // A FONT'S NAME AND ITS STAND-IN (ADR-0250): the resolver's rules, which the font picker previews by too.
-export { LOOKS_LIKE, STAND_INS, SUBSET_TAG, normaliseFamily, withoutSubsetTag } from './fontNames.js';
+export {
+  LOOKS_LIKE,
+  STAND_INS,
+  SUBSET_TAG,
+  faceSeenAs,
+  instanceName,
+  normaliseFamily,
+  withoutInstance,
+  withoutSubsetTag,
+} from './fontNames.js';
 export { DEFAULT_TEXT_LINE_HEIGHT, MAX_TEXT_LINE_HEIGHT, MAX_TEXT_PADDING, MIN_TEXT_LINE_HEIGHT } from './textBoxLimits.js';
 // THE ONE RULE for where Add text's box goes, taken by the editor and by the proof that its words land on the page.
 export { NEW_TEXT_MARGIN, NEW_TEXT_MAX_MEASURE, NEW_TEXT_MIN_MEASURE, type NewTextBox, newTextBox } from './newTextBox.js';

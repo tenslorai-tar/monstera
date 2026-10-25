@@ -60,15 +60,48 @@ export const LOOKS_LIKE: Readonly<Record<string, string>> = {
   Caladea: 'Cambria',
 };
 
+/** The suffix {@link instanceName} gives a variable face's instance: its `wght` axis pinned, as a number. */
+const INSTANCE_SUFFIX = /-wght\d+(?:\.\d+)?$/u;
+
 /**
- * A family name as the stand-in table keys it: no subset tag, no PostScript style suffix, lower case, letters only.
- * `ABCDEF+TimesNewRomanPS-BoldItalicMT` is `timesnewroman`.
+ * The PostScript name a variable face's instance is written under: the face's own name, which names only its default
+ * instance, and the weight it is pinned at. The one spelling every writer of such a face takes, so
+ * {@link withoutInstance} can read it back.
+ */
+export function instanceName(named: string, weight: number): string {
+  return `${named === '' ? 'Font' : named}-wght${String(weight)}`;
+}
+
+/** A font name without the instance suffix {@link instanceName} writes: `Arimo-Regular-wght700` is `Arimo-Regular`. */
+export function withoutInstance(name: string): string {
+  return name.replace(INSTANCE_SUFFIX, '');
+}
+
+/**
+ * A family name as the stand-in table keys it: no subset tag, no instance suffix, no PostScript style suffix, lower case,
+ * letters only. `ABCDEF+TimesNewRomanPS-BoldItalicMT` is `timesnewroman`.
  */
 export function normaliseFamily(name: string): string {
-  return withoutSubsetTag(name)
+  return withoutInstance(withoutSubsetTag(name))
     .replace(/[-,](?:Bold|Italic|Oblique|Regular|Roman|Book|Medium|Light|Semibold|Black)\w*$/iu, '')
     .replace(/(?:PS)?MT$/u, '')
     .replace(/PS$/u, '')
     .toLowerCase()
     .replace(/[^a-z0-9]/gu, '');
+}
+
+/**
+ * The face a font NAME draws as, as a person sees it, for telling two runs' faces apart
+ * ([ADR-0096](../../../docs/DECISIONS/0096-text-is-edited-in-place-on-the-page-in-blocks-that-reflow.md)'s correction of
+ * 2026-10-25): a name is not a face, and an edit's stand-in for letters a subset lacks must read as the face it stands in.
+ *
+ * - A subset tag says only which subset, and an instance suffix names a weight `bold` already says: neither is the face.
+ * - A face {@link STAND_INS} pairs with another is that family, told apart only by bold and italic: the table's own claim,
+ *   that the two are drawn to one measure. Arimo, Helvetica and Liberation Sans are one face.
+ * - Any other name is the face it names, as it is: `Roboto-Light` and `Roboto-Regular` stay two.
+ */
+export function faceSeenAs(font: string, bold: boolean, italic: boolean): string {
+  const named = withoutInstance(withoutSubsetTag(font));
+  const family = STAND_INS[normaliseFamily(named)];
+  return family === undefined ? named : `${family}${bold ? ' Bold' : ''}${italic ? ' Italic' : ''}`;
 }

@@ -13,6 +13,7 @@ import {
   setFontAndSize,
   setTextRise,
 } from '@cantoo/pdf-lib';
+import { instanceName } from '@monstera/shared';
 
 import { paragraphDirection } from './bidiOrder.js';
 import { CidFont, adjustment, codeString, pdfLibCidSink } from './cidFont.js';
@@ -238,7 +239,7 @@ export class ComposeFonts {
       faceIndex: face.faceIndex,
       axes: face.weights === null ? {} : { wght: weight },
       // A VARIABLE FACE'S NAME says which instance it is, since its own name 6 names only the default one.
-      postscript: face.weights === null ? named : `${named === '' ? 'Font' : named}-wght${String(weight)}`,
+      postscript: face.weights === null ? named : instanceName(named, weight),
       embedding: face.embedding,
       italic: face.italic,
       shaping,

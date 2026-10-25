@@ -115,7 +115,7 @@ describe('softEnds (ADR-0097 4c, ADR-0179 Decision 2)', () => {
 });
 
 describe('a block carries its soft ends and its shape (ADR-0179)', () => {
-  const style = { font: 'f', size: 10, colour: { r: 0, g: 0, b: 0 } };
+  const style = { font: 'f', bold: false, italic: false, size: 10, colour: { r: 0, g: 0, b: 0 } };
   const long = (index: number, text: string, bottom: number, top: number, right: number): BlockableRun<string> => ({
     index,
     text,
@@ -503,12 +503,14 @@ interface Set {
   readonly colour: { readonly r: number; readonly g: number; readonly b: number };
   readonly bold: boolean;
 }
-const HEADING: Set & { font: string } = { font: 'Roboto-Bold', size: 13.032, colour: { r: 66, g: 83, b: 149 }, bold: true };
-const LEAD: Set & { font: string } = { font: 'Nunito-Bold', size: 9.198, colour: { r: 64, g: 64, b: 64 }, bold: true };
-const REST: Set & { font: string } = { font: 'Nunito-Regular', size: 9.198, colour: { r: 64, g: 64, b: 64 }, bold: false };
+/** A run's setting with what `settingOf` reads beside it: the font's name and whether it is italic. */
+type Named = Set & { readonly font: string; readonly italic: boolean };
+const HEADING: Named = { font: 'Roboto-Bold', size: 13.032, colour: { r: 66, g: 83, b: 149 }, bold: true, italic: false };
+const LEAD: Named = { font: 'Nunito-Bold', size: 9.198, colour: { r: 64, g: 64, b: 64 }, bold: true, italic: false };
+const REST: Named = { font: 'Nunito-Regular', size: 9.198, colour: { r: 64, g: 64, b: 64 }, bold: false, italic: false };
 
-function headingOverList(setting: (style: Set & { font: string }) => string): BlockableRun<Set>[] {
-  const run = (index: number, text: string, left: number, right: number, bottom: number, top: number, style: Set & { font: string }) => ({
+function headingOverList(setting: (style: Named) => string): BlockableRun<Set>[] {
+  const run = (index: number, text: string, left: number, right: number, bottom: number, top: number, style: Named) => ({
     index,
     text,
     left,
@@ -578,6 +580,47 @@ describe('a block does not continue across a change of SETTING (N4, the owner’
     expect(settingOf({ ...REST, size: 9.1984 })).toBe(settingOf(REST));
     expect(settingOf({ ...REST, colour: { r: 64, g: 64, b: 65 } })).not.toBe(settingOf(REST));
     expect(settingOf({ ...REST, font: 'Nunito-Bold' })).not.toBe(settingOf(REST));
+  });
+});
+
+/**
+ * The brochure's heading (ADR-0096's correction of 2026-10-25, measured): set in the standard Helvetica PDFium reads as
+ * `LiberationSans`, its longer words written by an edit partly in the bundled Arimo that stands in for it, `QQKGUW+Arimo-
+ * Regular-wght400`, 26 pt in one green. Its two lines read back as two blocks, and a colour change reached one.
+ */
+describe('a block continues across look-alike faces: a change of font is a change of the face a person sees', () => {
+  const green = { r: 26, g: 89, b: 64 };
+  const heading = (font: string, bold = false, italic = false): Named => ({ font, size: 26, colour: green, bold, italic });
+
+  it('the page’s face and the stand-in written beside it are one setting, and its two lines one block', () => {
+    expect(settingOf(heading('QQKGUW+Arimo-Regular-wght400'))).toBe(settingOf(heading('LiberationSans')));
+    const blocks = groupIntoBlocks([
+      placed(0, 'Summer at the', 53.17, 221.37, 759.77, 779.14, settingOf(heading('QQKGUW+Arimo-Regular-wght400')), 26),
+      placed(1, 'garden', 53.09, 131.25, 723.42, 747.94, settingOf(heading('LiberationSans')), 26),
+    ]);
+    expect(blocks.map((block) => block.lines.map(covers))).toStrictEqual([[[0], [1]]]);
+    // CONTROL: the same two lines keyed by the font's name are the two blocks measured.
+    const byName = groupIntoBlocks([
+      placed(0, 'Summer at the', 53.17, 221.37, 759.77, 779.14, 'QQKGUW+Arimo-Regular-wght400', 26),
+      placed(1, 'garden', 53.09, 131.25, 723.42, 747.94, 'LiberationSans', 26),
+    ]);
+    expect(byName.map((block) => block.lines.map(covers))).toStrictEqual([[[0]], [[1]]]);
+  });
+
+  it('two subsets of one font are one face, whatever their tags; Helvetica, Arial and Arimo are one', () => {
+    expect(settingOf(heading('ABCDEF+Roboto-Regular'))).toBe(settingOf(heading('GHIJKL+Roboto-Regular')));
+    expect(settingOf(heading('Helvetica'))).toBe(settingOf(heading('ArialMT')));
+    expect(settingOf(heading('Calibri', true))).toBe(settingOf(heading('XYZABC+Carlito-Bold-wght700', true)));
+  });
+
+  it('CONTROL: bold, italic, and faces the table does not pair still change the setting', () => {
+    expect(settingOf(heading('LiberationSans', true))).not.toBe(settingOf(heading('LiberationSans')));
+    expect(settingOf(heading('Arimo', false, true))).not.toBe(settingOf(heading('Arimo')));
+    expect(settingOf(heading('Roboto-Light'))).not.toBe(settingOf(heading('Roboto-Regular')));
+    expect(settingOf(heading('Arimo'))).not.toBe(settingOf(heading('Tinos')));
+    // AND BY NAME, the rule before this one: the measured heading's two fonts are two keys.
+    const byName = (style: Named): string => `${style.font}|${style.size.toFixed(2)}`;
+    expect(byName(heading('QQKGUW+Arimo-Regular-wght400'))).not.toBe(byName(heading('LiberationSans')));
   });
 });
 

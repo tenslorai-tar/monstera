@@ -1,3 +1,5 @@
+import { instanceName } from '@monstera/shared';
+
 import { boxFont } from './boxFont.js';
 import { CidFont } from './cidFont.js';
 import { editPieces } from './editPieces.js';
@@ -117,7 +119,7 @@ export class OperatorFaceSet {
     const shaping = this.#shaping(face, axes);
     const named = shaping.postscriptName();
     // A VARIABLE FACE'S NAME says which instance it is, as the composers name one (`composeFonts.ts`).
-    const postscript = face.weights === null ? named : `${named === '' ? 'Font' : named}-wght${String(weight)}`;
+    const postscript = face.weights === null ? named : instanceName(named, weight);
     const added = this.#add(`${face.id}@${String(weight)}`, () => ({
       bytes: this.#read(face.path),
       faceIndex: face.faceIndex,
