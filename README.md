@@ -83,11 +83,11 @@ using your own key with any of ten providers.
 
 ## What it is
 
-A PDF editor that is genuinely professional and genuinely free. The benchmark it
-was built against is PDF-XChange Editor: parity or better. It runs as a Windows
-desktop application with light and dark themes, follows Windows' contrast
-themes, offers three layouts (Ribbon, Studio and Focus), and carries its own
-help, which works offline: press F1.
+A PDF editor that is genuinely professional and genuinely free. It is built to
+professional standards: every feature is tested against real documents and must
+survive save and reopen. It runs as a Windows desktop application with light and
+dark themes, follows Windows' contrast themes, offers three layouts (Ribbon,
+Studio and Focus), and carries its own help, which works offline: press F1.
 
 It is distributed through the **Microsoft Store** only, and the Store keeps it up
 to date. monsterapdf.com links to the Store listing.
