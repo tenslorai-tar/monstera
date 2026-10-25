@@ -244,3 +244,11 @@ is itself the guess that function refuses to make.
 
 **Stated limit:** a simple font with no ToUnicode whose encoding is `/MacRomanEncoding`, `/StandardEncoding` or carries
 `/Differences` is read as before, so its words are set in the resolver's face. pdf-lib holds none of those tables.
+
+**Narrowed the same day: only a font the file does NOT carry.** The first build read every simple font with no ToUnicode
+through its encoding, embedded ones too, and the corpus count at 8db42b52 logged three defects where it had logged none:
+words added to blocks in a word processor's embedded TrueType subsets (`/FontFile2`, WinAnsi named, no ToUnicode) in
+documents 6 and 8 were made, changed 0 pixels, and were not in MuPDF's reading. An embedded subset holds only the glyphs
+its producer used, so a code its encoding names may draw nothing; a font the file does not carry is drawn by the reader
+from a whole face, which is what makes the encoding a promise of a glyph. A font with an embedded program is therefore
+read as before.
