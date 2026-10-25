@@ -6,6 +6,7 @@ import {
   type BlockBox,
   type BlockableRun,
   type GroupableRun,
+  blockableOf,
   groupIntoBlocks,
   groupIntoLines,
   pushesOf,
@@ -588,6 +589,15 @@ describe('a block does not continue across a change of SETTING (N4, the owner’
  * `LiberationSans`, its longer words written by an edit partly in the bundled Arimo that stands in for it, `QQKGUW+Arimo-
  * Regular-wght400`, 26 pt in one green. Its two lines read back as two blocks, and a colour change reached one.
  */
+describe('blockableOf takes a run’s pitch from its style, in the one place every caller takes its setting from', () => {
+  it('a mono run is fixed pitch, so its line keeps its break; CONTROL a run that says none is not', () => {
+    const style = { font: 'Courier', bold: false, italic: false, size: 10, colour: { r: 0, g: 0, b: 0 } };
+    const run = { index: 0, text: 'if (ready) {', left: 72, right: 142, bottom: 698, top: 708 };
+    expect(blockableOf({ ...run, style: { ...style, mono: true } }).fixedPitch).toBe(true);
+    expect(blockableOf({ ...run, style }).fixedPitch).toBe(false);
+  });
+});
+
 describe('a block continues across look-alike faces: a change of font is a change of the face a person sees', () => {
   const green = { r: 26, g: 89, b: 64 };
   const heading = (font: string, bold = false, italic = false): Named => ({ font, size: 26, colour: green, bold, italic });

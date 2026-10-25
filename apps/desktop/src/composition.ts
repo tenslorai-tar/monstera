@@ -1730,8 +1730,6 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
           groupIntoBlocks(
             upright.map((run) => ({
               ...blockableOf(run),
-              // A FIXED-PITCH LINE KEEPS ITS BREAK (`softEnds`): code set one command to a line is not a wrapped paragraph.
-              fixedPitch: run.style.mono,
               style: {
                 size: run.style.size,
                 colour: run.style.colour,

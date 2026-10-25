@@ -261,13 +261,16 @@ export function settingOf(style: {
 }
 
 /**
- * A run with what the block grouping reads of how it is set — its {@link settingOf} key and the size it is drawn at — taken
- * from its style in one place, so no caller derives the two apart.
+ * A run with what the block grouping reads of how it is set — its {@link settingOf} key, the size it is drawn at, and
+ * whether it is fixed pitch (the read's `mono`) — taken from its style in one place, so no caller derives them apart. A
+ * FIXED-PITCH LINE KEEPS ITS BREAK (`softEnds`): code set one command to a line is not a wrapped paragraph. Main set this
+ * beside the call and the Edit text proof did not, so the proof read a code block's first line as wrapped and sent it
+ * with the next as one paragraph (2026-10-25).
  */
-export function blockableOf<R extends { readonly style: Parameters<typeof settingOf>[0] }>(
+export function blockableOf<R extends { readonly style: Parameters<typeof settingOf>[0] & { readonly mono?: boolean } }>(
   run: R,
-): R & { readonly setting: string; readonly size: number } {
-  return { ...run, setting: settingOf(run.style), size: run.style.size };
+): R & { readonly setting: string; readonly size: number; readonly fixedPitch: boolean } {
+  return { ...run, setting: settingOf(run.style), size: run.style.size, fixedPitch: run.style.mono === true };
 }
 
 /**

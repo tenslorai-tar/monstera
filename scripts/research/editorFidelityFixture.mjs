@@ -134,7 +134,6 @@ export async function readBlocks(bytes) {
     groupIntoBlocks(
       upright.map((/** @type {any} */ run) => ({
         ...blockableOf(run),
-        fixedPitch: run.style.mono,
         style: {
           size: round(run.style.size),
           colour: run.style.colour,
