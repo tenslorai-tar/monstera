@@ -215,3 +215,32 @@ carries the whole word but the page's fonts carry every character, it is set **a
 one font carries**, the run's own font first — which is how the page itself had set it (*aisle* in one font, *.* in
 another). Only a character no page font carries goes to the resolver's face or the box. **A word that yields no
 pieces always reports its characters**, so it is refused by name or given a face, and can never vanish.
+
+## Correction, 2026-10-25 — a standard font is read through its encoding and its standard widths (Decision 5)
+
+**Measured on cloud run 19's editor-fidelity page in the running application** (`scripts/research/editorFidelityWalk.mjs`):
+a paragraph in Times that the file names and does not carry, highlighted across its two lines and nothing else, was
+written in the stand-in face the resolver gives, and set in three lines. Its font is pdf-lib's standard Times-Roman:
+`/Type1`, `/Encoding /WinAnsiEncoding`, no `/ToUnicode`, no `/Widths`, no program. Decision 5 reads the run's own font
+through its ToUnicode, so with none no word could be set in it, and `pageFonts.ts` answered no width for a standard font
+without `/Widths` — its header calling those widths the reader's built-in metrics, *which this module does not hold*.
+Since every page moved to this writer (ADR-0266), every paragraph a producer set in a standard font it did not embed was
+re-set in another face by any change, a highlight included.
+
+**Neither is a guess, and both have an authority.** ISO 32000-1 §9.10.2 reads a simple font with no ToUnicode through
+its encoding's character names, and §9.6.2.2 gives the standard 14 fonts' metrics to every reader, which is why a
+producer may leave them out. pdf-lib holds both for the fonts it writes — the encoding a standard font is written in and
+the font's AFM widths, on its public `StandardFontEmbedder` — and the kernel already takes pdf-lib.
+
+**Decision 5 now reads the run's own font through its ToUnicode, else, for a simple font with none, through its
+encoding** where that is the WinAnsi encoding, or the built-in encoding of Symbol or ZapfDingbats with none named — the
+three pdf-lib holds. **A standard font's widths are its `/Widths`, else its AFM widths.** Both are pdf-lib's tables, read
+in one place (`pageFonts.ts`), never restated here.
+
+**Rejected: tables written here.** A partial copy of an encoding and its glyph names agrees with the authority most of the
+time, which is B3a's dangerous shape. **Rejected: learning each code from PDFium's reading of the page**, as
+`pageFontsAsRead` learns one unnamed code between named ones: with no code named, the alignment of codes to characters
+is itself the guess that function refuses to make.
+
+**Stated limit:** a simple font with no ToUnicode whose encoding is `/MacRomanEncoding`, `/StandardEncoding` or carries
+`/Differences` is read as before, so its words are set in the resolver's face. pdf-lib holds none of those tables.
