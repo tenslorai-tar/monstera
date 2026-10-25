@@ -91,3 +91,30 @@ The owner approved this ADR the same day and answered its two open points:
 - **Decision 4's four stops stay** — a numbering mismatch, a font with no widths, a clip the inserted object cannot
   share, an arrange that would crop — since writing past any of them changes other parts of the page. Each is logged as
   a writer defect, counted by the proof, and must read 0.
+
+## Correction, 2026-10-25 — what shipping Unifont decided, measured while it was built
+
+Five things the correction above did not say, each settled by a measurement rather than a reading:
+
+1. **The last face is the resolver's, so it reaches every writer that sets text through it** — text boxes, form fields,
+   stamps and the Markdown and CSV import as well as Edit text. One resolver per authority (B3a) leaves no other
+   reading: a chain that ended at Unifont for Edit text and at the box for an import would be two opinions about one
+   question. A character those writers boxed until now is drawn instead, which is the owner's *preserve, never drop*.
+2. **The box is NOT removed: it is reached past the Basic Multilingual Plane.** Unifont 18.0.01 draws every BMP point,
+   unassigned ones included, and nothing beyond it, so a plane-15 private-use character such as U+F0000 is still no
+   face's. "The box step is removed" is read as *no longer reached for anything a face draws*; the step itself stays,
+   since removing it would refuse those characters, which Decision 3 forbids.
+3. **A CFF face is embedded as a program BUILT in code order**, glyph *n* drawing code *n*'s glyph from the face's own
+   outline (`cidFont.ts`, `pathFont.ts`' `cffProgram`), under `Identity-H` as a `CIDFontType0` with `FontFile3
+   /OpenType`. A CFF that is not CID-keyed selects its glyph by the CID, so the face's own program — even subset with
+   its glyph ids kept — gives one glyph one code, and Thai SARA AM, shaped as NIKHAHIT and SARA AA, needs SARA AA's
+   glyph under two. An encoding CMap sending two codes to one CID is legal and was tried: MuPDF reads both codes as one
+   text, since its `ToUnicode` is held per CID — "าำาำ" did not read back. The built program holds only the glyphs drawn:
+   692 bytes for five, where HarfBuzz's id-keeping subset was 141,836 for three.
+4. **The PDFium writer is offered TrueType faces only.** `FPDFText_LoadFont` takes every face as TrueType and saved
+   Unifont's CFF program as `FontFile2` under `CIDFontType2` (`proof:pdfiumcommand`), which ISO 32000-2's 9.9 does
+   not allow. Its chain ends at its box as before. No Edit text change reaches it: every page's edits go to the operator
+   writer (ADR-0266); it is kept correct, not extended.
+5. **A word whose shaping draws a glyph standing for no character is written, never refused.** The operator writer
+   refused such a word — "refused by name, which loses nothing" — and Thai SARA AM in any face is one. The glyph takes
+   a code with no `ToUnicode` entry, and MuPDF reads the word back exactly as typed.
