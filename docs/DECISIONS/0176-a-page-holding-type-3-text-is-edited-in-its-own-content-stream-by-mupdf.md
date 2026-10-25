@@ -289,3 +289,22 @@ neighbours; the owner accepts this for an edit that is never refused and moves o
 **Rejected: making Type 3 code reuse faster.** Measured the same day on document 2, the slow finish was not the Type 3
 work (the read lane, Journal 2026-10-25); and the owner's rule is about what is written, not about speed. **Rejected:
 reusing a Type 3 glyph for a new word where the font happens to hold the letter** — the owner: drop it.
+
+## Correction, 2026-10-25, later — "the words the run already said" are the edit's, by the font that drew them
+
+The correction above was built keyed on the operator that starts each run, and a word was looked up under the operator
+of the run the layout set it in. That is narrower than the decision. Measured on the Chromium print
+(`proof:type3edit`, red on CI at `e2d94365`): PDFium reads its Type 3 heading as several runs, so a word set again at the
+end of the line landed in another run than the one that had said it and was taken for new; with no faces bound the
+edit was refused, and with faces bound an untouched word of the heading would have changed face inside its own block —
+which no corpus count can see, since they compare the pixels outside the block. A join of two headings in the one font
+was refused the same way: the second heading's words, moved and not typed, were new to the first heading's runs.
+
+**A word keeps its drawn letters where a run of the same edit, drawn in the same font, already said it.** The edit's
+words are read once, from every block it names — the emptied block of a join among them — and kept per font. So a
+heading set again keeps every word it had wherever the layout puts it, and a join keeps the moved words' letters when
+both blocks are drawn in one font. A word another font drew is still new to this one, so a Type 3 font is never asked
+for a glyph it did not already draw for that word, which is the rejected reuse above. A word typed is new as before.
+
+Rejected: keeping the per-run key and binding faces in the proof, which hides the change of face inside the block
+rather than removing it.
