@@ -125,7 +125,7 @@ to be read. See [Why the codebase looks the way it does](#why-the-codebase-looks
 - Select, move, copy, paste and erase marks, and snapshot a region as an image.
 
 ### Text editing
-- **Edit text** changes the words on the page in place, in paragraphs that reflow. It rewrites only the paragraph you changed, from your edit onward, and keeps the original font wherever that font can draw the letters.
+- **Edit text** changes the words on the page in place, in paragraphs that reflow. Only the block you edit changes; everything else on the page is left exactly as it was, except that text below moves down when your paragraph grows. It keeps the original font wherever that font can draw the letters, and sets any other letter in the closest font it can find, so an edit is never refused for its font.
 - Add new text, with bold, italic, alignment, lists and spacing.
 - Right-to-left text, and scanned pages that can be recognised and then edited.
 - **Edit Object** moves, resizes, recolours, reorders or removes any text, image or shape on the page, rewriting only the object you changed.
@@ -243,8 +243,8 @@ flowchart LR
     caps["CapabilityRegistry<br/>mints file handles"]
   end
   subgraph hosts["Engine hosts: AppContainer + job object<br/>no network, only the file handed"]
-    mupdf["MuPDF host<br/>open, render, edit, OCR"]
-    pdfium["PDFium host<br/>edit text in place"]
+    mupdf["MuPDF host<br/>open, render, edit text, OCR"]
+    pdfium["PDFium host<br/>read text for editing"]
     compose["Compose host<br/>import, compose, optimize"]
   end
   subgraph converters["Contained programs: AppContainer + job object<br/>only an input and an output folder"]
@@ -301,8 +301,8 @@ guards is removed.
 | [Electron](https://www.electronjs.org/) | 43.7.7 | The desktop shell; the same pinned binary runs the engine hosts in Node mode |
 | [React](https://react.dev/) | 19.2.8 | The interface |
 | [TypeScript](https://www.typescriptlang.org/) | 6.0.3 | Every package, in strict mode |
-| [MuPDF](https://mupdf.com/) | 1.28.0 | The main PDF engine: opening, rendering, editing, redaction, encryption; built from source into a native library loaded through [koffi](https://koffi.dev/) 3.1.5 |
-| [PDFium](https://pdfium.googlesource.com/pdfium/) | 155.0.8044.0 | Editing text in place, in its own contained host |
+| [MuPDF](https://mupdf.com/) | 1.28.0 | The main PDF engine: opening, rendering, editing text in place, redaction, encryption; built from source into a native library loaded through [koffi](https://koffi.dev/) 3.1.5 |
+| [PDFium](https://pdfium.googlesource.com/pdfium/) | 155.0.8044.0 | Reading a page's text, its runs and its fonts for Edit text, in its own contained host |
 | [PDF.js](https://mozilla.github.io/pdf.js/) | 6.2.108 | Draws pages in the window; never the source of truth |
 | [pdf-lib](https://github.com/cantoo-scribe/pdf-lib) (the `@cantoo/pdf-lib` fork) | 2.9.1 | Composing new documents, creating form fields and the OCR text layer |
 | [Tesseract](https://github.com/tesseract-ocr/tesseract) (`tesseract.js-core`) | 7.0.0, with tessdata_fast 4.0.0 | OCR, offline, inside the MuPDF host |
@@ -313,6 +313,7 @@ guards is removed.
 | [fflate](https://github.com/101arrowz/fflate) | 0.8.3 | The zip under every Word, PowerPoint and Excel export |
 | [HarfBuzz](https://harfbuzz.github.io/) (`harfbuzzjs`) | 1.6.2 | Reading and subsetting fonts for Edit text |
 | Bundled open fonts | from google/fonts | The fallback faces for Edit text when a document's own font cannot draw a letter: Arimo, Tinos, Cousine, Carlito, Caladea, Noto Sans Arabic, Noto Naskh Arabic and Noto Sans Symbols 2 |
+| [GNU Unifont](https://unifoundry.com/unifont/) | 18.0.01 | The last fallback face, for any character of the Basic Multilingual Plane no other font can draw; provisioned from ftp.gnu.org, pinned by sha256, embedded as a subset |
 | [Vite](https://vite.dev/) | 7.3.6 | Bundles the interface |
 | [Vitest](https://vitest.dev/) and [Playwright](https://playwright.dev/) with axe-core | | Unit tests, rendered accessibility tests and visual tests |
 
