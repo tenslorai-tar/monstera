@@ -53,6 +53,7 @@ import {
   MAX_OBJECT_INDEX,
   blockEditAgrees,
   blockEditSchema,
+  formPathSchema,
   annotationRectSchema,
   annotationColourSchema,
   pageMarksSchema,
@@ -5860,6 +5861,13 @@ export const channels = {
                   room: z.number().nonnegative().max(2 * MAX_PAGE_COORDINATE),
                 })
                 .strict(),
+              /**
+               * The form whose own content draws this block
+               * ([ADR-0269](../../../docs/DECISIONS/0269-text-inside-a-form-is-edited-in-the-forms-own-content.md)),
+               * absent for the page's own content. Its runs' indices are that placement's, read as a page of its own,
+               * and an edit of it is sent with this path. It pushes nothing and is pushed by nothing (Decision 6).
+               */
+              form: formPathSchema.exactOptional(),
             })
             .strict(),
         )

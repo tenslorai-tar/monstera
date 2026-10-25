@@ -7185,10 +7185,43 @@ export const editTextBlockSchema = blockEditCommandObject('editTextBlock')
  * by one function, so the editor sends one block wire to either writer and the two kinds cannot drift apart; the reading
  * says per page which one the page needs (Decision 1), and the renderer picks the kind from it.
  */
+/** Steps a form placement's path may take from the page: a form inside a form inside … this many deep. */
+export const MAX_FORM_DEPTH = 8;
+
+/**
+ * Where a form is drawn on a page ([ADR-0269](../../../docs/DECISIONS/0269-text-inside-a-form-is-edited-in-the-forms-own-content.md)
+ * Decision 1): the `Do` operators from the page's content down to it, each the resource name it draws and which
+ * occurrence of that name in the stream that holds it, from 0. Read by `main`, sent back with an edit, and found again
+ * by the writer from the page as it is.
+ */
+export const formPathSchema = z
+  .array(
+    z
+      .object({
+        // A RESOURCE NAME, decoded: printable, since a name with a control character in it names nothing a page draws.
+        name: z.string().min(1).max(127).regex(/^[^\p{Cc}]+$/u),
+        occurrence: z.number().int().min(0).max(9999),
+      })
+      .strict()
+      .readonly(),
+  )
+  .min(1)
+  .max(MAX_FORM_DEPTH)
+  .readonly();
+export type FormPath = z.infer<typeof formPathSchema>;
+
 // NO `unpack`: a page whose text is in a Type 3 font is never read unpacked (ADR-0232 Decision 5).
 export const editTextOperatorsSchema = blockEditCommandObject('editTextOperators')
-  // ITS PLACES MAY ARRANGE (ADR-0264 Decision 5), which PDFium's command cannot name.
-  .extend({ places: operatorEditSchema.shape.places })
+  .extend({
+    // ITS PLACES MAY ARRANGE (ADR-0264 Decision 5), which PDFium's command cannot name.
+    places: operatorEditSchema.shape.places,
+    /**
+     * The form whose own content holds the blocks
+     * ([ADR-0269](../../../docs/DECISIONS/0269-text-inside-a-form-is-edited-in-the-forms-own-content.md) Decision 2), as
+     * the read named it; absent for the page's own content. One command edits one stream, so its blocks share it.
+     */
+    form: formPathSchema.exactOptional(),
+  })
   .refine((command) => blockEditAgrees(command), blockEditDisagrees());
 
 /**

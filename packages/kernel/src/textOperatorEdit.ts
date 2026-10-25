@@ -14,6 +14,8 @@ import { resourceDictionaryOf } from './pageResources.js';
 import { BlockUnchangedError, EditRefusedError, TextNotWritableError } from './textEditRefusals.js';
 import { sentAsShown } from './blockAsShown.js';
 import { joinedContent } from './textOperators.js';
+import { type FormPlacement, ownPlacement, placementAt, unwrappedForm, wrappedForm } from './formText.js';
+import type { PDFDocument, PDFObject } from './mupdfRaw.js';
 
 /**
  * `editTextOperators` in the MuPDF session
@@ -93,19 +95,20 @@ export async function applyEditTextOperators(
   if (needed) await loadEditFaces();
   const faceSet = needed ? (await import('./operatorFaces.js')).OperatorFaceSet : null;
   return await withDocument(session, (document) => {
-    const leaf = document.findPage(command.page);
-    const content = joinedContent(pageContentStreams(leaf));
+    // THE CONTENT THE EDIT IS IN: the page's own, or a form's, made this placement's own first (ADR-0269 Decision 3).
+    const target = targetOf(document, command, true);
+    const { content, holder } = target;
     // THE PAGE'S FONTS AS PDFium READ THEM (`pageFontsAsRead`): a glyph the page draws with a code its font names no text
     // for is still the page's own font's to set, and the check below reads the same fonts.
-    const fonts = pageFontsAsRead(pageFonts(leaf), content, read);
+    const fonts = pageFontsAsRead(pageFonts(holder), content, read);
     // THE RESOLVER'S FACES AND THE BOX (ADR-0177): read on the first word that needs one, so an edit the page's own
     // fonts carry never reads a font file.
     const faces = faceSet === null ? null : new faceSet(document, lazyFaces(), fonts);
     // WHAT AN ARRANGE NEEDS (ADR-0264): the page's XObjects, so a drawn neighbour is found, and a free name for the plain
     // graphics state, added below only where the edit names it.
-    const plainState = plainStateName(leaf);
+    const plainState = plainStateName(holder);
     const made = editOperators(content, fonts, read, blocksOfEdit(command), faces?.faces ?? null, command.fit, command.inserts ?? [], {
-      kinds: xobjectKinds(leaf),
+      kinds: xobjectKinds(holder),
       plainState,
     });
     if (!made.ok) {
@@ -130,11 +133,11 @@ export async function applyEditTextOperators(
     const structural = checkOperatorEdit(content, edit, new Map([...fonts, ...added]));
     if (!structural.ok) noted.push(`page ${String(command.page)}: the structural read-back found ${structural.error}`);
 
-    // THE ADDED FONTS FIRST, named in the page's own `/Font`, so the content written next names fonts that exist.
-    const fontDictionary = added.size === 0 ? null : resourceDictionaryOf(document, leaf, 'Font');
+    // THE ADDED FONTS FIRST, named in the `/Font` of the stream that names them, so the content written next names fonts
+    // that exist.
+    const fontDictionary = added.size === 0 ? null : resourceDictionaryOf(document, holder, 'Font');
     if (faces !== null && fontDictionary !== null) faces.finish(fontDictionary);
-    const stream = document.addStream(edit.content, document.newDictionary());
-    leaf.put('Contents', stream);
+    target.write(edit.content);
     // MuPDF'S OWN READING of the page as it now is, the second read-back: each line whose words the edit set, unbroken
     // (ADR-0266 Decision 4), its difference noted and never a refusal (ADR-0270). Not the lines it left or carried: their
     // bytes are the page's, held byte for byte above. `clip=no` READS PAST THE PAGE'S EDGE: MuPDF's text device drops every
@@ -145,7 +148,7 @@ export async function applyEditTextOperators(
     const missing = edit.checked.filter((words) => !readingHolds(reading, words));
     if (missing.length > 0) noted.push(`page ${String(command.page)}: MuPDF's reading does not hold ${String(missing.length)} line(s) the edit set`);
     // THE PLAIN GRAPHICS STATE an arrange carried a block with (ADR-0264), since the edit is kept.
-    if (edit.plain) addPlainState(document, leaf, plainState);
+    if (edit.plain) addPlainState(document, holder, plainState);
     // EVERY CHARACTER DRAWN AS THE BOX, uncapped: the host names the first ones and counts the rest at the pipe
     // (`cappedBoxes`), as the PDFium writer's apply does (ADR-0177 Decision 7).
     const boxed = (faces?.boxed ?? []).map((character) => ({ character, page: command.page }));
@@ -160,21 +163,72 @@ export async function applyEditTextOperators(
  */
 function needsAFace(session: MupdfSession, command: CommandOfKind<'editTextOperators'>, read: PageRuns): Promise<boolean> {
   return withDocument(session, (document) => {
-    const leaf = document.findPage(command.page);
-    const content = joinedContent(pageContentStreams(leaf));
+    // READ ONLY: the placement as it is, copied by nothing, since this pass writes nothing.
+    const { content, holder } = targetOf(document, command, false);
     const made = editOperators(
       content,
-      pageFontsAsRead(pageFonts(leaf), content, read),
+      pageFontsAsRead(pageFonts(holder), content, read),
       read,
       blocksOfEdit(command),
       null,
       command.fit,
       command.inserts ?? [],
       // THE SAME ARRANGE the apply will make, so a block arranged past a picture is asked about as it will be written.
-      { kinds: xobjectKinds(leaf), plainState: plainStateName(leaf) },
+      { kinds: xobjectKinds(holder), plainState: plainStateName(holder) },
     );
     return !made.ok && made.error.reason === 'needs-a-face';
   });
+}
+
+/**
+ * Where an edit's operators are: the content `editOperators` reads, the object whose `/Resources` its names resolve in,
+ * and how the edited content is written back. The page's own content and its leaf, or a form placement's content wrapped
+ * as the page PDFium read it ([ADR-0269](../../../docs/DECISIONS/0269-text-inside-a-form-is-edited-in-the-forms-own-content.md)
+ * Decision 2) and the form — or, for a form with no `/Resources` of its own, the stream it draws with, as a reader
+ * resolves it.
+ */
+interface EditTarget {
+  readonly content: Uint8Array;
+  readonly holder: PDFObject;
+  write(edited: Uint8Array): void;
+}
+
+/**
+ * The {@link EditTarget} `command` names. `own` makes a form placement this placement's own first (`ownPlacement`), which
+ * only the apply does.
+ *
+ * @throws where the command names a form the page no longer draws there: the document moved since the read
+ */
+function targetOf(document: PDFDocument, command: CommandOfKind<'editTextOperators'>, own: boolean): EditTarget {
+  const leaf = document.findPage(command.page);
+  if (command.form === undefined) {
+    return {
+      content: joinedContent(pageContentStreams(leaf)),
+      holder: leaf,
+      write: (edited) => {
+        leaf.put('Contents', document.addStream(edited, document.newDictionary()));
+      },
+    };
+  }
+  const placement = own ? ownPlacement(document, command.page, command.form) : placementAt(leaf, command.form);
+  if (placement === undefined) {
+    throw new EditRefusedError('set-text', 0, `an operator edit names a form page ${String(command.page)} does not draw there`);
+  }
+  const wrapped = wrappedForm(placement);
+  // OUTWARD TO THE FIRST STREAM THAT HAS `/Resources`, each placement's holder in turn, ending at the page's leaf.
+  let holder = placement.form.resolve();
+  let drawnBy: FormPlacement | undefined = placement;
+  while (holder.get('Resources').isNull() && drawnBy !== undefined) {
+    holder = drawnBy.holder;
+    drawnBy = drawnBy.path.length > 1 ? placementAt(leaf, drawnBy.path.slice(0, -1)) : undefined;
+  }
+  return {
+    content: wrapped.bytes,
+    holder,
+    write: (edited) => {
+      placement.form.writeStream(unwrappedForm(edited, wrapped));
+    },
+  };
 }
 
 /** The bound catalogue, read when a word first asks for a face rather than when the edit begins. */

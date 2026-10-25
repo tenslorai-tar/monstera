@@ -6,9 +6,10 @@ import type { PDFDocument, PDFObject } from './mupdfRaw.js';
  * one those pages' content never uses.
  *
  * The ONE answer to *where does a writer add a resource to a page* for every MuPDF writer that draws onto a page — the
- * in-place operator edit and the page stamps (ADR-0235) — so the two cannot disagree about inheritance (B3a).
+ * in-place operator edit and the page stamps (ADR-0235) — so the two cannot disagree about inheritance (B3a). A form
+ * XObject's stream dictionary is read the same way: its own `/Resources` is what `getInheritable` finds on it (ADR-0269).
  */
-export function resourceDictionaryOf(document: PDFDocument, leaf: PDFObject, kind: 'Font' | 'ExtGState'): PDFObject {
+export function resourceDictionaryOf(document: PDFDocument, leaf: PDFObject, kind: 'Font' | 'ExtGState' | 'XObject'): PDFObject {
   let resources = leaf.getInheritable('Resources');
   if (!resources.isNull()) resources = resources.resolve();
   if (!resources.isDictionary()) {
