@@ -3,7 +3,8 @@
 **Status:** in force. **Derived from:** `BUILD-PROMPT.md` Parts C, L and M.
 
 This document is the **living law** of the project. `BUILD-PROMPT.md` is the
-immutable founding record and is never edited; where this document and the
+founding record and is never edited, but for the owner's one rewording of
+2026-10-25 (the amendment log); where this document and the
 founding record diverge, **this document wins**, and the amendment that created
 the divergence names the founding clause it supersedes. `CLAUDE.md` is the
 derived operational digest and is updated in the same commit as any amendment

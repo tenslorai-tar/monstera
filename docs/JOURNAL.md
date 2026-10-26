@@ -892,6 +892,160 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-26 — Stage audit of `8db42b52..dabf6041` — findings YYYYYYYY-1 to YYYYYYYY-22
+
+Cloud run 22, before any code of the Edit text rebuild's Part 2 (the owner's order of 2026-10-26): main at `2ea30acc` —
+the cloud-21 merge (Edit text's clicks, size field and command state), L1 (pushed lines carry their bullets), L2 (a
+word typed beside drawn letters takes the weight they look), the competitor-name removal, the repository's public
+files, two packed releases and ADR-0271 — plus the edit catalogue (`cfa6c126`..`c4c62ca0`), ADR-0271's correction
+(`fc1633ca`), the scan shape's correction (`ce33c221`) and this audit's fixes. `npm run audit:scope` at `0e78de90`: 77
+commits, 169 files, within one batch; 8 proofs added, 27 modified, none removed. **The watermark `8db42b52` is not an
+ancestor of main**: sixteen commits from `9ac52823` to `6b29f80f` reached main by merge and so fall in this range again;
+they were audited as `eda0c9ea..6b29f80f` (WWWWWWWW) and were not read again.
+
+**Method.** Three read-only reviewers, one each for the writer commits, the editor commits and the tooling and
+documents, were given the commits and CLAUDE.md's checklist, not this author's view of them; every finding recorded as
+verified below was re-read here, and those marked *reviewer's case* were shown by a reviewer's run in a scratch copy and
+not run again here. **Stated limitation, not a pass:** no Playwright case was run; `drawnWeight.test.ts`,
+`formText.test.ts`' nested cases, `stateful-commands.json`, CONTRIBUTING.md and CODE_OF_CONDUCT.md were not read whole;
+@signpdf's internals were not read for the node-forge verdict.
+
+**A baseline came with it.** `scripts/research/editCatalogueWriter.mjs` (`294eff15`) sends each catalogue page's edit
+to today's operator writer as `main` routes it and judges it by the catalogue's check: 19 of 24 pages hold every
+expectation. The five that do not are YYYYYYYY-8, -9, turned text not offered (18 and 21, FEATURES' stated limit), and
+text in a form, which the instrument does not send (XXXXXXXX-3).
+
+### Fixed
+
+**YYYYYYYY-1** — the catalogue's check told a drawn font by MuPDF's name for it, which is `Type3 (n 0 R)` only for a
+Type 3 font with no `/Name` (`pdf-type3.c`); a named one passed. It now reads `/Subtype` from the page's font
+dictionaries; with `/Name` added to the catalogue's drawn fonts the old rule went red on every page and the new one is
+green (`294eff15`).
+**YYYYYYYY-2** — the anti-aliasing case's lower bound could not fail while MARGIN was half a point; MARGIN must now
+equal the measurement at the device pixel, and 1.0 fails it (`294eff15`).
+**YYYYYYYY-3** — `pdfiumCommand.proof.mjs` kept its own `0xF0000` beside `noFaceCharacter.mjs` (`294eff15`).
+**YYYYYYYY-4** — README.md said twice the founding record is never edited, false since `41a42f1b` (`dabf6041`).
+**YYYYYYYY-5** — the ADR index said ADR-0176's weight is read from the ink; its correction and the code read stems
+(`dabf6041`).
+**YYYYYYYY-6** — FEATURES said the form table-cell loss had no cause read, while `40612621` (the form's own clip) and
+`7d69dcba` (a page clip framing the form) each fixed one. Which of the two the measured edit met is not established;
+the corpus count re-measures it (`dabf6041`).
+**YYYYYYYY-7** — `blockableOf`'s comment told history, not mechanism (B6) (`dabf6041`).
+
+### Recorded, not fixed
+
+**YYYYYYYY-8 — the scan's cover and visible words were lost with ADR-0266.** ADR-0181 Decision 9 and ADR-0187 —
+recognised words over a scan edited VISIBLE, over a cover of the paper's colour under the replaced words — are built
+only in the PDFium writer (`coversRoundBoxes`, `pdfiumFfi.ts`). ADR-0266 sends every Edit text change to the operator
+writer, which has neither: on the catalogue's scan page today's writer writes the new word invisible and covers nothing.
+Restoring it is a writer change beyond ADR-0271's three, so it is the owner's to order.
+**YYYYYYYY-9** — the operator writer sets an edited Arabic line in reversed letter order: the catalogue's line reads
+back `تيبكيمس` for `بيت سميك`, through both engines, and the write logs that MuPDF's reading does not hold the lines it
+set. Before Part 2b's changes, measured by the baseline.
+**YYYYYYYY-10** — `formText.ts`' rule that a clip "frames the form alone" (`7d69dcba`) counts only drawn objects, never
+text, so a clip around a form that also clips text is grown and the text its author hid shows (reviewer's case: the
+clip `60 696 340 18` became `60 638 340 76` and uncovered a line at y 650). Every fixture held the other drawing a path.
+**YYYYYYYY-11** — the push's line ownership (`60d3638b`) leaves a bullet hanging left of both blocks behind
+(reviewer's case: a paragraph at x 90 above a list at 77), and `editText.proof.mjs`' `leftBehind` chooses what to judge
+with the writer's own `sitsWithLine`, so it cannot see the rule's gaps: a judge that shares the rule it judges. ADR-0271
+retires the push, which closes the defect; the lesson stays for every instrument.
+**YYYYYYYY-12** — `edit-text.md` says a word you type is set in the ordinary font; `operatorEdit.ts` keys drawn letters
+on the token, so a typed word equal to one already drawn in a Type 3 font is written in its drawn letters. Part 2b's
+font rule is the fix.
+**YYYYYYYY-13** — `messages/en.ts` still tells a person a word drawn in two pieces can be changed with Edit text, while
+`find-and-replace.md` (`14f76d85`) says it is replaced too; `renderedScreen.pw.ts` re-asserts the old sentence
+(`2cccb4cc`).
+**YYYYYYYY-14** — bold has two opinions: the editor reports the resolver's weight for Type 3 fonts only, the writer's
+`isBold` uses it for every font, and the 600 threshold is spelt twice (`lookedWeights.ts`, `operatorEdit.ts`).
+**YYYYYYYY-15** — `setsAClip` and `ONE_RECTANGLE` read clips by regex beside the tokeniser that already tracks them
+(B3a); `setsAClip`'s comment claims a false no is impossible.
+**YYYYYYYY-16** — `fontWorkApart.proof.mjs` bounds a step's growth by the free space the step before left, which also
+holds what earlier steps freed; the derived count rests on an unproven bound.
+**YYYYYYYY-17** — editing `BUILD-PROMPT.md` (`41a42f1b`) shortened it by a line at line 42, so the 229 citations of
+its later lines across the repository each land one line early. No check reads them.
+**YYYYYYYY-18** — README.md, SECURITY.md and the community files publish `report@monsterapdf.com` as a security route and
+link the website, against the cloud rules' *report@ is not live, the website must not be discoverable before launch*.
+A report sent there is lost. The owner's decision; not changed here.
+**YYYYYYYY-19** — the product-name scan: its licence exemption matches any file whose name starts with *licence*
+(`licenceProvenance.proof.mjs` is never scanned); its masks pass a quoted name anywhere, not only the format's own
+registry string; `_` is stripped before hashing; commit messages, which B10 makes permanent, are not scanned (29 hits
+in history).
+**YYYYYYYY-20** — the catalogue's check reads a form's words through `promoteFormObjects`, a second route beside `main`'s
+`formPagesOf` (XXXXXXXX-3's class), and leans on the command XXXXXXXX-12 may retire.
+**YYYYYYYY-21** — the editor the rebuild deletes, for the rebuild to keep: at a caret the size field counts the whole
+block, not the paragraph its comment names (`148c40ec`; the test's block has one paragraph); the command-answer cost
+(`c390e90c`) was measured with no editor open, the one state where the editor's predicates return at once, and the
+instrument is not committed; the editor-store subscription has no case that fails without it; after the 1.5 s bound a
+late font draw no longer re-places the caret (`10b019c0`); and the first-click case reads its targets from the editor,
+not the page, so a layout that differs from the page would pass.
+**YYYYYYYY-22** — README.md's Edit text promise (*keeps the original font wherever that font can draw the letters*)
+predates the owner's rule that a drawn font never takes a new word. Rewritten with Part 2's behaviour.
+
+XXXXXXXX-3, -4, -8 and -12 stay open; XXXXXXXX-6's row is corrected (YYYYYYYY-6) and its log is still blind past clips.
+
+### 1. Root cause or workaround?
+
+Each fix states its mechanism. YYYYYYYY-1 changed the rule to the one the kernel uses rather than adding a name to a
+list. No loosened check in the range: XXXXXXXX-4's 1.5 pt allowance is unchanged, and the catalogue's margin was
+tightened from 1.0 to the measured 0.5 within the range.
+
+### 2. Easy shape only?
+
+Yes, four times: the form-clip rule held the other drawing a path (YYYYYYYY-10), the push's fixtures put every bullet
+right of the paragraph (-11), the size field's test block had one paragraph (-21), and the command-answer cost was
+taken with no editor open (-21).
+
+### 2a.
+
+The catalogue's drawn-font test moved from a name to a derivation from the file; it can run wherever the bytes can be
+read, so no coverage moved.
+
+### 3. Would CI have caught it?
+
+The Guards failure at `ef44e409` (a proof calling the staleness guard with no `ARTEFACT_EDGES` entry) was caught by CI
+and fixed in `c4c62ca0`. None of YYYYYYYY-8 to -22 is caught by CI: the scan and Arabic defects have no case on the
+operator writer, and the rest are documents, a scan's blind spots and untested branches. The catalogue proof runs in
+CI from this range, and with the baseline's two defects fixed it is the case that will hold them.
+
+### 4. Non-vacuous?
+
+The catalogue proof's eight controls each name their reason and count their runs, and three of its own guards were
+found blind by those controls while it was written (`ef44e409`'s message). YYYYYYYY-1 and -2 were each shown red without
+their fix. The editor's subscription (-21) has no failing case without it.
+
+### 4a.
+
+The command-answer figure cannot resolve the editor-open path it is used to clear (-21). The catalogue's spread is
+one device pixel, the instrument's smallest step, so it has no headroom (YYYYYYYY-2's record).
+
+### 4b.
+
+The product-name scan's exemption and masks hide what it searches for (-19); `leftBehind` cannot see what its own rule
+excludes (-11); the drawn-font test was blind to a named font (-1).
+
+### 4c.
+
+The catalogue proof's case count is a literal beside its list, and each control counts the pages it ran on and fails
+at zero.
+
+### 5. Executed or asserted?
+
+Executed: the catalogue proof (18 cases), the baseline, `proof:pdfiumcommand` (300), `proof:buildfreshness` (28),
+the changed kernel tests, and the reviewers' scratch cases where marked. Asserted: nothing recorded as found.
+
+### 6. Architecture before the feature?
+
+ADR-0249's correction (`4b9a3b4d`) before L1, ADR-0176's two (`2b1eabf0`, `5a7a197d`) before L2, ADR-0258's
+(`4c8ef5c7`) before the command context, and ADR-0271 with its correction before any of the rebuild's code.
+
+### 7. Documents?
+
+YYYYYYYY-4, -5, -6, -13, -17, -18 and -22. Swept for *never edited* with `sweep:prose` after -4: CLAUDE.md and
+ARCHITECTURE.md's amendment log carried the exception, and ARCHITECTURE.md's opening paragraph did not — corrected in
+this commit, which is -4's class found by the sweep rather than by the reviewer.
+
+---
+
 ## 2026-10-25 — Other PDF products' names removed from every record, by the owner's decision
 
 The owner had the names of other PDF products and their makers removed from every tracked file, these records included:
