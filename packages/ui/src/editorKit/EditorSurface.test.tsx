@@ -97,6 +97,20 @@ describe('the kit’s editable surface', () => {
     expect(firstAfter).not.toBe(first);
   });
 
+  it('draws a new look (the faces arrived, the zoom moved) on THE SAME NODES, so a press in flight keeps its target', () => {
+    // THE CONTROL is the surface before this: a new look built every paragraph again, and a press landing as the fonts
+    // loaded hit a detached node, was judged outside the editor and finished it (`restyleParagraph`).
+    const store = createEditorStore({ model: MODEL, selection: caret({ paragraph: 0, offset: 0 }) });
+    const view = render(<EditorSurface editable label="Words" look={LOOK} store={store} />);
+    const before = Array.from(view.container.querySelectorAll('[data-kit-paragraph]'));
+    const span = before[0]?.querySelectorAll('span')[1];
+    view.rerender(<EditorSurface editable label="Words" look={{ ...LOOK, zoom: 3 }} store={store} />);
+    const after = Array.from(view.container.querySelectorAll('[data-kit-paragraph]'));
+    expect(after).toStrictEqual(before);
+    expect(after[0]?.querySelectorAll('span')[1]).toBe(span);
+    expect((span as HTMLElement | undefined)?.style.fontSize).toBe('30px');
+  });
+
   it('lays a paragraph still as drawn at the drawing’s breaks, unpainted, and paints it once it changes', () => {
     const { root } = surface({ paragraphs: MODEL.paragraphs, wraps: [[2], []] });
     const first = root.querySelectorAll('[data-kit-paragraph]')[0];

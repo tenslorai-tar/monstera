@@ -378,8 +378,14 @@ export function BlockEditor({
     const element = frame.current;
     if (element === null) return undefined;
     const owner = element.ownerDocument;
+    // A TARGET NO LONGER IN THE DOCUMENT says nothing about where the press was, so it finishes nothing: a node replaced
+    // under a press in flight is not *outside* (`restyleParagraph`'s measurement).
     const away = (target: EventTarget | null): boolean =>
-      target instanceof Node && !element.contains(target) && !keepsEditor(target) && !(target instanceof Element && target.closest('[role="menu"]') !== null);
+      target instanceof Node &&
+      target.isConnected &&
+      !element.contains(target) &&
+      !keepsEditor(target) &&
+      !(target instanceof Element && target.closest('[role="menu"]') !== null);
     const onPress = (event: PointerEvent): void => {
       if (away(event.target)) actions.current.finish();
     };

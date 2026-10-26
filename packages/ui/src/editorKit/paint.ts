@@ -62,39 +62,60 @@ export function paragraphElement(owner: Document, paragraph: Paragraph, index: n
   const element = owner.createElement('div');
   element.className = wraps === undefined ? PARAGRAPH_CLASS : `${PARAGRAPH_CLASS} ${AS_DRAWN_CLASS}`;
   element.setAttribute(PARAGRAPH_ATTRIBUTE, String(index));
-  element.style.textAlign = paragraph.align;
-  element.style.paddingLeft = paragraph.leftIndent === 0 ? '' : `${String(paragraph.leftIndent * look.zoom)}px`;
-  element.style.textIndent = paragraph.firstIndent === 0 ? '' : `${String(paragraph.firstIndent * look.zoom)}px`;
-  element.style.marginTop = paragraph.spaceBefore === 0 ? '' : `${String(paragraph.spaceBefore * look.zoom)}px`;
-  element.style.marginBottom = paragraph.spaceAfter === 0 ? '' : `${String(paragraph.spaceAfter * look.zoom)}px`;
-  element.style.lineHeight = look.pitch === undefined ? String(1.2 * paragraph.lineSpacing) : `${String(look.pitch * paragraph.lineSpacing * look.zoom)}px`;
+  paintParagraph(element, paragraph, look);
   const breaks = [...(wraps ?? [])];
   let at = 0;
-  for (const run of paragraph.runs) {
+  for (const [place, run] of paragraph.runs.entries()) {
     let text = run.text;
     let cutAny = false;
+    const span = (part: string): HTMLElement => {
+      const made = owner.createElement('span');
+      made.textContent = part;
+      // WHICH RUN THE SPAN DRAWS, so a new look restyles it in place (`restyleParagraph`).
+      made.dataset['kitRun'] = String(place);
+      paintRun(made, run.style, look);
+      return made;
+    };
     // A RUN CROSSING ONE OF THE PAGE'S BREAKS is two spans with the break between them.
     while (breaks.length > 0 && (breaks[0] ?? 0) <= at + text.length && (breaks[0] ?? 0) > at) {
       const cut = (breaks.shift() ?? 0) - at;
-      const span = owner.createElement('span');
-      span.textContent = text.slice(0, cut);
-      paintRun(span, run.style, look);
-      element.append(span, wrapBreak(owner));
+      element.append(span(text.slice(0, cut)), wrapBreak(owner));
       at += cut;
       text = text.slice(cut);
       cutAny = true;
     }
     if (cutAny && text === '') continue;
-    const span = owner.createElement('span');
-    span.textContent = text;
-    paintRun(span, run.style, look);
-    element.append(span);
+    element.append(span(text));
     at += text.length;
   }
   // A PARAGRAPH WITH NO WORDS KEEPS A LINE: an empty span lays out no line box, and a browser then has nowhere in it to
   // put a caret. The break is the one a browser gives an emptied line itself, and holds no character.
   if (at === 0) element.append(owner.createElement('br'));
   return element;
+}
+
+/** Sets a paragraph's element from its settings at the look: the one place a paragraph's inline style is made. */
+function paintParagraph(element: HTMLElement, paragraph: Paragraph, look: Look): void {
+  element.style.textAlign = paragraph.align;
+  element.style.paddingLeft = paragraph.leftIndent === 0 ? '' : `${String(paragraph.leftIndent * look.zoom)}px`;
+  element.style.textIndent = paragraph.firstIndent === 0 ? '' : `${String(paragraph.firstIndent * look.zoom)}px`;
+  element.style.marginTop = paragraph.spaceBefore === 0 ? '' : `${String(paragraph.spaceBefore * look.zoom)}px`;
+  element.style.marginBottom = paragraph.spaceAfter === 0 ? '' : `${String(paragraph.spaceAfter * look.zoom)}px`;
+  element.style.lineHeight = look.pitch === undefined ? String(1.2 * paragraph.lineSpacing) : `${String(look.pitch * paragraph.lineSpacing * look.zoom)}px`;
+}
+
+/**
+ * A paragraph's element drawn at a new look — the faces arrived, the zoom moved — WITHOUT replacing a node. The words and
+ * their breaks are the same, so only the inline styles change; replacing the elements instead detached the very node a
+ * press in flight had been aimed at, and the press was then judged to be outside the editor and finished it (measured
+ * 2026-10-26 in Chromium 151: a double press on a block landing as its fonts loaded closed the editor it had opened).
+ */
+export function restyleParagraph(element: HTMLElement, paragraph: Paragraph, look: Look): void {
+  paintParagraph(element, paragraph, look);
+  for (const span of element.querySelectorAll<HTMLElement>('span[data-kit-run]')) {
+    const run = paragraph.runs[Number(span.dataset['kitRun'])];
+    if (run !== undefined) paintRun(span, run.style, look);
+  }
 }
 
 function wrapBreak(owner: Document): HTMLElement {

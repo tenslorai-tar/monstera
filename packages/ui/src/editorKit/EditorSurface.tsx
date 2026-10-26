@@ -18,7 +18,7 @@ import {
   wholeBlock,
   wordStep,
 } from './model.js';
-import { type Look, paragraphElement } from './paint.js';
+import { type Look, paragraphElement, restyleParagraph } from './paint.js';
 import type { EditorStore } from './store.js';
 
 /**
@@ -108,8 +108,14 @@ export function EditorSurface({ store, look, drawn, label, className, style, edi
         const wraps = stillDrawn ? was?.wraps[index] : undefined;
         const asDrawn = wraps !== undefined;
         const kept = built.get(paragraph);
-        if (kept?.asDrawn === asDrawn && kept.look === now) {
+        if (kept?.asDrawn === asDrawn) {
           kept.element.setAttribute('data-kit-paragraph', String(index));
+          // A NEW LOOK RESTYLES THE SAME NODES (`restyleParagraph`): the words have not changed, and a node replaced under
+          // a press in flight turns that press into one outside the editor.
+          if (kept.look !== now) {
+            restyleParagraph(kept.element, paragraph, now);
+            built.set(paragraph, { ...kept, look: now });
+          }
           return kept.element;
         }
         const made = paragraphElement(owner, paragraph, index, now, wraps);
