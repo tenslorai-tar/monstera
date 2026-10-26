@@ -337,7 +337,7 @@ docs/               the architecture, decisions (ADRs), features, journal and th
 
 | File | What it is |
 |---|---|
-| [`BUILD-PROMPT.md`](BUILD-PROMPT.md) | The founding record of the project. It is immutable: never edited after its first commit. |
+| [`BUILD-PROMPT.md`](BUILD-PROMPT.md) | The founding record of the project. Never edited after its first commit, with one exception by the owner's decision of 2026-10-25: two lines that named another product were reworded. |
 | [`CLAUDE.md`](CLAUDE.md) and [`AGENTS.md`](AGENTS.md) | The operating rules every contributor and coding agent follows. Monstera is built with AI coding agents working under these rules. |
 | [`.claude/`](.claude/) | The agents' settings and the guard hooks that stop unsafe commands before they run. |
 | [`DESIGN-DRAFT.html`](DESIGN-DRAFT.html) | The original design reference the design tokens were drawn from. |
@@ -356,7 +356,8 @@ stay where they are.
 Two documents govern it:
 
 - **[`BUILD-PROMPT.md`](BUILD-PROMPT.md)**: the founding record. Never edited
-  after its first commit.
+  after its first commit, but for one rewording by the owner's decision of
+  2026-10-25 (two lines that named another product).
 - **[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)**: the living law. Changed
   only through a recorded amendment, with the rejected alternatives written
   down.
