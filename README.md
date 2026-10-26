@@ -121,7 +121,7 @@ to be read. See [Why the codebase looks the way it does](#why-the-codebase-looks
 - Select, move, copy, paste and erase marks, and snapshot a region as an image.
 
 ### Text editing
-- **Edit text** changes the words on the page in place, in paragraphs that reflow. Only the block you edit changes; everything else on the page is left exactly as it was, except that text below moves down when your paragraph grows. It keeps the original font wherever that font can draw the letters, and sets any other letter in the closest font it can find, so an edit is never refused for its font.
+- **Edit text** changes the words on the page in place, in paragraphs that reflow. Only the block you edit changes; everything else on the page is left exactly as it was, and a paragraph that grows may overlap the text below it rather than move it. It keeps the original font wherever that font can draw the letters, and sets any other letter in the closest font it can find, so an edit is never refused for its font.
 - Add new text, with bold, italic, alignment, lists and spacing.
 - Right-to-left text, and scanned pages that can be recognised and then edited.
 - **Edit Object** moves, resizes, recolours, reorders or removes any text, image or shape on the page, rewriting only the object you changed.
