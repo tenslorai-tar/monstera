@@ -195,6 +195,9 @@ async function joined(
       textFaces: () => {
         throw new Error('no case here reads the fonts’ faces');
       },
+      blockFaces: () => {
+        throw new Error('no case here reads a block’s faces');
+      },
       wordBoxes: () => {
         throw new Error('a field read must not read the word boxes');
       },

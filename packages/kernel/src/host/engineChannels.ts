@@ -125,6 +125,14 @@ import type { KindsRoutedTo } from '../commandRouting.js';
 import { COPY_STANDINGS } from '../openCopy.js';
 import type { PlaceholderRequest } from '../signatureHole.js';
 import { TEXT_FACE_FONTS_MAX, TEXT_FACE_NAME_MAX, TEXT_FACE_RANGES_MAX } from '../textFaceRanges.js';
+import {
+  BLOCK_FACE_CANDIDATES_MAX,
+  BLOCK_FACE_FAMILY_MAX,
+  BLOCK_FACE_FONTS_MAX,
+  BLOCK_FACE_RUNS_MAX,
+  BLOCK_FACE_TEXT_MAX,
+  FACE_STYLES,
+} from '../blockFaceAnswer.js';
 import { PAGE_TEXT_READS } from '../textStructure.js';
 import { PROBE_CODE_MAX_CHARS, PROBE_CODE_PATTERN } from './containment.js';
 import { pageRunsSchema } from './pageRunsWire.js';
@@ -356,6 +364,16 @@ export const ENGINE_OCR_WORD_TEXT_MAX = 256;
  * cast to satisfy this schema and no reshaping to satisfy the type.
  */
 const ocrBoxSchema = z.tuple([z.number(), z.number(), z.number(), z.number()]).readonly();
+
+/** A face `engine/block-faces` names (`blockFaceAnswer.ts`' `FaceChoice`): a family, the weight and slant set, its styles. */
+const faceChoiceSchema = z
+  .object({
+    family: z.string().min(1).max(BLOCK_FACE_FAMILY_MAX),
+    weight: z.number().min(1).max(1000),
+    italic: z.boolean(),
+    styles: z.array(z.enum(FACE_STYLES)).max(FACE_STYLES.length).readonly(),
+  })
+  .strict();
 
 /**
  * A link's rectangle, in the page's own units.
@@ -2968,6 +2986,54 @@ export const engineChannels = {
           )
           .max(TEXT_FACE_RANGES_MAX),
         truncated: z.boolean(),
+      })
+      .strict(),
+    ['no-such-session'],
+  ),
+
+  /**
+   * What the operator writer does with a new word in each of a block's fonts, the read on open
+   * ([ADR-0271](../../../../docs/DECISIONS/0271-the-edit-text-editor-is-rebuilt-on-the-kept-writer.md) section 5,
+   * `blockFaces.ts`): asked once when a block is selected. The runs come already in the content's numbering
+   * (`blockFaceRunsOf`), so no page's pre-read crosses for it.
+   */
+  'engine/block-faces': channel(
+    'Reads which face the writer sets a new word in, for each font of one block’s runs.',
+    z
+      .object({
+        session: sessionSchema,
+        page: z.number().int().nonnegative(),
+        form: formPathSchema.exactOptional(),
+        runs: z
+          .array(
+            z
+              .object({
+                index: z.number().int().nonnegative(),
+                object: z.number().int().nonnegative(),
+                text: z.string().max(BLOCK_FACE_TEXT_MAX),
+              })
+              .strict(),
+          )
+          .min(1)
+          .max(BLOCK_FACE_RUNS_MAX)
+          .readonly(),
+      })
+      .strict(),
+    z
+      .object({
+        fonts: z
+          .array(
+            z
+              .object({
+                own: z.boolean(),
+                chosen: faceChoiceSchema.nullable(),
+                candidates: z.array(faceChoiceSchema).max(BLOCK_FACE_CANDIDATES_MAX).readonly(),
+              })
+              .strict(),
+          )
+          .max(BLOCK_FACE_FONTS_MAX)
+          .readonly(),
+        runs: z.array(z.number().int().nonnegative().max(BLOCK_FACE_FONTS_MAX - 1).nullable()).max(BLOCK_FACE_RUNS_MAX).readonly(),
       })
       .strict(),
     ['no-such-session'],

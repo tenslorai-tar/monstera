@@ -95,6 +95,8 @@ const MUPDF_READS = [
   'engine/page-rewrite',
   // A PAGE'S FONTS' DESCRIPTOR FACES ARE ONE OF MuPDF'S READS: PDFium's API reaches no descriptor key (ADR-0256).
   'engine/text-faces',
+  // A BLOCK'S FACES ARE ONE OF MuPDF'S READS: the writer's own font rule runs over this session's resources (ADR-0271).
+  'engine/block-faces',
   // A PAGE'S WORD BOXES ARE ONE OF MuPDF'S READS: its characters' quads, walked from the structured text (ADR-0137).
   'engine/word-boxes',
   // RECOGNITION IS ONE OF MuPDF'S READS, and that is §3's matrix rather than a

@@ -3,6 +3,7 @@ import {
   type ContractClient,
   type DispatchableCommand,
   type LibraryEntry,
+  MAX_BLOCK_FACE_RUNS,
   MAX_FONT_RUNS,
   channels,
   createClient,
@@ -89,6 +90,8 @@ import {
   commitTextBlock,
   NO_RUN_FONTS,
   readRunFonts,
+  NO_BLOCK_FACES,
+  readBlockFaces,
   editTextCommand,
   readPageContentBoxes,
   importFormDataFdfCommand,
@@ -7623,6 +7626,70 @@ describe('readRunFonts', () => {
     // CONTROL: the same answer at the block's own version is read.
     const same = clientAnswering('document.runFonts', { version: asDocVersion(4), fonts: [new Uint8Array([1])], runs: [0] });
     expect((await readRunFonts(same, DOC, 0, blockOf(1), AT_FOUR)).runs.get(0)).toBe(0);
+  });
+});
+
+/**
+ * The read on open (ADR-0271 section 5), through the real schemas: each run named once, in reads of `MAX_FONT_RUNS`, a
+ * block in a form asked about in its form, and only an answer at the block's own version counts.
+ */
+describe('readBlockFaces', () => {
+  const STYLE = { size: 10, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false, italic: false, bold: false };
+  const box = { x0: 0, y0: 0, x1: 10, y1: 10 };
+  const AT_FOUR: BlocksRead = { version: asDocVersion(4), rewrite: 'operators' };
+  const ARIMO = { family: 'Arimo', weight: 400, italic: false, styles: ['regular' as const, 'bold' as const] };
+  const font = (own: boolean) => ({ own, chosen: ARIMO, candidates: [ARIMO] });
+
+  /** A block of `count` runs, its first also on a line of its own, so a read naming runs by line would ask twice. */
+  function blockOf(count: number, form?: TextBlock['form']): TextBlock {
+    const runs = Array.from({ length: count }, (_, index) => ({ index, text: 'w', style: STYLE }));
+    return {
+      box,
+      lines: [
+        { runs: runs.slice(0, 1), box, soft: false, baseline: box.y0 },
+        { runs, box, soft: false, baseline: box.y0 },
+      ],
+      style: STYLE,
+      shape: { align: 'left', firstIndent: 0 },
+      ...(form === undefined ? {} : { form }),
+    };
+  }
+
+  it('names each run ONCE, maps every place to its run, and asks about a block in a form in that form', async () => {
+    const asked: unknown[] = [];
+    const client = createClient(channels, (_id, params) => {
+      asked.push(params);
+      return Promise.resolve(ok({ version: asDocVersion(4), fonts: [font(false)], runs: [0, null, 0] }));
+    });
+    const read = await readBlockFaces(client, DOC, 3, blockOf(3), AT_FOUR);
+    expect(asked).toStrictEqual([{ docId: DOC, page: 3, indices: [0, 1, 2] }]);
+    expect(read.fonts).toStrictEqual([font(false)]);
+    expect([...read.runs]).toStrictEqual([[0, 0], [2, 0]]);
+    // CONTROL: the page's own block above named no form, so the path here is the block's and not a constant.
+    await readBlockFaces(client, DOC, 3, blockOf(3, [{ name: 'Fm1', occurrence: 0 }]), AT_FOUR);
+    expect(asked.at(-1)).toStrictEqual({ docId: DOC, page: 3, indices: [0, 1, 2], form: [{ name: 'Fm1', occurrence: 0 }] });
+  });
+
+  it('a block past one read asks in reads of MAX_BLOCK_FACE_RUNS, and the second read’s places follow the first’s fonts', async () => {
+    const asked: number[][] = [];
+    const client = createClient(channels, (_id, params) => {
+      const { indices } = params as { indices: number[] };
+      asked.push(indices);
+      return Promise.resolve(ok({ version: asDocVersion(4), fonts: [font(asked.length === 1)], runs: indices.map(() => 0) }));
+    });
+    const read = await readBlockFaces(client, DOC, 0, blockOf(MAX_BLOCK_FACE_RUNS + 2), AT_FOUR);
+    expect(asked.map((indices) => indices.length)).toStrictEqual([MAX_BLOCK_FACE_RUNS, 2]);
+    expect(read.fonts.map((each) => each.own)).toStrictEqual([true, false]);
+    expect([read.runs.get(MAX_BLOCK_FACE_RUNS - 1), read.runs.get(MAX_BLOCK_FACE_RUNS), read.runs.get(MAX_BLOCK_FACE_RUNS + 1)]).toStrictEqual([0, 1, 1]);
+  });
+
+  it('an answer at ANOTHER version, or a refusal, is no faces', async () => {
+    const moved = clientAnswering('document.blockFaces', { version: asDocVersion(5), fonts: [font(true)], runs: [0] });
+    expect(await readBlockFaces(moved, DOC, 0, blockOf(1), AT_FOUR)).toBe(NO_BLOCK_FACES);
+    expect(await readBlockFaces(clientFailing('document-poisoned'), DOC, 0, blockOf(1), AT_FOUR)).toBe(NO_BLOCK_FACES);
+    // CONTROL: the same answer at the block's own version is read.
+    const same = clientAnswering('document.blockFaces', { version: asDocVersion(4), fonts: [font(true)], runs: [0] });
+    expect((await readBlockFaces(same, DOC, 0, blockOf(1), AT_FOUR)).runs.get(0)).toBe(0);
   });
 });
 

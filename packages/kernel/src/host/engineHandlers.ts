@@ -53,6 +53,7 @@ import type { PageFill } from '../cellFills.js';
 import type { ScanTable } from '../scanTableShape.js';
 import type { PageRewrite } from '../pageRewrite.js';
 import type { TextFaces } from '../textFaceRanges.js';
+import type { BlockFaceRun, BlockFaces } from '../blockFaceAnswer.js';
 import type { LinkAddress, ListedPageLinks } from '../pageLinks.js';
 import type { PageWordBoxes } from '../wordBoxes.js';
 import type { PageTextRead } from '../textStructure.js';
@@ -146,6 +147,13 @@ export type HostTextFacesReader = (session: MupdfSession, page: number) => Promi
 
 /** One page's word boxes (ADR-0137): `readPageWordBoxes` in the host, `remoteMupdfWordBoxes` across the pipe. */
 export type HostWordBoxesReader = (session: MupdfSession, page: number) => Promise<PageWordBoxes>;
+
+/** What the writer does with a new word in each font of a block (ADR-0271 section 5): `readBlockFaces` in the host. */
+export type HostBlockFacesReader = (
+  session: MupdfSession,
+  at: { readonly page: number; readonly form?: FormPath | undefined },
+  runs: readonly BlockFaceRun[],
+) => Promise<BlockFaces>;
 
 /**
  * Recognises one page's text and word boxes.
@@ -561,6 +569,8 @@ export interface EngineHandlerParts {
   readonly textFaces: HostTextFacesReader;
   /** A page's word boxes (ADR-0137). `engine/word-boxes`. */
   readonly wordBoxes: HostWordBoxesReader;
+  /** The faces a block's new words are set in (ADR-0271 section 5). `engine/block-faces`. */
+  readonly blockFaces: HostBlockFacesReader;
   /** How this process turns a raster into characters. `engine/ocr-page`. */
   readonly ocr: HostOcrReader;
   readonly destinations: HostDestinationsReader;
@@ -655,6 +665,7 @@ export function createEngineHandlers({
   pageRewrite,
   textFaces,
   wordBoxes,
+  blockFaces,
   ocr,
   destinations,
   layers,
@@ -1121,6 +1132,14 @@ export function createEngineHandlers({
       // NO try/catch, for the link read's reason.
       const faces = await textFaces(held.session, page);
       return { ok: true, value: { fonts: [...faces.fonts], ranges: [...faces.ranges], truncated: faces.truncated } };
+    },
+
+    'engine/block-faces': async ({ session, page, form, runs }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      // NO try/catch, for the link read's reason.
+      const faces = await blockFaces(held.session, { page, ...(form === undefined ? {} : { form }) }, runs);
+      return { ok: true, value: { fonts: [...faces.fonts], runs: [...faces.runs] } };
     },
 
     'engine/word-boxes': async ({ session, page }) => {

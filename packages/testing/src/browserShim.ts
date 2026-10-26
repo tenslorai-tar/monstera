@@ -816,6 +816,15 @@ export interface BrowserShimOptions {
     readonly runs: ReadonlyMap<number, number>;
   };
   /**
+   * What `document.blockFaces` answers, the read on open (ADR-0271 section 5): the fonts, and each run's place among them
+   * by the run's first object. Absent is no font for every run, which is what an installation with no faces answers,
+   * and the editor draws each run in the face PDF.js loaded or its kind of face.
+   */
+  readonly blockFaces?: {
+    readonly fonts: ChannelResult<'document.blockFaces'>['fonts'];
+    readonly runs: ReadonlyMap<number, number>;
+  };
+  /**
    * What `ai.translatePage` answers. Absent is a refusal with no key — no provider exists in a
    * browser — so a case that wants the write that follows a translation hands one in.
    */
@@ -2690,6 +2699,18 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       const current = versions.get(docId);
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
       const given = options.runFonts;
+      return Promise.resolve(
+        ok({
+          version: asDocVersion(current),
+          fonts: given?.fonts ?? [],
+          runs: indices.map((index) => given?.runs.get(index) ?? null),
+        }),
+      );
+    },
+    'document.blockFaces': ({ docId, indices }) => {
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+      const given = options.blockFaces;
       return Promise.resolve(
         ok({
           version: asDocVersion(current),

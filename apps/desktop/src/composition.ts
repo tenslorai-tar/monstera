@@ -106,6 +106,7 @@ import {
   type HostPageAdjustmentReader,
   type HostPageRewriteReader,
   type HostTextFacesReader,
+  type HostBlockFacesReader,
   type HostPageLinksReader,
   type RemotePageTextReader,
   type HostWordBoxesReader,
@@ -188,6 +189,10 @@ import {
   remoteMupdfPageAdjustment,
   remoteMupdfPageRewrite,
   remoteMupdfTextFaces,
+  remoteMupdfBlockFaces,
+  blockFaceRunsOf,
+  facesInOrder,
+  type PageRuns,
   namedByDescriptor,
   remoteMupdfPageLinks,
   remoteMupdfPageText,
@@ -1291,6 +1296,20 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       return bytes.byteLength;
     },
   });
+  /**
+   * A page's runs with their members, as PDFium reads them, for the page's own content or one form placement on it
+   * (ADR-0269): the one pre-read the operator writer's edit and the editor's read on open both take, so a run is the
+   * same objects to both. A process with no PDFium host cannot name which objects a run is.
+   */
+  const pageRunsOf = async (docId: DocId, sessions: DocumentSessions, page: number, form: FormPath | null): Promise<PageRuns> => {
+    if (pdfiumHost === null) throw new EngineUnavailableError('reading which objects a page’s text is made of');
+    if (form === null) return pdfiumHost.pageRuns(pdfiumReadImage(docId, sessions), page);
+    // A FORM'S BLOCKS (ADR-0269): its placement's page, from the same build of the placements the read offered them on.
+    const placed = await formPagesOf(docId, sessions, page);
+    const at = placed.paths.findIndex((path) => sameFormPath(path, form));
+    if (at === -1) throw new EditRefusedError('set-text', 0, `page ${String(page)} no longer draws the form the edit names`);
+    return pdfiumHost.pageRuns(placed.image, at);
+  };
   // THE SAME FLUSH, STAGED: the bytes stay where the host wrote them until they are placed, so a save, a copy and a
   // refreshed image never hold them in `main` (ADR-0121 Decision 2 and its addendum). `currentBytes`' check, the
   // same writer's session.
@@ -1846,14 +1865,17 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // A PAGE'S RUNS WITH THEIR MEMBERS, `editTextOperators`' pre-read (ADR-0176): `textBlocks`' two forced steps, the
     // current image and the PDFium host. A process with no PDFium host cannot name which objects a run is, so the edit
     // is refused for the engine that is missing rather than written against a guess.
-    pageRuns: async (docId, sessions, { page, form }) => {
-      if (pdfiumHost === null) throw new EngineUnavailableError('reading which objects a page’s text is made of');
-      if (form === null) return pdfiumHost.pageRuns(pdfiumReadImage(docId, sessions), page);
-      // A FORM'S BLOCKS (ADR-0269): its placement's page, from the same build of the placements the read offered them on.
-      const placed = await formPagesOf(docId, sessions, page);
-      const at = placed.paths.findIndex((path) => sameFormPath(path, form));
-      if (at === -1) throw new EditRefusedError('set-text', 0, `page ${String(page)} no longer draws the form the edit names`);
-      return pdfiumHost.pageRuns(placed.image, at);
+    pageRuns: (docId, sessions, { page, form }) => pageRunsOf(docId, sessions, page, form),
+    // THE READ ON OPEN (ADR-0271 section 5): the block's runs from the edit's own pre-read, translated to the content's
+    // numbering, and the MuPDF host's answer of what the writer does with a new word in each of their fonts. A process
+    // with no PDFium host cannot name a run's objects, and answers no font, so the editor draws each run in its kind.
+    blockFaces: async (docId, sessions, page, indices, form) => {
+      const session = sessions.mupdf;
+      if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+      if (pdfiumHost === null) return { fonts: [], runs: indices.map(() => null) };
+      const read = await pageRunsOf(docId, sessions, page, form);
+      const runs = blockFaceRunsOf(read, indices);
+      return facesInOrder(indices, runs, await engineHost.blockFaces(session, { page, ...(form === null ? {} : { form }) }, runs));
     },
     // THE EDITABLE POWERPOINT EXPORT'S TWO READS (ADR-0210), composed here for the reads above's reason: a byte-image engine
     // is asked about a document by being handed its bytes, and `currentImage` is the one route to them. The words a scan was
@@ -2503,6 +2525,8 @@ function engineSessionOpener(
   readonly pageRewrite: HostPageRewriteReader;
   /** One page's fonts' descriptor faces, from whichever host is live (ADR-0256). */
   readonly textFaces: HostTextFacesReader;
+  /** The faces a block's new words are set in, from whichever host is live (ADR-0271 section 5). */
+  readonly blockFaces: HostBlockFacesReader;
   /** One page's word boxes, from whichever host is live (ADR-0137). */
   readonly wordBoxes: HostWordBoxesReader;
   /** The document's outline, from whichever host is live. */
@@ -2737,6 +2761,7 @@ function engineSessionOpener(
     pageAdjustment: remoteMupdfPageAdjustment(client, remote),
     pageRewrite: remoteMupdfPageRewrite(client, remote),
     textFaces: remoteMupdfTextFaces(client, remote),
+    blockFaces: remoteMupdfBlockFaces(client, remote),
     wordBoxes: remoteMupdfWordBoxes(client, remote),
     destinations: remoteMupdfDestinations(client, remote),
     ocr: remoteMupdfOcr(client, remote),
@@ -2870,6 +2895,19 @@ function engineSessionOpener(
       );
     }
     return textFaces(session, page);
+  };
+
+  /** The read on open's half of the same registration (ADR-0271 section 5). See {@link pageText}. */
+  const readBlockFacesThroughHost: HostBlockFacesReader = (session, at, runs) => {
+    const blockFaces = bound?.blockFaces ?? null;
+    if (blockFaces === null) {
+      throw new Error(
+        'A block-faces read reached the engine with no host reader registered. A session was ' +
+          'resolved for this document, so one was issued by a host — the supervisor and the ' +
+          'host connection have diverged.',
+      );
+    }
+    return blockFaces(session, at, runs);
   };
 
   /** The word-box read's half of the same registration. See {@link pageText}. */
@@ -3698,6 +3736,7 @@ function engineSessionOpener(
     pageAdjustment: readPageAdjustmentThroughHost,
     pageRewrite: readPageRewriteThroughHost,
     textFaces: readTextFacesThroughHost,
+    blockFaces: readBlockFacesThroughHost,
     wordBoxes: readWordBoxesThroughHost,
     destinations: readDestinationsThroughHost,
     ocr: recogniseThroughHost,

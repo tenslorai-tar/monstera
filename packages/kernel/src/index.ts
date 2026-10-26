@@ -153,6 +153,7 @@ export {
   type HostPageAdjustmentReader,
   type HostPageRewriteReader,
   type HostTextFacesReader,
+  type HostBlockFacesReader,
   type HostPageLinksReader,
   type HostPageTextReader,
   type HostWordBoxesReader,
@@ -420,6 +421,7 @@ export {
   remoteMupdfPageAdjustment,
   remoteMupdfPageRewrite,
   remoteMupdfTextFaces,
+  remoteMupdfBlockFaces,
   remoteMupdfPageLinks,
   remoteMupdfPageText,
   type RemotePageTextReader,
@@ -428,6 +430,8 @@ export {
 export type { PageWordBoxes } from './wordBoxes.js';
 // PURE, and apart from `textFaces.ts`, which binds MuPDF (ADR-0256): `main` reads the answer without loading the engine.
 export { type TextFaces, namedByDescriptor } from './textFaceRanges.js';
+// PURE, and apart from `blockFaces.ts`, which binds MuPDF (ADR-0271 section 5): the read on open's shape and its runs.
+export { type BlockFaceRun, type BlockFaces, type FaceChoice, blockFaceRunsOf, facesInOrder } from './blockFaceAnswer.js';
 export { type CellFill, type PageFill, cellFillOf, withCellFills } from './cellFills.js';
 export {
   type CanonicalPath,

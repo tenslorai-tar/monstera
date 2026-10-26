@@ -164,6 +164,9 @@ function start(stream: HostByteStream) {
     textFaces: () => {
       throw new Error('no case here reads the fonts’ faces');
     },
+    blockFaces: () => {
+      throw new Error('no case here reads a block’s faces');
+    },
     wordBoxes: () => {
       throw new Error('no case here reads word boxes');
     },

@@ -22,6 +22,7 @@ import {
   MAX_TOC_ENTRIES,
   MAX_TOC_TITLE_CHARACTERS,
   type OutlineEntry,
+  MAX_BLOCK_FACE_RUNS,
   MAX_FONT_RUNS,
   blockEditOf,
   pageSetOf,
@@ -4905,6 +4906,54 @@ export async function readRunFonts(
     const asked = indices.slice(from, from + MAX_FONT_RUNS);
     const answer = await client['document.runFonts']({ docId, page, indices: asked, ...(read.unpacked === true ? { unpack: true } : {}) });
     if (!answer.ok || answer.value.version !== read.version) return NO_RUN_FONTS;
+    const base = fonts.length;
+    fonts.push(...answer.value.fonts);
+    asked.forEach((index, at) => {
+      const place = answer.value.runs[at];
+      if (place !== null && place !== undefined) runs.set(index, base + place);
+    });
+  }
+  return { fonts, runs };
+}
+
+/** One font of a block as the read on open answers it (`document.blockFaces`, ADR-0271 section 5). */
+export type BlockFontRead = ChannelResult<'document.blockFaces'>['fonts'][number];
+
+/** A block's faces: each of its fonts once, and each run's font by the run's first object. */
+export interface BlockFaces {
+  readonly fonts: readonly BlockFontRead[];
+  /** A run's place in `fonts`, by its first object. A run absent here is drawn in the face PDF.js loaded, or its kind. */
+  readonly runs: ReadonlyMap<number, number>;
+}
+
+/** No font answered: every run is drawn in the face PDF.js loaded for it, or its kind of face. */
+export const NO_BLOCK_FACES: BlockFaces = { fonts: [], runs: new Map() };
+
+/**
+ * The read on open for `block` (ADR-0271 section 5): what the writer does with a new word in each of its fonts, in as
+ * few reads as `MAX_BLOCK_FACE_RUNS` allows, asked once when the block is selected and never while it is typed in.
+ *
+ * ## Anything but an answer at `version` is NO FACES, and the words typed are untouched by it
+ *
+ * Without the answer a new word is drawn in the face PDF.js loaded for its run, or the run's kind of face, and is
+ * written as the writer writes it either way. An answer at another version describes objects the open block no longer
+ * names; a refusal is a document not open or poisoned, which the edit the person makes next says in its own words.
+ */
+export async function readBlockFaces(
+  client: ContractClient,
+  docId: DocId,
+  page: number,
+  block: TextBlock,
+  /** The read that named the block: its version. */
+  read: BlocksRead,
+): Promise<BlockFaces> {
+  const indices = [...new Set(block.lines.flatMap((line) => line.runs.map((run) => run.index)))];
+  const fonts: BlockFontRead[] = [];
+  const runs = new Map<number, number>();
+  for (let from = 0; from < indices.length; from += MAX_BLOCK_FACE_RUNS) {
+    const asked = indices.slice(from, from + MAX_BLOCK_FACE_RUNS);
+    const answer = await client['document.blockFaces']({ docId, page, indices: asked, ...(block.form === undefined ? {} : { form: block.form }) });
+    if (!answer.ok || answer.value.version !== read.version) return NO_BLOCK_FACES;
     const base = fonts.length;
     fonts.push(...answer.value.fonts);
     asked.forEach((index, at) => {

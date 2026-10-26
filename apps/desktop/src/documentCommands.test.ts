@@ -190,6 +190,7 @@ import {
   type DocumentPresentationReader,
   type DocumentPageRasteriser,
   type DocumentRunFontsReader,
+  type DocumentBlockFacesReader,
   EngineUnavailableError,
   suggestedComposedName,
   suggestedUrlName,
@@ -715,6 +716,10 @@ const noRenderPage: DocumentPageRasteriser = () =>
 const noRunFonts: DocumentRunFontsReader = (_docId, _sessions, _page, indices) =>
   Promise.resolve({ fonts: [], runs: indices.map(() => null) });
 
+/** The read on open, answering no font: a case about a block's faces supplies its own (ADR-0271 section 5). */
+const noBlockFaces: DocumentBlockFacesReader = (_docId, _sessions, _page, indices) =>
+  Promise.resolve({ fonts: [], runs: indices.map(() => null) });
+
 /** The editable PowerPoint export's reads, absent: a case that exports editable supplies them (ADR-0210). */
 const noPresentation: DocumentPresentationReader = {
   content: () => Promise.reject(new EngineUnavailableError('reading a page’s content')),
@@ -944,6 +949,7 @@ const INERT = {
   pageObjects: noPageObjects,
   renderPage: noRenderPage,
   runFonts: noRunFonts,
+  blockFaces: noBlockFaces,
   pageRuns: noPageRuns,
   presentation: noPresentation,
   duplicates: noDuplicates,
@@ -1060,6 +1066,7 @@ const LOCAL_READS = {
   pageObjects: noPageObjects,
   renderPage: noRenderPage,
   runFonts: noRunFonts,
+  blockFaces: noBlockFaces,
   pageRuns: noPageRuns,
   presentation: noPresentation,
   duplicates: localDuplicates,

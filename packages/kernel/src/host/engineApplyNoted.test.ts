@@ -64,6 +64,7 @@ function hostAnswering(drawn: DrawnBoxes) {
       annotationImportPlan: refuse('plan a comment import'),
       pageRewrite: refuse('rewrite a page'),
       textFaces: refuse('read the fonts’ faces'),
+      blockFaces: refuse('read a block’s faces'),
       duplicates: refuse('look for duplicates'),
       extract: refuse('build a document'),
       formPages: refuse('read a page’s forms'),

@@ -545,6 +545,9 @@ describe('the engine host answers a containment probe', () => {
     textFaces: () => {
       throw new Error('no case here reads the fonts’ faces');
     },
+    blockFaces: () => {
+      throw new Error('a containment probe must not read a block’s faces');
+    },
     wordBoxes: () => {
       throw new Error('a containment probe must not read word boxes');
     },

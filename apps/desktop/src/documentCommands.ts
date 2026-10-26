@@ -123,6 +123,7 @@ import {
   type RecognisedPage,
   type PageRewrite,
   type PageRuns,
+  type BlockFaces,
   type SaveDependencies,
   type CopyOutcome,
   type DocumentCopyOutcome,
@@ -2242,6 +2243,19 @@ export type DocumentRunFontsReader = (
 ) => Promise<{ readonly fonts: readonly Uint8Array<ArrayBuffer>[]; readonly runs: readonly (number | null)[] }>;
 
 /**
+ * The read on open (ADR-0271 section 5): what the operator writer does with a new word in each font of a block's runs,
+ * and each run's font among them, in the order asked. `form` names the placement the block is in, or `null` for the
+ * page's own content.
+ */
+export type DocumentBlockFacesReader = (
+  docId: DocId,
+  sessions: DocumentSessions,
+  page: number,
+  indices: readonly number[],
+  form: FormPath | null,
+) => Promise<BlockFaces>;
+
+/**
  * What the editable PowerPoint export reads of a page, in the editing engine (ADR-0210): the page's own content, and the
  * page rendered at a stated pixel size with its text or without it. Both are read from the document's CURRENT bytes, as
  * every other PDFium read is, so the words a scan was just recognised into are the words the slide gets.
@@ -2622,6 +2636,7 @@ export interface DocumentCommandsParts {
   readonly renderPage: DocumentPageRasteriser;
   /** A block's run fonts rebuilt by the editing engine's host, each once (ADR-0175). */
   readonly runFonts: DocumentRunFontsReader;
+  readonly blockFaces: DocumentBlockFacesReader;
   /** The editable PowerPoint export's reads of a page, or a thrower (ADR-0210). */
   readonly presentation: DocumentPresentationReader;
   readonly duplicates: DocumentDuplicatesReader;
@@ -2885,6 +2900,7 @@ export class DocumentCommands {
   readonly #pageObjects: DocumentPageObjectsReader;
   readonly #renderPage: DocumentPageRasteriser;
   readonly #runFonts: DocumentRunFontsReader;
+  readonly #blockFaces: DocumentBlockFacesReader;
   readonly #presentation: DocumentPresentationReader;
   readonly #duplicates: DocumentDuplicatesReader;
   readonly #copy: CopySource;
@@ -2976,6 +2992,7 @@ export class DocumentCommands {
     this.#pageObjects = parts.pageObjects;
     this.#renderPage = parts.renderPage;
     this.#runFonts = parts.runFonts;
+    this.#blockFaces = parts.blockFaces;
     this.#presentation = parts.presentation;
     this.#duplicates = parts.duplicates;
     this.#copy = parts.copy;
@@ -3902,6 +3919,29 @@ export class DocumentCommands {
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
       return this.#runFonts(docId, sessions, page, indices, unpack);
+    });
+    return { version, fonts: value.fonts, runs: value.runs };
+  }
+
+  /**
+   * A block's faces, the read on open, inside the document's lane: {@link runFonts}' guards in its order and for its
+   * reason, since this read too hands PDFium the document's bytes. The version comes back so the editor drops an answer
+   * for a page that has moved.
+   */
+  async blockFaces(
+    docId: DocId,
+    page: number,
+    indices: readonly number[],
+    form: FormPath | null,
+  ): Promise<BlockFaces & { readonly version: DocVersion }> {
+    const { version, value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      return this.#blockFaces(docId, sessions, page, indices, form);
     });
     return { version, fonts: value.fonts, runs: value.runs };
   }

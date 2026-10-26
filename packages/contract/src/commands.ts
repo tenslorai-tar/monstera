@@ -4225,11 +4225,31 @@ export const MAX_RUN_FONT_BYTES = 1024 * 1024;
 export const MAX_FONT_RUNS = 4096;
 
 /**
- * The most fonts one `document.runFonts` answer carries: one per distinct font among the runs it was asked about,
- * however many runs share it. A run in a font past the sixteenth is answered with none and drawn in its kind of face,
- * so an answer is at most sixteen times {@link MAX_RUN_FONT_BYTES}.
+ * The most runs one `document.blockFaces` read names, and so the most one `engine/block-faces` request carries. Each
+ * run crosses to the host with its words, up to {@link MAX_BLOCK_FACE_TEXT} of them, so sixty-four keeps a request
+ * under a third of the host's 256 KiB frame at its worst (`hostRoutes.test.ts`). A block of more runs is asked in reads
+ * of this many: the bound decides how many reads a long block costs rather than whether its faces are read.
+ */
+export const MAX_BLOCK_FACE_RUNS = 64;
+
+/** The most of one run's words a `document.blockFaces` read carries to the host: the sample a face is chosen for. */
+export const MAX_BLOCK_FACE_TEXT = 200;
+
+/**
+ * The most fonts one `document.blockFaces` answer carries: one per distinct font among the runs it was asked about,
+ * however many runs share it. A run in a font past the sixteenth is answered with none and drawn in its kind of face.
  */
 export const MAX_BLOCK_FONTS = 16;
+
+/** The styles a family has, as the editor's style choice names them (`document.blockFaces`, ADR-0271 section 3). */
+export const FACE_STYLES = ['regular', 'bold', 'italic', 'bold-italic'] as const;
+export type FaceStyle = (typeof FACE_STYLES)[number];
+
+/** The most faces `document.blockFaces` offers a font as its *Closest matches*: the owner's three to five. */
+export const MAX_FACE_CANDIDATES = 5;
+
+/** The longest family name `document.blockFaces` carries: past every family name a catalogue has read. */
+export const MAX_FACE_FAMILY = 256;
 
 /** A picture's name, as main takes it from the file's own name: bounded, and shown as text. */
 export const MAX_LIBRARY_NAME = 64;

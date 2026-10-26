@@ -12,7 +12,7 @@ import {
   displayLocationSchema,
   preloadChannels,
 } from './channels.js';
-import { MAX_BLOCK_FONTS, MAX_RUN_FONT_BYTES, placeImageSchema } from './commands.js';
+import { MAX_BLOCK_FONTS, MAX_FACE_CANDIDATES, MAX_RUN_FONT_BYTES, placeImageSchema } from './commands.js';
 import type { Incident } from './incident.js';
 import { MAX_PAGE_SET_ENTRIES } from './pageSet.js';
 import {
@@ -184,6 +184,14 @@ const handlers: ContractHandlers = {
     ),
   'document.runFonts': () =>
     Promise.resolve(ok({ version: asDocVersion(1), fonts: [new Uint8Array([0, 1, 0, 0])], runs: [0, null] })),
+  'document.blockFaces': () =>
+    Promise.resolve(
+      ok({
+        version: asDocVersion(1),
+        fonts: [{ own: true, chosen: { family: 'Arimo', weight: 400, italic: false, styles: ['regular', 'bold'] }, candidates: [] }],
+        runs: [0, null],
+      }),
+    ),
   'document.split':() => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.exportPageImages': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.exportText': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
@@ -957,6 +965,30 @@ describe('a block’s run fonts are bounded bytes, and every run names one the a
     expect(answer.safeParse(tooMany).success).toBe(false);
     expect(answer.safeParse({ version, fonts: [new Uint8Array(4)], runs: [0, 1] }).success).toBe(false);
     expect(answer.safeParse({ version, fonts: ['AAEAAA'], runs: [0] }).success).toBe(false);
+  });
+});
+
+describe('a block’s faces are bounded, and every run names a font the answer carries (ADR-0271 section 5)', () => {
+  const answer = channels['document.blockFaces'].result;
+  const version = asDocVersion(3);
+  const face = (family: string) => ({ family, weight: 400, italic: false, styles: ['regular' as const] });
+  const font = (candidates: number) => ({ own: false, chosen: face('Arimo'), candidates: Array.from({ length: candidates }, (_, at) => face(`F${String(at)}`)) });
+
+  it('takes the most candidates, the most fonts, a font with no face to offer, and no fonts', () => {
+    expect([
+      answer.safeParse({ version, fonts: [font(MAX_FACE_CANDIDATES)], runs: [0, null] }).success,
+      answer.safeParse({ version, fonts: Array.from({ length: MAX_BLOCK_FONTS }, () => font(1)), runs: [MAX_BLOCK_FONTS - 1] }).success,
+      answer.safeParse({ version, fonts: [{ own: true, chosen: null, candidates: [] }], runs: [0] }).success,
+      answer.safeParse({ version, fonts: [], runs: [null] }).success,
+    ]).toStrictEqual([true, true, true, true]);
+  });
+
+  it('CONTROL: a candidate too many, a font too many, a run past the fonts, a style not one, or no family is refused', () => {
+    expect(answer.safeParse({ version, fonts: [font(MAX_FACE_CANDIDATES + 1)], runs: [0] }).success).toBe(false);
+    expect(answer.safeParse({ version, fonts: Array.from({ length: MAX_BLOCK_FONTS + 1 }, () => font(1)), runs: [0] }).success).toBe(false);
+    expect(answer.safeParse({ version, fonts: [font(1)], runs: [0, 1] }).success).toBe(false);
+    expect(answer.safeParse({ version, fonts: [{ ...font(0), chosen: { ...face('Arimo'), styles: ['heavy'] } }], runs: [0] }).success).toBe(false);
+    expect(answer.safeParse({ version, fonts: [{ ...font(0), chosen: face('') }], runs: [0] }).success).toBe(false);
   });
 });
 

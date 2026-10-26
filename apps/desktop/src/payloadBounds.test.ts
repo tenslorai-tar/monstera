@@ -576,6 +576,9 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // them. A function of the fonts one block is set in, never of how many pages
   // the document has.
   'document.runFonts': 'needs an engine session',
+  // THE READ ON OPEN (ADR-0271 section 5): at most `MAX_BLOCK_FONTS` fonts, each with at most `MAX_FACE_CANDIDATES`
+  // faces named by family. A function of the fonts one block is set in, never of how many pages the document has.
+  'document.blockFaces': 'needs an engine session',
   'document.duplicatePages': 'needs an engine session',
 };
 

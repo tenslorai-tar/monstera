@@ -83,6 +83,7 @@ async function joined(parts: {
       pageAdjustment: refuse('read a page adjustment'),
       pageRewrite: refuse('read which writer a page needs'),
       textFaces: refuse('read the fonts’ faces'),
+      blockFaces: refuse('read a block’s faces'),
       wordBoxes: refuse('read the word boxes'),
       ocr: refuse('recognise a page'),
       destinations: refuse('read the outline'),

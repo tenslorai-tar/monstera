@@ -96,6 +96,10 @@ import {
   MAX_BLOCK_FONTS,
   MAX_FONT_RUNS,
   MAX_RUN_FONT_BYTES,
+  FACE_STYLES,
+  MAX_BLOCK_FACE_RUNS,
+  MAX_FACE_CANDIDATES,
+  MAX_FACE_FAMILY,
   keepableSignatureSchema,
   libraryEntrySchema,
   libraryIdSchema,
@@ -1274,6 +1278,17 @@ export const AI_SETUP_AT_START_SETTING_ID = 'ai.setup-at-start';
  * and the next reader deserves to know it is the base schema that carries it —
  * not a modifier they might remove as noise.
  */
+/**
+ * A face `document.blockFaces` names: a family, the weight and slant the writer sets it at, and every style the family
+ * has, which is what the editor's style choice offers.
+ */
+const faceChoiceSchema = z.object({
+  family: z.string().min(1).max(MAX_FACE_FAMILY),
+  weight: z.number().min(1).max(1000),
+  italic: z.boolean(),
+  styles: z.array(z.enum(FACE_STYLES)).max(FACE_STYLES.length).readonly(),
+});
+
 const linkBoundsSchema = z.object({
   x0: z.number(),
   y0: z.number(),
@@ -6098,6 +6113,46 @@ export const channels = {
         runs: z
           .array(z.number().int().min(0).max(MAX_BLOCK_FONTS - 1).nullable())
           .max(MAX_FONT_RUNS)
+          .readonly(),
+      })
+      .refine((answer) => answer.runs.every((at) => at === null || at < answer.fonts.length), {
+        message: 'a run names a font the answer does not carry',
+      }),
+    ['document-not-open', 'document-poisoned'],
+  ),
+
+  'document.blockFaces': channel(
+    'What the writer does with a new word in each font of a block’s runs: the read on open.',
+    z.object({
+      docId: docIdSchema,
+      page: z.number().int().nonnegative(),
+      /** The runs' first objects, as `document.textBlocks` named them. */
+      indices: z.array(z.number().int().min(0).max(MAX_OBJECT_INDEX)).min(1).max(MAX_BLOCK_FACE_RUNS).readonly(),
+      /** The form placement the block is in, as `document.textBlocks` named it (ADR-0269); absent for the page's own. */
+      form: formPathSchema.exactOptional(),
+    }),
+    z
+      .object({
+        version: docVersionSchema,
+        /**
+         * For each distinct font of the runs asked about: whether it may carry a new word (an ordinary program, not drawn
+         * letters), the face the writer sets one in where it cannot, and the chain's nearest faces, the chosen one first.
+         * The face and the faces are `null` and empty where the engine has no faces to offer.
+         */
+        fonts: z
+          .array(
+            z.object({
+              own: z.boolean(),
+              chosen: faceChoiceSchema.nullable(),
+              candidates: z.array(faceChoiceSchema).max(MAX_FACE_CANDIDATES).readonly(),
+            }),
+          )
+          .max(MAX_BLOCK_FONTS)
+          .readonly(),
+        /** For each run asked about, in the order asked, its font's place in `fonts`, or `null` for none. */
+        runs: z
+          .array(z.number().int().min(0).max(MAX_BLOCK_FONTS - 1).nullable())
+          .max(MAX_BLOCK_FACE_RUNS)
           .readonly(),
       })
       .refine((answer) => answer.runs.every((at) => at === null || at < answer.fonts.length), {
