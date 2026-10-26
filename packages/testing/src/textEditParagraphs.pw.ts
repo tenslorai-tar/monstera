@@ -44,7 +44,6 @@ import { LOOKS, bridgeUnder } from './pageBridge.js';
 
 const ID = asDocId('00000000-0000-4000-8000-0000000000f2');
 const TIMES = { size: 11, colour: { r: 0, g: 0, b: 0 }, serif: true, mono: false, italic: false, bold: false, font: 'Times-Roman' } as const;
-const NO_PUSH = { below: [], room: 0 };
 
 /** The clause as drawn: each number at x 72 and its words at x 90, 11 pt on 14, 3 and then 5 points between paragraphs. */
 const DRAWN = [
@@ -90,14 +89,12 @@ function blocks() {
       lines: READ.map((line, index) => ({ runs: [{ index: index + 1, text: line.text, style: TIMES }], box: line.box, soft: false, baseline: line.baseline })),
       style: TIMES,
       shape: { align: 'left' as const, firstIndent: 0 },
-      push: NO_PUSH,
     },
     {
       box: BELOW_BOX,
       lines: [{ runs: [{ index: 6, text: BELOW.text, style: TIMES }], box: BELOW_BOX, soft: false, baseline: BELOW.baseline }],
       style: TIMES,
       shape: { align: 'left' as const, firstIndent: 0 },
-      push: NO_PUSH,
     },
   ];
 }
@@ -122,7 +119,7 @@ async function open(page: Page, zoom: string): Promise<void> {
   await page.addStyleTag({
     content:
       // AND THE OUTLINE'S HOVER TINT, which an open block, having no outline, does not show (measured: 153 dark pixels at 200 %).
-      '.m-text-editor-handle,.m-text-editor-problem{visibility:hidden!important}.m-text-block{border-color:transparent!important;outline:none!important;background:transparent!important}.m-text-editor-frame{outline:none!important;border-color:transparent!important}',
+      '.m-kit-handle,.m-kit-problem{visibility:hidden!important}.m-text-block{border-color:transparent!important;outline:none!important;background:transparent!important}.m-kit-frame{outline:none!important;border-color:transparent!important}',
   });
 }
 
@@ -232,13 +229,13 @@ test('opening and closing the clauseâ€™s editor shows, in every frame, the pageâ
     const sample = (): void => {
       const editor = document.querySelector('[data-kit-surface]');
       const rows = editor === null ? [] : Array.from(editor.querySelectorAll(':scope > [data-kit-paragraph]'));
-      const frame = editor?.closest('.m-text-editor-frame') ?? null;
+      const frame = editor?.closest('.m-kit-frame') ?? null;
       frames.push({
         open: editor !== null,
         words: editor?.textContent ?? '',
         drawn: rows.filter((row) => getComputedStyle(row).color !== 'rgba(0, 0, 0, 0)').length,
         papered:
-          document.querySelectorAll('.m-text-editor-cover').length +
+          document.querySelectorAll('.m-kit-cover').length +
           (editor !== null && !clear(editor) ? 1 : 0) +
           (frame !== null && !clear(frame) ? 1 : 0),
       });
