@@ -343,3 +343,20 @@ program on every edit is not asked for. Stated, so the day a program is found ly
 **Rejected: reading the weight from the font's name** (`550wght`). It happens to be right here and is a producer's
 spelling, as unchecked as the descriptor; the owner's rule is the letters on the page. **Rejected: a lighter threshold
 than 600.** Any threshold is a guess about letters nobody looked at, and moves the defect to the next weight.
+
+## Correction, 2026-10-26, later — the measure is the STEM, not the ink: ink compares two designs as well as two weights
+
+The correction above measured *the area each letter fills per em of its advance* and matched it against the stand-in
+family's. Built and measured on document 2 the same day before any code was committed (scratch `l2Measure.mjs`), it
+misreads: Source Serif 4 is a darker design than Tinos, so the page's REGULAR body text (descriptor 400) read as weight
+561 against Tinos and a word typed into it would have been set bold, and the title read 607, still nearer Tinos Bold.
+Ink mixes the difference between two families' designs into the weight it is meant to measure.
+
+**What is measured instead is the thickness of a vertical stem, per em**: where a line across the middle of a
+single-stem letter — l, I, i, n, m, h, u, r — enters and leaves its ink, read the same way from the drawn glyph's paths
+and from each candidate face's outline, over the letters both draw. Measured on document 2 (scratch `l2Stems.mjs`): Tinos
+Regular 0.081 em and Bold 0.141; the body text 0.090, which matches 445 and stays regular; the title 0.107, 530, regular,
+the lighter serif the owner saw; the 550-weight headings at text size 0.115, 570, the nearer of Tinos's two being bold.
+Everything else above stands: the family is the resolver's, the weight is read off its faces or its axis, the person's
+own Bold wins, and the descriptor decides where nothing can be measured — a glyph drawn as a picture, fewer than four
+stem letters, or a family of one weight.
