@@ -6,18 +6,20 @@ import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { type Page, expect, test } from '@playwright/test';
 
+import { SURFACE } from './editTextSteps.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
 
 /**
- * THE CLICK THAT OPENS A BLOCK PUTS THE CARET WHERE IT WAS PRESSED (cloud run 21, the owner's video of 2026-10-26):
- * the boundary between characters nearest the point, in the editor's own text, exactly where a click inside the open
- * editor would put it, and a letter typed then lands there.
+ * THE PRESS THAT PUTS THE CARET IN A BLOCK PUTS IT WHERE IT WAS PRESSED (cloud run 21, the owner's video of 2026-10-26;
+ * ADR-0271 section 3): the boundary between characters nearest the point, in the editor's own text, and a letter typed
+ * then lands there. Edit text opens in two steps — a press selects the box, a press inside it puts the caret — so the
+ * press measured is the second.
  *
  * ## The oracle is the open editor itself
  *
- * Each target is read off the editor's own layout once it has settled, opened by a key so no point is involved: the
- * two characters either side of a boundary, and the point between them. The editor is closed with nothing changed, and
- * the block is then opened by ONE press at that point, as a hand makes it (down, a pixel's move, up). The letter typed
+ * Each target is read off the editor's own layout once it has settled, opened by keys so no point is involved: the two
+ * characters either side of a boundary, and the point between them. The editor is closed with nothing changed, and the
+ * block is then opened by two presses at that point, as a hand makes them (down, a pixel's move, up). The letter typed
  * must land at that boundary, and the caret must stand within half a character of the press.
  *
  * ## The three blocks, and why each
@@ -169,11 +171,14 @@ async function open(page: Page, zoom: '100pct' | '150pct', fontDelay = FONT_DELA
   await expect(page.locator(`[data-text-edit-layer="0"] [data-text-block="${String(BLOCKS.length - 1)}"]`)).toBeVisible({ timeout: 10_000 });
 }
 
+/** The runs drawn in a face the host rebuilt: the editor loads those under its own `m-kit-` families (`runFaces.ts`). */
+const OWN_FACE = '.m-kit__run[style*="m-kit-"]';
+
 /** Waits until the open editor is as it will stay: focused, and every run the host answers a font for drawn in it. */
 async function settled(page: Page, rebuilt: boolean): Promise<void> {
-  const editor = page.locator('[data-text-editor]');
+  const editor = page.locator(SURFACE);
   await expect(editor).toBeFocused();
-  if (rebuilt) await expect(editor.locator('[data-run-font]').first()).toBeVisible({ timeout: 5000 });
+  if (rebuilt) await expect(editor.locator(OWN_FACE).first()).toBeAttached({ timeout: 5000 });
   await page.evaluate(() => document.fonts.ready.then(() => undefined));
   // TWO FRAMES, for the layout effects and the baseline's re-render after the faces.
   await page.evaluate(
@@ -190,7 +195,7 @@ async function settled(page: Page, rebuilt: boolean): Promise<void> {
 
 /** Where boundary `at` of the editor's text stands on screen, by its own layout: the point a press there is made at. */
 function pointOf(page: Page, at: number): Promise<{ x: number; y: number; width: number; height: number }> {
-  return page.locator('[data-text-editor]').evaluate((editor, at) => {
+  return page.locator(SURFACE).evaluate((editor, at) => {
     const owner = editor.ownerDocument;
     const walker = owner.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
     const nodes: { node: Text; start: number }[] = [];
@@ -224,7 +229,7 @@ function pointOf(page: Page, at: number): Promise<{ x: number; y: number; width:
 
 /** The editor's words, its rows run together: the string a boundary's index counts in. */
 function editorText(page: Page): Promise<string> {
-  return page.locator('[data-text-editor]').evaluate((editor) => editor.textContent);
+  return page.locator(SURFACE).evaluate((editor) => editor.textContent);
 }
 
 /** Where the caret stands on screen: the collapsed selection's own rectangle. */
@@ -294,8 +299,10 @@ for (const fixture of CASES) {
       test(`at ${target.name}`, async ({ page }) => {
         await open(page, fixture.zoom);
         const outline = page.locator(`[data-text-edit-layer="0"] [data-text-block="${String(fixture.block)}"]`);
-        // THE ORACLE: the block opened by a key, read once it has settled, and closed with nothing changed.
+        // THE ORACLE: the block opened by keys (Enter on the outline selects the box, Enter again puts the caret), read
+        // once it has settled, and closed with nothing changed.
         await outline.focus();
+        await page.keyboard.press('Enter');
         await page.keyboard.press('Enter');
         await settled(page, fixture.rebuilt);
         const words = await editorText(page);
@@ -304,10 +311,11 @@ for (const fixture of CASES) {
         const at = found + target.offset;
         const point = await pointOf(page, at);
         await page.keyboard.press('Escape');
-        await expect(page.locator('[data-text-editor]')).toHaveCount(0);
+        await expect(page.locator(SURFACE)).toHaveCount(0);
         await expect(outline).toBeVisible();
 
-        // THE PRESS THAT OPENS IT, at that point.
+        // THE TWO PRESSES THAT OPEN IT, at that point: the box, then the caret.
+        await press(page, point.x, point.y);
         await press(page, point.x, point.y);
         await settled(page, fixture.rebuilt);
         const caret = await caretPoint(page);
@@ -339,18 +347,21 @@ for (const fixture of [
     const outline = page.locator(`[data-text-edit-layer="0"] [data-text-block="${String(fixture.block)}"]`);
     await outline.focus();
     await page.keyboard.press('Enter');
+    await page.keyboard.press('Enter');
     await settled(page, true);
     const words = await editorText(page);
     const at = words.indexOf(fixture.find) + fixture.offset;
     const point = await pointOf(page, at);
     await page.keyboard.press('Escape');
-    await expect(page.locator('[data-text-editor]')).toHaveCount(0);
+    await expect(page.locator(SURFACE)).toHaveCount(0);
     await expect(outline).toBeVisible();
 
+    // THE BOX AND THE CARET IN ONE BREATH, and the letters with them: the faces are read from the first press.
+    await press(page, point.x, point.y);
     await press(page, point.x, point.y);
     await page.keyboard.type('XYZ');
     // THE KEYS WERE TYPED BEFORE THE FONTS ARRIVED, or this case separates nothing.
-    expect(await page.locator('[data-text-editor] [data-run-font]').count(), 'the runs’ fonts had not arrived when the keys were typed').toBe(0);
+    expect(await page.locator(`${SURFACE} ${OWN_FACE}`).count(), 'the runs’ fonts had not arrived when the keys were typed').toBe(0);
     await settled(page, true);
     await expect.poll(() => editorText(page), { message: JSON.stringify({ at, point, words }) }).toBe(`${words.slice(0, at)}XYZ${words.slice(at)}`);
   });

@@ -51,20 +51,34 @@ function kindsOf(block: TextBlock): Map<string, FaceKind> {
   return kinds;
 }
 
-/** The family a block's face is loaded under: unique to this block's read, and plain letters and digits. */
-function familyOf(owner: string, place: number): string {
-  return `m-kit-${owner.replace(/[^a-zA-Z0-9]/gu, '')}-${String(place)}`;
+/** Counts the reads this window has loaded faces for, so no two reads share a family name. */
+let reads = 0;
+
+/** The family a block's face is loaded under: unique to this read, and plain letters and digits. */
+function familyOf(owner: string, read: number, place: number): string {
+  return `m-kit-${owner.replace(/[^a-zA-Z0-9]/gu, '')}-${String(read)}-${String(place)}`;
 }
 
 /**
  * Loads `block`'s run fonts from `read` while `read` is given, removing them when it is taken away or the block changes.
- * `owner` names the read (the version and the block's place), so two blocks never share a family.
+ * `owner` names the block (the version and its place), and each read is numbered besides.
+ *
+ * ## The answer is the READ's, never the block's
+ *
+ * A block closed and opened again is the same block and a new read, and its first faces were removed as it closed. Kept
+ * by the block, the second opening was handed the first's answer at once — *settled*, naming families no longer loaded —
+ * and drew its words in stand-in faces while saying they were the file's: measured 2026-10-26 in Chromium 151
+ * (`textFirstClick.pw.ts`), a press 21 characters into a heading landed at 24, its line 21 pixels narrower than the same
+ * line drawn in the file's font. So the answer is kept with the read that gave it, and each read's faces have names of
+ * their own, so no family is ever both removed and named.
  */
 export function useRunFaces(block: TextBlock | undefined, read: (() => Promise<RunFonts>) | undefined, owner: string): RunFaces {
-  const [faces, setFaces] = useState<{ readonly owner: string; readonly faces: RunFaces }>({ owner, faces: UNSETTLED });
+  const [faces, setFaces] = useState<{ readonly read: (() => Promise<RunFonts>) | undefined; readonly faces: RunFaces }>({ read: undefined, faces: UNSETTLED });
   useEffect(() => {
     if (block === undefined || read === undefined) return undefined;
     const fonts = document.fonts;
+    reads += 1;
+    const serial = reads;
     let current = true;
     const added: FontFace[] = [];
     void read().then(async ({ fonts: programs, runs }) => {
@@ -82,7 +96,7 @@ export function useRunFaces(block: TextBlock | undefined, read: (() => Promise<R
       }
       const loaded = await Promise.all(
         programs.map((bytes, place) => {
-          const face = new FontFace(familyOf(owner, place), bytes, declared.get(place));
+          const face = new FontFace(familyOf(owner, serial, place), bytes, declared.get(place));
           return face.load().then(
             () => face,
             () => undefined,
@@ -98,14 +112,14 @@ export function useRunFaces(block: TextBlock | undefined, read: (() => Promise<R
         const name = nameOf.get(place);
         if (name !== undefined && !families.has(name)) families.set(name, face.family);
       }
-      setFaces({ owner, faces: { settled: true, loaded: families } });
+      setFaces({ read, faces: { settled: true, loaded: families } });
     });
     return () => {
       current = false;
       for (const face of added) fonts.delete(face);
     };
   }, [block, read, owner]);
-  return faces.owner === owner ? faces.faces : UNSETTLED;
+  return faces.read === read ? faces.faces : UNSETTLED;
 }
 
 /**

@@ -11,7 +11,7 @@ import { positionOf, readSelection, writeSelection } from '../editorKit/dom.js';
 import { type EditorOps, EditorMenu, type EditorSpelling } from '../editorKit/EditorMenu.js';
 import { EditorSurface } from '../editorKit/EditorSurface.js';
 import { formatOpenEditor, keepsEditor, openEditorState, registerEditor, steppedSize } from '../editorKit/openEditor.js';
-import { caret, isCollapsed, ordered, replaceRange, selectedText, styleAt, wholeBlock, wordAt } from '../editorKit/model.js';
+import { caret, insertText, isCollapsed, ordered, replaceRange, selectedText, styleAt, wholeBlock, wordAt } from '../editorKit/model.js';
 import { AS_DRAWN_CLASS, type Look } from '../editorKit/paint.js';
 import { type EditorStore, createEditorStore } from '../editorKit/store.js';
 import {
@@ -185,13 +185,24 @@ function formatKey(event: KeyboardEvent, blockSize: number): boolean {
   return false;
 }
 
+/** How long letters typed after the press that put the caret wait for the file's faces, at most (C1b). */
+const HOLD_KEYS_MS = 1500;
+
 /** Puts the model's caret at the character under a point of the window, where the browser can say which that is. */
 function caretAtPoint(store: EditorStore, words: HTMLElement, x: number, y: number): void {
   const owner = words.ownerDocument;
   const at = (owner as Partial<Document>).caretPositionFromPoint?.call(owner, x, y);
   const position = at === null || at === undefined ? undefined : positionOf(words, at.offsetNode, at.offset);
-  if (position !== undefined) store.select(caret(position));
-  writeSelection(words, store.get().selection);
+  if (at === null || at === undefined || position === undefined) {
+    writeSelection(words, store.get().selection);
+    return;
+  }
+  // THE BROWSER'S OWN POINT for the press, put as it named it: where a line wraps, the end of one line and the start of
+  // the next are one offset, and only the node the browser named says which line the press was on (measured in Chromium
+  // 151, `textFirstClick.pw.ts`: mapped back from the offset, a press at a line's start showed the caret at the line
+  // above's end).
+  owner.getSelection()?.setBaseAndExtent(at.offsetNode, at.offset, at.offsetNode, at.offset);
+  store.select(caret(position));
 }
 
 /** Whether a different choice of words can pass a refusal: only characters the page's font cannot show. */
@@ -415,6 +426,55 @@ export function BlockEditor({
     else writeSelection(words, store.get().selection);
   }, [start, store]);
 
+  /**
+   * A press that put the caret while the words were still laid out in stand-in faces, and the letters typed since
+   * (cloud run 21's C1b, kept for the kit): the press is held, in the frame's own pixels so a scroll does not move it,
+   * and once the file's faces are drawn the caret is put at it again in the layout the person now sees and the letters
+   * go in there, in order. Measured 2026-10-26 in Chromium 151 with the faces 900 ms late (`textFirstClick.pw.ts`):
+   * letters typed in the press's breath landed one or two characters away. Any other key or press, or
+   * {@link HOLD_KEYS_MS}, settles at once with the layout as it is.
+   */
+  const held = useRef<{ readonly x: number; readonly y: number; readonly width: number; readonly letters: string[] } | undefined>(undefined);
+  const settlePress = useCallback((): void => {
+    const press = held.current;
+    const words = surface.current;
+    const corner = frame.current?.getBoundingClientRect();
+    held.current = undefined;
+    if (press === undefined || words === null || corner === undefined) return;
+    // A FRAME OF ANOTHER SIZE (a zoom, a block scaled) is not the one pressed: the caret stays where it is.
+    if (Math.abs(corner.width - press.width) <= 0.5) caretAtPoint(store, words, corner.left + press.x, corner.top + press.y);
+    if (press.letters.length === 0) return;
+    const { model, selection, pending } = store.get();
+    store.change(insertText(model, selection, press.letters.join(''), pending), 'typing', press.letters.join(''));
+  }, [store]);
+  const holdPress = (x: number, y: number): void => {
+    const corner = frame.current?.getBoundingClientRect();
+    if (faces.settled || corner === undefined) return;
+    held.current = { x: x - corner.left, y: y - corner.top, width: corner.width, letters: [] };
+  };
+  // THE FACES DRAWN: the layout will not change for them again, so the held press is placed in it.
+  useLayoutEffect(() => {
+    if (faces.settled) settlePress();
+  }, [faces.settled, settlePress]);
+  useEffect(() => {
+    const bound = setTimeout(settlePress, HOLD_KEYS_MS);
+    return () => {
+      clearTimeout(bound);
+    };
+  }, [settlePress]);
+  /** Letters typed while a press is held wait for it; anything else settles it first. */
+  const onType = (text: string): boolean => {
+    const press = held.current;
+    if (press === undefined) return false;
+    // TYPED LETTERS, as a key or an input method gives them; a line break or a tab is a key of its own, and settles.
+    if (!/[\n\t]/u.test(text)) {
+      press.letters.push(text);
+      return true;
+    }
+    settlePress();
+    return false;
+  };
+
   // THE SECOND PRESS: inside the box, on words already laid out, the browser's caret is the one the person meant. A
   // double press that opened the box sends its second press here too, which the browser would take as *select a word*:
   // it is the caret at the press instead (section 3).
@@ -422,12 +482,17 @@ export function BlockEditor({
     const words = surface.current;
     if (words === null) return undefined;
     const onDown = (event: MouseEvent): void => {
-      if (mode !== 'box') return;
+      if (mode !== 'box') {
+        // A LATER PRESS is the person's own: a held one is placed first, then let go.
+        settlePress();
+        return;
+      }
       if (event.detail >= 2) {
         event.preventDefault();
         words.focus();
         caretAtPoint(store, words, event.clientX, event.clientY);
       }
+      holdPress(event.clientX, event.clientY);
       setMode('text');
     };
     words.addEventListener('mousedown', onDown);
@@ -573,6 +638,9 @@ export function BlockEditor({
   /** The editor's own keys, in the words and on the box alike: answers whether it took the key. */
   const onKey = (event: KeyboardEvent): boolean => {
     if (composing(event)) return false;
+    // ANY KEY BUT A LETTER settles a held press first, so it acts where the person pressed.
+    const letter = event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey;
+    if (!letter) settlePress();
     const step = nudgeOf(event);
     if (step !== undefined) {
       actions.current.nudge(step);
@@ -657,6 +725,7 @@ export function BlockEditor({
             label={_(TEXT_EDIT_EDITOR_LABEL)}
             look={look}
             onKey={onKey}
+            onType={onType}
             onPainted={onPainted}
             store={store}
             style={{

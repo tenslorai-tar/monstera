@@ -60,6 +60,8 @@ export interface EditorSurfaceProps {
   readonly editable: boolean;
   /** The caller's own keys, asked first; answers whether it took the key. */
   readonly onKey?: (event: KeyboardEvent) => boolean;
+  /** Asked before letters typed are put in the model; answers whether the caller took them to put in later itself. */
+  readonly onType?: (text: string) => boolean;
   /** Told after every drawing, with the surface: what a caller measures from the layout (where the words now reach). */
   readonly onPainted?: (root: HTMLElement) => void;
   readonly surfaceRef?: React.RefObject<HTMLDivElement | null>;
@@ -80,13 +82,13 @@ function extended(model: Model, selection: Selection, by: 'word' | 'line', direc
   return { anchor: here, focus: there };
 }
 
-export function EditorSurface({ store, look, drawn, label, className, style, editable, onKey, onPainted, surfaceRef }: EditorSurfaceProps): ReactElement {
+export function EditorSurface({ store, look, drawn, label, className, style, editable, onKey, onType, onPainted, surfaceRef }: EditorSurfaceProps): ReactElement {
   const own = useRef<HTMLDivElement>(null);
   const root = surfaceRef ?? own;
   // THE LATEST OF WHAT A HANDLER READS, so the listeners added once for the surface's life never act on a stale one.
-  const latest = useRef({ editable, onKey, onPainted, look, drawn });
+  const latest = useRef({ editable, onKey, onType, onPainted, look, drawn });
   useLayoutEffect(() => {
-    latest.current = { editable, onKey, onPainted, look, drawn };
+    latest.current = { editable, onKey, onType, onPainted, look, drawn };
   });
   /** Draws the model as it is, for a change of look the store does not publish. */
   const repaint = useRef<(() => void) | undefined>(undefined);
@@ -139,6 +141,8 @@ export function EditorSurface({ store, look, drawn, label, className, style, edi
     };
 
     const type = (text: string, at?: Selection): void => {
+      // LETTERS THE CALLER HOLDS for a layout still settling go in later, by the caller (`onType`).
+      if (at === undefined && latest.current.onType?.(text) === true) return;
       const { edited, pending } = current();
       const selection = at ?? edited.selection;
       store.change(insertText(edited.model, selection, text, at === undefined ? pending : undefined), 'typing', text);
@@ -295,6 +299,24 @@ export function EditorSurface({ store, look, drawn, label, className, style, edi
     // words chosen and a field focused within one task are read after the selection became the field's (measured in
     // Chromium 151, `textAdd.pw.ts`' spacing case). `focusout` runs inside the focus move, while it is still the words'.
     element.addEventListener('focusout', onSelectionChange);
+    // AND AS IT COMES BACK, the model's selection is put back: focus given by script (a panel's field handing it back)
+    // lets the browser put its own caret, and the next `selectionchange` would collapse the words the person chose. NOT
+    // for focus a press gives: Chromium 151 places the press's caret before the focus arrives (`textFirstClick.pw.ts`),
+    // and putting the model's back then undid the press.
+    let pressing = false;
+    const onPress = (): void => {
+      pressing = true;
+    };
+    const onRelease = (): void => {
+      pressing = false;
+    };
+    const onFocus = (): void => {
+      if (!pressing) writeSelection(element, store.get().selection);
+    };
+    element.addEventListener('pointerdown', onPress, true);
+    owner.addEventListener('pointerup', onRelease, true);
+    owner.addEventListener('pointercancel', onRelease, true);
+    element.addEventListener('focus', onFocus);
     element.addEventListener('copy', onCopy);
     element.addEventListener('cut', onCut);
     owner.addEventListener('selectionchange', onSelectionChange);
@@ -306,6 +328,10 @@ export function EditorSurface({ store, look, drawn, label, className, style, edi
       element.removeEventListener('compositionstart', onCompositionStart);
       element.removeEventListener('compositionend', onCompositionEnd);
       element.removeEventListener('focusout', onSelectionChange);
+      element.removeEventListener('focus', onFocus);
+      element.removeEventListener('pointerdown', onPress, true);
+      owner.removeEventListener('pointerup', onRelease, true);
+      owner.removeEventListener('pointercancel', onRelease, true);
       element.removeEventListener('copy', onCopy);
       element.removeEventListener('cut', onCut);
       owner.removeEventListener('selectionchange', onSelectionChange);

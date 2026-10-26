@@ -138,6 +138,35 @@ describe('the kit’s editable surface', () => {
     expect(store.get().selection).toStrictEqual({ anchor: { paragraph: 1, offset: 0 }, focus: { paragraph: 1, offset: 6 } });
   });
 
+  it('puts the model’s selection back as the focus returns, so a field handing it back keeps the words chosen', () => {
+    const { root, store } = surface();
+    act(() => {
+      store.select({ anchor: { paragraph: 1, offset: 0 }, focus: { paragraph: 1, offset: 6 } });
+    });
+    root.ownerDocument.getSelection()?.removeAllRanges();
+    act(() => {
+      root.focus();
+    });
+    const live = root.ownerDocument.getSelection();
+    expect(live?.toString()).toBe('Second');
+  });
+
+  it('CONTROL: focus a press gives keeps the press’s caret, which the browser placed before the focus came', () => {
+    const { root, store } = surface();
+    act(() => {
+      store.select({ anchor: { paragraph: 0, offset: 0 }, focus: { paragraph: 1, offset: 11 } });
+    });
+    root.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    const point = pointOf(root, { paragraph: 1, offset: 3 });
+    if (point === undefined) throw new Error('no point');
+    root.ownerDocument.getSelection()?.setBaseAndExtent(point.node, point.offset, point.node, point.offset);
+    act(() => {
+      root.focus();
+    });
+    expect(root.ownerDocument.getSelection()?.isCollapsed).toBe(true);
+    root.ownerDocument.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+  });
+
   it('Ctrl+A selects the whole block in the model at once', () => {
     const { root, store } = surface();
     act(() => {
