@@ -51,6 +51,59 @@ export function render(kernel, bytes, index) {
 }
 
 /**
+ * MuPDF's drawing of page `index` with every text operation left out — fills, strokes and clips of text alike — at
+ * {@link render}'s size and place, so a pixel of one is the same pixel of the other. What text draws is the difference.
+ *
+ * MuPDF, not PDFium: PDFium draws a font the file does not embed from the MACHINE's fonts, so a Japanese line drew on a
+ * runner with a Japanese font and nothing on one without (CI's Linux leg, 2026-10-26), and a check built on it judged
+ * the machine. MuPDF's fallback faces are compiled into the shim, the same on every runner.
+ * @param {any} kernel @param {Uint8Array} bytes @param {number} index @returns {Render}
+ */
+export function renderWithoutText(kernel, bytes, index) {
+  const { mupdf } = kernel;
+  const document = mupdf.PDFDocument.openDocument(bytes, 'application/pdf');
+  try {
+    const page = document.loadPage(index);
+    const transform = page.getTransform();
+    const matrix = mupdf.Matrix.scale(SCALE, SCALE);
+    // THE SAME BOX the full drawing takes, read from it rather than worked out again.
+    const reference = page.toPixmap(matrix, mupdf.ColorSpace.DeviceRGB, false, false);
+    const [x0, y0, width, height] = [reference.getX(), reference.getY(), reference.getWidth(), reference.getHeight()];
+    reference.destroy();
+    const pixmap = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, [x0, y0, x0 + width, y0 + height], false);
+    pixmap.clear(255);
+    const draw = new mupdf.DrawDevice(mupdf.Matrix.identity, pixmap);
+    /** @param {string} name */
+    const forward = (name) => (/** @type {unknown[]} */ ...args) => draw[name](...args);
+    const kept = ['fillPath', 'strokePath', 'clipPath', 'clipStrokePath', 'fillShade', 'fillImage', 'fillImageMask', 'clipImageMask', 'popClip', 'beginMask', 'endMask', 'beginGroup', 'endGroup', 'beginTile', 'endTile', 'beginLayer', 'endLayer'];
+    // A CLIP BY TEXT is still a clip a later pop closes, so it is kept as a clip — of an empty path, which lets nothing
+    // through: what showed through the letters goes with them. Filled, stroked and invisible text is left out.
+    const filter = new mupdf.Device({
+      ...Object.fromEntries(kept.map((name) => [name, forward(name)])),
+      clipText: () => draw.clipPath(new mupdf.Path(), false, mupdf.Matrix.identity),
+      clipStrokeText: () => draw.clipPath(new mupdf.Path(), false, mupdf.Matrix.identity),
+    });
+    page.run(filter, matrix);
+    filter.close();
+    draw.close();
+    const out = {
+      width,
+      height,
+      rgb: new Uint8Array(pixmap.getPixels()),
+      /** @type {(x: number, y: number) => [number, number]} */
+      toDevice: (x, y) => [
+        (x * transform[0] + y * transform[2] + transform[4]) * SCALE - x0,
+        (x * transform[1] + y * transform[3] + transform[5]) * SCALE - y0,
+      ],
+    };
+    pixmap.destroy();
+    return out;
+  } finally {
+    document.destroy();
+  }
+}
+
+/**
  * Every character MuPDF reads on page `index` of `bytes`: what it is, its origin and its box, in PDF space, and the name
  * MuPDF gives its font — `Type3 (n 0 R)` for a drawn one.
  * @param {any} kernel @param {Uint8Array} bytes @param {number} index
