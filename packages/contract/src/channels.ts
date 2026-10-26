@@ -94,8 +94,6 @@ import {
   MAX_LIBRARY_ENTRIES,
   MAX_LIBRARY_PICTURE_BYTES,
   MAX_BLOCK_FONTS,
-  MAX_FONT_RUNS,
-  MAX_RUN_FONT_BYTES,
   FACE_STYLES,
   MAX_BLOCK_FACE_RUNS,
   MAX_FACE_CANDIDATES,
@@ -918,8 +916,8 @@ export const pdfBoxSchema = z
  * The page's own font program never travels — a renderer that loaded it would
  * be a second parser of the document's bytes — so what crosses here is its KIND
  * and the size it is drawn at. `colour` is the fill its glyphs are painted in.
- * A run whose embedded program the host can check and rebuild has that rebuilt
- * font on its own read, `document.runFonts` (ADR-0175), never in this answer.
+ * The editor draws a run in the face PDF.js already loaded for its font, or the
+ * face the writer sets new words in (`document.blockFaces`, ADR-0271).
  */
 export const textBlockStyleSchema = z
   .object({
@@ -939,7 +937,7 @@ export const textBlockStyleSchema = z
     /**
      * The name of the font the run is drawn in, as the page states it (a subset's tag included), where the page names
      * one: what the font picker lists *In this document* and what added text near it is set in (the owner's D2 and B4.3).
-     * A name, never the font's program, which crosses only by `document.runFonts`.
+     * A name, never the font's program, which never crosses.
      */
     font: z.string().min(1).max(MAX_FONT_FAMILY_NAME).optional(),
     /**
@@ -5920,7 +5918,7 @@ export const channels = {
       /**
        * The page was read with its forms' content moved onto it, in the engine's memory only
        * ([ADR-0232](../../../docs/DECISIONS/0232-packed-text-is-unpacked-by-the-edit-that-changes-it.md)): the blocks name
-       * that page's objects, so an edit of them is sent with `unpack` and a run-font read with it. Absent for a page read as
+       * that page's objects, so an edit of them is sent with `unpack`. Absent for a page read as
        * it is, which is every page with no text packed inside a form.
        */
       unpacked: z.literal(true).exactOptional(),
@@ -6074,51 +6072,6 @@ export const channels = {
     // an OUTCOME a caller can act on: ask for fewer pixels. An incident id for a
     // person who zoomed in would be a defect's answer to a working build.
     ['document-not-open', 'document-poisoned', 'engine-unavailable', 'raster-too-large'],
-  ),
-
-  /**
-   * The fonts the editor draws a block's runs in, rebuilt by the PDFium host from the runs' own programs
-   * ([ADR-0175](../../../docs/DECISIONS/0175-the-typing-box-draws-a-run-in-its-own-font-rebuilt-in-the-host.md)): the
-   * third sanctioned byte crossing, beside `document.readRange` and this one's neighbour `document.renderPage`.
-   *
-   * Never the document's program. ONE READ PER BLOCK, each font once however many runs share it: every read writes the
-   * document's image for the host and opens it there, so a read per run cost a block's run count in whole-image writes.
-   * A run with no font — not embedded, not an sfnt, or glyphs that do not read as the page's — is `null` and the editor
-   * draws it in its kind of face. Read when the editor opens over a block, never in `document.textBlocks`, whose parts
-   * outline every page.
-   */
-  'document.runFonts': channel(
-    'The fonts a block’s runs are drawn in, rebuilt by the editing engine from the runs’ own programs, each once.',
-    z.object({
-      docId: docIdSchema,
-      page: z.number().int().nonnegative(),
-      /** The runs' first objects, as `document.textBlocks` named them. */
-      indices: z.array(z.number().int().min(0).max(MAX_OBJECT_INDEX)).min(1).max(MAX_FONT_RUNS).readonly(),
-      /** The read that named them was `unpacked` (ADR-0232), so the indices name that page's objects. */
-      unpack: z.literal(true).exactOptional(),
-    }),
-    z
-      .object({
-        version: docVersionSchema,
-        /** The rebuilt fonts, each bounded in the predicate where the payload sweep can name it. */
-        fonts: z
-          .array(
-            z.instanceof(Uint8Array).refine((bytes) => bytes.length > 0 && bytes.length <= MAX_RUN_FONT_BYTES, {
-              message: `a run font empty or larger than ${String(MAX_RUN_FONT_BYTES)} bytes`,
-            }),
-          )
-          .max(MAX_BLOCK_FONTS)
-          .readonly(),
-        /** For each run asked about, in the order asked, its font's place in `fonts`, or `null` for none. */
-        runs: z
-          .array(z.number().int().min(0).max(MAX_BLOCK_FONTS - 1).nullable())
-          .max(MAX_FONT_RUNS)
-          .readonly(),
-      })
-      .refine((answer) => answer.runs.every((at) => at === null || at < answer.fonts.length), {
-        message: 'a run names a font the answer does not carry',
-      }),
-    ['document-not-open', 'document-poisoned'],
   ),
 
   'document.blockFaces': channel(

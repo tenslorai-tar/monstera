@@ -164,9 +164,7 @@ export const PDFIUM_COMMAND = [
   ['packages/kernel/src/boxFont.ts', 'packages/kernel/dist/boxFont.js', 'tsc'],
   // AND THE ONE RULE for a subset's name, by which an edit finds a sibling (Decision 4).
   ['packages/kernel/src/subsetName.ts', 'packages/kernel/dist/subsetName.js', 'tsc'],
-  // AND THE CHECK a run's font passes before it is offered to the editor (ADR-0175).
-  ['packages/kernel/src/runFont.ts', 'packages/kernel/dist/runFont.js', 'tsc'],
-  // AND THE PRODUCER'S PAGE the run font cases read a producer's subsets from (the owner's N14).
+  // AND THE PRODUCER'S PAGE the producer subset cases read (the owner's N14).
   ['packages/kernel/src/producerSubsetFixture.ts', 'packages/kernel/dist/producerSubsetFixture.js', 'tsc'],
   // AND THE FOUR THE PROOF IMPORTS DIRECTLY, which the case "every registered proof's imports are covered" named
   // (SSSSSSS-2): the operator numbering `pageRuns` is compared against (ADR-0176), the refusals it classifies, the
@@ -423,8 +421,6 @@ export const FONT_WORK_APART = [
   ['packages/kernel/src/composeApart.ts', 'packages/kernel/dist/composeApart.js', 'tsc'],
   ['packages/kernel/src/markdownCompose.ts', 'packages/kernel/dist/markdownCompose.js', 'tsc'],
   ['packages/kernel/src/fontCatalogue.ts', 'packages/kernel/dist/fontCatalogue.js', 'tsc'],
-  ['packages/kernel/src/runFont.ts', 'packages/kernel/dist/runFont.js', 'tsc'],
-  ['packages/kernel/src/runFontApart.ts', 'packages/kernel/dist/runFontApart.js', 'tsc'],
   ['packages/kernel/src/composeOutcome.ts', 'packages/kernel/dist/composeOutcome.js', 'tsc'],
   ['packages/kernel/src/textShaping.ts', 'packages/kernel/dist/textShaping.js', 'tsc'],
 ];

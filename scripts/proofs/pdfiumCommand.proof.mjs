@@ -117,7 +117,7 @@ if (!existsSync(library)) {
 
 // The proof imports the BUILT modules, so a stale build would prove yesterday's
 // routing and say nothing about the diff under review.
-refuseStaleBuild(root, PDFIUM_COMMAND, 28);
+refuseStaleBuild(root, PDFIUM_COMMAND, 27);
 
 // EVERY EDIT BUILT THROUGH THE CONTRACT'S ONE ENCODER, as the application builds it (ADR-0142).
 const { blockEditOf, replacementFieldsOf } = await import('../../packages/contract/dist/commands.js');
@@ -131,14 +131,13 @@ const {
   pageText,
   renderPageBitmap,
   replaceTextObjects,
-  runFonts,
   textObjectIndices,
   textRuns,
   unpackedIfAsked,
 } = await import('../../packages/kernel/dist/pdfiumFfi.js');
 // THE KERNEL'S OWN NUMBERING of a page's text operators (ADR-0176 Decision 3), which `pageRuns` is joined against.
 const { joinedContent, showOperators, textObjectCount } = await import('../../packages/kernel/dist/textOperators.js');
-// THE ONE HARFBUZZ READER, to read a rebuilt run font back (ADR-0175).
+// THE ONE HARFBUZZ READER, to read a face's glyphs back.
 const { ShapingFace } = await import('../../packages/kernel/dist/textShaping.js');
 const { blockableOf, groupIntoBlocks, risesOf } = await import('../../packages/kernel/dist/textLines.js');
 const specs = await import('../../packages/kernel/dist/pdfiumSpecs.js');
@@ -269,7 +268,7 @@ const failures = [];
 // THE COUNT IS MOVED ONLY WITH THE CASES IT COUNTS, and the commit that moves it names the cases it adds or removes. A
 // running ledger of the count was kept here until 2026-10-17 and had stopped at 246 against 274 (VVVVVVV-23): a second
 // copy of the history git already holds, which nothing compared with the count.
-const roster = createRoster(failures, { cases: 298 });
+const roster = createRoster(failures, { cases: 292 });
 
 /**
  * @param {string} name
@@ -591,7 +590,7 @@ async function main() {
   await pieceCases();
   await replacePieceCases();
   await siblingCases();
-  await runFontCases();
+  await producerCases();
   await formatPieceCases();
   await fontChangeCases();
   await restyledRowCases();
@@ -1257,18 +1256,6 @@ async function faceReadingCases() {
       'CONTROL: the regular face beside it, under the same descriptor, is read regular and serif',
       body?.style.bold === false && body.style.serif,
       JSON.stringify(body?.style),
-    );
-    // ITS OWN GLYPHS IN THE EDITOR (ADR-0238): a bare CFF program is no font a browser loads, so a font is built from
-    // what PDFium draws. Read back by HarfBuzz: each character the run sets maps to a glyph PDFium's width wide (the
-    // descriptor's /Widths, 500). Run before ADR-0238, `runFonts` answered `null` for both runs.
-    const read = await runFonts(session, 0, [lead?.index ?? -1, body?.index ?? -1]);
-    const font = read.fonts[read.runs[0] ?? -1];
-    const face = font === undefined ? null : ShapingFace.readable(font);
-    const widths = Array.from(new Set('Findings.'), (character) => face?.nominalAdvance(face.glyphFor(character.codePointAt(0) ?? 0) ?? 0));
-    record(
-      'a run in a bare CFF program is given a font built from its drawn glyphs, each character at the width PDFium draws it',
-      read.runs.every((place) => place !== null) && face !== null && widths.every((width) => width === 500),
-      `places ${JSON.stringify(read.runs)}, widths ${JSON.stringify(widths)}`,
     );
   } finally {
     await pdfiumWriter.close(session);
@@ -2171,79 +2158,23 @@ async function siblingCases() {
   }
 }
 
-/**
- * The font the editor draws a run in, rebuilt by the host from the run's own program
- * ([ADR-0175](../../docs/DECISIONS/0175-the-typing-box-draws-a-run-in-its-own-font-rebuilt-in-the-host.md)), against the
- * real library: a run in an Arimo subset an edit embedded has one, and its glyphs are the program's. THE CONTROL is the
- * Helvetica run on the same page, which is not embedded, so PDFium's substitute is all there is and nothing is offered.
- */
-async function runFontCases() {
+/** The producer's subsets' cases, which need the bundled fonts provisioned. */
+async function producerCases() {
   const fonts = fontsDirectory(root);
   if (!existsSync(fonts)) {
-    record('the bundled fonts are provisioned for the run font cases', false, `${fonts} is absent; run scripts/provision/fonts.mjs`);
+    record('the bundled fonts are provisioned for the producer subset cases', false, `${fonts} is absent; run scripts/provision/fonts.mjs`);
     return;
   }
-  bindEditFaces(() => faceSourceOf([{ path: fonts, origin: 'bundled' }], readCatalogueApart));
-  /** @type {Uint8Array} */
-  let edited;
-  try {
-    const original = await aParagraph();
-    const lines = ((await blocksOf(original)).blocks[0]?.lines ?? []).map((line) => line.runs.map((run) => run.index));
-    edited = await localPdfiumExecution.apply({
-      session: original,
-      command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
-        kind: 'editTextBlock',
-        page: 0,
-        ...blockEditOf([{ lines, soft: lines.map(() => false), text: [`${BLOCK_LINES[0] ?? ''} Привет`, BLOCK_LINES[1], BLOCK_LINES[2]].join('\n') }]),
-        fit: 'reflow',
-        version: 1,
-      }),
-      sources: [],
-      reads: undefined,
-    });
-  } finally {
-    bindEditFaces(null);
-  }
-  const session = await pdfiumWriter.open(edited);
-  try {
-    const runs = (await objectRuns(session, 0)).runs;
-    const piece = runs.find((run) => run.text.includes('Привет'));
-    const helvetica = runs.find((run) => run.style.font === 'Helvetica');
-    if (piece === undefined || helvetica === undefined) {
-      record('the edited page holds a run in the embedded subset and one in Helvetica', false, JSON.stringify(runs.map((run) => run.style.font)));
-      return;
-    }
-    // THE SUBSET'S RUN ASKED TWICE, around the Helvetica run: one font answered, both asks naming it, and the Helvetica
-    // run none — so a read that rebuilt per run, or answered every run alike, fails one of the two records.
-    const read = await runFonts(session, 0, [piece.index, helvetica.index, piece.index]);
-    const pieceFont = read.fonts[0];
-    // THE REBUILT FONT DRAWS THE RUN: every character of the piece maps to a glyph in it.
-    const mapped = pieceFont === undefined ? [] : Array.from(piece.text.trim(), (c) => runFontGlyph(pieceFont, c));
-    record(
-      'a block’s runs in an embedded subset have one font rebuilt from its program, mapping every character the run holds',
-      read.fonts.length === 1 && read.runs[0] === 0 && read.runs[2] === 0 && mapped.length > 0 && mapped.every((glyph) => glyph > 0),
-      `${String(read.fonts.length)} fonts, places ${JSON.stringify(read.runs)}; glyphs ${JSON.stringify(mapped)}`,
-    );
-    record(
-      'CONTROL: a run in a font that is not embedded has none, PDFium’s substitute being all there is',
-      read.runs[1] === null,
-      `place ${JSON.stringify(read.runs[1])}`,
-    );
-  } finally {
-    await pdfiumWriter.close(session);
-  }
-  await producerRunFontCases(fonts);
-  await rewrittenCodesCases(fonts);
+  await producerSubsetCases(fonts);
 }
 
 /**
  * A PRODUCER'S SUBSETS (the owner's N14): Type 0 fonts over TrueType programs with no `cmap`, `OS/2`, `name` or `post`
- * (`producerSubsetFixture.ts`). Every run on the line has its own font, found by shape — one for the bold lead-in and one
- * shared by the regular runs — and each rebuilt font maps every character its runs hold to the glyph the page draws.
+ * (`producerSubsetFixture.ts`), against the real library.
  *
  * @param {string} fonts the bundled fonts' directory
  */
-async function producerRunFontCases(fonts) {
+async function producerSubsetCases(fonts) {
   const pdf = await buildProducerSubsetPdf(
     new Uint8Array(readFileSync(resolve(fonts, 'Carlito-Regular.ttf'))),
     new Uint8Array(readFileSync(resolve(fonts, 'Carlito-Bold.ttf'))),
@@ -2251,16 +2182,6 @@ async function producerRunFontCases(fonts) {
   const session = await pdfiumWriter.open(pdf);
   try {
     const runs = (await objectRuns(session, 0)).runs;
-    const read = await runFonts(session, 0, runs.map((run) => run.index));
-    const unmapped = runs.flatMap((run, at) => {
-      const font = read.fonts[read.runs[at] ?? -1];
-      return font === undefined ? [run.text] : Array.from(run.text, (c) => c).filter((c) => runFontGlyph(font, c) === 0);
-    });
-    record(
-      'a producer’s subsets with no cmap still give every run its own font, bold apart from regular, mapping every character',
-      runs.length === 4 && read.fonts.length === 2 && JSON.stringify(read.runs) === '[0,1,1,1]' && unmapped.length === 0,
-      `${String(runs.length)} runs, ${String(read.fonts.length)} fonts, places ${JSON.stringify(read.runs)}; unmapped ${JSON.stringify(unmapped)}`,
-    );
 
     // THE RISE THE EDITOR IS GIVEN AND THE RISE THE WRITER LEAVES, named in one place (CLAUDE.md, the wired pair's
     // blind spot): the superscript's offset from its line by `risesOf` before an edit, and the same offset read back
@@ -2345,54 +2266,6 @@ async function producerRunFontCases(fonts) {
   } finally {
     await pdfiumWriter.close(session);
   }
-}
-
-/**
- * A SUBSET THAT KEEPS ITS `cmap` WHILE THE PAGE DRAWS OTHER GLYPHS (SSSSSSS-14): `runFont.ts`' decision, the `cmap`'s
- * glyph against what PDFium draws, reached against the real library. Carlito subset for "minimum", `i` and `m` drawn
- * with each other's glyphs and named as themselves, the program's `cmap` untouched: the rebuilt font must draw `i`
- * with the wide glyph the page shows, not the narrow one its `cmap` names. CONTROL: the same page unswapped draws `i`
- * at its own advance. Advances are compared as a fraction of the em, so the rebuilt font's units need not be Carlito's.
- *
- * @param {string} fonts the bundled fonts' directory
- */
-async function rewrittenCodesCases(fonts) {
-  const { buildRewrittenCodesPdf } = await import('../../packages/kernel/dist/producerSubsetFixture.js');
-  const program = new Uint8Array(readFileSync(resolve(fonts, 'Carlito-Regular.ttf')));
-  const carlito = new ShapingFace(program, 0, {});
-  /** Carlito's advance for `character`, in ems. @param {string} character */
-  const own = (character) => carlito.nominalAdvance(carlito.glyphFor(character.codePointAt(0) ?? 0) ?? 0) / carlito.unitsPerEm;
-  /** The rebuilt font's advance for `i`, in ems, for a page swapped or not. @param {[string, string] | null} swap */
-  const rebuiltI = async (swap) => {
-    const session = await pdfiumWriter.open(await buildRewrittenCodesPdf(program, 'minimum', swap));
-    try {
-      const [run] = (await objectRuns(session, 0)).runs;
-      if (run === undefined) return null;
-      const font = (await runFonts(session, 0, [run.index])).fonts[0];
-      if (font === undefined) return null;
-      const face = new ShapingFace(font, 0, {});
-      return face.nominalAdvance(face.glyphFor('i'.codePointAt(0) ?? 0) ?? 0) / face.unitsPerEm;
-    } finally {
-      await pdfiumWriter.close(session);
-    }
-  };
-  const swapped = await rebuiltI(['i', 'm']);
-  const plain = await rebuiltI(null);
-  record(
-    'a subset whose cmap disagrees with what the page draws is rebuilt to draw what the page draws',
-    swapped !== null && Math.abs(swapped - own('m')) < 0.002,
-    `rebuilt i ${String(swapped)} em; Carlito i ${own('i').toFixed(4)}, m ${own('m').toFixed(4)}`,
-  );
-  record(
-    'CONTROL: the same page with its codes as the cmap names them draws i at its own advance',
-    plain !== null && Math.abs(plain - own('i')) < 0.002,
-    `rebuilt i ${String(plain)} em; Carlito i ${own('i').toFixed(4)}`,
-  );
-}
-
-/** The glyph `font` maps `character` to, read by the one HarfBuzz reader. @param {Uint8Array} font @param {string} character */
-function runFontGlyph(font, character) {
-  return new ShapingFace(font, 0, {}).glyphFor(character.codePointAt(0) ?? 0) ?? 0;
 }
 
 /**

@@ -189,7 +189,6 @@ import {
   type DocumentPageObjectsReader,
   type DocumentPresentationReader,
   type DocumentPageRasteriser,
-  type DocumentRunFontsReader,
   type DocumentBlockFacesReader,
   EngineUnavailableError,
   suggestedComposedName,
@@ -712,10 +711,6 @@ const noPageObjects: DocumentPageObjectsReader = () =>
 const noRenderPage: DocumentPageRasteriser = () =>
   Promise.reject(new EngineUnavailableError('rendering a page with the second engine'));
 
-/** The composition's answer with no PDFium host: no run has a font (ADR-0175), which is an answer and not a refusal. */
-const noRunFonts: DocumentRunFontsReader = (_docId, _sessions, _page, indices) =>
-  Promise.resolve({ fonts: [], runs: indices.map(() => null) });
-
 /** The read on open, answering no font: a case about a block's faces supplies its own (ADR-0271 section 5). */
 const noBlockFaces: DocumentBlockFacesReader = (_docId, _sessions, _page, indices) =>
   Promise.resolve({ fonts: [], runs: indices.map(() => null) });
@@ -948,7 +943,6 @@ const INERT = {
   textBlocks: noTextBlocks,
   pageObjects: noPageObjects,
   renderPage: noRenderPage,
-  runFonts: noRunFonts,
   blockFaces: noBlockFaces,
   pageRuns: noPageRuns,
   presentation: noPresentation,
@@ -1065,7 +1059,6 @@ const LOCAL_READS = {
   textBlocks: noTextBlocks,
   pageObjects: noPageObjects,
   renderPage: noRenderPage,
-  runFonts: noRunFonts,
   blockFaces: noBlockFaces,
   pageRuns: noPageRuns,
   presentation: noPresentation,

@@ -24,11 +24,11 @@ import { LOOKS, bridgeUnder } from './pageBridge.js';
  *
  * ## The three blocks, and why each
  *
- * - A HEADING OVER THREE LINES whose runs the host answers a rebuilt font for (ADR-0175), as it does for a web-printed
- *   page's Type 3 text, after a delay as a host's answer has: until it arrives the runs are drawn in their kind of face,
- *   whose widths are not the font's.
- * - A PARAGRAPH WITH RAISED REFERENCE MARKERS, smaller than the body and set above its line, in a rebuilt font too.
- * - A CODE BLOCK in the editor's fixed-pitch face, with no rebuilt font, at 150 %.
+ * - A HEADING OVER THREE LINES in a font PDF.js loads no face for, as a web-printed page's Type 3 text is, whose words
+ *   the read on open answers the chain's face for (ADR-0271), after a delay as a host's answer has: until it arrives
+ *   and the face loads, the runs are drawn in their kind of face, whose widths are not the face's.
+ * - A PARAGRAPH WITH RAISED REFERENCE MARKERS, smaller than the body and set above its line, in the chain's face too.
+ * - A CODE BLOCK in the editor's fixed-pitch face, with no answer, at 150 %.
  *
  * ## The control, run 2026-10-26 on Chromium 151 against the build before this change
  *
@@ -42,12 +42,14 @@ import { LOOKS, bridgeUnder } from './pageBridge.js';
 const ID = asDocId('00000000-0000-4000-8000-0000000000c1');
 const BLACK = { r: 0, g: 0, b: 0 };
 const FONTS = join(dirname(createRequire(import.meta.url).resolve('pdfjs-dist/package.json')), 'standard_fonts');
-const BOLD = new Uint8Array(readFileSync(join(FONTS, 'LiberationSans-Bold.ttf')));
-const REGULAR = new Uint8Array(readFileSync(join(FONTS, 'LiberationSans-Regular.ttf')));
-/** How long the host takes to answer the runs' fonts: long enough that a caret placed before them is visibly placed. */
+/** The chain face's program, as the shim answers it for the bundled family: a sans whose widths are not the serif kind's. */
+const FACE = new Uint8Array(readFileSync(join(FONTS, 'LiberationSans-Bold.ttf')));
+/** The family the read on open answers: one the shim lists as bundled, so the editor asks for its face. */
+const CHAIN = 'Carlito';
+/** How long the host takes to answer the read on open: long enough that a caret placed before it is visibly placed. */
 const FONT_DELAY = 300;
 
-/** A heading's run: drawn in its kind of face (serif) until the host's rebuilt sans arrives, so the two widths differ. */
+/** A heading's run: drawn in its kind of face (serif) until the chain's sans arrives, so the two widths differ. */
 const HEADING = { size: 20, colour: BLACK, serif: true, mono: false, italic: false, bold: true, font: 'T3Font_1' } as const;
 const BODY = { size: 10, colour: BLACK, serif: true, mono: false, italic: false, bold: false, font: 'T3Font_2' } as const;
 const MARKER = { ...BODY, size: 7.88, rise: 3.5 } as const;
@@ -124,12 +126,13 @@ const CODE_BLOCK = blockOf(
 );
 const BLOCKS = [HEADING_BLOCK, PARAGRAPH_BLOCK, CODE_BLOCK];
 
-/** The heading's runs answered the bold program, the paragraph's the regular one: the host's rebuilt fonts. */
-function runFonts(): { fonts: Uint8Array<ArrayBuffer>[]; runs: Map<number, number> } {
+/** The read on open: the heading's and the paragraph's runs in a font that carries no new word, set in the chain's face. */
+function blockFaces() {
   const runs = new Map<number, number>();
   for (const line of HEADING_BLOCK.lines) for (const run of line.runs) runs.set(run.index, 0);
-  for (const line of PARAGRAPH_BLOCK.lines) for (const run of line.runs) runs.set(run.index, 1);
-  return { fonts: [new Uint8Array(BOLD), new Uint8Array(REGULAR)], runs };
+  for (const line of PARAGRAPH_BLOCK.lines) for (const run of line.runs) runs.set(run.index, 0);
+  const chosen = { family: CHAIN, weight: 700, italic: false, styles: ['regular' as const, 'bold' as const] };
+  return { fonts: [{ own: false, chosen, candidates: [chosen] }], runs };
 }
 
 async function pageBytes(): Promise<Uint8Array> {
@@ -158,8 +161,9 @@ async function open(page: Page, zoom: '100pct' | '150pct', fontDelay = FONT_DELA
     opens: [{ kind: 'opened' as const, docId: ID, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'Clicks.pdf' }],
     documentBytes: new Map([[ID, bytes]]),
     textBlocks: BLOCKS,
-    runFonts: runFonts(),
-    delays: { 'document.runFonts': fontDelay },
+    blockFaces: blockFaces(),
+    bundledFace: { bytes: new Uint8Array(FACE), released: Promise.resolve() },
+    delays: { 'document.blockFaces': fontDelay },
     settings: { 'viewing.starting-zoom': zoom },
   });
   await page.goto('/');
@@ -171,14 +175,14 @@ async function open(page: Page, zoom: '100pct' | '150pct', fontDelay = FONT_DELA
   await expect(page.locator(`[data-text-edit-layer="0"] [data-text-block="${String(BLOCKS.length - 1)}"]`)).toBeVisible({ timeout: 10_000 });
 }
 
-/** The runs drawn in a face the host rebuilt: the editor loads those under its own `m-kit-` families (`runFaces.ts`). */
-const OWN_FACE = '.m-kit__run[style*="m-kit-"]';
+/** The runs drawn in the chain's face: the editor names its family first once the face has loaded (`runFaces.ts`). */
+const CHAIN_FACE = `.m-kit__run[style*="${CHAIN}"]`;
 
-/** Waits until the open editor is as it will stay: focused, and every run the host answers a font for drawn in it. */
-async function settled(page: Page, rebuilt: boolean): Promise<void> {
+/** Waits until the open editor is as it will stay: focused, and every run the read answers a face for drawn in it. */
+async function settled(page: Page, answered: boolean): Promise<void> {
   const editor = page.locator(SURFACE);
   await expect(editor).toBeFocused();
-  if (rebuilt) await expect(editor.locator(OWN_FACE).first()).toBeAttached({ timeout: 5000 });
+  if (answered) await expect(editor.locator(CHAIN_FACE).first()).toBeAttached({ timeout: 5000 });
   await page.evaluate(() => document.fonts.ready.then(() => undefined));
   // TWO FRAMES, for the layout effects and the baseline's re-render after the faces.
   await page.evaluate(
@@ -254,10 +258,10 @@ async function press(page: Page, x: number, y: number): Promise<void> {
 
 const CASES = [
   {
-    name: 'a three-line heading in a rebuilt font',
+    name: 'a three-line heading in the chain’s face',
     block: 0,
     zoom: '100pct',
-    rebuilt: true,
+    answered: true,
     targets: [
       { name: 'the start of its first line', find: 'Edit', offset: 0 },
       { name: 'between two letters mid-word', find: 'caret', offset: 2 },
@@ -270,7 +274,7 @@ const CASES = [
     name: 'a paragraph with raised reference markers',
     block: 1,
     zoom: '100pct',
-    rebuilt: true,
+    answered: true,
     targets: [
       { name: 'the start of its second line', find: 'the size', offset: 0 },
       { name: 'between two letters mid-word', find: 'markers', offset: 3 },
@@ -283,7 +287,7 @@ const CASES = [
     name: 'a monospace code block at 150 %',
     block: 2,
     zoom: '150pct',
-    rebuilt: false,
+    answered: false,
     targets: [
       { name: 'the start of its second line', find: 'cd repo', offset: 0 },
       { name: 'between two letters mid-word', find: 'example', offset: 4 },
@@ -304,7 +308,7 @@ for (const fixture of CASES) {
         await outline.focus();
         await page.keyboard.press('Enter');
         await page.keyboard.press('Enter');
-        await settled(page, fixture.rebuilt);
+        await settled(page, fixture.answered);
         const words = await editorText(page);
         const found = words.indexOf(target.find);
         expect(found, `"${target.find}" in ${JSON.stringify(words)}`).toBeGreaterThanOrEqual(0);
@@ -317,14 +321,14 @@ for (const fixture of CASES) {
         // THE TWO PRESSES THAT OPEN IT, at that point: the box, then the caret.
         await press(page, point.x, point.y);
         await press(page, point.x, point.y);
-        await settled(page, fixture.rebuilt);
+        await settled(page, fixture.answered);
         const caret = await caretPoint(page);
         const facts = JSON.stringify({ at, point, caret, words });
         expect(caret, facts).toBeDefined();
         expect(Math.abs((caret?.x ?? Number.NaN) - point.x), facts).toBeLessThanOrEqual(point.width / 2);
         expect(Math.abs((caret?.y ?? Number.NaN) - point.y), facts).toBeLessThanOrEqual(point.height / 2);
         await page.keyboard.type('Q');
-        // POLLED: a letter typed before the host's answer to the runs' fonts is held until it arrives (C1b).
+        // POLLED: a letter typed before the read on open answers is held until the layout settles (C1b).
         await expect.poll(() => editorText(page), { message: facts }).toBe(`${words.slice(0, at)}Q${words.slice(at)}`);
       });
     }
@@ -332,14 +336,14 @@ for (const fixture of CASES) {
 }
 
 /*
- * KEYS TYPED BEFORE THE LAYOUT SETTLES land at the press too (cloud run 21, C1b). The runs' own fonts arrive 900 ms after
+ * KEYS TYPED BEFORE THE LAYOUT SETTLES land at the press too (cloud run 21, C1b). The read on open answers 900 ms after
  * the press here, the host's answer delayed so the keys are surely typed first, and three letters are typed in the same
  * breath as the press. CONTROL, Chromium 151, the build before C1b: the letters went where the caret stood in the
  * layout the editor was first built in, not at the press.
  */
 const LATE_FONTS = 900;
 for (const fixture of [
-  { name: 'a three-line heading in a rebuilt font', block: 0, find: 'person', offset: 3 },
+  { name: 'a three-line heading in the chain’s face', block: 0, find: 'person', offset: 3 },
   { name: 'a paragraph with raised reference markers', block: 1, find: 'markers', offset: 3 },
 ] as const) {
   test(`three letters typed at once after the press that opens ${fixture.name} land at the press, in order`, async ({ page }) => {
@@ -361,7 +365,7 @@ for (const fixture of [
     await press(page, point.x, point.y);
     await page.keyboard.type('XYZ');
     // THE KEYS WERE TYPED BEFORE THE FONTS ARRIVED, or this case separates nothing.
-    expect(await page.locator(`${SURFACE} ${OWN_FACE}`).count(), 'the runs’ fonts had not arrived when the keys were typed').toBe(0);
+    expect(await page.locator(`${SURFACE} ${CHAIN_FACE}`).count(), 'the chain’s face had not arrived when the keys were typed').toBe(0);
     await settled(page, true);
     await expect.poll(() => editorText(page), { message: JSON.stringify({ at, point, words }) }).toBe(`${words.slice(0, at)}XYZ${words.slice(at)}`);
   });

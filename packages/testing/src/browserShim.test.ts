@@ -306,7 +306,6 @@ describe('browser shim', () => {
       'document.reimportExternalEdit',
       'document.renderPage',
       'document.restoreBackup',
-      'document.runFonts',
       'document.save',
       'document.saveBarcodeContact',
       'document.saveCopy',

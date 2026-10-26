@@ -732,21 +732,21 @@ try {
       `${String(read)} named and ${String(inline)} inline call site(s) read; ${wrong.join('; ') || 'none wrong'}. A list's ` +
         'length changes when any list it spreads changes, so lower or raise the literal with it.',
     );
-    // THE INLINE FORM'S OWN CONTROL: a planted call spreading an 11-edge list beside one pair is 12, and 13 is named.
+    // THE INLINE FORM'S OWN CONTROL: a planted call spreading a 9-edge list beside one pair is 10, and 11 is named.
     const plantedInline = (/** @type {number} */ count) =>
       ['refuseStaleBuild(root, [', "...FONT_WORK_APART, ['a.ts', 'a.js', 'tsc'],", `], ${String(count)});`].join('');
     check(
       'CONTROL: an inline list whose count is one off its spreads and pairs is named',
-      wrongInline(plantedInline(13)).length === 1 && wrongInline(plantedInline(12)).length === 0,
-      `13: ${JSON.stringify(wrongInline(plantedInline(13)))}; 12: ${JSON.stringify(wrongInline(plantedInline(12)))}`,
+      wrongInline(plantedInline(11)).length === 1 && wrongInline(plantedInline(10)).length === 0,
+      `11: ${JSON.stringify(wrongInline(plantedInline(11)))}; 10: ${JSON.stringify(wrongInline(plantedInline(10)))}`,
     );
     // A SEARCH AND A COMPARISON: the scan must see the call sites (44 read on 2026-10-15) and must name a planted
     // mismatch. The planted calls are joined at run time, so this file's own text holds no call the scan would read.
     const planted = (/** @type {number} */ count) => ['refuseStaleBuild(root, ', `FONT_WORK_APART, ${String(count)});`].join('');
     check(
       'CONTROL: a call site whose count is one off its list is named',
-      wrongCounts(planted(12)).length === 1 && wrongCounts(planted(11)).length === 0,
-      'the comparison could not tell 11 from 12 for an 11-edge list',
+      wrongCounts(planted(10)).length === 1 && wrongCounts(planted(9)).length === 0,
+      'the comparison could not tell 9 from 10 for a 9-edge list',
     );
   }
 
@@ -809,13 +809,13 @@ try {
         REPO_ROOT,
         builtImportsOf(readFileSync(join(REPO_ROOT, 'scripts/proofs/pdfiumCommand.proof.mjs'), 'utf8')),
       ).map(({ artefact }) => artefact);
-      // AND EVERY ENTRY THE LISTS GAVE UP (JJJJJJJJ-4): the three edit and composition threads, from the font work proof's
+      // AND EVERY ENTRY THE LISTS GAVE UP (JJJJJJJJ-4): the edit and composition threads, from the font work proof's
       // own edges, which name each one's declaration and none of their entries.
       const fromWorkEdges = startedByPath(
         REPO_ROOT,
         (ARTEFACT_EDGES['proof:fontworkapart'] ?? []).map(([, artefact]) => artefact),
       ).map(({ artefact }) => artefact);
-      const owed = ['faceProgramWorker', 'runFontWorker', 'composeWorker'].map((name) => `packages/kernel/dist/${name}.js`);
+      const owed = ['faceProgramWorker', 'composeWorker'].map((name) => `packages/kernel/dist/${name}.js`);
       check(
         'CONTROL: the guard’s walk finds the thread entries two modules below a proof’s imports',
         reached.includes('packages/kernel/dist/fontCatalogueWorker.js') &&

@@ -158,7 +158,6 @@ import {
   remotePdfiumPageObjects,
   remotePdfiumPageContent,
   remotePdfiumRenderPage,
-  remotePdfiumRunFonts,
   remotePdfiumPageRuns,
   remotePdfiumTextRuns,
   remotePdfiumWriter,
@@ -1852,15 +1851,6 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         height: raster.height,
         png: encodePng(raster.bgra, raster.width, raster.height),
       };
-    },
-    // A BLOCK'S RUN FONTS, rebuilt in the PDFium host from the runs' own programs and checked there (ADR-0175): this
-    // layer only carries them. A process with no PDFium host has none, and the editor draws every run in its kind of face.
-    runFonts: async (docId, sessions, page, indices, unpack) => {
-      if (pdfiumHost === null) return { fonts: [], runs: indices.map(() => null) };
-      const { fonts, runs } = await pdfiumHost.runFonts(pdfiumReadImage(docId, sessions), page, indices, unpack);
-      // EACH COPIED INTO A BUFFER OF ITS OWN: they are views cut from one file read, and structured clone sends a view's
-      // whole buffer to the renderer, so a font sent as a view would carry its neighbours with it (`DocumentRunFontsReader`).
-      return { fonts: fonts.map((font) => new Uint8Array(font)), runs };
     },
     // A PAGE'S RUNS WITH THEIR MEMBERS, `editTextOperators`' pre-read (ADR-0176): `textBlocks`' two forced steps, the
     // current image and the PDFium host. A process with no PDFium host cannot name which objects a run is, so the edit
@@ -3803,8 +3793,6 @@ type PdfiumPageObjects = ReturnType<typeof remotePdfiumPageObjects>;
 /** One page rasterised, over the same wire. */
 type PdfiumRenderPage = ReturnType<typeof remotePdfiumRenderPage>;
 
-/** A block's run fonts rebuilt, over the same wire (ADR-0175). */
-type PdfiumRunFonts = ReturnType<typeof remotePdfiumRunFonts>;
 type PdfiumPageRuns = ReturnType<typeof remotePdfiumPageRuns>;
 /** One page's own content, over the same wire (ADR-0210). */
 type PdfiumPageContent = ReturnType<typeof remotePdfiumPageContent>;
@@ -3862,7 +3850,6 @@ function pdfiumHostBinding(
   readonly textRuns: PdfiumTextRuns;
   readonly pageObjects: PdfiumPageObjects;
   readonly renderPage: PdfiumRenderPage;
-  readonly runFonts: PdfiumRunFonts;
   readonly pageRuns: PdfiumPageRuns;
   readonly pageContent: PdfiumPageContent;
   /** Whether the PDFium host starts on this computer — `pdfium.dll` loaded, as a first edit loads it — for whoever asked. */
@@ -3878,7 +3865,6 @@ function pdfiumHostBinding(
     readonly textRuns: PdfiumTextRuns;
   readonly pageObjects: PdfiumPageObjects;
   readonly renderPage: PdfiumRenderPage;
-  readonly runFonts: PdfiumRunFonts;
   readonly pageRuns: PdfiumPageRuns;
   readonly pageContent: PdfiumPageContent;
     /** The granted pair, so `close` can remove exactly what `connect` created. */
@@ -4019,7 +4005,6 @@ function pdfiumHostBinding(
       textRuns: remotePdfiumTextRuns(client, held, transfer),
       pageObjects: remotePdfiumPageObjects(client, held, transfer),
       renderPage: remotePdfiumRenderPage(client, held, transfer),
-      runFonts: remotePdfiumRunFonts(client, held, transfer),
       pageRuns: remotePdfiumPageRuns(client, held, transfer),
       pageContent: remotePdfiumPageContent(client, held, transfer),
       paths,
@@ -4111,7 +4096,6 @@ function pdfiumHostBinding(
     pageObjects: (image, page) => counting(async () => (await ensure()).pageObjects(image, page)),
     renderPage: (image, page, width, height, withoutText) =>
       counting(async () => (await ensure()).renderPage(image, page, width, height, withoutText)),
-    runFonts: (image, page, indices, unpack) => counting(async () => (await ensure()).runFonts(image, page, indices, unpack)),
     pageRuns: (image, page) => counting(async () => (await ensure()).pageRuns(image, page)),
     pageContent: (image, page) => counting(async () => (await ensure()).pageContent(image, page)),
     retireIfIdle,

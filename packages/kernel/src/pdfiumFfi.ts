@@ -1,12 +1,4 @@
-import {
-  type BlockMark,
-  type BlockMarkSet,
-  type BlockPlace,
-  MAX_BLOCK_FONTS,
-  MAX_RUN_FONT_BYTES,
-  type PageInsert,
-  type ParagraphProps,
-} from '@monstera/contract/host';
+import type { BlockMark, BlockMarkSet, BlockPlace, PageInsert, ParagraphProps } from '@monstera/contract/host';
 import { type Alignment, type EditStep, TAB_STOP, blockShape, nextTabStop, paragraphSpacing } from '@monstera/shared';
 import koffi from 'koffi';
 
@@ -54,9 +46,6 @@ import { type ProgramFace, faceOf, programFace } from './fontFace.js';
 import { BOX } from './boxFont.js';
 import { sentAsShown } from './blockAsShown.js';
 import { faceProgramApart } from './faceProgramApart.js';
-import { type PathGlyph, type PathStep, pathFontFor } from './pathFont.js';
-import type { DrawnGlyph } from './runFont.js';
-import { type RunFontRequest, runFontsApart } from './runFontApart.js';
 import { withoutSubsetTag } from './subsetName.js';
 import { ShapingFace } from './textShaping.js';
 import {
@@ -537,9 +526,9 @@ function fromUtf16Units(units: Uint16Array): string {
  * ## Only what the renderer can USE, because the page's font program cannot travel
  *
  * The renderer cannot load the document's embedded program — it would be a
- * second parser of the document's bytes. It draws a run in a font the host
- * rebuilt and checked where there is one (ADR-0175, `document.runFonts`), and
- * otherwise in a family of the same KIND. These are the facts that choose the kind: the font descriptor's own flags,
+ * second parser of the document's bytes. It draws a run in the face PDF.js loaded for its font where PDF.js loaded
+ * one, else the chain's face (ADR-0271), and behind both a family of the same KIND. These are the facts that choose
+ * the kind: the font descriptor's own flags,
  * its weight, and whether its name says bold. The size is the size the page
  * DRAWS at, the object's font size times its matrix's scale, which is what the
  * editor must match to sit over the words.
@@ -551,9 +540,7 @@ export interface RunStyle {
   readonly colour: { readonly r: number; readonly g: number; readonly b: number };
   /**
    * The font's base name, as PDFium answers it — which font the run is set in, for the block grouping's *a change of
-   * font starts a new block* (`textLines.ts`). It never reaches a renderer, and nor does the font's program: what the
-   * editor draws a run in is a font the host rebuilds from that program's checked glyphs, read on its own channel
-   * (`runFont`, ADR-0175).
+   * font starts a new block* (`textLines.ts`). The font's program never reaches a renderer.
    */
   readonly font: string;
   /** Font descriptor flag 2 — a serif face. */
@@ -1253,112 +1240,6 @@ function embeddedProgramOf(bindings: Bound, font: unknown): Uint8Array | null {
   return numberFrom(bindings.fontData(font, bytes, length, needed), 'FPDFFont_GetFontData') === 1 ? bytes : null;
 }
 
-/** A block's run fonts: each font once, and for each run asked about its font's place among them, or `null`. */
-export interface BlockFonts {
-  readonly fonts: readonly Uint8Array[];
-  readonly runs: readonly (number | null)[];
-}
-
-/**
- * The fonts the editor draws the runs whose first objects are `indices` in, each rebuilt from its own program
- * (ADR-0175, `runFont.ts`). ONE ANSWER PER FONT, keyed by the font handle's address, which is the page's own font and
- * stable while the page is open: the check and the rebuild depend on the font alone, so runs that share one share its
- * answer, and a run in a font past {@link MAX_BLOCK_FONTS} is answered with none.
- *
- * Each font is checked against every character drawn in it ON THE PAGE, the run's and every other object's in it: a
- * joined run spans several objects, and a letter the person types may be one another line holds.
- */
-export function runFonts(session: PdfiumSession, page: number, indices: readonly number[]): Promise<BlockFonts> {
-  return promised(() =>
-    onPage(session, page, (handle) => {
-      const bindings = api();
-      let textPage: unknown = null;
-      try {
-        // EACH RUN'S FONT, by address, and what PDFium draws in each font met, read first: the programs are then rebuilt
-        // together in one thread that ends (`runFontsApart`), so the read keeps none of what HarfBuzz allocated.
-        const keys = indices.map((index) => {
-          const font: unknown = bindings.textFont(textObjectAt(bindings, handle, page, index));
-          return font === null ? null : { font, key: String(koffi.address(font)) };
-        });
-        const met = new Map<string, { readonly font: unknown; readonly read: FontOnPage | null }>();
-        for (const each of keys) {
-          if (each === null || met.has(each.key)) continue;
-          if (textPage === null) {
-            textPage = bindings.loadTextPage(handle);
-            if (textPage === null) throw refusedAt('page', 'PDFium could not load the page to read a run’s characters');
-          }
-          met.set(each.key, { font: each.font, read: fontOnPage(bindings, handle, textPage, each.font, each.key) });
-        }
-        const read = [...met.values()].flatMap((each) => (each.read === null ? [] : [each.read]));
-        const rebuilt = runFontsApart(read);
-        const fonts: Uint8Array[] = [];
-        /** Each font met, by address: its place in `fonts`, or `null` for one with none. */
-        const answered = new Map<string, number | null>();
-        for (const [key, each] of met) {
-          let at: number | null = null;
-          if (each.read !== null && fonts.length < MAX_BLOCK_FONTS) {
-            const font = rebuilt[read.indexOf(each.read)] ?? pathFontOf(bindings, each.font, each.read.drawn);
-            if (font !== null) at = fonts.push(font) - 1;
-          }
-          answered.set(key, at);
-        }
-        return { fonts, runs: keys.map((each) => (each === null ? null : (answered.get(each.key) ?? null))) };
-      } finally {
-        if (textPage !== null) bindings.closeTextPage(textPage);
-      }
-    }),
-  );
-}
-
-/** One font as the page uses it: its embedded program, and what PDFium draws for every character the page sets in it. */
-type FontOnPage = RunFontRequest;
-
-/** `font`'s program and drawn characters, or `null` where it embeds none or PDFium answers no width for one of them. */
-function fontOnPage(bindings: Bound, handle: unknown, textPage: unknown, font: unknown, key: string): FontOnPage | null {
-  const program = embeddedProgramOf(bindings, font);
-  if (program === null) return null;
-  const inFont: unknown[] = [];
-  const count = numberFrom(bindings.countObjects(handle), 'FPDFPage_CountObjects');
-  for (let at = 0; at < count; at += 1) {
-    const object: unknown = bindings.getObject(handle, at);
-    if (object === null || numberFrom(bindings.objectType(object), 'FPDFPageObj_GetType') !== TEXT_OBJECT) continue;
-    const own: unknown = bindings.textFont(object);
-    if (own !== null && String(koffi.address(own)) === key) inFont.push(object);
-  }
-  const drawn = new Map<number, DrawnGlyph>();
-  for (const character of drawnTextOn(bindings, textPage, inFont).join('')) {
-    const point = character.codePointAt(0) ?? 0;
-    if (drawn.has(point)) continue;
-    const glyph = drawnGlyphOf(bindings, font, point);
-    if (glyph === null) return null;
-    drawn.set(point, glyph);
-  }
-  return { program, drawn };
-}
-
-/**
- * The font built from what PDFium draws for each character (ADR-0238), where the program gave none — a Type 1 or bare
- * CFF program, or a TrueType one whose glyphs do not read as the page's — so the run keeps its own look; `null` where a
- * character has no path or the font would be too large.
- */
-function pathFontOf(bindings: Bound, font: unknown, drawn: ReadonlyMap<number, DrawnGlyph>): Uint8Array | null {
-  const paths = new Map<number, PathGlyph>();
-  for (const point of drawn.keys()) {
-    const path = drawnPathOf(bindings, font, point);
-    if (path === null) return null;
-    paths.set(point, path);
-  }
-  const ascent = [0];
-  const descent = [0];
-  const metrics =
-    numberFrom(bindings.fontAscent(font, 1000, ascent), 'FPDFFont_GetAscent') === 1 &&
-    numberFrom(bindings.fontDescent(font, 1000, descent), 'FPDFFont_GetDescent') === 1
-      ? { ascender: ascent[0] ?? 800, descender: descent[0] ?? -200 }
-      : { ascender: 800, descender: -200 };
-  const built = pathFontFor(paths, metrics);
-  return built === null || built.length > MAX_RUN_FONT_BYTES ? null : built;
-}
-
 /**
  * How far `text` carries the pen in `object`'s own font, size and scale, in page units, read from the FONT'S ADVANCES
  * (`FPDFFont_GetGlyphWidth` at the object's size, times the matrix's horizontal scale) with nothing written: `null` where
@@ -1378,69 +1259,6 @@ function fontAdvance(bindings: Bound, object: unknown, text: string): number | n
     total += width[0] ?? 0;
   }
   return total * Math.hypot(matrix.a, matrix.b);
-}
-
-/**
- * What PDFium draws for `point` in `font`, in thousandths of an em: its width, and the box of its path's points, `null`
- * for a glyph with no path (a space). `null` where PDFium answers no width, which no check can stand in for.
- */
-function drawnGlyphOf(bindings: Bound, font: unknown, point: number): DrawnGlyph | null {
-  const width = [0];
-  if (numberFrom(bindings.glyphWidth(font, point, 1000, width), 'FPDFFont_GetGlyphWidth') !== 1) return null;
-  const path: unknown = bindings.glyphPath(font, point, 1000);
-  const segments = path === null ? 0 : numberFrom(bindings.glyphPathSegments(path), 'FPDFGlyphPath_CountGlyphSegments');
-  let box: DrawnGlyph['box'] = null;
-  const points: [number, number][] = [];
-  for (let at = 0; at < segments; at += 1) {
-    const x = [0];
-    const y = [0];
-    if (numberFrom(bindings.segmentPoint(bindings.glyphPathSegment(path, at), x, y), 'FPDFPathSegment_GetPoint') !== 1) {
-      continue;
-    }
-    // IN EMS, measured, so a thousand times each point is the thousandths the program's reading is in.
-    const px = (x[0] ?? 0) * 1000;
-    const py = (y[0] ?? 0) * 1000;
-    points.push([px, py]);
-    box =
-      box === null
-        ? { x0: px, y0: py, x1: px, y1: py }
-        : { x0: Math.min(box.x0, px), y0: Math.min(box.y0, py), x1: Math.max(box.x1, px), y1: Math.max(box.y1, py) };
-  }
-  return { advance: width[0] ?? 0, box, points };
-}
-
-/**
- * What PDFium draws for `point` in `font` as an outline, in thousandths of an em, y up: its width and each segment of its
- * glyph path, a Bézier's three points read as one curve. `null` where PDFium answers no width or a segment it cannot
- * place, which no outline can stand in for.
- */
-function drawnPathOf(bindings: Bound, font: unknown, point: number): PathGlyph | null {
-  const width = [0];
-  if (numberFrom(bindings.glyphWidth(font, point, 1000, width), 'FPDFFont_GetGlyphWidth') !== 1) return null;
-  const path: unknown = bindings.glyphPath(font, point, 1000);
-  const count = path === null ? 0 : numberFrom(bindings.glyphPathSegments(path), 'FPDFGlyphPath_CountGlyphSegments');
-  const steps: PathStep[] = [];
-  const pending: [number, number][] = [];
-  for (let at = 0; at < count; at += 1) {
-    const segment: unknown = bindings.glyphPathSegment(path, at);
-    const x = [0];
-    const y = [0];
-    if (numberFrom(bindings.segmentPoint(segment, x, y), 'FPDFPathSegment_GetPoint') !== 1) return null;
-    // IN EMS, measured (`drawnGlyphOf`), so a thousand times each point is a thousandth of an em.
-    const here: [number, number] = [(x[0] ?? 0) * 1000, (y[0] ?? 0) * 1000];
-    const kind = numberFrom(bindings.segmentType(segment), 'FPDFPathSegment_GetType');
-    if (kind === SEGMENT_MOVE) steps.push({ kind: 'move', x: here[0], y: here[1] });
-    else if (kind === SEGMENT_LINE) steps.push({ kind: 'line', x: here[0], y: here[1] });
-    else if (kind === SEGMENT_CURVE) {
-      pending.push(here);
-      if (pending.length === 3) {
-        const [[x1, y1], [x2, y2], [x3, y3]] = pending as [[number, number], [number, number], [number, number]];
-        steps.push({ kind: 'curve', x1, y1, x2, y2, x: x3, y: y3 });
-        pending.length = 0;
-      }
-    } else return null;
-  }
-  return pending.length === 0 ? { advance: width[0] ?? 0, steps } : null;
 }
 
 /** The most bytes of one base name read: a name is a PDF name, and one this long is not a font's (CR-NAT-12). */

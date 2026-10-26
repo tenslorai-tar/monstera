@@ -1479,7 +1479,6 @@ export const handlers: ContractHandlers = {
   'document.openButtonFile': () => Promise.resolve(ok({ kind: 'absent' })),
   'document.textBlocks': () =>
     Promise.resolve(ok({ version: asDocVersion(1), blocks: [], next: null, truncated: false, rotated: 0, angled: { turned: 0, vertical: 0, slanted: 0, mirrored: 0 }, unaddressable: 0, rewrite: 'objects' as const })),
-  'document.runFonts': () => Promise.resolve(ok({ version: asDocVersion(1), fonts: [], runs: [] })),
   'document.blockFaces': () => Promise.resolve(ok({ version: asDocVersion(1), fonts: [], runs: [] })),
   'document.pageObjects': () =>
     Promise.resolve(ok({ version: asDocVersion(1), objects: [], next: null, truncated: false })),
@@ -1714,7 +1713,6 @@ export const handlers: ContractHandlers = {
   'document.openButtonFile': () => Promise.resolve(ok({ kind: 'absent' })),
   'document.textBlocks': () =>
     Promise.resolve(ok({ version: asDocVersion(1), blocks: [], next: null, truncated: false, rotated: 0, angled: { turned: 0, vertical: 0, slanted: 0, mirrored: 0 }, unaddressable: 0, rewrite: 'objects' as const })),
-  'document.runFonts': () => Promise.resolve(ok({ version: asDocVersion(1), fonts: [], runs: [] })),
   'document.blockFaces': () => Promise.resolve(ok({ version: asDocVersion(1), fonts: [], runs: [] })),
   'document.pageObjects': () =>
     Promise.resolve(ok({ version: asDocVersion(1), objects: [], next: null, truncated: false })),
@@ -2030,7 +2028,6 @@ export const shim: ContractClient = {
   'document.openButtonFile': () => Promise.resolve(ok({ kind: 'absent' })),
   'document.textBlocks': () =>
     Promise.resolve(ok({ version: asDocVersion(1), blocks: [], next: null, truncated: false, rotated: 0, angled: { turned: 0, vertical: 0, slanted: 0, mirrored: 0 }, unaddressable: 0, rewrite: 'objects' as const })),
-  'document.runFonts': () => Promise.resolve(ok({ version: asDocVersion(1), fonts: [], runs: [] })),
   'document.blockFaces': () => Promise.resolve(ok({ version: asDocVersion(1), fonts: [], runs: [] })),
   'document.pageObjects': () =>
     Promise.resolve(ok({ version: asDocVersion(1), objects: [], next: null, truncated: false })),

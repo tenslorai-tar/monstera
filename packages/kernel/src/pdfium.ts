@@ -14,8 +14,6 @@ export {
   unpackedIfAsked,
   renderPageBitmapWithoutText,
   replaceTextObjects,
-  runFonts,
-  type BlockFonts,
   textObjectIndices,
   textObjectText,
   textRuns,

@@ -5226,20 +5226,19 @@ for (const look of LOOKS) {
   });
 }
 
-// A RUN DRAWN IN ITS OWN FONT (ADR-0175), in a real browser and every look: the font crosses as bytes, loads as a face
-// under the renderer's own policy, and the run is DRAWN in it, while the run beside it with none keeps its kind of face.
-// LIBERATION SANS from pdfjs-dist, which every install has, given to a MONO run: a proportional face and a monospace one
-// set the same words to different widths, so the width says which face drew them — a family name alone would pass for a
-// face that never loaded.
-const RUN_FONT = new Uint8Array(
+// A RUN DRAWN IN THE FACE THE WRITER WILL SET ITS NEW WORDS IN (ADR-0271), in a real browser and every look: the read on
+// open names the chain's family, the editor gives that bundled family its face, and the run is DRAWN in it, while the
+// run beside it with no answer keeps its kind of face. LIBERATION SANS from pdfjs-dist, which every install has, is the
+// face the shim answers for the family, given to a MONO run: a proportional face and a monospace one set the same words
+// to different widths, so the width says which face drew them — a family name alone would pass for a face that never
+// loaded.
+const CHAIN_FACE_BYTES = new Uint8Array(
   readFileSync(createRequire(import.meta.url).resolve('pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf')),
 );
 const MONO_RUN = { ...BODY_RUN, mono: true };
 
 for (const look of LOOKS) {
-  test(`${look.name}: a run is DRAWN in the font the host rebuilt, its neighbour in its kind, and the face leaves with the editor`, async ({
-    page,
-  }) => {
+  test(`${look.name}: a run is DRAWN in the chain’s face the read on open names, its neighbour in its kind`, async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     const bytes = await onePagePdf();
     const docId = asDocId('00000000-0000-4000-8000-0000000000e3');
@@ -5247,6 +5246,7 @@ for (const look of LOOKS) {
     // measured 69.97 px against Consolas' 85.78 on windows-latest (run 37416673829, 2026-10-06), 0.82 of it, where a
     // fifth narrower was asked. An `i` is 0.222 em in Liberation Sans against 0.55 in Consolas and 0.602 in DejaVu Sans Mono.
     const words = 'iiiiiiiiiiii';
+    const chosen = { family: 'Carlito', weight: 400, italic: false, styles: ['regular' as const, 'bold' as const] };
     await bridgeUnder(page, look, {
       opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'fonts.pdf' }],
       documentBytes: new Map([[docId, bytes]]),
@@ -5261,7 +5261,8 @@ for (const look of LOOKS) {
           shape: LEFT_SHAPE,
         },
       ],
-      runFonts: { fonts: [RUN_FONT], runs: new Map([[1, 0]]) },
+      blockFaces: { fonts: [{ own: false, chosen, candidates: [chosen] }], runs: new Map([[1, 0]]) },
+      bundledFace: { bytes: CHAIN_FACE_BYTES, released: Promise.resolve() },
     });
     await page.goto('/');
     await page.getByRole('button', { name: 'Open PDF…' }).click();
@@ -5275,36 +5276,26 @@ for (const look of LOOKS) {
     // EACH RUN BY THE FACE IT IS KEYED BY: neither names a font, so each is its own run's (`faceKeyOf`).
     const own = page.locator(`${SURFACE} .m-kit__run[data-face="run:1"]`);
     const kind = page.locator(`${SURFACE} .m-kit__run[data-face="run:2"]`);
-    await expect(own).toHaveAttribute('style', /font-family: "m-kit-[a-zA-Z0-9-]+"/u);
-    const family = ((await own.evaluate((element) => (element as HTMLElement).style.fontFamily)).split(',')[0] ?? '').replaceAll('"', '');
+    await expect(own).toHaveAttribute('style', /font-family: "Carlito"/u);
     const faceOf = (run: typeof own) =>
       run.evaluate((element) => ({ family: getComputedStyle(element).fontFamily.replaceAll('"', ''), width: element.getBoundingClientRect().width }));
     const drawn = await faceOf(own);
     const kept = await faceOf(kind);
-    // ITS OWN FONT FIRST and the kind behind it; the neighbour with none is the kind alone.
-    expect(family.startsWith('m-kit-')).toBe(true);
-    expect(drawn.family.startsWith(family)).toBe(true);
+    // THE CHAIN'S FACE FIRST and the kind behind it; the neighbour with no answer is the kind alone.
+    expect(drawn.family.startsWith('Carlito')).toBe(true);
     expect(drawn.family).toContain('monospace');
     expect(kept.family.startsWith('Consolas')).toBe(true);
     // DRAWN IN IT: the same words, set proportionally, are under three fifths of the kind's monospace (about 0.4 on
     // both platforms; a face that never loaded falls back to the monospace and measures 1).
     expect(drawn.width).toBeLessThan(kept.width * 0.6);
-    const loaded = (name: string) =>
-      page.evaluate((wanted) => [...document.fonts].some((face) => face.family === wanted && face.status === 'loaded'), name);
-    expect(await loaded(family)).toBe(true);
 
-    await page.screenshot({ path: test.info().outputPath(`run-font-${look.name}.png`) });
+    await page.screenshot({ path: test.info().outputPath(`chain-face-${look.name}.png`) });
     const results = await new AxeBuilder({ page }).analyze();
     const blocking = results.violations.filter((violation) => BLOCKING.has(String(violation.impact)));
     expect(
       blocking,
       blocking.map((violation) => `${String(violation.impact)}: ${violation.id} — ${violation.help}`).join('\n'),
     ).toEqual([]);
-
-    // THE FACE LEAVES WITH THE EDITOR: Escape with nothing changed closes it, and the document holds the face no more.
-    await page.keyboard.press('Escape');
-    await expect(page.locator('[data-kit-surface]')).toHaveCount(0);
-    expect(await loaded(family)).toBe(false);
   });
 }
 
