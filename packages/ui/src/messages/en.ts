@@ -2150,6 +2150,8 @@ export const EDITING_DIRECTION_OPTION_TITLES = {
   'right-to-left': EDITING_DIRECTION_RTL,
 } as const;
 export const EDITING_IMAGE_PAGES_TITLE = messageKey('setting.editing.image-pages');
+export const EDITING_FALLBACK_FACE_TITLE = messageKey('setting.editing.fallback-face');
+export const EDITING_FALLBACK_FACE_DESCRIPTION = messageKey('setting.editing.fallback-face.description');
 export const STYLE_PANEL_LABEL = messageKey('surface.style.label');
 export const COMMENT_STYLES_NO_WIDTH = messageKey('surface.comment-styles.no-width');
 export const STYLE_COLOUR_AUTO = messageKey('surface.style.colour-auto');
@@ -2805,6 +2807,9 @@ export const UNIT_IN_TITLE = messageKey('setting.unit.in');
 export const UNIT_FT_TITLE = messageKey('setting.unit.ft');
 export const IMAGE_PAGES_THIS_TITLE = messageKey('setting.editing.image-pages.this');
 export const IMAGE_PAGES_ALL_TITLE = messageKey('setting.editing.image-pages.all');
+export const FALLBACK_FACE_SERIF_TITLE = messageKey('setting.editing.fallback-face.serif');
+export const FALLBACK_FACE_SANS_TITLE = messageKey('setting.editing.fallback-face.sans');
+export const FALLBACK_FACE_MONO_TITLE = messageKey('setting.editing.fallback-face.mono');
 export const SETTINGS_CATEGORY_AI = messageKey('dialog.settings.category.ai');
 export const AI_ANTHROPIC_KEY_TITLE = messageKey('setting.ai.anthropic-key.title');
 export const AI_OPENAI_KEY_TITLE = messageKey('setting.ai.openai-key.title');
@@ -2907,6 +2912,12 @@ export const UNIT_TITLES = {
 export const IMAGE_PAGES_TITLES = {
   this: IMAGE_PAGES_THIS_TITLE,
   all: IMAGE_PAGES_ALL_TITLE,
+} as const;
+/** `editing.fallback-face`' members. */
+export const FALLBACK_FACE_TITLES = {
+  serif: FALLBACK_FACE_SERIF_TITLE,
+  sans: FALLBACK_FACE_SANS_TITLE,
+  mono: FALLBACK_FACE_MONO_TITLE,
 } as const;
 export const FIND_LABEL = messageKey('surface.find.label');
 export const FIND_SUBMIT = messageKey('surface.find.submit');
@@ -4909,6 +4920,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EDITING_DIRECTION_OPTION_TITLES['left-to-right']]: 'Left to right',
   [EDITING_DIRECTION_OPTION_TITLES['right-to-left']]: 'Right to left',
   [EDITING_IMAGE_PAGES_TITLE]: 'Place images on',
+  [EDITING_FALLBACK_FACE_TITLE]: 'Font for letters a document font lacks',
+  [EDITING_FALLBACK_FACE_DESCRIPTION]: 'While you edit text, letters the document’s own font does not have are shown in this kind of font.',
   [STYLE_PANEL_LABEL]: 'Annotation style',
   // SAID RATHER THAN SHOWN AS ZERO. Six subtypes have no `/BS` at all, and a 0
   // reads as *no border* rather than *no such property* — which is what a person
@@ -5893,6 +5906,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [UNIT_TITLES.ft]: 'Feet',
   [IMAGE_PAGES_TITLES.this]: 'This page only',
   [IMAGE_PAGES_TITLES.all]: 'Every page',
+  [FALLBACK_FACE_TITLES.serif]: 'Serif',
+  [FALLBACK_FACE_TITLES.sans]: 'Sans serif',
+  [FALLBACK_FACE_TITLES.mono]: 'Monospaced',
   [SETTINGS_CATEGORY_AI]: 'AI',
   [AI_ANTHROPIC_KEY_TITLE]: 'Anthropic API key',
   [AI_OPENAI_KEY_TITLE]: 'OpenAI API key',

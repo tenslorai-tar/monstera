@@ -5,13 +5,14 @@ import {
   PARAGRAPH_ALIGNMENTS,
   type ParagraphProps,
 } from '@monstera/contract';
-import { tokensOf } from '@monstera/shared';
 
 import { previewFamilyOf } from './familyFaces.js';
 
 /**
- * The in-place editor's formatting, kept in the DOM it is drawn in
+ * The text box's formatting (`InlineWriter`), kept in the DOM it is drawn in
  * ([ADR-0180](../../../docs/DECISIONS/0180-formatting-is-marks-over-a-blocks-words-and-a-block-is-moved-resized-and-added-by-its-own-commands.md)).
+ * Edit text's editor keeps its formatting in the editor kit's model instead (`editorKit/`, ADR-0271), and Text box moves
+ * onto that kit after launch (ADR-0271 section 11, item 4); until then this module is the text box's alone.
  *
  * ## One walk, for the words and for the marks
  *
@@ -69,13 +70,6 @@ export function toggleChord(event: {
 
 /** The class of a span the formatting made. */
 export const FORMAT_CLASS = 'm-text-editor__fmt';
-
-/** Points a list's hanging indent and one step of indent move a paragraph. */
-export const INDENT_STEP = 18;
-
-/** The bullet and the number a list starts its words with (ADR-0180 Decision 3). */
-const BULLET = /^•\s/u;
-const NUMBER = /^\d+\.\s/u;
 
 /** How a paragraph the person set is carried in its element: the contract's paragraph settings, named once there (B3a). */
 type ParagraphSetting = Omit<ParagraphProps, 'block' | 'paragraph'>;
@@ -283,7 +277,7 @@ export function toggled(root: HTMLElement, range: Range, property: 'bold' | 'ita
 }
 
 /** Whether every word `range` covers is already what `has` says: a toggle's question, asked before it flips. */
-export function allWords(root: HTMLElement, range: Range, has: (state: FormatState) => boolean): boolean {
+function allWords(root: HTMLElement, range: Range, has: (state: FormatState) => boolean): boolean {
   const nodes = covered(root, range);
   return nodes.length > 0 && nodes.every(({ node }) => has(stateAt(node, root)));
 }
@@ -445,201 +439,6 @@ function settingOf(element: HTMLElement): ParagraphSetting {
     ...number('spaceBefore'),
     ...number('spaceAfter'),
   };
-}
-
-/**
- * The word at a point of the editor: the paragraph's words cut by `tokensOf` (the one segmenter every word of this
- * application is cut by) and the one holding `offset` of the text node `node`, as a range over the nodes it spans. A word
- * a mark split across nodes is still one word, which is why the paragraph is read as one text. `undefined` where the point
- * is in no word.
- */
-export function wordAt(root: HTMLElement, node: Node, offset: number): { word: string; range: Range } | undefined {
-  const { paragraphs } = paragraphsOf(root);
-  const owner = paragraphs.find((paragraph) => paragraph.nodes.some((each) => each === node));
-  if (owner === undefined || !(node instanceof Text)) return undefined;
-  const text = owner.nodes.map((each) => each.data).join('');
-  let caret = offset;
-  for (const each of owner.nodes) {
-    if (each === node) break;
-    caret += each.data.length;
-  }
-  const token = [...tokensOf(text)].find((each) => each.isWord && each.index <= caret && caret <= each.index + each.text.length);
-  if (token === undefined) return undefined;
-  /** The node and offset that character position `at` of the paragraph's text is in. */
-  const place = (at: number, atEnd: boolean): { node: Text; offset: number } | undefined => {
-    let before = 0;
-    for (const each of owner.nodes) {
-      const end = before + each.data.length;
-      if (at < end || (atEnd && at === end)) return { node: each, offset: at - before };
-      before = end;
-    }
-    return undefined;
-  };
-  const start = place(token.index, false);
-  const end = place(token.index + token.text.length, true);
-  if (start === undefined || end === undefined) return undefined;
-  const range = root.ownerDocument.createRange();
-  range.setStart(start.node, start.offset);
-  range.setEnd(end.node, end.offset);
-  return { word: token.text, range };
-}
-
-/** How the paragraph holding `node` is set, where the person set it: the settings the panel's fields show. */
-export function paragraphSettingAt(root: HTMLElement, node: Node): ParagraphSetting {
-  for (let at: Node | null = node; at !== null && at !== root; at = at.parentNode) {
-    if (at.parentNode === root && at instanceof HTMLElement && at.tagName === 'DIV') return settingOf(at);
-  }
-  return {};
-}
-
-/** The place, among the editor's paragraphs, of the one holding `node`: what a split before a paragraph names. */
-export function paragraphAt(root: HTMLElement, node: Node): number | undefined {
-  const { paragraphs } = paragraphsOf(root);
-  const place = paragraphs.findIndex((paragraph) => paragraph.nodes.some((each) => each === node));
-  return place === -1 ? undefined : place;
-}
-
-/** Replaces the words a range covers with `text`, in the style of its first node, and tells the editor it changed. */
-export function replaceRange(root: HTMLElement, range: Range, text: string): void {
-  const first = range.startContainer;
-  if (first instanceof Text && range.endContainer === first) {
-    first.replaceData(range.startOffset, range.endOffset - range.startOffset, text);
-  } else {
-    range.deleteContents();
-    range.insertNode(root.ownerDocument.createTextNode(text));
-  }
-  root.dispatchEvent(new Event('input', { bubbles: true }));
-}
-
-/** The paragraph elements a range touches, in order. */
-function paragraphElementsIn(root: HTMLElement, range: Range): HTMLElement[] {
-  return Array.from(root.children).filter(
-    (child): child is HTMLElement => child instanceof HTMLElement && child.tagName === 'DIV' && range.intersectsNode(child),
-  );
-}
-
-/**
- * The `data-*` names a paragraph's OWN edges on the page are carried under (ADR-0179's correction of 2026-10-24): how far
- * its lines after the first stand from the block's left, and its first line from them. Never read back as a setting —
- * they are the page's, and the writer reads them again from the same lines — and kept by a paragraph that Enter splits,
- * which is the writer's rule for the new one too.
- */
-export const PAGE_EDGE_KEYS = { left: 'pageLeft', first: 'pageFirst' } as const;
-
-/**
- * Draws a paragraph's settings from its `data-*`: the one place its inline style is made. Where the person set no indent,
- * the paragraph's own edges on the page, by the writer's rule (`operatorEdit.ts`' `setFor`): a left indent the person set
- * puts the first line at it, and the page's first-line indent is the default only where neither was set.
- */
-export function paintParagraph(element: HTMLElement, zoom: number): void {
-  const { align, left, first, spacing, before, after } = element.dataset;
-  const pageLeft = element.dataset[PAGE_EDGE_KEYS.left];
-  const pageFirst = element.dataset[PAGE_EDGE_KEYS.first];
-  element.style.textAlign = align ?? '';
-  element.style.marginBottom = after === undefined ? '' : `${String(Number(after) * zoom)}px`;
-  const leftIndent = left !== undefined ? Number(left) : pageLeft === undefined ? undefined : Number(pageLeft);
-  const firstIndent = first !== undefined ? Number(first) : left === undefined && pageFirst !== undefined ? Number(pageFirst) : undefined;
-  element.style.paddingLeft = leftIndent === undefined ? '' : `${String(leftIndent * zoom)}px`;
-  element.style.textIndent = firstIndent === undefined ? '' : `${String(firstIndent * zoom)}px`;
-  element.style.lineHeight = spacing === undefined ? '' : String(Number(spacing) * 1.2);
-  element.style.marginTop = before === undefined ? '' : `${String(Number(before) * zoom)}px`;
-}
-
-/** Sets how the paragraphs `range` touches are set: a key set to `null` takes the person's setting off. */
-export function setParagraphs(
-  root: HTMLElement,
-  range: Range,
-  change: { readonly [K in keyof ParagraphSetting]?: ParagraphSetting[K] | null },
-  zoom = 1,
-): number {
-  const elements = paragraphElementsIn(root, range);
-  for (const element of elements) {
-    for (const [key, value] of Object.entries(change) as [keyof ParagraphSetting, string | number | null | undefined][]) {
-      const name = `data-${PARAGRAPH_KEYS[key]}`;
-      if (value === null || value === undefined) element.removeAttribute(name);
-      else element.setAttribute(name, String(value));
-    }
-    paintParagraph(element, zoom);
-  }
-  return elements.length;
-}
-
-/** Steps the left indent of the paragraphs `range` touches by `steps` of {@link INDENT_STEP}, never below none. */
-export function indentParagraphs(root: HTMLElement, range: Range, steps: number, zoom = 1): number {
-  const elements = paragraphElementsIn(root, range);
-  for (const element of elements) {
-    const next = Math.max(0, Number(element.dataset['left'] ?? 0) + steps * INDENT_STEP);
-    if (next === 0) delete element.dataset['left'];
-    else element.dataset['left'] = String(next);
-    paintParagraph(element, zoom);
-  }
-  return elements.length;
-}
-
-/**
- * Makes the paragraphs `range` touches a list of `kind`, or takes them out of one when every one already is: the words
- * start with a bullet or a number and the paragraph hangs by one step (ADR-0180 Decision 3). Answers the paragraphs
- * changed.
- */
-export function toggleList(root: HTMLElement, range: Range, kind: 'bullet' | 'number', zoom = 1): number {
-  const elements = paragraphElementsIn(root, range);
-  const marker = kind === 'bullet' ? BULLET : NUMBER;
-  const first = (element: HTMLElement): Text | undefined => {
-    const walker = root.ownerDocument.createTreeWalker(element, 4);
-    for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
-      if (node instanceof Text && node.data !== '') return node;
-    }
-    return undefined;
-  };
-  const listed = elements.every((element) => marker.test(first(element)?.data ?? ''));
-  for (const [at, element] of elements.entries()) {
-    const node = first(element);
-    if (listed) {
-      if (node !== undefined) node.data = node.data.replace(marker, '');
-      delete element.dataset['left'];
-      delete element.dataset['first'];
-    } else {
-      // ANOTHER KIND OF LIST IS REPLACED, not stacked on: its marker comes off first.
-      const bare = (node?.data ?? '').replace(BULLET, '').replace(NUMBER, '');
-      const prefix = kind === 'bullet' ? '• ' : `${String(at + 1)}. `;
-      if (node === undefined) element.prepend(root.ownerDocument.createTextNode(prefix));
-      else node.data = prefix + bare;
-      element.dataset['left'] = String(INDENT_STEP);
-      element.dataset['first'] = String(-INDENT_STEP);
-    }
-    paintParagraph(element, zoom);
-  }
-  return elements.length;
-}
-
-/** Inserts `text` where the caret is, replacing a selection, and tells the editor it changed as typing does. */
-function insertAtCaret(root: HTMLElement, text: string): void {
-  const selection = root.ownerDocument.getSelection();
-  if (selection === null || selection.rangeCount === 0) return;
-  const range = selection.getRangeAt(0);
-  if (!root.contains(range.commonAncestorContainer)) return;
-  range.deleteContents();
-  const node = root.ownerDocument.createTextNode(text);
-  range.insertNode(node);
-  range.setStartAfter(node);
-  range.collapse(true);
-  selection.removeAllRanges();
-  selection.addRange(range);
-  root.dispatchEvent(new Event('input', { bubbles: true }));
-}
-
-/**
- * A Tab: the tab character itself (the owner's K8, ADR-0228 Decision 2), which the editor draws at the next stop
- * (`tab-size`, the shared {@link TAB_STOP}) and the writer sets as a marked gap to the same stop. Its words keep the tab,
- * so search, copy and the next edit read one where it was typed.
- */
-export function insertTab(root: HTMLElement): void {
-  insertAtCaret(root, '\t');
-}
-
-/** Letters typed and held while the editor's layout settled, inserted at the caret as typing does (cloud run 21, C1b). */
-export function insertTyped(root: HTMLElement, text: string): void {
-  insertAtCaret(root, text);
 }
 
 /**

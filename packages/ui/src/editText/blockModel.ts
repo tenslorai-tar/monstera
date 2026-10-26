@@ -93,7 +93,10 @@ export function modelOfBlock(block: TextBlock): OpenedBlock {
         )
       : [];
   const wraps: number[][] = [];
-  const paragraphs = linesByParagraph(block).map((lines, place): Paragraph => {
+  const grouped = linesByParagraph(block);
+  const [firstLine, secondLine] = block.lines;
+  const pitch = firstLine !== undefined && secondLine !== undefined && firstLine.baseline > secondLine.baseline ? firstLine.baseline - secondLine.baseline : undefined;
+  const paragraphs = grouped.map((lines, place): Paragraph => {
     const runs: Run[] = [];
     const breaks: number[] = [];
     let length = 0;
@@ -115,10 +118,17 @@ export function modelOfBlock(block: TextBlock): OpenedBlock {
     }
     wraps.push(breaks);
     const edge = edges[place];
+    // THE SPACE THE PAGE LEAVES ABOVE THE PARAGRAPH beyond the block's even pitch: its first baseline less where the lines
+    // above, set at the pitch, would put it. Measured 2026-10-24 on a contract clause of three numbered paragraphs, whose
+    // baselines were 700, 686, 669, 655 and 636 against an even 700 to 644: without it the editor ended 8 points above the
+    // page's last line (the editor this kit replaces, `paragraphPlaces`).
+    const above = grouped[place - 1];
+    const lead = lines[0];
+    const spaceBefore = pitch === undefined || above?.[0] === undefined || lead === undefined ? 0 : above[0].baseline - above.length * pitch - lead.baseline;
     const setting: ParagraphSetting = {
       align: block.shape.align,
       lineSpacing: 1,
-      spaceBefore: 0,
+      spaceBefore,
       spaceAfter: 0,
       firstIndent: edge === undefined ? 0 : edge.firstIndent,
       leftIndent: edge === undefined ? 0 : Math.max(0, edge.left - block.box.x0),

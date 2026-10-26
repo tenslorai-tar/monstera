@@ -15,15 +15,15 @@ import {
   TEXT_MENU_LABEL,
   TEXT_MENU_NO_SUGGESTIONS,
   TEXT_MENU_SPLIT,
-} from './messages/en.js';
-import { MenuScrollArrows } from './primitives/MenuScrollArrows.js';
-import type { Lookup } from './spelling/personalWords.js';
-import { paragraphAt, replaceRange, wordAt } from './textFormatting.js';
+} from '../messages/en.js';
+import { MenuScrollArrows } from '../primitives/MenuScrollArrows.js';
+import type { Lookup } from '../spelling/personalWords.js';
 
 /**
- * The in-place editor's right-click menu: what a word processor's offers over a word and over a selection
- * ([ADR-0180](../../../docs/DECISIONS/0180-formatting-is-marks-over-a-blocks-words-and-a-block-is-moved-resized-and-added-by-its-own-commands.md)
- * Decision 8).
+ * The kit editor's right-click menu: what a word processor's offers over a word and over a selection
+ * ([ADR-0180](../../../../docs/DECISIONS/0180-formatting-is-marks-over-a-blocks-words-and-a-block-is-moved-resized-and-added-by-its-own-commands.md)
+ * Decision 8). The word under the pointer and the paragraph it is in are the CALLER'S answers, from its model, and a
+ * replacement is the caller's to make there: the menu reads and changes no words itself.
  *
  * ## It is the editor's own, and not a projection of the command registry
  *
@@ -62,23 +62,28 @@ export interface EditorOps {
   readonly split?: () => void;
 }
 
+/** The word under the pointer as the caller found it in its model, and how to put another in its place. */
+export interface WordUnder {
+  readonly word: string;
+  readonly replace: (text: string) => void;
+}
+
 /** What the menu holds for the right-click it was opened by. */
 interface Shown {
   /** What may be done to the block, asked when the menu opened. */
   readonly ops: EditorOps;
-  /** The word under the pointer, and the words it spans, where the pointer was over one. */
-  readonly word?: string;
-  readonly range?: Range;
+  /** The word under the pointer, where the pointer was over one. */
+  readonly word?: WordUnder;
   /** The replacements for it where it is misspelt; `undefined` while asked, or where it is not. */
   readonly look?: Lookup;
   /** Whether something was selected in the words, which Cut and Copy need. */
   readonly selected: boolean;
-  /** The selection the menu was opened over, put back before a verb runs. */
-  readonly saved: Range | undefined;
 }
 
-export function TextEditorMenu({
+export function EditorMenu({
   root,
+  under,
+  refocus,
   spell,
   native,
   ops,
@@ -90,6 +95,10 @@ export function TextEditorMenu({
   readonly ops?: ((paragraph: number | undefined) => EditorOps) | undefined;
   /** The editor's element: where a right-click is about the words, and where the focus returns. */
   readonly root: RefObject<HTMLDivElement | null>;
+  /** The word and the paragraph under a point of the window, from the caller's model. */
+  readonly under: (x: number, y: number) => { readonly word: WordUnder | undefined; readonly paragraph: number | undefined; readonly selected: boolean };
+  /** Puts the focus back in the words, with the selection the model holds: a verb acts on what is selected. */
+  readonly refocus: () => void;
   readonly spell?: EditorSpelling | undefined;
   /** The browser's own verb on the window — `window.edit`. */
   readonly native?: ((action: WindowEditAction) => void) | undefined;
@@ -108,19 +117,8 @@ export function TextEditorMenu({
   /** Numbers each right-click, so a lookup that returns after the menu was opened again writes nothing. */
   const serial = useRef(0);
 
-  /** Puts the focus and the selection back in the words: a verb acts on what is selected, where it is focused. */
-  const restore = (): void => {
-    const element = root.current;
-    if (element === null) return;
-    element.focus();
-    const range = shown?.saved;
-    if (range === undefined) return;
-    const selection = element.ownerDocument.getSelection();
-    selection?.removeAllRanges();
-    selection?.addRange(range);
-  };
   const run = (action: WindowEditAction): void => {
-    restore();
+    refocus();
     native?.(action);
   };
 
@@ -146,29 +144,16 @@ export function TextEditorMenu({
             const element = root.current;
             asked.current = element !== null && event.target instanceof Node && element.contains(event.target);
             if (!asked.current || element === null) return;
-            const owner = element.ownerDocument;
-            const selection = owner.getSelection();
-            // THE WORD UNDER THE POINTER, by the browser's own answer to *which character is here*; an engine without it
-            // falls back to where the caret is, which is where a right-click on a word leaves it where the platform moves it.
-            const caret = (owner as Partial<Document>).caretPositionFromPoint?.call(owner, event.clientX, event.clientY);
-            const at =
-              caret !== null && caret !== undefined
-                ? { node: caret.offsetNode, offset: caret.offset }
-                : selection?.anchorNode == null
-                  ? undefined
-                  : { node: selection.anchorNode, offset: selection.anchorOffset };
-            const found = at === undefined ? undefined : wordAt(element, at.node, at.offset);
-            const selected = selection !== null && !selection.isCollapsed && element.contains(selection.anchorNode);
+            const found = under(event.clientX, event.clientY);
             serial.current += 1;
             const mine = serial.current;
             setShown({
-              ops: ops?.(at === undefined ? undefined : paragraphAt(element, at.node)) ?? {},
-              selected,
-              saved: selection !== null && selection.rangeCount > 0 ? selection.getRangeAt(0).cloneRange() : undefined,
-              ...(found === undefined ? {} : { word: found.word, range: found.range }),
+              ops: ops?.(found.paragraph) ?? {},
+              selected: found.selected,
+              ...(found.word === undefined ? {} : { word: found.word }),
             });
-            if (found !== undefined && spell !== undefined) {
-              void spell.look(found.word).then((answer) => {
+            if (found.word !== undefined && spell !== undefined) {
+              void spell.look(found.word.word).then((answer) => {
                 if (serial.current === mine && answer !== undefined) setShown((now) => (now === undefined ? now : { ...now, look: answer }));
               });
             }
@@ -189,7 +174,7 @@ export function TextEditorMenu({
                 }}
               >
                 <MenuScrollArrows>
-                {shown.look === undefined || shown.word === undefined || shown.range === undefined ? null : (
+                {shown.look === undefined || shown.word === undefined ? null : (
                   <>
                     {shown.look.suggestions.length === 0 ? (
                       <ContextMenu.Item className="m-context-menu-item" disabled label={_(TEXT_MENU_NO_SUGGESTIONS)}>
@@ -203,8 +188,7 @@ export function TextEditorMenu({
                           key={suggestion}
                           label={suggestion}
                           onClick={() => {
-                            const element = root.current;
-                            if (element !== null && shown.range !== undefined) replaceRange(element, shown.range, suggestion);
+                            shown.word?.replace(suggestion);
                           }}
                         >
                           <strong>{suggestion}</strong>
@@ -214,14 +198,14 @@ export function TextEditorMenu({
                     <ContextMenu.Item
                       className="m-context-menu-item"
                       data-add-word=""
-                      label={_(TEXT_MENU_ADD_WORD, { word: shown.word })}
+                      label={_(TEXT_MENU_ADD_WORD, { word: shown.word.word })}
                       onClick={() => {
-                        const word = shown.word;
+                        const word = shown.word?.word;
                         const refusal = word === undefined ? undefined : spell?.keep(word);
                         if (refusal !== undefined) onNotice(refusal);
                       }}
                     >
-                      <span>{_(TEXT_MENU_ADD_WORD, { word: shown.word })}</span>
+                      <span>{_(TEXT_MENU_ADD_WORD, { word: shown.word.word })}</span>
                     </ContextMenu.Item>
                     <ContextMenu.Separator className="m-context-menu-separator" />
                   </>

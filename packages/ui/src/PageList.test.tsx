@@ -13,7 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { NO_RUN_FONTS } from './commands/documentCommands.js';
 import { PageList } from './PageList.js';
-import type { PageBlocks, TextEditing } from './TextEditLayer.js';
+import type { PageBlocks, TextEditing } from './editText/editing.js';
 import { FIRST_PAGE } from './pageNumbering.js';
 import { activateCatalogue, i18n } from './i18n.js';
 import { EN } from './messages/en.js';

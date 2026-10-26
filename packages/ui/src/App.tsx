@@ -135,7 +135,7 @@ import {
 } from './commands/documentCommands.js';
 import { inWriteOrder } from './commands/orderedClient.js';
 import { textFormatCommands } from './commands/textFormatCommands.js';
-import { editorIsOpen, onEditorChange } from './textEditorControl.js';
+import { editorIsOpen, onEditorChange } from './editorKit/openEditor.js';
 import { proceeds, settlePendingRedactions } from './commands/pendingRedactions.js';
 import type { PendingRedactionOccasion } from './dialogs/pendingRedactions.js';
 import { confirmCopied, confirmDone } from './commands/confirmWritten.js';
@@ -440,6 +440,7 @@ import {
   TEXT_BOX_LOOK_SETTING,
   CARET_SIZE_SETTING,
   IMAGE_PAGES_SETTING,
+  FALLBACK_FACE_SETTING,
   MEASURE_RATIO_SETTING,
   MEASURE_UNIT_SETTING,
   measureScaleOf,
@@ -474,7 +475,7 @@ import { autosaveEvery, createAutosave } from './autosave.js';
 import { AUTOSAVE_SETTING, CONFIRM_REDACTION_SETTING, WARN_SIGNATURE_BREAK_SETTING } from './settings/saving.js';
 import { FIRST_PAGE, kernelPageOf } from './pageNumbering.js';
 import { OpeningState, PageList, type PageListProps, type ViewDrawn } from './PageList.js';
-import type { TextEditing } from './TextEditLayer.js';
+import type { TextEditing } from './editText/editing.js';
 import { keepWord, lookUp } from './spelling/personalWords.js';
 import { type Side, SideBySide, type SidePreferences, drawForComparison } from './SideBySide.js';
 import { SplitView } from './SplitView.js';
@@ -3366,6 +3367,8 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
   const scaleRatio = useSetting(settings, MEASURE_RATIO_SETTING);
   const scaleUnit = useSetting(settings, MEASURE_UNIT_SETTING);
   const imagePages = useSetting(settings, IMAGE_PAGES_SETTING);
+  // THE KIND OF FACE EDIT TEXT DRAWS A LETTER IN where the document's own font has none (ADR-0271 section 3).
+  const fallbackFace = useSetting(settings, FALLBACK_FACE_SETTING);
   // THE REGION TOOL'S LANGUAGES, read here because this is where settings are read
   // and handed to the registries. The OCR dialog opens on this value and offers the
   // provisioned list; the tool has no dialog and reads it.
@@ -4802,7 +4805,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
    * mode's memo is built before them, and the click that calls it comes after (ADR-0181 Decision 9).
    */
   const recognisePage = useRef<(page: number) => void>(() => undefined);
-  const textMode = useMemo<Omit<TextEditing, 'adding'> | undefined>(() => {
+  const textMode = useMemo<Omit<TextEditing, 'adding' | 'fallbackFace'> | undefined>(() => {
     if (!inEditText || open === undefined) return undefined;
     const { docId } = open;
     /** Whether this mode has reported a refused read already — once per entry into it. */
@@ -4890,8 +4893,8 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
   // THE ADD FLAVOUR BESIDE THE MODE, not inside it: choosing Add text from Edit text, or leaving it, must not hand every
   // page a new reader and read them all again, which is what a value inside the memo above would do.
   const editing = useMemo<PageListProps['editing']>(
-    () => (textMode === undefined ? undefined : { ...textMode, adding: toolId === EDIT_TEXT_ADD_TOOL_ID }),
-    [textMode, toolId],
+    () => (textMode === undefined ? undefined : { ...textMode, adding: toolId === EDIT_TEXT_ADD_TOOL_ID, fallbackFace }),
+    [textMode, toolId, fallbackFace],
   );
 
   const shownDocId = open?.docId;

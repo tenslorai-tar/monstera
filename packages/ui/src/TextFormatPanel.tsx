@@ -22,7 +22,7 @@ import {
   openEditorSnapshot,
   refocusOpenEditor,
   removeOpenBlock,
-} from './textEditorControl.js';
+} from './editorKit/openEditor.js';
 import { spacingBoundOf, spacingOf } from './textFormatting.js';
 import { TextSection, type TextRow } from './TextSection.js';
 

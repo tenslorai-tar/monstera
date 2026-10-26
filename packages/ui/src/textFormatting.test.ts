@@ -1,22 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
 
-import {
-  allWords,
-  formatRange,
-  indentParagraphs,
-  INDENT_STEP,
-  isFormatted,
-  paragraphSettingAt,
-  readEditor,
-  replaceRange,
-  setParagraphs,
-  spacingBoundOf,
-  spacingOf,
-  stateAt,
-  toggleList,
-  wordAt,
-} from './textFormatting.js';
+import { formatRange, isFormatted, readEditor, spacingBoundOf, spacingOf, stateAt, toggled } from './textFormatting.js';
 
 /**
  * The editor's formatting, kept in the DOM. What these assert is the one reading ({@link readEditor}) that sends the
@@ -210,110 +195,17 @@ describe('stateAt and allWords', () => {
     expect(stateAt(inner, root).bold).toBe(false);
   });
 
-  it('asks every covered word, so a mixed selection is not already bold', () => {
+  it('asks every covered word, so a mixed selection is not already bold and a toggle puts bold ON', () => {
     const root = editorOf('abcdef');
     formatRange(root, rangeOver(firstText(root), 0, 3), { bold: true });
     const whole = document.createRange();
     whole.selectNodeContents(root);
-    expect(allWords(root, whole, (state) => state.bold)).toBe(false);
+    expect(toggled(root, whole, 'bold')).toStrictEqual({ bold: true });
     const tail = root.querySelector('div')?.lastChild;
     if (!(tail instanceof Text)) throw new Error('no tail');
     formatRange(root, rangeOver(tail, 0, 3), { bold: true });
-    expect(allWords(root, whole, (state) => state.bold)).toBe(true);
-  });
-});
-
-describe('paragraph settings', () => {
-  it('sends a setting against the paragraph it was set on', () => {
-    const root = editorOf('first', 'second');
-    const range = rangeOver(firstText(root, 1), 0, 3);
-    setParagraphs(root, range, { align: 'center' });
-    expect(readEditor(root).formatting.paragraphs).toEqual([{ paragraph: 1, align: 'center' }]);
-    // CONTROL: the first paragraph, outside the range, carries nothing.
-    expect(root.children[0]?.getAttribute('data-align')).toBeNull();
-  });
-
-  it('sends a justified paragraph and its space after, and reads them back for the panel (ADR-0228)', () => {
-    const root = editorOf('first', 'second');
-    const range = rangeOver(firstText(root, 0), 0, 3);
-    setParagraphs(root, range, { align: 'justify', spaceAfter: 12 }, 2);
-    expect(readEditor(root).formatting.paragraphs).toEqual([{ paragraph: 0, align: 'justify', spaceAfter: 12 }]);
-    const first = root.children[0] as HTMLElement;
-    expect(first.style.textAlign).toBe('justify');
-    // AT ZOOM 2, so the gap drawn while typing is the gap the page will have at that zoom.
-    expect(first.style.marginBottom).toBe('24px');
-    expect(paragraphSettingAt(root, firstText(root, 0))).toEqual({ align: 'justify', spaceAfter: 12 });
-    // CONTROL: the space after taken off is gone from what is sent, and the second paragraph never carried any.
-    setParagraphs(root, range, { spaceAfter: null });
-    expect(readEditor(root).formatting.paragraphs).toEqual([{ paragraph: 0, align: 'justify' }]);
-    expect(paragraphSettingAt(root, firstText(root, 1))).toEqual({});
-  });
-
-  it('steps the indent and never below none', () => {
-    const root = editorOf('line');
-    const range = rangeOver(firstText(root), 0, 2);
-    indentParagraphs(root, range, 2);
-    expect(root.children[0]?.getAttribute('data-left')).toBe(String(2 * INDENT_STEP));
-    indentParagraphs(root, range, -5);
-    expect(root.children[0]?.getAttribute('data-left')).toBeNull();
-  });
-});
-
-describe('toggleList', () => {
-  it('makes bullets with a hanging indent and takes them off again', () => {
-    const root = editorOf('one', 'two');
-    const all = document.createRange();
-    all.selectNodeContents(root);
-    expect(toggleList(root, all, 'bullet')).toBe(2);
-    expect(readEditor(root).text).toBe('• one\n• two');
-    expect(root.children[0]?.getAttribute('data-first')).toBe(String(-INDENT_STEP));
-    toggleList(root, all, 'bullet');
-    expect(readEditor(root)).toEqual({ text: 'one\ntwo', formatting: {} });
-  });
-
-  it('replaces a bullet with a number instead of stacking them', () => {
-    const root = editorOf('one', 'two');
-    const all = document.createRange();
-    all.selectNodeContents(root);
-    toggleList(root, all, 'bullet');
-    toggleList(root, all, 'number');
-    expect(readEditor(root).text).toBe('1. one\n2. two');
-  });
-});
-
-describe('wordAt and replaceRange', () => {
-  it('finds the word a point is in, by the same segmenter every word here is cut by', () => {
-    const root = editorOf('the quikc brown fox');
-    const found = wordAt(root, firstText(root), 7);
-    expect(found?.word).toBe('quikc');
-    expect(found?.range.toString()).toBe('quikc');
-    // CONTROL: a point in the space between words is in none, so a right-click there offers no spelling.
-    expect(wordAt(root, firstText(root), 3 + 0)?.word).toBe('the');
-    expect(wordAt(root, editorOf('a  b').firstElementChild?.firstChild as Text, 2)).toBeUndefined();
-  });
-
-  it('keeps a word one when a mark split it across nodes, and replaces it whole', () => {
-    const root = editorOf('a quikc fox');
-    // BOLD "ik" so the word is three text nodes.
-    formatRange(root, rangeOver(firstText(root), 3, 5), { bold: true });
-    const found = wordAt(root, firstText(root), 3);
-    expect(found?.word).toBe('quikc');
-    if (found === undefined) throw new Error('no word');
-    replaceRange(root, found.range, 'quick');
-    expect(readEditor(root).text).toBe('a quick fox');
-  });
-
-  it('replacing tells the editor it changed, as typing does', () => {
-    const root = editorOf('teh cat');
-    let heard = 0;
-    root.addEventListener('input', () => {
-      heard += 1;
-    });
-    const found = wordAt(root, firstText(root), 1);
-    if (found === undefined) throw new Error('no word');
-    replaceRange(root, found.range, 'the');
-    expect(heard).toBe(1);
-    expect(readEditor(root).text).toBe('the cat');
+    // CONTROL: every word bold now, so the same toggle takes it OFF.
+    expect(toggled(root, whole, 'bold')).toStrictEqual({ bold: false });
   });
 });
 

@@ -16,8 +16,7 @@ import {
   TEXT_FORMAT_UNDERLINE,
 } from '../messages/en.js';
 import { type CommandContext, type UiCommand, VISIBLE } from '../registries/commands.js';
-import { type FormatAction, formatOpenEditor, openEditorState } from '../textEditorControl.js';
-import type { FormatState } from '../textFormatting.js';
+import { type FormatAction, type FormatState, formatOpenEditor, openEditorState } from '../editorKit/openEditor.js';
 import type { MessageKey } from '@monstera/shared';
 
 /**
