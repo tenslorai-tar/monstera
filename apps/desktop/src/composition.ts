@@ -137,7 +137,6 @@ import {
   engineChannels,
   groupIntoBlocks,
   isEditedInPlace,
-  pushesOfPage,
   withRises,
   hostedPdfLibExecution,
   nodeFileSurface,
@@ -1753,19 +1752,10 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         );
       };
       const grouped = blocksOf(found.runs);
-      // WHAT EACH BLOCK PUSHES WHEN IT GROWS (ADR-0249 Decision 2), decided here beside the grouping and nowhere else: the
-      // column below it and the room to the footer or the bottom margin, measured against the page box the runs were read
-      // in, and nothing on a page with no box or one read in part (`pushesOfPage`).
-      const pushes = pushesOfPage(
-        grouped.map((block) => block.box),
-        found,
-      );
       // TEXT INSIDE A FORM (ADR-0269 Decision 1): each placement read by PDFium as a page of its own, in the page's user
-      // space, its blocks after the page's own — so the page's blocks keep their places, which `push` names them by — each
-      // carrying its path. Each pushes the blocks below it among its own placement's, as the page's do, those named by
-      // their place in the page's whole list (the correction of 2026-10-25); never across a stream. NEVER for Edit object's
-      // read, which reads the page as it is (ADR-0264 Decision 5). A Type 3 font inside a form is not named by its
-      // descriptor: that read is the page's (ADR-0256).
+      // space, its blocks after the page's own, each carrying its path. NEVER for Edit object's read, which reads the page
+      // as it is (ADR-0264 Decision 5). A Type 3 font inside a form is not named by its descriptor: that read is the
+      // page's (ADR-0256).
       const placed = asItIs ? null : await formPagesOf(docId, sessions, page);
       const host = pdfiumHost;
       const placements =
@@ -1774,22 +1764,10 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
           : await Promise.all(
               placed.paths.map(async (form, at) => {
                 const read = await host.textRuns(placed.image, at, false);
-                return { form, read, blocks: blocksOf(read.runs) };
+                return { form, blocks: blocksOf(read.runs) };
               }),
             );
-      let offset = grouped.length;
-      const inForms = placements.flatMap(({ form, read, blocks }) => {
-        const own = pushesOfPage(
-          blocks.map((block) => block.box),
-          read,
-        );
-        const first = offset;
-        offset += blocks.length;
-        return blocks.map((block, at) => {
-          const push = own[at] ?? { below: [], room: 0 };
-          return { ...block, push: { ...push, below: push.below.map((index) => index + first) }, form };
-        });
-      });
+      const inForms = placements.flatMap(({ form, blocks }) => blocks.map((block) => ({ ...block, form })));
       const angled = {
         turned: counts.get('turned') ?? 0,
         vertical: counts.get('vertical') ?? 0,
@@ -1798,7 +1776,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       };
       const rotated = angled.turned + angled.vertical + angled.slanted + angled.mirrored;
       return {
-        blocks: [...grouped.map((block, at) => ({ ...block, push: pushes[at] ?? { below: [], room: 0 } })), ...inForms],
+        blocks: [...grouped, ...inForms],
         truncated: found.truncated,
         rotated,
         angled,

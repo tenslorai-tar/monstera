@@ -387,8 +387,7 @@ export function createPdfiumHandlers({
       }
       const written = await files.writeOutput(held.outputDirectory, into, applied.image);
       // WHAT IT DREW AS BOXES TRAVELS WITH THE COUNT (ADR-0174), through the one cap.
-      // AND THE BLOCKS IT MOVED (ADR-0249), whole: one per pushed block, which the command already bounds.
-      return { ok: true, value: { bytes: written, ...cappedBoxes(applied), moved: [...applied.moved], noted: [...applied.noted] } };
+      return { ok: true, value: { bytes: written, ...cappedBoxes(applied), noted: [...applied.noted] } };
     },
 
     'engine/invert': async ({ session, inverse, from, password, into }) => {
@@ -416,7 +415,7 @@ export function createPdfiumHandlers({
         return refusedBy(error);
       }
       const written = await files.writeOutput(held.outputDirectory, into, inverted.image);
-      return { ok: true, value: { bytes: written, ...cappedBoxes(inverted), moved: [...inverted.moved], noted: [...inverted.noted] } };
+      return { ok: true, value: { bytes: written, ...cappedBoxes(inverted), noted: [...inverted.noted] } };
     },
 
     'engine/text-runs': async ({ session, from, password, page, unpack }) => {

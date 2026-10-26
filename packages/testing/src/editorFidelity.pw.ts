@@ -103,7 +103,7 @@ async function open(page: Page, zoom: string): Promise<void> {
   await bridgeUnder(page, LOOKS[0], {
     opens: [{ kind: 'opened' as const, docId: ID, version: asDocVersion(1), byteLength: BYTES.byteLength, name: 'Fidelity.pdf' }],
     documentBytes: new Map([[ID, BYTES]]),
-    textBlocks: BLOCKS.map((block) => ({ ...block, style: block.lines[0]?.runs[0]?.style, shape: (block as unknown as { shape: unknown }).shape, push: { below: [], room: 0 } })) as never,
+    textBlocks: BLOCKS.map((block) => ({ ...block, style: block.lines[0]?.runs[0]?.style, shape: (block as unknown as { shape: unknown }).shape })) as never,
     runFonts: runFonts(),
     settings: { 'viewing.starting-zoom': zoom },
   });

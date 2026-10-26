@@ -65,7 +65,6 @@ const BLOCK = {
   })),
   style: RUN,
   shape: { align: 'left' as const, firstIndent: 0 },
-  push: { below: [], room: 0 },
 };
 
 const OUTLINE = '[data-text-edit-layer="0"] [data-text-block="0"]';

@@ -158,8 +158,8 @@ export async function applyEditTextOperators(
     // EVERY CHARACTER DRAWN AS THE BOX, uncapped: the host names the first ones and counts the rest at the pipe
     // (`cappedBoxes`), as the PDFium writer's apply does (ADR-0177 Decision 7).
     const boxed = (faces?.boxed ?? []).map((character) => ({ character, page: command.page }));
-    // AND THE BLOCKS IT MOVED DOWN (ADR-0249), whose markup `main` moves with them; and what its checks noted.
-    return { boxed, more: 0, moved: edit.moved, noted };
+    // AND WHAT ITS CHECKS NOTED.
+    return { boxed, more: 0, noted };
   });
 }
 

@@ -326,20 +326,6 @@ export const TYPE3_EDIT = [
 ];
 
 /**
- * What `textPush.proof.mjs` runs (ADR-0249): the PDFium writer and reading, the grouping and `pushesOf` beside it, the
- * contract's encoder, the shared paragraph join, and MuPDF as the second reader. The kernel's whole `src`, for
- * {@link TYPE3_EDIT}'s reason.
- *
- * @type {BuildEdge[]}
- */
-export const TEXT_PUSH = [
-  ['packages/kernel/src', 'packages/kernel/dist/index.js', 'tsc'],
-  ['packages/contract/src/commands.ts', 'packages/contract/dist/commands.js', 'tsc'],
-  ['packages/shared/src', 'packages/shared/dist/index.js', 'tsc'],
-  ...NATIVE_ENGINE,
-];
-
-/**
  * What `lineEndMarks.proof.mjs` runs: the page-text read and the text layer the renderer is handed, and the markup
  * writer, on the native engine. The kernel's whole `src`, for {@link TYPE3_EDIT}'s reason.
  *
@@ -732,8 +718,6 @@ export const ARTEFACT_EDGES = {
   'proof:inlineimages': INLINE_IMAGES,
   // PDFium's reading and MuPDF's operator writer, end to end on a Type 3 page (ADR-0176).
   'proof:type3edit': TYPE3_EDIT,
-  // A growing paragraph pushing the text below it, written by PDFium and read back by MuPDF (ADR-0249).
-  'proof:textpush': TEXT_PUSH,
   // A whole line marked from its two ends covers its first glyph to its last on every font kind (cloud run 18, F1).
   'proof:lineendmarks': LINE_END_MARKS,
   // The page Edit text's fidelity case opens and its blocks, held to the reading PDFium and the grouping make (cloud run 19).

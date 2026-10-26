@@ -4,8 +4,8 @@ import { describe, expect, it } from 'vitest';
 import { type ReplacedBlock, blocksReplaced } from './blockReplace.js';
 
 /** A block of one line per text, each line one run numbered from `first`. */
-function block(texts: readonly string[], first: number, push: ReplacedBlock['push'] = { below: [], room: 0 }): ReplacedBlock {
-  return { lines: texts.map((text, at) => ({ runs: [{ index: first + at, text }], soft: false })), push };
+function block(texts: readonly string[], first: number): ReplacedBlock {
+  return { lines: texts.map((text, at) => ({ runs: [{ index: first + at, text }], soft: false })) };
 }
 
 const matcher = (query: string, options: { wholeWord?: boolean; caseSensitive?: boolean } = {}) => {
@@ -29,22 +29,15 @@ describe('replaceMatches, the one splice (ADR-0267)', () => {
 });
 
 describe('blocksReplaced, a page’s replacement as block edits (ADR-0267 Decision 2)', () => {
-  const page = [block(['the teh', 'teh'], 0, { below: [1, 2], room: 40 }), block(['a line below'], 2), block(['teh too'], 3)];
+  const page = [block(['the teh', 'teh'], 0), block(['a line below'], 2), block(['teh too'], 3)];
 
-  it('writes every block holding the word, and pushes an unchanged block below a changed one by that block', () => {
+  it('writes every block holding the word and NO OTHER: an unchanged block below a changed one is not in the edit', () => {
     const edits = blocksReplaced(page, matcher('teh', { wholeWord: true }), 'the');
+    // THE BLOCK BELOW THAT DID NOT CHANGE stays out of the edit: a block that grows overlaps it (ADR-0271 section 11.1).
     expect(edits).toStrictEqual([
       { lines: [[0], [1]], soft: [false, false], text: 'the the\nthe' },
       { lines: [[3]], soft: [false], text: 'the too' },
-      // THE BLOCK BELOW THAT DID NOT CHANGE moves with the first, by what it grew; the one below that CHANGED is written,
-      // not moved, so it is not pushed as well.
-      { lines: [[2]], soft: [false], text: 'a line below', push: { by: 0, room: 40 } },
     ]);
-  });
-
-  it('pushes nothing where the block has no room, as an edit by hand sends none', () => {
-    const tight = [block(['teh'], 0, { below: [1], room: 0 }), block(['below'], 1)];
-    expect(blocksReplaced(tight, matcher('teh'), 'the')).toStrictEqual([{ lines: [[0]], soft: [false], text: 'the' }]);
   });
 
   it('ONE occurrence of one block, for a spelling replacement of one word', () => {

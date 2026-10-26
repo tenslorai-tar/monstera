@@ -140,9 +140,6 @@ function recordingKeeper(
   };
 }
 
-/** A block the host says an edit moved down (ADR-0249), which main is answered as it was said. */
-const MOVED = { block: 1, box: { x0: 72, y0: 640, x1: 380, y1: 652 }, down: 14.4 };
-
 const COMMAND = {
   kind: 'replaceTextObject',
   page: 0,
@@ -184,7 +181,7 @@ describe('main’s PDFium writer', () => {
         expect(transfer.snapshots.get(sent.from)).toStrictEqual(new Uint8Array([1, 2]));
         transfer.outputs.set(sent.into, result);
         // A BOX AND A COUNT PAST IT (ADR-0174): both must reach the writer's answer, beside the image.
-        return { ok: true, value: { bytes: result.length, boxed: [{ character: '中', page: 0 }], more: 4, moved: [MOVED], noted: ['page 0: a note'] } };
+        return { ok: true, value: { bytes: result.length, boxed: [{ character: '中', page: 0 }], more: 4, noted: ['page 0: a note'] } };
       },
     };
     const { writer } = harness(peer, transfer);
@@ -196,7 +193,7 @@ describe('main’s PDFium writer', () => {
         sources: [],
         reads: undefined,
       }),
-    ).toStrictEqual({ image: result, boxed: [{ character: '中', page: 0 }], more: 4, moved: [MOVED], noted: ['page 0: a note'] });
+    ).toStrictEqual({ image: result, boxed: [{ character: '中', page: 0 }], more: 4, noted: ['page 0: a note'] });
     // AND THE INPUT IS GONE. A file that outlives the call is one nothing holds
     // a name for, in a directory nothing sweeps until the host ends.
     expect(transfer.snapshots.size).toBe(0);
@@ -217,7 +214,7 @@ describe('main’s PDFium writer', () => {
         const sent = params as { from: string; into: string };
         expect(transfer.snapshots.get(sent.from)).toStrictEqual(new Uint8Array([7, 7]));
         transfer.outputs.set(sent.into, result);
-        return { ok: true, value: { bytes: result.length, boxed: [], more: 0, moved: [], noted: [] } };
+        return { ok: true, value: { bytes: result.length, boxed: [], more: 0, noted: [] } };
       },
     };
     const { writer } = harness(peer, transfer, keep);
@@ -236,7 +233,7 @@ describe('main’s PDFium writer', () => {
         const frame = params as { into: string; password: unknown };
         sent.push(frame.password);
         transfer.outputs.set(frame.into, new Uint8Array([9]));
-        return { ok: true, value: { bytes: 1, boxed: [], more: 0, moved: [], noted: [] } };
+        return { ok: true, value: { bytes: 1, boxed: [], more: 0, noted: [] } };
       },
     };
     const { writer } = harness(peer, transfer, keep);
@@ -258,7 +255,7 @@ describe('main’s PDFium writer', () => {
         const sent = params as { from: string; into: string };
         expect(transfer.snapshots.get(sent.from)).toStrictEqual(new Uint8Array([1, 2]));
         transfer.outputs.set(sent.into, new Uint8Array([9]));
-        return { ok: true, value: { bytes: 1, boxed: [], more: 0, moved: [], noted: [] } };
+        return { ok: true, value: { bytes: 1, boxed: [], more: 0, noted: [] } };
       },
     };
     const { writer } = harness(peer, transfer, keep);
@@ -277,7 +274,7 @@ describe('main’s PDFium writer', () => {
           return { ok: true, value: { captured: true, value: { kind: 'replaceTextObject', prior: { page: 0, objects: [{ index: 2, text: 'WAS' }] } } } };
         }
         transfer.outputs.set((params as { into: string }).into, new Uint8Array([9]));
-        return { ok: true, value: { bytes: 1, boxed: [], more: 0, moved: [], noted: [] } };
+        return { ok: true, value: { bytes: 1, boxed: [], more: 0, noted: [] } };
       },
     };
     const { writer } = harness(peer, transfer, keep);
@@ -377,7 +374,7 @@ describe('main’s PDFium writer', () => {
         // A COUNT THAT IS NOT THE FILE'S LENGTH. The host answers a number and
         // main reads a file, so "the host wrote nothing" and "the read found
         // nothing" are otherwise the same empty buffer.
-        return { ok: true, value: { bytes: 99, boxed: [], more: 0, moved: [], noted: [] } };
+        return { ok: true, value: { bytes: 99, boxed: [], more: 0, noted: [] } };
       },
     };
     const { writer } = harness(peer, transfer);
@@ -631,7 +628,7 @@ describe('main’s PDFium writer', () => {
         return { ok: true, value: { runs, truncated: false, unaddressable: 9, box } };
       },
     };
-    // THE PAGE'S BOX, forwarded as the host said it (ADR-0249): off the origin, so a reader that answered a default
+    // THE PAGE'S BOX, forwarded as the host said it: off the origin, so a reader that answered a default
     // box would not equal it.
     const box = { x0: 9, y0: 18, x1: 603, y1: 774 };
     const { textRuns } = harness(peer, transfer);

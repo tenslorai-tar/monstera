@@ -32,7 +32,6 @@ async function open(page: Page): Promise<void> {
         lines: [{ runs: [{ index: 3, text: WORDS, style: RUN }], box, soft: false, baseline: 690 }],
         style: RUN,
         shape: { align: 'left' as const, firstIndent: 0 },
-        push: { below: [], room: 0 },
       },
     ],
   });

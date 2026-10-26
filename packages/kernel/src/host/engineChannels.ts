@@ -12,9 +12,7 @@ import {
   MAX_CALCULATED_NAME,
   MAX_CALCULATED_PRIORS,
   MAX_CALCULATED_TEXT,
-  MAX_EDIT_RUNS,
   MAX_MERGE_DOCUMENTS,
-  MAX_PUSHED_BLOCKS,
   addAnnotationSchema,
   textRewriteSchema,
   pageSetSchema,
@@ -135,23 +133,8 @@ import { pageRunsSchema } from './pageRunsWire.js';
 export const MAX_WRITER_NOTES = 8;
 export const MAX_WRITER_NOTE = 400;
 
-/**
- * The blocks a text edit moved down (ADR-0249 Decision 4), as a host answers them beside its boxes: each its place in the
- * edit, where its objects stood and how far down it went — `engineSeam.ts`' `MovedBlock`. At most one per pushed block,
- * `MAX_PUSHED_BLOCKS`. Kernel-only: `main` moves the markup on them and the renderer is told nothing of it.
- */
-export const movedBlocksShape = {
-  moved: z
-    .array(
-      z
-        .object({
-          block: z.number().int().nonnegative().max(MAX_EDIT_RUNS),
-          box: z.object({ x0: z.number(), y0: z.number(), x1: z.number(), y1: z.number() }).strict(),
-          down: z.number().positive(),
-        })
-        .strict(),
-    )
-    .max(MAX_PUSHED_BLOCKS),
+/** What a text edit's host answers beside its boxes. Kernel-only: the renderer is told nothing of it. */
+export const writerNotesShape = {
   /**
    * Writer defects a kept write's own checks found (ADR-0270), for the diagnostics log: a few, each a short line of our
    * words and numbers. Bounded so a host that found many cannot fill the frame; the proof counts the same checks at 0.
@@ -1789,7 +1772,7 @@ export const byteImageWire = {
   read: { from: outputNameSchema, password: documentPasswordSchema.nullable() },
   write: { into: outputNameSchema },
   // AND WHAT IT DREW AS BOXES (ADR-0174): only the apply knows, so its answer carries them, capped and counted.
-  wrote: z.object({ bytes: z.number().int().nonnegative(), ...drawnBoxesShape, ...movedBlocksShape }).strict(),
+  wrote: z.object({ bytes: z.number().int().nonnegative(), ...drawnBoxesShape, ...writerNotesShape }).strict(),
   transferFailures: ['asset-missing', 'engine-refused'],
 } as const satisfies WireShape<
   z.ZodRawShape,
@@ -2254,9 +2237,9 @@ export const engineChannels = {
         reads: pageRunsSchema,
       })
       .strict(),
-    // WHAT IT DREW AS BOXES (ADR-0177 Decision 7), capped and counted as the PDFium host's answer carries them; AND THE
-    // BLOCKS IT MOVED DOWN (ADR-0249), as the PDFium host's answer carries them.
-    z.object({ ...drawnBoxesShape, ...movedBlocksShape }).strict(),
+    // WHAT IT DREW AS BOXES (ADR-0177 Decision 7), capped and counted as the PDFium host's answer carries them; AND WHAT
+    // ITS CHECKS NOTED.
+    z.object({ ...drawnBoxesShape, ...writerNotesShape }).strict(),
     // `text-unchanged` (ADR-0260): an operator edit that sent the words its blocks already say, and nothing else.
     ['no-such-session', 'text-not-writable', 'edit-refused', 'text-unchanged'],
   ),

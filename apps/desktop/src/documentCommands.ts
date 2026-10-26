@@ -62,7 +62,6 @@ import {
   keptLookOf,
   placedMarkOf,
   sourceIdsOf,
-  MAX_PLACED_ANNOTATIONS,
   type BoxedInEditEntry,
   cappedBoxes,
   type PageAdjustment,
@@ -166,12 +165,7 @@ import {
   TimestampUnreachableError,
   type DocusignSigner,
   EngineCallFailed,
-  type PushedColumn,
   type RisenBlock,
-  type MovedBlock,
-  KINDS_ON_WORDS,
-  movedDown,
-  movedUnder,
   writeDocumentCopy,
   writeDocumentSplit,
   writeStreamedDocument,
@@ -2154,8 +2148,7 @@ export type DocumentTextBlocksReader = (
 /** The blocks, stamped with the version the lane read them at. */
 export interface DocumentTextBlocks {
   readonly version: DocVersion;
-  /** Each block, and what it pushes when it grows (`pushesOf`, ADR-0249 Decision 2). */
-  readonly blocks: readonly (RisenBlock<TextBlockStyle> & { readonly push: PushedColumn })[];
+  readonly blocks: readonly RisenBlock<TextBlockStyle>[];
   readonly truncated: boolean;
   /**
    * Characters on this page set at an angle, which are not offered for editing
@@ -4051,9 +4044,6 @@ export class DocumentCommands {
       );
       // A DEFECT THE WRITE'S OWN CHECKS FOUND in a write that was kept (ADR-0270): to the log, never to the person.
       for (const note of drawn.noted) this.#engine.writerDefect(docId, command.kind, note);
-      // THE MARKUP ON TEXT THE EDIT PUSHED DOWN moves with it (ADR-0249 Decision 4): by its own writer, MuPDF, in this
-      // lane straight after the edit, so nothing comes between and each command joins the edit's undo step (ADR-0200).
-      const followed = drawn.moved.length === 0 ? 0 : await this.#moveMarkupOnMovedText(docId, context, command, drawn.moved);
       // A PROTECT MOVES THE HOLDER, in the lane and after the bus recorded it, so every later open of a copy has the
       // key the document opens with now (ADR-0171 Decision 8).
       const terms = protectionTermsOf(command);
@@ -4075,7 +4065,7 @@ export class DocumentCommands {
       // COPIES A PROTECT COULD NOT SEAL (ADR-0178), empty for every other command: the person is owed them.
       return {
         byteLength: context.byteLength,
-        historyDropped: trimmed.droppedEntries + followed,
+        historyDropped: trimmed.droppedEntries,
         ...cappedBoxes(drawn),
         unsealedCopies: unsealed.copies.copies,
         unsealedUndoCopies: unsealed.copies.undoCopies,
@@ -4108,59 +4098,6 @@ export class DocumentCommands {
       for (const [place, page] of window.entries()) if (boxes[place] === null) skippedPages.push(page);
     }
     return skippedPages;
-  }
-
-  /**
-   * Moves the marks and links that sit on text a block edit pushed down, by the amount each block went
-   * ([ADR-0249](../../../docs/DECISIONS/0249-a-paragraph-that-grows-pushes-the-text-below-it-down.md) Decision 4).
-   *
-   * ## Inside the edit's lane, so the join cannot fail
-   *
-   * Each move is its own command — `placeAnnotation` for the marks, `editLink` for each link — by MuPDF, the writer of
-   * record for both (B3), and each joins the edit's undo step at the version the command before it produced (ADR-0200).
-   * Nothing else can run in this lane between them, so one Undo takes back the edit, the push and the markup together.
-   * Which marks ride is the kernel's one answer (`markupOnMovedText.ts`).
-   *
-   * @returns the undo steps the moves cost, which the edit's answer adds to its own
-   */
-  async #moveMarkupOnMovedText(
-    docId: DocId,
-    context: DocumentContext,
-    command: Command,
-    moved: readonly MovedBlock[],
-  ): Promise<number> {
-    if (command.kind !== 'editTextBlock' && command.kind !== 'editTextOperators') return 0;
-    const { page } = command;
-    // THE SESSIONS AS THEY ARE NOW: the edit installed a new image, which the MuPDF session was rebuilt from.
-    const sessionsNow = (): DocumentSessions => {
-      const sessions = this.#engine.sessions(docId);
-      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
-      return sessions;
-    };
-    let dropped = 0;
-    const joined = async <K extends CommandKind>(next: CommandOfKind<K>): Promise<void> => {
-      const { trimmed } = await ledgered(this.#engine, docId, next.kind, () =>
-        this.#bus.execute<K>(sessionsNow(), context, next, this.#byteImage(docId, sourceIdsOf(next)), context.version),
-      );
-      dropped += trimmed.droppedEntries;
-    };
-    const { annotations } = await this.#annotations(docId, sessionsNow());
-    const placements = annotations.flatMap((annotation) => {
-      if (annotation.page !== page || annotation.rect === null || !KINDS_ON_WORDS.has(annotation.kind)) return [];
-      const under = movedUnder(annotation.rect, moved);
-      return under === undefined ? [] : [{ index: annotation.index, rect: movedDown(annotation.rect, under) }];
-    });
-    // ONE COMMAND FOR THE MARKS, up to its bound: a page with more marks on moved text than that keeps the rest where they
-    // were, which no real page reaches.
-    if (placements.length > 0) {
-      await joined({ kind: 'placeAnnotation', page, placements: placements.slice(0, MAX_PLACED_ANNOTATIONS), version: context.version });
-    }
-    const { links } = await this.#pageLinks(docId, sessionsNow(), page);
-    for (const [index, link] of links.entries()) {
-      const under = movedUnder(link.rect, moved);
-      if (under !== undefined) await joined({ kind: 'editLink', page, index, rect: movedDown(link.rect, under), version: context.version });
-    }
-    return dropped;
   }
 
   /**

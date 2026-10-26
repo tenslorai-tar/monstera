@@ -287,31 +287,15 @@ describe('the block edit payload (ADR-0142)', () => {
     });
   });
 
-  it('a PUSHED block is pushed by an earlier block that is not pushed, and carries nothing written (ADR-0249)', () => {
-    const three = (pushes: unknown, marks?: unknown) => ({
-      kind: 'editTextBlock' as const,
-      page: 0,
-      ...blockEditOf([
-        { lines: [[1]], soft: [false], text: 'Grown words' },
-        { lines: [[2]], soft: [false], text: 'Below' },
-        { lines: [[3]], soft: [false], text: 'Further below' },
-      ]),
-      pushes,
-      ...(marks === undefined ? {} : { marks }),
-      fit: 'reflow' as const,
-      version,
-    });
-    // CONTROL: two blocks pushed by the first, in order, is an edit.
-    expect(editTextBlockSchema.safeParse(three([{ block: 1, by: 0, room: 40 }, { block: 2, by: 0, room: 40 }])).success).toBe(true);
-    // PUSHED BY ITSELF OR A LATER BLOCK: its growth is not known when it is moved.
-    expect(editTextBlockSchema.safeParse(three([{ block: 1, by: 1, room: 40 }])).success).toBe(false);
-    expect(editTextBlockSchema.safeParse(three([{ block: 1, by: 2, room: 40 }])).success).toBe(false);
-    // PUSHED BY A PUSHED BLOCK, which grows by nothing.
-    expect(editTextBlockSchema.safeParse(three([{ block: 1, by: 0, room: 40 }, { block: 2, by: 1, room: 40 }])).success).toBe(false);
-    // A PUSHED BLOCK WITH A MARK would be words set that nobody typed.
-    expect(editTextBlockSchema.safeParse(three([{ block: 1, by: 0, room: 40 }], [{ block: 1, from: 0, to: 2, set: { bold: true } }])).success).toBe(false);
-    // NAMING A BLOCK THE EDIT DOES NOT HAVE.
-    expect(editTextBlockSchema.safeParse(three([{ block: 3, by: 0, room: 40 }])).success).toBe(false);
+  it('REFUSES a block named to be pushed by another: a block that grows overlaps, and nothing else moves (ADR-0271 section 11.1)', () => {
+    const two = blockEditOf([
+      { lines: [[1]], soft: [false], text: 'Grown words' },
+      { lines: [[2]], soft: [false], text: 'Below' },
+    ]);
+    const edit = { kind: 'editTextBlock' as const, page: 0, ...two, fit: 'reflow' as const, version };
+    expect(editTextBlockSchema.safeParse({ ...edit, pushes: [{ block: 1, by: 0, room: 40 }] }).success).toBe(false);
+    // CONTROL: the same two blocks, written and not pushed, are an edit.
+    expect(editTextBlockSchema.safeParse(edit).success).toBe(true);
   });
 
   it('REFUSES a command with no `softLines` at all, so a caller cannot satisfy it by not reading it', () => {

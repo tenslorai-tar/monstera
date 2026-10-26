@@ -88,7 +88,7 @@ function hostAnswering(drawn: DrawnBoxes) {
 describe('engine/apply-file answers what the writer noted (ADR-0270, the stage audit AUD-2)', () => {
   it('carries the first notes whole and each held to its bound; CONTROL a write that noted nothing answers none', async () => {
     const notes = Array.from({ length: MAX_WRITER_NOTES + 1 }, (_, at) => (at === 0 ? 'x'.repeat(MAX_WRITER_NOTE + 50) : `page 0: note ${String(at)}`));
-    const answer = await hostAnswering({ boxed: [], more: 0, moved: [], noted: notes })['engine/apply-file']({
+    const answer = await hostAnswering({ boxed: [], more: 0, noted: notes })['engine/apply-file']({
       session: 'h1',
       command: COMMAND,
       sources: [],
@@ -99,7 +99,7 @@ describe('engine/apply-file answers what the writer noted (ADR-0270, the stage a
     expect(answer.value.noted[0]).toHaveLength(MAX_WRITER_NOTE);
     expect(answer.value.noted.at(-1)).toBe(`page 0: note ${String(MAX_WRITER_NOTES - 1)}`);
 
-    const quiet = await hostAnswering({ boxed: [], more: 0, moved: [], noted: [] })['engine/apply-file']({
+    const quiet = await hostAnswering({ boxed: [], more: 0, noted: [] })['engine/apply-file']({
       session: 'h1',
       command: COMMAND,
       sources: [],

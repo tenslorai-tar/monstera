@@ -2,7 +2,6 @@ import {
   type BlockMark,
   type BlockMarkSet,
   type BlockPlace,
-  type BlockPush,
   MAX_BLOCK_FONTS,
   MAX_RUN_FONT_BYTES,
   type PageInsert,
@@ -39,7 +38,7 @@ import {
 import { carries as faceDraws, familyClass, resolveRuns } from './fontResolver.js';
 import { type EditPiece, editPieces } from './editPieces.js';
 import { inDrawingOrder, visualUnits } from './visualPieces.js';
-import type { BoxedInEdit, ByteImage, EngineWriter, ImageSession, MovedBlock, PdfiumSession } from './engineSeam.js';
+import type { BoxedInEdit, ByteImage, EngineWriter, ImageSession, PdfiumSession } from './engineSeam.js';
 import type { CatalogueFace, FaceSource } from './fontCatalogue.js';
 import type { PageRuns } from './operatorEdit.js';
 import { FIT_STEPS, type FlowLine, MIN_FIT, type Measure, NO_MARK, planBlock } from './paragraphFlow.js';
@@ -678,8 +677,8 @@ export interface PageText {
   readonly unaddressable: number;
   /**
    * The page box the runs are measured in — PDFium's `FPDF_GetPageBoundingBox`, the crop box within the media box — or
-   * `null` where PDFium answers none. What `main` measures a page's margins against (ADR-0249 Decision 2), in the frame
-   * of the runs beside it, and the box the writer takes a one-line block's column from (ADR-0097 4a).
+   * `null` where PDFium answers none, in the frame of the runs beside it: the box the writer takes a one-line block's
+   * column from (ADR-0097 4a).
    */
   readonly box: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number } | null;
 }
@@ -1799,8 +1798,6 @@ export interface BlockEdit {
   readonly paragraphs?: readonly Omit<ParagraphProps, 'block'>[];
   /** How the block is placed once laid out: moved, scaled, rotated, or set at a new measure (ADR-0180, corrected). */
   readonly place?: Omit<BlockPlace, 'block'>;
-  /** In the edit to be moved down by block `by`'s growth, within `room`, and never written (ADR-0249 Decision 3). */
-  readonly push?: Omit<BlockPush, 'block'>;
   /**
    * `reflow`: a person typing — the block grows downward (ADR-0096). `shrink`: a translation — the
    * block is scaled uniformly to end above its original last line, never below {@link MIN_FIT}
@@ -1957,14 +1954,13 @@ export async function editTextBlocks(
   edits: readonly BlockEdit[],
   /** Boxes of new text the page is given, laid out by the same pass (ADR-0180, corrected 2026-10-06). */
   inserts: readonly PageInsert[] = [],
-): Promise<{ readonly boxed: readonly BoxedInEdit[]; readonly pushed: readonly MovedBlock[] }> {
+): Promise<{ readonly boxed: readonly BoxedInEdit[] }> {
   const scales = await fitScales(session, page, edits, inserts);
-  // THE CHARACTERS IT DREW AS BOXES (ADR-0174): the write pass's, never a trial's, which draws on a page thrown away. AND
-  // THE PUSHED BLOCKS THAT MOVED (ADR-0249), where they were and how far: what the markup on them is moved by.
-  const { boxed, pushed } = await promised(() =>
+  // THE CHARACTERS IT DREW AS BOXES (ADR-0174): the write pass's, never a trial's, which draws on a page thrown away.
+  const { boxed } = await promised(() =>
     onPage(session, page, (handle) => layOutBlocks(session, handle, page, edits, inserts, scales, 'write')),
   );
-  return { boxed, pushed };
+  return { boxed };
 }
 
 /**
@@ -2945,7 +2941,7 @@ function layOutBlocks(
   inserts: readonly PageInsert[],
   scales: readonly number[],
   mode: 'write' | 'trial',
-): { readonly fits: readonly boolean[]; readonly boxed: readonly BoxedInEdit[]; readonly pushed: readonly MovedBlock[] } {
+): { readonly fits: readonly boolean[]; readonly boxed: readonly BoxedInEdit[] } {
       const bindings = api();
       const document = documentFor(session);
       const pen = pieceWriter(
@@ -3010,7 +3006,6 @@ function layOutBlocks(
         marks: edit.marks ?? [],
         paragraphs: edit.paragraphs ?? [],
         place: edit.place,
-        push: edit.push,
         fit: edit.fit,
         lines: edit.lines.map((line) =>
           line.map((named): HeldRun => {
@@ -3085,10 +3080,6 @@ function layOutBlocks(
         }
         return null;
       };
-      /** What each block grew, its old last baseline less its new one: what the blocks it pushes move by (ADR-0249). */
-      const grew = blocks.map(() => 0);
-      /** Each pushed block that moved: where it was, before anything moved, and how far down it went (ADR-0249). */
-      const pushed: MovedBlock[] = [];
 
         for (const [blockAt, block] of blocks.entries()) {
           const { lines } = block;
@@ -3097,18 +3088,7 @@ function layOutBlocks(
           if (firstLine === undefined || firstRun === undefined) {
             throw new Error(`A block edit on page ${String(page)} named no line.`);
           }
-          // A PUSHED BLOCK IS MOVED BY WHAT ITS PUSHER GREW, or not at all where that passes its room (ADR-0249 Decision 3):
-          // through ADR-0180's move, the path that moves a block as one thing with its decorations. The pusher came first
-          // (the contract's `blockEditAgrees`), so its growth is known here.
-          const { push } = block;
-          const growth = push === undefined ? 0 : (grew[push.by] ?? 0);
-          const pushMove = push !== undefined && growth > 0 && growth <= push.room ? growth : 0;
-          // A PUSHED BLOCK THAT DOES NOT MOVE IS LEFT ALONE, before any of the work below: nothing of it is written either
-          // way, and planning it to prove so cost a heading's edit the whole body under it (the text walk's L6, 2026-10-17:
-          // one block of 39,200 runs below a heading, and the editor took 28 s to close on an edit that grew nothing).
-          if (push !== undefined && pushMove === 0) continue;
-          const place = push === undefined ? block.place : pushMove > 0 ? { move: { x: 0, y: -pushMove } } : undefined;
-          const writtenBefore = written.length;
+          const { place } = block;
           // ROTATED OR SKEWED TEXT IS REFUSED rather than wrapped along an axis
           // it is not set on. The read offers no such block; this is the write
           // keeping the same rule for a caller that did not ask.
@@ -3170,15 +3150,6 @@ function layOutBlocks(
                 : keptRight;
           // WHERE THE BLOCK ENDED, before anything moves: a fitted block must end above it.
           const lastBaselineBefore = matrixOn(bindings, (lines[lines.length - 1]?.[0] ?? firstRun).object).f;
-          // A PUSHED BLOCK THAT MOVES, said with where it stood: its objects' own bounds, ascent to descent, which is the box
-          // the markup on its words sits in (ADR-0249 Decision 4).
-          if (pushMove > 0) {
-            pushed.push({
-              block: blockAt,
-              box: { x0: blockLeft, y0: Math.min(...edges.map((edge) => edge.bottom)), x1: ownRight, y1: blockTop },
-              down: pushMove,
-            });
-          }
 
           /**
            * THE SPACING EACH HELD RUN WAS SET WITH, kept when its words are set again (the owner's decision of 2026-10-18 on
@@ -3664,11 +3635,6 @@ function layOutBlocks(
           // EVERY OLD LINE THE PLAN DID NOT KEEP goes at the end: a line set afresh stands in for it, or the person
           // removed it — a joined run's every object.
           for (const [at, line] of lines.entries()) if (!kept.has(at)) removed.push(...objectsOf(line));
-          // A PUSHED BLOCK IS NEVER WRITTEN (ADR-0249 Decision 3): every line kept and no word set, or the edit is refused.
-          // Its words are the read's, so a diff that names a run of it is words nobody typed into a block nobody opened.
-          if (push !== undefined && (written.length !== writtenBefore || kept.size !== lines.length)) {
-            throw refusedAt('object', `A block on page ${String(page)} moved by another's growth would have had its words set again`);
-          }
 
           // THE LAYOUT, top to bottom: the first line stays where it is, and
           // each line after it sits its own gap below the one above.
@@ -3691,9 +3657,6 @@ function layOutBlocks(
               }
             }
           }
-          // WHAT THE BLOCK GREW, for the blocks it pushes: a baseline, as a fit measures (a descender is not a line). A block
-          // the person placed, and one pushed, push nothing — a placement is where they put it, not a paragraph growing.
-          if (place === undefined && push === undefined) grew[blockAt] = lastBaselineBefore - baseline;
           // THE DRAWINGS MARKS ASK, now that the baselines are where they end, each a filled rectangle as long as the words
           // are wide: a line a little below the baseline and one through the words at STRIKE_RISE, each inserted after the
           // last object it marks so the page reads in the order it is seen; and a colour behind the words, from below their
@@ -3801,7 +3764,7 @@ function layOutBlocks(
 
         // A TRIAL ENDS HERE: nothing removed, nothing read back, nothing generated — the page is
         // closed and its changes go with it.
-        if (mode === 'trial') return { fits, boxed: [], pushed };
+        if (mode === 'trial') return { fits, boxed: [] };
 
         // NOTHING TO WRITE, which the writer itself splits in two (ADR-0260): regenerating a page's content stream is the
         // whole cost of an edit, and this one would change nothing. Where every block was sent the words the page already
@@ -3855,7 +3818,7 @@ function layOutBlocks(
           written.map((write) => write.object),
         );
         // THE BOXES STILL ON THE PAGE (ADR-0174).
-        return { fits, boxed: pen.boxed(), pushed };
+        return { fits, boxed: pen.boxed() };
       } finally {
         pen.close();
       }

@@ -31,7 +31,6 @@ function block(y: number, text: string) {
     lines: [{ runs: [{ index: 3, text, style: RUN }], box, soft: false, baseline: y + 4 }],
     style: RUN,
     shape: { align: 'left' as const, firstIndent: 0 },
-    push: { below: [], room: 0 },
   };
 }
 

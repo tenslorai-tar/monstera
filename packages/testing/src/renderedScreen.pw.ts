@@ -378,8 +378,6 @@ for (const look of LOOKS) {
 const BODY_RUN = { size: 12, colour: { r: 30, g: 30, b: 30 }, serif: false, mono: false, italic: false, bold: false };
 /** A block no case here is about the shape of: left-aligned with no first-line indent (ADR-0179). */
 const LEFT_SHAPE = { align: 'left', firstIndent: 0 } as const;
-/** A block that pushes nothing when it grows (ADR-0249): no case here is about the push. */
-const NO_PUSH = { below: [], room: 0 };
 const SET_APART_RUN = { size: 16, colour: { r: 66, g: 83, b: 149 }, serif: false, mono: false, italic: false, bold: true };
 
 /** A one-page document built here, so the case needs no fixture from the corpus (B10). */
@@ -4884,7 +4882,6 @@ for (const look of LOOKS) {
           ],
           style: BODY_RUN,
           shape: LEFT_SHAPE,
-          push: NO_PUSH,
         },
       ],
     });
@@ -4977,7 +4974,6 @@ for (const look of LOOKS) {
           ],
           style: BODY_RUN,
           shape: LEFT_SHAPE,
-          push: NO_PUSH,
         },
       ],
     });
@@ -5151,7 +5147,6 @@ for (const look of LOOKS) {
           ],
           style: BODY_RUN,
           shape: LEFT_SHAPE,
-          push: NO_PUSH,
         },
         {
           box,
@@ -5163,7 +5158,6 @@ for (const look of LOOKS) {
           })),
           style: BODY_RUN,
           shape: LEFT_SHAPE,
-          push: NO_PUSH,
         },
       ],
     });
@@ -5265,7 +5259,6 @@ for (const look of LOOKS) {
           ],
           style: MONO_RUN,
           shape: LEFT_SHAPE,
-          push: NO_PUSH,
         },
       ],
       runFonts: { fonts: [RUN_FONT], runs: new Map([[1, 0]]) },

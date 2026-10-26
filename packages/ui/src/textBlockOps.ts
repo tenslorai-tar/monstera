@@ -116,14 +116,10 @@ export function joinEdits(
 /**
  * One block made two, before its paragraph `paragraph` (1 or more): each half names its own old lines and its own words,
  * so neither changes, and the second is moved down by a line so the gap between the halves is wider than the grouping
- * joins across. `undefined` where there is no paragraph there to split before.
- *
- * THE TEXT BELOW, IN ITS COLUMN (`under`, the blocks the read's `push.below` named), moves down by the same line, so the
- * second half does not come to stand over it (VVVVVVV-25) — each as a move of its own, since a placed block pushes nothing
- * (ADR-0249: a placement is where it was put, not a paragraph growing). Only where the room `main` measured below the
- * block holds that line; where it does not, the text below stays, as a push past its room does.
+ * joins across. `undefined` where there is no paragraph there to split before. Nothing else moves: the second half may
+ * overlap what is below it, as a block that grows does (ADR-0271 section 11.1).
  */
-export function splitEdits(block: TextBlock, paragraph: number, under: readonly TextBlock[] = []): EditedBlock[] | undefined {
+export function splitEdits(block: TextBlock, paragraph: number): EditedBlock[] | undefined {
   const words = wordsOfBlock(block).split('\n');
   if (paragraph < 1 || paragraph >= words.length) return undefined;
   // THE LINES EACH PARAGRAPH HOLDS: a paragraph ends at the first line that is not soft.
@@ -145,7 +141,6 @@ export function splitEdits(block: TextBlock, paragraph: number, under: readonly 
   return [
     { ...linesOf(first), text: words.slice(0, paragraph).join('\n') },
     { ...linesOf(second), text: words.slice(paragraph).join('\n'), place: down },
-    ...(block.push.room >= pitch ? under.map((below) => ({ ...linesOf(below), text: wordsOfBlock(below), place: down })) : []),
   ];
 }
 

@@ -49,8 +49,8 @@ interface LinkLook {
 
 /**
  * Where a link is in PDF USER SPACE — `addLink` and `editLink`'s frame, and an annotation's listed `rect`'s — beside
- * `bounds` in MuPDF's displayed one: what `main` finds a link on moved text by and moves it with (ADR-0249 Decision 4),
- * read back by the one inverse of the conversion `editLink` writes through (`pdfRectOf`).
+ * `bounds` in MuPDF's displayed one, read back by the one inverse of the conversion `editLink` writes through
+ * (`pdfRectOf`).
  */
 interface LinkRect {
   readonly rect: AnnotationRect;

@@ -647,11 +647,9 @@ describe('the PDFium host body', () => {
     stream = stubStream();
     const files = emptyFiles();
     const drawn = Array.from({ length: 70 }, (_, at) => ({ character: String.fromCodePoint(0x4e00 + at), page: 0 }));
-    // AND A MOVED BLOCK (ADR-0249), which crosses whole: a handler that dropped it answers `[]`.
-    const moved = [{ block: 1, box: { x0: 72, y0: 560, x1: 540, y1: 590 }, down: 14.5 }];
     // AND A WRITER DEFECT NOTED (ADR-0270), which crosses whole too.
     const noted = ['page 0: a note'];
-    const { session } = await openArea(files, { boxed: drawn, more: 0, moved, noted });
+    const { session } = await openArea(files, { boxed: drawn, more: 0, noted });
     files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([4, 5]));
     stream.feed(
       request('a1', 'engine/apply', {
@@ -665,12 +663,11 @@ describe('the PDFium host body', () => {
     );
     await stream.whenSent(2);
     const answer = answerIn(stream.sent[1]) as {
-      body: { ok: boolean; value: { boxed: unknown[]; more: number; moved: unknown[]; noted: unknown[] } };
+      body: { ok: boolean; value: { boxed: unknown[]; more: number; noted: unknown[] } };
     };
     expect(answer.body.ok, JSON.stringify(answer)).toBe(true);
     expect(answer.body.value.boxed).toStrictEqual(drawn.slice(0, 64));
     expect(answer.body.value.more).toBe(6);
-    expect(answer.body.value.moved).toStrictEqual(moved);
     expect(answer.body.value.noted).toStrictEqual(noted);
   });
 
@@ -854,7 +851,7 @@ describe('the PDFium host body', () => {
         // this page no command can name — text inside a Form XObject, which
         // the object walk reports as one `form` and does not descend into.
         unaddressable: 7,
-        // THE PAGE BOX CROSSES (ADR-0249 Decision 2): main measures a page's margins against it.
+        // THE PAGE BOX CROSSES: the box a one-line block's column is taken from (ADR-0097 4a).
         box: { x0: 3, y0: 5, x1: 611, y1: 787 },
       },
     });

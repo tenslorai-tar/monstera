@@ -194,8 +194,6 @@ export function freshBox(css: { readonly x: number; readonly y: number }, geomet
       lines: [{ runs: [{ index: 0, text: '', style }], box, soft: false, baseline }],
       style,
       shape: { align: 'left', firstIndent: 0 },
-      // A NEW BOX PUSHES NOTHING: it is added text, not a paragraph of the page's.
-      push: { below: [], room: 0 },
     },
     left,
     baseline,

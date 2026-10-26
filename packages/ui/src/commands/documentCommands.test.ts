@@ -2141,7 +2141,6 @@ describe('delete pages — the mutation-dialog gate', () => {
     ],
     style: PLAIN,
     shape: { align: 'left', firstIndent: 0 },
-    push: { below: [], room: 0 },
   };
   /** The read BLOCK came from, at version 7, by `rewrite`'s writer: the page holds BLOCK alone. */
   const readOf = (rewrite: 'objects' | 'operators', unpacked = false) =>
@@ -2194,36 +2193,28 @@ describe('delete pages — the mutation-dialog gate', () => {
     expect(applied).toHaveLength(1);
   });
 
-  it('THE TEXT BELOW A BLOCK rides in its edit as pushed blocks, words as read, never written (ADR-0249)', async () => {
-    // THE UI HALF OF THE WIRED PAIR for the push. Its kernel half is `proof:textpush`, which writes this shape through the
-    // real PDFium writer and reads the moved small print back with MuPDF. The block below is the read's own; a commit that
-    // forgot `push.below` sends the edited block alone, which is the control below.
+  it('A BLOCK THAT GROWS is sent ALONE: the block below it on the page is in no edit, so nothing else moves (ADR-0271 section 11.1)', async () => {
+    // THE CONTROL IS THE READ: a block that still names the one below it with room, as `main` answered every read from
+    // 2026-10-16 to 2026-10-26, so a commit that still put the text below into the edit sends two blocks here.
     const below: TextBlock = {
       box: { x0: 72, y0: 640, x1: 300, y1: 651 },
       lines: [{ runs: [{ index: 12, text: 'Small print', style: PLAIN }], box: { x0: 72, y0: 640, x1: 150, y1: 651 }, soft: false, baseline: 642 }],
       style: PLAIN,
       shape: { align: 'left', firstIndent: 0 },
-      push: { below: [], room: 0 },
     };
-    const pushing: TextBlock = { ...BLOCK, push: { below: [1], room: 300 } };
+    const growing = { ...BLOCK, push: { below: [1], room: 300 } } as TextBlock;
     const sent: unknown[] = [];
     const client = createClient(channels, (_id, params) => {
       sent.push((params as { command: unknown }).command);
       return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
     });
     const deps = { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, signatures };
-    const read = { version: asDocVersion(7), rewrite: 'objects' as const, blocks: [pushing, below] };
-    await commitTextBlock(deps, DOC, 3, pushing, 'The quick brown dog jumps over and over again', read);
-    expect(sent[0]).toMatchObject({
-      runs: [4, 9, 2, 12],
-      blockStarts: [0, 2],
-      text: 'The quick brown dog jumps over and over againSmall print',
-      pushes: [{ block: 1, by: 0, room: 300 }],
-    });
-    // CONTROL: WITH NO ROOM nothing could move, so the block is sent alone and the writer is handed nothing to push.
-    await commitTextBlock(deps, DOC, 3, { ...pushing, push: { below: [1], room: 0 } }, 'The quick brown dog jumps', read);
-    expect(sent[1]).toMatchObject({ runs: [4, 9, 2], blockStarts: [0] });
-    expect(Object.hasOwn(sent[1] as object, 'pushes')).toBe(false);
+    const read = { version: asDocVersion(7), rewrite: 'operators' as const, blocks: [growing, below] };
+    await commitTextBlock(deps, DOC, 3, growing, 'The quick brown dog jumps over and over again and again', read);
+    expect(sent).toHaveLength(1);
+    // THE GROWN BLOCK'S RUNS AND WORDS, and no run of the block below.
+    expect(sent[0]).toMatchObject({ runs: [4, 9, 2], blockStarts: [0], text: 'The quick brown dog jumps over and over again and again' });
+    expect(Object.hasOwn(sent[0] as object, 'pushes')).toBe(false);
   });
 
   it('A BLOCK INSIDE A FORM is sent with its form, so the writer edits that form’s own stream (ADR-0269)', async () => {
@@ -7591,7 +7582,6 @@ describe('readRunFonts', () => {
       ],
       style: STYLE,
       shape: { align: 'left', firstIndent: 0 },
-      push: { below: [], room: 0 },
     };
   }
 

@@ -63,7 +63,6 @@ const TEXT_BLOCKS = LINES.map((line, at) => {
     lines: [{ runs: [{ index: 3 + 4 * at, text: line.text, style: RUN }], box, soft: false, baseline: box.y0 + 3 }],
     style: RUN,
     shape: { align: 'left' as const, firstIndent: 0 },
-    push: { below: [], room: 0 },
   };
 });
 

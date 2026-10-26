@@ -310,10 +310,6 @@ export function EditTextLayer({
                   : {
                       above: blocks.blocks[neighbourOf(blocks.blocks, at, 'above') ?? -1],
                       below: blocks.blocks[neighbourOf(blocks.blocks, at, 'below') ?? -1],
-                      under: block.push.below.flatMap((index) => {
-                        const below = blocks.blocks[index];
-                        return below === undefined ? [] : [below];
-                      }),
                       apply: (edits, kept) => onRestructure(edits, blocks, block.form ?? null, kept),
                       families: familiesOf,
                     }

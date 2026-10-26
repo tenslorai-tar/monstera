@@ -13,7 +13,6 @@ const BLOCK: TextBlock = {
   lines: [{ runs: [{ index: 1, text: 'words', style: STYLE }], box: BOX, soft: false, baseline: 689 }],
   style: STYLE,
   shape: { align: 'left', firstIndent: 0 },
-  push: { below: [], room: 0 },
 };
 const NONE: RunFonts = { fonts: [], runs: new Map() };
 

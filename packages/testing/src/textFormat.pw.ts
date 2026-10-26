@@ -56,7 +56,6 @@ async function openBlock(
           lines: [{ runs: [{ index: 3, text: 'A paragraph of words', style: RUN }], box: { x0: 100, y0: 686, x1: 400, y1: 700 }, soft: false, baseline: 690 }],
           style: RUN,
           shape: { align: 'left', firstIndent: 0 },
-          push: { below: [], room: 0 },
         },
       ],
     },

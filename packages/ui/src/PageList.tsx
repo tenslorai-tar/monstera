@@ -2458,9 +2458,9 @@ function paperIn(slot: HTMLElement | null, x: number, y: number): string | undef
 
 /**
  * The drawn page's own pixels inside `box`, a rectangle in the WINDOW's CSS pixels, copied into a canvas of their own;
- * or `undefined` where nothing is drawn there yet. What Edit text draws moved below a growing block (ADR-0249 Decision
- * 5): the page as it is, taken from every canvas the page is drawn in, tiles included, at the drawing's own
- * resolution so a picture is not blurred by the copy. In the window's pixels, so no caller has to share this slot's
+ * or `undefined` where nothing is drawn there yet. What Edit object draws a picture it moves from: the page as it is,
+ * taken from every canvas the page is drawn in, tiles included, at the drawing's own resolution so a picture is not
+ * blurred by the copy. In the window's pixels, so no caller has to share this slot's
  * origin to name a place on it.
  */
 function pictureIn(slot: HTMLElement | null, box: { x0: number; y0: number; x1: number; y1: number }): HTMLCanvasElement | undefined {

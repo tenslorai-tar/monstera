@@ -356,7 +356,6 @@ export type { PageRewrite } from './pageRewrite.js';
 // of (ADR-0096).
 export {
   type BlockBox,
-  type PushedColumn,
   type BlockableRun,
   type EditableBlock,
   type EditableLine,
@@ -366,15 +365,10 @@ export {
   groupIntoBlocks,
   groupIntoLines,
   isEditedInPlace,
-  pushesOf,
-  pushesOfPage,
   settingOf,
   softEnds,
   withRises,
 } from './textLines.js';
-// WHICH MARKS RIDE WITH PUSHED TEXT (ADR-0249 Decision 4): pure, so main asks it beside the command it sends.
-export { KINDS_ON_WORDS, movedDown, movedUnder } from './markupOnMovedText.js';
-export type { MovedBlock } from './engineSeam.js';
 // THE REFUSAL, from a module that imports nothing, so main can name it without
 // loading the engine that throws it (`signingRefusals.ts`' shape).
 export {

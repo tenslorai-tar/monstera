@@ -490,8 +490,8 @@ const basePdfiumChannels = {
          */
         unaddressable: z.number().int().nonnegative().max(PDFIUM_PRIOR_TEXT_MAX),
         /**
-         * The page box the runs are measured in, or `null` where PDFium answers none: what `main` measures the page's
-         * margins against for a block's push (ADR-0249 Decision 2), in the runs' own frame.
+         * The page box the runs are measured in, or `null` where PDFium answers none, in the runs' own frame: the box a
+         * one-line block's column is taken from (ADR-0097 4a).
          */
         box: z
           .object({ x0: z.number(), y0: z.number(), x1: z.number(), y1: z.number() })

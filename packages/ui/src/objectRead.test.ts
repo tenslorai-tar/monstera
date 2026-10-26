@@ -20,7 +20,6 @@ const BLOCK: TextBlock = {
   ],
   style: PLAIN,
   shape: { align: 'left', firstIndent: 0 },
-  push: { below: [], room: 0 },
 };
 const object = (index: number, kind: 'text' | 'path' | 'image' | 'form' | 'unknown', extra: Record<string, unknown> = {}) => ({
   index,

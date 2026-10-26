@@ -99,28 +99,14 @@ export interface BoxedInEdit {
 }
 
 /**
- * A block a text edit moved down because the block above it grew
- * ([ADR-0249](../../../docs/DECISIONS/0249-a-paragraph-that-grows-pushes-the-text-below-it-down.md) Decision 4): its place
- * in the edit, the box its objects filled before anything moved, in PDF user space, and how many points it went down.
- * What `main` moves the markup on it by.
- */
-export interface MovedBlock {
-  readonly block: number;
-  readonly box: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
-  readonly down: number;
-}
-
-/**
- * What an operation answers beside its image: the characters it drew as boxes (ADR-0174), and the blocks a text edit
- * moved down (ADR-0249). `boxed` and `moved` are REQUIRED and empty when there is none, `historyDropped`'s rule: a field
- * a person is owed is one a forwarding site cannot drop in silence — a dropped `moved` would leave a highlight on the
- * wrong words. `more` counts the boxes past a list a boundary capped (`MAX_BOXED_CHARACTERS`); an apply in this process
- * lists every one and answers 0.
+ * What an operation answers beside its image: the characters it drew as boxes (ADR-0174). `boxed` is REQUIRED and empty
+ * when there is none, `historyDropped`'s rule: a field a person is owed is one a forwarding site cannot drop in silence.
+ * `more` counts the boxes past a list a boundary capped (`MAX_BOXED_CHARACTERS`); an apply in this process lists every
+ * one and answers 0.
  */
 export interface DrawnBoxes {
   readonly boxed: readonly BoxedInEdit[];
   readonly more: number;
-  readonly moved: readonly MovedBlock[];
   /**
    * Writer defects the write's own checks found in a write that was KEPT
    * ([ADR-0270](../../../docs/DECISIONS/0270-edit-text-writes-what-the-person-typed-and-never-refuses-it.md)): a read-back
@@ -130,8 +116,8 @@ export interface DrawnBoxes {
   readonly noted: readonly string[];
 }
 
-/** No box drawn, nothing moved and nothing noted: what every operation answers that sets no new text. */
-export const NO_BOXES: DrawnBoxes = { boxed: [], more: 0, moved: [], noted: [] };
+/** No box drawn and nothing noted: what every operation answers that sets no new text. */
+export const NO_BOXES: DrawnBoxes = { boxed: [], more: 0, noted: [] };
 
 /** What a BYTE-IMAGE writer's apply and invert answer (ADR-0174): the new image, and the characters it drew as boxes. */
 export interface AppliedImage extends DrawnBoxes {

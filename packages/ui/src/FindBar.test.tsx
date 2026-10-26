@@ -23,7 +23,6 @@ const WIDGET_BLOCK = {
   lines: [{ runs: [{ index: 0, text: 'hit a WIDGET narrow', style: PLAIN }], box: { x0: 72, y0: 700, x1: 300, y1: 711 }, soft: false, baseline: 703 }],
   style: PLAIN,
   shape: { align: 'left' as const, firstIndent: 0 },
-  push: { below: [], room: 0 },
 };
 const BLOCKS_PART = { next: null, truncated: false, rotated: 0, angled: { turned: 0, vertical: 0, slanted: 0, mirrored: 0 }, unaddressable: 0, rewrite: 'operators' as const };
 

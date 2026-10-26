@@ -421,16 +421,6 @@ jobs:
           node scripts/ci/annotate.mjs scripts/proofs/type3Edit.proof.mjs
           ${{ runner.os == 'Windows' && '--require-engines' || '' }}
 
-      # ADR-0249, the owner's decision of 2026-10-16. A paragraph grown by one
-      # line moves the small print under it down by exactly one line, read
-      # back from the saved bytes by MuPDF; the control is the same edit
-      # without the push, which leaves the new line on the small print. A
-      # second column and the footer stay; a page with no room moves nothing.
-      - name: Prove a growing paragraph pushes the text below it down
-        run: >
-          node scripts/ci/annotate.mjs scripts/proofs/textPush.proof.mjs
-          ${{ runner.os == 'Windows' && '--require-engines' || '' }}
-
       # ADR-0264 Decision 7, the gate the owner set before Edit object's
       # surface: every edit on every object of the brochure and the
       # repository's fixtures, through PDFium's reading and the MuPDF writers.

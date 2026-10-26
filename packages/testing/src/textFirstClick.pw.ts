@@ -80,7 +80,7 @@ function blockOf(lines: readonly LineSpec[], first: number) {
     x1: Math.max(...built.map((line) => line.box.x1)),
     y1: Math.max(...built.map((line) => line.box.y1)),
   };
-  return { box, lines: built, style: lines[0]?.runs[0]?.style ?? BODY, shape: { align: 'left' as const, firstIndent: 0 }, push: { below: [], room: 0 } };
+  return { box, lines: built, style: lines[0]?.runs[0]?.style ?? BODY, shape: { align: 'left' as const, firstIndent: 0 } };
 }
 
 const HEADING_BLOCK = blockOf(

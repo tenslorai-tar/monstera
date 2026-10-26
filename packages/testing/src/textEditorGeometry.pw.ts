@@ -49,9 +49,6 @@ async function pageBytes(): Promise<Uint8Array> {
   return document.save();
 }
 
-/** A block that pushes nothing when it grows (ADR-0249): this file is about where the editor sits, not the push. */
-const NO_PUSH = { below: [], room: 0 };
-
 function blocks(labelStyle: typeof LABEL | typeof WIDE) {
   const [first, second, small, label] = LINES;
   const lineOf = (line: (typeof LINES)[number], index: number, style: typeof SANS | typeof SMALL | typeof LABEL | typeof WIDE) => ({
@@ -66,10 +63,9 @@ function blocks(labelStyle: typeof LABEL | typeof WIDE) {
       lines: [lineOf(first, 1, SANS), lineOf(second, 2, SANS)],
       style: SANS,
       shape: { align: 'left' as const, firstIndent: 0 },
-      push: NO_PUSH,
     },
-    { box: inkBox(small), lines: [lineOf(small, 3, SMALL)], style: SMALL, shape: { align: 'left' as const, firstIndent: 0 }, push: NO_PUSH },
-    { box: inkBox(label), lines: [lineOf(label, 4, labelStyle)], style: labelStyle, shape: { align: 'left' as const, firstIndent: 0 }, push: NO_PUSH },
+    { box: inkBox(small), lines: [lineOf(small, 3, SMALL)], style: SMALL, shape: { align: 'left' as const, firstIndent: 0 } },
+    { box: inkBox(label), lines: [lineOf(label, 4, labelStyle)], style: labelStyle, shape: { align: 'left' as const, firstIndent: 0 } },
   ];
 }
 

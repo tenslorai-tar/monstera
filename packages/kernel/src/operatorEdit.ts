@@ -13,14 +13,12 @@ import {
   paragraphSpacing,
 } from '@monstera/shared';
 
-import type { MovedBlock } from './engineSeam.js';
 import type { PageFont } from './pageFonts.js';
 import type { PageBox, PageCoverCell } from './paperColour.js';
 import { type BlockPlan, type FlowLine, type Measure, NO_MARK, type Row, largestFit, planBlock } from './paragraphFlow.js';
 import { DECORATION_KEY, DECORATION_KINDS, DECORATION_TAG, type DecorationKind, decorationBand, decorationsOf } from './markDecorations.js';
 import { JUSTIFY_CAP, RISE_SCALE, SUBSCRIPT_DROP, SUPERSCRIPT_RISE, spaceable, spacedBy } from './markFigures.js';
 import { carried, holds, neighbourSpan } from './contentCarry.js';
-import { type PushedLine, shapesMovedWith } from './pushedShapes.js';
 import {
   type MarkedDecoration,
   type Matrix,
@@ -173,8 +171,6 @@ export interface OperatorEdit {
   readonly drawn: readonly string[];
   /** Each block's first and last baseline after the edit, and its last before it, in user space. */
   readonly baselines: readonly { readonly first: number; readonly last: number; readonly lastBefore: number }[];
-  /** The pushed blocks that moved down (ADR-0249): where each stood and how far it went. */
-  readonly moved: readonly MovedBlock[];
   /** Whether the content names the plain graphics state an arrange carried a block with, which the page must then hold. */
   readonly plain: boolean;
 }
@@ -842,12 +838,6 @@ function write(
   const checked: string[] = [];
   const baselinesOut: { first: number; last: number; lastBefore: number }[] = [];
   const uncarried = new Set<string>();
-  /** What each block grew, by its place in the edit: its old last baseline less its new one (ADR-0249 Decision 1). */
-  const grew = new Map<number, number>();
-  /** The pushed blocks that moved, where they stood and how far down they went: the PDFium writer's own answer. */
-  const moved: MovedBlock[] = [];
-  /** Every line of a pushed block that moved, for the drawings that sit with it (ADR-0249's correction of 2026-10-26). */
-  const pushedLines: PushedLine[] = [];
   /** Whether an arrange carried a block with the plain graphics state, which the page must then hold (ADR-0264). */
   let plain = false;
 
@@ -890,7 +880,7 @@ function write(
     }
   }
 
-  for (const [jobAt, { block, insert }] of jobs.entries()) {
+  for (const { block, insert } of jobs) {
     /** This block's emptied operators: where its inserted object goes is the first of their `BT`s. */
     const own = new Set<number>();
     const lines = block.lines.map((line) =>
@@ -944,44 +934,9 @@ function write(
     }
     const inkRight = Math.max(...lines.flat().map((run) => run.right));
     const baselines = lines.map((line) => line[0]?.origin.y ?? 0);
-    // A PUSHED BLOCK IS MOVED BY WHAT ITS PUSHER GREW, or not at all where that passes its room (ADR-0249 Decision 3), by
-    // the placement below: the PDFium writer's rule, so the two writers move the text below a growing block alike.
-    const { push } = block;
-    const growth = push === undefined ? 0 : (grew.get(push.by) ?? 0);
-    const pushMove = push !== undefined && growth > 0 && growth <= push.room ? growth : 0;
-    // A PUSHED BLOCK THAT DOES NOT MOVE IS LEFT ALONE, the PDFium writer's rule and its reason: nothing of it is written
-    // either way, and setting it to prove so is the whole cost of the text below a heading.
-    if (push !== undefined && pushMove === 0) continue;
-    if (push !== undefined && pushMove > 0) {
-      moved.push({
-        block: jobAt,
-        box: {
-          x0: Math.min(...lines.flat().map((run) => run.run.left)),
-          y0: Math.min(...lines.flat().map((run) => run.run.bottom)),
-          x1: Math.max(...lines.flat().map((run) => run.run.right)),
-          y1: Math.max(...lines.flat().map((run) => run.run.top)),
-        },
-        down: pushMove,
-      });
-      // ITS LINES, for what is drawn beside them: each line's baseline and size where it stood, and the push's column, the
-      // growing block's ink and this one's together.
-      const pusher = jobs[push.by]?.block.lines.flat().flatMap((index) => {
-        const run = runs.get(index);
-        return run === undefined ? [] : [run];
-      });
-      const inks = [...lines.flat().map((run) => run.run), ...(pusher ?? [])];
-      const left = Math.min(...inks.map((run) => run.left));
-      const right = Math.max(...inks.map((run) => run.right));
-      for (const line of lines) {
-        const first = line[0];
-        if (first === undefined) continue;
-        const size = Math.max(...line.map((run) => (ops[run.first]?.state.size ?? 0) * run.origin.up));
-        pushedLines.push({ baseline: first.origin.y, size, left, right, down: pushMove });
-      }
-    }
     // WHAT THE PERSON DID TO THE BLOCK AS A WHOLE (ADR-0188): placed, so every line of it is set again under one `cm`, or
     // given a measure, so every paragraph of it is. Either way no line of it is left where it was.
-    const blockPlace = push === undefined ? block.place : pushMove > 0 ? { move: { x: 0, y: -pushMove } } : undefined;
+    const blockPlace = block.place;
     const measured = blockPlace?.width !== undefined;
     // AND A BLOCK RECOLOURED WHOLE (ADR-0264 Decision 5) is set again in place, every line carried as it was with its
     // colour set: decided once the plan has said its words are the read's, below.
@@ -1465,7 +1420,7 @@ function write(
     ]);
     const marked = { marks: (block.marks ?? []).map(({ from, to }) => ({ from, to })), changes, forced };
     // A WHOLE-BLOCK COLOUR is planned as no change to the words, so the plan says whether they are the read's.
-    const colour = push === undefined && block.place === undefined && fit === 'reflow' && (block.paragraphs?.length ?? 0) === 0 ? wholeColour(block) : undefined;
+    const colour = block.place === undefined && fit === 'reflow' && (block.paragraphs?.length ?? 0) === 0 ? wholeColour(block) : undefined;
     let formatting = colour === undefined ? marked : { marks: [], changes: (): boolean => false, forced };
     const oldGap = (line: number): number => (baselines[line - 1] ?? 0) - (baselines[line] ?? 0);
     /**
@@ -1525,11 +1480,6 @@ function write(
       }
     }
     const targets = rowTargets(plan.rows, shrink);
-    // A PUSHED BLOCK IS NEVER WRITTEN (ADR-0249 Decision 3): every row one of its own lines, as it was, or the edit is
-    // refused — words nobody typed into a block nobody opened.
-    if (push !== undefined && !(plan.rows.length === lines.length && plan.rows.every((row, at) => row.kind === 'old' && row.line === at))) {
-      throw new Refused({ reason: 'numbering', detail: 'a block moved by another’s growth would have had its words set again' });
-    }
 
     /** The old lines the plan keeps exactly as they are: their operators are not touched. */
     const kept = new Set<number>();
@@ -1678,8 +1628,6 @@ function write(
     written.push(laid.join('\n'));
     checked.push(...setLines);
     baselinesOut.push({ first: baselines[0] ?? 0, last: previous, lastBefore: baselines.at(-1) ?? 0 });
-    // WHAT THE BLOCK GREW, for the blocks it pushes; a placed block and a pushed one push nothing (the PDFium writer's rule).
-    if (block.place === undefined && push === undefined) grew.set(jobAt, (baselines.at(-1) ?? 0) - previous);
 
     const segments = visual.flatMap((line) => line.segments.map((segment) => ({ ...segment, baseline: line.baseline })));
     // WHAT THE CODES SHOW, which the structural read-back reads them as: a tab's segment means a tab and draws its gap
@@ -1692,7 +1640,7 @@ function write(
     // at the first text object it empties. These are one CTM while a block's lines share one; where they differ by a
     // translation (above), the first line's would set every line the edit writes off by the difference.
     const standsAt =
-      (push === undefined ? blockPlace?.arrange : undefined) !== undefined
+      blockPlace?.arrange !== undefined
         ? firstRun.first
         : own.size === 0
           ? lastRun.last
@@ -1883,7 +1831,7 @@ function write(
     // AN ARRANGED BLOCK goes just past the object it was arranged past (ADR-0264 Decision 5): after its unit going forward,
     // before it going backward, inside a `q … Q` that carries the state its first line was drawn under there
     // (`contentCarry.ts`, the drawn object's own carry). Its operators are emptied where they stood, as a placement's are.
-    const arrangement = push === undefined ? blockPlace?.arrange : undefined;
+    const arrangement = blockPlace?.arrange;
     if (arrangement !== undefined) {
       const members = lines.flat().flatMap((run) => run.members);
       const first = Math.min(...members.map((at) => ops[at]?.start ?? Number.POSITIVE_INFINITY));
@@ -1994,11 +1942,6 @@ function write(
   }
   if (uncarried.size > 0) throw new Refused({ reason: 'needs-a-face', characters: [...uncarried] });
   if (emptied.size === 0 && insertions.length === 0) throw new Refused({ reason: 'unchanged' });
-  // WHAT SAT WITH A MOVED LINE MOVES WITH IT (ADR-0249's correction of 2026-10-26): a bullet drawn as a square, a rule under
-  // linked words. Each wrap draws no words, so the read-back reads it as an inserted object that shows nothing. The
-  // writer's own marked decorations are not among them: they go with their words above.
-  const marked = (start: number): boolean => pageDecorations.some((decoration) => start >= decoration.start && start < decoration.end);
-  for (const move of shapesMovedWith(content, arrangeWith.kinds, pushedLines, marked)) insertions.push({ ...move, drawn: '' });
 
   // THE SPLICES, in the order they sit in the bytes: each emptied operator's span, and each insertion at its BT.
   const splices: { readonly start: number; readonly end: number; readonly text: string; readonly inserted: boolean; readonly drawn?: string }[] = [];
@@ -2047,7 +1990,7 @@ function write(
     out.set(piece, at);
     at += piece.length;
   }
-  return { content: out, emptied: [...emptied].sort((x, y) => x - y), changes, written, checked, drawn, baselines: baselinesOut, moved, plain };
+  return { content: out, emptied: [...emptied].sort((x, y) => x - y), changes, written, checked, drawn, baselines: baselinesOut, plain };
 }
 
 /**
