@@ -102,6 +102,12 @@ function paintParagraph(element: HTMLElement, paragraph: Paragraph, look: Look):
   element.style.marginTop = paragraph.spaceBefore === 0 ? '' : `${String(paragraph.spaceBefore * look.zoom)}px`;
   element.style.marginBottom = paragraph.spaceAfter === 0 ? '' : `${String(paragraph.spaceAfter * look.zoom)}px`;
   element.style.lineHeight = look.pitch === undefined ? String(1.2 * paragraph.lineSpacing) : `${String(look.pitch * paragraph.lineSpacing * look.zoom)}px`;
+  // THE PARAGRAPH'S OWN FACE AND SIZE, its first run's: every line box holds a strut in the paragraph's font, and a strut
+  // in the interface's font, whose ascent is not the run's, set the second line of a block 4 px below the page's at 200 %
+  // (Chromium 151, `textEditorGeometry.pw.ts`, measured 2026-10-26).
+  const first = paragraph.runs[0]?.style;
+  element.style.fontFamily = first === undefined ? '' : look.faceCss(first);
+  element.style.fontSize = first === undefined ? '' : `${String(first.size * look.zoom)}px`;
 }
 
 /**
