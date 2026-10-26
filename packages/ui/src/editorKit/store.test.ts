@@ -12,6 +12,7 @@ const BODY: RunStyle = {
   underline: false,
   strike: false,
   rise: 'none',
+  lift: 0,
   spacing: 0,
   highlight: null,
 };

@@ -31,6 +31,7 @@ const BODY: RunStyle = {
   underline: false,
   strike: false,
   rise: 'none',
+  lift: 0,
   spacing: 0,
   highlight: null,
 };
@@ -153,5 +154,23 @@ describe('the editor kit model', () => {
   it('keeps one empty run in an empty paragraph, and joins runs of one style', () => {
     expect(normalised(paragraph(['', BODY])).runs).toHaveLength(1);
     expect(normalised(paragraph(['a', BODY], ['b', BODY])).runs).toEqual([{ text: 'ab', style: BODY }]);
+  });
+
+  it('keeps each letter’s base through typing and formatting, and sees two bases as one style', () => {
+    // A BOLD RUN THAT WAS REGULAR ON THE PAGE beside a run that IS bold on the page: alike to the eye, two to a writer.
+    const made: Model = {
+      paragraphs: [{ ...SET, runs: [{ text: 'made', style: HEADING, base: BODY }, { text: ' bold', style: HEADING, base: HEADING }] }],
+    };
+    expect(made.paragraphs[0] === undefined ? [] : normalised(made.paragraphs[0]).runs).toHaveLength(2);
+    // TYPED INTO THE FIRST, a letter joins its base; formatted, the base stays.
+    const typed = insertText(made, caret({ paragraph: 0, offset: 2 }), 'X').model;
+    expect(typed.paragraphs[0]?.runs.map((run) => [run.text, run.base])).toEqual([
+      ['maXde', BODY],
+      [' bold', HEADING],
+    ]);
+    const italic = applyStyle(typed, { anchor: { paragraph: 0, offset: 0 }, focus: { paragraph: 0, offset: 10 } }, { italic: true }).model;
+    expect(italic.paragraphs[0]?.runs.map((run) => run.base)).toEqual([BODY, HEADING]);
+    // THE SAME TO THE EYE as one run in that style, whatever the bases say.
+    expect(sameModel(made, { paragraphs: [{ ...SET, runs: [{ text: 'made bold', style: HEADING }] }] })).toBe(true);
   });
 });

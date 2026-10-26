@@ -34,15 +34,25 @@ export interface RunStyle {
   readonly italic: boolean;
   readonly underline: boolean;
   readonly strike: boolean;
+  /** A superscript or subscript the person chose; the page's own raise of a run is {@link RunStyle.lift}. */
   readonly rise: 'none' | 'superscript' | 'subscript';
+  /** How far, in points, the page raises the run's baseline off its line (negative lowers it): drawn, never chosen. */
+  readonly lift: number;
   /** Space added after each character, as a fraction of the size. */
   readonly spacing: number;
   readonly highlight: Rgb | null;
 }
 
+/**
+ * Letters in one style. `base`, where the caller gives one, is the style the letters ARE where nobody changed them —
+ * the page's run they came from, or the run they were typed into — so a caller can say what the person changed and
+ * nothing else: a mark over words that are as the page has them says nothing, and the writer refuses an edit that
+ * changes nothing (the editor this kit replaces paid for that as VVVVVVV-16).
+ */
 export interface Run {
   readonly text: string;
   readonly style: RunStyle;
+  readonly base?: RunStyle;
 }
 
 export type Alignment = 'left' | 'center' | 'right' | 'justify';
@@ -57,8 +67,10 @@ export interface ParagraphSetting {
   readonly leftIndent: number;
 }
 
+/** A paragraph; `base` is how it is set where nobody changed it, for the reason {@link Run.base} is. */
 export interface Paragraph extends ParagraphSetting {
   readonly runs: readonly Run[];
+  readonly base?: ParagraphSetting;
 }
 
 export interface Model {
@@ -96,9 +108,15 @@ export function sameStyle(a: RunStyle, b: RunStyle): boolean {
     a.underline === b.underline &&
     a.strike === b.strike &&
     a.rise === b.rise &&
+    a.lift === b.lift &&
     a.spacing === b.spacing &&
     SAME_COLOUR(a.highlight, b.highlight)
   );
+}
+
+/** Whether two runs may be one: the same style, and the same base or none. */
+function sameRun(a: Run, b: Run): boolean {
+  return sameStyle(a.style, b.style) && (a.base === b.base || (a.base !== undefined && b.base !== undefined && sameStyle(a.base, b.base)));
 }
 
 export function paragraphText(paragraph: Paragraph): string {
@@ -116,11 +134,11 @@ export function normalised(paragraph: Paragraph): Paragraph {
   for (const run of paragraph.runs) {
     const last = runs[runs.length - 1];
     if (run.text === '') continue;
-    if (last !== undefined && sameStyle(last.style, run.style)) runs[runs.length - 1] = { text: last.text + run.text, style: last.style };
+    if (last !== undefined && sameRun(last, run)) runs[runs.length - 1] = { ...last, text: last.text + run.text };
     else runs.push(run);
   }
   const first = paragraph.runs[0];
-  if (runs.length === 0 && first !== undefined) runs.push({ text: '', style: first.style });
+  if (runs.length === 0 && first !== undefined) runs.push({ ...first, text: '' });
   return { ...paragraph, runs };
 }
 
@@ -166,8 +184,8 @@ function splitRuns(paragraph: Paragraph, offset: number): { readonly before: Run
     if (end <= offset) before.push(run);
     else if (at >= offset) after.push(run);
     else {
-      before.push({ text: run.text.slice(0, offset - at), style: run.style });
-      after.push({ text: run.text.slice(offset - at), style: run.style });
+      before.push({ ...run, text: run.text.slice(0, offset - at) });
+      after.push({ ...run, text: run.text.slice(offset - at) });
     }
     at = end;
   }
@@ -175,38 +193,44 @@ function splitRuns(paragraph: Paragraph, offset: number): { readonly before: Run
 }
 
 /**
- * The style a letter typed at `position` takes: the letter before it in its paragraph, or at a paragraph's start the
- * letter after it — as a word processor does, so typing at the end of a bold word continues bold.
+ * The run a letter typed at `position` joins: the letter before it in its paragraph, or at a paragraph's start the letter
+ * after it — as a word processor does, so typing at the end of a bold word continues bold.
  */
-export function styleAt(model: Model, position: Position): RunStyle {
+function runAt(model: Model, position: Position): Run {
   const paragraph = paragraphAt(model, position.paragraph);
   let at = 0;
-  let found: RunStyle | undefined;
+  let found: Run | undefined;
   for (const run of paragraph.runs) {
     const end = at + run.text.length;
-    if (position.offset > at && position.offset <= end) found = run.style;
+    if (position.offset > at && position.offset <= end) found = run;
     at = end;
   }
   const first = paragraph.runs[0];
   if (found !== undefined) return found;
-  if (first !== undefined) return first.style;
+  if (first !== undefined) return first;
   throw new Error(`paragraph ${String(position.paragraph)} has no run to take a style from`);
 }
 
+/** The style a letter typed at `position` takes ({@link runAt}). */
+export function styleAt(model: Model, position: Position): RunStyle {
+  return runAt(model, position).style;
+}
+
 /**
- * `from` to `to` replaced by `text`, its letters in `style`; a line feed in `text` parts a paragraph, the new paragraph
- * set as the one it was parted from. The caret ends after the inserted text.
+ * `from` to `to` replaced by `text`, its letters in `style` over the base of the run they join; a line feed in `text`
+ * parts a paragraph, the new paragraph set as the one it was parted from. The caret ends after the inserted text.
  */
 export function replaceRange(model: Model, from: Position, to: Position, text: string, style: RunStyle): Edited {
   const start = paragraphAt(model, from.paragraph);
   const end = paragraphAt(model, to.paragraph);
   const head = splitRuns(start, from.offset).before;
   const tail = splitRuns(end, to.offset).after;
+  const { base } = runAt(model, from);
   const pieces = text.replace(/\r\n?/gu, '\n').split('\n');
   const made: Paragraph[] = pieces.map((piece, k) => {
     const runs: Run[] = [];
     if (k === 0) runs.push(...head);
-    runs.push({ text: piece, style });
+    runs.push(base === undefined ? { text: piece, style } : { text: piece, style, base });
     if (k === pieces.length - 1) runs.push(...tail);
     // A PARAGRAPH PARTED OFF is set as the one it came from, as a word processor's Enter keeps the paragraph's setting.
     return normalised({ ...start, runs });
@@ -288,9 +312,9 @@ export function applyStyle(model: Model, selection: Selection, patch: StylePatch
       const b = Math.min(end, runEnd) - at;
       if (b <= a && run.text !== '') runs.push(run);
       else {
-        runs.push({ text: run.text.slice(0, a), style: run.style });
-        runs.push({ text: run.text.slice(a, b), style: { ...run.style, ...patch } });
-        runs.push({ text: run.text.slice(b), style: run.style });
+        runs.push({ ...run, text: run.text.slice(0, a) });
+        runs.push({ ...run, text: run.text.slice(a, b), style: { ...run.style, ...patch } });
+        runs.push({ ...run, text: run.text.slice(b) });
       }
       at = runEnd;
     }
@@ -451,14 +475,19 @@ export function formatState(model: Model, selection: Selection, pending?: RunSty
   };
 }
 
-/** Whether two models hold the same words in the same styles, set the same way. */
+/** A paragraph's runs joined wherever the STYLE agrees, whatever their bases: what a reader of the page would see. */
+function shown(paragraph: Paragraph): Paragraph {
+  return normalised({ ...paragraph, runs: paragraph.runs.map((run) => ({ text: run.text, style: run.style })) });
+}
+
+/** Whether two models hold the same words in the same styles, set the same way: what the person would see as one. */
 export function sameModel(a: Model, b: Model): boolean {
   if (a.paragraphs.length !== b.paragraphs.length) return false;
   return a.paragraphs.every((paragraph, index) => {
     const other = b.paragraphs[index];
     if (other === undefined) return false;
-    const x = normalised(paragraph);
-    const y = normalised(other);
+    const x = shown(paragraph);
+    const y = shown(other);
     return (
       x.align === y.align &&
       x.lineSpacing === y.lineSpacing &&
