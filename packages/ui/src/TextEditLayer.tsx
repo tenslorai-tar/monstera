@@ -275,6 +275,66 @@ function caretAt(element: HTMLElement, click: Click): boolean {
   return place(position.offsetNode, position.offset);
 }
 
+/**
+ * The press that opened an editor, put where it was pressed in the words AS THEY ARE SHOWN rather than as they were
+ * first built (cloud run 21, the owner's video of 2026-10-26). Answers the call that puts it there again, made each time
+ * the editor's layout settles further.
+ *
+ * ## Why one placement as the editor is built is not enough
+ *
+ * A caret is a character offset, and the point is turned into one by asking which character is under it. The editor is
+ * built with each run at its size in points (`drawRun` at a zoom of 1) and in its kind of face; then its sizes are set
+ * at the zoom, its first baseline is moved onto the page's (`useBaselineShift`), and each run's own font arrives from
+ * the host (`useRunFonts`). Asked as it was built, the point named the character under it in a layout nobody sees, and
+ * the offset stayed when the words moved: measured 2026-10-26 in Chromium 151 (`textFirstClick.pw.ts`), a press mid-word
+ * in a code block at 150 % stood the caret 99 pixels to its right, and one in a heading whose rebuilt font arrived after
+ * it stood it 32 pixels off. A click inside the open editor was right, being asked of the layout on screen.
+ *
+ * So the point is held, in the frame's own pixels so a scroll does not move it, and asked again of each layout until the
+ * person acts: a key, a press, an input or a composition in the frame lets it go, and so does a frame that changed size
+ * (a zoom, a block scaled), whose pixels are no longer the ones pressed. A key typed before the last layout arrives goes
+ * where the caret stood then, and the caret is not moved after it.
+ */
+function useOpeningPress(area: React.RefObject<HTMLDivElement | null>, click: Click | undefined): (element: HTMLElement) => void {
+  const held = useRef<{ readonly x: number; readonly y: number; readonly width: number } | undefined>(undefined);
+  const place = useCallback((element: HTMLElement): void => {
+    const at = held.current;
+    if (at === undefined || element.ownerDocument.activeElement !== element) return;
+    const corner = element.closest('.m-text-editor-frame')?.getBoundingClientRect();
+    if (corner === undefined || Math.abs(corner.width - at.width) > 0.5) {
+      held.current = undefined;
+      return;
+    }
+    caretAt(element, { x: corner.left + at.x, y: corner.top + at.y });
+  }, []);
+  useLayoutEffect(() => {
+    const element = area.current;
+    const frame = element === null ? null : element.closest('.m-text-editor-frame');
+    if (click === undefined || element === null || frame === null) {
+      held.current = undefined;
+      return undefined;
+    }
+    const corner = frame.getBoundingClientRect();
+    held.current = { x: click.x - corner.left, y: click.y - corner.top, width: corner.width };
+    const letGo = (): void => {
+      held.current = undefined;
+    };
+    const acts = ['keydown', 'pointerdown', 'beforeinput', 'compositionstart'] as const;
+    // IN THE CAPTURE PHASE, before the editor's own handlers act on the key or the press.
+    for (const act of acts) frame.addEventListener(act, letGo, true);
+    const fonts = element.ownerDocument.fonts;
+    const loaded = (): void => {
+      place(element);
+    };
+    fonts.addEventListener('loadingdone', loaded);
+    return () => {
+      for (const act of acts) frame.removeEventListener(act, letGo, true);
+      fonts.removeEventListener('loadingdone', loaded);
+    };
+  }, [area, click, place]);
+  return place;
+}
+
 /** The CSS a placed box is drawn with. */
 function boxStyle(placed: Placed): React.CSSProperties {
   return {
@@ -1271,6 +1331,8 @@ function useRunFonts(
   area: React.RefObject<HTMLDivElement | null>,
   read: () => Promise<RunFonts>,
   editor: string,
+  /** Called once the runs are drawn in their own fonts, which moves every word after the first that changed width. */
+  onDrawn: (element: HTMLElement) => void,
 ): void {
   useEffect(() => {
     const element = area.current;
@@ -1316,12 +1378,13 @@ function useRunFonts(
         span.classList.add('m-text-editor__run--own');
         span.style.setProperty('--m-run-font', familyOf(editor, place));
       }
+      onDrawn(element);
     });
     return () => {
       current = false;
       for (const face of added) owner.fonts.delete(face);
     };
-  }, [area, editor, read]);
+  }, [area, editor, read, onDrawn]);
 }
 
 /** What a run is drawn in: the page's own values — size, fill, weight, slant — and the face kind by class. */
@@ -1426,7 +1489,8 @@ function BlockEditor({
   const [readFonts] = useState(() => runFonts);
   // THE PAGE'S FONT NAMES as the editor opened, kept for its life for `readFonts`' reason.
   const [pageFontsAtOpen] = useState(() => pageFonts);
-  useRunFonts(area, readFonts, useId());
+  const placeOpening = useOpeningPress(area, click);
+  useRunFonts(area, readFonts, useId(), placeOpening);
   // THE EDITOR IS OPEN, for the formatting commands to act on (ADR-0180): registered for its life, at the zoom now.
   const zoomNow = useRef(geometry.zoom);
   useEffect(() => {
@@ -1618,6 +1682,11 @@ function BlockEditor({
     revealChanged();
   }, [block, geometry.zoom, revealChanged]);
   const baselineShift = useBaselineShift(area, block, geometry.zoom);
+  // THE OPENING PRESS PUT WHERE IT WAS MADE in the layout as it now is: after the sizes at the zoom and the paragraphs'
+  // places above, again when the baseline moves the words, and when the runs' own fonts are drawn (`useOpeningPress`).
+  useLayoutEffect(() => {
+    if (area.current !== null) placeOpening(area.current);
+  }, [placeOpening, baselineShift]);
 
   /** Whether a write is in flight: the words are not editable meanwhile, so nothing is typed into a block already sent. */
   const [sending, setBusy] = useState(false);
