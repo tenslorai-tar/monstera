@@ -56,7 +56,7 @@ const JAPANESE = { a: 'モンステラの見出し。', b: '変更しない行�
 // ---------------------------------------------------------------------------------------------- TrueType tables
 
 /** @param {Buffer} sfnt */
-function tablesOf(sfnt) {
+export function tablesOf(sfnt) {
   /** @type {Map<string, Buffer>} */
   const tables = new Map();
   const count = sfnt.readUInt16BE(4);
@@ -73,7 +73,7 @@ function tablesOf(sfnt) {
  *
  * @param {Buffer} sfnt
  */
-function trueTypeOf(sfnt) {
+export function trueTypeOf(sfnt) {
   const tables = tablesOf(sfnt);
   const need = (/** @type {string} */ tag) => {
     const table = tables.get(tag);
@@ -160,7 +160,7 @@ function sfntOf(tables) {
  * @param {Buffer} sfnt
  * @param {Iterable<number>} keep
  */
-function trueTypeSubset(sfnt, keep) {
+export function trueTypeSubset(sfnt, keep) {
   const tables = new Map(tablesOf(sfnt));
   const head = Buffer.from(/** @type {Buffer} */ (tables.get('head')));
   const loca = /** @type {Buffer} */ (tables.get('loca'));
@@ -244,7 +244,7 @@ function afmWidths(afm) {
  * Where MuPDF's own copy of the URW base-35 fonts is: the source the MuPDF provisioning extracts under `.tools`, which
  * carries each as a raw Type 1 program beside its AFM (SIL OFL 1.1, the `OFL.txt` beside them).
  */
-function urwDirectory() {
+export function urwDirectory() {
   const base = join(ROOT, '.tools', 'mupdf');
   for (const version of existsSync(base) ? readdirSync(base) : []) {
     for (const source of readdirSync(join(base, version)).filter((name) => name.startsWith('mupdf-'))) {
@@ -344,7 +344,7 @@ function type1Program(source, keep) {
 // ------------------------------------------------------------------------------------------------------- the PDFs
 
 /** A ToUnicode CMap mapping each 1- or 2-byte code to its character. @param {Map<number, string>} map @param {1 | 2} bytes */
-function toUnicode(map, bytes) {
+export function toUnicode(map, bytes) {
   const hex = (/** @type {number} */ n) => n.toString(16).padStart(bytes * 2, '0').toUpperCase();
   const utf16 = (/** @type {string} */ s) =>
     [...Buffer.from(s, 'utf16le').swap16()].map((b) => b.toString(16).padStart(2, '0')).join('').toUpperCase();
@@ -408,7 +408,9 @@ export async function buildFixture(id) {
  * @param {string} id one of {@link FONT_KINDS}' ids
  * @param {string[]} used every character the document will set in it: a subset keeps these glyphs and no others
  * @param {import('@cantoo/pdf-lib').PDFFont} helvetica the document's Helvetica, which the standard-14 kind is
- * @returns {{ font: import('@cantoo/pdf-lib').PDFRef, show: (text: string) => string }}
+ * @returns {{ font: import('@cantoo/pdf-lib').PDFRef, show: (text: string) => string, width: (text: string) => number }}
+ *   `width` is a run's advance in thousandths of an em, from the same widths the font dictionary carries, so a fixture
+ *   that lays out lines knows where they end without asking an engine it is about to test.
  */
 export function fontOfKind(doc, id, used, helvetica) {
   const context = doc.context;
@@ -416,22 +418,29 @@ export function fontOfKind(doc, id, used, helvetica) {
   let font;
   /** @type {(text: string) => string} */
   let show;
+  /** @type {(text: string) => number} */
+  let width;
   const literal = (/** @type {string} */ text) => PDFString.of(text).toString();
+  const summed = (/** @type {(c: string) => number} */ advance) => (/** @type {string} */ text) =>
+    [...text].reduce((total, c) => total + advance(c), 0);
 
   if (id === 'type1-standard14') {
     font = helvetica.ref;
     show = (text) => helvetica.encodeText(text).toString();
-  } else if (id === 'type1-embedded' || id === 'type1-subset' || id === 'type1c-embedded') {
+    width = (text) => helvetica.widthOfTextAtSize(text, 1000);
+  } else if (id === 'type1-embedded' || id === 'type1-subset' || id === 'type1c-embedded' || id === 'type1c-subset') {
     const urw = urwDirectory();
     // TIMES' METRICS for all three: Nimbus Roman is metric-compatible with Times, and so is PDFium's own serif, which
     // is the compact program here.
     const widths = afmWidths(readFileSync(join(urw, 'NimbusRoman-Regular.afm'), 'latin1'));
     let file;
     let name;
-    if (id === 'type1c-embedded') {
-      // A BARE CFF, whatever pdf.js' file name says: its header is 01 00 04 02, which is FontFile3 /Type1C.
-      name = 'FoxitSerif';
-      file = { FontFile3: context.register(context.flateStream(readFileSync(join(FONTS, 'FoxitSerif.pfb')), { Subtype: 'Type1C' })) };
+    if (id === 'type1c-embedded' || id === 'type1c-subset') {
+      // A BARE CFF, whatever pdf.js' file name says: its header is 01 00 04 02, which is FontFile3 /Type1C. The subset
+      // (not one of FONT_KINDS, which `editText.proof.mjs` walks whole; the edit catalogue's) keeps only the glyphs drawn.
+      const cff = readFileSync(join(FONTS, 'FoxitSerif.pfb'));
+      name = id === 'type1c-subset' ? 'AAAAAA+FoxitSerif' : 'FoxitSerif';
+      file = { FontFile3: context.register(context.flateStream(id === 'type1c-subset' ? cffSubset(cff, used) : cff, { Subtype: 'Type1C' })) };
     } else {
       const subset = id === 'type1-subset';
       const { program, lengths } = type1Program(
@@ -474,6 +483,7 @@ export function fontOfKind(doc, id, used, helvetica) {
       }),
     );
     show = literal;
+    width = summed((c) => widths.get(glyphName(c)) ?? 0);
   } else if (id.startsWith('truetype')) {
     const sfnt = readFileSync(join(FONTS, 'LiberationSans-Regular.ttf'));
     const tt = trueTypeOf(sfnt);
@@ -507,47 +517,9 @@ export function fontOfKind(doc, id, used, helvetica) {
       }),
     );
     show = literal;
+    width = summed((c) => tt.width(tt.glyphOf(c.charCodeAt(0))));
   } else if (id === 'type0-cidfonttype2') {
-    const sfnt = readFileSync(join(FONTS, 'LiberationSans-Regular.ttf'));
-    const tt = trueTypeOf(sfnt);
-    const gids = new Map(used.map((c) => [c, tt.glyphOf(c.charCodeAt(0))]));
-    const descendant = context.register(
-      context.obj({
-        Type: 'Font',
-        Subtype: 'CIDFontType2',
-        BaseFont: 'LiberationSans',
-        CIDSystemInfo: { Registry: PDFString.of('Adobe'), Ordering: PDFString.of('Identity'), Supplement: 0 },
-        CIDToGIDMap: 'Identity',
-        W: [...gids.values()].flatMap((g) => [g, [tt.width(g)]]),
-        FontDescriptor: context.register(
-          context.obj({
-            Type: 'FontDescriptor',
-            FontName: 'LiberationSans',
-            Flags: 32,
-            FontBBox: [-544, -303, 1302, 980],
-            ItalicAngle: 0,
-            Ascent: 905,
-            Descent: -212,
-            CapHeight: 716,
-            StemV: 80,
-            FontFile2: context.register(context.flateStream(sfnt, { Length1: sfnt.length })),
-          }),
-        ),
-      }),
-    );
-    font = context.register(
-      context.obj({
-        Type: 'Font',
-        Subtype: 'Type0',
-        BaseFont: 'LiberationSans',
-        Encoding: 'Identity-H',
-        DescendantFonts: [descendant],
-        ToUnicode: context.register(
-          context.flateStream(toUnicode(new Map([...gids.entries()].map(([c, g]) => [g, c])), 2)),
-        ),
-      }),
-    );
-    show = (text) => PDFHexString.of([...text].map((c) => (gids.get(c) ?? 0).toString(16).padStart(4, '0')).join('')).toString();
+    ({ font, show, width } = cidFontOf(doc, readFileSync(join(FONTS, 'LiberationSans-Regular.ttf')), { name: 'LiberationSans', used }));
   } else if (id === 'type0-cidfonttype0') {
     const descendant = context.register(
       context.obj({
@@ -575,6 +547,7 @@ export function fontOfKind(doc, id, used, helvetica) {
       context.obj({ Type: 'Font', Subtype: 'Type0', BaseFont: 'KozMinPr6N-Regular-UniJIS-UCS2-H', Encoding: 'UniJIS-UCS2-H', DescendantFonts: [descendant] }),
     );
     show = (text) => PDFHexString.of(Buffer.from(text, 'utf16le').swap16().toString('hex')).toString();
+    width = (text) => [...text].length * 1000;
   } else if (id === 'type3') {
     /** Code 1.. per character, in first-use order. */
     const codes = new Map(used.map((c, k) => [c, k + 1]));
@@ -603,10 +576,321 @@ export function fontOfKind(doc, id, used, helvetica) {
       }),
     );
     show = (text) => PDFHexString.of([...text].map((c) => (codes.get(c) ?? 0).toString(16).padStart(2, '0')).join('')).toString();
+    width = summed((c) => (c === ' ' ? 500 : 600));
   } else {
     throw new Error(`no fixture kind ${id}`);
   }
-  return { font, show };
+  return { font, show, width };
+}
+
+/**
+ * A font's descriptor metrics in thousandths of an em, from its own `head` and `hhea`.
+ * @param {Map<string, Buffer>} tables
+ */
+function metricsOf(tables) {
+  const head = /** @type {Buffer} */ (tables.get('head'));
+  const hhea = /** @type {Buffer} */ (tables.get('hhea'));
+  const em = head.readUInt16BE(18);
+  const scaled = (/** @type {number} */ value) => Math.round((value * 1000) / em);
+  return {
+    FontBBox: [36, 38, 40, 42].map((at) => scaled(head.readInt16BE(at))),
+    Ascent: scaled(hhea.readInt16BE(4)),
+    Descent: scaled(hhea.readInt16BE(6)),
+  };
+}
+
+/**
+ * A Type0 font over an embedded font file, keyed by glyph id (Identity-H): CIDFontType2 over a TrueType program, or
+ * CIDFontType0 over an OpenType one whose outlines are CFF, which ISO 32000-2 §9.7.4.2 has read CID as glyph id.
+ *
+ * `used` are the characters the content will show, looked up in the font's own `cmap` — for Arabic the presentation
+ * forms a shaping producer writes — and `unicodeOf` is what each MEANS, which is what ToUnicode says, so a reader gets
+ * the letters back rather than the forms. Where `name` is Liberation Sans' and nothing else is given, the dictionaries
+ * are the ones `type0-cidfonttype2` has always written, byte for byte.
+ *
+ * @param {PDFDocument} doc
+ * @param {Buffer} sfnt
+ * @param {{ name: string, used: string[], subset?: boolean, unicodeOf?: (c: string) => string }} options
+ * @returns {{ font: import('@cantoo/pdf-lib').PDFRef, show: (text: string) => string, width: (text: string) => number }}
+ */
+export function cidFontOf(doc, sfnt, { name, used, subset = false, unicodeOf = (c) => c }) {
+  const context = doc.context;
+  const tt = trueTypeOf(sfnt);
+  const cff = sfnt.toString('latin1', 0, 4) === 'OTTO';
+  const gids = new Map(used.map((c) => [c, tt.glyphOf(c.charCodeAt(0))]));
+  const missing = used.filter((c) => gids.get(c) === 0 && c !== ' ');
+  if (missing.length > 0) throw new Error(`${name} has no glyph for ${missing.map((c) => `U+${(c.codePointAt(0) ?? 0).toString(16)}`).join(' ')}`);
+  const program = subset ? (cff ? sfnt : trueTypeSubset(sfnt, gids.values())) : sfnt;
+  const fontName = subset ? `AAAAAB+${name}` : name;
+  // LIBERATION'S DESCRIPTOR IS THE ONE `type0-cidfonttype2` HAS ALWAYS WRITTEN, kept so its fixtures do not move; any
+  // other font's is read from its own tables.
+  const metrics = name === 'LiberationSans' ? { FontBBox: [-544, -303, 1302, 980], Ascent: 905, Descent: -212 } : metricsOf(tt.tables);
+  const descendant = context.register(
+    context.obj({
+      Type: 'Font',
+      Subtype: cff ? 'CIDFontType0' : 'CIDFontType2',
+      BaseFont: fontName,
+      CIDSystemInfo: { Registry: PDFString.of('Adobe'), Ordering: PDFString.of('Identity'), Supplement: 0 },
+      ...(cff ? {} : { CIDToGIDMap: 'Identity' }),
+      W: [...gids.values()].flatMap((g) => [g, [tt.width(g)]]),
+      FontDescriptor: context.register(
+        context.obj({
+          Type: 'FontDescriptor',
+          FontName: fontName,
+          Flags: 32,
+          FontBBox: metrics.FontBBox,
+          ItalicAngle: 0,
+          Ascent: metrics.Ascent,
+          Descent: metrics.Descent,
+          CapHeight: 716,
+          StemV: 80,
+          ...(cff
+            ? { FontFile3: context.register(context.flateStream(program, { Subtype: 'OpenType' })) }
+            : { FontFile2: context.register(context.flateStream(program, { Length1: program.length })) }),
+        }),
+      ),
+    }),
+  );
+  const font = context.register(
+    context.obj({
+      Type: 'Font',
+      Subtype: 'Type0',
+      BaseFont: fontName,
+      Encoding: 'Identity-H',
+      DescendantFonts: [descendant],
+      ToUnicode: context.register(
+        context.flateStream(toUnicode(new Map([...gids.entries()].map(([c, g]) => [g, unicodeOf(c)])), 2)),
+      ),
+    }),
+  );
+  return {
+    font,
+    show: (text) => PDFHexString.of([...text].map((c) => (gids.get(c) ?? 0).toString(16).padStart(4, '0')).join('')).toString(),
+    width: (text) => [...text].reduce((total, c) => total + tt.width(gids.get(c) ?? 0), 0),
+  };
+}
+
+/**
+ * A simple glyph's outline from a TrueType `glyf` table as PDF path operators in thousandths of an em: each contour's
+ * quadratic segments raised to cubic ones, which is what a page drawn from a browser's glyph cache carries.
+ *
+ * @param {ReturnType<typeof trueTypeOf>} tt @param {number} glyph
+ */
+function outlineOf(tt, glyph) {
+  const head = /** @type {Buffer} */ (tt.tables.get('head'));
+  const loca = /** @type {Buffer} */ (tt.tables.get('loca'));
+  const glyf = /** @type {Buffer} */ (tt.tables.get('glyf'));
+  const long = head.readInt16BE(50) === 1;
+  const offsetOf = (/** @type {number} */ g) => (long ? loca.readUInt32BE(g * 4) : loca.readUInt16BE(g * 2) * 2);
+  const at = offsetOf(glyph);
+  if (offsetOf(glyph + 1) === at) return '';
+  const contours = glyf.readInt16BE(at);
+  if (contours < 0) throw new Error(`glyph ${String(glyph)} is a composite, which this outline reader does not follow`);
+  const ends = Array.from({ length: contours }, (_, k) => glyf.readUInt16BE(at + 10 + k * 2));
+  const count = (ends[ends.length - 1] ?? -1) + 1;
+  let p = at + 10 + contours * 2;
+  p += 2 + glyf.readUInt16BE(p);
+  /** @type {number[]} */
+  const flags = [];
+  while (flags.length < count) {
+    const flag = /** @type {number} */ (glyf[p++]);
+    flags.push(flag);
+    if (flag & 8) for (let repeat = /** @type {number} */ (glyf[p++]); repeat > 0; repeat -= 1) flags.push(flag);
+  }
+  const coordinates = (/** @type {number} */ short, /** @type {number} */ same) => {
+    /** @type {number[]} */
+    const out = [];
+    let value = 0;
+    for (const flag of flags) {
+      if (flag & short) {
+        const delta = /** @type {number} */ (glyf[p++]);
+        value += flag & same ? delta : -delta;
+      } else if (!(flag & same)) {
+        value += glyf.readInt16BE(p);
+        p += 2;
+      }
+      out.push(value);
+    }
+    return out;
+  };
+  const xs = coordinates(2, 16);
+  const ys = coordinates(4, 32);
+  const scale = 1000 / tt.unitsPerEm;
+  const point = (/** @type {number} */ k) => ({ x: (xs[k] ?? 0) * scale, y: (ys[k] ?? 0) * scale, on: ((flags[k] ?? 0) & 1) === 1 });
+  const f = (/** @type {number} */ n) => String(Math.round(n * 100) / 100);
+  const ops = [];
+  let first = 0;
+  for (const end of ends) {
+    const points = Array.from({ length: end - first + 1 }, (_, k) => point(first + k));
+    first = end + 1;
+    // A CONTOUR MAY START OFF THE CURVE: it then starts at the midpoint of its first two off-curve points, or at the
+    // first on-curve point after it.
+    const start = points.findIndex((each) => each.on);
+    const ring = start === -1 ? points : [...points.slice(start), ...points.slice(0, start)];
+    const origin = start === -1 ? { x: ((ring[0]?.x ?? 0) + (ring[1]?.x ?? 0)) / 2, y: ((ring[0]?.y ?? 0) + (ring[1]?.y ?? 0)) / 2, on: true } : /** @type {{ x: number, y: number, on: boolean }} */ (ring[0]);
+    ops.push(`${f(origin.x)} ${f(origin.y)} m`);
+    let pen = origin;
+    const rest = start === -1 ? [...ring, origin] : [...ring.slice(1), origin];
+    for (let k = 0; k < rest.length; k += 1) {
+      const here = /** @type {{ x: number, y: number, on: boolean }} */ (rest[k]);
+      if (here.on) {
+        ops.push(`${f(here.x)} ${f(here.y)} l`);
+        pen = here;
+        continue;
+      }
+      const next = rest[k + 1] ?? origin;
+      const to = next.on ? next : { x: (here.x + next.x) / 2, y: (here.y + next.y) / 2, on: true };
+      // A QUADRATIC AS A CUBIC: each control point two thirds of the way from an end towards the quadratic's control.
+      ops.push(
+        `${f(pen.x + ((here.x - pen.x) * 2) / 3)} ${f(pen.y + ((here.y - pen.y) * 2) / 3)} ` +
+          `${f(to.x + ((here.x - to.x) * 2) / 3)} ${f(to.y + ((here.y - to.y) * 2) / 3)} ${f(to.x)} ${f(to.y)} c`,
+      );
+      pen = to;
+      if (next.on) k += 1;
+    }
+    ops.push('h');
+  }
+  return `${ops.join(' ')} f`;
+}
+
+/**
+ * A Type 3 font whose glyphs are a TrueType font's own outlines, drawn — the shape a web browser's print writes for a
+ * synthetic bold or a font it will not embed, which `type3`'s rectangles stand in for when shape plays no part.
+ *
+ * @param {PDFDocument} doc
+ * @param {Buffer} sfnt
+ * @param {string[]} used
+ * @returns {{ font: import('@cantoo/pdf-lib').PDFRef, show: (text: string) => string, width: (text: string) => number }}
+ */
+export function drawnFontOf(doc, sfnt, used) {
+  const context = doc.context;
+  const tt = trueTypeOf(sfnt);
+  const codes = new Map(used.map((c, k) => [c, k + 1]));
+  /** @type {Record<string, import('@cantoo/pdf-lib').PDFRef>} */
+  const procs = {};
+  const head = /** @type {Buffer} */ (tt.tables.get('head'));
+  const box = [36, 38, 40, 42].map((at) => Math.round((head.readInt16BE(at) * 1000) / tt.unitsPerEm)).join(' ');
+  for (const [c, code] of codes) {
+    const glyph = tt.glyphOf(c.charCodeAt(0));
+    // `d1`, A SHAPE TAKING THE TEXT'S COLOUR, as a browser's print writes a glyph; `d0` is a coloured picture, which a
+    // reader routes apart from text it fills (MuPDF reports it as ignored text, measured 2026-10-26).
+    procs[`g${String(code)}`] = context.register(context.flateStream(`${String(tt.width(glyph))} 0 ${box} d1 ${outlineOf(tt, glyph)}`.trim()));
+  }
+  const font = context.register(
+    context.obj({
+      Type: 'Font',
+      Subtype: 'Type3',
+      FontBBox: [-200, -250, 1200, 950],
+      FontMatrix: [0.001, 0, 0, 0.001, 0, 0],
+      CharProcs: procs,
+      Encoding: { Type: 'Encoding', Differences: [1, ...[...codes.values()].map((code) => `g${String(code)}`)] },
+      FirstChar: 1,
+      LastChar: codes.size,
+      Widths: [...codes.keys()].map((c) => tt.width(tt.glyphOf(c.charCodeAt(0)))),
+      Resources: {},
+      ToUnicode: context.register(context.flateStream(toUnicode(new Map([...codes.entries()].map(([c, code]) => [code, c])), 1))),
+    }),
+  );
+  return {
+    font,
+    show: (text) => PDFHexString.of([...text].map((c) => (codes.get(c) ?? 0).toString(16).padStart(2, '0')).join('')).toString(),
+    width: (text) => [...text].reduce((total, c) => total + tt.width(tt.glyphOf(c.charCodeAt(0))), 0),
+  };
+}
+
+/**
+ * A bare CFF program with every glyph not kept reduced to `endchar`, and the bytes saved left as zeros after the last
+ * charstring, so no offset in the font moves — a subset the way `trueTypeSubset` makes one, every glyph id kept.
+ *
+ * Glyphs are kept by STRING ID (CFF §10's charset). For the characters a fixture's words use — letters, space, period
+ * and comma — the standard string id is the WinAnsi code less 31 (CFF Appendix A), which is all this needs.
+ *
+ * @param {Buffer} cff @param {string[]} used
+ */
+export function cffSubset(cff, used) {
+  const keep = new Set([0, ...used.map((c) => {
+    if (!/[A-Za-z .,]/u.test(c)) throw new Error(`no standard string id is computed here for U+${(c.codePointAt(0) ?? 0).toString(16)}`);
+    return c.charCodeAt(0) - 31;
+  })]);
+  /** An INDEX at `at`: its entries' extents and where it ends. @param {number} at */
+  const index = (at) => {
+    const count = cff.readUInt16BE(at);
+    if (count === 0) return { count, size: 0, offsets: [], data: at + 2, end: at + 2 };
+    const size = /** @type {number} */ (cff[at + 2]);
+    const offsets = Array.from({ length: count + 1 }, (_, k) => cff.readUIntBE(at + 3 + k * size, size));
+    const data = at + 3 + (count + 1) * size - 1;
+    return { count, size, offsets, data, end: data + /** @type {number} */ (offsets[count]) };
+  };
+  const names = index(/** @type {number} */ (cff[2]));
+  const tops = index(names.end);
+  /** @type {Map<number, number>} */
+  const dict = new Map();
+  /** @type {number[]} */
+  let operands = [];
+  for (let p = tops.data + /** @type {number} */ (tops.offsets[0]); p < tops.data + /** @type {number} */ (tops.offsets[1]); ) {
+    const b = /** @type {number} */ (cff[p]);
+    if (b <= 21) {
+      const op = b === 12 ? 1200 + /** @type {number} */ (cff[p + 1]) : b;
+      p += b === 12 ? 2 : 1;
+      dict.set(op, operands[operands.length - 1] ?? 0);
+      operands = [];
+    } else if (b === 28) {
+      operands.push(cff.readInt16BE(p + 1));
+      p += 3;
+    } else if (b === 29) {
+      operands.push(cff.readInt32BE(p + 1));
+      p += 5;
+    } else if (b === 30) {
+      for (p += 1; ((cff[p] ?? 0xff) & 0x0f) !== 0x0f && ((cff[p] ?? 0xff) & 0xf0) !== 0xf0; p += 1);
+      p += 1;
+      operands.push(0);
+    } else if (b <= 246) {
+      operands.push(b - 139);
+      p += 1;
+    } else if (b <= 250) {
+      operands.push((b - 247) * 256 + /** @type {number} */ (cff[p + 1]) + 108);
+      p += 2;
+    } else {
+      operands.push(-(b - 251) * 256 - /** @type {number} */ (cff[p + 1]) - 108);
+      p += 2;
+    }
+  }
+  const strings = index(/** @type {number} */ (dict.get(17)));
+  const glyphs = strings.count;
+  // THE CHARSET names glyph 1 onwards by string id; glyph 0 is .notdef.
+  const charsetAt = dict.get(15) ?? 0;
+  if (charsetAt <= 2) throw new Error('a predefined charset, which this subset does not read');
+  /** @type {number[]} */
+  const sids = [0];
+  const format = /** @type {number} */ (cff[charsetAt]);
+  let p = charsetAt + 1;
+  while (sids.length < glyphs) {
+    if (format === 0) {
+      sids.push(cff.readUInt16BE(p));
+      p += 2;
+    } else {
+      const first = cff.readUInt16BE(p);
+      const left = format === 1 ? /** @type {number} */ (cff[p + 2]) : cff.readUInt16BE(p + 2);
+      for (let k = 0; k <= left; k += 1) sids.push(first + k);
+      p += format === 1 ? 3 : 4;
+    }
+  }
+  const out = Buffer.from(cff);
+  let write = strings.data + 1;
+  for (let g = 0; g < glyphs; g += 1) {
+    out.writeUIntBE(write - strings.data, strings.data - (glyphs + 1) * strings.size + 1 + g * strings.size, strings.size);
+    const from = strings.data + /** @type {number} */ (strings.offsets[g]);
+    const to = strings.data + /** @type {number} */ (strings.offsets[g + 1]);
+    if (keep.has(sids[g] ?? -1)) {
+      cff.copy(out, write, from, to);
+      write += to - from;
+    } else {
+      out[write] = 14;
+      write += 1;
+    }
+  }
+  out.fill(0, write, strings.end);
+  return out;
 }
 
 if (isMain(import.meta.url)) {
