@@ -31,7 +31,7 @@
 
 import { PDFDict, PDFDocument, PDFName, PDFRawStream, PDFRef } from '@cantoo/pdf-lib';
 
-import { charactersOf, compare, inkOf, render, SCALE } from './pageDisturbance.mjs';
+import { charactersOf, compare, inkOf, render, renderWithoutText, SCALE } from './pageDisturbance.mjs';
 
 /**
  * How far outside its characters' boxes a block's own pixels may lie, in points. MEASURED 2026-10-26 by
@@ -197,20 +197,13 @@ async function pdfiumReading(pdfium, bytes, page) {
 }
 
 /**
- * A page drawn by PDFium with and without its text, at the size of MuPDF's drawing of it, so a character's box maps
- * to the same pixels in both. @param {any} pdfium @param {Uint8Array} bytes @param {number} page @param {number} width @param {number} height
+ * A page drawn by MuPDF with its text and without it (`renderWithoutText`): what the text draws is where they differ.
+ * MuPDF's own fallback faces draw a font the file does not embed alike on every machine; PDFium's drawing of one depends
+ * on the machine's fonts, and judged a Japanese line unseen on a runner without a Japanese font (2026-10-26).
+ * @param {any} kernel @param {Uint8Array} bytes @param {number} page
  */
-async function textInk(pdfium, bytes, page, width, height) {
-  const drawn = await pdfium.pdfiumWriter.open(bytes);
-  const bare_ = await pdfium.pdfiumWriter.open(bytes);
-  try {
-    const withText = await pdfium.renderPageBitmap(drawn, page, width, height);
-    const without = await pdfium.renderPageBitmapWithoutText(bare_, page, width, height);
-    return { withText: /** @type {Uint8Array} */ (withText.bgra), without: /** @type {Uint8Array} */ (without.bgra) };
-  } finally {
-    await pdfium.pdfiumWriter.close(drawn);
-    await pdfium.pdfiumWriter.close(bare_);
-  }
+function textInk(kernel, bytes, page) {
+  return { withText: render(kernel, bytes, page).rgb, without: renderWithoutText(kernel, bytes, page).rgb };
 }
 
 /**
@@ -440,7 +433,7 @@ export async function expectEdit({ kernel, pdfium }, { before, after, page, bloc
   // Over a scan that is the new words alone; the words kept stay invisible over their own ink.
   if (shown) {
     const judged = block.scan ? newWords.flat() : written;
-    const unseen = undrawn(drawnAfter, judged, await textInk(pdfium, after, page, drawnAfter.width, drawnAfter.height));
+    const unseen = undrawn(drawnAfter, judged, textInk(kernel, after, page));
     if (unseen.length > 0) failures.push(`UNSEEN WORDS: ${String(unseen.length)} of the block’s characters draw nothing, “${unseen.slice(0, 24).map((each) => each.character).join('')}”`);
   }
   return failures;
@@ -454,7 +447,7 @@ export async function expectEdit({ kernel, pdfium }, { before, after, page, bloc
  * which reaches into the lines above and below, and their ink made an invisible word read as drawn (measured
  * 2026-10-26, the two-column page). The middle half lies in every glyph's body, a full stop's included.
  * @param {import('./pageDisturbance.mjs').Render} drawn MuPDF's drawing, for the map from PDF space to pixels
- * @param {Char[]} chars @param {{ withText: Uint8Array, without: Uint8Array }} ink PDFium's two drawings at that size
+ * @param {Char[]} chars @param {{ withText: Uint8Array, without: Uint8Array }} ink MuPDF's two drawings, RGB
  */
 function undrawn(drawn, chars, { withText, without }) {
   return chars.filter((each) => {
@@ -467,7 +460,7 @@ function undrawn(drawn, chars, { withText, without }) {
     const y1 = Math.min(drawn.height - 1, Math.ceil(Math.max(...corners.map(([, y]) => y))));
     for (let y = y0; y <= y1; y += 1) {
       for (let x = x0; x <= x1; x += 1) {
-        const at = (y * drawn.width + x) * 4;
+        const at = (y * drawn.width + x) * 3;
         if (withText[at] !== without[at] || withText[at + 1] !== without[at + 1] || withText[at + 2] !== without[at + 2]) return false;
       }
     }
@@ -497,9 +490,9 @@ export async function readBlock({ kernel, pdfium }, bytes, page, block) {
  * @param {{ kernel: any, pdfium: any }} engines @param {Uint8Array} bytes @param {number} page @param {Box} box
  * @returns {Promise<{ read: number, unseen: string }>}
  */
-export async function inkedCharacters({ kernel, pdfium }, bytes, page, box) {
+export async function inkedCharacters({ kernel }, bytes, page, box) {
   const drawn = render(kernel, bytes, page);
   const own = /** @type {Char[]} */ (charactersOf(kernel, bytes, page)).filter((each) => centredIn(each.box, box, MARGIN) && each.character.trim() !== '');
-  const unseen = undrawn(drawn, own, await textInk(pdfium, bytes, page, drawn.width, drawn.height));
+  const unseen = undrawn(drawn, own, textInk(kernel, bytes, page));
   return { read: own.length, unseen: unseen.map((each) => each.character).join('') };
 }
