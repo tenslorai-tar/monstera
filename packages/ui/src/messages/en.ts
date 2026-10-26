@@ -1715,6 +1715,8 @@ export const FONT_GROUP_RECENT = messageKey('surface.font-picker.group-recent');
 export const FONT_GROUP_COMPUTER = messageKey('surface.font-picker.group-computer');
 export const FONT_GROUP_BUNDLED = messageKey('surface.font-picker.group-bundled');
 export const FONT_GROUP_BUILT_IN = messageKey('surface.font-picker.group-built-in');
+export const FONT_GROUP_CLOSEST = messageKey('surface.font-picker.group-closest');
+export const FONT_GROUP_ALL = messageKey('surface.font-picker.group-all');
 export const FONT_LIST_UNREAD = messageKey('surface.font-picker.unread');
 export const FONT_LIST_EMPTY = messageKey('surface.font-picker.empty');
 export const FONT_LIST_MORE = messageKey('surface.font-picker.more');
@@ -4684,6 +4686,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FONT_GROUP_COMPUTER]: 'On this computer',
   [FONT_GROUP_BUNDLED]: 'Included with Monstera',
   [FONT_GROUP_BUILT_IN]: 'Built into PDF',
+  [FONT_GROUP_CLOSEST]: 'Closest matches',
+  [FONT_GROUP_ALL]: 'All fonts',
   [FONT_LIST_UNREAD]: 'The fonts on this computer could not be listed, so the fonts every PDF has are offered.',
   [FONT_LIST_EMPTY]: 'No fonts were found on this computer.',
   // THE FAMILIES PAST THE LIST'S BOUND are the last by name, so a family a person cannot find is told apart from one

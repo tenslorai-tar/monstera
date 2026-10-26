@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { modelOfBlock, editOf } from '../editText/blockModel.js';
 import { wholeBlock } from '../editorKit/model.js';
-import { registerEditor } from '../editorKit/openEditor.js';
+import { formatOpenEditor, registerEditor } from '../editorKit/openEditor.js';
 import { createEditorStore } from '../editorKit/store.js';
 import type { CommandContext } from '../registries/commands.js';
 import type { TextBlock } from '../textBlock.js';
@@ -74,6 +74,16 @@ describe('the formatting commands', () => {
     void command('text.format.bold').run({} as never);
     expect(store.get().model).toBe(before);
     expect(command('text.format.bold').checked?.(EDITING)).toBe(false);
+  });
+
+  it('As on the page (a family of null) puts each letter back in ITS page face, and so sends no family at all', () => {
+    const { store, unregister } = openOver();
+    formatOpenEditor({ kind: 'set', change: { family: 'Tinos' } });
+    expect(editOf(store.get().model).formatting).toStrictEqual({ marks: [{ from: 0, to: 5, set: { family: 'Tinos' } }] });
+    formatOpenEditor({ kind: 'set', change: { family: null } });
+    // CONTROL is the line above: the family was sent, so its absence here is the way back and not nothing done.
+    expect(editOf(store.get().model).formatting).toStrictEqual({});
+    unregister();
   });
 
   it('strikethrough marks the words and justify sets the paragraph, through the open editor (ADR-0228)', () => {

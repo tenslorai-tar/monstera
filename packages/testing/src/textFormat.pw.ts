@@ -205,7 +205,7 @@ test.describe('Formatting in the Properties panel (K11)', () => {
     await expect.poll(() => drawnIn(family)).toBe(family);
   });
 
-  test('the font picker lists the page’s own font first, its subset tag stripped, then this computer’s: names alone (N12)', async ({ page }) => {
+  test('the font picker lists the page’s own font first, its subset tag stripped, then All fonts, then As on the page: names alone (N12)', async ({ page }) => {
     const sent: { channel: string; params: unknown }[] = [];
     await openBlock(page, sent);
     const panel = page.locator('[data-text-properties]');
@@ -213,14 +213,17 @@ test.describe('Formatting in the Properties panel (K11)', () => {
     const groups = panel.getByRole('listbox').getByRole('group');
     await expect(groups.first()).toHaveAccessibleName('In this document');
     await expect(groups.first().getByRole('option')).toHaveText(['Garamond']);
-    // THE COMPUTER'S, from the shim's list, and a bundled one, each by its name and nothing else.
-    await expect(panel.getByRole('group', { name: 'On this computer' }).getByRole('option', { name: 'Calibri' })).toBeVisible();
-    await expect(panel.getByRole('option', { name: 'Carlito', exact: true })).toBeVisible();
+    // EDIT TEXT'S GROUPS (the owner's decision of 2026-10-26): the computer's and the bundled ones in ONE list.
+    await expect(panel.getByRole('group', { name: 'All fonts' }).getByRole('option', { name: 'Calibri' })).toBeVisible();
+    await expect(panel.getByRole('group', { name: 'All fonts' }).getByRole('option', { name: 'Carlito', exact: true })).toBeVisible();
+    await expect(panel.getByRole('group', { name: 'On this computer' })).toHaveCount(0);
+    // AND THE WAY BACK, last.
+    await expect(panel.getByRole('option').last()).toHaveText('As on the page');
     // THE SHIM LISTS A FAMILY WHOSE LICENCE FORBIDS EMBEDDING, and the picker leaves it out; the family beside it in the
     // same list is the control that the list was read.
     await expect(panel.locator('[data-font-choice="Locked Display"]')).toHaveCount(0);
     await expect(panel.locator('[data-font-choice="Arial"]')).not.toHaveCount(0);
-    const texts = await panel.getByRole('option').evaluateAll((each) => each.map((node) => [node.textContent, node.getAttribute('data-font-choice')]));
+    const texts = await panel.locator('[data-font-choice]').evaluateAll((each) => each.map((node) => [node.textContent, node.getAttribute('data-font-choice')]));
     expect(texts.filter(([text, name]) => text !== name)).toStrictEqual([]);
   });
 
