@@ -750,6 +750,7 @@ export const ARTEFACT_EDGES = {
   'proof:editobject': EDIT_OBJECT,
   // EDIT TEXT'S WRITER on every block (ADR-0266): the same reading, grouping, encoder and MuPDF writer, and the route.
   'proof:edittext': EDIT_TEXT,
+  'proof:editcatalogue': EDIT_CATALOGUE,
   'proof:shimpassword': SHIM_PASSWORD,
   // THE WORD EXPORT'S PICTURES, read back by a zip reader and a PNG decoder that are not the writer's.
   'proof:wordpictures': WORD_PICTURES,
