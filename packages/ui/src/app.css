@@ -6732,13 +6732,20 @@ optgroup {
  */
 /*
  * EDIT TEXT'S MODE (ADR-0096): every editable block outlined where it is, and
- * the open one edited in place. The layer itself takes no pointer — only the
- * outlines and the open editor do — so the text layer below still selects.
+ * the open one edited in place. THE LAYER TAKES EVERY PRESS ON THE PAGE, as the
+ * object and field layers do, and selects nothing (cloud run 21). It passed the
+ * pointer through until 2026-10-26 so the page's text layer below still selected,
+ * and that made a press outside the blocks a selection gesture on the page's
+ * words: a press with a pixel's drift on words no block outlines selected them,
+ * and the presses after it landed on outlines and on this layer, which are not
+ * selectable and so left that selection standing (`textClickOutside.pw.ts`). A
+ * press here moves the focus out of the open editor, which finishes the edit.
  */
 .m-text-edit-layer {
   position: absolute;
   inset: 0;
-  pointer-events: none;
+  pointer-events: auto;
+  user-select: none;
   /* NEVER THE SCROLL ANCHOR. The editor moves itself onto the page's baseline after it opens, and Chromium, anchored on a
      word inside it, scrolled the page list by the same amount to hold that word still: the page under it jumped 10 px at
      200 % (measured 2026-10-24, no script scroll anywhere in the trace). The page is what the view holds still. */

@@ -148,7 +148,7 @@ test.describe('Formatting in the Properties panel (K11)', () => {
     expect(await commandsSettled(page, () => sent.filter((one) => one.channel === 'document.execute').length, 'the edits sent')).toBe(0);
 
     // AWAY, on the page beside the block.
-    await page.locator('canvas[data-page-canvas="0"]').click({ position: { x: 40, y: 600 } });
+    await page.locator('[data-text-edit-layer="0"]').click({ position: { x: 40, y: 600 } });
     await expect.poll(() => marksSent(sent)).toStrictEqual([
       expect.objectContaining({ set: expect.objectContaining({ family: 'Times New Roman', size: 18 }) }),
     ]);
@@ -269,7 +269,7 @@ test.describe('Formatting in the Properties panel (K11)', () => {
     // NONE, read once settled (DDDDDDDD-4): straight after the gesture the read could come before a send.
     expect(await commandsSettled(page, () => sent.filter((one) => one.channel === 'document.execute').length, 'the edits sent')).toBe(0);
 
-    await page.locator('canvas[data-page-canvas="0"]').click({ position: { x: 40, y: 600 } });
+    await page.locator('[data-text-edit-layer="0"]').click({ position: { x: 40, y: 600 } });
     await expect.poll(() => marksSent(sent)).toStrictEqual([
       expect.objectContaining({ set: { strike: true, highlight: { r: 255, g: 241, b: 118 }, spacing: 0.05 } }),
     ]);
@@ -296,7 +296,7 @@ test.describe('Formatting in the Properties panel (K11)', () => {
     await size.fill('');
     await size.pressSequentially('18');
     await size.press('Enter');
-    await page.locator('canvas[data-page-canvas="0"]').click({ position: { x: 40, y: 600 } });
+    await page.locator('[data-text-edit-layer="0"]').click({ position: { x: 40, y: 600 } });
     // `paragraph` IS CHARACTERS 2 TO 11 (12 with the space the platform chose), and is the one mark: the words around it
     // were never formatted, and the paragraph's length (20) is what the defect this guards would send.
     await expect.poll(() => marksSent(sent)).toStrictEqual([{ block: 0, from: 2, to: 2 + chosen.length, set: { size: 18 } }]);
@@ -328,7 +328,7 @@ test.describe('Formatting in the Properties panel (K11)', () => {
     await size.fill('');
     await size.pressSequentially('18');
     await size.press('Enter');
-    await page.locator('canvas[data-page-canvas="0"]').click({ position: { x: 40, y: 600 } });
+    await page.locator('[data-text-edit-layer="0"]').click({ position: { x: 40, y: 600 } });
     await expect.poll(() => marksSent(sent)).toStrictEqual([{ block: 0, from: 2, to: 11, set: { size: 18 } }]);
   });
 
@@ -342,7 +342,7 @@ test.describe('Formatting in the Properties panel (K11)', () => {
     await expect(editor).toBeFocused();
     await expect.poll(() => editor.evaluate((element) => element.textContent.startsWith('\t'))).toBe(true);
     expect(await editor.evaluate((element) => getComputedStyle(element).tabSize)).not.toBe('8');
-    await page.locator('canvas[data-page-canvas="0"]').click({ position: { x: 40, y: 600 } });
+    await page.locator('[data-text-edit-layer="0"]').click({ position: { x: 40, y: 600 } });
     const texts = (): string[] =>
       sent.flatMap(({ channel, params }) => {
         const command = (params as { command?: { kind?: string; texts?: string[]; text?: string } }).command;

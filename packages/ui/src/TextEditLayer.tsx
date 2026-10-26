@@ -739,6 +739,16 @@ export function TextEditLayer({
       className="m-text-edit-layer"
       data-text-edit-layer={String(page)}
       onKeyDown={onKeyDown}
+      // A SELECTION OF THE PAGE'S WORDS STILL STANDING as the mode is used — one made before it was turned on — goes at the
+      // next press: the layer takes every press and selects nothing (the stylesheet), so nothing else would clear it. One
+      // inside an editor is the person's own and stays.
+      onPointerDown={(event) => {
+        const selection = event.currentTarget.ownerDocument.getSelection();
+        if (selection === null || selection.isCollapsed) return;
+        const anchor = selection.anchorNode;
+        const holder = anchor instanceof Element ? anchor : (anchor?.parentElement ?? null);
+        if ((holder?.closest('[data-text-editor]') ?? null) === null) selection.removeAllRanges();
+      }}
       ref={layer}
       role="group"
     >
