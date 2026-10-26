@@ -26,8 +26,9 @@ describe('the faces an open block is drawn in', () => {
       new Promise((resolve) => {
         answer = resolve;
       });
+    const opening: { read: (() => Promise<RunFonts>) | undefined } = { read: first };
     const { result, rerender } = renderHook(({ read }: { read: (() => Promise<RunFonts>) | undefined }) => useRunFaces(BLOCK, read, 'v1-0-0'), {
-      initialProps: { read: first },
+      initialProps: opening,
     });
     await act(async () => {
       await Promise.resolve();
