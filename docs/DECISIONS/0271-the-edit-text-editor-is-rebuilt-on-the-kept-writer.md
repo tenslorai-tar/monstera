@@ -336,3 +336,15 @@ it.
 6. **Two-step opening:** the first click selects the box; the second places the cursor (section 3).
 7. **Manual font and style choice** when the person is not satisfied with the match (section 3).
 8. **Repaint only the block's area** after an edit; the full page is never waited for (section 3, Finishing).
+
+## Correction, 2026-10-26 — who does what: the cloud agent owns the writer changes
+
+The owner's decision of 2026-10-26 17:07, given after this ADR was written: **the cloud agent owns the three writer
+changes** — the owner's font rule as the only rule, no push, one write per finish — **and the read-on-open call**, as
+well as the editor kit, its adapter and the deletion of the old editor. **The local agent does only the work that needs
+the Windows machine:** the owner's corpus, the real application, speed on the owner's laptop, packaging, the visual
+baselines, merging, and moving `main`.
+
+So section 5's heading *"The writer: changes owned by the local agent"* and the local agent's column of section 9's table
+no longer say who does the work. **Section 9's table is superseded** by this paragraph; its order of milestones stands.
+What each change is, and the rule that the writer's other behaviour must not change, are unchanged.
