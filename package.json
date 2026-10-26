@@ -162,6 +162,7 @@
     "proof:editorfidelityfixture": "node scripts/proofs/editorFidelityFixture.proof.mjs",
     "proof:editobject": "node scripts/proofs/editObject.proof.mjs",
     "proof:edittext": "node scripts/proofs/editText.proof.mjs",
+    "proof:editcatalogue": "node scripts/proofs/editCatalogue.proof.mjs",
     "proof:textspaces": "node scripts/proofs/textSpaces.proof.mjs",
     "proof:fontcatalogueapart": "node scripts/proofs/fontCatalogueApart.proof.mjs",
     "proof:fontworkapart": "node scripts/proofs/fontWorkApart.proof.mjs",

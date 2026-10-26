@@ -348,6 +348,14 @@ export const TEXT_PUSH = [
 export const LINE_END_MARKS = [['packages/kernel/src', 'packages/kernel/dist/index.js', 'tsc'], ...NATIVE_ENGINE];
 
 /**
+ * What `editCatalogue.proof.mjs` runs: PDFium's reading, drawing and page objects, and MuPDF's reading, drawing and
+ * writer, through `editExpectations.mjs`. The kernel's whole `src`, for {@link TYPE3_EDIT}'s reason, and the native engine.
+ *
+ * @type {BuildEdge[]}
+ */
+export const EDIT_CATALOGUE = [['packages/kernel/src', 'packages/kernel/dist/index.js', 'tsc'], ...NATIVE_ENGINE];
+
+/**
  * What `editorFidelityFixture.proof.mjs` runs: PDFium's reading and the grouping, through `editorFidelityFixture.mjs`.
  * The kernel's whole `src`, for {@link TYPE3_EDIT}'s reason.
  *
