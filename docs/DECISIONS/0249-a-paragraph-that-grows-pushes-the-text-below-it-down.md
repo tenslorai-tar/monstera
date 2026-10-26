@@ -148,3 +148,41 @@ a cell's words really grow, the row below moves down with them, as Decision 2 de
 and the cases that asserted them. **Proof:** an edit grown past the room shows no message and no highlight, and the
 write is sent as typed; opening a block whose editor is a line taller, nothing typed, moves nothing and shows nothing;
 CONTROL: growth within the room still draws the text below moved down.
+
+## Correction, 2026-10-26 — what sits with a moved line moves with it: bullets, rules and every drawing on its band
+
+**The owner's test of 1.0.2152.0 (2026-10-26, document 2, page 2):** a character added to a paragraph above a bulleted
+list wrapped it onto one more line; the list items moved down and their bullets did not, so every bullet stood a line
+above its item and the first stood alone. *"It just pulls everything out."* Damage to content nobody touched.
+
+**The mechanism, measured.** Decision 3 moves a pushed BLOCK, and a block is text: the runs `main` grouped. That page's
+sixteen bullets are not text at all but filled squares, 3 points across, drawn as paths beside each item (PDFium's
+reading of the page, `pageObjects`: no U+2022 among its runs, sixteen paths at x 77 to 80, one per item's line), and
+the rules under its linked words are paths about a point tall. The operator writer sets a pushed block's words again under one `cm` and touches nothing
+else of the page, so every drawing that belonged to a moved line stayed where it was. Decision 4 moved annotations and
+links and nothing in the page's own content; the decorations the writer moved were only its own marked ones (ADR-0228).
+
+**Decision 3 gains a sentence.** When a pushed block moves, **every drawn object that sits with one of its lines moves
+with it, by the same amount, in the same write**: a path, an image or an inline picture whose box lies wholly inside
+the band that line's words fill — `decorationBand('behind', baseline, size)`, where a highlight behind them is drawn,
+within half a point — and across the column of the push, the horizontal extent of the growing block and the pushed one
+together. One function answers which (`sitsWithLine`, `pushedShapes.ts`), and the corpus proof asks the same function.
+Each is moved by Edit object's own placement (`placedSpan`, ADR-0240's E3 addendum and ADR-0264): its own instructions,
+or the clip window it is drawn through where that window holds nothing else, wrapped in `q … cm … Q`. A bullet that is
+TEXT already moves: as a run of the item's line it is in the pushed block, and as a block of its own it is in `below`,
+since it overlaps the growing block's column and sits lower.
+
+**What does not move, and why.** A drawing taller than one line's band — a picture beside the list, a table's ruling,
+a box around several lines — is not a line's, so it stays, as Decision 4 left a shape annotation. A drawing that also
+sets the clip for what follows is not moved, since moving its clip would re-cut what is drawn after it. A form XObject or a shading has no box this read can state, and stays. The growing block's own lines
+are set again where its words now wrap; a drawing beside them is not carried, since no line of it keeps its place.
+
+**The instrument could not see this, and that is part of the defect.** `proof:edittext` judged pixels outside where the
+edited blocks may draw, and a pushed block may draw where it went: a bullet that does not move leaves its old pixels
+unchanged and puts none where it should be, so the corpus count read 0 disturbed on document 2. The proof now asks the
+same function for every drawn object on every moved line before the edit, and finds each after it at its box moved by
+what the writer reports; one not found is disturbed. Its CONTROL: the check fed a page where the writer reported a move
+and nothing moved names every such object.
+
+**The PDFium writer's push is not changed.** Every page's text is the operator writer's (ADR-0266), so no surface reaches
+PDFium's `placeObjects` for a push; stated here so that the day one does, this sentence is the first thing it falsifies.
