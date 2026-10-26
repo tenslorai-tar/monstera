@@ -149,7 +149,7 @@ async function pageBytes(): Promise<Uint8Array> {
   return document.save();
 }
 
-async function open(page: Page, zoom: '100pct' | '150pct'): Promise<void> {
+async function open(page: Page, zoom: '100pct' | '150pct', fontDelay = FONT_DELAY): Promise<void> {
   const bytes = await pageBytes();
   await page.setViewportSize({ width: 1800, height: 1100 });
   await bridgeUnder(page, LOOKS[0], {
@@ -157,7 +157,7 @@ async function open(page: Page, zoom: '100pct' | '150pct'): Promise<void> {
     documentBytes: new Map([[ID, bytes]]),
     textBlocks: BLOCKS,
     runFonts: runFonts(),
-    delays: { 'document.runFonts': FONT_DELAY },
+    delays: { 'document.runFonts': fontDelay },
     settings: { 'viewing.starting-zoom': zoom },
   });
   await page.goto('/');
@@ -316,8 +316,42 @@ for (const fixture of CASES) {
         expect(Math.abs((caret?.x ?? Number.NaN) - point.x), facts).toBeLessThanOrEqual(point.width / 2);
         expect(Math.abs((caret?.y ?? Number.NaN) - point.y), facts).toBeLessThanOrEqual(point.height / 2);
         await page.keyboard.type('Q');
-        expect(await editorText(page), facts).toBe(`${words.slice(0, at)}Q${words.slice(at)}`);
+        // POLLED: a letter typed before the host's answer to the runs' fonts is held until it arrives (C1b).
+        await expect.poll(() => editorText(page), { message: facts }).toBe(`${words.slice(0, at)}Q${words.slice(at)}`);
       });
     }
+  });
+}
+
+/*
+ * KEYS TYPED BEFORE THE LAYOUT SETTLES land at the press too (cloud run 21, C1b). The runs' own fonts arrive 900 ms after
+ * the press here, the host's answer delayed so the keys are surely typed first, and three letters are typed in the same
+ * breath as the press. CONTROL, Chromium 151, the build before C1b: the letters went where the caret stood in the
+ * layout the editor was first built in, not at the press.
+ */
+const LATE_FONTS = 900;
+for (const fixture of [
+  { name: 'a three-line heading in a rebuilt font', block: 0, find: 'person', offset: 3 },
+  { name: 'a paragraph with raised reference markers', block: 1, find: 'markers', offset: 3 },
+] as const) {
+  test(`three letters typed at once after the press that opens ${fixture.name} land at the press, in order`, async ({ page }) => {
+    await open(page, '100pct', LATE_FONTS);
+    const outline = page.locator(`[data-text-edit-layer="0"] [data-text-block="${String(fixture.block)}"]`);
+    await outline.focus();
+    await page.keyboard.press('Enter');
+    await settled(page, true);
+    const words = await editorText(page);
+    const at = words.indexOf(fixture.find) + fixture.offset;
+    const point = await pointOf(page, at);
+    await page.keyboard.press('Escape');
+    await expect(page.locator('[data-text-editor]')).toHaveCount(0);
+    await expect(outline).toBeVisible();
+
+    await press(page, point.x, point.y);
+    await page.keyboard.type('XYZ');
+    // THE KEYS WERE TYPED BEFORE THE FONTS ARRIVED, or this case separates nothing.
+    expect(await page.locator('[data-text-editor] [data-run-font]').count(), 'the runs’ fonts had not arrived when the keys were typed').toBe(0);
+    await settled(page, true);
+    await expect.poll(() => editorText(page), { message: JSON.stringify({ at, point, words }) }).toBe(`${words.slice(0, at)}XYZ${words.slice(at)}`);
   });
 }
