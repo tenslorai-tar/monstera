@@ -114,6 +114,14 @@ export interface CommandContext {
    * field; absent is *no*.
    */
   readonly editingText?: boolean;
+  /**
+   * Every command's answers in this context, as one string (`commandAnswers`): what makes the context a NEW value when
+   * only a store a predicate reads has moved, so a surface memoized on the context draws the new state
+   * ([ADR-0258](../../../../docs/DECISIONS/0258-the-react-compiler-is-switched-on.md)'s correction of 2026-10-26).
+   * Set by `useCommandContext` for the surfaces; a predicate never reads it. Absent in a context built without it, as
+   * a case's is.
+   */
+  readonly answers?: string;
 }
 
 /**

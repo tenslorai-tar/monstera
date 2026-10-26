@@ -459,6 +459,7 @@ import { listedFamiliesFor } from './familyFaces.js';
 import { readOnePageLinks } from './usePageLinks.js';
 import { LinkProperties } from './LinkProperties.js';
 import { GRID_DIVISION_COUNTS, type GridLook, type RulerUnit } from './rulerGeometry.js';
+import { useCommandContext } from './useCommandContext.js';
 import { useSetting } from './useSetting.js';
 import type { SettingsStore } from './settingsStore.js';
 import { type ShowToast, TOAST_LIFETIME, createToastStore } from './toasts.js';
@@ -4974,7 +4975,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
   // The start screen's context: no document focused. `hasSelection` and `dirty`
   // are false because there is nothing to select in and nothing to dirty — not
   // because they are unknown.
-  const context = useMemo(
+  const contextAsked = useMemo(
     () => ({
       docId: open?.docId,
       version: open?.version,
@@ -5002,6 +5003,9 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
     }),
     [currentPage, open, pageCount, selectedPages, tabs, textEditorOpen, textSelection],
   );
+  // WITH EVERY COMMAND'S ANSWERS IN IT, so a surface memoized on the context draws a state a store moved (ADR-0258's
+  // correction of 2026-10-26): the surfaces take this one and subscribe to nothing.
+  const context = useCommandContext(registry, contextAsked, settings);
   useEffect(() => {
     commandContextRef.current = context;
   }, [context]);

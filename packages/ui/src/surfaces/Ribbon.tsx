@@ -426,6 +426,8 @@ export function Ribbon({ registry, context, settings, showing, values }: RibbonP
             {foot.map((entry, index) =>
               railFold.has(SECTION_IDS.length + index) ? null : (
                 <button
+                  // THE STATE IT SETS, as every other projection draws it (the quick toolbar's switch is on the foot).
+                  aria-pressed={entry.command.checked?.(context)}
                   className="m-ribbon__tab"
                   data-command={entry.command.id}
                   key={entry.command.id}

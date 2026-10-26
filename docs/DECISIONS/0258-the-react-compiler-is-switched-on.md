@@ -48,3 +48,46 @@ measurement above is repeated with the commit that switches it on.
   compiler applies it everywhere and keeps the identities.
 - **Narrowing `App`'s subscription first.** Needed, and the next step; alone it leaves every child of whatever does
   render rendering again.
+
+## Correction, 2026-10-26 — Decision 2 was false for every command's state; the context now carries its answers
+
+Decision 2 read *"the code is already written to its rules"*. It was not, and the rules could not have said so. The
+compiler memoizes a component's output by the values it is given, and the surfaces draw a command's state by calling
+its predicates in render: `pressed={entry.command.checked?.(context)}`. A predicate is handed only the context, but
+many read a store they were given when the command was made — `deps.settings.get(LOUPE_SETTING.id)`, the panels'
+presence (which reads settings), the open text editor's formatting. None of those is an input the compiler can see,
+so when only the store moved, nothing a surface was given had changed and it kept the answer it drew last.
+
+Measured 2026-10-26 on Chromium 151 (`commandStateLive.pw.ts`, the owner's second video of the same day): Loupe on the
+Tools tab, pressed once, turned the loupe on and its button stayed unpressed; a switch to another tab and back drew it
+pressed, and pressed again it turned the loupe off and stayed pressed. The same build with the compiler taken out of
+`renderer.vite.config.mjs` drew it pressed at the first press. At 445fbaa7, `git grep` counts 23 `checked:` and 136
+`when:` sites in `packages/ui/src/commands/`; a site may make many commands, and every `checked:` site reads something
+other than its context.
+
+`UiCommand.when` and `checked` say *"Pure and synchronous"* (ADR-0029 Decision 5). Synchronous holds. Pure of the
+context does not, and that is the premise the memoization rested on.
+
+### Decision
+
+**The context the surfaces are given carries the commands' answers** (`CommandContext.answers`). One hook,
+`useCommandContext`, evaluates every registered command's `when` and `checked` against the context and folds the
+results into one string, through `useSyncExternalStore` subscribed to the stores the predicates read: the settings and
+the open editor's state. The context's identity moves exactly when an answer moves, so every surface memoized on it
+draws the new state, and nothing renders again for a change no answer shows. A predicate reading state `App` holds is
+already covered: the registry is rebuilt from those values, and the answers are evaluated again on that render.
+
+So no surface subscribes to anything, and none can forget to: the surfaces are unchanged, and a surface added later
+takes the same context.
+
+### Rejected
+
+- **Each projection subscribing to the settings.** Five surfaces today (the ribbon, its overflow, the quick toolbar,
+  the status bar, the menus and palette through `projections.ts`), and the sixth would be the one that forgets.
+- **Predicates made pure of a settings snapshot in the context.** The strongest form for settings — a predicate that
+  reads only its argument cannot be stale under memoization on that argument — and it would need every one of the
+  settings readers rewritten and a check to keep them so, while leaving the editor's state and the next store a
+  predicate reaches for exactly where they are. The answers cover any store a predicate reads, provided the store is
+  subscribed; that list is one array in one hook.
+- **Opting the surfaces out of the compiler.** Gives back what this ADR measured, and is still wrong under any other
+  memoization of the same values.

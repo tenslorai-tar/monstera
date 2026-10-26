@@ -5036,10 +5036,12 @@ for (const look of LOOKS) {
     // NOTHING OF THE EDITOR'S IS PAINTED until the words are changed (cloud run 19, `AS_DRAWN`): the page shows.
     const untouched = await editor.locator('.m-text-editor__run').evaluateAll((spans) => spans.map((span) => getComputedStyle(span).color));
     expect(untouched).toStrictEqual(['rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0)']);
-    // A LETTER TYPED AND TAKEN BACK leaves its paragraph drawn by the editor, which is what is measured below: once where
-    // the click put the caret, and once at the block's end, so both of its lines are drawn.
-    for (const at of [undefined, 'Control+End'] as const) {
-      if (at !== undefined) await page.keyboard.press(at);
+    // A LETTER TYPED AND TAKEN BACK leaves its paragraph drawn by the editor, which is what is measured below: once at the
+    // block's start and once at its end, so both of its lines are drawn. Not where the click put the caret: that is the
+    // middle of the block, on its second line, since the press that opens a block puts the caret where it was made
+    // (`textFirstClick.pw.ts`), and this read the first line only while that press was placed against a layout not shown.
+    for (const at of ['Control+Home', 'Control+End'] as const) {
+      await page.keyboard.press(at);
       await page.keyboard.type('x');
       await page.keyboard.press('Backspace');
     }

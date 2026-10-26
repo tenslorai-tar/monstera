@@ -1,0 +1,1127 @@
+[
+  {
+    "id": "forms.edit-fields",
+    "title": "Edit fields",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "forms"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "forms"
+      }
+    ]
+  },
+  {
+    "id": "view.theme-system",
+    "title": "Match the system theme",
+    "where": [
+      {
+        "surface": "menu-bar",
+        "menu": "view"
+      }
+    ]
+  },
+  {
+    "id": "view.theme-light",
+    "title": "Light theme",
+    "where": [
+      {
+        "surface": "menu-bar",
+        "menu": "view"
+      }
+    ]
+  },
+  {
+    "id": "view.theme-dark",
+    "title": "Dark theme",
+    "where": [
+      {
+        "surface": "menu-bar",
+        "menu": "view"
+      }
+    ]
+  },
+  {
+    "id": "view.show-properties",
+    "title": "Properties panel",
+    "where": [
+      {
+        "surface": "menu-bar",
+        "menu": "window"
+      }
+    ]
+  },
+  {
+    "id": "view.show-pages",
+    "title": "Pages panel",
+    "where": [
+      {
+        "surface": "menu-bar",
+        "menu": "window"
+      }
+    ]
+  },
+  {
+    "id": "view.show-bookmarks",
+    "title": "Bookmarks panel",
+    "where": [
+      {
+        "surface": "menu-bar",
+        "menu": "window"
+      }
+    ]
+  },
+  {
+    "id": "view.show-layers",
+    "title": "Layers panel",
+    "where": [
+      {
+        "surface": "menu-bar",
+        "menu": "window"
+      }
+    ]
+  },
+  {
+    "id": "view.show-search",
+    "title": "Search panel",
+    "where": [
+      {
+        "surface": "menu-bar",
+        "menu": "window"
+      }
+    ]
+  },
+  {
+    "id": "text.edit",
+    "title": "Edit text on the page",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "edit"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "edit"
+      }
+    ]
+  },
+  {
+    "id": "text.add",
+    "title": "Add text",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "edit"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "edit"
+      }
+    ]
+  },
+  {
+    "id": "edit.objects-all",
+    "title": "Edit all objects",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "edit",
+        "menu": "ribbon.edit-object"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "edit"
+      }
+    ]
+  },
+  {
+    "id": "edit.objects-text",
+    "title": "Edit text objects",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "edit",
+        "menu": "ribbon.edit-object"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "edit"
+      }
+    ]
+  },
+  {
+    "id": "edit.objects-images",
+    "title": "Edit images",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "edit",
+        "menu": "ribbon.edit-object"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "edit"
+      }
+    ]
+  },
+  {
+    "id": "edit.objects-shapes",
+    "title": "Edit shapes",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "edit",
+        "menu": "ribbon.edit-object"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "edit"
+      }
+    ]
+  },
+  {
+    "id": "text.format.bold",
+    "title": "Bold",
+    "where": []
+  },
+  {
+    "id": "text.format.italic",
+    "title": "Italic",
+    "where": []
+  },
+  {
+    "id": "text.format.underline",
+    "title": "Underline",
+    "where": []
+  },
+  {
+    "id": "text.format.strike",
+    "title": "Strikethrough",
+    "where": []
+  },
+  {
+    "id": "text.format.superscript",
+    "title": "Superscript",
+    "where": []
+  },
+  {
+    "id": "text.format.subscript",
+    "title": "Subscript",
+    "where": []
+  },
+  {
+    "id": "annotate.signature",
+    "title": "Signature",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "home"
+      },
+      {
+        "surface": "ribbon",
+        "section": "comment"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "comment"
+      }
+    ]
+  },
+  {
+    "id": "view.hand",
+    "title": "Hand — drag to move the pages",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "home"
+      },
+      {
+        "surface": "quick-toolbar"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "view"
+      }
+    ]
+  },
+  {
+    "id": "view.select-text",
+    "title": "Select text",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "home"
+      },
+      {
+        "surface": "quick-toolbar"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "view"
+      }
+    ]
+  },
+  {
+    "id": "view.show-comments",
+    "title": "Comments list",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "comment"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "comment"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "window"
+      }
+    ]
+  },
+  {
+    "id": "view.show-fields",
+    "title": "Fields list",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "forms"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "forms"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "window"
+      }
+    ]
+  },
+  {
+    "id": "annotate.rectangle",
+    "title": "Rectangle",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "comment"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "comment"
+      }
+    ]
+  },
+  {
+    "id": "annotate.ellipse",
+    "title": "Ellipse",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "comment"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "comment"
+      }
+    ]
+  },
+  {
+    "id": "annotate.line",
+    "title": "Line",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "comment"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "comment"
+      }
+    ]
+  },
+  {
+    "id": "annotate.arrow",
+    "title": "Arrow",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "comment"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "comment"
+      }
+    ]
+  },
+  {
+    "id": "annotate.ink",
+    "title": "Freehand",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "comment"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "comment"
+      }
+    ]
+  },
+  {
+    "id": "annotate.redact-text",
+    "title": "Mark text for redaction",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "comment"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "comment"
+      }
+    ]
+  },
+  {
+    "id": "annotate.redact",
+    "title": "Mark an area for redaction",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "comment"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "comment"
+      }
+    ]
+  },
+  {
+    "id": "annotate.text-box",
+    "title": "Text box",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "comment"
+      },
+      {
+        "surface": "ribbon",
+        "section": "edit"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "edit"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "comment"
+      }
+    ]
+  },
+  {
+    "id": "annotate.sticky-note",
+    "title": "Note",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "comment"
+      },
+      {
+        "surface": "quick-toolbar"
+      },
+      {
+        "surface": "ribbon",
+        "section": "home"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "comment"
+      }
+    ]
+  },
+  {
+    "id": "annotate.caret",
+    "title": "Insertion mark",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "comment"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "comment"
+      }
+    ]
+  },
+  {
+    "id": "annotate.polygon",
+    "title": "Polygon",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "comment"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "comment"
+      }
+    ]
+  },
+  {
+    "id": "annotate.polyline",
+    "title": "Connected lines",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "comment"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "comment"
+      }
+    ]
+  },
+  {
+    "id": "annotate.cloud",
+    "title": "Cloud",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "comment"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "comment"
+      }
+    ]
+  },
+  {
+    "id": "annotate.eraser",
+    "title": "Erase annotation",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "comment"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "comment"
+      }
+    ]
+  },
+  {
+    "id": "annotate.select",
+    "title": "Select annotations",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "comment"
+      },
+      {
+        "surface": "quick-toolbar"
+      },
+      {
+        "surface": "ribbon",
+        "section": "home"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "comment"
+      }
+    ]
+  },
+  {
+    "id": "annotate.highlight",
+    "title": "Highlight text",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "comment"
+      },
+      {
+        "surface": "ribbon",
+        "section": "home"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "comment"
+      }
+    ]
+  },
+  {
+    "id": "annotate.highlight-area",
+    "title": "Highlight an area of the page",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "comment"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "comment"
+      }
+    ]
+  },
+  {
+    "id": "annotate.underline",
+    "title": "Underline text",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "comment"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "comment"
+      }
+    ]
+  },
+  {
+    "id": "annotate.strikeout",
+    "title": "Strikethrough text",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "comment"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "comment"
+      }
+    ]
+  },
+  {
+    "id": "annotate.link-address",
+    "title": "Link to a web address",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "comment"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "comment"
+      }
+    ]
+  },
+  {
+    "id": "annotate.link-page",
+    "title": "Link to a page",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "comment"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "comment"
+      }
+    ]
+  },
+  {
+    "id": "annotate.callout",
+    "title": "Callout",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "comment"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "comment"
+      }
+    ]
+  },
+  {
+    "id": "annotate.typewriter",
+    "title": "Typewriter",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "comment"
+      },
+      {
+        "surface": "ribbon",
+        "section": "edit"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "edit"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "comment"
+      }
+    ]
+  },
+  {
+    "id": "annotate.measure-distance",
+    "title": "Measure distance",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "comment"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "comment"
+      }
+    ]
+  },
+  {
+    "id": "annotate.measure-area",
+    "title": "Measure area",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "comment"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "comment"
+      }
+    ]
+  },
+  {
+    "id": "annotate.measure-perimeter",
+    "title": "Measure perimeter",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "comment"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "comment"
+      }
+    ]
+  },
+  {
+    "id": "view.snapshot",
+    "title": "Snapshot a region",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "comment"
+      },
+      {
+        "surface": "quick-toolbar"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "comment"
+      }
+    ]
+  },
+  {
+    "id": "annotate.stamp",
+    "title": "Stamp",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "comment"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "comment"
+      }
+    ]
+  },
+  {
+    "id": "annotate.image",
+    "title": "Place an image",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "comment"
+      },
+      {
+        "surface": "ribbon",
+        "section": "edit"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "edit"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "comment"
+      }
+    ]
+  },
+  {
+    "id": "protect.signature",
+    "title": "Signature & Certificate",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "protect"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "protect"
+      }
+    ]
+  },
+  {
+    "id": "organize.barcode",
+    "title": "Add a barcode",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "edit"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "edit"
+      }
+    ]
+  },
+  {
+    "id": "tools.ocr-region",
+    "title": "Recognise text in a box",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "tools"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "tools"
+      }
+    ]
+  },
+  {
+    "id": "tools.cloud-region",
+    "title": "Send a box to Azure to recognise",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "tools"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "tools"
+      }
+    ]
+  },
+  {
+    "id": "annotate.claude-region",
+    "title": "Send a box to Claude to recognise",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "tools"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "tools"
+      }
+    ]
+  },
+  {
+    "id": "forms.field-text",
+    "title": "Add a text field",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "forms"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "forms"
+      }
+    ]
+  },
+  {
+    "id": "forms.field-checkbox",
+    "title": "Add a tick box",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "forms"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "forms"
+      }
+    ]
+  },
+  {
+    "id": "forms.field-radio",
+    "title": "Add radio buttons",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "forms"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "forms"
+      }
+    ]
+  },
+  {
+    "id": "forms.field-dropdown",
+    "title": "Add a dropdown",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "forms"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "forms"
+      }
+    ]
+  },
+  {
+    "id": "forms.field-listbox",
+    "title": "Add a list box",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "forms"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "forms"
+      }
+    ]
+  },
+  {
+    "id": "forms.field-button",
+    "title": "Add a button",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "forms"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "forms"
+      }
+    ]
+  },
+  {
+    "id": "forms.field-signature",
+    "title": "Add a signature field",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "forms"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "forms"
+      }
+    ]
+  },
+  {
+    "id": "forms.field-date",
+    "title": "Add a date field",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "forms"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "forms"
+      }
+    ]
+  },
+  {
+    "id": "view.toggle-rulers",
+    "title": "Show rulers",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "tools"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "view"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "tools"
+      }
+    ]
+  },
+  {
+    "id": "view.toggle-grid",
+    "title": "Show grid",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "tools"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "view"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "tools"
+      }
+    ]
+  },
+  {
+    "id": "view.toggle-dark-page",
+    "title": "Dim pages",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "tools"
+      },
+      {
+        "surface": "ribbon",
+        "section": "home"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "view"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "tools"
+      }
+    ]
+  },
+  {
+    "id": "view.toggle-field-highlight",
+    "title": "Highlight fields",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "forms"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "view"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "forms"
+      }
+    ]
+  },
+  {
+    "id": "view.toggle-loupe",
+    "title": "Loupe",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "tools"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "view"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "tools"
+      }
+    ]
+  },
+  {
+    "id": "view.toggle-split",
+    "title": "Split view",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "tools"
+      },
+      {
+        "surface": "ribbon",
+        "section": "home"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "view"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "tools"
+      }
+    ]
+  },
+  {
+    "id": "view.autoscroll",
+    "title": "Autoscroll",
+    "where": [
+      {
+        "surface": "menu-bar",
+        "menu": "view"
+      }
+    ]
+  },
+  {
+    "id": "view.toggle-quick-toolbar",
+    "title": "Show or hide the Float bar",
+    "where": [
+      {
+        "surface": "status-bar"
+      },
+      {
+        "surface": "rail"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "window"
+      }
+    ]
+  },
+  {
+    "id": "view.toggle-panel",
+    "title": "Show or hide the document panel",
+    "where": [
+      {
+        "surface": "menu-bar",
+        "menu": "window"
+      }
+    ]
+  },
+  {
+    "id": "view.toggle-context-panel",
+    "title": "Show or hide the properties panel",
+    "where": [
+      {
+        "surface": "menu-bar",
+        "menu": "window"
+      }
+    ]
+  },
+  {
+    "id": "view.layout-ribbon",
+    "title": "Ribbon layout",
+    "where": [
+      {
+        "surface": "menu-bar",
+        "menu": "view"
+      }
+    ]
+  },
+  {
+    "id": "view.layout-studio",
+    "title": "Studio layout",
+    "where": [
+      {
+        "surface": "menu-bar",
+        "menu": "view"
+      }
+    ]
+  },
+  {
+    "id": "view.layout-focus",
+    "title": "Focus layout",
+    "where": [
+      {
+        "surface": "menu-bar",
+        "menu": "view"
+      }
+    ]
+  }
+]

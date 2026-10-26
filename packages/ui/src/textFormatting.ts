@@ -637,6 +637,11 @@ export function insertTab(root: HTMLElement): void {
   insertAtCaret(root, '\t');
 }
 
+/** Letters typed and held while the editor's layout settled, inserted at the caret as typing does (cloud run 21, C1b). */
+export function insertTyped(root: HTMLElement, text: string): void {
+  insertAtCaret(root, text);
+}
+
 /**
  * Whether the editor holds anything BEYOND ITS WORDS: marks, paragraph settings, or a place the block was put. The one
  * answer to what makes a commit with unchanged words still a write, so the editor's commit and the command's agree.

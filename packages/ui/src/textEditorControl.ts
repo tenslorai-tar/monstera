@@ -274,8 +274,47 @@ export function openParagraphState(): ReturnType<typeof paragraphSettingAt> | un
   return paragraphSettingAt(editor.root, range.startContainer);
 }
 
+/**
+ * The size most of the words in `range` use, counted by character and leaving white space out (cloud run 21, the owner's
+ * C3). The range is the one a size typed into the field applies to (`target`): the characters selected, or at a caret the
+ * paragraph it is in, which for a block of one paragraph is the block. `undefined` where no character has a size.
+ *
+ * ## Why not the size of the first character, as every other value is read
+ *
+ * A paragraph ending in small raised reference markers opened with its caret after the last marker, and the size field
+ * said 7.88, the markers', for a paragraph set at 10 (the owner's video of 2026-10-26). One character speaks for the
+ * whole field that way, and a marker is the character least like the rest. The markers keep their own size: this is
+ * only what is SHOWN, and a size typed into the field is applied to the selection as before.
+ */
+function sizeMostUsed(root: HTMLElement, range: Range): number | undefined {
+  const counts = new Map<number, number>();
+  const walker = root.ownerDocument.createTreeWalker(root, 4);
+  for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+    const text = node as Text;
+    if (!range.collapsed && !range.intersectsNode(text)) continue;
+    const from = !range.collapsed && range.startContainer === text ? range.startOffset : 0;
+    const to = !range.collapsed && range.endContainer === text ? range.endOffset : text.data.length;
+    const characters = text.data.slice(from, to).replace(/\s/gu, '').length;
+    const { size } = stateAt(text, root);
+    if (characters === 0 || size === undefined) continue;
+    counts.set(size, (counts.get(size) ?? 0) + characters);
+  }
+  let most: number | undefined;
+  for (const [size, count] of counts) if (most === undefined || count > (counts.get(most) ?? 0)) most = size;
+  return most;
+}
+
 /** What the words at the selection are now, for the controls that show a state; `undefined` with no editor open. */
 export function openEditorState(): FormatState | undefined {
+  const state = stateAtSelection();
+  const editor = open;
+  if (state === undefined || editor === undefined) return state;
+  const size = sizeMostUsed(editor.root, remembered ?? target(editor));
+  return size === undefined ? state : { ...state, size };
+}
+
+/** What the words at the selection's first character are now, every value as that character has it. */
+function stateAtSelection(): FormatState | undefined {
   const editor = open;
   if (editor === undefined) return undefined;
   const range = remembered ?? target(editor);

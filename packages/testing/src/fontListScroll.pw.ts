@@ -86,7 +86,8 @@ async function listPoint(list: Locator): Promise<{ x: number; y: number }> {
 async function chooseAndLeave(page: Page, list: Locator, editor: Locator, sent: { channel: string; params: unknown }[], name: string): Promise<void> {
   await list.getByRole('option', { name: new RegExp(name, 'u') }).click();
   await expect(editor).toBeFocused();
-  await page.locator('canvas[data-page-canvas="0"]').click({ position: { x: 40, y: 600 } });
+  // ON THE PAGE, which in Edit text is the mode's layer: it takes every press there (`textClickOutside.pw.ts`).
+  await page.locator('[data-text-edit-layer="0"]').click({ position: { x: 40, y: 600 } });
   await expect
     .poll(() =>
       sent.flatMap(({ channel, params }) => {
@@ -146,7 +147,7 @@ test.describe('The font list scrolled while a block is open (T1)', () => {
   test('CONTROL: a press outside the list, on the page, still closes it and ends the editor', async ({ page }) => {
     const sent: { channel: string; params: unknown }[] = [];
     const { list, editor } = await openList(page, sent);
-    await page.locator('canvas[data-page-canvas="0"]').click({ position: { x: 40, y: 600 } });
+    await page.locator('[data-text-edit-layer="0"]').click({ position: { x: 40, y: 600 } });
     await expect(list).toHaveCount(0);
     await expect(editor).toHaveCount(0);
   });

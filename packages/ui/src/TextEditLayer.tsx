@@ -55,7 +55,7 @@ import { composing } from './surfaces/shortcuts.js';
 import { joinEdits, neighbourOf, splitEdits, wordsOfBlock } from './textBlockOps.js';
 import { type EditorOps, type EditorSpelling, TextEditorMenu } from './TextEditorMenu.js';
 import { formatOpenEditor, keepsEditor, openEditorState, registerEditor, steppedSize } from './textEditorControl.js';
-import { PAGE_EDGE_KEYS, insertTab, isFormatted, paintParagraph, readEditor, toggleChord } from './textFormatting.js';
+import { PAGE_EDGE_KEYS, insertTab, insertTyped, isFormatted, paintParagraph, readEditor, toggleChord } from './textFormatting.js';
 import { paperAround } from './paperAround.js';
 import {
   dragged,
@@ -274,6 +274,130 @@ function caretAt(element: HTMLElement, click: Click): boolean {
   if (position === null || position === undefined) return false;
   return place(position.offsetNode, position.offset);
 }
+
+/**
+ * The press that opened an editor, put where it was pressed in the words AS THEY ARE SHOWN rather than as they were
+ * first built (cloud run 21, the owner's video of 2026-10-26). Answers the call that puts it there again, made each time
+ * the editor's layout settles further.
+ *
+ * ## Why one placement as the editor is built is not enough
+ *
+ * A caret is a character offset, and the point is turned into one by asking which character is under it. The editor is
+ * built with each run at its size in points (`drawRun` at a zoom of 1) and in its kind of face; then its sizes are set
+ * at the zoom, its first baseline is moved onto the page's (`useBaselineShift`), and each run's own font arrives from
+ * the host (`useRunFonts`). Asked as it was built, the point named the character under it in a layout nobody sees, and
+ * the offset stayed when the words moved: measured 2026-10-26 in Chromium 151 (`textFirstClick.pw.ts`), a press mid-word
+ * in a code block at 150 % stood the caret 99 pixels to its right, and one in a heading whose rebuilt font arrived after
+ * it stood it 32 pixels off. A click inside the open editor was right, being asked of the layout on screen.
+ *
+ * So the point is held, in the frame's own pixels so a scroll does not move it, and asked again of each layout until the
+ * person acts: a key, a press, an input or a composition in the frame lets it go, and so does a frame that changed size
+ * (a zoom, a block scaled), whose pixels are no longer the ones pressed.
+ *
+ * ## Letters typed before the layout has settled are held, and typed at the press once it has (C1b)
+ *
+ * The runs' own fonts are the host's answer and arrive a task or more after the press, and a person who clicks and types
+ * at once types into the layout before them: measured 2026-10-26 in Chromium 151 with the answer 900 ms late, three
+ * letters typed in the press's breath landed one or two characters past it (`textFirstClick.pw.ts`). So until the layout
+ * settles — the fonts drawn, or answered with none, or {@link HOLD_KEYS_MS} passed — a letter typed is held instead of
+ * inserted; once it settles the caret is put at the press and the held letters are inserted there, in order, by the
+ * editor's one insertion at the caret (`insertTyped`, Tab's), which tells the editor it changed as typing does. Any
+ * other key, a press or a composition settles at once with what has arrived, and then does what it does.
+ */
+function useOpeningPress(
+  area: React.RefObject<HTMLDivElement | null>,
+  click: Click | undefined,
+): { readonly place: (element: HTMLElement) => void; readonly settle: (element: HTMLElement) => void } {
+  const held = useRef<{ readonly x: number; readonly y: number; readonly width: number } | undefined>(undefined);
+  /** The letters typed since the press while the layout has not settled, or `undefined` once it has. */
+  const typed = useRef<string[] | undefined>(undefined);
+  const place = useCallback((element: HTMLElement): void => {
+    const at = held.current;
+    if (at === undefined || element.ownerDocument.activeElement !== element) return;
+    const corner = element.closest('.m-text-editor-frame')?.getBoundingClientRect();
+    if (corner === undefined || Math.abs(corner.width - at.width) > 0.5) {
+      held.current = undefined;
+      return;
+    }
+    caretAt(element, { x: corner.left + at.x, y: corner.top + at.y });
+  }, []);
+  /** The layout as it now is is the one the press is put in: the caret goes there, and the held letters after it. */
+  const settle = useCallback(
+    (element: HTMLElement): void => {
+      const letters = typed.current;
+      if (letters === undefined) return;
+      typed.current = undefined;
+      place(element);
+      if (letters.length === 0) return;
+      // TYPED THEN, the person has acted: the press is let go, as a key typed after the layout settled lets it go.
+      held.current = undefined;
+      // THE EDITOR'S ONE INSERTION AT THE CARET, the one a Tab takes, which tells the editor it changed as typing does.
+      insertTyped(element, letters.join(''));
+    },
+    [place],
+  );
+  useLayoutEffect(() => {
+    const element = area.current;
+    const frame = element === null ? null : element.closest<HTMLElement>('.m-text-editor-frame');
+    if (click === undefined || element === null || frame === null) {
+      held.current = undefined;
+      typed.current = undefined;
+      return undefined;
+    }
+    const corner = frame.getBoundingClientRect();
+    held.current = { x: click.x - corner.left, y: click.y - corner.top, width: corner.width };
+    typed.current = [];
+    const letGo = (): void => {
+      held.current = undefined;
+    };
+    // A LETTER while unsettled is held; anything else settles first with what has arrived, then lets the press go.
+    const onKey = (event: KeyboardEvent): void => {
+      const letter = event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey;
+      if (typed.current !== undefined && letter) return;
+      settle(element);
+      letGo();
+    };
+    const onInput = (event: InputEvent): void => {
+      if (typed.current !== undefined && event.inputType === 'insertText' && event.data !== null) {
+        event.preventDefault();
+        typed.current.push(event.data);
+        return;
+      }
+      settle(element);
+      letGo();
+    };
+    const onOther = (): void => {
+      settle(element);
+      letGo();
+    };
+    // IN THE CAPTURE PHASE, before the editor's own handlers act on the key or the press.
+    frame.addEventListener('keydown', onKey, true);
+    frame.addEventListener('beforeinput', onInput, true);
+    frame.addEventListener('pointerdown', onOther, true);
+    frame.addEventListener('compositionstart', onOther, true);
+    // THE BOUND: past it the layout is taken as it is, so a host that never answers holds nothing for long.
+    const bound = setTimeout(() => {
+      settle(element);
+    }, HOLD_KEYS_MS);
+    const fonts = element.ownerDocument.fonts;
+    const loaded = (): void => {
+      place(element);
+    };
+    fonts.addEventListener('loadingdone', loaded);
+    return () => {
+      clearTimeout(bound);
+      frame.removeEventListener('keydown', onKey, true);
+      frame.removeEventListener('beforeinput', onInput, true);
+      frame.removeEventListener('pointerdown', onOther, true);
+      frame.removeEventListener('compositionstart', onOther, true);
+      fonts.removeEventListener('loadingdone', loaded);
+    };
+  }, [area, click, place, settle]);
+  return { place, settle };
+}
+
+/** How long letters typed after the press that opened an editor wait for its layout to settle, at most (C1b). */
+const HOLD_KEYS_MS = 1500;
 
 /** The CSS a placed box is drawn with. */
 function boxStyle(placed: Placed): React.CSSProperties {
@@ -679,6 +803,16 @@ export function TextEditLayer({
       className="m-text-edit-layer"
       data-text-edit-layer={String(page)}
       onKeyDown={onKeyDown}
+      // A SELECTION OF THE PAGE'S WORDS STILL STANDING as the mode is used — one made before it was turned on — goes at the
+      // next press: the layer takes every press and selects nothing (the stylesheet), so nothing else would clear it. One
+      // inside an editor is the person's own and stays.
+      onPointerDown={(event) => {
+        const selection = event.currentTarget.ownerDocument.getSelection();
+        if (selection === null || selection.isCollapsed) return;
+        const anchor = selection.anchorNode;
+        const holder = anchor instanceof Element ? anchor : (anchor?.parentElement ?? null);
+        if ((holder?.closest('[data-text-editor]') ?? null) === null) selection.removeAllRanges();
+      }}
       ref={layer}
       role="group"
     >
@@ -1271,6 +1405,11 @@ function useRunFonts(
   area: React.RefObject<HTMLDivElement | null>,
   read: () => Promise<RunFonts>,
   editor: string,
+  /**
+   * Called once the runs are drawn in their own fonts, which moves every word after the first that changed width, or once
+   * the host has answered that there are none: either way the layout will not change for them again.
+   */
+  onDrawn: (element: HTMLElement) => void,
 ): void {
   useEffect(() => {
     const element = area.current;
@@ -1279,7 +1418,10 @@ function useRunFonts(
     let current = true;
     const added: FontFace[] = [];
     void read().then(async ({ fonts, runs }) => {
-      if (fonts.length === 0) return;
+      if (fonts.length === 0) {
+        if (current) onDrawn(element);
+        return;
+      }
       // EACH FACE DECLARES THE WEIGHT AND SLANT ITS PROGRAM HAS — the page's, as the first run drawn in it states them.
       // A face declared normal while its run asks for 700 is emboldened by the browser a second time over a program that
       // is already bold; declared as the page has it, a run as on the page is drawn as the program draws it, and one the
@@ -1316,12 +1458,13 @@ function useRunFonts(
         span.classList.add('m-text-editor__run--own');
         span.style.setProperty('--m-run-font', familyOf(editor, place));
       }
+      onDrawn(element);
     });
     return () => {
       current = false;
       for (const face of added) owner.fonts.delete(face);
     };
-  }, [area, editor, read]);
+  }, [area, editor, read, onDrawn]);
 }
 
 /** What a run is drawn in: the page's own values — size, fill, weight, slant — and the face kind by class. */
@@ -1426,7 +1569,8 @@ function BlockEditor({
   const [readFonts] = useState(() => runFonts);
   // THE PAGE'S FONT NAMES as the editor opened, kept for its life for `readFonts`' reason.
   const [pageFontsAtOpen] = useState(() => pageFonts);
-  useRunFonts(area, readFonts, useId());
+  const { place: placeOpening, settle: settleOpening } = useOpeningPress(area, click);
+  useRunFonts(area, readFonts, useId(), settleOpening);
   // THE EDITOR IS OPEN, for the formatting commands to act on (ADR-0180): registered for its life, at the zoom now.
   const zoomNow = useRef(geometry.zoom);
   useEffect(() => {
@@ -1618,6 +1762,11 @@ function BlockEditor({
     revealChanged();
   }, [block, geometry.zoom, revealChanged]);
   const baselineShift = useBaselineShift(area, block, geometry.zoom);
+  // THE OPENING PRESS PUT WHERE IT WAS MADE in the layout as it now is: after the sizes at the zoom and the paragraphs'
+  // places above, again when the baseline moves the words, and when the runs' own fonts are drawn (`useOpeningPress`).
+  useLayoutEffect(() => {
+    if (area.current !== null) placeOpening(area.current);
+  }, [placeOpening, baselineShift]);
 
   /** Whether a write is in flight: the words are not editable meanwhile, so nothing is typed into a block already sent. */
   const [sending, setBusy] = useState(false);
