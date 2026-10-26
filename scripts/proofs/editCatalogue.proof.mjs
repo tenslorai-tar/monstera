@@ -54,7 +54,7 @@ const CASES = [
   'DRAWN: every character of a visible block draws, and none of an invisible one (the unseen check’s two controls)',
   'THE SHAPE: what each file claims to test is in the file, read back with pdf-lib',
   'ROUND TRIP: every page saved again with no change draws the same pixels, so no level tolerance is needed',
-  'ANTI-ALIASING SPREAD: the farthest pixel of any block outside its character boxes is within MARGIN, and MARGIN is no more than half a point wider',
+  'ANTI-ALIASING SPREAD: the farthest pixel of any block outside its character boxes is MARGIN, measured to the device pixel (wider or narrower fails)',
   'THE CORRECT EDIT passes the check on every page',
   'THE EDIT GROWN BY A LINE, overlapping what is below, passes the check on every page',
   'CONTROL: a neighbour moved half a point fails the check, as moved by MuPDF’s characters, by PDFium’s runs and by the pixels, each',
@@ -387,7 +387,9 @@ async function run(pdfium, kernel) {
   check(CASES[0] ?? '', shapes.length === (ONLY === undefined ? 24 : 1) && (wrong[0]?.length ?? 1) === 0, (wrong[0] ?? []).join('\n      '));
   for (const at of [1, 2, 3, 4]) check(CASES[at] ?? '', (wrong[at]?.length ?? 1) === 0, (wrong[at] ?? []).join('\n      '));
   process.stdout.write(`\n  ANTI-ALIASING SPREAD: ${spread.toFixed(2)} pt at ${spreadAt}; MARGIN is ${String(MARGIN)} pt\n`);
-  check(CASES[5] ?? '', spread > 0 && spread <= MARGIN && MARGIN - spread <= 0.5, `measured ${spread.toFixed(2)} pt (at ${spreadAt}) against a MARGIN of ${String(MARGIN)} pt`);
+  // EQUAL AT THE INSTRUMENT'S STEP, one device pixel: a bound of "at most half a point wider" could not fail while MARGIN
+  // was itself half a point (the stage audit of 2026-10-26), so the margin must be the measurement rounded up to a pixel.
+  check(CASES[5] ?? '', spread > 0 && MARGIN === Math.ceil(spread * SCALE) / SCALE,`measured ${spread.toFixed(2)} pt (at ${spreadAt}) against a MARGIN of ${String(MARGIN)} pt`);
   for (const at of [6, 7]) check(CASES[at] ?? '', (wrong[at]?.length ?? 1) === 0, (wrong[at] ?? []).join('\n      '));
   const controls = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17];
   process.stdout.write(`  CONTROLS RAN on: ${controls.map((at) => `case ${String(at + 1)} ${String(ran[at] ?? 0)}`).join(', ')} time(s)\n`);

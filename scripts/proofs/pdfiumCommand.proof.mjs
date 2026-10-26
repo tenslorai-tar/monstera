@@ -97,6 +97,7 @@ import { PDFIUM_COMMAND, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { pageStreams } from '../lib/pageStreams.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { withNoPassword } from '../lib/pdfiumNoPassword.mjs';
+import { NO_FACE_CHARACTER } from '../lib/noFaceCharacter.mjs';
 import { exitUnverifiable } from '../lib/unverifiable.mjs';
 import { fontsDirectory } from '../provision/fonts.mjs';
 import { PDFIUM_VERSION, pdfiumLibrary } from '../provision/pdfium.mjs';
@@ -299,8 +300,8 @@ async function textOf(bytes) {
   }
 }
 
-/** A character no bundled face carries, GNU Unifont included: plane 15's first private-use point. */
-const NONE_CARRY_POINT = 0xf0000;
+/** A character no bundled face carries, GNU Unifont included: the instruments' one spelling of it. */
+const NONE_CARRY_POINT = /** @type {number} */ (NO_FACE_CHARACTER.codePointAt(0));
 
 /**
  * How each font page 0 names holds its program, read with pdf-lib from the saved bytes: `BaseFont`, the descendant's

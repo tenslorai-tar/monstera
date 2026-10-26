@@ -29,14 +29,17 @@
  *   const failures = await expectEdit({ kernel, pdfium }, { before, after, block, expected, outcome })
  */
 
+import { PDFDict, PDFDocument, PDFName, PDFRawStream, PDFRef } from '@cantoo/pdf-lib';
+
 import { charactersOf, compare, inkOf, render, SCALE } from './pageDisturbance.mjs';
 
 /**
  * How far outside its characters' boxes a block's own pixels may lie, in points. MEASURED 2026-10-26 by
  * `editCatalogue.proof.mjs` (ANTI-ALIASING SPREAD) over every visible block of the 24 catalogue pages at 144 dpi on
  * Linux, the native MuPDF 1.28.0: the farthest pixel was 0.5 pt out — one device pixel, on the Times paragraph of
- * `03-standard-fonts-not-embedded`. The proof fails when a run measures more than this, or more than half a point less,
- * so the figure cannot drift from the measurement in either direction unseen.
+ * `03-standard-fonts-not-embedded`. The proof fails unless a run measures exactly this, rounded up to the device pixel
+ * — the instrument's step — so the figure cannot drift from the measurement in either direction unseen. One pixel is
+ * the smallest step there is: the figure has no headroom, and it was measured on Linux; Windows CI measures it again.
  */
 export const MARGIN = 0.5;
 
@@ -188,6 +191,52 @@ async function textInk(pdfium, bytes, page, width, height) {
   }
 }
 
+/**
+ * The names MuPDF gives the page's drawn (Type 3) fonts, its forms' included: a font is drawn by its dictionary's
+ * `/Subtype`, as the kernel decides it, and MuPDF names one by its `/Name` where it has one and `Type3 (n 0 R)` where
+ * not (`pdf-type3.c`, MuPDF 1.28.0). Telling a drawn font by MuPDF's name alone was blind to a named one (the stage
+ * audit of 2026-10-26). A name an ordinary font on the page also has cannot say which drew a character, so it throws.
+ * @param {Uint8Array} bytes @param {number} index @returns {Promise<Set<string>>}
+ */
+async function drawnFontNames(bytes, index) {
+  const doc = await PDFDocument.load(bytes, { updateMetadata: false });
+  const context = doc.context;
+  /** @param {unknown} value */
+  const resolved = (value) => (value instanceof PDFRef ? context.lookup(value) : value);
+  const drawn = new Set();
+  const ordinary = new Set();
+  const seen = new Set();
+  /** @param {unknown} resources */
+  const walk = (resources) => {
+    if (!(resources instanceof PDFDict) || seen.has(resources)) return;
+    seen.add(resources);
+    const fonts = resolved(resources.get(PDFName.of('Font')));
+    if (fonts instanceof PDFDict) {
+      for (const [, ref] of fonts.entries()) {
+        const font = resolved(ref);
+        if (!(font instanceof PDFDict)) continue;
+        const own = font.get(PDFName.of('Name'));
+        if (String(font.get(PDFName.of('Subtype'))) === '/Type3') {
+          drawn.add(own instanceof PDFName ? own.decodeText() : `Type3 (${ref instanceof PDFRef ? String(ref.objectNumber) : '0'} 0 R)`);
+        } else {
+          ordinary.add(String(font.get(PDFName.of('BaseFont')) ?? '').replace(/^\/(?:[A-Z]{6}\+)?/u, ''));
+        }
+      }
+    }
+    const xobjects = resolved(resources.get(PDFName.of('XObject')));
+    if (xobjects instanceof PDFDict) {
+      for (const [, ref] of xobjects.entries()) {
+        const xobject = resolved(ref);
+        if (xobject instanceof PDFRawStream) walk(resolved(xobject.dict.get(PDFName.of('Resources'))));
+      }
+    }
+  };
+  walk(resolved(doc.getPage(index).node.get(PDFName.of('Resources'))));
+  const shared = [...drawn].filter((name) => ordinary.has(name.replace(/^[A-Z]{6}\+/u, '')));
+  if (shared.length > 0) throw new Error(`a drawn font and an ordinary one are both named ${shared.join(', ')}, so MuPDF's name cannot say which drew a character`);
+  return drawn;
+}
+
 /** MuPDF's links on a page, by their box and target. @param {any} kernel @param {Uint8Array} bytes @param {number} page */
 function linksOf(kernel, bytes, page) {
   const document = kernel.mupdf.PDFDocument.openDocument(bytes, 'application/pdf');
@@ -287,7 +336,8 @@ export async function expectEdit({ kernel, pdfium }, { before, after, page, bloc
   const wordsAfter = wordsIn(afterChars, written);
   const { rest: newWords, missing: replacedWords } = remainder(wordsAfter, wordsBefore, textOfWord);
   const { rest: keptWords } = remainder(wordsBefore, replacedWords, textOfWord);
-  const drawn = newWords.flat().filter((each) => each.font.startsWith('Type3'));
+  const drawnFonts = await drawnFontNames(after, page);
+  const drawn = newWords.flat().filter((each) => drawnFonts.has(each.font));
   if (drawn.length > 0) {
     failures.push(`A DRAWN FONT FOR NEW WORDS: ${String(drawn.length)} written character(s) are in a Type 3 font (${[...new Set(drawn.map((each) => each.font))].join(', ')}), the first “${drawn.slice(0, 12).map((each) => each.character).join('')}”`);
   }

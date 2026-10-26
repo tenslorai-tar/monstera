@@ -780,6 +780,9 @@ export function drawnFontOf(doc, sfnt, used) {
     context.obj({
       Type: 'Font',
       Subtype: 'Type3',
+      // A /Name, as a browser's print gives its drawn fonts: MuPDF then names the font by it, not as "Type3 (n 0 R)",
+      // so a reader that tells a drawn font by MuPDF's name is blind to it (the stage audit of 2026-10-26).
+      Name: 'MonsteraDrawn',
       FontBBox: [-200, -250, 1200, 950],
       FontMatrix: [0.001, 0, 0, 0.001, 0, 0],
       CharProcs: procs,
