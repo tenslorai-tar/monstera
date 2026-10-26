@@ -453,7 +453,7 @@ import { AssistantPanel } from './AssistantPanel.js';
 import type { DropOpener, EventSubscriber } from './bridge.js';
 import { PropertiesPanel, type StyleChange, caretRectAt } from './PropertiesPanel.js';
 import { TextFormatPanel } from './TextFormatPanel.js';
-import { useEditingEnginesKept } from './editingEngines.js';
+import { useEditingEnginesStarted } from './editingEngines.js';
 import { fontListOf, readFontListWhenIdle, useDocumentFonts, useFontList } from './fontList.js';
 import { listedFamiliesFor } from './familyFaces.js';
 import { readOnePageLinks } from './usePageLinks.js';
@@ -4900,9 +4900,9 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
   // had pressed, and the Edit section is where both modes are chosen. Asked once each time a document is shown there;
   // what it answers changes nothing here — a host that cannot start is said by the reads and by Help › Components.
   const editingMode = toolId === EDIT_TEXT_TOOL_ID || toolId === EDIT_OBJECTS_TOOL_ID || ribbonSection === 'edit';
-  // AND KEPT RUNNING WHILE THE EDIT TAB IS IN USE (ADR-0048's correction of 2026-10-24, item 7a): the ask renewed, so a
-  // person who reads for a minute between edits never pays the hosts' start again; they stop 60 to 80 s after leaving.
-  useEditingEnginesKept(client, editingMode && shownDocId !== undefined);
+  // NOT KEPT RUNNING THERE (ADR-0048's correction of 2026-10-26): one ask as the tab comes into use, and the hosts stop by
+  // their idle rule on the tab as anywhere else.
+  useEditingEnginesStarted(client, editingMode && shownDocId !== undefined);
 
   // THE PAGE ON SHOW, which Edit object's reads take first (Decision 9): a ref, so the queue reads it when it picks the
   // next read rather than when the reader was made.
