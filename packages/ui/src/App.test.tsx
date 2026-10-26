@@ -3175,6 +3175,77 @@ describe('App', () => {
     expect(dialogs.get('dialog.help')).toBeDefined();
   });
 
+  it('every command with a state, and every surface that draws it, is the list commandStateLive.pw.ts presses (ADR-0258’s correction)', async () => {
+    // THE RENDERED CASE PRESSES each of these in each surface that draws it, against the compiled bundle, which is the
+    // only place the stale state shows: this suite does not run the React Compiler. Its list is this output, held equal
+    // here — regenerate with `npx vitest run packages/ui/src/App.test.tsx -t "every command with a state" -u`.
+    let commands: CommandRegistry | undefined;
+    const { client } = recordingClient({ kind: 'cancelled' });
+    render(<App client={client} settings={freshSettings()} onRegistries={(registries) => (commands = registries.commands)} />);
+    if (commands === undefined) throw new Error('the shell reported no registries');
+    const stateful = commands.all().filter((command) => command.checked !== undefined);
+    // THE ANCHOR, by name and written here rather than taken from the registry: a command that lost its state, or was
+    // removed, leaves the derived list without a sound, and this names it.
+    const ANCHOR = [
+      ...['view.theme-system', 'view.theme-light', 'view.theme-dark'],
+      ...['view.layout-ribbon', 'view.layout-studio', 'view.layout-focus'],
+      ...['view.show-properties', 'view.show-pages', 'view.show-bookmarks', 'view.show-layers', 'view.show-search'],
+      ...['view.show-comments', 'view.show-fields', 'view.toggle-panel', 'view.toggle-context-panel', 'view.toggle-quick-toolbar'],
+      ...['view.toggle-rulers', 'view.toggle-grid', 'view.toggle-dark-page', 'view.toggle-field-highlight', 'view.toggle-loupe'],
+      ...['view.toggle-split', 'view.autoscroll', 'view.hand', 'view.select-text', 'view.snapshot'],
+      ...['text.edit', 'text.add', 'edit.objects-all', 'edit.objects-text', 'edit.objects-images', 'edit.objects-shapes'],
+      ...['text.format.bold', 'text.format.italic', 'text.format.underline', 'text.format.strike'],
+      ...['text.format.superscript', 'text.format.subscript'],
+      ...['annotate.select', 'annotate.highlight', 'annotate.highlight-area', 'annotate.underline', 'annotate.strikeout'],
+      ...['annotate.text-box', 'annotate.typewriter', 'annotate.sticky-note', 'annotate.caret', 'annotate.ink', 'annotate.eraser'],
+      ...['annotate.rectangle', 'annotate.ellipse', 'annotate.line', 'annotate.arrow', 'annotate.polygon', 'annotate.polyline'],
+      ...['annotate.cloud', 'annotate.callout', 'annotate.redact-text', 'annotate.redact', 'annotate.link-address'],
+      ...['annotate.link-page', 'annotate.measure-distance', 'annotate.measure-area', 'annotate.measure-perimeter'],
+      ...['annotate.stamp', 'annotate.image', 'annotate.signature', 'annotate.claude-region', 'protect.signature'],
+      ...['organize.barcode', 'tools.ocr-region', 'tools.cloud-region', 'forms.edit-fields', 'forms.field-text'],
+      ...['forms.field-checkbox', 'forms.field-radio', 'forms.field-dropdown', 'forms.field-listbox', 'forms.field-button'],
+      ...['forms.field-signature', 'forms.field-date'],
+    ];
+    const ids = stateful.map((command) => command.id);
+    // BY NAME BOTH WAYS, so a failure says which command arrived or left rather than that two lengths differ.
+    expect(ids.filter((id) => !ANCHOR.includes(id)), 'stateful commands the anchor does not name').toStrictEqual([]);
+    expect(ANCHOR.filter((id) => !ids.includes(id)), 'anchored commands the registry no longer gives a state').toStrictEqual([]);
+    expect(ids).toHaveLength(ANCHOR.length);
+    // WHERE EACH IS DRAWN, by the projections' own rules: its ribbon, quick toolbar, status bar and rail placements, and
+    // every menu of the bar the menu bar's own model puts it in (a section's menu is its ribbon section, ADR-0107).
+    const context = { docId: DOC, version: asDocVersion(1), hasSelection: false, dirty: false, page: 0, pageCount: 1, openDocuments: [], selectedPages: [] };
+    const menus = new Map<string, string[]>();
+    for (const menu of projections.menuBarModel(commands, context)) {
+      for (const group of menu.groups) {
+        for (const entry of group.items) {
+          const items = entry.kind === 'submenu' ? entry.items : [entry];
+          for (const item of items) menus.set(item.command.id, [...(menus.get(item.command.id) ?? []), menu.id]);
+        }
+      }
+    }
+    /** A surface that draws a command: the ribbon's section and named menu, or a menu of the bar, or one of the bars. */
+    interface Where {
+      readonly surface: string;
+      readonly section?: string;
+      readonly menu?: string;
+    }
+    const list = stateful.map((command) => ({
+      id: command.id,
+      title: i18n._(command.title),
+      where: [
+        ...command.placements.flatMap((placement): Where[] =>
+          placement.surface === 'ribbon'
+            ? [{ surface: 'ribbon', section: placement.section, ...(placement.menu === undefined ? {} : { menu: placement.menu }) }]
+            : placement.surface === 'quick-toolbar' || placement.surface === 'status-bar' || placement.surface === 'rail'
+              ? [{ surface: placement.surface }]
+              : [],
+        ),
+        ...[...new Set(menus.get(command.id) ?? [])].map((menu) => ({ surface: 'menu-bar', menu })),
+      ],
+    }));
+    await expect(`${JSON.stringify(list, null, 2)}\n`).toMatchFileSnapshot('../../testing/fixtures/stateful-commands.json');
+  });
+
   it('the manual test checklist is generated from the registry — docs/manual-test-checklist.md is never edited by hand', async () => {
     // The owner's list (28 September, item 14). A hand-kept list of tools is the second wiring place the registry
     // forbids: it names a renamed tool and misses a new one. So the document is this output, held equal here —
