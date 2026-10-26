@@ -4,6 +4,7 @@ import { boxFont } from './boxFont.js';
 import { CidFont } from './cidFont.js';
 import { editPieces } from './editPieces.js';
 import type { CatalogueFace, FaceSource } from './fontCatalogue.js';
+import { LookedWeights, type Restyle } from './lookedWeights.js';
 import { type MupdfFontRef, mupdfCidSink } from './mupdfCidFont.js';
 import type { PDFDocument, PDFObject } from './mupdfRaw.js';
 import type { FacePiece, OperatorFaces } from './operatorEdit.js';
@@ -12,8 +13,6 @@ import { ShapingFace } from './textShaping.js';
 
 /** U+25A1 WHITE SQUARE, the missing-character box. */
 const BOX = 0x25a1;
-/** A weight from which a run is asked for in a bold face. */
-const BOLD = 600;
 
 /** A font this edit adds to the page: its resource name, the font being written, and the page's view of it. */
 interface Added {
@@ -44,6 +43,8 @@ export class OperatorFaceSet {
   /** Every character drawn as the box, in the order drawn. */
   readonly boxed: string[] = [];
   readonly #taken: Set<string>;
+  /** The weight a word is set at, the one answer the read gives the editor too (`lookedWeights.ts`). */
+  readonly #weights: LookedWeights;
 
   constructor(
     private readonly document: PDFDocument,
@@ -51,6 +52,8 @@ export class OperatorFaceSet {
     private readonly fonts: ReadonlyMap<string, PageFont>,
   ) {
     this.#taken = new Set(fonts.keys());
+    // THE FACES IT MEASURES ARE THE ONES IT WRITES: one opening of each face at each pin.
+    this.#weights = new LookedWeights(source, (face, axes) => this.#shaping(face, axes));
   }
 
   /** The hook {@link editOperators} asks for a word its run's fonts cannot carry. */
@@ -60,6 +63,7 @@ export class OperatorFaceSet {
       drawn: (pieces) => {
         for (const piece of pieces) if (piece.boxed !== undefined) this.boxed.push(piece.boxed);
       },
+      isBold: (font) => this.#weights.isBold(font),
     };
   }
 
@@ -84,17 +88,12 @@ export class OperatorFaceSet {
     word: string,
     runFont: string | null,
     own: (stretch: string) => FacePiece | null,
-    restyle?: { readonly bold?: boolean; readonly italic?: boolean; readonly family?: string },
+    restyle?: Restyle,
   ): readonly FacePiece[] | null {
     const font = runFont === null ? undefined : this.fonts.get(runFont);
     // A RESTYLED WORD (ADR-0180) asks the resolver for the weight, slant and family the person chose, and the run's own
     // font is not tried: it is the wrong face by definition.
-    const request = {
-      family: restyle?.family ?? font?.face ?? null,
-      bold: restyle?.bold ?? (font?.weight ?? 400) >= BOLD,
-      italic: restyle?.italic ?? false,
-      own: [],
-    };
+    const request = this.#weights.requestFor(font, restyle);
     const pieces = editPieces(word, (stretch) => restyle === undefined && own(stretch) !== null, request, this.source.faces, []);
     const out: FacePiece[] = [];
     for (const piece of pieces) {

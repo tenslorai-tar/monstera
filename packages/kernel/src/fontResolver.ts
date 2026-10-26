@@ -53,6 +53,11 @@ export interface FontRequest {
   /** The family the text asks for (a document font's name, a source's font), `null` for none. */
   readonly family: string | null;
   readonly bold: boolean;
+  /**
+   * The weight asked, where it is known as a number (ADR-0176's correction of 2026-10-26: a drawn font's weight is
+   * measured from its letters, `drawnWeight.ts`); absent, `bold` asks 700 and its absence 400. {@link askedWeight}.
+   */
+  readonly weight?: number;
   readonly italic: boolean;
   /** The text's own font, first, then its siblings in the document; empty where the text is new. */
   readonly own: readonly CandidateFace[];
@@ -165,7 +170,7 @@ function catalogueOrder(request: FontRequest, catalogue: readonly CandidateFace[
     orders = new Map();
     ORDERS.set(catalogue, orders);
   }
-  const key = `${request.family ?? ''}\u0000${String(request.bold)}\u0000${String(request.italic)}`;
+  const key = `${request.family ?? ''}\u0000${String(askedWeight(request))}\u0000${String(request.italic)}`;
   let order = orders.get(key);
   if (order === undefined) {
     order = workOutOrder(request, catalogue);
@@ -175,7 +180,7 @@ function catalogueOrder(request: FontRequest, catalogue: readonly CandidateFace[
 }
 
 function workOutOrder(request: FontRequest, catalogue: readonly CandidateFace[]): readonly CandidateFace[] {
-  const weight = request.bold ? 700 : 400;
+  const weight = askedWeight(request);
   const usable = catalogue.filter((face) => face.embedding !== 'never');
   const asked = request.family === null ? null : normaliseFamily(request.family);
   const standIn = asked === null ? undefined : STAND_INS[asked];
@@ -201,9 +206,13 @@ function workOutOrder(request: FontRequest, catalogue: readonly CandidateFace[])
   return ordered;
 }
 
+/** The weight a request asks: its number where it states one, else 700 for bold and 400 for not. The one spelling. */
+export function askedWeight(request: Pick<FontRequest, 'bold' | 'weight'>): number {
+  return request.weight ?? (request.bold ? 700 : 400);
+}
+
 /** The weight a face is drawn at for a request: pinned into a variable face's range, or the face's own. */
-function weightFor(face: CandidateFace | null, bold: boolean): number {
-  const asked = bold ? 700 : 400;
+function weightFor(face: CandidateFace | null, asked: number): number {
   if (face === null) return asked;
   if (face.weights === null) return face.weight;
   return Math.min(face.weights.max, Math.max(face.weights.min, asked));
@@ -266,5 +275,5 @@ export function resolveRuns(text: string, request: FontRequest, catalogue: reado
       else append(grapheme, wordFace, Array.from(grapheme));
     }
   }
-  return runs.map((run) => ({ text: run.text, face: run.face, weight: weightFor(run.face, request.bold), missing: run.missing }));
+  return runs.map((run) => ({ text: run.text, face: run.face, weight: weightFor(run.face, askedWeight(request)), missing: run.missing }));
 }

@@ -1,3 +1,4 @@
+import { editFaces, editFacesBound, loadEditFaces } from './editFaces.js';
 import type { MupdfSession } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';
 import { pageContentStreams } from './pageContent.js';
@@ -27,8 +28,23 @@ import { joinedContent, showOperators } from './textOperators.js';
  * answer is the runs of consecutive objects sharing a font, bounded by {@link TEXT_FACE_RANGES_MAX}. Past the bound the
  * answer says `truncated`, and the objects past it keep what PDFium read.
  */
+/**
+ * The writer's own answer to what weight a word is set at (`lookedWeights.ts`), over the faces this process was given, or
+ * `null` where it was given none: a read with no faces says the descriptor's weight, as a write with none sets by it.
+ * Loaded on first need, by literal `import()`, as the writer loads its faces: they bring HarfBuzz.
+ */
+async function lookedWeights(): Promise<import('./lookedWeights.js').LookedWeights | null> {
+  if (!editFacesBound()) return null;
+  await loadEditFaces();
+  const source = editFaces();
+  if (source === null) return null;
+  const { LookedWeights } = await import('./lookedWeights.js');
+  return new LookedWeights(source);
+}
+
 export async function readTextFaces(session: MupdfSession, page: number): Promise<TextFaces> {
   const standard = await loadStandardFonts();
+  const weights = await lookedWeights();
   return withDocument(session, (document) => {
     const leaf = document.findPage(page);
     const fonts = pageFonts(leaf, standard);
@@ -46,7 +62,10 @@ export async function readTextFaces(session: MupdfSession, page: number): Promis
           truncated = true;
           continue;
         }
-        at = named.push({ face: font.face === null ? null : boundedFaceName(font.face), weight: font.weight }) - 1;
+        // A DRAWN FONT'S WEIGHT IS THE ONE A WORD IN IT IS SET AT (ADR-0176's corrections of 2026-10-26): what the writer
+        // sets a new word by and compares a person's Bold with, so the editor draws and presses Bold as it is written.
+        const weight = font.outline !== undefined && weights !== null ? weights.unmarkedWeight(font) : font.weight;
+        at = named.push({ face: font.face === null ? null : boundedFaceName(font.face), weight }) - 1;
         indexOf.set(op.state.font, at);
       }
       const last = ranges.at(-1);

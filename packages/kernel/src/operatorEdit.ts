@@ -361,6 +361,18 @@ export interface OperatorFaces {
    * often as it likes and draws it once, and the boxes a person is told about are the drawn ones.
    */
   drawn(pieces: readonly FacePiece[]): void;
+  /**
+   * Whether a word in `font` that nobody marked is set bold: what a mark's *bold* is compared with, so a mark that asks
+   * what an unmarked word already is changes nothing, and one that asks otherwise is set (ADR-0176's correction of
+   * 2026-10-26). For a font whose letters are drawn that is the weight they look, measured; the descriptor's number
+   * answers only where nothing can be measured, and where no faces are given at all.
+   */
+  isBold(font: PageFont): boolean;
+}
+
+/** Whether a word in `font` is set bold with no mark, where no face set can say: its descriptor's weight. */
+export function statedBold(font: PageFont): boolean {
+  return font.weight !== null && font.weight >= 600;
 }
 
 /** What a mark asks of the face a word is set in (ADR-0180 Decision 4). */
@@ -1136,7 +1148,7 @@ function write(
       }
       // WHAT A PAGE'S OPERATORS DO NOT SAY — its slant, its colour — a mark that names is a change.
       return (
-        (set.bold !== undefined && set.bold !== (font.weight !== null && font.weight >= 600)) ||
+        (set.bold !== undefined && set.bold !== (faces?.isBold(font) ?? statedBold(font))) ||
         set.italic === true ||
         (set.size !== undefined && Math.abs(set.size - sizePt) > 0.05) ||
         set.colour !== undefined ||

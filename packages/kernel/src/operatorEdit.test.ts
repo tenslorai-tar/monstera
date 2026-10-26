@@ -13,6 +13,7 @@ import {
   checkOperatorEdit,
   editOperators,
   pageFontsAsRead,
+  statedBold,
 } from './operatorEdit.js';
 import { pageContentStreams } from './pageContent.js';
 import { type PageFont, pageFonts } from './pageFonts.js';
@@ -120,6 +121,7 @@ function resolverFaces(): { readonly faces: OperatorFaces; readonly face: PageFo
       return Array.from(word, (character) => own(character) ?? { font: face, codes: [codeFor(character)] });
     },
     drawn: () => undefined,
+    isBold: statedBold,
   };
   return { faces, face, asked };
 }
@@ -848,6 +850,7 @@ describe('editOperators on paragraphs (ADR-0179)', () => {
           return Array.from(word, (character) => ({ font: face, codes: [character.charCodeAt(0)] }));
         },
         drawn: () => undefined,
+        isBold: statedBold,
       };
       const result = marked({ bold: true }, faces);
       if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
@@ -1273,6 +1276,7 @@ describe('a placement and an added box (ADR-0188)', () => {
         return Array.from(word, (character) => ({ font: face, codes: [codeFor(character)] }));
       },
       drawn: () => undefined,
+      isBold: statedBold,
     };
     const box = { left: 100, baseline: 600, measure: 200, size: 10, text: 'xyz' };
     const withFonts = new Map([...fonts, ['MonsteraFace1', face]]);

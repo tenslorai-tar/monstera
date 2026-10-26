@@ -1,3 +1,4 @@
+import { glyphProcedureContours } from './drawnWeight.js';
 import type { PDFObject } from './mupdfRaw.js';
 import { bufferBytes } from './mupdfWriter.js';
 import { withoutSubsetTag } from './subsetName.js';
@@ -43,6 +44,12 @@ export interface PageFont {
   readonly face: string | null;
   /** Its descriptor's weight, `null` where none is stated. */
   readonly weight: number | null;
+  /**
+   * A font whose letters are DRAWN (`/Type3`): its glyph for `code` as filled contours, in text space at a size of 1,
+   * from its glyph procedure's paths; `null` where that glyph draws a picture or a stroke (ADR-0176's corrections of
+   * 2026-10-26, which measure a new word's weight from it). Absent for a font with a program, whose weight is its program's.
+   */
+  readonly outline?: (code: number) => readonly (readonly (readonly [number, number])[])[] | null;
   /**
    * The codes whose text in `toUnicode` is PDFium's READING of the page and not the font's own statement
    * (`pageFontsAsRead`, ADR-0270): a glyph the font names nothing for, which another reader is free to name otherwise.
@@ -135,12 +142,12 @@ function cidWidths(descendant: PDFObject): (code: number) => number | null {
   return (code) => (widths.get(code) ?? standard) / 1000;
 }
 
-/** A Type 3 font's codes that name a glyph its `/CharProcs` holds, by its `/Encoding /Differences`. */
-function type3Glyphs(font: PDFObject): ReadonlySet<number> {
+/** A Type 3 font's codes that name a glyph its `/CharProcs` holds, by its `/Encoding /Differences`, with each glyph's name. */
+function type3Glyphs(font: PDFObject): ReadonlyMap<number, string> {
   const procs = resolved(font.get('CharProcs'));
   const encoding = resolved(font.get('Encoding'));
   const differences = encoding.isDictionary() ? resolved(encoding.get('Differences')) : encoding;
-  const drawn = new Set<number>();
+  const drawn = new Map<number, string>();
   if (!differences.isArray() || !procs.isDictionary()) return drawn;
   let code = 0;
   for (let at = 0; at < differences.length; at += 1) {
@@ -149,10 +156,31 @@ function type3Glyphs(font: PDFObject): ReadonlySet<number> {
       code = item.asNumber();
       continue;
     }
-    if (item.isName() && !procs.get(item.asName()).isNull()) drawn.add(code);
+    if (item.isName() && !procs.get(item.asName()).isNull()) drawn.set(code, item.asName());
     code += 1;
   }
   return drawn;
+}
+
+/**
+ * A Type 3 font's drawn glyphs as outlines (ADR-0176's corrections of 2026-10-26): each glyph procedure's filled contours
+ * through the font's matrix, in text space at a size of 1. Read on first asking and kept, since a font is measured once.
+ */
+function type3Outlines(font: PDFObject, glyphs: ReadonlyMap<number, string>, matrix: readonly number[]): NonNullable<PageFont['outline']> {
+  const procs = resolved(font.get('CharProcs'));
+  const [a = 0.001, b = 0, c = 0, d = 0.001] = matrix;
+  const known = new Map<number, ReturnType<NonNullable<PageFont['outline']>>>();
+  return (code) => {
+    const kept = known.get(code);
+    if (kept !== undefined || known.has(code)) return kept ?? null;
+    const name = glyphs.get(code);
+    // ASKED OF THE REFERENCE, `toUnicodeOf`'s reason: an indirect stream's `resolve()` answers its dictionary.
+    const procedure = name === undefined || !procs.isDictionary() ? null : procs.get(name);
+    const contours = procedure === null || procedure.isNull() || !procedure.isStream() ? null : glyphProcedureContours(bufferBytes(procedure.readStream()));
+    const mapped = contours === null ? null : contours.map((contour) => contour.map(([x, y]) => [x * a + y * c, x * b + y * d] as const));
+    known.set(code, mapped);
+    return mapped;
+  };
 }
 
 /**
@@ -180,11 +208,13 @@ function read(resource: string, font: PDFObject, standard: StandardFontTables): 
   const weightObject = descriptor.isDictionary() ? resolved(descriptor.get('FontWeight')) : null;
   let width: PageFont['width'];
   let draws: PageFont['draws'];
+  let outline: PageFont['outline'];
   if (subtype === 'Type3') {
     const matrix = numbers(font.get('FontMatrix')) ?? [0.001];
     width = simpleWidths(font, matrix[0] ?? 0.001);
     const glyphs = type3Glyphs(font);
     draws = (code) => glyphs.has(code);
+    outline = type3Outlines(font, glyphs, matrix);
   } else if (descendant !== null) {
     width = cidWidths(descendant);
     draws = () => true;
@@ -211,6 +241,7 @@ function read(resource: string, font: PDFObject, standard: StandardFontTables): 
     draws,
     face: face === null ? null : withoutSubsetTag(face),
     weight: weightObject?.isNumber() === true ? weightObject.asNumber() : null,
+    ...(outline === undefined ? {} : { outline }),
   };
 }
 
