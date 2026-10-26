@@ -2305,11 +2305,6 @@ optgroup {
   max-inline-size: 16rem;
 }
 
-/* A FIELD THAT TAKES LINE BREAKS grows downwards when a person wants more of it shown, never across the column. */
-.m-forms-text--lines {
-  resize: vertical;
-}
-
 /*
  * Why a control is absent — read-only, or not a field anybody fills.
  *
@@ -2565,37 +2560,6 @@ optgroup {
 }
 
 /*
- * The reading-order inspection: a list, so it needs two rules — no bullets or
- * indent the primitive did not ask for, and one line per element. The indent it
- * does want is the depth, set on the row.
- *
- * The role carries the weight; the document's own name and the line count are
- * `--muted` beside it: the distinction has to survive being read quickly, and
- * colour carries it without a second line.
- */
-.m-page-structure__list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.m-page-structure__row {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-8);
-  padding-block: var(--space-2);
-}
-
-.m-page-structure__role {
-  font-weight: 600;
-}
-
-.m-page-structure__raw,
-.m-page-structure__lines {
-  color: var(--muted);
-}
-
-/*
  * The PDF/A removals notice: a list, so the list exception's two rules — no bullets or
  * indent the primitive did not ask for. Each line is the converter's own, quoted.
  */
@@ -2742,30 +2706,6 @@ optgroup {
   margin-inline-start: var(--space-2);
 }
 
-/*
- * The accessibility check's two lists: the list exception's rules, and each rule's row in TWO COLUMNS, the verdict
- * and what the rule says, with the pages under the rule's words. A wrapping row dropped the pages to the verdict's
- * column, where they read as a verdict of their own (the owner's item 19d).
- */
-.m-accessibility-check__rules li {
-  display: grid;
-  grid-template-columns: 12ch minmax(0, 1fr);
-  column-gap: var(--space-8);
-}
-
-.m-accessibility-check__verdict {
-  font-weight: 600;
-}
-
-.m-accessibility-check__pages {
-  grid-column: 2;
-}
-
-.m-accessibility-check__pages,
-.m-accessibility-check__human li {
-  color: var(--muted);
-}
-
 /* DOCUSIGN'S FIELDS hold a subject, names and email addresses, which run past the default field's twenty characters:
    about thirty-two show whole, and the field never outgrows its row. */
 .m-docusign-send .m-input {
@@ -2862,70 +2802,6 @@ optgroup {
 }
 
 /*
- * The choice list in the create-field dialogs.
- *
- * THE ONLY RULE THESE FIVE DIALOGS NEED, and that is deliberate rather than
- * minimal: every other dialog body in this application — the text box, the note,
- * the two link dialogs — carries no CSS at all and relies on the dialog
- * primitive's own flow. A row holding an input beside its remove button is the
- * one thing default flow gets wrong, because the two would stack.
- *
- * `align-items: end` rather than `center`: the input is a labelled field, so it
- * is taller than the button by its label, and centring would float the button
- * into the middle of the label rather than beside the control it removes.
- */
-.m-form-field__options {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.m-form-field__option {
-  display: flex;
-  align-items: end;
-  gap: var(--space-4);
-}
-
-/*
- * The line chooser in the edit-text dialog.
- *
- * The browser's fieldset frame is undone by the base `fieldset` rule at the top
- * of this file. This paragraph used to say no other body grouped radios, which
- * stopped being true and left every later group in the browser's frame; what
- * remains here is this chooser's own layout.
- *
- * The options are a COLUMN, and that is a change of 2026-09-10 rather than the
- * default. They were a wrapping row while each option was a one- or two-digit
- * index; an option is now a line of the document, so a row would put two
- * sentences beside each other and a reader would have to work out where one
- * ended. A column of lines reads the way the page does.
- */
-.m-replace-text-object__choice {
-  border: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-/*
- * The legend, laid out as a heading for the group rather than as a border
- * caption: with the border removed a legend's default inline placement leaves
- * it sitting in the first row of options.
- */
-.m-replace-text-object__legend {
-  flex: 1 0 100%;
-  padding: 0;
-}
-
-.m-replace-text-object__option {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-/*
  * The find bar's replace row.
  *
  * Its own row rather than sitting in the bar's main line: the find controls are
@@ -2951,29 +2827,6 @@ optgroup {
   max-width: 60ch;
   margin: 0;
   color: var(--muted);
-}
-
-/*
- * The edit-object dialog's choice of object, in the pattern's choice rows: each object's box is its note, in TABULAR
- * FIGURES — four numbers per row down a column, and proportional digits make 11 narrower than 88, so nothing lines up
- * and no two rows can be compared at a glance.
- */
-.m-edit-page-object .m-dialog-choice .m-dialog-row__note {
-  font-variant-numeric: tabular-nums;
-}
-
-/*
- * A line's text.
- *
- * It does NOT wrap: a document line that wrapped here would look like two lines
- * in a list whose whole job is to say which pieces of text are one line, which
- * is the one misreading this chooser cannot afford. Overflow is clipped with an
- * ellipsis and the input below shows the whole thing once a line is chosen.
- */
-.m-replace-text-object__line {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* The jump WRAPS its parts rather than squeezing them: the kind-and-page line stays whole, and the badges,
@@ -3422,11 +3275,6 @@ optgroup {
   gap: var(--space-4);
   padding: var(--space-4) var(--space-4) var(--space-4) var(--space-8);
   border-block-end: 1px solid var(--border-soft); /* decorative: separates the header from the properties below */
-}
-
-.m-context-panel__title {
-  color: var(--muted);
-  font-size: var(--font-chrome-11);
 }
 
 /* The panel's two tabs (ADR-0083). Captioned rather than icon-only: there are two of them
@@ -4793,12 +4641,6 @@ optgroup {
   align-items: center;
 }
 
-.m-text-font-size {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
 /* A GROUP'S OVERFLOW (the owner's `document-light-narrow.png`): the tools that did not fit, in the
    group they belong to. It draws as a tool button so a folded group reads as a group — the chevron
    is what says it opens rather than runs. */
@@ -5127,23 +4969,6 @@ optgroup {
   gap: var(--dialog-sentence-gap);
 }
 
-.m-ai-setup__actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-8);
-}
-
-/* A LABELLED CHOICE — a caption over a select — in the text-field primitive's shape (`.m-field`,
-   `.m-input`), so a dialog's drop-downs and text boxes read as one family. There was no rule for
-   this class at all: every dialog using it drew its caption run into a browser-default select. */
-.m-document-choice {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  color: var(--muted);
-  font-size: var(--font-chrome-12);
-}
-
 /* THE SECOND-DOCUMENT ROW (`SourceDocumentRow`): the open documents and *Choose file…* side by side at the row's right,
    the select giving way first, since its list shows a long name whole and the button's words must not be cut. */
 .m-source-document {
@@ -5373,7 +5198,6 @@ optgroup {
 /* THE SETTINGS ROWS' DROP-DOWNS TOO (v5-10 draws them as fields): they were browser-default boxes beside styled segmented
    controls and text fields, so one dialog read as two families. A dialog row's (the dialog pattern, 2026-10-02) is the
    same field. */
-.m-document-choice select,
 .m-settings-row__control select,
 .m-dialog-row__control select {
   /* THE TEXT FIELD'S OWN MEASURES (`.m-input`): with 8 px padding, a 13 px face and a 4 px corner the drop-down stood
@@ -5384,7 +5208,6 @@ optgroup {
   font-size: var(--font-chrome-12);
 }
 
-.m-document-choice select:focus-visible,
 .m-settings-row__control select:focus-visible,
 .m-dialog-row__control select:focus-visible {
   outline: 2px solid var(--focus-ring);
@@ -5408,12 +5231,6 @@ optgroup {
   margin: 0;
   color: var(--muted);
   font-size: var(--font-chrome-12);
-}
-
-.m-translate__actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-8);
 }
 
 /*
@@ -5448,12 +5265,6 @@ optgroup {
   margin: 0;
 }
 
-.m-close-unsaved__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-4);
-}
-
 /* Redaction marks nobody applied, before a save, a close or an export: the question, why it matters, three answers —
    the close question's shape, so the two read as one family when a close asks both. */
 .m-pending-redactions {
@@ -5474,14 +5285,6 @@ optgroup {
   display: flex;
   flex-direction: column;
   gap: var(--space-8);
-}
-
-.m-donate__actions,
-.m-security-update__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-8);
-  margin-block-start: var(--space-8);
 }
 
 /* §7's context menus: the dialog surface's roles at a menu's density, and the palette's row. Portaled to the end of
@@ -5542,7 +5345,7 @@ optgroup {
   font-size: var(--font-chrome-11);
 }
 
-/* The Save-a-smaller-copy dialog: the close-unsaved dialog's stack and its action row. */
+/* The Save-a-smaller-copy dialog: the close-unsaved dialog's stack. */
 .m-optimize {
   display: grid;
   gap: var(--space-8);
@@ -5550,12 +5353,6 @@ optgroup {
 
 .m-optimize p {
   margin: 0;
-}
-
-.m-optimize__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-4);
 }
 
 /*
@@ -6658,11 +6455,6 @@ optgroup {
   pointer-events: auto;
 }
 
-.m-page-field-editor--lines {
-  resize: none;
-  overflow-y: auto;
-}
-
 .m-text-line {
   position: absolute;
   color: transparent;
@@ -6792,15 +6584,6 @@ optgroup {
    outline's own colour, so every look that draws the dashed outline draws this one too; the page's note says why. */
 .m-text-block--past {
   border: 2px solid var(--accent-on-paper, var(--accent));
-}
-
-/* THE TEXT BELOW A GROWING BLOCK, drawn moved (ADR-0249): its old place covered in the page's paper and the page's own
-   pixels of it drawn lower. A drawing of the page, never pressed, under every outline and editor. */
-.m-text-push-cover,
-.m-text-push-copy {
-  position: absolute;
-  pointer-events: none;
-  transform-origin: top left;
 }
 
 /* ITS SENTENCE, sat on the block's top edge where the words begin, and set as the editor's problem is. */
@@ -8088,12 +7871,6 @@ optgroup {
 .m-stamp-chooser__empty {
   color: var(--muted);
   grid-column: 1 / -1;
-}
-
-.m-stamp-chooser__actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-8);
 }
 
 /*
