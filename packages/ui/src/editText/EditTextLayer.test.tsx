@@ -184,6 +184,32 @@ describe('Edit text on the editor kit (ADR-0271)', () => {
     expect(onCommit).toHaveBeenCalledTimes(1);
   });
 
+  it('a page with no text offers to RECOGNISE it, and the button calls onRecognise; a page with blocks does not (ADR-0181)', () => {
+    const onRecognise = vi.fn();
+    const empty: PageBlocks = { ...BLOCKS, blocks: [] };
+    const view = render(
+      <I18nProvider i18n={i18n}>
+        <EditTextLayer
+          blocks={empty}
+          geometry={{ ...GEOMETRY, crop: [...GEOMETRY.crop] }}
+          onCommit={() => Promise.resolve('unchanged')}
+          onLeave={() => undefined}
+          onRecognise={onRecognise}
+          page={0}
+          paperAt={() => undefined}
+          runFonts={() => Promise.resolve(NO_RUN_FONTS)}
+        />
+      </I18nProvider>,
+    );
+    const offer = must(view.container.querySelector<HTMLButtonElement>('.m-text-edit__promote'), 'recognise button');
+    fireEvent.click(offer);
+    expect(onRecognise).toHaveBeenCalledTimes(1);
+    cleanup();
+    // CONTROL: the same layer over a page WITH blocks makes no offer.
+    const { view: withBlocks } = layer();
+    expect(withBlocks.container.querySelector('.m-text-edit__promote')).toBeNull();
+  });
+
   it('Escape with no block open leaves the mode', () => {
     const { view, onLeave } = layer();
     fireEvent.keyDown(must(view.container.querySelector('[data-text-edit-layer]'), 'layer'), { key: 'Escape' });

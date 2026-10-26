@@ -14,8 +14,8 @@ import { LOOKS, bridgeUnder } from './pageBridge.js';
  * contract clause of three numbered paragraphs with space between them is one block of five lines to PDFium and
  * `groupIntoBlocks`, and its baselines are not evenly spaced: the editor's last line stood 8 points above the page's,
  * and the page's own last line showed below the editor, a second copy a few pixels away. The lines carrying on a
- * clause's words were drawn at the number column's left. `paragraphPlaces` in `TextEditLayer.tsx` moves each paragraph
- * to where the page has it.
+ * clause's words were drawn at the number column's left. The editor now opens each paragraph with the space the page
+ * leaves above it and at its own edges (`modelOfBlock` in `editText/blockModel.ts`), so it stands where the page has it.
  *
  * ## Corrected by cloud run 19: ONE copy is now the PAGE'S, until the person changes a row
  *

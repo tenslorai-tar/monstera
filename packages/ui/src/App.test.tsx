@@ -2987,7 +2987,7 @@ describe('App', () => {
     });
 
     it('EDIT TEXT: a page with no text offers to recognise it, and the button runs the registry’s own recognise command (ADR-0181)', async () => {
-      // THE WIRED PAIR'S MISSING HALF: `TextEditLayer.test.tsx` proves the button calls `onRecognise`, and the kernel proof
+      // THE WIRED PAIR'S MISSING HALF: `editText/EditTextLayer.test.tsx` proves the button calls `onRecognise`, and the kernel proof
       // proves a recognised scan is edited; this is the line between them, which only the shell holds.
       const asked: string[] = [];
       const client = createClient(channels, (id) => {

@@ -4752,7 +4752,7 @@ export function addTextCommand(deps: {
  * is full of text, how do you rightly list that on a dialog box?"* — and the
  * standard is a person clicking the words they are looking at. So this command
  * does what a drawing tool's command does: it turns a mode on, or off again.
- * `TextEditLayer` is what the mode draws on each page, and {@link commitTextBlock}
+ * `EditTextLayer` is what the mode draws on each page, and {@link commitTextBlock}
  * is the one way an edit leaves it.
  *
  * ## A machine with no editing engine meets a SENTENCE
