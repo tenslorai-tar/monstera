@@ -308,3 +308,38 @@ for a glyph it did not already draw for that word, which is the rejected reuse a
 
 Rejected: keeping the per-run key and binding faces in the proof, which hides the change of face inside the block
 rather than removing it.
+
+## Correction, 2026-10-26 — a new word takes the weight its neighbours LOOK, measured from their drawn letters
+
+**The owner's test of 1.0.2152.0 (L2, document 2, page 1):** four letters typed into the title, a heading drawn in Type 3
+letters, were written visibly heavier than the heading — *"it makes it bold, which is not what the people wanted"* —
+and pressing Bold did not take it off.
+
+**The mechanism, measured in the running application the same day.** The heading's font is named
+`SourceSerif4Variable_550wght_26.25opsz`: Chromium drew a variable serif at weight 550, a semibold, and wrote 600 in its
+descriptor. The correction above sends the typed letters to the chain *matched on the run's own weight*, and that weight
+was the descriptor's number, read as a yes or no: `operatorFaces.ts` asked for bold at 600 or more, and the resolver
+turned bold into 700 (`fontResolver.ts`). So the new letters were set in Tinos Bold, a full bold beside a semibold.
+Turning Bold off did write the typed letters in Tinos Regular (measured: the saved file names both), but the rest of the
+word they were typed into, new to the run and so in the stand-in too, stayed in Tinos Bold; and in 1.0.2152.0 the
+button's own pressed state could lag (fixed apart, cloud branch 21's C4). Both are the same defect: a stated number
+standing for what the letters look like.
+
+**Decision 5 gains a sentence: for a font whose letters are DRAWN, the weight a new word is matched on is the weight its
+letters look, measured from them, and a number the descriptor states is used only where they cannot be measured.** The
+drawn font's ink is read from its own glyph procedures — the area each letter's paths fill, per em of its advance — over
+the letters it draws, and the stand-in family's ink is read the same way from its own outlines, over the same letters, at
+its regular and bold, or along its weight axis where it has one. The weight asked is the one whose ink matches: pinned
+there on a variable face, and the nearer of the faces on a family of fixed weights. One module answers it
+(`drawnWeight.ts`), and the resolver's request carries that weight as a number (`FontRequest.weight`), so the order and
+the pinning read it where they read *bold* before. **The person's own choice still wins:** a word they made bold or not
+is set as they made it, and the measured weight decides only what nobody chose.
+
+**Where nothing can be measured** — a drawn font whose glyphs are pictures rather than paths, one drawing fewer than
+four letters, or a family with one weight — the descriptor's number decides, as before. **A font with a program** keeps
+its program's own weight class: what the program says of itself is not a descriptor's guess, and measuring every
+program on every edit is not asked for. Stated, so the day a program is found lying, this is the sentence it falsifies.
+
+**Rejected: reading the weight from the font's name** (`550wght`). It happens to be right here and is a producer's
+spelling, as unchecked as the descriptor; the owner's rule is the letters on the page. **Rejected: a lighter threshold
+than 600.** Any threshold is a guess about letters nobody looked at, and moves the defect to the next weight.
