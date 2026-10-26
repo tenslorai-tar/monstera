@@ -99,7 +99,7 @@ describe('Edit text on the editor kit (ADR-0271)', () => {
     expect(frame()?.ownerDocument.activeElement).toBe(frame());
     // OPENING CHANGES NOTHING VISIBLE: the paragraph is laid out over the page's own pixels, not drawn.
     expect(frame()?.querySelector('.m-kit__paragraph--as-drawn')).not.toBeNull();
-    expect(frame()?.querySelectorAll('.m-text-editor-cover')).toHaveLength(0);
+    expect(frame()?.querySelectorAll('.m-kit-cover')).toHaveLength(0);
   });
 
   it('a second press inside the box puts the caret in the words; Enter does so at their end', () => {

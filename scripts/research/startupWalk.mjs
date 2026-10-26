@@ -118,8 +118,10 @@ async function launch(appData) {
     if ((await control.getAttribute('aria-pressed')) !== 'true') await control.click();
     const block = page.locator('[data-text-edit-layer]:visible [data-text-block]').first();
     await block.waitFor({ timeout: 60_000 });
+    // TWO STEPS (ADR-0271 section 3): the press selects the box, Enter puts the caret at the end of its words.
     await block.click();
-    await page.locator('[data-text-editor]').first().waitFor({ timeout: 60_000 });
+    await page.keyboard.press('Enter');
+    await page.locator('[data-kit-surface]').first().waitFor({ timeout: 60_000 });
     const editorOpenMs = Date.now() - chose;
     await page.keyboard.press('End');
     await page.keyboard.type(' now');

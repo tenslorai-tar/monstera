@@ -6606,7 +6606,7 @@ optgroup {
   outline-offset: 2px;
 }
 
-.m-text-editor-frame {
+.m-kit-frame {
   position: absolute;
   pointer-events: auto;
   transform-origin: top left;
@@ -6691,7 +6691,7 @@ optgroup {
 }
 
 /* THE PAGE'S PAPER over its own copy of a paragraph the editor draws: placed from script, under the words. */
-.m-text-editor-cover {
+.m-kit-cover {
   position: absolute;
   inset-inline: -1px;
   background-color: var(--page);
@@ -6795,7 +6795,7 @@ optgroup {
 
 /* WHAT THE PERSON HAS DONE TO THE BLOCK is drawn as a transform on this, about its top left, so the bar and the
    sentences around the frame stay upright where they are (`textPlacement.placeTransform`). */
-.m-text-editor-placer {
+.m-kit-placer {
   position: relative;
   transform-origin: 0 0;
 }
@@ -6807,11 +6807,11 @@ optgroup {
    four pixels in from the last line's start answered the south-west handle). The visible square is small and sits
    against the frame inside its target (`::before`). `--m-handle-reach` is the target's side, which the bar and the
    sentence above the frame clear. */
-.m-text-editor-frame {
+.m-kit-frame {
   --m-handle-reach: var(--space-24);
 }
 
-.m-text-editor-handle {
+.m-kit-handle {
   position: absolute;
   box-sizing: border-box;
   inline-size: var(--m-handle-reach);
@@ -6822,7 +6822,7 @@ optgroup {
   touch-action: none;
 }
 
-.m-text-editor-handle::before {
+.m-kit-handle::before {
   content: '';
   position: absolute;
   box-sizing: border-box;
@@ -6835,12 +6835,12 @@ optgroup {
   translate: -50% -50%;
 }
 
-.m-text-editor-handle:disabled {
+.m-kit-handle:disabled {
   pointer-events: none;
 }
 
 /* EACH TARGET'S INNER CORNER OR SIDE meets the frame; the grip is a half square in from it, so it touches the frame. */
-.m-text-editor-handle--nw {
+.m-kit-handle--nw {
   inset-block-start: 0;
   inset-inline-start: 0;
   translate: -100% -100%;
@@ -6848,14 +6848,14 @@ optgroup {
   --grip-y: calc(100% - var(--space-4));
   cursor: nwse-resize;
 }
-.m-text-editor-handle--n {
+.m-kit-handle--n {
   inset-block-start: 0;
   inset-inline-start: 50%;
   translate: -50% -100%;
   --grip-y: calc(100% - var(--space-4));
   cursor: move;
 }
-.m-text-editor-handle--ne {
+.m-kit-handle--ne {
   inset-block-start: 0;
   inset-inline-start: 100%;
   translate: 0 -100%;
@@ -6863,21 +6863,21 @@ optgroup {
   --grip-y: calc(100% - var(--space-4));
   cursor: nesw-resize;
 }
-.m-text-editor-handle--e {
+.m-kit-handle--e {
   inset-block-start: 50%;
   inset-inline-start: 100%;
   translate: 0 -50%;
   --grip-x: var(--space-4);
   cursor: ew-resize;
 }
-.m-text-editor-handle--se {
+.m-kit-handle--se {
   inset-block-start: 100%;
   inset-inline-start: 100%;
   --grip-x: var(--space-4);
   --grip-y: var(--space-4);
   cursor: nwse-resize;
 }
-.m-text-editor-handle--sw {
+.m-kit-handle--sw {
   inset-block-start: 100%;
   inset-inline-start: 0;
   translate: -100% 0;
@@ -6885,7 +6885,7 @@ optgroup {
   --grip-y: var(--space-4);
   cursor: nesw-resize;
 }
-.m-text-editor-handle--w {
+.m-kit-handle--w {
   inset-block-start: 50%;
   inset-inline-start: 0;
   translate: -100% -50%;
@@ -6894,14 +6894,14 @@ optgroup {
 }
 /* THE TURN HANDLE sits one reach to the right of the block, level with its middle; `TURN_REACH` is the same number. Its
    target is centred there, which is outside the frame by the reach less half the target's side. */
-.m-text-editor-handle--r {
+.m-kit-handle--r {
   inset-block-start: 50%;
   inset-inline-start: calc(100% + 20px);
   translate: -50% -50%;
   cursor: grab;
 }
 
-.m-text-editor-handle--r::before {
+.m-kit-handle--r::before {
   border-radius: 50%;
 }
 
@@ -6909,7 +6909,7 @@ optgroup {
    over white paper it composites to a mid grey. Measured 2026-10-05 on Chromium 151 (`renderedScreen.pw.ts`' editor
    refusal case, composited over --page): the Edit text refusal's reference line read 2.57:1 and its sentence 3.99:1 in
    dark, the owner's faint line; on --float, 7.82:1 and 12.11:1. --float is the token for what floats over anything. */
-.m-text-editor-problem,
+.m-kit-problem,
 .m-inline-writer__problem {
   position: absolute;
   inset-block-start: calc(100% + var(--space-8));
@@ -6927,13 +6927,13 @@ optgroup {
 }
 
 /* THE EDITOR'S IS A SENTENCE, its particulars and its way out, one under another (ADR-0169 Decision 5). */
-.m-text-editor-problem {
+.m-kit-problem {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
 }
 
-.m-text-editor-problem p {
+.m-kit-problem p {
   margin: 0;
 }
 
@@ -7104,7 +7104,7 @@ optgroup {
 }
 
 /* ABOVE THE WORDS, for what is said of words that ran past the page's foot: below them is out of sight. */
-.m-text-editor-problem--above {
+.m-kit-problem--above {
   inset-block-start: auto;
   inset-block-end: calc(100% + var(--m-handle-reach) + var(--space-4));
 }

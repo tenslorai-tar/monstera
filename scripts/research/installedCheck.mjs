@@ -567,8 +567,10 @@ try {
     await runCommand(page, 'Edit text on the page');
     const block = page.locator('[data-text-edit-layer] [data-text-block]').first();
     await block.waitFor({ timeout: 30_000 });
+    // TWO STEPS (ADR-0271 section 3): the press selects the box, Enter puts the caret at the end of its words.
     await block.click();
-    const editor = page.locator('[data-text-editor]');
+    await page.keyboard.press('Enter');
+    const editor = page.locator('[data-kit-surface]');
     await editor.waitFor({ timeout: 15_000 });
     await page.keyboard.press('Control+End');
     await page.keyboard.type(` ${MARKER}`);

@@ -127,14 +127,16 @@ await step('M3. ONE Edit text action: a paragraph clicked, a word typed, a click
   const block = page.locator('[data-text-block]').nth(1);
   const box = await block.boundingBox();
   if (box === null) throw new Error('no second text block on the first page');
+  // TWO STEPS (ADR-0271 section 3): the press selects the box, Enter puts the caret at the end of its words.
   await page.mouse.click(box.x + box.width / 2, box.y + Math.min(8, box.height / 2));
-  await expect(page.locator('[data-text-editor]')).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('[data-kit-surface]')).toBeFocused();
   await page.keyboard.type(' walked');
   // A CLICK AWAY in the page's right margin, below the ribbon, as textWalk's step 3 makes it.
   const pageBox = await page.locator('canvas.m-page:visible').first().boundingBox();
   if (pageBox === null) throw new Error('the page is not on screen');
   await page.mouse.click(pageBox.x + pageBox.width - 20, Math.max(pageBox.y, 230) + 20);
-  await expect(page.locator('[data-text-editor]')).toHaveCount(0);
+  await expect(page.locator('[data-kit-surface]')).toHaveCount(0);
   // A WRITE TAKES 3 TO 5 S (textWalk's reading of 2026-10-12), then the hosts it started settle.
   await page.waitForTimeout(15_000);
   const read = await reading();

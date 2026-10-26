@@ -26,7 +26,34 @@ export function textSteps(walk) {
   const { page, output, saveTo, command } = walk;
 
   /** The open editor's words. */
-  const editor = () => page.locator('[data-text-editor]');
+  const editor = () => page.locator('[data-kit-surface]');
+  /** The open editor's frame: the selected box, and what says the editor is busy writing. */
+  const frame = () => page.locator('[data-kit-frame]');
+
+  /**
+   * A block opened at a point, as a hand opens it in the rebuilt editor (ADR-0271 section 3): the first press selects the
+   * box, the second at the same point puts the caret there. BY THE POINT, not by the outline element: once the box is
+   * selected its frame lies over the outline, and a press aimed at the outline is one the frame takes.
+   * @param {number} x
+   * @param {number} y
+   */
+  async function openAt(x, y) {
+    await page.mouse.click(x, y);
+    await expect(frame()).toBeFocused();
+    await page.mouse.click(x, y);
+    await expect(editor()).toBeFocused();
+  }
+
+  /**
+   * {@link openAt} the middle of `block`'s outline, or `at` from its top left.
+   * @param {import('playwright').Locator} block
+   * @param {{ x: number, y: number }} [at]
+   */
+  async function openBlock(block, at) {
+    const box = await block.boundingBox();
+    if (box === null) throw new Error('the block has no outline on screen');
+    await openAt(box.x + (at?.x ?? box.width / 2), box.y + (at?.y ?? Math.min(8, box.height / 2)));
+  }
   /** The Properties panel's text section, while an editor is open. */
   const panel = () => page.locator('[data-text-properties]');
 
@@ -54,7 +81,7 @@ export function textSteps(walk) {
   }
 
   /** Every refusal or warning the open editor shows, worded. */
-  const problems = () => page.locator('.m-text-editor-problem').allInnerTexts();
+  const problems = () => page.locator('.m-kit-problem').allInnerTexts();
 
   /**
    * A press away, ENDED: {@link clickPage}, then settled — no write in flight, and the editor closed or saying why it
@@ -126,9 +153,10 @@ export function textSteps(walk) {
         const dom = /** @type {{ querySelector: (selector: string) => { getAttribute: (name: string) => string | null, textContent: string | null } | null }} */ (
           Reflect.get(globalThis, 'document')
         );
-        const open = dom.querySelector('[data-text-editor]');
-        const problem = dom.querySelector('.m-text-editor-problem');
-        return { open: open !== null, busy: open?.getAttribute('aria-busy') === 'true', problem: problem?.textContent ?? null };
+        const open = dom.querySelector('[data-kit-surface]');
+        const frame = dom.querySelector('[data-kit-frame]');
+        const problem = dom.querySelector('.m-kit-problem');
+        return { open: open !== null, busy: frame?.getAttribute('aria-busy') === 'true', problem: problem?.textContent ?? null };
       });
       samples.push({ ms: Date.now() - started, busy: state.busy, problem: state.problem });
       if (!state.open || (!state.busy && Date.now() - started >= 1000)) break;
@@ -152,7 +180,7 @@ export function textSteps(walk) {
     return path;
   }
 
-  return { editor, panel, ensureEditText, clickPage, pressAway, problems, chooseFont, savedCopy };
+  return { editor, frame, panel, ensureEditText, openAt, openBlock, clickPage, pressAway, problems, chooseFont, savedCopy };
 }
 
 /**

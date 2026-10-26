@@ -105,8 +105,8 @@ async function open(page: Page, zoom: string): Promise<void> {
   await page.addStyleTag({
     content:
       // THE OUTLINE'S HOVER TINT TOO: an open block has no outline, so a pointer resting on one tints only the capture before.
-      '.m-text-editor-handle,.m-text-editor-problem{visibility:hidden!important}.m-text-block{border-color:transparent!important;outline:none!important;background:transparent!important}' +
-      '.m-text-editor-frame{outline:none!important;border-color:transparent!important}[data-kit-surface]{caret-color:transparent!important}',
+      '.m-kit-handle,.m-kit-problem{visibility:hidden!important}.m-text-block{border-color:transparent!important;outline:none!important;background:transparent!important}' +
+      '.m-kit-frame{outline:none!important;border-color:transparent!important}[data-kit-surface]{caret-color:transparent!important}',
   });
 }
 
@@ -319,7 +319,7 @@ test('opening and closing a block shows, in every frame, the page’s own drawin
       frames.push({
         open: editor !== null,
         drawnRows: rows.filter((row) => getComputedStyle(row).color !== 'rgba(0, 0, 0, 0)').length,
-        covers: document.querySelectorAll('.m-text-editor-cover').length,
+        covers: document.querySelectorAll('.m-kit-cover').length,
         opaque: editor === null ? 0 : getComputedStyle(editor).backgroundColor === 'rgba(0, 0, 0, 0)' ? 0 : 1,
       });
       if (Reflect.get(window, 'editorFramesStop') !== true) requestAnimationFrame(sample);

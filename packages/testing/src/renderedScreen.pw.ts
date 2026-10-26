@@ -4897,7 +4897,7 @@ for (const look of LOOKS) {
     await page.keyboard.type(' typed here');
     await page.keyboard.press('Escape');
 
-    const said = page.locator('.m-text-editor-problem');
+    const said = page.locator('.m-kit-problem');
     await expect(said).toContainText('Monstera couldn’t make this change without disturbing other text on the page, so nothing was changed.');
     await expect(said).toContainText('read-back 0');
     // ONLY ESC IS OFFERED where no words can pass (RRRRRRR-16, 83fb33fc): a font this build cannot rewrite refuses any
@@ -5018,7 +5018,7 @@ for (const look of LOOKS) {
 
     await openWords(page, outline);
     const editor = page.locator(SURFACE);
-    expect(await againstPaper(page.locator('.m-text-editor-frame'), 'outline-color')).toBeGreaterThanOrEqual(3);
+    expect(await againstPaper(page.locator('.m-kit-frame'), 'outline-color')).toBeGreaterThanOrEqual(3);
     // THE CARET, which nothing measured (OOOOOOO-9): the editor draws it in the paper-solved accent.
     expect(await againstPaper(editor, 'caret-color')).toBeGreaterThanOrEqual(3);
     // CONTROLS on the instrument: the page's canvas paints no outline and the body's caret is the default, so each has
@@ -5056,7 +5056,7 @@ for (const look of LOOKS) {
     // handle. Eight handles are required first: no handle at all would leave the overlap list empty for the wrong reason.
     // CONTROL: the target the handles had before, 24 px centred on the frame's corner, overlaps the frame by a quarter of
     // itself, which is what this measure reports for it.
-    const placerBox = await page.locator('.m-text-editor-placer').boundingBox();
+    const placerBox = await page.locator('.m-kit-placer').boundingBox();
     expect(placerBox).not.toBeNull();
     const frame = placerBox ?? { x: 0, y: 0, width: 0, height: 0 };
     const overlap = (a: { x: number; y: number; width: number; height: number }, b: typeof frame) =>
@@ -5190,7 +5190,7 @@ for (const look of LOOKS) {
     await openWords(page, past);
     const editor = page.locator(SURFACE);
     expect(await editor.evaluate((element) => (element as HTMLElement).innerText)).toBe(lines.join('\n'));
-    const status = page.locator('.m-text-editor-frame [role="status"]');
+    const status = page.locator('.m-kit-frame [role="status"]');
     await expect(status).toHaveText('This text no longer fits on the page');
     // IN THE WINDOW, above the words: below them it was past the foot they ran off, and out of sight.
     await expect(status).toBeInViewport();

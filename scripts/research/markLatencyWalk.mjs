@@ -476,8 +476,10 @@ await measure('edit text', async (run) => {
   const area = await block.boundingBox();
   if (area === null) throw new Error('the block has no box');
   return timed({ x: area.x - 6, y: area.y - 6, width: area.width + 60, height: area.height + 12 }, async () => {
+    // TWO STEPS (ADR-0271 section 3): the press selects the box, Enter puts the caret at the end of its words.
     await block.click();
-    await page.locator('[data-text-editor]').waitFor({ timeout: 15_000 });
+    await page.keyboard.press('Enter');
+    await page.locator('[data-kit-surface]').waitFor({ timeout: 15_000 });
     await page.keyboard.press('End');
     await page.keyboard.type(' X');
     await page.keyboard.press('Escape');

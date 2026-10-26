@@ -218,14 +218,14 @@ function EditorProblem({ problem }: { readonly problem: Exclude<BlockCommit, 'wr
   const { _ } = useLingui();
   if (problem === 'held') {
     return (
-      <div className="m-text-editor-problem" role="alert">
+      <div className="m-kit-problem" role="alert">
         <p>{_(TEXT_EDIT_HELD)}</p>
       </div>
     );
   }
   const particulars = problemParticulars(problem.refused);
   return (
-    <div className="m-text-editor-problem" role="alert">
+    <div className="m-kit-problem" role="alert">
       <p>{_(problemMessage(problem.refused))}</p>
       {particulars === undefined ? null : (
         <dl className="m-command-problem-reference">
@@ -703,7 +703,7 @@ export function BlockEditor({
     // now reach and what they overlap (growth by overlap, ADR-0271 section 3).
     <div
       aria-busy={busy}
-      className={`m-text-editor-frame m-kit-frame${mode === 'box' ? ' m-kit-frame--box' : ''}`}
+      className={`m-kit-frame${mode === 'box' ? ' m-kit-frame--box' : ''}`}
       data-kit-frame=""
       data-kit-mode={mode}
       onKeyDown={onBoxKey}
@@ -712,10 +712,10 @@ export function BlockEditor({
       tabIndex={-1}
     >
       {(moved ? [{ top: 0, height: undefined }] : covers).map((cover, at) => (
-        <div aria-hidden="true" className="m-text-editor-cover" key={at} style={{ top: cover.top, height: cover.height ?? '100%', ...paper }} />
+        <div aria-hidden="true" className="m-kit-cover" key={at} style={{ top: cover.top, height: cover.height ?? '100%', ...paper }} />
       ))}
       <div
-        className="m-text-editor-placer"
+        className="m-kit-placer"
         data-placed={moved ? '' : undefined}
         style={{
           ...(placement.width === undefined ? {} : { width: placement.width * geometry.zoom }),
@@ -760,7 +760,7 @@ export function BlockEditor({
         {(placeable ? HANDLES : []).map(({ handle, label }) => (
           <button
             aria-label={_(label)}
-            className={`m-text-editor-handle m-text-editor-handle--${handle}`}
+            className={`m-kit-handle m-kit-handle--${handle}`}
             data-handle={handle}
             disabled={busy}
             key={handle}
@@ -773,11 +773,11 @@ export function BlockEditor({
       {problem !== undefined ? (
         <EditorProblem problem={problem} />
       ) : notice !== undefined ? (
-        <div className="m-text-editor-problem" role="status">
+        <div className="m-kit-problem" role="status">
           <p>{_(notice)}</p>
         </div>
       ) : past ? (
-        <div className="m-text-editor-problem m-text-editor-problem--above" role="status">
+        <div className="m-kit-problem m-kit-problem--above" role="status">
           <p>{_(TEXT_EDIT_PAST_PAGE)}</p>
         </div>
       ) : null}

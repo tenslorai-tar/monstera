@@ -511,8 +511,10 @@ await measure(
       await arm('text.edit');
       const block = page.locator('[data-text-edit-layer] [data-text-block]').first();
       await block.waitFor({ timeout: 30_000 });
+      // TWO STEPS (ADR-0271 section 3): the press selects the box, Enter puts the caret at the end of its words.
       await block.click();
-      await page.locator('[data-text-editor]').waitFor({ timeout: 15_000 });
+      await page.keyboard.press('Enter');
+      await page.locator('[data-kit-surface]').waitFor({ timeout: 15_000 });
       await page.keyboard.press('End');
     },
     untouched: allBut([0]),

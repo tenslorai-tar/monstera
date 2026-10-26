@@ -88,7 +88,7 @@ async function open(page: Page, labelStyle: typeof LABEL | typeof WIDE = LABEL):
   await expect(page.locator('[data-text-edit-layer="0"] [data-text-block="2"]')).toBeVisible();
   // THE OUTLINES AND HANDLES HIDDEN, so the only dark pixels are words.
   await page.addStyleTag({
-    content: '.m-text-editor-handle,.m-text-editor-problem{visibility:hidden!important}.m-text-block{border-color:transparent!important;outline:none!important}.m-text-editor-frame{outline:none!important;border-color:transparent!important}',
+    content: '.m-kit-handle,.m-kit-problem{visibility:hidden!important}.m-text-block{border-color:transparent!important;outline:none!important}.m-kit-frame{outline:none!important;border-color:transparent!important}',
   });
 }
 
