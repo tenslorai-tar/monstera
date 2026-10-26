@@ -59,14 +59,23 @@ function unturned([x, y], angle) {
   return [x * Math.cos(r) - y * Math.sin(r), x * Math.sin(r) + y * Math.cos(r)];
 }
 
-/** A box in the block's own direction: its corners turned back by the block's angle. @param {Box} box @param {number} angle */
-function inBlockSpace(box, angle) {
+/** How a block is set on the page: its turn, and the slant of its letters. @typedef {{ angle: number, skew?: number }} Direction */
+
+/**
+ * A box in the block's own space: its corners turned back by the block's angle and its slant taken out, so that
+ * "below" and "within its width" mean what they mean to the block's own lines.
+ * @param {Box} box @param {Direction} direction
+ */
+function inBlockSpace(box, { angle, skew = 0 }) {
   const corners = [
-    unturned([box.left, box.bottom], angle),
-    unturned([box.right, box.bottom], angle),
-    unturned([box.left, box.top], angle),
-    unturned([box.right, box.top], angle),
-  ];
+    [box.left, box.bottom],
+    [box.right, box.bottom],
+    [box.left, box.top],
+    [box.right, box.top],
+  ].map((point) => {
+    const [x, y] = unturned(/** @type {[number, number]} */ (point), angle);
+    return /** @type {[number, number]} */ ([x - y * skew, y]);
+  });
   return {
     left: Math.min(...corners.map(([x]) => x)),
     right: Math.max(...corners.map(([x]) => x)),
@@ -85,23 +94,31 @@ function centredIn(inner, box, margin) {
 /**
  * The words among `members`, in the reading order of `chars` (a page's characters as MuPDF read them): runs of letters
  * and digits on one line. A WORD IS A RUN OF LETTERS AND DIGITS: punctuation touching a new word is the old text's.
- * @param {Char[]} chars @param {Char[]} members @returns {Char[][]}
+ * @param {Char[]} chars @param {Char[]} members @param {Direction} direction @returns {Char[][]}
  */
-function wordsIn(chars, members) {
+function wordsIn(chars, members, direction) {
   const letter = /[\p{L}\p{N}\p{M}]/u;
   const inBlock = new Set(members.filter((each) => letter.test(each.character)));
   /** @type {Char[][]} */
   const words = [];
-  /** @type {Char | null} */
+  /** @type {Box | null} */
   let previous = null;
   for (const each of chars) {
     if (!inBlock.has(each)) {
       previous = null;
       continue;
     }
-    if (previous !== null && Math.abs(previous.y - each.y) < (each.box.top - each.box.bottom) / 2) words[words.length - 1]?.push(each);
+    // IN THE BLOCK'S OWN SPACE, so a turned block's letters run along its lines and not the page's x axis (measured
+    // 2026-10-26: the turned page read every letter as a word of its own).
+    // A WORD ENDS at a gap as well as at a space: a writer may part two words by moving the pen and write no space
+    // character, and the engines infer one from the gap (measured 2026-10-26: "reader" and "whatever" read as one word).
+    const at = inBlockSpace(each.box, direction);
+    const height = at.top - at.bottom;
+    const sameLine = previous !== null && Math.abs((previous.top + previous.bottom) / 2 - (at.top + at.bottom) / 2) < height / 2;
+    const gap = previous === null ? 0 : Math.max(at.left - previous.right, previous.left - at.right);
+    if (sameLine && gap < height * 0.15) words[words.length - 1]?.push(each);
     else words.push([each]);
-    previous = each;
+    previous = at;
   }
   return words;
 }
@@ -148,10 +165,10 @@ function remainder(after, kept, key) {
 /**
  * A reading's text in the engine's own order and in line order — lines top down in the block's own direction, each
  * left to right — since a writer may write a block's lines in another order than they read. Either is accepted.
- * @param {{ text: string, box: Box }[]} pieces @param {number} angle
+ * @param {{ text: string, box: Box }[]} pieces @param {Direction} direction
  */
-function readings(pieces, angle) {
-  const placed = pieces.map((piece) => ({ ...piece, at: inBlockSpace(piece.box, angle) }));
+function readings(pieces, direction) {
+  const placed = pieces.map((piece) => ({ ...piece, at: inBlockSpace(piece.box, direction) }));
   const sorted = [...placed].sort((a, b) => {
     const height = Math.max(a.at.top - a.at.bottom, b.at.top - b.at.bottom, 1);
     const ay = (a.at.top + a.at.bottom) / 2;
@@ -161,12 +178,17 @@ function readings(pieces, angle) {
   return [bare(pieces.map((piece) => piece.text).join('')), bare(sorted.map((piece) => piece.text).join(''))];
 }
 
-/** PDFium's reading of a page, its forms promoted into it in memory so a form's words are read as the page's. @param {any} pdfium @param {Uint8Array} bytes @param {number} page */
+/**
+ * PDFium's reading of a page, its forms promoted into it in memory so a form's words and drawings are read as the
+ * page's: objects read before the promotion saw a form as one object, so a drawing removed inside one went unseen as an
+ * object (measured 2026-10-26, the pull quote's rule).
+ * @param {any} pdfium @param {Uint8Array} bytes @param {number} page
+ */
 async function pdfiumReading(pdfium, bytes, page) {
   const session = await pdfium.pdfiumWriter.open(bytes);
   try {
-    const objects = await pdfium.pageObjects(session, page);
     await pdfium.promoteFormObjects(session, page);
+    const objects = await pdfium.pageObjects(session, page);
     const read = await pdfium.textRuns(session, page);
     return { runs: /** @type {{ text: string, left: number, right: number, bottom: number, top: number }[]} */ (read.runs), objects: /** @type {any[]} */ (objects) };
   } finally {
@@ -264,7 +286,8 @@ export async function expectEdit({ kernel, pdfium }, { before, after, page, bloc
   }
   for (const note of outcome.noted ?? []) failures.push(`LOGGED: the write noted “${note}”`);
 
-  const { angle } = block;
+  /** The block's turn and slant, which "below" and "its width" are measured in. @type {Direction} */
+  const direction = block;
   const beforeChars = /** @type {Char[]} */ (charactersOf(kernel, before, page));
   const afterChars = /** @type {Char[]} */ (charactersOf(kernel, after, page));
   const owned = (/** @type {Box} */ box) => centredIn(box, block.box, MARGIN);
@@ -305,7 +328,7 @@ export async function expectEdit({ kernel, pdfium }, { before, after, page, bloc
   // EACH CHARACTER TURNED BACK, then their extent: the extent of a turned block taken first and turned back after is a
   // box tens of points too large, and a block moved 30 pt up still sat inside it (measured 2026-10-26, the 30° block).
   const column = ownBefore
-    .map((each) => inBlockSpace(each.box, angle))
+    .map((each) => inBlockSpace(each.box, direction))
     .reduce(
       (box, at) => ({
         left: Math.min(box.left, at.left),
@@ -316,7 +339,7 @@ export async function expectEdit({ kernel, pdfium }, { before, after, page, bloc
       { left: Infinity, right: -Infinity, bottom: Infinity, top: -Infinity },
     );
   const astray = written.filter((each) => {
-    const at = inBlockSpace(each.box, angle);
+    const at = inBlockSpace(each.box, direction);
     const x = (at.left + at.right) / 2;
     const y = (at.bottom + at.top) / 2;
     return x < column.left - MARGIN || x > column.right + MARGIN || y > column.top + MARGIN;
@@ -326,16 +349,24 @@ export async function expectEdit({ kernel, pdfium }, { before, after, page, bloc
   }
 
   const want = bare(expected);
-  const mupdfRead = readings(written.map((each) => ({ text: each.character, box: each.box })), angle);
+  const mupdfRead = readings(written.map((each) => ({ text: each.character, box: each.box })), direction);
   if (!mupdfRead.includes(want)) failures.push(`READ BACK (MuPDF): “${mupdfRead[0] ?? ''}”, where “${want}” was expected`);
 
   // THE FONT RULE: a NEW word — one the block did not hold before — is never in a drawn font. By word and not by place,
   // since the owner's rule lets an unchanged word that re-flows keep the face the page drew it in.
   // The same comparison says which words the edit REPLACED and which it KEPT, which the scan's rule below needs.
-  const wordsBefore = wordsIn(beforeChars, ownBefore);
-  const wordsAfter = wordsIn(afterChars, written);
+  const wordsBefore = wordsIn(beforeChars, ownBefore, direction);
+  const wordsAfter = wordsIn(afterChars, written, direction);
   const { rest: newWords, missing: replacedWords } = remainder(wordsAfter, wordsBefore, textOfWord);
   const { rest: keptWords } = remainder(wordsBefore, replacedWords, textOfWord);
+  // WORDS AS WORDS: the read-back above leaves spaces out, so two words set against each other with neither a space nor
+  // a gap pass it. The block's words, as letter runs, must be the expected ones (measured 2026-10-26: today's writer set
+  // a new word against the next with no space after a re-wrap, and the page read "readerwhatever").
+  const wordsWanted = expected.match(/[\p{L}\p{N}\p{M}]+/gu) ?? [];
+  const { rest: wordsExtra, missing: wordsLost } = remainder(wordsAfter.map(textOfWord), wordsWanted, (word) => word);
+  if (wordsExtra.length > 0 || wordsLost.length > 0) {
+    failures.push(`WORDS RUN TOGETHER OR SPLIT (MuPDF): read “${wordsExtra.slice(0, 4).join('”, “')}” where “${wordsLost.slice(0, 4).join('”, “')}” were expected`);
+  }
   const drawnFonts = await drawnFontNames(after, page);
   const drawn = newWords.flat().filter((each) => drawnFonts.has(each.font));
   if (drawn.length > 0) {
@@ -361,7 +392,7 @@ export async function expectEdit({ kernel, pdfium }, { before, after, page, bloc
   }
   const blockRuns = runsUnmatched.filter((run) => !runsDisplaced.has(run));
   if (runsLost.length > 0) failures.push(`MOVED OR CHANGED OUTSIDE THE BLOCK (PDFium): ${String(runsLost.length)} run(s), the first “${runsLost[0]?.text ?? ''}”`);
-  const pdfiumRead = readings(blockRuns.map((run) => ({ text: run.text, box: runBox(run) })), angle);
+  const pdfiumRead = readings(blockRuns.map((run) => ({ text: run.text, box: runBox(run) })), direction);
   if (!pdfiumRead.includes(want)) failures.push(`READ BACK (PDFium): “${pdfiumRead[0] ?? ''}”, where “${want}” was expected`);
 
   const objectKey = (/** @type {any} */ object) =>
@@ -455,8 +486,8 @@ export async function readBlock({ kernel, pdfium }, bytes, page, block) {
   const box = (/** @type {{ left: number, right: number, bottom: number, top: number }} */ run) => ({ left: run.left, right: run.right, bottom: run.bottom, top: run.top });
   return {
     want: bare(block.text),
-    mupdf: readings(own.map((each) => ({ text: each.character, box: each.box })), block.angle),
-    pdfium: readings(runs.filter((run) => centredIn(box(run), block.box, MARGIN) && bare(run.text) !== '').map((run) => ({ text: run.text, box: box(run) })), block.angle),
+    mupdf: readings(own.map((each) => ({ text: each.character, box: each.box })), block),
+    pdfium: readings(runs.filter((run) => centredIn(box(run), block.box, MARGIN) && bare(run.text) !== '').map((run) => ({ text: run.text, box: box(run) })), block),
   };
 }
 

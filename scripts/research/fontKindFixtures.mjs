@@ -757,12 +757,16 @@ function outlineOf(tt, glyph) {
  * A Type 3 font whose glyphs are a TrueType font's own outlines, drawn — the shape a web browser's print writes for a
  * synthetic bold or a font it will not embed, which `type3`'s rectangles stand in for when shape plays no part.
  *
+ * `stated`, where given, is a font descriptor the font carries, naming a family and a weight — which a print may state
+ * apart from how its drawn letters look (a synthetic bold described as regular, the owner's L2).
+ *
  * @param {PDFDocument} doc
  * @param {Buffer} sfnt
  * @param {string[]} used
+ * @param {{ fontName: string, weight: number }} [stated]
  * @returns {{ font: import('@cantoo/pdf-lib').PDFRef, show: (text: string) => string, width: (text: string) => number }}
  */
-export function drawnFontOf(doc, sfnt, used) {
+export function drawnFontOf(doc, sfnt, used, stated) {
   const context = doc.context;
   const tt = trueTypeOf(sfnt);
   const codes = new Map(used.map((c, k) => [c, k + 1]));
@@ -792,6 +796,13 @@ export function drawnFontOf(doc, sfnt, used) {
       Widths: [...codes.keys()].map((c) => tt.width(tt.glyphOf(c.charCodeAt(0)))),
       Resources: {},
       ToUnicode: context.register(context.flateStream(toUnicode(new Map([...codes.entries()].map(([c, code]) => [code, c])), 1))),
+      ...(stated === undefined
+        ? {}
+        : {
+            FontDescriptor: context.register(
+              context.obj({ Type: 'FontDescriptor', FontName: stated.fontName, Flags: 32, FontWeight: stated.weight, ItalicAngle: 0, FontBBox: [-200, -250, 1200, 950], Ascent: 905, Descent: -212, CapHeight: 716, StemV: 80 }),
+            ),
+          }),
     }),
   );
   return {

@@ -55,14 +55,15 @@ function mupdfFonts() {
  * @typedef {{ left: number, bottom: number, right: number, top: number }} Box
  * @typedef {{ ref: import('@cantoo/pdf-lib').PDFRef, show: (text: string) => string, width: (text: string) => number,
  *   ascent: number, descent: number, kind: string, rtl?: boolean, visual?: (text: string) => string }} Face
- * @typedef {{ text: string, face?: Face, normal?: boolean, size?: number, rise?: number, colour?: [number, number, number], render?: number }} Segment
+ * @typedef {{ text: string, face?: Face, normal?: boolean | 'bold', size?: number, rise?: number, colour?: [number, number, number], render?: number }} Segment
  * @typedef {string | Segment[]} Line
  * @typedef {{ edit?: { block: string, lines: Line[] }, move?: { block: string, dx: number, dy: number },
  *   omit?: string, invisible?: { block: string, word: string }, drawn?: { block: string, word: string },
  *   cover?: string }} Variant
  *   `cover` is the scanned page's alone: a kept word of its first line covered as a replaced one is.
- * @typedef {{ id: string, role: string, text: string, box: Box, angle: number, face: string, visible: boolean,
+ * @typedef {{ id: string, role: string, text: string, box: Box, angle: number, skew?: number, face: string, visible: boolean,
  *   scan?: true, form?: string }} Block
+ *   `skew` slants the block's letters: x moves by it per unit of y, in the block's own space before its turn.
  *   `scan` marks recognised words over a picture (ADR-0181 Decision 9): invisible before an edit, and its new words
  *   written visible over a cover of the paper's colour under the words they replace.
  * @typedef {{ id: string, role: string, box: Box }} Drawing
@@ -99,8 +100,10 @@ class Sheet {
     this.blocks = [];
     /** @type {Drawing[]} */
     this.drawings = [];
-    /** An ordinary font, for a new word on a page that has none. @type {Face | null} */
+    /** An ordinary font, for a new word on a page that has none, and its bold. @type {Face | null} */
     this.normal = null;
+    /** @type {Face | null} */
+    this.normalBold = null;
   }
 
   /** @param {Face} face */
@@ -170,8 +173,9 @@ class Sheet {
    * direction, written as one text object per line or as one for the block. Returns where its lines sit.
    *
    * @param {{ id: string, role: string, face: Face, size: number, x: number, y: number, leading?: number, lines: Line[],
-   *   angle?: number, perObject?: 'line' | 'block', align?: 'left' | 'right' | 'justify', measure?: number,
-   *   visible?: boolean, render?: number, colour?: [number, number, number], form?: string, prefix?: string, scan?: boolean }} spec
+   *   angle?: number, skew?: number, perObject?: 'line' | 'block' | 'glyph' | 'transform', align?: 'left' | 'right' | 'justify', measure?: number,
+   *   visible?: boolean, render?: number, colour?: [number, number, number], form?: string, prefix?: string, suffix?: string,
+   *   scan?: boolean }} spec
    */
   paragraph(spec) {
     const { id, face, size, angle = 0, perObject = 'line', align = 'left', render = 0 } = spec;
@@ -184,9 +188,10 @@ class Sheet {
       typeof line === 'string'
         ? line
         : line.map(({ normal, ...segment }) => {
-            if (normal !== true) return segment;
-            if (this.normal === null) throw new Error('a segment asks for an ordinary font and the sheet was given none');
-            return { ...segment, face: this.normal };
+            if (normal === undefined || normal === false) return segment;
+            const chosen = normal === 'bold' ? this.normalBold : this.normal;
+            if (chosen === null) throw new Error('a segment asks for an ordinary font and the sheet was given none');
+            return { ...segment, face: chosen };
           }),
     );
     const [mx, my] = variant.move?.block === id ? [variant.move.dx, variant.move.dy] : [0, 0];
@@ -256,12 +261,14 @@ class Sheet {
       written.push(`${f(tw)} Tw ${shows.join(' ')}`);
     });
     const [cos, sin] = turned([1, 0], angle);
+    // A SKEW slants the letters: x moves by `skew` per unit of y, before the turn.
+    const skew = spec.skew ?? 0;
     /**
      * A point in the block's own space (its first baseline's start at 0,0) in page space.
      * @param {number} px @param {number} py @returns {[number, number]}
      */
     const place = (px, py) => {
-      const [tx, ty] = turned([px, py], angle);
+      const [tx, ty] = turned([px + py * skew, py], angle);
       return [x + tx, y + ty];
     };
     const corners = [place(left, top), place(right, top), place(left, bottom), place(right, bottom)];
@@ -277,18 +284,42 @@ class Sheet {
       text: lines.map(textOf).join('\n'),
       box,
       angle,
+      ...(skew === 0 ? {} : { skew }),
       face: face.kind,
       visible: (spec.visible ?? true) && render !== 3,
       ...(spec.scan === true ? { scan: /** @type {const} */ (true) } : {}),
       ...(spec.form === undefined ? {} : { form: spec.form }),
     });
     if (variant.omit === id) return box;
+    const shape = `${f(cos)} ${f(sin)} ${f(cos * skew - sin)} ${f(sin * skew + cos)}`;
     const matrix = (/** @type {number} */ k) => {
       const [ox, oy] = place(0, -k * leading);
-      return `${f(cos)} ${f(sin)} ${f(-sin)} ${f(cos)} ${f(ox)} ${f(oy)} Tm`;
+      return `${shape} ${f(ox)} ${f(oy)} Tm`;
     };
     const prefix = spec.prefix ?? '';
-    if (perObject === 'block') {
+    if (perObject === 'glyph') {
+      // ONE GLYPH TO A TEXT OBJECT, each placed by its own matrix, as some producers write every letter.
+      lines.forEach((line, k) => {
+        let pen = 0;
+        for (const segment of segmentsOf(line)) {
+          const used = segment.face ?? face;
+          const s = segment.size ?? size;
+          for (const letter of segment.text) {
+            const [ox, oy] = place(pen, -k * leading);
+            if (letter !== ' ') {
+              this.ops.push(`${prefix}BT /${this.font(used)} ${f(s)} Tf ${segment.render ?? render} Tr ${shape} ${f(ox)} ${f(oy)} Tm ${used.show(letter)} Tj ET`);
+            }
+            pen += (used.width(letter) * s) / 1000;
+          }
+        }
+      });
+    } else if (perObject === 'transform') {
+      // A TRANSFORM OF ITS OWN FOR EVERY LINE: the line drawn at the origin, moved there by a `cm`.
+      written.forEach((each, k) => {
+        const [ox, oy] = place(0, -k * leading);
+        this.ops.push(`${prefix}q 1 0 0 1 ${f(ox)} ${f(oy)} cm BT ${shape} 0 0 Tm ${each} ET Q`);
+      });
+    } else if (perObject === 'block') {
       const steps = written.map((each, k) => {
         const start = align === 'right' ? measure - ((natural[k] ?? 0)) : 0;
         return k === 0 ? `${matrix(0)} ${f(start)} 0 Td ${each}` : `${f(start - (align === 'right' ? measure - (natural[k - 1] ?? 0) : 0))} ${f(-leading)} Td ${each}`;
@@ -300,6 +331,8 @@ class Sheet {
         this.ops.push(`${prefix}BT ${matrix(k)} ${f(start)} 0 Td ${each} ET`);
       });
     }
+    // WHAT CLOSES THE PREFIX (a clip's restores), written with the block, so an omitted block leaves none unbalanced.
+    if (spec.suffix !== undefined) this.ops.push(spec.suffix);
     return box;
   }
 
@@ -356,9 +389,9 @@ async function documentOf() {
         return { ref: font, show, width, ascent: 900, descent: -300, kind: `Type0, embedded subset (${name})`, ...more };
       }),
     /** A Type 3 font drawn from a TrueType font's outlines. @param {string} file @param {string} used @param {string} name */
-    drawn: async (/** @type {string} */ file, /** @type {string} */ used, /** @type {string} */ name) =>
+    drawn: async (/** @type {string} */ file, /** @type {string} */ used, /** @type {string} */ name, /** @type {{ fontName: string, weight: number } | undefined} */ stated = undefined) =>
       once(`drawn:${name}`, () => {
-        const { font, show, width } = drawnFontOf(doc, readFileSync(file), [...new Set(used)]);
+        const { font, show, width } = drawnFontOf(doc, readFileSync(file), [...new Set(used)], stated);
         return { ref: font, show, width, ascent: 760, descent: -220, kind: `Type 3, drawn from ${name}` };
       }),
   };
@@ -456,7 +489,10 @@ function onePage(fill) {
   return async (/** @type {Variant} */ variant) => {
     const { doc, faces } = await documentOf();
     const sheet = new Sheet(doc, variant);
-    if (variant.edit !== undefined) sheet.normal = await faces.helvetica();
+    if (variant.edit !== undefined) {
+      sheet.normal = await faces.helvetica();
+      sheet.normalBold = await faces.helveticaBold();
+    }
     const entries = (await fill(sheet, faces, doc)) ?? {};
     pageOf(doc, sheet, entries);
     return { bytes: await doc.save({ useObjectStreams: false }), page: 0, pages: 1, blocks: sheet.blocks, drawings: sheet.drawings };
@@ -761,8 +797,7 @@ export const SHAPES = [
       ];
       for (const cell of cells) {
         sheet.draw(`${cell.id}-frame`, 'the cell’s frame', { left: cell.x - 6, bottom: 649.6, right: cell.x + 106, top: 710.4 }, `0 0 0 RG 0.8 w ${f(cell.x - 6)} 650 112 60 re S`);
-        sheet.paragraph({ id: cell.id, role: 'a cell’s words under its clip', face: helvetica, size: 12, x: cell.x, y: 690, lines: cell.lines, perObject: 'block', prefix: `q ${f(cell.x - 4)} 652 108 56 re W n ` });
-        sheet.raw('Q');
+        sheet.paragraph({ id: cell.id, role: 'a cell’s words under its clip', face: helvetica, size: 12, x: cell.x, y: 690, lines: cell.lines, perObject: 'block', prefix: `q ${f(cell.x - 4)} 652 108 56 re W n `, suffix: 'Q' });
       }
     }),
   },
@@ -1034,7 +1069,241 @@ export const SHAPES = [
       return { bytes: await doc.save({ useObjectStreams: false }), page: 249, pages: 500, blocks, drawings };
     },
   },
+  // THE OWNER'S CORPUS SHAPES (2026-10-26): what the local agent's measurements found there and the catalogue lacked.
+  {
+    id: '25-glyph-per-object',
+    title: 'One glyph to a text object',
+    tests: 'every letter its own text object placed by its own matrix, as some producers write a whole page',
+    edit: { block: 'letters', lines: ['Each letter of this paragraph', 'is set as a text object of its own,', 'placed by its own small matrix.'], word: 'small' },
+    neighbour: 'below',
+    must: AGREED.must,
+    mustNot: AGREED.mustNot,
+    build: onePage(async (sheet, faces) => {
+      const helvetica = await faces.helvetica();
+      sheet.paragraph({ id: 'letters', role: 'a paragraph, a text object per glyph', face: helvetica, size: 12, x: 72, y: 700, perObject: 'glyph', lines: ['Each letter of this paragraph', 'is set as a text object of its own,', 'placed by a matrix of its own.'] });
+      sheet.paragraph({ id: 'below', role: 'the paragraph below, also a glyph to an object', face: helvetica, size: 12, x: 72, y: 640, perObject: 'glyph', lines: ['Nothing here may move.'] });
+    }),
+  },
+  {
+    id: '26-nested-clips',
+    title: 'Text under clips nested nine deep',
+    tests: 'a paragraph inside nine nested rectangular clips, each a little inside the one around it',
+    edit: { block: 'clipped', lines: ['Nine windows are drawn around', 'these words, each one inside the last,', 'and the words still show plainly.'], word: 'plainly' },
+    neighbour: 'free',
+    must: [...AGREED.must, 'keep new words visible: written past the clips where a clip would hide them'],
+    mustNot: AGREED.mustNot,
+    build: onePage(async (sheet, faces) => {
+      const helvetica = await faces.helvetica();
+      const clips = Array.from({ length: 9 }, (_, k) => `q ${f(60 + k)} ${f(640 + k)} ${f(360 - 2 * k)} ${f(84 - 2 * k)} re W n `).join('');
+      sheet.paragraph({ id: 'clipped', role: 'a paragraph under nine nested clips', face: helvetica, size: 12, x: 72, y: 700, perObject: 'block', prefix: clips, suffix: 'Q Q Q Q Q Q Q Q Q', lines: ['Nine windows are drawn around', 'these words, each one inside the last,', 'and the words still show.'] });
+      sheet.paragraph({ id: 'free', role: 'a paragraph under no clip', face: helvetica, size: 12, x: 72, y: 600, lines: ['This line has no window.'] });
+    }),
+  },
+  {
+    id: '27-markers-after-paragraph',
+    title: 'Raised reference markers drawn after their paragraph',
+    tests: 'a paragraph whose small raised markers are separate text drawn later in the content, after the next paragraph',
+    edit: { block: 'cited', lines: ['Mulch keeps the soil damp in summer', 'and warm through the first frosts', 'when it is spread in October.'], word: 'October' },
+    neighbour: 'next',
+    must: [...AGREED.must, 'keep each marker where it is, raised and small'],
+    mustNot: AGREED.mustNot,
+    build: onePage(async (sheet, faces) => {
+      const helvetica = await faces.helvetica();
+      const lines = ['Mulch keeps the soil damp in summer', 'and warm through the first frosts', 'when it is spread in autumn.'];
+      const edited = sheet.variant.edit?.block === 'cited' ? sheet.variant.edit.lines.map(textOf) : lines;
+      sheet.paragraph({ id: 'cited', role: 'a paragraph, its markers drawn later', face: helvetica, size: 12, x: 72, y: 700, lines: edited });
+      sheet.paragraph({ id: 'next', role: 'the next paragraph, drawn before the markers', face: helvetica, size: 12, x: 72, y: 640, lines: ['The next paragraph comes first in the content.'] });
+      // THE MARKERS, after the next paragraph in the content, raised beside the ends of the first two lines.
+      const markers = ['[1]', '[2]'].map((marker, k) => {
+        const end = 72 + (helvetica.width(lines[k] ?? '') * 12) / 1000;
+        return { marker, x: end, y: 700 - k * 15 + 4 };
+      });
+      if (sheet.variant.omit !== 'cited') {
+        for (const { marker, x, y } of markers) sheet.raw(`BT /${sheet.font(helvetica)} 7 Tf 0 Tr 0 0 0 rg 1 0 0 1 ${f(x)} ${f(y)} Tm ${helvetica.show(marker)} Tj ET`);
+      }
+      // THE BLOCK AS A PERSON SEES IT: the paragraph with its markers.
+      const at = sheet.blocks.findIndex((block) => block.id === 'cited');
+      const block = /** @type {Block} */ (sheet.blocks[at]);
+      const right = Math.max(block.box.right, ...markers.map(({ marker, x }) => x + (helvetica.width(marker) * 7) / 1000));
+      sheet.blocks[at] = { ...block, text: edited.map((line, k) => `${line}${markers[k]?.marker ?? ''}`).join('\n'), box: { ...block.box, right, top: Math.max(block.box.top, 704 + 7 * 0.76) } };
+    }),
+  },
+  {
+    id: '28-same-name-two-encodings',
+    title: 'Two fonts of one name with different encodings',
+    tests: 'two paragraphs in fonts with the same BaseFont and font program, one WinAnsi and one with its own Differences',
+    edit: { block: 'winansi', lines: ['This paragraph is set in the font', 'whose codes are the plain ones.'], word: 'plain' },
+    neighbour: 'remapped',
+    must: [...AGREED.must, 'keep the other font’s words as they read: a writer that merges the two fonts by name breaks them'],
+    mustNot: AGREED.mustNot,
+    build: onePage(async (sheet, faces, doc) => {
+      const winansiLines = ['This paragraph is set in the font', 'whose codes are the usual ones.'];
+      const remappedLines = ['This one uses the same font program', 'with codes renumbered from one.'];
+      const used = `${[...winansiLines, ...remappedLines].join('')}plain`;
+      const winansi = await faces.ofKind('type1-subset', used);
+      // THE TWIN: the same dictionary, the same name and program, its codes numbered from one by Differences.
+      const original = /** @type {import('@cantoo/pdf-lib').PDFDict} */ (doc.context.lookup(winansi.ref));
+      const twin = original.clone(doc.context);
+      const letters = [...new Set(remappedLines.join(''))];
+      const names = /** @type {Record<string, string>} */ ({ ' ': 'space', '.': 'period', ',': 'comma' });
+      twin.set(PDFName.of('Encoding'), doc.context.obj({ Type: 'Encoding', BaseEncoding: 'WinAnsiEncoding', Differences: [1, ...letters.map((c) => names[c] ?? c)] }));
+      twin.set(PDFName.of('FirstChar'), doc.context.obj(1));
+      twin.set(PDFName.of('LastChar'), doc.context.obj(letters.length));
+      twin.set(PDFName.of('Widths'), doc.context.obj(letters.map((c) => winansi.width(c))));
+      const codes = new Map(letters.map((c, k) => [c, k + 1]));
+      /** @type {Face} */
+      const remapped = {
+        ref: doc.context.register(twin),
+        show: (text) => `<${[...text].map((c) => (codes.get(c) ?? 0).toString(16).padStart(2, '0')).join('')}>`,
+        width: winansi.width,
+        ascent: winansi.ascent,
+        descent: winansi.descent,
+        kind: 'Type 1, embedded subset, the same name and program renumbered by Differences',
+      };
+      sheet.paragraph({ id: 'winansi', role: 'a paragraph in the font with WinAnsi codes', face: winansi, size: 13, x: 72, y: 700, lines: winansiLines });
+      sheet.paragraph({ id: 'remapped', role: 'a paragraph in its twin, codes renumbered', face: remapped, size: 13, x: 72, y: 650, lines: remappedLines });
+    }),
+  },
+  {
+    id: '29-transform-per-line',
+    title: 'A transform of its own for every line, 104 lines on the page',
+    tests: 'thirteen blocks of eight small lines in two columns, every line drawn at the origin and moved by its own cm',
+    edit: { block: 'list-3', lines: LIST(3).map((line, k) => (k === 2 ? line.replace('seeds', 'bulbs') : line)), word: 'bulbs' },
+    neighbour: 'list-4',
+    must: AGREED.must,
+    mustNot: AGREED.mustNot,
+    build: onePage(async (sheet, faces) => {
+      const helvetica = await faces.helvetica();
+      for (let k = 0; k < 13; k += 1) {
+        const column = k < 7 ? 0 : 1;
+        const row = column === 0 ? k : k - 7;
+        sheet.paragraph({ id: `list-${String(k)}`, role: 'eight lines, each its own transform', face: helvetica, size: 7, leading: 8.5, x: 50 + column * 270, y: 740 - row * 82, perObject: 'transform', lines: LIST(k) });
+      }
+    }),
+  },
+  {
+    id: '30-skewed-text',
+    title: 'Slanted (skewed) text',
+    tests: 'a paragraph whose text matrix slants its letters, as a false italic is drawn',
+    edit: { block: 'slanted', lines: ['These letters lean to the right,', 'drawn upright and then sheared', 'by the matrix that sets them.'], word: 'sets' },
+    neighbour: 'upright',
+    must: [...AGREED.must, 'keep the slant: new words lean as the old ones do'],
+    mustNot: AGREED.mustNot,
+    build: onePage(async (sheet, faces) => {
+      const helvetica = await faces.helvetica();
+      sheet.paragraph({ id: 'slanted', role: 'a paragraph sheared by its matrix', face: helvetica, size: 13, x: 80, y: 700, skew: 0.25, lines: ['These letters lean to the right,', 'drawn upright and then sheared', 'by the matrix that places them.'] });
+      sheet.paragraph({ id: 'upright', role: 'an upright paragraph below', face: helvetica, size: 12, x: 72, y: 630, lines: ['This one stands upright.'] });
+    }),
+  },
+  {
+    id: '31-pull-quote-in-form',
+    title: 'A pull quote inside a form',
+    tests: 'a quote set large inside a form XObject placed beside the body text, with a rule above it',
+    edit: { block: 'quote', lines: ['“A garden is', 'never finished,', 'only resting.”'], word: 'resting' },
+    neighbour: 'body',
+    must: [...AGREED.must, 'edit the form’s own content, the body text untouched'],
+    mustNot: AGREED.mustNot,
+    build: onePage(async (sheet, faces, doc) => {
+      const helvetica = await faces.helvetica();
+      const bold = await faces.helveticaBold();
+      sheet.paragraph({ id: 'body', role: 'the body text beside the quote', face: helvetica, size: 11, x: 60, y: 700, lines: ['The body of the article runs down', 'the left of the page, and the quote', 'sits in its own frame on the right.', 'Nothing in this column may move.'] });
+      const quote = new Sheet(doc, sheet.variant);
+      quote.draw('quote-rule', 'the rule above the quote', { left: 0, bottom: 99.5, right: 200, top: 100.5 }, '0 0 0 RG 1 w 0 100 m 200 100 l S');
+      quote.paragraph({ id: 'quote', role: 'the pull quote, in the form', face: bold, size: 16, leading: 20, x: 0, y: 78, lines: ['“A garden is', 'never finished,', 'only waiting.”'] });
+      placeForm(sheet, quote, 'Quote', [0, 0, 220, 110], 340, 590);
+    }),
+  },
+  {
+    id: '32-table-form-13-clips',
+    title: 'A table drawn as a form, its 13 cells each clipped',
+    tests: 'a form holding a ruled table of a title and six rows of two cells, each cell’s words under a clip of its own',
+    // TWO WORDS WHERE ONE STOOD wrap inside the cell's width, which is its word's: the block grows a line downward.
+    edit: { block: 'cell-3b', lines: ['Late', 'April'], word: 'Late' },
+    neighbour: 'cell-4b',
+    must: [...AGREED.must, 'edit the cell inside the form, every other cell and rule untouched'],
+    mustNot: AGREED.mustNot,
+    build: onePage(async (sheet, faces, doc) => {
+      const helvetica = await faces.helvetica();
+      const table = new Sheet(doc, sheet.variant);
+      const rows = [['Peas', 'March'], ['Beans', 'May'], ['Kale', 'June'], ['Leeks', 'April'], ['Chard', 'July'], ['Garlic', 'October']];
+      const top = 330;
+      /** A cell: its frame, a clip a little inside it, and its words. @param {string} id @param {number} x @param {number} y @param {number} w @param {string} text */
+      const cell = (id, x, y, w, text) => {
+        // ROOM FOR THREE LINES under each clip: a correct edit that grows a line must still be seen.
+        table.draw(`${id}-frame`, 'a cell’s frame', { left: x - 0.4, bottom: y - 46.4, right: x + w + 0.4, top: y + 0.4 }, `0 0 0 RG 0.8 w ${f(x)} ${f(y - 46)} ${f(w)} 46 re S`);
+        table.paragraph({ id, role: 'a cell under its clip, in the form', face: helvetica, size: 11, x: x + 5, y: y - 12, lines: [text], perObject: 'block', prefix: `q ${f(x + 2)} ${f(y - 44)} ${f(w - 4)} 42 re W n `, suffix: 'Q' });
+      };
+      cell('cell-title', 0, top, 300, 'When to sow');
+      rows.forEach(([plant, month], r) => {
+        cell(`cell-${String(r)}a`, 0, top - 46 * (r + 1), 150, plant ?? '');
+        cell(`cell-${String(r)}b`, 150, top - 46 * (r + 1), 150, month ?? '');
+      });
+      sheet.paragraph({ id: 'caption', role: 'a caption on the page itself', face: helvetica, size: 10, x: 72, y: 720, lines: ['The table below is one form.'] });
+      placeForm(sheet, table, 'Table', [0, 0, 300, 340], 72, 360);
+    }),
+  },
+  {
+    id: '33-drawn-weight-stated-regular',
+    title: 'A drawn font whose stated weight differs from its look',
+    tests: 'a paragraph drawn in Type 3 letters made from a bold face, its font descriptor stating a regular weight (400)',
+    edit: { block: 'drawn', lines: [[{ text: 'These letters look bold to a ' }, { text: 'reader', normal: 'bold' }], 'whatever the font says of itself.'], word: 'reader' },
+    neighbour: 'plain',
+    must: [...AGREED.must, 'set the new word in an ordinary font of the weight the letters LOOK — bold — not the weight the font states (ADR-0176’s correction, L2)'],
+    mustNot: [...AGREED.mustNot, 'take the stated regular weight for a word typed beside bold-looking letters'],
+    build: onePage(async (sheet, faces) => {
+      const lines = ['These letters look bold to a person', 'whatever the font says of itself.'];
+      const drawn = await faces.drawn(join(PDFJS_FONTS, 'LiberationSans-Bold.ttf'), `${lines.join('')}reader`, 'Liberation Sans Bold stated regular', { fontName: 'LiberationSans', weight: 400 });
+      sheet.paragraph({ id: 'drawn', role: 'a paragraph in drawn bold letters stated regular', face: drawn, size: 13, x: 72, y: 700, lines });
+      sheet.paragraph({ id: 'plain', role: 'an ordinary paragraph below', face: await faces.helvetica(), size: 12, x: 72, y: 650, lines: ['An ordinary line below it.'] });
+    }),
+  },
+  {
+    id: '34-two-hundred-links',
+    title: 'A page with 210 links',
+    tests: 'an introduction above a reference list of 42 lines, each line carrying five links',
+    edit: { block: 'intro', lines: ['Every entry below is a link to its', 'page in the club’s online diary.'], word: 'diary' },
+    neighbour: 'references',
+    must: AGREED.must,
+    mustNot: [...AGREED.mustNot, 'move, drop or change any of the 210 links'],
+    build: onePage(async (sheet, faces, doc) => {
+      const helvetica = await faces.helvetica();
+      sheet.paragraph({ id: 'intro', role: 'the introduction', face: helvetica, size: 12, x: 60, y: 740, lines: ['Every entry below is a link to its', 'page in the club’s online records.'] });
+      const lines = Array.from({ length: 42 }, (_, row) => Array.from({ length: 5 }, (__, k) => `see ${String(row + 1)}.${String(k + 1)}`).join('   '));
+      sheet.paragraph({ id: 'references', role: 'a reference list, five links to a line', face: helvetica, size: 9, leading: 13.5, x: 60, y: 690, lines });
+      /** @type {import('@cantoo/pdf-lib').PDFRef[]} */
+      const links = [];
+      lines.forEach((line, row) => {
+        const baseline = 690 - row * 13.5;
+        let start = 60;
+        for (const entry of line.split('   ')) {
+          const end = start + (helvetica.width(entry) * 9) / 1000;
+          links.push(doc.context.register(doc.context.obj({ Type: 'Annot', Subtype: 'Link', Rect: [start, baseline - 2, end, baseline + 7], Border: [0, 0, 0], A: { S: 'URI', URI: PDFString.of(`https://example.org/notebook/${String(row + 1)}`) } })));
+          start = end + (helvetica.width('   ') * 9) / 1000;
+        }
+      });
+      // THE CONTROL'S DAMAGE: one link gone.
+      return { Annots: sheet.variant.omit === 'link' ? links.slice(1) : links };
+    }),
+  },
 ];
+
+/** Eight lines of a long list, numbered from its block. @param {number} block */
+function LIST(block) {
+  return Array.from({ length: 8 }, (_, k) => `Item ${String(block * 8 + k + 1)}: sow the seeds in rows.`);
+}
+
+/**
+ * A form's content placed once on a page at (x, y): the form registered, drawn there, and its blocks and drawings
+ * entered in the page's manifest where they show, each block naming the form.
+ * @param {Sheet} sheet @param {Sheet} form @param {string} name @param {number[]} bbox @param {number} x @param {number} y
+ */
+function placeForm(sheet, form, name, bbox, x, y) {
+  sheet.xobjects[name] = formOf(sheet.doc, form, bbox);
+  sheet.raw(`q 1 0 0 1 ${f(x)} ${f(y)} cm /${name} Do Q`);
+  const moved = (/** @type {Box} */ box) => ({ left: box.left + x, right: box.right + x, bottom: box.bottom + y, top: box.top + y });
+  for (const block of form.blocks) sheet.blocks.push({ ...block, box: moved(block.box), form: name });
+  for (const drawing of form.drawings) sheet.drawings.push({ ...drawing, box: moved(drawing.box) });
+}
 
 /** A circle as four cubic curves, from its rightmost point, ending with the path open for `f`. @param {number} cx @param {number} cy @param {number} r */
 function circle(cx, cy, r) {

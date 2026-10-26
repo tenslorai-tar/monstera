@@ -49,7 +49,7 @@ const REQUIRED = process.argv.includes('--require-engines');
 const ONLY = process.argv.includes('--shape') ? process.argv[process.argv.indexOf('--shape') + 1] : undefined;
 
 const CASES = [
-  'THE CATALOGUE: 24 shapes, each built by its generator',
+  'THE CATALOGUE: 34 shapes, each built by its generator',
   'READ BACK: every block of every page reads, by MuPDF and by PDFium, as the manifest’s words where it says',
   'DRAWN: every character of a visible block draws, and none of an invisible one (the unseen check’s two controls)',
   'THE SHAPE: what each file claims to test is in the file, read back with pdf-lib',
@@ -64,9 +64,10 @@ const CASES = [
   'CONTROL: an edit that changed nothing fails the check, as unseen',
   'CONTROL: a refused write and a logged defect each fail the check, as refused and as logged',
   'CONTROL: a drawing outside the block removed fails the check, as a drawing changed and as pixels changed',
-  'CONTROL: the edited block set above its own top fails the check, as outside its column (every page)',
+  'CONTROL: the edited block set 30 pt past its own width fails the check, as outside its column (every page)',
   'CONTROL: the link removed fails the check, as a link changed (the page with a link)',
   'CONTROL: on the scan, a cover under a word the edit kept fails the check, as a kept word covered (ADR-0187)',
+  'CONTROL: the new word set against its neighbour with no space fails the check, as words run together',
 ];
 
 // ------------------------------------------------------------------------------------------------- the file's shape
@@ -81,7 +82,7 @@ async function structureOf(bytes, index) {
   const context = doc.context;
   /** @param {unknown} value */
   const resolved = (value) => (value === undefined ? undefined : context.lookup(/** @type {any} */ (value)));
-  /** @type {{ subtype: string, base: string, file: string, toUnicode: boolean, encoding: string }[]} */
+  /** @type {{ subtype: string, base: string, file: string, toUnicode: boolean, encoding: string, weight: number | null }[]} */
   const fonts = [];
   /** @type {string[]} */
   const contents = [];
@@ -114,6 +115,7 @@ async function structureOf(bytes, index) {
           file,
           toUnicode: font.has(PDFName.of('ToUnicode')),
           encoding: name('Encoding'),
+          weight: descriptor instanceof PDFDict && descriptor.get(PDFName.of('FontWeight')) instanceof PDFNumber ? /** @type {PDFNumber} */ (descriptor.get(PDFName.of('FontWeight'))).asNumber() : null,
         });
       }
     }
@@ -227,6 +229,19 @@ const CLAIMS = {
   ],
   '23-word-processor-export': (s) => [['TrueType subsets, WinAnsi, no ToUnicode', s.fonts.some((each) => each.subtype === 'TrueType' && each.base.startsWith('AAAAAA+') && each.encoding === 'WinAnsiEncoding' && !each.toUnicode)]],
   '24-five-hundred-pages': (s, built) => [['500 pages, the edit on page 250', s.pages === 500 && built.page === 249]],
+  '25-glyph-per-object': (s) => [['every text object shows one glyph', count(s.content, /\bBT\b/gu) > 40 && count(s.content, /<[0-9A-F]{2}> Tj/gu) === count(s.content, /\bBT\b/gu)]],
+  '26-nested-clips': (s) => [['nine nested clips around the paragraph', count(s.content, / re W n/gu) === 9 && /Q Q Q Q Q Q Q Q Q/u.test(s.content)]],
+  '27-markers-after-paragraph': (s) => [['two small markers drawn after every paragraph', count(s.content, / 7 Tf/gu) === 2 && s.content.indexOf(' 7 Tf') > s.content.lastIndexOf(' 12 Tf')]],
+  '28-same-name-two-encodings': (s) => {
+    const twins = s.fonts.filter((each) => each.base === 'AAAAAA+NimbusRoman-Regular');
+    return [['two fonts of one name and program, one WinAnsi and one with Differences', twins.length === 2 && twins.some((each) => each.encoding === 'WinAnsiEncoding') && twins.some((each) => each.encoding.includes('Differences'))]];
+  },
+  '29-transform-per-line': (s) => [['104 lines, each drawn under a transform of its own', count(s.content, / cm BT /gu) === 104]],
+  '30-skewed-text': (s) => [['a text matrix that shears', /\b1 0 0\.25 1 /u.test(s.content)]],
+  '31-pull-quote-in-form': (s) => [['one form, holding text, placed on the page', s.forms === 1 && /\/Quote Do/u.test(s.pageContent) && /BT/u.test(s.content.slice(s.pageContent.length))]],
+  '32-table-form-13-clips': (s) => [['one form holding thirteen cell clips', s.forms === 1 && count(s.content.slice(s.pageContent.length), / re W n/gu) === 13]],
+  '33-drawn-weight-stated-regular': (s) => [['a drawn font stating weight 400', s.fonts.some((each) => each.subtype === 'Type3' && each.weight === 400)]],
+  '34-two-hundred-links': (s) => [['210 link annotations', s.links === 210]],
 };
 
 // ----------------------------------------------------------------------------------------------------------- the run
@@ -235,8 +250,8 @@ const CLAIMS = {
 async function run(pdfium, kernel) {
   /** @type {string[]} */
   const failures = [];
-  const roster = createRoster(failures, { cases: 18 });
-  if (CASES.length !== 18) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 18`);
+  const roster = createRoster(failures, { cases: 19 });
+  if (CASES.length !== 19) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 19`);
   const check = (/** @type {string} */ name, /** @type {boolean} */ held, /** @type {string} */ detail) => {
     const mark = roster.mark();
     if (!held) failures.push(`${name}\n      ${detail}`);
@@ -343,9 +358,17 @@ async function run(pdfium, kernel) {
     // An invisible neighbour (the scan's text layer) moves no pixel, so only a visible one owes the pixel reason.
     const seen = base.blocks.find((each) => each.id === shape.neighbour)?.visible === true;
     for (const reason of ['MOVED OR REMOVED OUTSIDE THE BLOCK (MuPDF)', 'MOVED OR CHANGED OUTSIDE THE BLOCK (PDFium)', ...(seen ? ['PIXELS OUTSIDE THE BLOCK'] : [])]) control(8, moved, reason);
-    // THE EDITED BLOCK SET ABOVE ITS OWN TOP, in its own direction: its words leave its column.
-    const [upX, upY] = [-Math.sin((block.angle * Math.PI) / 180) * 30, Math.cos((block.angle * Math.PI) / 180) * 30];
-    control(15, await judge((await shape.build({ edit, move: { block: block.id, dx: upX, dy: upY } })).bytes, expected), 'OUTSIDE ITS COLUMN');
+    // THE EDITED BLOCK SET 30 PT PAST ITS OWN WIDTH, along its own lines: its words leave its column. Sideways rather
+    // than above its top, since a block under a clip moved up is hidden by the clip and fails as unread instead.
+    const [sideX, sideY] = [Math.cos((block.angle * Math.PI) / 180) * 30, Math.sin((block.angle * Math.PI) / 180) * 30];
+    control(15, await judge((await shape.build({ edit, move: { block: block.id, dx: sideX, dy: sideY } })).bytes, expected), 'OUTSIDE ITS COLUMN');
+    // THE NEW WORD SET AGAINST ITS NEIGHBOUR with no space: the space-blind read-back passes it, and only reading the
+    // block's words as words can fail it.
+    const joined = (/** @type {string} */ text) => (text.includes(`${word} `) ? text.replace(`${word} `, word) : text.replace(` ${word}`, word));
+    const together = shape.edit.lines.map((line) => (typeof line === 'string' ? joined(line) : line.map((segment) => ({ ...segment, text: joined(segment.text) }))));
+    if (JSON.stringify(together) !== JSON.stringify(shape.edit.lines)) {
+      control(18, await judge((await shape.build({ edit: { ...edit, lines: together } })).bytes, expected), 'WORDS RUN TOGETHER OR SPLIT');
+    }
     // A PAGE THAT CARRIES A LINK has it removed (the generator names its link `link`).
     if (structure.links > 0) {
       control(16, await judge((await shape.build({ edit, omit: 'link' })).bytes, expected), 'A LINK CHANGED');
@@ -384,14 +407,14 @@ async function run(pdfium, kernel) {
     process.stdout.write(`  ${shape.id}: ${String(Date.now() - started)} ms\n`);
   }
 
-  check(CASES[0] ?? '', shapes.length === (ONLY === undefined ? 24 : 1) && (wrong[0]?.length ?? 1) === 0, (wrong[0] ?? []).join('\n      '));
+  check(CASES[0] ?? '', shapes.length === (ONLY === undefined ? 34 : 1) && (wrong[0]?.length ?? 1) === 0, (wrong[0] ?? []).join('\n      '));
   for (const at of [1, 2, 3, 4]) check(CASES[at] ?? '', (wrong[at]?.length ?? 1) === 0, (wrong[at] ?? []).join('\n      '));
   process.stdout.write(`\n  ANTI-ALIASING SPREAD: ${spread.toFixed(2)} pt at ${spreadAt}; MARGIN is ${String(MARGIN)} pt\n`);
   // EQUAL AT THE INSTRUMENT'S STEP, one device pixel: a bound of "at most half a point wider" could not fail while MARGIN
   // was itself half a point (the stage audit of 2026-10-26), so the margin must be the measurement rounded up to a pixel.
   check(CASES[5] ?? '', spread > 0 && MARGIN === Math.ceil(spread * SCALE) / SCALE,`measured ${spread.toFixed(2)} pt (at ${spreadAt}) against a MARGIN of ${String(MARGIN)} pt`);
   for (const at of [6, 7]) check(CASES[at] ?? '', (wrong[at]?.length ?? 1) === 0, (wrong[at] ?? []).join('\n      '));
-  const controls = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17];
+  const controls = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18];
   process.stdout.write(`  CONTROLS RAN on: ${controls.map((at) => `case ${String(at + 1)} ${String(ran[at] ?? 0)}`).join(', ')} time(s)\n`);
   for (const at of controls) {
     const times = ran[at] ?? 0;

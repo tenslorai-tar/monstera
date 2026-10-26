@@ -21,9 +21,11 @@
  * Before any page is judged, the check is run on the catalogue's own correct edit of the first page, which must pass, and
  * on that page unchanged, which must fail as unseen: an instrument that cannot tell the two apart reports nothing.
  *
- * Usage: node scripts/research/editCatalogueWriter.mjs [--shape <id>]
+ * Usage: node scripts/research/editCatalogueWriter.mjs [--shape <id>] [--keep <folder>]
+ *   --keep writes each page as the writer left it to the folder, named by its shape, for a person to open
  */
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import { EDIT_TEXT, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { expectEdit } from '../lib/editExpectations.mjs';
@@ -35,6 +37,8 @@ import { SHAPES } from './editCatalogue.mjs';
 
 const ROOT = repoRoot();
 const ONLY = process.argv.includes('--shape') ? process.argv[process.argv.indexOf('--shape') + 1] : undefined;
+const KEEP = process.argv.includes('--keep') ? process.argv[process.argv.indexOf('--keep') + 1] : undefined;
+if (KEEP !== undefined) mkdirSync(KEEP, { recursive: true });
 
 const library = pdfiumLibrary(ROOT);
 if (!existsSync(library) || bindNativeEngine(ROOT) === null || !existsSync(fontsDirectory(ROOT))) {
@@ -56,8 +60,6 @@ bindEditFolders(fontsDirectory(ROOT), null, readCatalogueApart);
 await loadEditFaces();
 const engines = { kernel: { mupdf }, pdfium };
 
-/** @param {import('./editCatalogue.mjs').Line} line */
-const textOf = (line) => (typeof line === 'string' ? line : line.map((segment) => segment.text).join(''));
 
 // THE CONTROL: the check passes the catalogue's correct edit and fails an unchanged page.
 {
@@ -114,8 +116,10 @@ for (const shape of SHAPES.filter((each) => ONLY === undefined || each.id === ON
   // THE EDIT'S OWN CHANGE, applied to the block as the grouping reads it: the words the manifest's edit removes and
   // inserts, found by their shared start and end. Rebuilding the text from the manifest's lines instead dropped what the
   // grouping joins to the block — a numbered list's numbers — and failed wherever it splits lines otherwise.
+  // THE EDITED BLOCK'S TEXT AS THE CATALOGUE BUILDS IT, not the edit's lines alone: a block's words include what is
+  // drawn apart from its lines, such as markers drawn later.
   const was = block.text.split(/\s+/u);
-  const becomes = shape.edit.lines.map(textOf).join('\n').split(/\s+/u);
+  const becomes = expected.split(/\s+/u);
   let start = 0;
   while (start < was.length && was[start] === becomes[start]) start += 1;
   let end = 0;
@@ -130,7 +134,15 @@ for (const shape of SHAPES.filter((each) => ONLY === undefined || each.id === ON
     results.push({ id: shape.id, verdict: `NOT SENT: the block as the grouping reads it does not hold “${removed}”` });
     continue;
   }
-  const text = asRead.replace(removed, inserted);
+  // THE SAME OCCURRENCE the edit changes: the words before it may hold the phrase too (a list of like lines).
+  const occurrence = was.slice(0, start).join(' ').split(removed).length - 1;
+  let at = -1;
+  for (let k = 0; k <= occurrence; k += 1) at = asRead.indexOf(removed, at + 1);
+  if (at < 0) {
+    results.push({ id: shape.id, verdict: `NOT SENT: the block as the grouping reads it holds “${removed}” fewer times than the catalogue’s` });
+    continue;
+  }
+  const text = asRead.slice(0, at) + inserted + asRead.slice(at + removed.length);
   const entry = {
     lines: chosen.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index)),
     soft: chosen.lines.map((/** @type {any} */ line) => line.soft),
@@ -144,6 +156,7 @@ for (const shape of SHAPES.filter((each) => ONLY === undefined || each.id === ON
   try {
     const { noted } = await applyEditTextOperators(copy, { kind: 'editTextOperators', page: base.page, ...blockEditOf([entry]), fit: 'reflow', version: asDocVersion(1) }, runs);
     after = await mupdfWriter.serialise(copy);
+    if (KEEP !== undefined) writeFileSync(join(KEEP, `${shape.id}.pdf`), after);
     outcome = { noted };
   } catch (error) {
     outcome = { refused: error };
