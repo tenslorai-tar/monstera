@@ -23,6 +23,7 @@ import type { AnnotationSelection, LinkSelection } from './annotations/selectToo
 import { SelectionLayer } from './SelectionLayer.js';
 import type { TextEditing } from './editText/editing.js';
 import { EditTextPage } from './editText/EditTextPage.js';
+import { shownTextOf } from './editText/pdfjsFaces.js';
 import { type ObjectEditing, ObjectEditPage } from './ObjectEditLayer.js';
 import { type FieldEditing, FieldDesignLayer } from './forms/FieldDesignLayer.js';
 import { type TabOrderEditing, TabOrderLayer } from './forms/TabOrderLayer.js';
@@ -2374,6 +2375,13 @@ function PageSlot({
           geometry={{ crop: size.crop, rotation: size.rotation, zoom }}
           page={page}
           pictureNoted={kind === 'image-only'}
+          // PDF.JS'S FACES for the page's fonts, which an open block's unchanged words are drawn in (`pdfjsFaces.ts`). A
+          // read the view's closing cut short (its version moved) lends none, and the words are drawn in the chain's face.
+          shown={async () =>
+            view === undefined
+              ? undefined
+              : { version: view.version, items: await shownTextOf(view.document, pdfjsPageOf(page), globalThis.document.fonts).catch(() => []) }
+          }
         />
       )}
       {drawing === undefined || size === undefined ? null : (

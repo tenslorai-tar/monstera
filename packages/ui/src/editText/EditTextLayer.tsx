@@ -4,7 +4,7 @@ import { type DocVersion, NEW_TEXT_MARGIN } from '@monstera/shared';
 import { type ReactElement, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { OverlayPage } from '../annotations/annotationSpace.js';
-import type { BlockCommit, BlocksRead, PageBlocksRead, RunFonts } from '../commands/documentCommands.js';
+import type { BlockCommit, BlockFaces, BlocksRead, PageBlocksRead } from '../commands/documentCommands.js';
 import type { EditorSpelling } from '../editorKit/EditorMenu.js';
 import {
   TEXT_ADD_SURFACE,
@@ -27,7 +27,8 @@ import { neighbourOf, wordsOfBlock } from '../textBlockOps.js';
 import { modelOfBlock } from './blockModel.js';
 import { BlockEditor, type Opening } from './BlockEditor.js';
 import { type FreshBox, type PageBlocks, boxStyle, fontsOfPage, freshBox, insertOf, newlyCovered, overlaps, pastItsPage, place } from './editing.js';
-import { type FaceKind, useRunFaces } from './runFaces.js';
+import { type ShownPage, runFamiliesOf } from './pdfjsFaces.js';
+import { type FaceKind, type FaceRead, type RunFaces, useRunFaces } from './runFaces.js';
 
 /**
  * Text edited where it is on the page — Edit text's mode, drawn over one page
@@ -65,7 +66,10 @@ export interface EditTextLayerProps {
   readonly onRestructure?: (edits: EditedBlock[], read: BlocksRead, form: FormPath | null, kept?: boolean) => Promise<BlockCommit>;
   readonly familiesOf?: () => Promise<(font: string) => string | undefined>;
   readonly onCommit: (block: TextBlock, text: string, read: PageBlocksRead, formatting?: BlockFormatting) => Promise<BlockCommit>;
-  readonly runFonts: (block: TextBlock, read: BlocksRead) => Promise<RunFonts>;
+  /** The read on open for a block (`document.blockFaces`). */
+  readonly blockFaces: (block: TextBlock, read: BlocksRead) => Promise<BlockFaces>;
+  /** The text PDF.js shows on this page and the face it loaded for each piece; absent where no page is drawn. */
+  readonly shown?: () => Promise<ShownPage | undefined>;
   readonly objects?: () => Promise<{ readonly version: DocVersion; readonly boxes: readonly TextBlock['box'][] } | undefined>;
   readonly onRecognise?: () => void;
   readonly pictureNoted?: boolean;
@@ -103,7 +107,8 @@ export function EditTextLayer({
   onRestructure,
   familiesOf = NO_FAMILIES,
   onCommit,
-  runFonts,
+  blockFaces,
+  shown = NOTHING_SHOWN,
   objects,
   onRecognise,
   pictureNoted = false,
@@ -177,16 +182,23 @@ export function EditTextLayer({
 
   const openBlock = open === undefined ? undefined : blocks?.blocks[open];
   // THE OPEN BLOCK'S FACES, read once as it is selected and kept for its life (`runFaces.ts`).
-  // ONE READ PER BLOCK AND VERSION: the parent hands a new `runFonts` each render, and it asks the same question.
-  const runFontsNow = useRef(runFonts);
+  // ONE READ PER BLOCK AND VERSION: the parent hands new functions each render, and they ask the same question.
+  const readsNow = useRef({ blockFaces, shown });
   useEffect(() => {
-    runFontsNow.current = runFonts;
-  }, [runFonts]);
+    readsNow.current = { blockFaces, shown };
+  }, [blockFaces, shown]);
   const readFaces = useMemo(
-    () => (openBlock === undefined || blocks === undefined ? undefined : () => runFontsNow.current(openBlock, blocks)),
+    () =>
+      openBlock === undefined || blocks === undefined
+        ? undefined
+        : async (): Promise<FaceRead> => {
+            const [faces, page] = await Promise.all([readsNow.current.blockFaces(openBlock, blocks), readsNow.current.shown()]);
+            // PDF.JS'S TEXT AT ANOTHER VERSION describes words the open block may no longer have, so it lends no face.
+            return { faces, shown: page?.version === blocks.version ? runFamiliesOf(openBlock, page.items) : new Map() };
+          },
     [openBlock, blocks],
   );
-  const faces = useRunFaces(openBlock, readFaces, `${String(blocks?.version ?? '')}-${String(open ?? -1)}-${String(page)}`);
+  const faces = useRunFaces(openBlock, readFaces);
   const openedModel = useMemo(() => (openBlock === undefined ? undefined : modelOfBlock(openBlock)), [openBlock]);
   const freshModel = useMemo(() => (freshOpen === undefined ? undefined : modelOfBlock(freshOpen.block)), [freshOpen]);
 
@@ -407,4 +419,7 @@ export function EditTextLayer({
 }
 
 /** A box of new text has no faces of its own to read: its words are drawn in the nearby words' kind. */
-const NO_FACES = { settled: true, loaded: new Map<string, string>() } as const;
+const NO_FACES: RunFaces = { settled: true, loaded: new Map(), fonts: new Map() };
+
+/** No page drawn to read PDF.js's faces from: every run is drawn in the chain's face, or its kind. */
+const NOTHING_SHOWN = (): Promise<ShownPage | undefined> => Promise.resolve(undefined);

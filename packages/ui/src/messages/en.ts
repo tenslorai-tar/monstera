@@ -1716,6 +1716,12 @@ export const FONT_GROUP_COMPUTER = messageKey('surface.font-picker.group-compute
 export const FONT_GROUP_BUNDLED = messageKey('surface.font-picker.group-bundled');
 export const FONT_GROUP_BUILT_IN = messageKey('surface.font-picker.group-built-in');
 export const FONT_GROUP_CLOSEST = messageKey('surface.font-picker.group-closest');
+export const FONT_CLOSEST_CHOSEN = messageKey('surface.font-picker.closest-chosen');
+export const FONT_STYLE_NEAREST = messageKey('surface.font-picker.style-nearest');
+export const FONT_STYLE_REGULAR = messageKey('surface.font-picker.style-regular');
+export const FONT_STYLE_BOLD = messageKey('surface.font-picker.style-bold');
+export const FONT_STYLE_ITALIC = messageKey('surface.font-picker.style-italic');
+export const FONT_STYLE_BOLD_ITALIC = messageKey('surface.font-picker.style-bold-italic');
 export const FONT_GROUP_ALL = messageKey('surface.font-picker.group-all');
 export const FONT_LIST_UNREAD = messageKey('surface.font-picker.unread');
 export const FONT_LIST_EMPTY = messageKey('surface.font-picker.empty');
@@ -4687,6 +4693,12 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FONT_GROUP_BUNDLED]: 'Included with Monstera',
   [FONT_GROUP_BUILT_IN]: 'Built into PDF',
   [FONT_GROUP_CLOSEST]: 'Closest matches',
+  [FONT_CLOSEST_CHOSEN]: 'Monstera’s choice',
+  [FONT_STYLE_NEAREST]: '{family} has no {wanted}, so {nearest} is used.',
+  [FONT_STYLE_REGULAR]: 'Regular',
+  [FONT_STYLE_BOLD]: 'Bold',
+  [FONT_STYLE_ITALIC]: 'Italic',
+  [FONT_STYLE_BOLD_ITALIC]: 'Bold Italic',
   [FONT_GROUP_ALL]: 'All fonts',
   [FONT_LIST_UNREAD]: 'The fonts on this computer could not be listed, so the fonts every PDF has are offered.',
   [FONT_LIST_EMPTY]: 'No fonts were found on this computer.',

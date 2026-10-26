@@ -2,7 +2,7 @@ import type { BlockFormatting, EditedBlock, FormPath, PageInsert, WindowEditActi
 import { type DocVersion, newTextBox, pdfPoint, toPdf, toViewport, viewportPoint } from '@monstera/shared';
 
 import { type OverlayPage, overlayTransform } from '../annotations/annotationSpace.js';
-import type { BlockCommit, BlocksRead, PageBlocksRead, RunFonts } from '../commands/documentCommands.js';
+import type { BlockCommit, BlockFaces, BlocksRead, PageBlocksRead } from '../commands/documentCommands.js';
 import type { EditorSpelling } from '../editorKit/EditorMenu.js';
 import type { TextBlock } from '../textBlock.js';
 import type { FaceKind } from './runFaces.js';
@@ -31,8 +31,8 @@ export interface TextEditing {
   /** Reads one page's blocks, or `undefined` where the read was refused. */
   readonly read: (page: number) => Promise<PageBlocks | undefined>;
   readonly onCommit: (page: number, block: TextBlock, text: string, read: PageBlocksRead, formatting?: BlockFormatting) => Promise<BlockCommit>;
-  /** The fonts one block's runs are drawn in, as the host rebuilt them, from the read that named the block (ADR-0175, ADR-0232). */
-  readonly runFonts: (page: number, block: TextBlock, read: BlocksRead) => Promise<RunFonts>;
+  /** What the writer does with a new word in each of one block's fonts, the read on open (ADR-0271 section 5). */
+  readonly blockFaces: (page: number, block: TextBlock, read: BlocksRead) => Promise<BlockFaces>;
   /** Recognises a page that has no text (the one `document.ocr` command), so a scan's words can be edited. */
   readonly onRecognise: (page: number) => void;
   readonly onLeave: () => void;

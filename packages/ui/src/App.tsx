@@ -88,7 +88,7 @@ import {
   commitPageInsert,
   commitTextBlock,
   isEditTextTool,
-  readRunFonts,
+  readBlockFaces,
   editTextCommand,
   handToolCommand,
   HAND_TOOL_ID,
@@ -4855,7 +4855,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
         return undefined;
       },
       onCommit: (page, block, text, read, formatting) => commitTextBlock(deps, docId, page, block, text, read, formatting),
-      runFonts: (page, block, read) => readRunFonts(client, docId, page, block, read),
+      blockFaces: (page, block, read) => readBlockFaces(client, docId, page, block, read),
       // EVERYTHING BUT TEXT, which the blocks already are: a refused read is no note rather than a second report, since
       // the note is a courtesy after a write that already landed (B1.6).
       objects: (page) => readPageContentBoxes(client, docId, page),

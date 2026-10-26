@@ -6965,6 +6965,14 @@ optgroup {
   gap: var(--space-4);
 }
 
+/* THE NEAREST STYLE, said under the toggles where the family lacks the one asked for. */
+.m-text-section__note {
+  margin: 0;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: var(--font-chrome-12);
+}
+
 .m-text-section__row {
   display: flex;
   flex-direction: column;
@@ -7074,6 +7082,13 @@ optgroup {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* MONSTERA'S CHOICE under a name in *Closest matches*: in the interface's face, as the option's second line. */
+.m-font-picker__option-note {
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: var(--font-chrome-12);
 }
 
 .m-font-picker__note {

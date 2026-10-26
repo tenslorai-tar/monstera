@@ -11,7 +11,7 @@ import { render as renderBare, act, fireEvent } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { NO_RUN_FONTS } from './commands/documentCommands.js';
+import { NO_BLOCK_FACES } from './commands/documentCommands.js';
 import { PageList } from './PageList.js';
 import type { PageBlocks, TextEditing } from './editText/editing.js';
 import { FIRST_PAGE } from './pageNumbering.js';
@@ -732,7 +732,7 @@ describe('PageList', () => {
           rewrite: 'objects',
         }),
       onCommit: () => Promise.resolve('unchanged'),
-      runFonts: () => Promise.resolve(NO_RUN_FONTS),
+      blockFaces: () => Promise.resolve(NO_BLOCK_FACES),
       onRecognise,
       onLeave: vi.fn(),
       adding: false,

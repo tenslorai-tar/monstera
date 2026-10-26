@@ -1,24 +1,29 @@
 import { useEffect, useState } from 'react';
 
-import type { RunFonts } from '../commands/documentCommands.js';
+import type { BlockFaces, BlockFontRead } from '../commands/documentCommands.js';
 import type { RunStyle } from '../editorKit/model.js';
-import { previewFamilyOf } from '../familyFaces.js';
+import type { EditorFaces } from '../editorKit/openEditor.js';
+import { drawFamiliesNamed, drawnWith, previewFamilyOf } from '../familyFaces.js';
 import type { TextBlock } from '../textBlock.js';
 import { faceKeyOf, isKindFace, isPageOnlyFace, kindFace } from './blockModel.js';
 
 /**
- * The faces an open block is drawn in: THE FONTS IN THE FILE
- * ([ADR-0271](../../../../docs/DECISIONS/0271-the-edit-text-editor-is-rebuilt-on-the-kept-writer.md) section 4,
- * [ADR-0175](../../../../docs/DECISIONS/0175-the-typing-box-draws-a-run-in-its-own-font-rebuilt-in-the-host.md)).
+ * The faces an open block is drawn in: EACH WORD IN THE FACE THAT WILL DRAW IT ON THE PAGE
+ * ([ADR-0271](../../../../docs/DECISIONS/0271-the-edit-text-editor-is-rebuilt-on-the-kept-writer.md) section 3, the
+ * owner's font rule).
  *
- * The host rebuilds each run's embedded program (`document.runFonts`), and each is loaded here as a face of this block
- * alone, under a name no other block, document or version shares, and removed when the block is let go. A run is drawn
- * by its font's name in that face first; behind it, for a letter the font does not carry, the KIND of face the page says
- * the run is (serif, sans, mono), and where the page says nothing of a kind — a family the person chose — the kind the
- * person set in Settings (`editing.fallback-face`).
+ * A run is drawn first in the face PDF.js already loaded for its font (`pdfjsFaces.ts`), which is the page's own font
+ * program and draws the run's unchanged words as the page does; behind it, the face the writer sets a word in that the
+ * run's font cannot carry, the chain's answer from the read on open (`document.blockFaces`); behind that, the KIND of face
+ * the page says the run is, else the kind the person set in Settings (`editing.fallback-face`).
+ *
+ * The browser falls back per letter where the writer decides per word, so a new word whose letters the page's font has
+ * only some of is drawn across two faces here and written whole in the chain's. A run with no face from PDF.js (a Type 3
+ * font, a standard font the page does not embed) draws every word in the chain's face, which for a new word is what is
+ * written; an unchanged word in it is written again in its own codes and font, so the page shows the original.
  *
  * The read begins when a block is SELECTED, the first of the two presses that open it, so by the press that places the
- * caret the faces are usually drawn and the caret goes where the person pressed in the layout they see.
+ * caret the faces are usually known and the caret goes where the person pressed in the layout they see.
  */
 export type FaceKind = 'serif' | 'sans' | 'mono';
 
@@ -29,15 +34,23 @@ const KIND_STACK: Readonly<Record<FaceKind, string>> = {
   mono: 'var(--m-face-mono)',
 };
 
-/** A block's faces: each page font's loaded family by its name, or none while they are read. */
-export interface RunFaces {
-  /** Whether the read has answered and every face it gave has loaded or been refused: the layout will not change for them again. */
-  readonly settled: boolean;
-  /** The family each page font's name is loaded under. */
-  readonly loaded: ReadonlyMap<string, string>;
+/** What the editor reads for a block as it opens: the read on open, and PDF.js's face for each run, by run index. */
+export interface FaceRead {
+  readonly faces: BlockFaces;
+  readonly shown: ReadonlyMap<number, string>;
 }
 
-const UNSETTLED: RunFaces = { settled: false, loaded: new Map() };
+/** A block's faces by the kit's face key (`faceKeyOf`), or none while they are read. */
+export interface RunFaces {
+  /** Whether the read has answered: the layout will not change for it again. */
+  readonly settled: boolean;
+  /** The family PDF.js loaded each page font in. */
+  readonly loaded: ReadonlyMap<string, string>;
+  /** What the writer does with a new word in each page font: the read on open's answer. */
+  readonly fonts: ReadonlyMap<string, BlockFontRead>;
+}
+
+const UNSETTLED: RunFaces = { settled: false, loaded: new Map(), fonts: new Map() };
 
 /** The kind of face each of a block's faces is, by its key (`faceKeyOf`): what the page says of the runs drawn in it. */
 function kindsOf(block: TextBlock): Map<string, FaceKind> {
@@ -51,91 +64,83 @@ function kindsOf(block: TextBlock): Map<string, FaceKind> {
   return kinds;
 }
 
-/** Counts the reads this window has loaded faces for, so no two reads share a family name. */
-let reads = 0;
-
-/** The family a block's face is loaded under: unique to this read, and plain letters and digits. */
-function familyOf(owner: string, read: number, place: number): string {
-  return `m-kit-${owner.replace(/[^a-zA-Z0-9]/gu, '')}-${String(read)}-${String(place)}`;
+/** `read`'s answer keyed as the kit keys a run's face: each key takes the first run drawn in it that has an answer. */
+export function runFacesOf(block: TextBlock, read: FaceRead): RunFaces {
+  const loaded = new Map<string, string>();
+  const fonts = new Map<string, BlockFontRead>();
+  for (const line of block.lines) {
+    for (const run of line.runs) {
+      const key = faceKeyOf(run.style, run.index);
+      const family = read.shown.get(run.index);
+      if (family !== undefined && !loaded.has(key)) loaded.set(key, family);
+      const place = read.faces.runs.get(run.index);
+      const font = place === undefined ? undefined : read.faces.fonts[place];
+      if (font !== undefined && !fonts.has(key)) fonts.set(key, font);
+    }
+  }
+  return { settled: true, loaded, fonts };
 }
 
 /**
- * Loads `block`'s run fonts from `read` while `read` is given, removing them when it is taken away or the block changes.
- * `owner` names the block (the version and its place), and each read is numbered besides.
- *
- * ## The answer is the READ's, never the block's
- *
- * A block closed and opened again is the same block and a new read, and its first faces were removed as it closed. Kept
- * by the block, the second opening was handed the first's answer at once — *settled*, naming families no longer loaded —
- * and drew its words in stand-in faces while saying they were the file's: measured 2026-10-26 in Chromium 151
- * (`textFirstClick.pw.ts`), a press 21 characters into a heading landed at 24, its line 21 pixels narrower than the same
- * line drawn in the file's font. So the answer is kept with the read that gave it, and each read's faces have names of
- * their own, so no family is ever both removed and named.
+ * Reads `block`'s faces from `read` while `read` is given. The answer is kept with the READ that gave it, never the
+ * block: a block closed and opened again is a new read, and is not settled until that read answers. The chain's
+ * families are given their faces as the answer arrives (`drawFamiliesNamed`), so a new word is drawn in its face rather
+ * than in its kind while a picker has never drawn the list.
  */
-export function useRunFaces(block: TextBlock | undefined, read: (() => Promise<RunFonts>) | undefined, owner: string): RunFaces {
-  const [faces, setFaces] = useState<{ readonly read: (() => Promise<RunFonts>) | undefined; readonly faces: RunFaces }>({ read: undefined, faces: UNSETTLED });
+export function useRunFaces(block: TextBlock | undefined, read: (() => Promise<FaceRead>) | undefined): RunFaces {
+  const [faces, setFaces] = useState<{ readonly read: (() => Promise<FaceRead>) | undefined; readonly faces: RunFaces }>({ read: undefined, faces: UNSETTLED });
   useEffect(() => {
     if (block === undefined || read === undefined) return undefined;
-    const fonts = document.fonts;
-    reads += 1;
-    const serial = reads;
     let current = true;
-    const added: FontFace[] = [];
-    void read().then(async ({ fonts: programs, runs }) => {
-      // EACH FACE DECLARES THE WEIGHT AND SLANT ITS PROGRAM HAS — the page's, as the first run drawn in it states them —
-      // so the browser does not embolden a bold program a second time.
-      const declared = new Map<number, FontFaceDescriptors>();
-      /** Each face key drawn in a program, by the program's place: every run's, so a run with no font name has its own. */
-      const keysOf = new Map<number, string[]>();
-      for (const line of block.lines) {
-        for (const run of line.runs) {
-          const place = runs.get(run.index);
-          if (place === undefined) continue;
-          keysOf.set(place, [...(keysOf.get(place) ?? []), faceKeyOf(run.style, run.index)]);
-          if (declared.has(place)) continue;
-          declared.set(place, { weight: run.style.bold ? '700' : '400', style: run.style.italic ? 'italic' : 'normal' });
-        }
-      }
-      const loaded = await Promise.all(
-        programs.map((bytes, place) => {
-          const face = new FontFace(familyOf(owner, serial, place), bytes, declared.get(place));
-          return face.load().then(
-            () => face,
-            () => undefined,
-          );
-        }),
-      );
+    void read().then((answer) => {
       if (!current) return;
-      const families = new Map<string, string>();
-      for (const [place, face] of loaded.entries()) {
-        if (face === undefined) continue;
-        fonts.add(face);
-        added.push(face);
-        for (const key of keysOf.get(place) ?? []) if (!families.has(key)) families.set(key, face.family);
-      }
-      setFaces({ read, faces: { settled: true, loaded: families } });
+      const found = runFacesOf(block, answer);
+      drawFamiliesNamed(
+        [...found.fonts.values()].flatMap((font) => [font.chosen, ...font.candidates].flatMap((face) => (face === null ? [] : [face.family]))),
+      );
+      setFaces({ read, faces: found });
     });
     return () => {
       current = false;
-      for (const face of added) fonts.delete(face);
     };
-  }, [block, read, owner]);
+  }, [block, read]);
   return faces.read === read ? faces.faces : UNSETTLED;
 }
 
+/** The read on open as the picker takes it (`openEditor.ts`): each page font's chain faces, Monstera's choice marked. */
+export function editorFacesOf(faces: RunFaces): (face: string) => EditorFaces | undefined {
+  return (face) => {
+    const font = faces.fonts.get(face);
+    if (font === undefined || font.candidates.length === 0) return undefined;
+    return { closest: font.candidates.map(({ family, styles }) => ({ family, styles })), chosen: font.chosen?.family };
+  };
+}
+
+/** A family name as CSS names it: quoted, since a family's name may hold a digit, which an unquoted name may not. */
+const quoted = (family: string): string => `"${family.replaceAll('"', '')}"`;
+
 /**
- * The CSS `font-family` a style is drawn in: the page font's own face where it loaded, else the family the font picker
- * draws its name in (`previewFamilyOf`, ADR-0250), and behind either the run's kind of face, else the person's fallback.
+ * The CSS `font-family` a style is drawn in: the stack this module's header describes. A face the person chose from the
+ * list, or a page font the read gave nothing for, is drawn in the family the font picker draws its name in
+ * (`previewFamilyOf`, ADR-0250), and behind it the run's kind of face, else the person's fallback.
  */
-export function faceCssOf(faces: RunFaces, block: TextBlock | undefined, fallback: FaceKind): (style: RunStyle) => string {
+export function faceCssOf(
+  faces: RunFaces,
+  block: TextBlock | undefined,
+  fallback: FaceKind,
+  /** The families given a face here (`facesGiven`), which a render that reads them subscribes to. */
+  given: ReadonlySet<string> = new Set(),
+): (style: RunStyle) => string {
   const kinds = block === undefined ? new Map<string, FaceKind>() : kindsOf(block);
+  const preview = (name: string): string | undefined => previewFamilyOf(name, undefined, drawnWith(given));
   return (style) => {
     if (isKindFace(style.face)) return KIND_STACK[kindOfFace(style.face)];
     const behind = KIND_STACK[kinds.get(style.face) ?? fallback];
-    // A RUN'S UNNAMED FONT has no family to preview: its own face where the host rebuilt it, else its kind.
-    const own = faces.loaded.get(style.face) ?? (isPageOnlyFace(style.face) ? undefined : previewFamilyOf(style.face));
-    // QUOTED, since a family's name may hold a digit, which an unquoted name may not.
-    return own === undefined ? behind : `"${own.replaceAll('"', '')}", ${behind}`;
+    const shown = faces.loaded.get(style.face);
+    const chosen = faces.fonts.get(style.face)?.chosen;
+    const chain = chosen === null || chosen === undefined ? undefined : preview(chosen.family);
+    const own = shown === undefined && chain === undefined && !isPageOnlyFace(style.face) ? preview(style.face) : undefined;
+    return [shown, chain, own].flatMap((family) => (family === undefined ? [] : [quoted(family)])).concat(behind).join(', ');
   };
 }
 

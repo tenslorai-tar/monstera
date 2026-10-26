@@ -4,6 +4,7 @@ import { type ReactElement, useCallback, useEffect, useState } from 'react';
 import type { OverlayPage } from '../annotations/annotationSpace.js';
 import type { PageBlocks, TextEditing } from './editing.js';
 import { EditTextLayer } from './EditTextLayer.js';
+import type { ShownPage } from './pdfjsFaces.js';
 
 /** A read of a page's blocks, and the version it was read at; `blocks` undefined for a refused read. */
 interface BlocksAnswer {
@@ -29,8 +30,11 @@ export function EditTextPage({
   paperAt,
   pictureNoted,
   drawn,
+  shown,
 }: {
   readonly page: number;
+  /** The text PDF.js shows on the page and the face it loaded for each piece (`pdfjsFaces.ts`), at the version it shows. */
+  readonly shown?: () => Promise<ShownPage | undefined>;
   /** The version the page on screen is drawn from, `undefined` before it is drawn. */
   readonly drawn: DocVersion | undefined;
   readonly geometry: OverlayPage;
@@ -83,7 +87,8 @@ export function EditTextPage({
       page={page}
       paperAt={paperAt}
       pictureNoted={pictureNoted}
-      runFonts={(block, read) => editing.runFonts(page, block, read)}
+      blockFaces={(block, read) => editing.blockFaces(page, block, read)}
+      {...(shown === undefined ? {} : { shown })}
       spell={editing.spell}
       // AN ANSWER WITH NO BLOCKS is a refused read, as against no answer yet.
       unreadable={answer !== undefined && answer.blocks === undefined}

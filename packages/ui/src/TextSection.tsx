@@ -1,10 +1,17 @@
 import { useLingui } from '@lingui/react';
+import type { FaceStyle } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 import { type ReactElement, type ReactNode, useId, useState } from 'react';
 
 import { ColourSwatches } from './ColourChoice.js';
 import { type DocumentFont, type EditorFonts, FontPicker, type FontList } from './FontPicker.js';
+import { nearestStyle, styleOf, togglesOf } from './faceStyles.js';
 import {
+  FONT_STYLE_BOLD,
+  FONT_STYLE_BOLD_ITALIC,
+  FONT_STYLE_ITALIC,
+  FONT_STYLE_NEAREST,
+  FONT_STYLE_REGULAR,
   PROPERTIES_TEXT_COLOUR,
   TEXT_FORMAT_ALIGN_CENTER,
   TEXT_FORMAT_ALIGN_JUSTIFY,
@@ -135,6 +142,14 @@ const TOGGLES: readonly { readonly style: TextToggle; readonly label: MessageKey
   { style: 'strike', label: TEXT_FORMAT_STRIKE, icon: 'Strikethrough' },
 ];
 
+/** Each style's name as the note says it. */
+const STYLE_NAMES: Readonly<Record<FaceStyle, MessageKey>> = {
+  regular: FONT_STYLE_REGULAR,
+  bold: FONT_STYLE_BOLD,
+  italic: FONT_STYLE_ITALIC,
+  'bold-italic': FONT_STYLE_BOLD_ITALIC,
+};
+
 const RISES = [
   { rise: 'superscript', label: TEXT_FORMAT_SUPERSCRIPT, icon: 'Superscript' },
   { rise: 'subscript', label: TEXT_FORMAT_SUBSCRIPT, icon: 'Subscript' },
@@ -245,6 +260,14 @@ export function TextSection(props: TextSectionProps): ReactElement {
   const { _ } = useLingui();
   const { look, shows, live, onEnter } = props;
   const sizeId = useId();
+  // THE STYLES THE FAMILY HAS, where the read on open said (`faceStyles.ts`): a toggle with no face behind it is not
+  // offered unless it is on, so a style already set can still be taken off.
+  const styles = props.font.editor?.styles;
+  const can = styles === undefined ? undefined : togglesOf(styles);
+  const offered = (style: TextToggle): boolean => (style !== 'bold' && style !== 'italic') || can === undefined || can[style] || look[style];
+  const wanted = styleOf(look.bold, look.italic);
+  const used = styles === undefined ? undefined : nearestStyle(wanted, styles);
+  const nearest = used === undefined || used === wanted ? undefined : { wanted, used };
   return (
     <div aria-label={_(TEXT_PROPERTIES_TEXT)} className="m-text-section" data-text-section="" role="group">
       <h3 className="m-text-section__title">{_(TEXT_PROPERTIES_TEXT)}</h3>
@@ -279,7 +302,7 @@ export function TextSection(props: TextSectionProps): ReactElement {
       {shows.has('style') || shows.has('rise') ? (
         <div className="m-text-section__buttons">
           {shows.has('style')
-            ? TOGGLES.map((toggle) => (
+            ? TOGGLES.filter((toggle) => offered(toggle.style)).map((toggle) => (
                 <IconButton
                   icon={ICONS[toggle.icon]}
                   key={toggle.style}
@@ -308,6 +331,12 @@ export function TextSection(props: TextSectionProps): ReactElement {
             : null}
         </div>
       ) : null}
+      {nearest === undefined || look.family === undefined ? null : (
+        // A STYLE THE FAMILY LACKS is set in its nearest one, and said (the owner's decision of 2026-10-26).
+        <p className="m-text-section__note" data-style-nearest="" role="status">
+          {_(FONT_STYLE_NEAREST, { family: look.family, wanted: _(STYLE_NAMES[nearest.wanted]), nearest: _(STYLE_NAMES[nearest.used]) })}
+        </p>
+      )}
 
       <div aria-label={_(PROPERTIES_TEXT_COLOUR)} className="m-text-section__row" role="group">
         <span className="m-text-section__label">{_(PROPERTIES_TEXT_COLOUR)}</span>

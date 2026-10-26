@@ -5,7 +5,7 @@ import { act, cleanup, fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type { BlockCommit } from '../commands/documentCommands.js';
-import { NO_RUN_FONTS } from '../commands/documentCommands.js';
+import { NO_BLOCK_FACES } from '../commands/documentCommands.js';
 import { pointOf } from '../editorKit/dom.js';
 import { formatOpenEditor } from '../editorKit/openEditor.js';
 import { activateCatalogue, i18n } from '../i18n.js';
@@ -63,7 +63,7 @@ function layer(commit: (text: string, formatting: unknown) => Promise<BlockCommi
         onLeave={onLeave}
         page={0}
         paperAt={() => undefined}
-        runFonts={() => Promise.resolve(NO_RUN_FONTS)}
+        blockFaces={() => Promise.resolve(NO_BLOCK_FACES)}
       />
     </I18nProvider>,
   );
@@ -196,7 +196,7 @@ describe('Edit text on the editor kit (ADR-0271)', () => {
           onRecognise={onRecognise}
           page={0}
           paperAt={() => undefined}
-          runFonts={() => Promise.resolve(NO_RUN_FONTS)}
+          blockFaces={() => Promise.resolve(NO_BLOCK_FACES)}
         />
       </I18nProvider>,
     );

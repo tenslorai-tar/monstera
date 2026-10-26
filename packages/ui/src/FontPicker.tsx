@@ -1,5 +1,5 @@
 import { useLingui } from '@lingui/react';
-import type { FontFamilyEntry } from '@monstera/contract';
+import type { FaceStyle, FontFamilyEntry } from '@monstera/contract';
 import { type MessageKey, SUBSET_TAG } from '@monstera/shared';
 import { type ReactElement, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
@@ -8,6 +8,7 @@ import {
   FONT_GROUP_ALL,
   FONT_GROUP_BUILT_IN,
   FONT_GROUP_BUNDLED,
+  FONT_CLOSEST_CHOSEN,
   FONT_GROUP_CLOSEST,
   FONT_GROUP_COMPUTER,
   FONT_GROUP_DOCUMENT,
@@ -112,6 +113,10 @@ export { SUBSET_TAG };
 export interface EditorFonts {
   /** The chain's candidates for the words, best first; none until the block's read-on-open answers them. */
   readonly closest: readonly string[];
+  /** The one among `closest` Monstera sets a new word in, which the list marks. */
+  readonly chosen?: string | undefined;
+  /** The styles the family at the selection has, where the read on open said; the style toggles offer only these. */
+  readonly styles?: readonly FaceStyle[] | undefined;
   /** Puts every selected letter back in the face the page has it in. */
   readonly onAsOnPage: () => void;
 }
@@ -383,6 +388,12 @@ export function FontPicker({ label, value, unset, list, inDocument, builtIn, onP
                             {choice.family}
                           </span>
                         )}
+                        {/* MONSTERA'S CHOICE among the closest: the face a new word is set in until the person picks. */}
+                        {group.title === FONT_GROUP_CLOSEST && choice.family === editor?.chosen ? (
+                          <span className="m-font-picker__option-note" data-font-chosen="">
+                            {_(FONT_CLOSEST_CHOSEN)}
+                          </span>
+                        ) : null}
                       </div>
                     );
                   })}

@@ -2,11 +2,12 @@ import { useLingui } from '@lingui/react';
 import type { BlockFormatting, EditedBlock, WindowEditAction } from '@monstera/contract';
 import { type MessageKey, TAB_STOP, toPdf, viewportPoint } from '@monstera/shared';
 import type React from 'react';
-import { type ReactElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { type ReactElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
 import { type OverlayPage, overlayTransform } from '../annotations/annotationSpace.js';
 import type { BlockCommit } from '../commands/documentCommands.js';
 import { type CommandProblem, problemMessage, problemParticulars } from '../dialogs/problemMessages.js';
+import { facesGiven, subscribeFaces } from '../familyFaces.js';
 import { positionOf, readSelection, writeSelection } from '../editorKit/dom.js';
 import { type EditorOps, EditorMenu, type EditorSpelling } from '../editorKit/EditorMenu.js';
 import { EditorSurface } from '../editorKit/EditorSurface.js';
@@ -31,7 +32,7 @@ import { joinEdits, splitEdits } from '../textBlockOps.js';
 import { dragged, type Handle, NOT_PLACED, type Nudge, nudged, type Placement, placeOf, placeTransform } from '../textPlacement.js';
 import { type OpenedBlock, editOf } from './blockModel.js';
 import { type Placed, boxStyle } from './editing.js';
-import { type FaceKind, type RunFaces, faceCssOf } from './runFaces.js';
+import { type FaceKind, type RunFaces, editorFacesOf, faceCssOf } from './runFaces.js';
 
 /**
  * One block open for editing, on the editor kit
@@ -279,7 +280,9 @@ export function BlockEditor({
   const [shift, setShift] = useState(0);
 
   // THE FACES the page's runs are drawn in, else their kind, else the person's fallback (`runFaces.ts`).
-  const faceCss = useMemo(() => faceCssOf(faces, block, fallback), [faces, block, fallback]);
+  // AND AGAIN EACH TIME A FAMILY IS GIVEN ITS FACE: the chain's families load as the read answers (`drawFamiliesNamed`).
+  const given = useSyncExternalStore(subscribeFaces, facesGiven);
+  const faceCss = useMemo(() => faceCssOf(faces, block, fallback, given), [faces, block, fallback, given]);
   const pitch = pitchOf(block);
   const look = useMemo<Look>(() => ({ zoom: geometry.zoom, pitch, faceCss }), [geometry.zoom, pitch, faceCss]);
   // A BLOCK MOVED OFF ITS PLACE draws every paragraph: the page's copy of it is papered whole.
@@ -309,8 +312,9 @@ export function BlockEditor({
           actions.current.finish();
         },
         fonts: fontsAtOpen,
+        faces: editorFacesOf(faces),
       }),
-    [store, fontsAtOpen],
+    [store, fontsAtOpen, faces],
   );
 
   /** Sends ONE write for this editor and takes its outcome, the words' write and a join's or a split's alike (B3a). */
