@@ -19,6 +19,7 @@ import { type BlockPlan, type FlowLine, type Measure, NO_MARK, type Row, largest
 import { DECORATION_KEY, DECORATION_KINDS, DECORATION_TAG, type DecorationKind, decorationBand, decorationsOf } from './markDecorations.js';
 import { JUSTIFY_CAP, RISE_SCALE, SUBSCRIPT_DROP, SUPERSCRIPT_RISE, spaceable, spacedBy } from './markFigures.js';
 import { carried, holds, neighbourSpan } from './contentCarry.js';
+import { type PushedLine, shapesMovedWith } from './pushedShapes.js';
 import {
   type MarkedDecoration,
   type Matrix,
@@ -792,6 +793,8 @@ function write(
   const grew = new Map<number, number>();
   /** The pushed blocks that moved, where they stood and how far down they went: the PDFium writer's own answer. */
   const moved: MovedBlock[] = [];
+  /** Every line of a pushed block that moved, for the drawings that sit with it (ADR-0249's correction of 2026-10-26). */
+  const pushedLines: PushedLine[] = [];
   /** Whether an arrange carried a block with the plain graphics state, which the page must then hold (ADR-0264). */
   let plain = false;
 
@@ -888,7 +891,7 @@ function write(
     // A PUSHED BLOCK THAT DOES NOT MOVE IS LEFT ALONE, the PDFium writer's rule and its reason: nothing of it is written
     // either way, and setting it to prove so is the whole cost of the text below a heading.
     if (push !== undefined && pushMove === 0) continue;
-    if (pushMove > 0) {
+    if (push !== undefined && pushMove > 0) {
       moved.push({
         block: jobAt,
         box: {
@@ -899,6 +902,21 @@ function write(
         },
         down: pushMove,
       });
+      // ITS LINES, for what is drawn beside them: each line's baseline and size where it stood, and the push's column, the
+      // growing block's ink and this one's together.
+      const pusher = jobs[push.by]?.block.lines.flat().flatMap((index) => {
+        const run = runs.get(index);
+        return run === undefined ? [] : [run];
+      });
+      const inks = [...lines.flat().map((run) => run.run), ...(pusher ?? [])];
+      const left = Math.min(...inks.map((run) => run.left));
+      const right = Math.max(...inks.map((run) => run.right));
+      for (const line of lines) {
+        const first = line[0];
+        if (first === undefined) continue;
+        const size = Math.max(...line.map((run) => (ops[run.first]?.state.size ?? 0) * run.origin.up));
+        pushedLines.push({ baseline: first.origin.y, size, left, right, down: pushMove });
+      }
     }
     // WHAT THE PERSON DID TO THE BLOCK AS A WHOLE (ADR-0188): placed, so every line of it is set again under one `cm`, or
     // given a measure, so every paragraph of it is. Either way no line of it is left where it was.
@@ -1884,6 +1902,11 @@ function write(
   }
   if (uncarried.size > 0) throw new Refused({ reason: 'needs-a-face', characters: [...uncarried] });
   if (emptied.size === 0 && insertions.length === 0) throw new Refused({ reason: 'unchanged' });
+  // WHAT SAT WITH A MOVED LINE MOVES WITH IT (ADR-0249's correction of 2026-10-26): a bullet drawn as a square, a rule under
+  // linked words. Each wrap draws no words, so the read-back reads it as an inserted object that shows nothing. The
+  // writer's own marked decorations are not among them: they go with their words above.
+  const marked = (start: number): boolean => pageDecorations.some((decoration) => start >= decoration.start && start < decoration.end);
+  for (const move of shapesMovedWith(content, arrangeWith.kinds, pushedLines, marked)) insertions.push({ ...move, drawn: '' });
 
   // THE SPLICES, in the order they sit in the bytes: each emptied operator's span, and each insertion at its BT.
   const splices: { readonly start: number; readonly end: number; readonly text: string; readonly inserted: boolean; readonly drawn?: string }[] = [];
