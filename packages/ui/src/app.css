@@ -7084,7 +7084,7 @@ optgroup {
 }
 
 /* A SPAN THE FORMATTING MADE keeps the run's own line box: its size is the person's, its place is the run's. */
-.m-text-editor__fmt {
+.m-inline-writer__fmt {
   line-height: inherit;
 }
 

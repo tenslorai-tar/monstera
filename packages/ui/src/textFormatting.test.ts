@@ -76,19 +76,16 @@ describe('readEditor', () => {
     expect(isFormatted(readEditor(root).formatting)).toBe(false);
   });
 
-  it('CONTROL: bold taken off words whose run IS bold is a mark, because it changes them', () => {
+  it('CONTROL: bold taken off words whose box IS bold is a mark, because it changes them', () => {
     const root = document.createElement('div');
-    const run = document.createElement('span');
-    run.className = 'm-text-editor__run';
-    run.dataset['size'] = '12';
-    run.style.fontWeight = '700';
-    run.textContent = 'words';
+    root.dataset['size'] = '12';
+    root.style.fontWeight = '700';
     const row = document.createElement('div');
-    row.append(run);
+    row.textContent = 'words';
     root.append(row);
     document.body.append(root);
-    const text = run.firstChild;
-    if (!(text instanceof Text)) throw new Error('no run text');
+    const text = row.firstChild;
+    if (!(text instanceof Text)) throw new Error('no box text');
     formatRange(root, rangeOver(text, 0, 5), { bold: false });
     expect(readEditor(root).formatting.marks).toEqual([{ from: 0, to: 5, set: { bold: false } }]);
   });
@@ -174,19 +171,16 @@ describe('formatRange', () => {
 });
 
 describe('stateAt and allWords', () => {
-  it('reports the run own weight until the person sets one', () => {
+  it('reports the box’s own weight until the person sets one', () => {
     const root = document.createElement('div');
+    root.dataset['size'] = '12';
+    root.style.fontWeight = '700';
     const row = document.createElement('div');
-    const run = document.createElement('span');
-    run.className = 'm-text-editor__run';
-    run.dataset['size'] = '12';
-    run.style.fontWeight = '700';
-    run.textContent = 'strong';
-    row.append(run);
+    row.textContent = 'strong';
     root.append(row);
     document.body.append(root);
-    const node = run.firstChild;
-    if (!(node instanceof Text)) throw new Error('no run text');
+    const node = row.firstChild;
+    if (!(node instanceof Text)) throw new Error('no box text');
     expect(stateAt(node, root).bold).toBe(true);
     formatRange(root, rangeOver(node, 0, 6), { bold: false });
     const inner = root.querySelector('[data-fmt]')?.firstChild;
