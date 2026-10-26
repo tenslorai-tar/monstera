@@ -377,3 +377,21 @@ of the block*, the new word drawing nothing.
    whole line's ink, and its other lines stay invisible over theirs. `editExpectations.mjs` judges a scan by the line: a
    word on a line holding a replaced or new word may be covered and must be drawn; a word on any other line must not be
    touched.
+
+## Open question, 2026-10-26 — a format press renders the whole shell
+
+**Measured.** In `editTextHandWalk.pw.ts` on this cloud machine (Chromium 151, the production build), *Bold visible in
+the editor* reads a median of 13.6 to 20.7 ms and a worst of 21.2 to 33.7 ms over six presses, inside its 50 ms budget;
+single presses read earlier the same evening went from 22.0 to 52.1 ms, one of them over it. A CPU profile of ten Bold
+presses (unminified build, CDP sampling at 50 µs) puts about 15 ms of React work in each press, and most of it is not
+the editor: `App`, the menu bar, the ribbon and the status bar render again on every press.
+
+**The mechanism.** Bold flips a command's `checked` answer. `useCommandContext` (ADR-0258's correction) holds every
+command's answers in App, so the context changes identity and every surface memoized on it renders again, which is the
+correction working as designed: it is what keeps Loupe and Bold from showing a stale state. Typing changes no answer,
+so a keystroke does not pay it (median 7.7 to 10.0 ms).
+
+**The question for the owner.** The laptop measurement against base A decides whether the row is inside its budget
+there. If it is not, the remedy is a change to ADR-0258's correction: each surface subscribes to the answers of the
+commands it shows, so a Bold press renders the Bold button and not the shell. That is an architecture change (B4) and is
+not made without your decision. Nothing else in Milestone 2 depends on it.
