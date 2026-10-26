@@ -1,6 +1,7 @@
 # ADR-0249 — A paragraph that grows pushes the text below it down
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR-0271](0271-the-edit-text-editor-is-rebuilt-on-the-kept-writer.md) (2026-10-26):
+  growth overlaps, and nothing is pushed
 - **Date:** 2026-10-16
 - **Amends:** [ADR-0096](0096-text-is-edited-in-place-on-the-page-in-blocks-that-reflow.md), its stated limit *"Text
   added below a block can overlap what is under it … a block that grows pushes its own lines down and nothing else"*,
@@ -186,3 +187,13 @@ and nothing moved names every such object.
 
 **The PDFium writer's push is not changed.** Every page's text is the operator writer's (ADR-0266), so no surface reaches
 PDFium's `placeObjects` for a push; stated here so that the day one does, this sentence is the first thing it falsifies.
+
+## Correction, 2026-10-26, later — retired: a paragraph that grows overlaps, and nothing is pushed
+
+**The owner's decision of 2026-10-26** ([ADR-0271](0271-the-edit-text-editor-is-rebuilt-on-the-kept-writer.md),
+section 11.1), in the owner's words: growth is *"a reminder for users to know there is a limit to what they can edit.
+Allowing it to push text down only ends up scattering other text on the page."* A block that grows grows downward and
+may overlap what is below; nothing else on the page moves, and nothing moves up when it shrinks. Every decision above —
+the column, the room, the pushed blocks in the edit, the markup moved with them, the live push in the editor, and the
+correction of this same day that moved drawings with pushed lines — is retired with it. The code is removed by the
+writer change that ADR-0271 names; this ADR stays as the record of what was built and why.
