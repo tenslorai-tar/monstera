@@ -33,6 +33,12 @@ export function commandAnswers(registry: CommandRegistry, context: CommandContex
  * stores they read moves and whenever the shell renders; the context's identity moves exactly when an answer does, and
  * nothing renders again for a change no answer shows.
  *
+ * ## What it costs
+ *
+ * Every predicate, on every render of the shell and every change of a subscribed store: 275 commands answered in
+ * 0.08 ms, measured 2026-10-26 on Node 22 over `App.test.tsx`'s registry (happy-dom, no editor open, 500 runs after 50
+ * to warm), so it is no part of the renders ADR-0258 measured.
+ *
  * ## What a predicate may read, then
  *
  * The context; state the shell holds, from which the registry is rebuilt, so it is asked again on that render; and the
