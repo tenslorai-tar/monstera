@@ -59,13 +59,14 @@ const CASES = [
   'THE EDIT GROWN BY A LINE, overlapping what is below, passes the check on every page',
   'CONTROL: a neighbour moved half a point fails the check, as moved by MuPDF’s characters, by PDFium’s runs and by the pixels, each',
   'CONTROL: a word missing from the edit fails the check, as read back wrongly by both engines',
-  'CONTROL: the new word invisible fails the check, as unseen words (every page whose block is visible)',
+  'CONTROL: the new word invisible fails the check, as unseen words (every page whose block shows its words, the scan’s included)',
   'CONTROL: the new word in a drawn (Type 3) font fails the check, as a drawn font for new words',
   'CONTROL: an edit that changed nothing fails the check, as unseen',
   'CONTROL: a refused write and a logged defect each fail the check, as refused and as logged',
   'CONTROL: a drawing outside the block removed fails the check, as a drawing changed and as pixels changed',
   'CONTROL: the edited block set above its own top fails the check, as outside its column (every page)',
   'CONTROL: the link removed fails the check, as a link changed (the page with a link)',
+  'CONTROL: on the scan, a cover under a word the edit kept fails the check, as a kept word covered (ADR-0187)',
 ];
 
 // ------------------------------------------------------------------------------------------------- the file's shape
@@ -234,8 +235,8 @@ const CLAIMS = {
 async function run(pdfium, kernel) {
   /** @type {string[]} */
   const failures = [];
-  const roster = createRoster(failures, { cases: 17 });
-  if (CASES.length !== 17) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 17`);
+  const roster = createRoster(failures, { cases: 18 });
+  if (CASES.length !== 18) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 18`);
   const check = (/** @type {string} */ name, /** @type {boolean} */ held, /** @type {string} */ detail) => {
     const mark = roster.mark();
     if (!held) failures.push(`${name}\n      ${detail}`);
@@ -325,7 +326,8 @@ async function run(pdfium, kernel) {
     const word = shape.edit.word;
     // THE LINE ADDED IS THE NEW WORD ALONE: it is in every page's fonts, and as narrow as the narrowest block.
     // On a drawn font's page it is set in an ordinary one, as the owner's rule sets every new word there.
-    const grownLines = [...shape.edit.lines, block.face.startsWith('Type 3') ? [{ text: word, normal: true }] : word];
+    // And it is drawn (render mode 0), which a scan's recognised words are not until an edit writes them.
+    const grownLines = [...shape.edit.lines, [{ text: word, render: 0, ...(block.face.startsWith('Type 3') ? { normal: true } : {}) }]];
     const grown = await shape.build({ edit: { ...edit, lines: grownLines } });
     const grew = await judge(grown.bytes, /** @type {string} */ (grown.blocks.find((each) => each.id === block.id)?.text));
     if (grew.length > 0) wrong[7]?.push(`${shape.id}: ${verdict(grew)}`);
@@ -353,10 +355,17 @@ async function run(pdfium, kernel) {
     const missed = await judge(missing.bytes, expected);
     control(9, missed, 'READ BACK (MuPDF)');
     control(9, missed, 'READ BACK (PDFium)');
-    if (block.visible) {
+    // A SCAN'S BLOCK SHOWS ITS NEW WORDS (ADR-0181 Decision 9), so its new word left invisible — the old way — fails too.
+    if (block.visible || block.scan === true) {
       const invisible = await shape.build({ edit, invisible: { block: block.id, word } });
       control(10, await judge(invisible.bytes, expected), 'UNSEEN WORDS');
       control(12, await judge(base.bytes, expected), 'UNSEEN:');
+    }
+    // A COVER UNDER A WORD THE EDIT KEPT, on the scan: the picture there is the page's visible text.
+    if (block.scan === true) {
+      // A word of the first line, which the edit keeps and which the generator's `cover` reads its ink from.
+      const kept = (block.text.split('\n')[0] ?? '').split(' ').find((each) => each.length > 3);
+      control(17, await judge((await shape.build({ edit, cover: kept ?? '' })).bytes, expected), 'A KEPT WORD COVERED');
     }
     const drawnWord = await shape.build({ edit, drawn: { block: block.id, word } });
     control(11, await judge(drawnWord.bytes, expected), 'A DRAWN FONT');
@@ -380,7 +389,7 @@ async function run(pdfium, kernel) {
   process.stdout.write(`\n  ANTI-ALIASING SPREAD: ${spread.toFixed(2)} pt at ${spreadAt}; MARGIN is ${String(MARGIN)} pt\n`);
   check(CASES[5] ?? '', spread > 0 && spread <= MARGIN && MARGIN - spread <= 0.5, `measured ${spread.toFixed(2)} pt (at ${spreadAt}) against a MARGIN of ${String(MARGIN)} pt`);
   for (const at of [6, 7]) check(CASES[at] ?? '', (wrong[at]?.length ?? 1) === 0, (wrong[at] ?? []).join('\n      '));
-  const controls = [8, 9, 10, 11, 12, 13, 14, 15, 16];
+  const controls = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17];
   process.stdout.write(`  CONTROLS RAN on: ${controls.map((at) => `case ${String(at + 1)} ${String(ran[at] ?? 0)}`).join(', ')} time(s)\n`);
   for (const at of controls) {
     const times = ran[at] ?? 0;

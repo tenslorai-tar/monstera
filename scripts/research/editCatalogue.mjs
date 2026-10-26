@@ -58,9 +58,13 @@ function mupdfFonts() {
  * @typedef {{ text: string, face?: Face, normal?: boolean, size?: number, rise?: number, colour?: [number, number, number], render?: number }} Segment
  * @typedef {string | Segment[]} Line
  * @typedef {{ edit?: { block: string, lines: Line[] }, move?: { block: string, dx: number, dy: number },
- *   omit?: string, invisible?: { block: string, word: string }, drawn?: { block: string, word: string } }} Variant
+ *   omit?: string, invisible?: { block: string, word: string }, drawn?: { block: string, word: string },
+ *   cover?: string }} Variant
+ *   `cover` is the scanned page's alone: a kept word of its first line covered as a replaced one is.
  * @typedef {{ id: string, role: string, text: string, box: Box, angle: number, face: string, visible: boolean,
- *   form?: string }} Block
+ *   scan?: true, form?: string }} Block
+ *   `scan` marks recognised words over a picture (ADR-0181 Decision 9): invisible before an edit, and its new words
+ *   written visible over a cover of the paper's colour under the words they replace.
  * @typedef {{ id: string, role: string, box: Box }} Drawing
  */
 
@@ -167,7 +171,7 @@ class Sheet {
    *
    * @param {{ id: string, role: string, face: Face, size: number, x: number, y: number, leading?: number, lines: Line[],
    *   angle?: number, perObject?: 'line' | 'block', align?: 'left' | 'right' | 'justify', measure?: number,
-   *   visible?: boolean, render?: number, colour?: [number, number, number], form?: string, prefix?: string }} spec
+   *   visible?: boolean, render?: number, colour?: [number, number, number], form?: string, prefix?: string, scan?: boolean }} spec
    */
   paragraph(spec) {
     const { id, face, size, angle = 0, perObject = 'line', align = 'left', render = 0 } = spec;
@@ -275,6 +279,7 @@ class Sheet {
       angle,
       face: face.kind,
       visible: (spec.visible ?? true) && render !== 3,
+      ...(spec.scan === true ? { scan: /** @type {const} */ (true) } : {}),
       ...(spec.form === undefined ? {} : { form: spec.form }),
     });
     if (variant.omit === id) return box;
@@ -922,10 +927,23 @@ export const SHAPES = [
     id: '22-scanned-page-ocr',
     title: 'A scanned page with an OCR text layer',
     tests: 'a page that is one grey picture, with the recognised words laid over it invisibly (render mode 3)',
-    edit: { block: 'ocr-1', lines: ['Minutes of the spring meeting', 'held in the village hall'], word: 'village' },
+    // AS ADR-0181 DECISION 9 AND ADR-0187 HAVE IT: the new word written visible, over a cover of the paper's colour
+    // under the word it replaces; the words kept stay invisible over their own ink.
+    edit: {
+      block: 'ocr-1',
+      lines: ['Minutes of the spring meeting', [{ text: 'held in the ' }, { text: 'village', render: 0 }, { text: ' hall' }]],
+      word: 'village',
+    },
     neighbour: 'ocr-2',
-    must: ['read back, by both engines, as the edited words', 'stay invisible: the scan is the page’s picture, and the text layer is what search and copy read'],
-    mustNot: ['move, change or remove anything outside the block: no pixel and no page object', 'be refused, or log a defect', 'paint words over the scan'],
+    must: [
+      'read back, by both engines, as the edited words',
+      'write the new words VISIBLE, and cover the picture under the replaced words with the paper’s own colour, grown through their ink (ADR-0181 Decision 9, ADR-0187)',
+    ],
+    mustNot: [
+      'move, change or remove anything outside the block: no pixel and no page object',
+      'cover the picture under a word the edit kept, or change the picture itself',
+      'be refused, or log a defect, or leave a new word invisible',
+    ],
     build: onePage(async (sheet, faces) => {
       const helvetica = await faces.helvetica();
       const lines = ['Minutes of the spring meeting', 'held in the church hall'];
@@ -933,6 +951,13 @@ export const SHAPES = [
       // THE SCAN: a grey page with dark bars where the words are, at 50 dpi — what a scanner's picture of print is to
       // anything that does not read it.
       const words = [...lines.map((line, k) => ({ line, y: 700 - k * 16 })), ...second.map((line) => ({ line, y: 640 }))];
+      /** Where a word's bar of ink is on the scan, in page space. @param {string} word @param {number} k its line */
+      const inkOfWord = (word, k) => {
+        const line = lines[k] ?? '';
+        const start = 72 + (helvetica.width(line.slice(0, line.indexOf(word))) * 12) / 1000;
+        const baseline = 700 - k * 16;
+        return { left: start, right: start + (helvetica.width(word) * 12) / 1000, bottom: baseline - 1, top: baseline + 8 };
+      };
       sheet.image('scan', 'the scanned page', { left: 0, bottom: 0, right: 612, top: 792 }, {
         width: 425,
         height: 550,
@@ -952,8 +977,15 @@ export const SHAPES = [
           return [ink ? 40 : 235 - ((px * 7 + py * 13) % 9)];
         },
       });
-      sheet.paragraph({ id: 'ocr-1', role: 'recognised words, invisible over the scan', face: helvetica, size: 12, leading: 16, x: 72, y: 700, lines, render: 3 });
-      sheet.paragraph({ id: 'ocr-2', role: 'more recognised words, invisible', face: helvetica, size: 12, x: 72, y: 640, lines: second, render: 3 });
+      // THE COVER, under the replaced word's ink with a scan pixel to spare (1.5 pt), in the paper's grey; and, for the
+      // control, one under a word the edit KEPT, which a writer must never draw.
+      const covered = [...(sheet.variant.edit?.block === 'ocr-1' ? [inkOfWord('church', 1)] : []), ...(sheet.variant.cover === undefined ? [] : [inkOfWord(sheet.variant.cover, 0)])];
+      covered.forEach((box, k) => {
+        const [x0, y0, x1, y1] = [box.left - 1.5, box.bottom - 1.5, box.right + 1.5, box.top + 1.5];
+        sheet.draw(`cover-${String(k)}`, 'a cover of the paper’s colour', { left: x0, bottom: y0, right: x1, top: y1 }, `0.914 g ${f(x0)} ${f(y0)} ${f(x1 - x0)} ${f(y1 - y0)} re f`);
+      });
+      sheet.paragraph({ id: 'ocr-1', role: 'recognised words, invisible over the scan', face: helvetica, size: 12, leading: 16, x: 72, y: 700, lines, render: 3, scan: true });
+      sheet.paragraph({ id: 'ocr-2', role: 'more recognised words, invisible', face: helvetica, size: 12, x: 72, y: 640, lines: second, render: 3, scan: true });
     }),
   },
   {

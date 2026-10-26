@@ -79,6 +79,41 @@ function centredIn(inner, box, margin) {
   return x >= box.left - margin && x <= box.right + margin && y >= box.bottom - margin && y <= box.top + margin;
 }
 
+/**
+ * The words among `members`, in the reading order of `chars` (a page's characters as MuPDF read them): runs of letters
+ * and digits on one line. A WORD IS A RUN OF LETTERS AND DIGITS: punctuation touching a new word is the old text's.
+ * @param {Char[]} chars @param {Char[]} members @returns {Char[][]}
+ */
+function wordsIn(chars, members) {
+  const letter = /[\p{L}\p{N}\p{M}]/u;
+  const inBlock = new Set(members.filter((each) => letter.test(each.character)));
+  /** @type {Char[][]} */
+  const words = [];
+  /** @type {Char | null} */
+  let previous = null;
+  for (const each of chars) {
+    if (!inBlock.has(each)) {
+      previous = null;
+      continue;
+    }
+    if (previous !== null && Math.abs(previous.y - each.y) < (each.box.top - each.box.bottom) / 2) words[words.length - 1]?.push(each);
+    else words.push([each]);
+    previous = each;
+  }
+  return words;
+}
+
+/** @param {Char[]} word */
+const textOfWord = (word) => word.map((each) => each.character).join('');
+
+/** The box round a word's characters. @param {Char[]} word @returns {Box} */
+const boxOfWord = (word) => ({
+  left: Math.min(...word.map((each) => each.box.left)),
+  right: Math.max(...word.map((each) => each.box.right)),
+  bottom: Math.min(...word.map((each) => each.box.bottom)),
+  top: Math.max(...word.map((each) => each.box.top)),
+});
+
 /** A character by what it is, where its pen is and how tall it is, to half a point. @param {Char} each */
 const keyOfChar = (each) =>
   `${each.character}@${String(Math.round(each.x * 2))},${String(Math.round(each.y * 2))}/${String(Math.round((each.box.top - each.box.bottom) * 2))}`;
@@ -247,34 +282,12 @@ export async function expectEdit({ kernel, pdfium }, { before, after, page, bloc
 
   // THE FONT RULE: a NEW word — one the block did not hold before — is never in a drawn font. By word and not by place,
   // since the owner's rule lets an unchanged word that re-flows keep the face the page drew it in.
-  // A WORD IS A RUN OF LETTERS AND DIGITS: punctuation touching a new word is the old text's, and is not judged.
-  const letter = /[\p{L}\p{N}\p{M}]/u;
-  const inBlock = new Set(written.filter((each) => letter.test(each.character)));
-  /** @type {Char[][]} */
-  const words = [];
-  /** @type {Char | null} */
-  let previous = null;
-  for (const each of afterChars) {
-    const joins = inBlock.has(each) && previous !== null && Math.abs(previous.y - each.y) < (each.box.top - each.box.bottom) / 2;
-    if (!inBlock.has(each)) previous = null;
-    else {
-      if (joins) words[words.length - 1]?.push(each);
-      else words.push([each]);
-      previous = each;
-    }
-  }
-  /** @type {Map<string, number>} */
-  const held = new Map();
-  for (const word of block.text.match(/[\p{L}\p{N}\p{M}]+/gu) ?? []) held.set(word, (held.get(word) ?? 0) + 1);
-  const drawn = words
-    .filter((word) => {
-      const text = word.map((each) => each.character).join('');
-      const left = held.get(text) ?? 0;
-      if (left > 0) held.set(text, left - 1);
-      return left === 0;
-    })
-    .flat()
-    .filter((each) => each.font.startsWith('Type3'));
+  // The same comparison says which words the edit REPLACED and which it KEPT, which the scan's rule below needs.
+  const wordsBefore = wordsIn(beforeChars, ownBefore);
+  const wordsAfter = wordsIn(afterChars, written);
+  const { rest: newWords, missing: replacedWords } = remainder(wordsAfter, wordsBefore, textOfWord);
+  const { rest: keptWords } = remainder(wordsBefore, replacedWords, textOfWord);
+  const drawn = newWords.flat().filter((each) => each.font.startsWith('Type3'));
   if (drawn.length > 0) {
     failures.push(`A DRAWN FONT FOR NEW WORDS: ${String(drawn.length)} written character(s) are in a Type 3 font (${[...new Set(drawn.map((each) => each.font))].join(', ')}), the first “${drawn.slice(0, 12).map((each) => each.character).join('')}”`);
   }
@@ -315,14 +328,38 @@ export async function expectEdit({ kernel, pdfium }, { before, after, page, bloc
   // PIXELS: none outside the block's ink before and its characters' after; and some inside, or the edit was unseen.
   const drawnBefore = render(kernel, before, page);
   const drawnAfter = render(kernel, after, page);
-  const ink = inkOf(kernel, before, page, block.box);
-  const { outside, inside: changedInside, farthest } = compare(drawnBefore, drawnAfter, [ink, ...written.map((each) => each.box)], MARGIN);
+  // RECOGNISED WORDS OVER A SCAN (ADR-0181 Decision 9, ADR-0187) are invisible over their own ink, so the block may
+  // change the picture only where a REPLACED word's ink is — its cover, grown through that ink by at most ADR-0187's
+  // caps, 5 pt sideways and a third of its height (at least 2 pt) up and down — and where its NEW words are drawn.
+  const zones = block.scan
+    ? [
+        ...replacedWords.map((word) => {
+          const box = boxOfWord(word);
+          const up = Math.max(2, (box.top - box.bottom) / 3);
+          return { left: box.left - 5, right: box.right + 5, bottom: box.bottom - up, top: box.top + up };
+        }),
+        ...newWords.flat().map((each) => each.box),
+      ]
+    : [inkOf(kernel, before, page, block.box), ...written.map((each) => each.box)];
+  const { outside, inside: changedInside, farthest } = compare(drawnBefore, drawnAfter, zones, MARGIN);
   if (outside > 0) failures.push(`PIXELS OUTSIDE THE BLOCK: ${String(outside)} changed, up to ${String(farthest / SCALE)} pt from where the block may draw`);
-  if (block.visible && changedInside === 0) failures.push('UNSEEN: the edit changed no pixel of the block');
+  const shown = block.visible || block.scan === true;
+  if (shown && changedInside === 0) failures.push('UNSEEN: the edit changed no pixel of the block');
+  if (block.scan) {
+    // A KEPT WORD's ink is the page's visible text: no cover may reach it. Its box less a point each side, since a
+    // replaced word's cover may come within the space between them.
+    const covered = keptWords.filter((word) => {
+      const box = boxOfWord(word);
+      return compare(drawnBefore, drawnAfter, [{ ...box, left: box.left + 1, right: box.right - 1 }], 0).inside > 0;
+    });
+    if (covered.length > 0) failures.push(`A KEPT WORD COVERED: the picture under “${covered.map(textOfWord).join(' ')}” changed, which the edit kept`);
+  }
 
-  // EVERY CHARACTER OF THE BLOCK DRAWS SOMETHING: its box differs between the page drawn with its text and without.
-  if (block.visible) {
-    const unseen = undrawn(drawnAfter, written, await textInk(pdfium, after, page, drawnAfter.width, drawnAfter.height));
+  // EVERY CHARACTER THE BLOCK SHOWS DRAWS SOMETHING: its box differs between the page drawn with its text and without.
+  // Over a scan that is the new words alone; the words kept stay invisible over their own ink.
+  if (shown) {
+    const judged = block.scan ? newWords.flat() : written;
+    const unseen = undrawn(drawnAfter, judged, await textInk(pdfium, after, page, drawnAfter.width, drawnAfter.height));
     if (unseen.length > 0) failures.push(`UNSEEN WORDS: ${String(unseen.length)} of the block’s characters draw nothing, “${unseen.slice(0, 24).map((each) => each.character).join('')}”`);
   }
   return failures;
