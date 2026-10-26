@@ -2,6 +2,7 @@ import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { type Page, expect, test } from '@playwright/test';
 
+import { SURFACE, openWords } from './editTextSteps.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
 
 /**
@@ -61,10 +62,8 @@ async function open(page: Page, sent: number[]): Promise<void> {
 test('the written words stay in the editor until the page can draw them, then the editor goes', async ({ page }) => {
   const sent: number[] = [];
   await open(page, sent);
-  await page.locator('[data-text-edit-layer="0"] [data-text-block="0"]').click();
-  const editor = page.locator('[data-text-editor]');
-  await expect(editor).toHaveAttribute('contenteditable', 'plaintext-only', { timeout: 10_000 });
-  await page.keyboard.press('End');
+  await openWords(page, page.locator('[data-text-edit-layer="0"] [data-text-block="0"]'));
+  const editor = page.locator(SURFACE);
   await page.keyboard.type(' grows');
   await page.keyboard.press('Escape');
   await expect.poll(() => sent.length).toBe(1);
@@ -74,8 +73,10 @@ test('the written words stay in the editor until the page can draw them, then th
   await page.waitForTimeout(Math.max(0, answered + MODEL_MS / 2 - Date.now()));
   expect(Date.now()).toBeLessThan(answered + MODEL_MS);
   await expect(editor).toHaveText('The first paragraph grows');
-  // LOCKED: a key now would go into words already written.
-  await expect(editor).toHaveAttribute('contenteditable', 'false');
+  // LOCKED: a key now would go into words already written, and changes nothing.
+  await expect(editor).toHaveAttribute('aria-readonly', 'true');
+  await page.keyboard.type('X');
+  await expect(editor).toHaveText('The first paragraph grows');
 
   // AND IT GOES once the page has drawn the version the write produced.
   await expect(editor).toHaveCount(0, { timeout: MODEL_MS + 10_000 });

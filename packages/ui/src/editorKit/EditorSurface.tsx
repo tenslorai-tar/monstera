@@ -228,6 +228,14 @@ export function EditorSurface({ store, look, drawn, label, className, style, edi
         }
         return;
       }
+      // CTRL+A IS THE BLOCK, in the model at once: the browser's own select-all reaches the store only by a queued
+      // `selectionchange`, after a control the person moves to next has taken the focus.
+      if (chord && key === 'a' && !event.shiftKey) {
+        event.preventDefault();
+        store.select(wholeBlock(store.get().model));
+        writeSelection(element, store.get().selection);
+        return;
+      }
       if (chord && key === 'y' && !event.shiftKey) {
         event.preventDefault();
         if (latest.current.editable) store.redo();
@@ -283,6 +291,10 @@ export function EditorSurface({ store, look, drawn, label, className, style, edi
     element.addEventListener('keydown', onKeyDown);
     element.addEventListener('compositionstart', onCompositionStart);
     element.addEventListener('compositionend', onCompositionEnd);
+    // AS THE FOCUS LEAVES THE WORDS, too: `selectionchange` is a queued task that reads the selection when it RUNS, so
+    // words chosen and a field focused within one task are read after the selection became the field's (measured in
+    // Chromium 151, `textAdd.pw.ts`' spacing case). `focusout` runs inside the focus move, while it is still the words'.
+    element.addEventListener('focusout', onSelectionChange);
     element.addEventListener('copy', onCopy);
     element.addEventListener('cut', onCut);
     owner.addEventListener('selectionchange', onSelectionChange);
@@ -293,6 +305,7 @@ export function EditorSurface({ store, look, drawn, label, className, style, edi
       element.removeEventListener('keydown', onKeyDown);
       element.removeEventListener('compositionstart', onCompositionStart);
       element.removeEventListener('compositionend', onCompositionEnd);
+      element.removeEventListener('focusout', onSelectionChange);
       element.removeEventListener('copy', onCopy);
       element.removeEventListener('cut', onCut);
       owner.removeEventListener('selectionchange', onSelectionChange);

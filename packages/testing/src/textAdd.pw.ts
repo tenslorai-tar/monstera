@@ -79,7 +79,7 @@ test.describe('Add text', () => {
       const box = await surface.boundingBox();
       if (box === null) throw new Error('the add surface has no box');
       await page.mouse.click(box.x + box.width * where.x, box.y + box.height * where.y);
-      const editor = page.locator('[data-text-editor]');
+      const editor = page.locator('[data-kit-surface]');
       await expect(editor).toBeFocused();
       await page.keyboard.type('Words that stay');
       // IN THE BOX before anything is sent: the defect was here, and a case asserting only the command could not say so.
@@ -102,7 +102,7 @@ test.describe('Add text', () => {
         const box = await surface.boundingBox();
         if (box === null) throw new Error('the add surface has no box');
         await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.5);
-        const editor = page.locator('[data-text-editor]');
+        const editor = page.locator('[data-kit-surface]');
         await expect(editor).toBeFocused();
         await page.keyboard.type('In a chosen font');
         const panel = page.locator('[data-text-properties]');
@@ -150,7 +150,7 @@ test.describe('Add text', () => {
     const box = await surface.boundingBox();
     if (box === null) throw new Error('the add surface has no box');
     await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.5);
-    await expect(page.locator('[data-text-editor]')).toBeFocused();
+    await expect(page.locator('[data-kit-surface]')).toBeFocused();
     const panel = page.locator('[data-text-properties]');
     await expect(panel.getByRole('spinbutton', { name: 'Size in points' })).toHaveValue('12');
     await expect(panel.getByRole('spinbutton', { name: 'Character spacing in points' })).toBeEnabled();
@@ -208,7 +208,7 @@ test.describe('Add text', () => {
     const box = await surface.boundingBox();
     if (box === null) throw new Error('the add surface has no box');
     await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.6);
-    await expect(page.locator('[data-text-editor]')).toBeFocused();
+    await expect(page.locator('[data-kit-surface]')).toBeFocused();
     await page.keyboard.type('Kept by Escape');
     await page.keyboard.press('Escape');
     await expect.poll(() => insertedWords(sent)).toStrictEqual(['Kept by Escape']);
@@ -221,9 +221,9 @@ test.describe('Add text', () => {
     const again = page.locator('[data-text-add-surface]').first();
     await expect(again).toBeAttached();
     await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.3);
-    await expect(page.locator('[data-text-editor]')).toBeFocused();
+    await expect(page.locator('[data-kit-surface]')).toBeFocused();
     await page.keyboard.press('Escape');
-    await expect(page.locator('[data-text-editor]')).toHaveCount(0);
+    await expect(page.locator('[data-kit-surface]')).toHaveCount(0);
     expect(insertedWords(sent.slice(before))).toStrictEqual([]);
   });
 });

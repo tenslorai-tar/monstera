@@ -124,6 +124,28 @@ describe('the kit’s editable surface', () => {
     expect(changed?.querySelectorAll('br[data-kit-wrap]')).toHaveLength(0);
   });
 
+  it('takes the browser’s selection as the focus leaves the words, before a queued selectionchange could', () => {
+    const { root, store } = surface();
+    root.focus();
+    const from = pointOf(root, { paragraph: 1, offset: 0 });
+    const to = pointOf(root, { paragraph: 1, offset: 6 });
+    if (from === undefined || to === undefined) throw new Error('no points');
+    root.ownerDocument.getSelection()?.setBaseAndExtent(from.node, from.offset, to.node, to.offset);
+    // NO `selectionchange` is sent: the field the person moved to has the focus before that task would run.
+    act(() => {
+      root.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+    });
+    expect(store.get().selection).toStrictEqual({ anchor: { paragraph: 1, offset: 0 }, focus: { paragraph: 1, offset: 6 } });
+  });
+
+  it('Ctrl+A selects the whole block in the model at once', () => {
+    const { root, store } = surface();
+    act(() => {
+      root.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', ctrlKey: true, bubbles: true, cancelable: true }));
+    });
+    expect(store.get().selection).toStrictEqual({ anchor: { paragraph: 0, offset: 0 }, focus: { paragraph: 1, offset: 11 } });
+  });
+
   it('undoes and redoes by its own history, not the browser’s', () => {
     const { root, store } = surface();
     act(() => {

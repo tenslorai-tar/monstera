@@ -2,6 +2,7 @@ import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { expect, test } from '@playwright/test';
 
+import { openWords } from './editTextSteps.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
 import { runCommand } from './palette.js';
 
@@ -60,10 +61,7 @@ test('an Add text box opened on another page while that page is still drawing su
   await runCommand(page, 'Edit text on the page');
 
   // A WRITE ON PAGE 1.
-  await page.locator('[data-text-edit-layer="0"] [data-text-block="0"]').click();
-  const editor = page.locator('[data-text-editor]');
-  await expect(editor).toHaveAttribute('contenteditable', 'plaintext-only', { timeout: 10_000 });
-  await page.keyboard.press('End');
+  await openWords(page, page.locator('[data-text-edit-layer="0"] [data-text-block="0"]'));
   await page.keyboard.type(' grows');
   await page.keyboard.press('Escape');
   await expect.poll(() => sent.length).toBe(1);
@@ -80,7 +78,7 @@ test('an Add text box opened on another page while that page is still drawing su
   if (box === null) throw new Error('no add surface on page 2');
   await page.mouse.click(box.x + box.width * 0.3, box.y + box.height * 0.6);
   // PAGE 2'S OWN: page 1's written editor may still be on screen as its words' look.
-  const added = page.locator('[data-text-edit-layer="1"] [data-text-editor]');
+  const added = page.locator('[data-text-edit-layer="1"] [data-kit-surface]');
   await expect(added).toBeFocused();
   await page.keyboard.type('Added on page two');
 
