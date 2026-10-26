@@ -2,6 +2,7 @@ import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { type Locator, type Page, expect, test } from '@playwright/test';
 
+import { SURFACE, openWords } from './editTextSteps.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
 import { runCommand } from './palette.js';
 
@@ -56,9 +57,8 @@ async function openList(page: Page, sent: { channel: string; params: unknown }[]
   await page.getByRole('button', { name: /^Open PDF/u }).first().click();
   await expect(page.locator('canvas[data-page-canvas="0"]')).toBeVisible();
   await runCommand(page, 'Edit text on the page');
-  await page.locator('[data-text-edit-layer="0"] [data-text-block="0"]').click();
-  const editor = page.locator('[data-text-editor]');
-  await expect(editor).toBeFocused();
+  await openWords(page, page.locator('[data-text-edit-layer="0"] [data-text-block="0"]'));
+  const editor = page.locator(SURFACE);
   await page.keyboard.press('Control+A');
   const panel = page.locator('[data-text-properties]');
   await panel.getByRole('button', { name: /^Font:/u }).click();

@@ -6,6 +6,8 @@ import { editOf, joinsAsTheKernelDoes, modelOfBlock } from './blockModel.js';
 
 const REGULAR = { size: 11, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false, italic: false, bold: false, font: 'ABCDEF+Arimo' };
 const BOLD = { ...REGULAR, bold: true, font: 'ABCDEF+Arimo-Bold' };
+/** A run the page names no font for. */
+const STYLE_UNNAMED = { size: 11, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: true, italic: false, bold: false };
 
 const box = (x0: number, y0: number, x1: number, y1: number) => ({ x0, y0, x1, y1 });
 
@@ -67,6 +69,19 @@ describe('the Edit text adapter’s model of a block', () => {
         { from: 29, to: 42, set: { family: 'Tinos' } },
       ],
     });
+  });
+
+  it('keys a run the page names no font for by the run itself, and never writes that key as a family', () => {
+    const unnamed = { ...STYLE_UNNAMED };
+    const plain = block([{ runs: [[7, 'No name here', unnamed]], soft: false }]);
+    const { model } = modelOfBlock(plain);
+    // ITS OWN KEY, so the face the host rebuilds for run 7 draws it (`faceKeyOf`); CONTROL: a named run keeps its name.
+    expect(model.paragraphs[0]?.runs[0]?.style.face).toBe('run:7');
+    expect(modelOfBlock(BLOCK).model.paragraphs[0]?.runs[0]?.style.face).toBe('ABCDEF+Arimo');
+    // A FAMILY CHOSEN over it is written; the run's own key, put back, is not.
+    const chosen = applyStyle(model, wholeBlock(model), { face: 'Tinos' }).model;
+    expect(editOf(chosen).formatting).toStrictEqual({ marks: [{ from: 0, to: 12, set: { family: 'Tinos' } }] });
+    expect(editOf(model).formatting).toStrictEqual({});
   });
 
   it('sends a paragraph’s setting only where the person set it', () => {

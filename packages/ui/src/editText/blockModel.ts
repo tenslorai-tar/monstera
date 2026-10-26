@@ -38,10 +38,28 @@ export function isKindFace(face: string): boolean {
   return face.startsWith('kind:');
 }
 
-/** How a run the page read is set, as the kit holds it. */
-export function runStyleOf(style: TextBlockStyle): RunStyle {
+/** The prefix of a face named by the run it is drawn in, where the page names no font for it. */
+const RUN_FACE = 'run:';
+
+/**
+ * The face a page run is drawn in, as the kit keys it: the font's name where the page gives one, else the run itself,
+ * since the host may still rebuild that run's program (`document.runFonts` answers by run, not by name) and a run with
+ * neither is drawn in its kind. The ONE key the model and the face loader both take (B3a): keyed by name alone, a run
+ * the page names no font for lost the face the host rebuilt for it.
+ */
+export function faceKeyOf(style: TextBlockStyle, run: number): string {
+  return style.font ?? `${RUN_FACE}${String(run)}`;
+}
+
+/** Whether a face names no family the resolver could write: a kind, or a run's own font with no name. */
+export function isPageOnlyFace(face: string): boolean {
+  return isKindFace(face) || face.startsWith(RUN_FACE);
+}
+
+/** How a run the page read is set, as the kit holds it; `run` its first object, which keys an unnamed font. */
+export function runStyleOf(style: TextBlockStyle, run?: number): RunStyle {
   return {
-    face: style.font ?? kindFace(style),
+    face: run === undefined ? (style.font ?? kindFace(style)) : faceKeyOf(style, run),
     size: style.size,
     colour: style.colour,
     bold: style.bold,
@@ -102,7 +120,7 @@ export function modelOfBlock(block: TextBlock): OpenedBlock {
     let length = 0;
     for (const [at, line] of lines.entries()) {
       for (const run of line.runs) {
-        const style = runStyleOf(run.style);
+        const style = runStyleOf(run.style, run.index);
         runs.push({ text: run.text, style, base: style });
         length += run.text.length;
       }
@@ -110,7 +128,7 @@ export function modelOfBlock(block: TextBlock): OpenedBlock {
       const join = joinAfterLine(lineText(line.runs), true);
       const last = line.runs.at(-1);
       if (join !== '' && last !== undefined) {
-        const style = runStyleOf(last.style);
+        const style = runStyleOf(last.style, last.index);
         runs.push({ text: join, style, base: style });
         length += join.length;
       }
@@ -158,8 +176,9 @@ export function changedFrom(style: RunStyle, was: RunStyle | undefined): BlockMa
   if (!sameRgb(style.highlight, was === undefined ? null : was.highlight)) set.highlight = style.highlight;
   if (style.spacing !== (was?.spacing ?? 0)) set.spacing = style.spacing;
   if (style.rise !== 'none' && style.rise !== was?.rise) set.rise = style.rise;
-  // A FACE OF A KIND is not a family the resolver knows: the letters keep the page's, and nothing names it.
-  if (style.face !== was?.face && !isKindFace(style.face)) set.family = style.face;
+  // A FACE OF A KIND, or a run's unnamed font, is not a family the resolver knows: the letters keep the page's, and
+  // nothing names it.
+  if (style.face !== was?.face && !isPageOnlyFace(style.face)) set.family = style.face;
   return set;
 }
 

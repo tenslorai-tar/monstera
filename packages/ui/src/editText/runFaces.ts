@@ -4,7 +4,7 @@ import type { RunFonts } from '../commands/documentCommands.js';
 import type { RunStyle } from '../editorKit/model.js';
 import { previewFamilyOf } from '../familyFaces.js';
 import type { TextBlock } from '../textBlock.js';
-import { isKindFace, kindFace } from './blockModel.js';
+import { faceKeyOf, isKindFace, isPageOnlyFace, kindFace } from './blockModel.js';
 
 /**
  * The faces an open block is drawn in: THE FONTS IN THE FILE
@@ -39,13 +39,13 @@ export interface RunFaces {
 
 const UNSETTLED: RunFaces = { settled: false, loaded: new Map() };
 
-/** The kind of face each page font of a block is, by its name: what the page says of the runs drawn in it. */
+/** The kind of face each of a block's faces is, by its key (`faceKeyOf`): what the page says of the runs drawn in it. */
 function kindsOf(block: TextBlock): Map<string, FaceKind> {
   const kinds = new Map<string, FaceKind>();
   for (const line of block.lines) {
     for (const run of line.runs) {
-      const name = run.style.font;
-      if (name !== undefined && !kinds.has(name)) kinds.set(name, run.style.mono ? 'mono' : run.style.serif ? 'serif' : 'sans');
+      const key = faceKeyOf(run.style, run.index);
+      if (!kinds.has(key)) kinds.set(key, run.style.mono ? 'mono' : run.style.serif ? 'serif' : 'sans');
     }
   }
   return kinds;
@@ -85,13 +85,15 @@ export function useRunFaces(block: TextBlock | undefined, read: (() => Promise<R
       // EACH FACE DECLARES THE WEIGHT AND SLANT ITS PROGRAM HAS — the page's, as the first run drawn in it states them —
       // so the browser does not embolden a bold program a second time.
       const declared = new Map<number, FontFaceDescriptors>();
-      const nameOf = new Map<number, string>();
+      /** Each face key drawn in a program, by the program's place: every run's, so a run with no font name has its own. */
+      const keysOf = new Map<number, string[]>();
       for (const line of block.lines) {
         for (const run of line.runs) {
           const place = runs.get(run.index);
-          if (place === undefined || declared.has(place)) continue;
+          if (place === undefined) continue;
+          keysOf.set(place, [...(keysOf.get(place) ?? []), faceKeyOf(run.style, run.index)]);
+          if (declared.has(place)) continue;
           declared.set(place, { weight: run.style.bold ? '700' : '400', style: run.style.italic ? 'italic' : 'normal' });
-          if (run.style.font !== undefined) nameOf.set(place, run.style.font);
         }
       }
       const loaded = await Promise.all(
@@ -109,8 +111,7 @@ export function useRunFaces(block: TextBlock | undefined, read: (() => Promise<R
         if (face === undefined) continue;
         fonts.add(face);
         added.push(face);
-        const name = nameOf.get(place);
-        if (name !== undefined && !families.has(name)) families.set(name, face.family);
+        for (const key of keysOf.get(place) ?? []) if (!families.has(key)) families.set(key, face.family);
       }
       setFaces({ read, faces: { settled: true, loaded: families } });
     });
@@ -131,7 +132,8 @@ export function faceCssOf(faces: RunFaces, block: TextBlock | undefined, fallbac
   return (style) => {
     if (isKindFace(style.face)) return KIND_STACK[kindOfFace(style.face)];
     const behind = KIND_STACK[kinds.get(style.face) ?? fallback];
-    const own = faces.loaded.get(style.face) ?? previewFamilyOf(style.face);
+    // A RUN'S UNNAMED FONT has no family to preview: its own face where the host rebuilt it, else its kind.
+    const own = faces.loaded.get(style.face) ?? (isPageOnlyFace(style.face) ? undefined : previewFamilyOf(style.face));
     // QUOTED, since a family's name may hold a digit, which an unquoted name may not.
     return own === undefined ? behind : `"${own.replaceAll('"', '')}", ${behind}`;
   };
