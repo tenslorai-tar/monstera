@@ -146,3 +146,11 @@ paths* are amended there. The entry's stated cost was a cubic-to-quadratic conve
 needs none, since PDFium's paths are cubic too. Where the program offers no font, one is now written from what PDFium
 draws for each character, and a Type 1, bare CFF or check-failing TrueType run is edited in its own glyphs. The
 Consequences' first line no longer holds for those three kinds; it still holds for Type 3 and for a substituted font.
+
+## Correction, 2026-10-26 — retired: the rebuilt editor shows a run in the face PDF.js loaded
+
+[ADR-0271](0271-the-edit-text-editor-is-rebuilt-on-the-kept-writer.md) section 3, the owner's font rule, retires this
+decision. The rebuilt editor shows a word the edit leaves in the face PDF.js already loaded for its run's font, which is
+the page's own, costs nothing, and was measured drawing the run's own text for embedded TrueType, Type 1, CFF and WinAnsi
+subsets (PDF.js 6.2.108, the catalogue's pages); and where PDF.js loaded none, in the face the writer would set it in.
+The rebuilt font, its check and `document.runFonts` are removed. This ADR stays as the record of what was built and why.

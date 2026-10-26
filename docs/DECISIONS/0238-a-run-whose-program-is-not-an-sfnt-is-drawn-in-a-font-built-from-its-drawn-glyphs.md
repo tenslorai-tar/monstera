@@ -66,3 +66,12 @@ PDFium 155.0.8044.0's Linux build and the pinned Chromium 151.0.7922.34:
 - ADR-0175's Rejected entry is withdrawn on its stated cost, which was a cubic-to-quadratic conversion: CFF needs none.
   Its other half — *its check would be the same outline it was built from* — is true and is the point: the font is the
   page's drawing, not a claim about it to be checked.
+
+## Correction, 2026-10-26 — retired: no font is built from glyph drawings
+
+[ADR-0271](0271-the-edit-text-editor-is-rebuilt-on-the-kept-writer.md) section 3, the owner's font rule: *never build a
+font from glyph drawings*, in the editor or anywhere else. A Type 1 or bare CFF run is now shown in the face PDF.js
+already loaded for it, measured drawing the run's own text for both (PDF.js 6.2.108, the catalogue's shape 2); a run
+PDF.js has no face for is shown in the face the writer would set it in. The path-built font and its route are removed;
+the CFF program writer this ADR shared with the face writer (`cffProgram`, `stepsOfOutline`) stays, since it writes a
+real face's outlines and not a page's drawing. This ADR stays as the record.
