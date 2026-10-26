@@ -2,6 +2,7 @@ import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { type Page, expect, test } from '@playwright/test';
 
+import { SURFACE, openWords } from './editTextSteps.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
 
 /**
@@ -183,18 +184,17 @@ for (const zoom of ['100pct', '200pct'] as const) {
     const before = await darkPixels(page, region);
     expect(before).toBeGreaterThan(200);
 
-    await page.locator('[data-text-edit-layer="0"] [data-text-block="0"]').click();
-    const editor = page.locator('[data-text-editor]');
-    await expect(editor).toBeFocused();
+    await openWords(page, page.locator('[data-text-edit-layer="0"] [data-text-block="0"]'));
+    const editor = page.locator(SURFACE);
     await page.waitForTimeout(300);
     // THE SAME PLACE ON THE PAGE, or the ink compared is of two places.
     expect((await onScreen(page)).y(CLAUSE_BOX.y1) - 1).toBe(region.y);
 
     // EACH ROW'S BASELINE AND START against the page's line it was built from.
     const rows = await editor.evaluate((element) =>
-      Array.from(element.querySelectorAll<HTMLElement>(':scope > .m-text-editor__line'), (row) => {
+      Array.from(element.querySelectorAll<HTMLElement>(':scope > [data-kit-paragraph]'), (row) => {
         const marker = element.ownerDocument.createElement('span');
-        marker.className = 'm-text-editor__baseline';
+        marker.className = 'm-kit__baseline';
         row.prepend(marker);
         const box = marker.getBoundingClientRect();
         marker.remove();
@@ -214,7 +214,7 @@ for (const zoom of ['100pct', '200pct'] as const) {
     }
 
     // AND ONE COPY, THE PAGE'S: the box holds the ink it held before the editor opened, the caret hidden.
-    await page.addStyleTag({ content: '[data-text-editor]{caret-color:transparent!important}' });
+    await page.addStyleTag({ content: '[data-kit-surface]{caret-color:transparent!important}' });
     await page.waitForTimeout(100);
     expect.soft(await darkPixels(page, region)).toBe(before);
   });
@@ -230,8 +230,8 @@ test('opening and closing the clauseâ€™s editor shows, in every frame, the pageâ
       return style.backgroundColor === 'rgba(0, 0, 0, 0)' && style.backgroundImage === 'none';
     };
     const sample = (): void => {
-      const editor = document.querySelector('[data-text-editor]');
-      const rows = editor === null ? [] : Array.from(editor.querySelectorAll(':scope > div'));
+      const editor = document.querySelector('[data-kit-surface]');
+      const rows = editor === null ? [] : Array.from(editor.querySelectorAll(':scope > [data-kit-paragraph]'));
       const frame = editor?.closest('.m-text-editor-frame') ?? null;
       frames.push({
         open: editor !== null,
@@ -246,11 +246,10 @@ test('opening and closing the clauseâ€™s editor shows, in every frame, the pageâ
     };
     requestAnimationFrame(sample);
   });
-  await page.locator('[data-text-edit-layer="0"] [data-text-block="0"]').click();
-  await expect(page.locator('[data-text-editor]')).toBeFocused();
+  await openWords(page, page.locator('[data-text-edit-layer="0"] [data-text-block="0"]'));
   await page.waitForTimeout(300);
   await page.keyboard.press('Escape');
-  await expect(page.locator('[data-text-editor]')).toHaveCount(0);
+  await expect(page.locator(SURFACE)).toHaveCount(0);
   await page.waitForTimeout(300);
   const frames = await page.evaluate(() => {
     Reflect.set(window, 'editorFramesStop', true);

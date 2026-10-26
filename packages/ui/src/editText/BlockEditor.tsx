@@ -185,6 +185,9 @@ function formatKey(event: KeyboardEvent, blockSize: number): boolean {
   return false;
 }
 
+/** A focus that leaves the page where it is: the editor's own focus is never a request to scroll. */
+const NO_SCROLL: FocusOptions = { preventScroll: true };
+
 /** How long letters typed after the press that put the caret wait for the file's faces, at most (C1b). */
 const HOLD_KEYS_MS = 1500;
 
@@ -413,15 +416,18 @@ export function BlockEditor({
 
   // THE FOCUS AS IT OPENS: the frame for the box, the words for a caret — at their end, or where the second press fell.
   // The opening as it was when the editor opened, kept: a later press is the person's, and the browser places it.
+  // EVERY FOCUS THE EDITOR GIVES ITSELF leaves the page where it is (`NO_SCROLL`): opening a block at the window's foot
+  // scrolled the page 8 px to bring the frame in (Chromium 151, `editorFidelity.pw.ts`), and the person asked for no
+  // scroll.
   const [start] = useState(opening);
   useLayoutEffect(() => {
     const words = surface.current;
     if (start.at === 'box') {
-      frame.current?.focus();
+      frame.current?.focus(NO_SCROLL);
       return;
     }
     if (words === null) return;
-    words.focus();
+    words.focus(NO_SCROLL);
     if (start.at === 'point') caretAtPoint(store, words, start.x, start.y);
     else writeSelection(words, store.get().selection);
   }, [start, store]);
@@ -489,7 +495,7 @@ export function BlockEditor({
       }
       if (event.detail >= 2) {
         event.preventDefault();
-        words.focus();
+        words.focus(NO_SCROLL);
         caretAtPoint(store, words, event.clientX, event.clientY);
       }
       holdPress(event.clientX, event.clientY);
@@ -505,7 +511,7 @@ export function BlockEditor({
     if (words === null) return;
     store.select(caret(wholeBlock(store.get().model).focus));
     setMode('text');
-    words.focus();
+    words.focus(NO_SCROLL);
     writeSelection(words, store.get().selection);
   };
 
@@ -537,14 +543,26 @@ export function BlockEditor({
   const onPainted = useCallback(
     (words: HTMLElement): void => {
       const rows = Array.from(words.children).filter((row): row is HTMLElement => row instanceof HTMLElement);
-      const first = rows.findIndex((row) => !row.classList.contains(AS_DRAWN_CLASS));
-      if (first === -1) {
+      const drawnHere = rows.filter((row) => !row.classList.contains(AS_DRAWN_CLASS));
+      const bands = paragraphBands(block, geometry.zoom);
+      // THE PAGE'S COPY IS PAPERED only where the editor draws instead: under each paragraph it draws, and under any of the
+      // page's paragraphs the model no longer has. A paragraph still as the page drew it keeps the page's own pixels —
+      // papering every paragraph after the first change hid commands of a code block nobody had touched
+      // (`editorFidelity.pw.ts`).
+      const gone = bands.slice(rows.length);
+      if (drawnHere.length === 0 && gone.length === 0) {
         setCovers((now) => (now.length === 0 ? now : []));
         return;
       }
-      const found: { top: number; height: number }[] = paragraphBands(block, geometry.zoom).slice(first);
+      const found: { top: number; height: number }[] = [
+        ...bands.filter((_band, index) => {
+          const row = rows[index];
+          return row !== undefined && !row.classList.contains(AS_DRAWN_CLASS);
+        }),
+        ...gone,
+      ];
       const corner = frame.current?.getBoundingClientRect();
-      for (const row of rows.slice(first)) {
+      for (const row of drawnHere) {
         // THE WORDS' OWN EXTENT where the page is upright, so the paper does not clip the next line's letters; the row's
         // box on a page drawn turned, whose screen rectangles are not the frame's.
         const range = words.ownerDocument.createRange();
@@ -711,7 +729,7 @@ export function BlockEditor({
           refocus={() => {
             const words = surface.current;
             if (words === null) return;
-            words.focus();
+            words.focus(NO_SCROLL);
             writeSelection(words, store.get().selection);
           }}
           root={surface}

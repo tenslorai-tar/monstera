@@ -18,7 +18,7 @@ import {
   wholeBlock,
   wordStep,
 } from './model.js';
-import { type Look, paragraphElement, restyleParagraph } from './paint.js';
+import { AS_DRAWN_CLASS, type Look, paragraphElement, restyleParagraph } from './paint.js';
 import type { EditorStore } from './store.js';
 
 /**
@@ -100,14 +100,17 @@ export function EditorSurface({ store, look, drawn, label, className, style, edi
     const built = new WeakMap<Paragraph, { readonly element: HTMLElement; readonly asDrawn: boolean; readonly look: Look }>();
     let composing: { readonly selection: Selection } | undefined;
 
-    const paint = (): void => {
-      if (composing !== undefined) return;
-      const { model, selection } = store.get();
+    /**
+     * Where each paragraph stood as the editor opened, in points from the surface's top: a paragraph nobody changed is
+     * kept as the page drew it only while it still stands there (`paint`).
+     */
+    let openedTops: readonly number[] | undefined;
+
+    /** The paragraph elements for the model, `moved` drawn by the editor whatever else they are. */
+    const lay = (paragraphs: readonly Paragraph[], moved: ReadonlySet<number>): HTMLElement[] => {
       const { look: now, drawn: was } = latest.current;
-      let stillDrawn = was !== undefined;
-      const elements = model.paragraphs.map((paragraph, index) => {
-        stillDrawn = stillDrawn && was?.paragraphs[index] === paragraph;
-        const wraps = stillDrawn ? was?.wraps[index] : undefined;
+      return paragraphs.map((paragraph, index) => {
+        const wraps = was?.paragraphs[index] === paragraph && !moved.has(index) ? was.wraps[index] : undefined;
         const asDrawn = wraps !== undefined;
         const kept = built.get(paragraph);
         if (kept?.asDrawn === asDrawn) {
@@ -124,8 +127,37 @@ export function EditorSurface({ store, look, drawn, label, className, style, edi
         built.set(paragraph, { element: made, asDrawn, look: now });
         return made;
       });
-      const children = Array.from(element.children);
-      if (children.length !== elements.length || children.some((child, at) => child !== elements[at])) element.replaceChildren(...elements);
+    };
+
+    /**
+     * Draws the model. A paragraph is left as the page drew it while it is the paragraph the editor opened with, at the
+     * same place in the block, AND still stands where it stood then: a change above that moved it means the page's copy
+     * is no longer under it, so it is drawn too. Again until nothing more moves, since a paragraph drawn by the editor
+     * may wrap again and move the ones below it. Measured against the editor this kit replaced, which drew every row
+     * after a change: typing in one command of a code block redrew the three below it (`editorFidelity.pw.ts`).
+     */
+    const paint = (): void => {
+      if (composing !== undefined) return;
+      const { model, selection } = store.get();
+      const { look: now } = latest.current;
+      const moved = new Set<number>();
+      for (let pass = 0; pass <= model.paragraphs.length; pass += 1) {
+        const elements = lay(model.paragraphs, moved);
+        const children = Array.from(element.children);
+        if (children.length !== elements.length || children.some((child, at) => child !== elements[at])) element.replaceChildren(...elements);
+        // THE OPENING'S PLACES, read once, in points so a zoom does not move them.
+        openedTops ??= elements.map((row) => row.offsetTop / now.zoom);
+        let more = false;
+        for (const [index, row] of elements.entries()) {
+          if (moved.has(index) || !row.classList.contains(AS_DRAWN_CLASS)) continue;
+          const was = openedTops[index];
+          if (was === undefined || Math.abs(row.offsetTop / now.zoom - was) * now.zoom > 0.5) {
+            moved.add(index);
+            more = true;
+          }
+        }
+        if (!more) break;
+      }
       if (owner.activeElement === element) writeSelection(element, selection);
       latest.current.onPainted?.(element);
     };

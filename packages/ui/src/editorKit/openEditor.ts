@@ -135,7 +135,8 @@ export function finishOpenEditor(): boolean {
 
 /** Puts the focus back in the open editor's words, after a value control that took it was used. */
 export function refocusOpenEditor(): void {
-  open?.root()?.focus();
+  // WITHOUT SCROLLING: handing the focus back is not a request to move the page.
+  open?.root()?.focus({ preventScroll: true });
 }
 
 /** Removes the open block from the page when the editor next writes: its words go, which is what removes a block. */
