@@ -217,7 +217,9 @@ test('THE HAND WALK: select the box, a caret where pressed, typing, Bold on and 
   // A WORD CHOSEN BY A DOUBLE PRESS, then Bold on and off: the button changes IN PLACE and the word with it.
   const tea = await characterAt(page, (await page.locator(SURFACE).evaluate((editor) => editor.textContent)).indexOf('Tea') + 1);
   await page.mouse.dblclick(tea.x, tea.y);
-  expect(await selectionState(page)).toMatchObject({ kind: 'range', text: 'Tea' });
+  // THE WORD, AND ON WINDOWS ITS SPACE: Chromium's editing behaviour there selects a word's trailing white space with
+  // it, as Windows word processors do, and on Linux it does not (CI's two legs, run 40407996478 on 8f9d22a9).
+  expect(await selectionState(page)).toMatchObject({ kind: 'range', text: expect.stringMatching(/^Tea ?$/u) });
   const panel = page.locator('[data-text-properties]');
   const bold = panel.getByRole('button', { name: 'Bold' });
   await expect(bold).toHaveAttribute('aria-pressed', 'false');
