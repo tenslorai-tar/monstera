@@ -297,6 +297,22 @@ export type StylePatch = Partial<RunStyle>;
 
 /** `patch` applied to every letter from `from` to `to`. */
 export function applyStyle(model: Model, selection: Selection, patch: StylePatch): Edited {
+  return restyle(model, selection, (run) => ({ ...run.style, ...patch }));
+}
+
+/** The properties `keys` of every selected letter put back as its base has them; a letter with no base keeps its own. */
+export function restoreStyle(model: Model, selection: Selection, keys: readonly (keyof RunStyle)[]): Edited {
+  return restyle(model, selection, (run) => {
+    const base = run.base;
+    if (base === undefined) return run.style;
+    const back: Record<string, unknown> = { ...run.style };
+    for (const key of keys) back[key] = base[key];
+    return back as unknown as RunStyle;
+  });
+}
+
+/** Every selected letter's style made by `style` from its run; an empty paragraph's one run where the selection is in it. */
+function restyle(model: Model, selection: Selection, style: (run: Run) => RunStyle): Edited {
   const { from, to } = ordered(selection);
   const paragraphs = model.paragraphs.map((paragraph, index) => {
     if (index < from.paragraph || index > to.paragraph) return paragraph;
@@ -313,13 +329,13 @@ export function applyStyle(model: Model, selection: Selection, patch: StylePatch
       if (b <= a && run.text !== '') runs.push(run);
       else {
         runs.push({ ...run, text: run.text.slice(0, a) });
-        runs.push({ ...run, text: run.text.slice(a, b), style: { ...run.style, ...patch } });
+        runs.push({ ...run, text: run.text.slice(a, b), style: style(run) });
         runs.push({ ...run, text: run.text.slice(b) });
       }
       at = runEnd;
     }
     // AN EMPTY PARAGRAPH'S ONE RUN takes the patch, so its style is what a letter typed there gets.
-    if (length === 0) return normalised({ ...paragraph, runs: paragraph.runs.map((run) => ({ ...run, style: { ...run.style, ...patch } })) });
+    if (length === 0) return normalised({ ...paragraph, runs: paragraph.runs.map((run) => ({ ...run, style: style(run) })) });
     return normalised({ ...paragraph, runs });
   });
   return { model: { paragraphs }, selection };
