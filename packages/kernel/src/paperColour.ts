@@ -77,6 +77,12 @@ export const MOST_DOWN = 6;
 /** The most the paper may change across a box, in any channel, and still be one colour. */
 export const FLAT_TOLERANCE = 14;
 
+/** How many raster pixels a point of the page is, when a page is drawn for its paper: past what a scan's grain needs. */
+export const PAPER_PIXELS_PER_POINT = 2;
+
+/** How far past a recognised word's box the cover's growth starts, in points: a scanned word's ink is wider than its box. */
+export const COVER_MARGIN = 1.5;
+
 /**
  * The median colour of the pixels of `bgra` (four bytes a pixel, blue first, as PDFium renders) in the ring of
  * {@link PAPER_RING} pixels outside `box`, and white where the ring is wholly off the raster.
@@ -284,6 +290,68 @@ export function inkExtent(bgra: Uint8Array, width: number, height: number, seed:
     x1: Math.min(windowX1, right + 1),
     y1: Math.min(windowY1, bottom + 1),
   };
+}
+
+/** A box in page space, PDF's user space with y up. */
+export interface PageBox {
+  readonly left: number;
+  readonly bottom: number;
+  readonly right: number;
+  readonly top: number;
+}
+
+/** One rectangle of a cover in page space, and the paper colour it is filled with. */
+export interface PageCoverCell {
+  readonly box: PageBox;
+  readonly colour: Rgb;
+}
+
+/** An affine map `[a, b, c, d, e, f]`: a point goes to `(a·x + c·y + e, b·x + d·y + f)`, PDF's and MuPDF's order. */
+export type Affine = readonly [number, number, number, number, number, number];
+
+/**
+ * The cover for each of `boxes`, given in page space, on a raster of the page that `toDevice` maps page space onto
+ * ([ADR-0187](../../../docs/DECISIONS/0187-a-scans-edited-words-are-covered-where-the-ink-is-with-the-paper-that-is-there.md)
+ * Decision 4): each box carried to the raster, covered there by {@link paperCoverFor}, and each cell carried back. The ONE
+ * place a writer turns page boxes into a scan's cover, whichever engine drew the raster (B3a): the map is the engine's
+ * own, read from the page, so a quarter turn or a box that does not start at the origin is the page's and not assumed.
+ *
+ * A PLAIN WHITE COVER only where the map cannot be inverted: a page of no width or no height, which shows nothing, so the
+ * cover patches nothing a person can see.
+ */
+export function coversInPageSpace(
+  bgra: Uint8Array,
+  width: number,
+  height: number,
+  toDevice: Affine,
+  pixelsPerPoint: number,
+  boxes: readonly PageBox[],
+): PageCoverCell[][] {
+  // THE GROWTH STARTS {@link COVER_MARGIN} OUT from the recogniser's box, and runs on through the ink from there.
+  const grown = boxes.map((box) => ({ left: box.left - COVER_MARGIN, bottom: box.bottom - COVER_MARGIN, right: box.right + COVER_MARGIN, top: box.top + COVER_MARGIN }));
+  const [a, b, c, d, e, f] = toDevice;
+  const determinant = a * d - b * c;
+  if (!Number.isFinite(determinant) || determinant === 0) return grown.map((box) => [{ box, colour: { r: 255, g: 255, b: 255 } }]);
+  const deviceOf = (x: number, y: number): readonly [number, number] => [a * x + c * y + e, b * x + d * y + f];
+  const pageOf = (x: number, y: number): readonly [number, number] => [
+    (d * (x - e) - c * (y - f)) / determinant,
+    (-b * (x - e) + a * (y - f)) / determinant,
+  ];
+  /** The smallest upright box holding `corners`, in whichever space they are. */
+  const around = (corners: readonly (readonly [number, number])[]): PageBox => ({
+    left: Math.min(...corners.map((corner) => corner[0])),
+    bottom: Math.min(...corners.map((corner) => corner[1])),
+    right: Math.max(...corners.map((corner) => corner[0])),
+    top: Math.max(...corners.map((corner) => corner[1])),
+  });
+  return grown.map((box) => {
+    const device = around([deviceOf(box.left, box.bottom), deviceOf(box.left, box.top), deviceOf(box.right, box.bottom), deviceOf(box.right, box.top)]);
+    const seed: PixelBox = { x0: device.left, y0: device.bottom, x1: device.right, y1: device.top };
+    return paperCoverFor(bgra, width, height, seed, pixelsPerPoint).map((cell) => ({
+      box: around([pageOf(cell.box.x0, cell.box.y0), pageOf(cell.box.x1, cell.box.y0), pageOf(cell.box.x0, cell.box.y1), pageOf(cell.box.x1, cell.box.y1)]),
+      colour: cell.colour,
+    }));
+  });
 }
 
 /**

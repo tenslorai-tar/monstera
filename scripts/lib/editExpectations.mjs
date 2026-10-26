@@ -352,6 +352,23 @@ export async function expectEdit({ kernel, pdfium }, { before, after, page, bloc
   const wordsAfter = wordsIn(afterChars, written, direction);
   const { rest: newWords, missing: replacedWords } = remainder(wordsAfter, wordsBefore, textOfWord);
   const { rest: keptWords } = remainder(wordsBefore, replacedWords, textOfWord);
+  // A SCAN IS REDRAWN BY THE LINE (ADR-0271's correction of 2026-10-26, the owner's answer): every word on a line that
+  // holds a replaced or a new word is drawn again and its old ink covered. Two words stand on one line where their
+  // middles, in the block's own space, are within half the shorter one's height.
+  const changed = [...replacedWords, ...newWords];
+  const middleOf = (/** @type {Char[]} */ word) => {
+    const box = inBlockSpace(boxOfWord(word), direction);
+    return { y: (box.bottom + box.top) / 2, height: box.top - box.bottom };
+  };
+  const onAChangedLine = (/** @type {Char[]} */ word) => {
+    const here = middleOf(word);
+    return changed.some((other) => {
+      const there = middleOf(other);
+      return Math.abs(here.y - there.y) <= Math.min(here.height, there.height) / 2;
+    });
+  };
+  const redrawnBefore = wordsBefore.filter(onAChangedLine);
+  const redrawnAfter = wordsAfter.filter(onAChangedLine);
   // WORDS AS WORDS: the read-back above leaves spaces out, so two words set against each other with neither a space nor
   // a gap pass it. The block's words, as letter runs, must be the expected ones (measured 2026-10-26: today's writer set
   // a new word against the next with no space after a re-wrap, and the page read "readerwhatever").
@@ -403,16 +420,17 @@ export async function expectEdit({ kernel, pdfium }, { before, after, page, bloc
   const drawnBefore = render(kernel, before, page);
   const drawnAfter = render(kernel, after, page);
   // RECOGNISED WORDS OVER A SCAN (ADR-0181 Decision 9, ADR-0187) are invisible over their own ink, so the block may
-  // change the picture only where a REPLACED word's ink is — its cover, grown through that ink by at most ADR-0187's
-  // caps, 5 pt sideways and a third of its height (at least 2 pt) up and down — and where its NEW words are drawn.
+  // change the picture only where the ink of a word on a REDRAWN line is — its cover, grown through that ink by at most
+  // ADR-0187's caps, 5 pt sideways and a third of its height (at least 2 pt) up and down — and where that line's words
+  // are drawn now.
   const zones = block.scan
     ? [
-        ...replacedWords.map((word) => {
+        ...redrawnBefore.map((word) => {
           const box = boxOfWord(word);
           const up = Math.max(2, (box.top - box.bottom) / 3);
           return { left: box.left - 5, right: box.right + 5, bottom: box.bottom - up, top: box.top + up };
         }),
-        ...newWords.flat().map((each) => each.box),
+        ...redrawnAfter.flat().map((each) => each.box),
       ]
     : [inkOf(kernel, before, page, block.box), ...written.map((each) => each.box)];
   const { outside, inside: changedInside, farthest } = compare(drawnBefore, drawnAfter, zones, MARGIN);
@@ -420,9 +438,9 @@ export async function expectEdit({ kernel, pdfium }, { before, after, page, bloc
   const shown = block.visible || block.scan === true;
   if (shown && changedInside === 0) failures.push('UNSEEN: the edit changed no pixel of the block');
   if (block.scan) {
-    // A KEPT WORD's ink is the page's visible text: no cover may reach it. Its box less a point each side, since a
-    // replaced word's cover may come within the space between them.
-    const covered = keptWords.filter((word) => {
+    // A KEPT WORD ON A LINE THE EDIT DID NOT REACH: its ink is the page's visible text, and no cover may reach it. Its box
+    // less a point each side, since a redrawn word's cover may come within the space between them.
+    const covered = keptWords.filter((word) => !redrawnBefore.includes(word)).filter((word) => {
       const box = boxOfWord(word);
       return compare(drawnBefore, drawnAfter, [{ ...box, left: box.left + 1, right: box.right - 1 }], 0).inside > 0;
     });
@@ -430,9 +448,9 @@ export async function expectEdit({ kernel, pdfium }, { before, after, page, bloc
   }
 
   // EVERY CHARACTER THE BLOCK SHOWS DRAWS SOMETHING: its box differs between the page drawn with its text and without.
-  // Over a scan that is the new words alone; the words kept stay invisible over their own ink.
+  // Over a scan that is the redrawn lines' words; the words of the lines it did not reach stay invisible over their ink.
   if (shown) {
-    const judged = block.scan ? newWords.flat() : written;
+    const judged = block.scan ? redrawnAfter.flat() : written;
     const unseen = undrawn(drawnAfter, judged, textInk(kernel, after, page));
     if (unseen.length > 0) failures.push(`UNSEEN WORDS: ${String(unseen.length)} of the block’s characters draw nothing, “${unseen.slice(0, 24).map((each) => each.character).join('')}”`);
   }

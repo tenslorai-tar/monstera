@@ -64,8 +64,9 @@ function mupdfFonts() {
  * @typedef {{ id: string, role: string, text: string, box: Box, angle: number, skew?: number, face: string, visible: boolean,
  *   scan?: true, form?: string }} Block
  *   `skew` slants the block's letters: x moves by it per unit of y, in the block's own space before its turn.
- *   `scan` marks recognised words over a picture (ADR-0181 Decision 9): invisible before an edit, and its new words
- *   written visible over a cover of the paper's colour under the words they replace.
+ *   `scan` marks recognised words over a picture (ADR-0181 Decision 9): invisible before an edit, and each line an edit
+ *   reaches written visible whole over a cover of the paper's colour under that line's ink (ADR-0271's correction of
+ *   2026-10-26).
  * @typedef {{ id: string, role: string, box: Box }} Drawing
  */
 
@@ -962,22 +963,23 @@ export const SHAPES = [
     id: '22-scanned-page-ocr',
     title: 'A scanned page with an OCR text layer',
     tests: 'a page that is one grey picture, with the recognised words laid over it invisibly (render mode 3)',
-    // AS ADR-0181 DECISION 9 AND ADR-0187 HAVE IT: the new word written visible, over a cover of the paper's colour
-    // under the word it replaces; the words kept stay invisible over their own ink.
+    // AS ADR-0181 DECISION 9 AND ADR-0187 HAVE IT, BY THE LINE (ADR-0271's correction of 2026-10-26, the owner's
+    // answer): the line the edit reaches is written visible whole, over a cover of the paper's colour under that whole
+    // line's ink; the lines it does not reach stay invisible over theirs.
     edit: {
       block: 'ocr-1',
-      lines: ['Minutes of the spring meeting', [{ text: 'held in the ' }, { text: 'village', render: 0 }, { text: ' hall' }]],
+      lines: ['Minutes of the spring meeting', [{ text: 'held in the village hall', render: 0 }]],
       word: 'village',
     },
     neighbour: 'ocr-2',
     must: [
       'read back, by both engines, as the edited words',
-      'write the new words VISIBLE, and cover the picture under the replaced words with the paper’s own colour, grown through their ink (ADR-0181 Decision 9, ADR-0187)',
+      'write the edited line VISIBLE whole, and cover the picture under that line’s old ink with the paper’s own colour, grown through the ink (ADR-0181 Decision 9, ADR-0187, ADR-0271’s correction of 2026-10-26)',
     ],
     mustNot: [
       'move, change or remove anything outside the block: no pixel and no page object',
-      'cover the picture under a word the edit kept, or change the picture itself',
-      'be refused, or log a defect, or leave a new word invisible',
+      'cover the picture under a line the edit did not reach, or change the picture itself',
+      'be refused, or log a defect, or leave a word of the edited line invisible',
     ],
     build: onePage(async (sheet, faces) => {
       const helvetica = await faces.helvetica();
@@ -1012,9 +1014,9 @@ export const SHAPES = [
           return [ink ? 40 : 235 - ((px * 7 + py * 13) % 9)];
         },
       });
-      // THE COVER, under the replaced word's ink with a scan pixel to spare (1.5 pt), in the paper's grey; and, for the
-      // control, one under a word the edit KEPT, which a writer must never draw.
-      const covered = [...(sheet.variant.edit?.block === 'ocr-1' ? [inkOfWord('church', 1)] : []), ...(sheet.variant.cover === undefined ? [] : [inkOfWord(sheet.variant.cover, 0)])];
+      // THE COVER, under the edited line's ink with a scan pixel to spare (1.5 pt), in the paper's grey; and, for the
+      // control, one under a word of a line the edit did not reach, which a writer must never draw.
+      const covered = [...(sheet.variant.edit?.block === 'ocr-1' ? [inkOfWord(lines[1] ?? '', 1)] : []), ...(sheet.variant.cover === undefined ? [] : [inkOfWord(sheet.variant.cover, 0)])];
       covered.forEach((box, k) => {
         const [x0, y0, x1, y1] = [box.left - 1.5, box.bottom - 1.5, box.right + 1.5, box.top + 1.5];
         sheet.draw(`cover-${String(k)}`, 'a cover of the paper’s colour', { left: x0, bottom: y0, right: x1, top: y1 }, `0.914 g ${f(x0)} ${f(y0)} ${f(x1 - x0)} ${f(y1 - y0)} re f`);

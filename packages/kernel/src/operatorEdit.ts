@@ -15,6 +15,7 @@ import {
 
 import type { MovedBlock } from './engineSeam.js';
 import type { PageFont } from './pageFonts.js';
+import type { PageBox, PageCoverCell } from './paperColour.js';
 import { type BlockPlan, type FlowLine, type Measure, NO_MARK, type Row, largestFit, planBlock } from './paragraphFlow.js';
 import { DECORATION_KEY, DECORATION_KINDS, DECORATION_TAG, type DecorationKind, decorationBand, decorationsOf } from './markDecorations.js';
 import { JUSTIFY_CAP, RISE_SCALE, SUBSCRIPT_DROP, SUPERSCRIPT_RISE, spaceable, spacedBy } from './markFigures.js';
@@ -119,16 +120,24 @@ export type OperatorRefusal =
   | { readonly reason: 'cropped' };
 
 /**
- * What an arrange needs beyond the page's text (ADR-0264 Decision 5): what each XObject the content names is, so a drawn
- * neighbour is found as PDFium numbers it, and the name the caller will add a plain graphics state under.
+ * What an edit needs from the page beyond its text: what each XObject the content names is, so a drawn neighbour is found
+ * as PDFium numbers it and a picture under recognised words is seen; the name the caller will add a plain graphics state
+ * under (ADR-0264 Decision 5); and the paper round boxes on the page as it is drawn before the edit, which a line of a
+ * scan set afresh is covered with (ADR-0271's correction of 2026-10-26, the fourth writer change).
  */
 export interface ArrangeContext {
   readonly kinds: (name: string) => XObjectKind;
   readonly plainState: string;
+  /** The cover for each box, in page space and in the order given (`coversInPageSpace`); asked only where a scan's line is set. */
+  readonly paper: (boxes: readonly PageBox[]) => readonly (readonly PageCoverCell[])[];
 }
 
-/** No arrange is possible: no XObject is known, and a plain state is never named. */
-const NO_ARRANGE: ArrangeContext = { kinds: () => undefined, plainState: '' };
+/** No arrange is possible: no XObject is known, a plain state is never named, and a cover is the plain white one. */
+const NO_ARRANGE: ArrangeContext = {
+  kinds: () => undefined,
+  plainState: '',
+  paper: (boxes) => boxes.map((box) => [{ box, colour: { r: 255, g: 255, b: 255 } }]),
+};
 
 /** A byte range. */
 export interface Span {
@@ -691,6 +700,38 @@ function write(
     opAt.set(seed.index, real.length + k);
   }
 
+  /**
+   * THE PICTURES THE PAGE DRAWS, in page space, each with where its instruction stands: what makes invisible words a scan's
+   * recognised words (ADR-0181 Decision 9). Read only where the content paints some text invisibly at all, since it is a
+   * pass over the whole page. A picture inside a form is not among them: the page walk does not enter a form.
+   */
+  const pictures = real.some((op) => op.state.render === 3)
+    ? contentLayout(content, arrangeWith.kinds)
+        .drawn.filter((object) => object.kind === 'image')
+        .map((object) => {
+          const corners = [apply(object.ctm, 0, 0), apply(object.ctm, 1, 0), apply(object.ctm, 0, 1), apply(object.ctm, 1, 1)];
+          return {
+            start: object.start,
+            left: Math.min(...corners.map((corner) => corner[0])),
+            right: Math.max(...corners.map((corner) => corner[0])),
+            bottom: Math.min(...corners.map((corner) => corner[1])),
+            top: Math.max(...corners.map((corner) => corner[1])),
+          };
+        })
+    : [];
+  /**
+   * Whether a run is recognised words over a scan: every operator of it painted invisibly, over a picture drawn BEFORE it,
+   * so the words a person reads there are the picture's pixels. Invisible text over no picture is text a document keeps
+   * for a reader that is not eyes, and stays as invisible as it was (ADR-0179's keep list).
+   */
+  const overAScan = (run: PageRun, members: readonly number[]): boolean => {
+    const first = ops[members[0] ?? -1];
+    if (pictures.length === 0 || first === undefined || !members.every((at) => ops[at]?.state.render === 3)) return false;
+    return pictures.some(
+      (picture) => picture.start < first.start && run.left < picture.right && run.right > picture.left && run.bottom < picture.top && run.top > picture.bottom,
+    );
+  };
+
   const fontOf = (op: ShowOperator): PageFont => {
     const added = syntheticFonts.get(op);
     if (added !== undefined) return added;
@@ -875,6 +916,14 @@ function write(
     const firstLine = lines[0];
     const firstRun = firstLine?.[0];
     if (firstLine === undefined || firstRun === undefined) continue;
+    // A SCAN'S LINES, REDRAWN WHOLE (ADR-0271's correction of 2026-10-26, the owner's answer): the operators of every run
+    // that is recognised words over a picture, which are drawn visible wherever the edit sets them again; the lines holding
+    // one, none of whose runs is left as its own operator when the line is set afresh; and the ink of each such run the
+    // edit empties, which is covered with the paper that is there.
+    const scanRuns = lines.map((line) => line.map((run) => overAScan(run.run, run.members)));
+    const runOnScan = scanRuns.flat();
+    const drawnVisible = new Set(lines.flat().flatMap((run, at) => (runOnScan[at] === true ? run.members.map((member) => ops[member]) : [])));
+    const covers: PageBox[] = [];
     const ctm = ops[firstRun.first]?.state.ctm;
     // ONE INSERTED OBJECT DRAWS EVERY LINE, under the CTM where it stands. A line drawn under another CTM is reproduced
     // exactly inside it: its origin is taken from page space back through that CTM (`toBt` below), and its text matrix
@@ -1547,7 +1596,8 @@ function write(
       const inkEdge = edge === undefined ? shape.left + (row.first ? shape.firstIndent : 0) : edge.left + (row.first ? edge.firstIndent : 0);
       const startsWhereSet = replaced !== undefined && inkStart !== undefined && agree([inkStart, inkEdge], unit);
       const keepsItsLine = given?.leftIndent === undefined && given?.firstIndent === undefined && startsWhereSet;
-      if (shrink === 1 && !replaceAll && replaced !== undefined && set.align === 'left' && keepsItsLine && Math.abs(target - (baselines[row.replaces] ?? 0)) <= SAME) {
+      const onAScan = scanRuns[row.replaces]?.includes(true) === true;
+      if (shrink === 1 && !replaceAll && !onAScan && replaced !== undefined && set.align === 'left' && keepsItsLine && Math.abs(target - (baselines[row.replaces] ?? 0)) <= SAME) {
         while (untouched < replaced.length - 1) {
           const piece = row.pieces[untouched];
           const run = replaced[untouched];
@@ -1613,7 +1663,11 @@ function write(
       const from = kept.has(at) ? line.length : (keptRuns.get(at) ?? 0);
       for (const [index, run] of line.entries()) for (const decoration of claimedBy.get(run.run.index) ?? []) (index < from ? staying : going).add(decoration);
       if (kept.has(at)) continue;
-      for (const run of line.slice(from)) empty(run.members);
+      for (const [index, run] of line.entries()) {
+        if (index < from) continue;
+        empty(run.members);
+        if (scanRuns[at]?.[index] === true) covers.push({ left: run.run.left, bottom: run.run.bottom, right: run.run.right, top: run.run.top });
+      }
       emptyBetween(line[from]?.first ?? 0, line.at(-1)?.last ?? -1);
     }
     for (const decoration of going) if (!staying.has(decoration)) decorationsGone.add(decoration);
@@ -1631,7 +1685,8 @@ function write(
     // WHAT THE CODES SHOW, which the structural read-back reads them as: a tab's segment means a tab and draws its gap
     // (W9; read as the tab it stood for, every tab edit on this writer was refused as not reading as what it drew).
     const drawnWords = segments.map((segment) => (segment.actual === '\t' ? TAB_GAP : segment.text)).join('');
-    if (segments.length === 0) continue;
+    // NOTHING TO DRAW is nothing to insert, unless a scan's old words were taken away: their ink is still covered.
+    if (segments.length === 0 && covers.length === 0) continue;
     // THE CTM WHERE THE NEW OBJECT STANDS, which every position below is converted into: an arranged block is carried with
     // its first line's state (`contentCarry.ts`); lines only added go after the last run's text object; anything else goes
     // at the first text object it empties. These are one CTM while a block's lines share one; where they differ by a
@@ -1689,6 +1744,8 @@ function write(
     let fontSize = 0;
     /** Whether the fill colour in force is a mark's, so the next segment starts from the source's own again. */
     let tinted = false;
+    /** Whether this writer has said `0 Tr` for a scan's words since the source's settings were last replayed. */
+    let shownVisible = false;
     /**
      * Each decoration of the block as stretches of one kind and colour on one line, in user space: a rule under or through
      * words is drawn after the text object, a highlight BEFORE it, so the words are over it.
@@ -1716,9 +1773,17 @@ function write(
           if (tinted && !settings.some((setting) => /(^|\s)(g|rg|k|sc|scn)(\s|$)/u.test(setting))) parts.push('0 g');
           font = segment.source.state.font;
           fontSize = segment.source.state.size;
+          shownVisible = false;
         }
         replayed = segment.source;
         tinted = false;
+      }
+      // A SCAN'S WORDS SET AGAIN ARE DRAWN, in fill mode, where the source's own settings paint them invisibly; and a
+      // segment after them from text that is not a scan's goes back to the source's own mode.
+      const visible = drawnVisible.has(segment.source);
+      if (visible !== shownVisible) {
+        parts.push(`${String(visible ? 0 : segment.source.state.render)} Tr`);
+        shownVisible = visible;
       }
       if (style?.colour !== undefined) {
         parts.push(`${style.colour.map((channel) => num(channel / 255)).join(' ')} rg`);
@@ -1799,6 +1864,21 @@ function write(
     if (behind.length > 0) {
       if (cm === null) parts.splice(0, 1, 'q', ...behind, 'BT');
       else parts.splice(2, 0, ...behind);
+    }
+    // THE PAPER OVER A SCAN'S OLD INK (ADR-0187, ADR-0271's correction of 2026-10-26) goes first of all, straight after the
+    // `q`: over the picture, which is drawn before these words, under any highlight and the words, and before a
+    // placement's `cm`, since it covers where the old words were and not where the block is put. In the page's own fill.
+    if (covers.length > 0) {
+      const papers = arrangeWith.paper(covers).flatMap((cells) =>
+        cells.map(({ box, colour }) => {
+          const [x0, y0] = apply(toBt, box.left, box.bottom);
+          const [x1, y1] = apply(toBt, box.right, box.top);
+          const rect = [Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0)].map(num).join(' ');
+          return `q ${[colour.r, colour.g, colour.b].map((channel) => num(channel / 255)).join(' ')} rg ${rect} re f Q`;
+        }),
+      );
+      if (parts[0] === 'q BT') parts.splice(0, 1, 'q', ...papers, 'BT');
+      else parts.splice(1, 0, ...papers);
     }
     // AN ARRANGED BLOCK goes just past the object it was arranged past (ADR-0264 Decision 5): after its unit going forward,
     // before it going backward, inside a `q … Q` that carries the state its first line was drawn under there

@@ -63,6 +63,7 @@ async function written(blocks: readonly EditedBlock[], content = CONTENT): Promi
       const made = editOperators(content, pageFonts(leaf, STANDARD), runsOf(content), blocks, null, 'reflow', [], {
         kinds: xobjectKinds(leaf),
         plainState: 'MonPlain1',
+        paper: (boxes) => boxes.map(() => []),
       });
       if (!made.ok) throw new Error(`refused: ${JSON.stringify(made.error)}`);
       return new TextDecoder('latin1').decode(made.value.content);
