@@ -79,7 +79,7 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
  * trusting this constant. Two places would otherwise disagree silently and the
  * binary would be a different build from the one the types describe.
  */
-export const ELECTRON_VERSION = '43.7.7';
+export const ELECTRON_VERSION = '43.8.3';
 
 const ALLOWED_HOSTS = ['github.com', 'release-assets.githubusercontent.com'];
 
@@ -94,42 +94,43 @@ const MAX_ARCHIVE_BYTES = 320 * 1024 * 1024;
  * Pinned archives, one per platform a contributor might build on.
  *
  * Keyed by `${process.platform}-${process.arch}`. Verified against both the
- * release `SHASUMS256.txt` and the package's `checksums.json` on 2026-10-03,
- * for 43.7.7: both agree on all six. 43.4.1, pinned until then, carries
- * GHSA-qmv3-fv6v-rmhq (a sandboxed preload's code cache poisoned by a compromised
- * renderer, `>=43.0.0-beta.1 <43.5.0`, read from `npm audit`'s advisory data).
+ * release `SHASUMS256.txt` and the package's `checksums.json` on 2026-10-26,
+ * for 43.8.3: both agree on all six. 43.7.7, pinned until then, carries
+ * GHSA-jr5w-w6x2-84p9 (no mitigation for compromised eMudhra intermediate
+ * certificates, `>=43.0.0-alpha.1 <43.8.1`, read from `npm audit`'s advisory
+ * data); 43.4.1 before it carried GHSA-qmv3-fv6v-rmhq (`<43.5.0`).
  *
  * @type {Readonly<Record<string, PlatformBuild>>}
  */
 export const BUILDS = Object.freeze({
   'win32-x64': {
     asset: `electron-v${ELECTRON_VERSION}-win32-x64.zip`,
-    sha256: '97dcb75065444ef031b9b6ea814ccd2109b97934fffb0c503a555d4737ca79cc',
+    sha256: '98efbd2d1c7bd44150c0aa800cd9ac5fefcefd2d44fd94958a95d6744d86c6de',
     executable: 'electron.exe',
   },
   'win32-arm64': {
     asset: `electron-v${ELECTRON_VERSION}-win32-arm64.zip`,
-    sha256: 'd3751b5046350eee0cfd88e7709697c0ef05db93bb3435195c2d0cec50f0ad1f',
+    sha256: '2b3aceeb51107023e48fe5a8ccb361dd4a1af4171b23b7ff1af2d67f09cfd394',
     executable: 'electron.exe',
   },
   'linux-x64': {
     asset: `electron-v${ELECTRON_VERSION}-linux-x64.zip`,
-    sha256: '4d0a48398c444258dbcf2f5f83b49ca5bc53583130f354e0c299dad5b22b5271',
+    sha256: '73d7d6fe120c998db75834c23c8ce7ce8390607c198b2e167a28acd7937bef22',
     executable: 'electron',
   },
   'linux-arm64': {
     asset: `electron-v${ELECTRON_VERSION}-linux-arm64.zip`,
-    sha256: '16071038a9677d0f00b11d3d0f0b7b4ea3250987727aa73aa563b87789f2d5ab',
+    sha256: 'b814ab22abf0bce90fd2fffc1490efc94f388353bcdb2f744950744998fd97b1',
     executable: 'electron',
   },
   'darwin-x64': {
     asset: `electron-v${ELECTRON_VERSION}-darwin-x64.zip`,
-    sha256: 'cbed66567d55db4a2bffad0bb6ee9795ca0037ad241039f7473fe75680d10905',
+    sha256: '3e16ccaed7473a763e1a8cd16e8f17e796229d2a269b9c36bfbb6d93a6ba8443',
     executable: join('Electron.app', 'Contents', 'MacOS', 'Electron'),
   },
   'darwin-arm64': {
     asset: `electron-v${ELECTRON_VERSION}-darwin-arm64.zip`,
-    sha256: '9327d8ba5bc9e279d1a2f7da90235301c65a2e80eb4ad3bc5610d28d483340f9',
+    sha256: '08e693ae36cfd230105aabe70c626b1a243c13534a529c35a80c1b87cb8da7b4',
     executable: join('Electron.app', 'Contents', 'MacOS', 'Electron'),
   },
 });

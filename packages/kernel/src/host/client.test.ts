@@ -197,9 +197,10 @@ describe('createHostClient', () => {
     const detail = h.terminations[0]?.detail ?? '';
     // ZOD'S OWN MESSAGE NAMES THE UNRECOGNISED KEY, so a client that forwarded it fails here.
     expect(detail).not.toContain(chosen);
-    // CONTROL: the detail still says what was wrong — the wire is a union of two strict shapes — so an empty or
-    // constant one cannot pass.
-    expect(detail).toContain('invalid_union at depth 0');
+    // CONTROL: the detail still says what was wrong, so an empty or constant one cannot pass. The wire is a union of
+    // two strict shapes, and zod 4.6.7 answers a union whose one live branch failed with that branch's own issue
+    // (`handleUnionResults`, read 2026-10-26): here the extra key, which is the issue whose message names it.
+    expect(detail).toContain('unrecognized_keys at depth 0');
     await expect(call).rejects.toBeInstanceOf(HostConnectionLost);
   });
 

@@ -294,7 +294,7 @@ guards is removed.
 
 | Component | Version | Its job |
 |---|---|---|
-| [Electron](https://www.electronjs.org/) | 43.7.7 | The desktop shell; the same pinned binary runs the engine hosts in Node mode |
+| [Electron](https://www.electronjs.org/) | 43.8.3 | The desktop shell; the same pinned binary runs the engine hosts in Node mode |
 | [React](https://react.dev/) | 19.2.8 | The interface |
 | [TypeScript](https://www.typescriptlang.org/) | 6.0.3 | Every package, in strict mode |
 | [MuPDF](https://mupdf.com/) | 1.28.0 | The main PDF engine: opening, rendering, editing text in place, redaction, encryption; built from source into a native library loaded through [koffi](https://koffi.dev/) 3.1.5 |

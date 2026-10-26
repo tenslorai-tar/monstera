@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import { ANSWER_TOO_LARGE, channel, fileAnswered, fileRequested } from './channel.js';
-import { WORST_BYTES_PER_CHAR, hostRouteViolations, maxEncodedBytes } from './schemaBound.js';
+import { WORST_BYTES_PER_CHAR, hostRouteViolations, maxEncodedBytes, unboundedMembers } from './schemaBound.js';
 
 describe('the most bytes a schema admits', () => {
   /** Each figure checked against a value built at the bound, so the walk is compared with an encoder, not with itself. */
@@ -32,6 +32,36 @@ describe('the most bytes a schema admits', () => {
   it('bounds an integer by the longer of its bounds written out', () => {
     expect(maxEncodedBytes(z.number().int().min(-5).max(1000), 1)).toBe(4);
     expect(maxEncodedBytes(z.number().int().min(-50_000).max(1000), 1)).toBe(6);
+  });
+
+  /**
+   * A TUPLE WITH NO REST IS ITS OWN BOUND, read off the closure JSON Schema spells (`items: false`). zod 4.6.7 writes
+   * that form and 4.4.3 did not, and a walk keyed on the older spelling answered Infinity for every page range.
+   */
+  it('bounds a tuple with no rest by its members, as an encoder writes it at the bound', () => {
+    const pair = z.tuple([z.number().int().min(0).max(99), z.boolean()]);
+    expect(maxEncodedBytes(pair, 1)).toBe(JSON.stringify([99, false]).length);
+    expect(unboundedMembers(pair, 'pair')).toStrictEqual([]);
+  });
+
+  /**
+   * A LIST OF TYPES IS EACH OF THEM. zod 4.6.7 writes a bare nullable primitive as `"type": ["number","null"]`, and a
+   * reader that took `type` as one word read it as no type: Infinity here, and nothing to report in the sweep.
+   */
+  it('bounds a node that lists its types by the worst of them', () => {
+    expect(maxEncodedBytes(z.boolean().nullable(), 1)).toBe(JSON.stringify(false).length);
+    expect(maxEncodedBytes(z.number().nullable(), 1)).toBe(JSON.stringify(-1.7976931348623157e308).length);
+  });
+
+  it('CONTROL: and reports an unbounded string whose type is listed beside null', () => {
+    expect(maxEncodedBytes(z.string().nullable(), 1)).toBe(Infinity);
+    expect(unboundedMembers(z.string().nullable(), 'note')).toStrictEqual(['string note']);
+  });
+
+  it('CONTROL: and reads a tuple WITH a rest as unbounded, like any array', () => {
+    const open = z.tuple([z.boolean()]).rest(z.boolean());
+    expect(maxEncodedBytes(open, 1)).toBe(Infinity);
+    expect(unboundedMembers(open, 'open')).toStrictEqual(['array  open']);
   });
 });
 

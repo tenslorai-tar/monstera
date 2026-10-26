@@ -17,7 +17,7 @@
     "clean": "node ../../scripts/clean.mjs dist"
   },
   "devDependencies": {
-    "electron": "43.7.7"
+    "electron": "43.8.3"
   },
   "dependencies": {
     "dictionary-en": "^4.0.0"

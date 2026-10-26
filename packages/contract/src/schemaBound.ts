@@ -73,6 +73,30 @@ function nodesOf(node: Node, key: string): Node[] | undefined {
   return Array.isArray(value) ? value.filter(isNode) : undefined;
 }
 
+/**
+ * The JSON types a node admits. JSON Schema spells one as a string and several as a list, and zod 4.6.7 writes a
+ * nullable primitive with no keywords of its own as the list — `z.string().nullable()` is `["string","null"]`, read
+ * 2026-10-26 — where 4.4.3 wrote an `anyOf`. Both readers here take the types from this one place, so a list is never
+ * read as no type at all: as Infinity by one, and as nothing to report by the other.
+ */
+function typesOf(node: Node): readonly string[] {
+  const declared = node['type'];
+  if (typeof declared === 'string') return [declared];
+  return Array.isArray(declared) ? declared.filter((type): type is string => typeof type === 'string') : [];
+}
+
+/**
+ * A tuple's members when it admits no more, or `undefined` for any other node.
+ *
+ * JSON Schema 2020-12 closes a tuple with `items: false`: `prefixItems` alone leaves every later member unconstrained,
+ * and `items` as a schema is a rest. zod 4.6.7 writes `z.tuple([a, b])` as the closed form (read 2026-10-26); 4.4.3
+ * left `items` out, which this module read as closed and the schema's own rule reads as open. Both readers here ask
+ * this one question, so neither can hold the old reading alone.
+ */
+function closedTuple(node: Node): Node[] | undefined {
+  return node['items'] === false ? nodesOf(node, 'prefixItems') : undefined;
+}
+
 /** A container's members inside its two brackets, with a comma BETWEEN each pair — one fewer than there are members. */
 function bracketed(members: readonly number[]): number {
   return 2 + members.reduce((sum, member) => sum + member, 0) + Math.max(members.length - 1, 0);
@@ -85,8 +109,10 @@ function walk(node: unknown, perChar: number): number {
   if (Array.isArray(members)) return Math.max(...members.map(encodedLength));
   const alternatives = nodesOf(node, 'anyOf') ?? nodesOf(node, 'oneOf');
   if (alternatives !== undefined) return Math.max(...alternatives.map((option) => walk(option, perChar)));
+  const types = typesOf(node);
+  if (types.length > 1) return Math.max(...types.map((type) => walk({ ...node, type }, perChar)));
 
-  switch (node['type']) {
+  switch (types[0]) {
     case 'string': {
       const limit = numberOf(node, 'maxLength');
       return limit === undefined ? Infinity : 2 + limit * perChar;
@@ -105,10 +131,8 @@ function walk(node: unknown, perChar: number): number {
     case 'null':
       return 4;
     case 'array': {
-      const fixed = nodesOf(node, 'prefixItems');
-      if (fixed !== undefined && node['items'] === undefined) {
-        return bracketed(fixed.map((item) => walk(item, perChar)));
-      }
+      const fixed = closedTuple(node);
+      if (fixed !== undefined) return bracketed(fixed.map((item) => walk(item, perChar)));
       const limit = numberOf(node, 'maxItems');
       if (limit === undefined) return Infinity;
       // ARITHMETIC RATHER THAN A LIST of `limit` equal members, which a large `maxItems` would make an allocation.
@@ -122,6 +146,8 @@ function walk(node: unknown, perChar: number): number {
       // `"key":value` — the colon is the one byte beside the key.
       return bracketed(Object.entries(properties).map(([key, value]) => encodedLength(key) + 1 + walk(value, perChar)));
     }
+    // A node naming no type admits any value.
+    case undefined:
     default:
       return Infinity;
   }
@@ -144,11 +170,11 @@ export function unboundedMembers(schema: z.ZodType, path: string): readonly stri
     // would be a second statement of the same fact — and requiring one would
     // put `.max()` on every `kind` discriminant in the contract.
     const enumerated = held['const'] !== undefined || held['enum'] !== undefined;
-    // A TUPLE WITH NO REST IS ITS OWN BOUND. zod writes `z.tuple([a, b])` as `prefixItems` with no `items`, and its
-    // own parse refuses a third member; a tuple WITH a rest writes `items`, and is read as unbounded like any array.
-    const fixedTuple = Array.isArray(held['prefixItems']) && held['items'] === undefined;
-    if (held['type'] === 'array' && held['maxItems'] === undefined && !fixedTuple) found.push(`array  ${at}`);
-    if (held['type'] === 'string' && held['maxLength'] === undefined && !enumerated) {
+    // A TUPLE WITH NO REST IS ITS OWN BOUND; a tuple WITH a rest is read as unbounded like any array.
+    const fixedTuple = closedTuple(held) !== undefined;
+    const types = typesOf(held);
+    if (types.includes('array') && held['maxItems'] === undefined && !fixedTuple) found.push(`array  ${at}`);
+    if (types.includes('string') && held['maxLength'] === undefined && !enumerated) {
       found.push(`string ${at}`);
     }
     for (const [key, value] of Object.entries(held)) visit(value, `${at}.${key}`);
