@@ -113,6 +113,7 @@ describe('the read on open: what the writer does with a new word in each of a bl
           text: new TextDecoder('latin1').decode(made.value.content),
           added: [...faces.pageFonts.keys()],
           faces: [...faces.pageFonts.values()].map((font) => font.face),
+          weights: [...faces.pageFonts.values()].map((font) => font.weight),
         };
       });
       // THE NEW WORD IS IN A FONT THE EDIT ADDED, and the words the line already said stay in the drawn one.
@@ -122,6 +123,10 @@ describe('the read on open: what the writer does with a new word in each of a bl
       // AND IT IS THE FACE THE READ NAMED: the editor draws a new word in the face it will be written in.
       expect(answer.fonts[0]?.own).toBe(false);
       expect(written.faces).toStrictEqual([answer.fonts[0]?.chosen?.family]);
+      // AT THE WEIGHT IT NAMED, which is what separates asking about THIS font from asking about none: every font asked
+      // answers the same family here, and only the drawn font's stems make it bold (the stage audit's ZZZZZZZZ-7).
+      expect(written.weights).toStrictEqual([answer.fonts[0]?.chosen?.weight]);
+      expect(answer.fonts[0]?.chosen?.weight).toBeGreaterThanOrEqual(600);
     } finally {
       await mupdfWriter.close(session);
     }
