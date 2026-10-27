@@ -783,8 +783,6 @@ describe('PageList', () => {
           version: VERSION,
           blocks: [],
           truncated: false,
-          rotated: 0,
-          angled: { turned: 0, vertical: 0, slanted: 0, mirrored: 0 },
           unaddressable: 1,
           rewrite: 'objects',
         }),

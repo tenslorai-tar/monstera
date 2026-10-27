@@ -28,6 +28,12 @@
  *   a word missing; the new word invisible; the new word in a drawn font; the edit unseen (the bytes unchanged); the
  *   write refused; a defect logged; a drawing outside the block removed. Each must fail, for its own reason.
  *
+ * ## Text set at an angle (ADR-0273)
+ *
+ * - The three angled pages edited through the editor's own path (`writeCatalogueShape`, the one the research walk runs):
+ *   PDFium's read, the grouping in frames, the operator writer. Each must hold every expectation, and each must be left
+ *   unsent when grouped upright only, which is what the editor did before.
+ *
  * Usage: node scripts/proofs/editCatalogue.proof.mjs [--require-engines] [--shape <id>]
  */
 import { existsSync } from 'node:fs';
@@ -37,10 +43,12 @@ import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRawStream, Stand
 import { EDIT_CATALOGUE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { MARGIN, expectEdit, inkedCharacters, readBlock } from '../lib/editExpectations.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
+import { writeCatalogueShape } from '../lib/catalogueWrite.mjs';
 import { bindNativeEngine } from '../lib/nativeEngine.mjs';
 import { charactersOf, compare, render, SCALE } from '../lib/pageDisturbance.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { exitUnverifiable } from '../lib/unverifiable.mjs';
+import { fontsDirectory } from '../provision/fonts.mjs';
 import { pdfiumLibrary } from '../provision/pdfium.mjs';
 import { SHAPES } from '../research/editCatalogue.mjs';
 
@@ -69,6 +77,7 @@ const CASES = [
   'CONTROL: on the scan, a cover under a word the edit kept fails the check, as a kept word covered (ADR-0187)',
   'CONTROL: the new word set against its neighbour with no space fails the check, as words run together',
   'DRAWN UNDER AN ANNOTATION: invisible words under an annotation’s appearance are still judged unseen, as without it',
+  'TEXT SET AT AN ANGLE (ADR-0273): the turned page, the turned page under a crop box and the skewed page are each offered by the editor’s grouping and written, every expectation held; CONTROL: grouped upright only, none is sent',
 ];
 
 // ------------------------------------------------------------------------------------------------- the file's shape
@@ -247,12 +256,12 @@ const CLAIMS = {
 
 // ----------------------------------------------------------------------------------------------------------- the run
 
-/** @param {any} pdfium @param {any} kernel */
-async function run(pdfium, kernel) {
+/** @param {any} pdfium @param {any} kernel @param {any} kit `writeCatalogueShape`'s modules, and the upright-only grouping's */
+async function run(pdfium, kernel, kit) {
   /** @type {string[]} */
   const failures = [];
-  const roster = createRoster(failures, { cases: 20 });
-  if (CASES.length !== 20) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 20`);
+  const roster = createRoster(failures, { cases: 21 });
+  if (CASES.length !== 21) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 21`);
   const check = (/** @type {string} */ name, /** @type {boolean} */ held, /** @type {string} */ detail) => {
     const mark = roster.mark();
     if (!held) failures.push(`${name}\n      ${detail}`);
@@ -442,6 +451,27 @@ async function run(pdfium, kernel) {
     const [plain, annotated] = [await unseenUnder(false), await unseenUnder(true)];
     check(CASES[19] ?? '', plain === '6:HIDDEN' && annotated === plain, `without the annotation ${plain}, with it ${annotated}`);
   }
+  // TEXT SET AT AN ANGLE is edited in its own frame (ADR-0273), through the path the walk takes: PDFium's read, the
+  // editor's grouping, the operator writer. THE CONTROL is the grouping as it was, upright runs only: the same pages must
+  // then offer nothing to edit, or the held verdicts could be the check passing a page the editor never reached.
+  {
+    const angled = ['18-rotated-text', '21-cropbox-and-rotate', '30-skewed-text'];
+    const uprightOnly = (/** @type {readonly any[]} */ runs) => kit.groupIntoBlocks(runs.filter((run) => kit.isUpright(run.style)).map(kit.blockableOf));
+    /** @type {string[]} */
+    const wrongAngled = [];
+    for (const id of angled) {
+      const shape = SHAPES.find((each) => each.id === id);
+      if (shape === undefined) {
+        wrongAngled.push(`${id}: no such shape`);
+        continue;
+      }
+      const { verdict } = await writeCatalogueShape(kit, shape);
+      if (verdict !== 'held') wrongAngled.push(`${id}: ${verdict}`);
+      const without = await writeCatalogueShape(kit, shape, { group: uprightOnly });
+      if (!without.verdict.startsWith('NOT SENT')) wrongAngled.push(`${id}: grouped upright only, it was ${without.verdict === 'held' ? 'held' : `judged “${without.verdict}”`}, not left unsent`);
+    }
+    check(CASES[20] ?? '', wrongAngled.length === 0, wrongAngled.join('\n      '));
+  }
 
   process.stdout.write(
     failures.length > 0 ? `\n${String(failures.length)} edit catalogue case(s) FAILED:\n\n  - ${failures.join('\n\n  - ')}\n` : roster.format('edit catalogue case'),
@@ -451,21 +481,38 @@ async function run(pdfium, kernel) {
 
 const library = pdfiumLibrary(ROOT);
 const shim = existsSync(library) ? bindNativeEngine(ROOT) : null;
-if (!existsSync(library) || shim === null) {
+if (!existsSync(library) || shim === null || !existsSync(fontsDirectory(ROOT))) {
   exitUnverifiable({
     required: REQUIRED,
     subject: 'The edit catalogue and its expectation check',
     why:
-      `${String(CASES.length)} case(s) need both engines:\n${CASES.map((label) => `        ??  ${label}`).join('\n')}\n\n      ` +
-      (existsSync(library) ? 'The MuPDF shim is not built. Run `npm run provision:mupdf`.' : 'PDFium is not provisioned. Run `node scripts/provision/pdfium.mjs`.'),
+      `${String(CASES.length)} case(s) need both engines and the bundled fonts:\n${CASES.map((label) => `        ??  ${label}`).join('\n')}\n\n      ` +
+      (!existsSync(library)
+        ? 'PDFium is not provisioned. Run `node scripts/provision/pdfium.mjs`.'
+        : shim === null
+          ? 'The MuPDF shim is not built. Run `npm run provision:mupdf`.'
+          : 'The bundled fonts are not provisioned, and the writer sets new words in them. Run `npm run provision:fonts`.'),
     flag: '--require-engines',
   });
 } else {
-  refuseStaleBuild(ROOT, EDIT_CATALOGUE, 2);
+  refuseStaleBuild(ROOT, EDIT_CATALOGUE, 4);
   // LITERAL SPECIFIERS, so `proof:electronimports` and the freshness scan can read what this loads.
   const pdfium = await import('../../packages/kernel/dist/pdfiumFfi.js');
   pdfium.openPdfium(library);
   const mupdf = await import('../../packages/kernel/dist/mupdfRaw.js');
   const { mupdfWriter } = await import('../../packages/kernel/dist/mupdfWriter.js');
-  await run(pdfium, { mupdf, mupdfWriter });
+  const { blockEditOf, readsUnpacked } = await import('../../packages/contract/dist/commands.js');
+  const { groupInFrames, groupIntoBlocks, inItsFrame, isUpright, blockableOf } = await import('../../packages/kernel/dist/textLines.js');
+  const { paragraphsOfLines, lineText, asDocVersion, fromTextFrame } = await import('../../packages/shared/dist/index.js');
+  const { applyEditTextOperators } = await import('../../packages/kernel/dist/textOperatorEdit.js');
+  const { bindEditFolders, loadEditFaces } = await import('../../packages/kernel/dist/editFaces.js');
+  const { readCatalogueApart } = await import('../../packages/kernel/dist/fontCatalogueApart.js');
+  bindEditFolders(fontsDirectory(ROOT), null, readCatalogueApart);
+  await loadEditFaces();
+  const kernel = { mupdf, mupdfWriter };
+  const kit = {
+    pdfium, mupdfWriter, applyEditTextOperators, blockEditOf, readsUnpacked, groupInFrames, inItsFrame, blockableOf, paragraphsOfLines,
+    lineText, asDocVersion, fromTextFrame, expectEdit, engines: { kernel, pdfium }, groupIntoBlocks, isUpright,
+  };
+  await run(pdfium, kernel, kit);
 }

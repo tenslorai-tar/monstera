@@ -118,7 +118,7 @@ export async function readBlocks(bytes) {
   refuseStaleBuild(ROOT, EDITOR_FIDELITY_FIXTURE, 1);
   const pdfium = await import('../../packages/kernel/dist/pdfiumFfi.js');
   pdfium.openPdfium(pdfiumLibrary(ROOT));
-  const { blockableOf, groupIntoBlocks, isEditedInPlace, withRises } = await import('../../packages/kernel/dist/textLines.js');
+  const { blockableOf, groupIntoBlocks, isUpright, withRises } = await import('../../packages/kernel/dist/textLines.js');
   const session = await pdfium.pdfiumWriter.open(bytes);
   /** @type {any} */
   let read;
@@ -129,7 +129,7 @@ export async function readBlocks(bytes) {
   }
   const round = (/** @type {number} */ value) => Math.round(value * 1000) / 1000;
   const boxOf = (/** @type {any} */ box) => ({ x0: round(box.x0), y0: round(box.y0), x1: round(box.x1), y1: round(box.y1) });
-  const upright = read.runs.filter((/** @type {any} */ run) => isEditedInPlace(run.style));
+  const upright = read.runs.filter((/** @type {any} */ run) => isUpright(run.style));
   const grouped = withRises(
     groupIntoBlocks(
       upright.map((/** @type {any} */ run) => ({

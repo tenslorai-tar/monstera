@@ -34,8 +34,6 @@ const BLOCKS: PageBlocks = {
   version: asDocVersion(3),
   blocks: [BLOCK],
   truncated: false,
-  rotated: 0,
-  angled: { turned: 0, vertical: 0, slanted: 0, mirrored: 0 },
   unaddressable: 0,
   rewrite: 'objects',
 };

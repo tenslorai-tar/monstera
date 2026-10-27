@@ -334,10 +334,17 @@ export const LINE_END_MARKS = [['packages/kernel/src', 'packages/kernel/dist/ind
 /**
  * What `editCatalogue.proof.mjs` runs: PDFium's reading, drawing and page objects, and MuPDF's reading, drawing and
  * writer, through `editExpectations.mjs`. The kernel's whole `src`, for {@link TYPE3_EDIT}'s reason, and the native engine.
+ * And the editor's path through `catalogueWrite.mjs` (ADR-0273): the contract's block edit and the shared frame and
+ * paragraph helpers.
  *
  * @type {BuildEdge[]}
  */
-export const EDIT_CATALOGUE = [['packages/kernel/src', 'packages/kernel/dist/index.js', 'tsc'], ...NATIVE_ENGINE];
+export const EDIT_CATALOGUE = [
+  ['packages/kernel/src', 'packages/kernel/dist/index.js', 'tsc'],
+  ['packages/contract/src/commands.ts', 'packages/contract/dist/commands.js', 'tsc'],
+  ['packages/shared/src', 'packages/shared/dist/index.js', 'tsc'],
+  ...NATIVE_ENGINE,
+];
 
 /**
  * What `editorFidelityFixture.proof.mjs` runs: PDFium's reading and the grouping, through `editorFidelityFixture.mjs`.

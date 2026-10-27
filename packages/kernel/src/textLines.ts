@@ -50,20 +50,68 @@
  * 238.0**, so equality splits the very case the grouping exists for.
  */
 
-import { blockShape, faceSeenAs } from '@monstera/shared';
+import { type TextFrame, blockShape, faceSeenAs, sameTextFrame } from '@monstera/shared';
 
 /** How a text object's matrix sets it (`orientationOf`, `pdfiumFfi.ts`): `upright` is the only one an editor is placed along. */
 export type Orientation = 'upright' | 'turned' | 'vertical' | 'slanted' | 'mirrored';
 
 /**
- * Whether text set like this is edited in place: straight text only, since an editor cannot be placed along an axis the
- * page is not set on ([ADR-0181](../../../docs/DECISIONS/0181-right-to-left-text-is-written-in-drawing-order-and-read-back-as-typed.md)
- * Decision 7). The ONE spelling of that test (B3a): the composition leaves other text out of the blocks, the join does
- * not join it, and the proofs that group runs ask the same question, so a kind added to {@link Orientation} is decided
- * here and nowhere else.
+ * Whether text is set upright, the ONE spelling of that test (B3a). It no longer decides what is edited: since
+ * [ADR-0273](../../../docs/DECISIONS/0273-text-set-at-an-angle-is-edited-in-its-own-frame.md) text at any angle is
+ * grouped in its own frame ({@link groupInFrames}). What it still decides is upright-only by its nature: glyphs drawn an
+ * object each are joined into a run along the page's x (`textRunJoin.ts`), and a line running both ways is read in the
+ * page's left-to-right order (`bidiLine.ts`). A proof that groups an upright fixture may still filter by it.
  */
-export function isEditedInPlace(style: { readonly orientation: Orientation }): boolean {
+export function isUpright(style: { readonly orientation: Orientation }): boolean {
   return style.orientation === 'upright';
+}
+
+/** A run's frame and its place in it, as the read answers it (`RunFrame`, `pdfiumFfi.ts`). */
+export interface FramedPlace {
+  readonly matrix: TextFrame;
+  readonly left: number;
+  readonly right: number;
+  readonly bottom: number;
+  readonly top: number;
+  readonly baseline: number;
+}
+
+/**
+ * A run as it is grouped: where it has a frame (ADR-0273), its box and baseline are the frame's, in which it is upright;
+ * otherwise it is as read. The baseline is the style's, where the composition reads it.
+ */
+export function inItsFrame<R extends { readonly left: number; readonly right: number; readonly bottom: number; readonly top: number; readonly style: { readonly baseline: number }; readonly frame?: FramedPlace | undefined }>(
+  run: R,
+): R {
+  const frame = run.frame;
+  if (frame === undefined) return run;
+  return { ...run, left: frame.left, right: frame.right, bottom: frame.bottom, top: frame.top, style: { ...run.style, baseline: frame.baseline } };
+}
+
+/**
+ * The blocks a person edits, FRAME BY FRAME (ADR-0273): runs of one frame are grouped by {@link groupIntoBlocks}, in that
+ * frame's coordinates where they are upright, and each block of a frame carries it. Upright runs have no frame and are
+ * grouped exactly as they always were. A block never mixes frames: two runs set at different angles are not one line.
+ *
+ * The ONE grouping for the editor's read and every walk that must agree with it (B3a). `frameOf` names a run's frame;
+ * the runs are given in their frame's coordinates already ({@link inItsFrame}).
+ */
+export function groupInFrames<R extends BlockableRun<unknown>>(
+  runs: readonly R[],
+  frameOf: (run: R) => TextFrame | undefined,
+): readonly (EditableBlock<R['style']> & { readonly frame?: TextFrame })[] {
+  const groups: { readonly frame: TextFrame | null; readonly runs: R[] }[] = [];
+  for (const run of runs) {
+    const frame = frameOf(run) ?? null;
+    const group = groups.find((each) => sameTextFrame(each.frame, frame));
+    if (group === undefined) groups.push({ frame, runs: [run] });
+    else group.runs.push(run);
+  }
+  // UPRIGHT FIRST, then each frame in the order its first run was read, so a page with no angled text is answered as before.
+  groups.sort((a, b) => (a.frame === null ? 0 : 1) - (b.frame === null ? 0 : 1));
+  return groups.flatMap(({ frame, runs: members }) =>
+    groupIntoBlocks<R['style']>(members).map((block) => (frame === null ? block : { ...block, frame })),
+  );
 }
 
 /**

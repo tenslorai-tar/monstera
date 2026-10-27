@@ -22,7 +22,7 @@
  */
 
 import { LEFT_TO_RIGHT, RIGHT_TO_LEFT, hasRightToLeftLetter, logicalOfDrawn, strongDirections } from './bidiOrder.js';
-import { type Orientation, isEditedInPlace } from './textLines.js';
+import { type Orientation, isUpright } from './textLines.js';
 
 /** How a run is set, compared field by field — `pdfiumFfi.ts`' `RunStyle`. */
 export interface JoinStyle {
@@ -124,7 +124,7 @@ function measure(run: ObjectRun): number {
  */
 function continues(run: JoinedRun, next: ObjectRun): boolean {
   // UPRIGHT ONLY: a gap along x means nothing for text set at an angle, and the editor leaves that text out anyway.
-  if (!isEditedInPlace(run.style) || !sameStyle(run.style, next.style)) return false;
+  if (!isUpright(run.style) || !sameStyle(run.style, next.style)) return false;
   const size = measure(run);
   if (size <= 0) return false;
   const overlap = Math.min(run.top, next.top) - Math.max(run.bottom, next.bottom);

@@ -114,7 +114,7 @@ async function walkPage(pdfium, kernel, bytes, index, quotes) {
   /** @type {import('@monstera/contract').ListedObject[]} */
   const listed = objects.map((object) => ({ index: object.index, kind: object.kind, box: object.shown ?? { left: object.left, bottom: object.bottom, right: object.right, top: object.top } }));
   const blocks = kernel.groupIntoBlocks(
-    read.runs.filter((/** @type {any} */ run) => kernel.isEditedInPlace(run.style)).map((/** @type {any} */ run) => kernel.blockableOf(run)),
+    read.runs.filter((/** @type {any} */ run) => kernel.isUpright(run.style)).map((/** @type {any} */ run) => kernel.blockableOf(run)),
   );
   const before = render(kernel, bytes, index);
   /** @type {Try[]} */
@@ -265,7 +265,7 @@ async function run(pdfium, kernel) {
   } finally {
     await pdfium.pdfiumWriter.close(session);
   }
-  const blocks = kernel.groupIntoBlocks(read.runs.filter((/** @type {any} */ run) => kernel.isEditedInPlace(run.style)).map((/** @type {any} */ run) => kernel.blockableOf(run)));
+  const blocks = kernel.groupIntoBlocks(read.runs.filter((/** @type {any} */ run) => kernel.isUpright(run.style)).map((/** @type {any} */ run) => kernel.blockableOf(run)));
   const heading = blocks[0];
   const headingBox = { left: heading.box.x0, bottom: heading.box.y0, right: heading.box.x1, top: heading.box.y1 };
   /** @type {string} */
@@ -361,7 +361,7 @@ if (!existsSync(library) || shim === null) {
   const pdfium = await import('../../packages/kernel/dist/pdfiumFfi.js');
   pdfium.openPdfium(library);
   const { blockEditOf, arrangeNeighbourOf } = await import('../../packages/contract/dist/commands.js');
-  const { groupIntoBlocks, isEditedInPlace, blockableOf } = await import('../../packages/kernel/dist/textLines.js');
+  const { groupIntoBlocks, isUpright, blockableOf } = await import('../../packages/kernel/dist/textLines.js');
   const { paragraphsOfLines, lineText } = await import('../../packages/shared/dist/index.js');
   const mupdf = await import('../../packages/kernel/dist/mupdfRaw.js');
   const { mupdfWriter } = await import('../../packages/kernel/dist/mupdfWriter.js');
@@ -373,7 +373,7 @@ if (!existsSync(library) || shim === null) {
     blockEditOf,
     arrangeNeighbourOf,
     groupIntoBlocks,
-    isEditedInPlace,
+    isUpright,
     blockableOf,
     paragraphsOfLines,
     lineText,

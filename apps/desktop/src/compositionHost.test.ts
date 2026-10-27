@@ -2182,7 +2182,7 @@ function blockFacesEngine(): {
     formPages.push(page);
     const bytes = new TextEncoder().encode(FORM_PAGES_TEXT);
     writeFileSync(join(output, into), bytes);
-    return { ok: true, value: { bytes: bytes.length, paths: FORM_PLACEMENTS } };
+    return { ok: true, value: { bytes: bytes.length, paths: FORM_PLACEMENTS, omitted: 0 } };
   };
   return { peer, faces, formPages };
 }

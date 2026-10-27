@@ -5867,6 +5867,17 @@ export const channels = {
                * and an edit of it is sent with this path.
                */
               form: formPathSchema.exactOptional(),
+              /**
+               * The frame the block is set in where it is not upright
+               * ([ADR-0273](../../../docs/DECISIONS/0273-text-set-at-an-angle-is-edited-in-its-own-frame.md)): its
+               * turn, slant or flip as `[a, b, c, d]`, a point `(x, y)` of the frame being `(a x + c y, b x + d y)` on
+               * the page (`textFrameOf`). Its box, its lines' boxes and its baselines are in the frame, where it is upright;
+               * the editor draws it through the frame. Absent for upright text.
+               */
+              frame: z
+                .tuple([z.number().min(-1).max(1), z.number().min(-1).max(1), z.number(), z.number()])
+                .readonly()
+                .exactOptional(),
             })
             .strict(),
         )
@@ -5874,25 +5885,6 @@ export const channels = {
         .readonly(),
       /** Whether the engine's walk stopped at its bound, on the last part only. `document.annotations`' flag. */
       truncated: z.boolean(),
-      /**
-       * Characters on this page set at an angle, which are not offered for editing
-       * in place — an editor cannot be placed along an axis the page is not set on.
-       */
-      rotated: z.number().int().nonnegative(),
-      /**
-       * `rotated` by kind ([ADR-0181](../../../docs/DECISIONS/0181-right-to-left-text-is-written-in-drawing-order-and-read-back-as-typed.md)
-       * Decision 7), read from the matrix each run is set by: `turned` a rotation, `vertical` a quarter turn (how lines
-       * that run up or down a page are set), `slanted` a shear and `mirrored` a flip. The editor names each kind present,
-       * so a person is told which text is not theirs to edit and why. They sum to `rotated`.
-       */
-      angled: z
-        .object({
-          turned: z.number().int().nonnegative(),
-          vertical: z.number().int().nonnegative(),
-          slanted: z.number().int().nonnegative(),
-          mirrored: z.number().int().nonnegative(),
-        })
-        .strict(),
       /**
        * Characters on this page that no editing command can name.
        *

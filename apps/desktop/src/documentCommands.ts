@@ -200,6 +200,7 @@ import {
   type DocVersion,
   type HeldPassword,
   type QueryProblem,
+  type TextFrame,
   type WordCount,
   compileQuery,
 } from '@monstera/shared';
@@ -2149,20 +2150,10 @@ export type DocumentTextBlocksReader = (
 /** The blocks, stamped with the version the lane read them at. */
 export interface DocumentTextBlocks {
   readonly version: DocVersion;
-  readonly blocks: readonly RisenBlock<TextBlockStyle>[];
+  /** Each with its frame where it is set at an angle, its boxes and baselines then in that frame (ADR-0273). */
+  readonly blocks: readonly (RisenBlock<TextBlockStyle> & { readonly frame?: TextFrame })[];
+  /** Whether some of the page's text is not outlined: its read was cut, or a form placement was past the path's bounds. */
   readonly truncated: boolean;
-  /**
-   * Characters on this page set at an angle, which are not offered for editing
-   * in place: an editor cannot be placed along an axis the page is not set on.
-   */
-  readonly rotated: number;
-  /** `rotated` by kind, so the editor can say which text is not offered and why (ADR-0181 Decision 7). */
-  readonly angled: {
-    readonly turned: number;
-    readonly vertical: number;
-    readonly slanted: number;
-    readonly mirrored: number;
-  };
   /**
    * Characters on this page no command can name — text inside a Form XObject.
    *

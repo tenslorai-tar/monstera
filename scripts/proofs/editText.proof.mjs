@@ -204,7 +204,7 @@ async function walkPage(pdfium, kernel, bytes, index, quotes) {
   }
   const groupedOf = (/** @type {any} */ found) =>
     kernel.groupIntoBlocks(
-      found.runs.filter((/** @type {any} */ run) => kernel.isEditedInPlace(run.style)).map((/** @type {any} */ run) => kernel.blockableOf(run)),
+      found.runs.filter((/** @type {any} */ run) => kernel.isUpright(run.style)).map((/** @type {any} */ run) => kernel.blockableOf(run)),
     );
   const grouped = groupedOf(read);
   // EACH BLOCK carries the pre-read its edit is written against, and a form's block its path (ADR-0269).
@@ -486,7 +486,7 @@ async function editFirstBlock(pdfium, kernel, bytes, text, soft) {
   } finally {
     await pdfium.pdfiumWriter.close(session);
   }
-  const blocks = kernel.groupIntoBlocks(read.runs.filter((/** @type {any} */ run) => kernel.isEditedInPlace(run.style)).map((/** @type {any} */ run) => kernel.blockableOf(run)));
+  const blocks = kernel.groupIntoBlocks(read.runs.filter((/** @type {any} */ run) => kernel.isUpright(run.style)).map((/** @type {any} */ run) => kernel.blockableOf(run)));
   const block = blocks[0];
   const lines = block.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index));
   const sent = soft ?? block.lines.map((/** @type {any} */ line) => line.soft);
@@ -867,7 +867,7 @@ async function run(pdfium, kernel) {
   let twiceCheck = `${String(placements.length)} placement(s) read`;
   if (placements.length === 2 && firstPlaced !== undefined) {
     const [block] = kernel.groupIntoBlocks(
-      firstPlaced.read.runs.filter((/** @type {any} */ run) => kernel.isEditedInPlace(run.style)).map((/** @type {any} */ run) => kernel.blockableOf(run)),
+      firstPlaced.read.runs.filter((/** @type {any} */ run) => kernel.isUpright(run.style)).map((/** @type {any} */ run) => kernel.blockableOf(run)),
     );
     const lines = block.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index));
     const soft = block.lines.map((/** @type {any} */ line) => line.soft);
@@ -1084,7 +1084,7 @@ if (!existsSync(library) || shim === null || !existsSync(fontsDirectory(ROOT))) 
   pdfium.openPdfium(library);
   const { blockEditOf, readsUnpacked, streamsOf } = await import('../../packages/contract/dist/commands.js');
   const { formPagesDocument, textPlacements } = await import('../../packages/kernel/dist/formText.js');
-  const { groupIntoBlocks, isEditedInPlace, blockableOf } = await import('../../packages/kernel/dist/textLines.js');
+  const { groupIntoBlocks, isUpright, blockableOf } = await import('../../packages/kernel/dist/textLines.js');
   const { paragraphsOfLines, lineText, compileQuery } = await import('../../packages/shared/dist/index.js');
   const { blocksReplaced, wordsOf } = await import('../../packages/contract/dist/blockReplace.js');
   const mupdf = await import('../../packages/kernel/dist/mupdfRaw.js');
@@ -1109,7 +1109,7 @@ if (!existsSync(library) || shim === null || !existsSync(fontsDirectory(ROOT))) 
     blocksReplaced,
     wordsOf,
     groupIntoBlocks,
-    isEditedInPlace,
+    isUpright,
     blockableOf,
     paragraphsOfLines,
     lineText,

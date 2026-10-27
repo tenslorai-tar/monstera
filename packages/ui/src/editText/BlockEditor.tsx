@@ -1,6 +1,6 @@
 import { useLingui } from '@lingui/react';
 import type { BlockFormatting, EditedBlock, WindowEditAction } from '@monstera/contract';
-import { type MessageKey, TAB_STOP, toPdf, viewportPoint } from '@monstera/shared';
+import { intoTextFrame, type MessageKey, TAB_STOP, toPdf, viewportPoint } from '@monstera/shared';
 import type React from 'react';
 import { type ReactElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
@@ -573,14 +573,14 @@ export function BlockEditor({
         const range = words.ownerDocument.createRange();
         range.selectNodeContents(row);
         const extent = range.getBoundingClientRect();
-        if (placed.rotation === 0 && corner !== undefined && extent.height > 0) found.push({ top: extent.top - corner.top, height: extent.height });
+        if (placed.rotation === 0 && placed.matrix === undefined && corner !== undefined && extent.height > 0) found.push({ top: extent.top - corner.top, height: extent.height });
         else found.push({ top: words.offsetTop + row.offsetTop, height: row.offsetHeight });
       }
       // A PIXEL EITHER WAY, for the edge of a glyph's anti-aliasing.
       const next = found.map((cover) => ({ top: cover.top - 1, height: cover.height + 2 }));
       setCovers((now) => (JSON.stringify(now) === JSON.stringify(next) ? now : next));
     },
-    [block, geometry.zoom, placed.rotation],
+    [block, geometry.zoom, placed.rotation, placed.matrix],
   );
 
   /** What the menu may do to the BLOCK: join or split, only while nothing is unwritten (ADR-0180 Decision 7). */
@@ -627,13 +627,15 @@ export function BlockEditor({
   };
 
   // A DRAG OF A HANDLE: where the pointer went down and the placement it began from, the movement in PDF points by the
-  // page's one transform.
+  // page's one transform, and then into the block's frame where it has one (ADR-0273): a placement is stated along the
+  // block's own lines, which is where the writer applies it.
   const dragging = useRef<{ handle: Handle; x: number; y: number; from: Placement } | undefined>(undefined);
   const pdfDelta = (dx: number, dy: number): { x: number; y: number } => {
     const shown = overlayTransform(geometry);
     const origin = toPdf(viewportPoint(0, 0), shown);
     const to = toPdf(viewportPoint(dx, dy), shown);
-    return { x: to.x - origin.x, y: to.y - origin.y };
+    const onPage = { x: to.x - origin.x, y: to.y - origin.y };
+    return block.frame === undefined ? onPage : intoTextFrame(block.frame, onPage.x, onPage.y);
   };
   const handleProps = (handle: Handle) => ({
     // A PRESS ON A HANDLE KEEPS THE FOCUS where it was: the editor finishes when a press leaves the frame, not here.

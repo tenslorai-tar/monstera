@@ -1,12 +1,14 @@
-import { paragraphsOfLines } from '@monstera/shared';
+import { paragraphsOfLines, type TextFrame } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import {
   type BlockableRun,
   type GroupableRun,
   blockableOf,
+  groupInFrames,
   groupIntoBlocks,
   groupIntoLines,
+  inItsFrame,
   settingOf,
   softEnds,
   withRises,
@@ -678,5 +680,57 @@ describe('withRises', () => {
     expect(two[0]?.lines.map((line) => line.baseline)).toStrictEqual([700, 686]);
     const raised = withRises(groupIntoBlocks([at(0, '1', 72, 78, 703.96), at(1, ' Note', 78, 120, 700)]), () => 0, () => 0);
     expect(raised[0]?.lines[0]?.baseline).toBe(703.96);
+  });
+});
+
+describe('text set at an angle is grouped in its own frame (ADR-0273)', () => {
+  const TURN = [Math.cos(Math.PI / 6), Math.sin(Math.PI / 6), -Math.sin(Math.PI / 6), Math.cos(Math.PI / 6)] as const;
+  /** The page box around a frame box turned by TURN: what PDFium answers for a turned run. */
+  const around = (x0: number, y0: number, x1: number, y1: number) => {
+    const corners = [[x0, y0], [x1, y0], [x0, y1], [x1, y1]].map(([x = 0, y = 0]) => [TURN[0] * x + TURN[2] * y, TURN[1] * x + TURN[3] * y] as const);
+    return { left: Math.min(...corners.map(([x]) => x)), right: Math.max(...corners.map(([x]) => x)), bottom: Math.min(...corners.map(([, y]) => y)), top: Math.max(...corners.map(([, y]) => y)) };
+  };
+  /** A run of a two-line paragraph turned 30 degrees: its page box as read, and its frame and place in it. */
+  const turned = (index: number, text: string, bottom: number) => {
+    const frame = { matrix: TURN, left: 100, right: 200, bottom, top: bottom + 12, baseline: bottom + 3 };
+    return { index, text, ...around(100, bottom, 200, bottom + 12), style: { baseline: 0, size: 12 }, frame };
+  };
+  const PARAGRAPH = [turned(1, 'Turned thirty degrees,', 490), turned(2, 'and two lines long.', 476)];
+  const blockable = <R extends { readonly style: { readonly size: number } }>(run: R) => ({ ...run, setting: 'Face|12|0,0,0', size: run.style.size });
+
+  it('groups a turned paragraph as the upright one it is in its frame: two lines, one block, carrying the frame', () => {
+    const blocks = groupInFrames(PARAGRAPH.map((run) => blockable(inItsFrame(run))), (run) => run.frame.matrix);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]?.frame).toStrictEqual(TURN);
+    expect(blocks[0]?.lines.map((line) => line.runs.map((run) => run.text).join(''))).toStrictEqual(['Turned thirty degrees,', 'and two lines long.']);
+    // ITS BOX IS THE FRAME'S: the two lines' own extent, not the page box around them.
+    expect(blocks[0]?.box).toStrictEqual({ x0: 100, y0: 476, x1: 200, y1: 502 });
+  });
+
+  it('CONTROL: the same runs grouped by their page boxes overlap into ONE line, the reading the frame exists to avoid', () => {
+    const blocks = groupIntoBlocks(PARAGRAPH.map((run) => blockable(run)));
+    expect(blocks.flatMap((block) => block.lines)).toHaveLength(1);
+  });
+
+  it('puts a run its frame’s box and baseline, and leaves an upright run as it was read', () => {
+    const [first] = PARAGRAPH;
+    if (first === undefined) throw new Error('no run');
+    expect(inItsFrame(first)).toMatchObject({ left: 100, right: 200, bottom: 490, top: 502, style: { baseline: 493 } });
+    const upright = { left: 1, right: 2, bottom: 3, top: 4, style: { baseline: 3.5 } };
+    expect(inItsFrame(upright)).toBe(upright);
+  });
+
+  it('never joins runs of two frames, or a framed run with upright text, into one block', () => {
+    const upright = { index: 9, text: 'An upright line.', left: 100, right: 200, bottom: 490, top: 502, style: { baseline: 493, size: 12 } };
+    const slant = [1, 0, 0.25, 1] as const;
+    const sheared = { ...turned(3, 'Sheared words.', 490), frame: { ...turned(3, '', 490).frame, matrix: slant } };
+    const mixed: readonly (ReturnType<typeof blockable<typeof upright>> & { readonly frame?: { readonly matrix: TextFrame } })[] = [
+      blockable(inItsFrame(PARAGRAPH[0] ?? upright)),
+      blockable(upright),
+      blockable(inItsFrame(sheared)),
+    ];
+    const blocks = groupInFrames(mixed, (run) => run.frame?.matrix);
+    // THE SAME FRAME BOX in all three, so only the frames part them.
+    expect(blocks.map((block) => block.frame ?? null)).toStrictEqual([null, TURN, slant]);
   });
 });

@@ -230,14 +230,15 @@ export function unwrappedForm(edited: Uint8Array, wrapped: ReturnType<typeof wra
  * order: what PDFium reads a form's text from. Built in memory and answered as bytes; nothing of `document` changes.
  * A form with no `/Resources` of its own draws with its holder's, as a reader resolves it.
  */
-export function formPagesDocument(document: PDFDocument, page: number): { readonly bytes: Uint8Array; readonly paths: readonly FormPath[] } {
+export function formPagesDocument(document: PDFDocument, page: number): FormPages {
   const leaf = document.findPage(page);
   // ONLY PATHS THE WIRE TAKES, and the first `MAX_FORM_PLACEMENTS` of them: a placement deeper, or named longer, than the
   // contract's bounds is left unoffered rather than answered with a path the schema refuses, which would fail the read.
-  const placements = textPlacements(leaf)
-    .filter((placement) => formPathSchema.safeParse(placement.path).success)
-    .slice(0, MAX_FORM_PLACEMENTS);
-  if (placements.length === 0) return { bytes: new Uint8Array(), paths: [] };
+  // COUNTED, so the page says some of its text is not outlined (ADR-0273 Decision 6) rather than nothing.
+  const every = textPlacements(leaf);
+  const placements = every.filter((placement) => formPathSchema.safeParse(placement.path).success).slice(0, MAX_FORM_PLACEMENTS);
+  const omitted = every.length - placements.length;
+  if (placements.length === 0) return { bytes: new Uint8Array(), paths: [], omitted };
   const pages = newDocument();
   try {
     const box = leaf.getInheritable('MediaBox');
@@ -249,14 +250,21 @@ export function formPagesDocument(document: PDFDocument, page: number): { readon
       const grafted = pages.graftObject(resources.isNull() ? placement.holder.getInheritable('Resources') : resources);
       pages.insertPage(-1, pages.addPage(mediabox, rotate, grafted, wrappedForm(placement).bytes));
     }
-    return { bytes: bufferBytes(savedBuffer(pages, '')), paths: placements.map((placement) => placement.path) };
+    return { bytes: bufferBytes(savedBuffer(pages, '')), paths: placements.map((placement) => placement.path), omitted };
   } finally {
     pages.destroy();
   }
 }
 
+/** A page's form placements read as pages, and how many it holds that the path's bounds left out. */
+export interface FormPages {
+  readonly bytes: Uint8Array;
+  readonly paths: readonly FormPath[];
+  readonly omitted: number;
+}
+
 /** {@link formPagesDocument} of a session's document: what the MuPDF host answers `engine/form-pages` with. */
-export function readFormPages(session: MupdfSession, page: number): Promise<{ readonly bytes: Uint8Array; readonly paths: readonly FormPath[] }> {
+export function readFormPages(session: MupdfSession, page: number): Promise<FormPages> {
   return withDocument(session, (document) => formPagesDocument(document, page));
 }
 

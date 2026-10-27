@@ -1421,6 +1421,22 @@ describe('a block set at an angle is written in its own frame (ADR-0273)', () =>
     expect(operatorsAndDecorations(off.value.content).decorations).toHaveLength(0);
   });
 
+  it('a turned block moved by its handles moves along its own lines, the frame the editor states the move in', () => {
+    const turn = [Math.cos(Math.PI / 6), Math.sin(Math.PI / 6), -Math.sin(Math.PI / 6), Math.cos(Math.PI / 6)] as const;
+    const { content, runs } = page(turn);
+    const [first, next] = runs.runs;
+    const result = editOperators(content, fonts, runs, [
+      { lines: [[first?.index ?? -1], [next?.index ?? -1]], soft: [false, false], text: 'turned at an angle\nand only two lines', place: { move: { x: 10, y: 0 } } },
+    ]);
+    if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+    const shown = showOperators(result.value.content).find((op) => op.state.font === 'F1' && said(op, fonts).startsWith('turned'));
+    if (shown === undefined) throw new Error('no first line was written');
+    const m = multiply(shown.state.matrix, shown.state.ctm);
+    // TEN POINTS ALONG THE TURNED LINE: (10 cos 30, 10 sin 30) from where it began, not ten along the page's x.
+    expect(m[4]).toBeCloseTo(100 + 10 * turn[0], 3);
+    expect(m[5]).toBeCloseTo(500 + 10 * turn[1], 3);
+  });
+
   it('CONTROL: the same block upright is written upright where it stood, so the cases above are the frame’s', () => {
     const answer = editSecond([1, 0, 0, 1]);
     if (answer.refused !== undefined) throw new Error(`refused: ${JSON.stringify(answer.refused)}`);

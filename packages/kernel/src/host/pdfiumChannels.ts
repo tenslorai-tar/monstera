@@ -460,6 +460,21 @@ const basePdfiumChannels = {
                  * (`/MonsteraMeasure`, ADR-0097's correction of 2026-10-17); absent where none is.
                  */
                 measure: z.number().positive().max(2 * MAX_PAGE_COORDINATE).exactOptional(),
+                /**
+                 * Where the run is not upright, its frame and its box and first baseline in that frame (`RunFrame`,
+                 * ADR-0273); absent for upright text.
+                 */
+                frame: z
+                  .object({
+                    matrix: z.tuple([z.number(), z.number(), z.number(), z.number()]).readonly(),
+                    left: z.number(),
+                    right: z.number(),
+                    bottom: z.number(),
+                    top: z.number(),
+                    baseline: z.number(),
+                  })
+                  .strict()
+                  .exactOptional(),
               })
               .strict()
               // A RUN ENDS AT OR AFTER ITS START: a host answering otherwise names objects that are no run.

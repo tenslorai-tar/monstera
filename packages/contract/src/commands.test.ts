@@ -5,6 +5,8 @@ import {
   type ListedObject,
   MAX_EDIT_RUNS,
   MAX_EDIT_TEXT,
+  MAX_INSERT_TEXT,
+  pageInsertSchema,
   arrangeNeighbourOf,
   blockEditOf,
   blocksOfEdit,
@@ -412,6 +414,15 @@ describe('which page is read again unpacked (ADR-0232)', () => {
     expect(readsUnpacked(0, 'objects')).toBe(false);
     // CONTROL: the operator writer names the page as it is, so its page is not unpacked whatever it holds.
     expect(readsUnpacked(36, 'operators')).toBe(false);
+  });
+
+  it('an added box takes a paste far past the 4,096 characters it once refused, to its bound (ADR-0273 Decision 5)', () => {
+    const insert = (text: string) => ({ left: 72, baseline: 700, measure: 400, size: 12, text });
+    const wire = (text: string) => ({ kind: 'editTextOperators', page: 0, ...blockEditOf([]), inserts: [insert(text)], fit: 'reflow', version: 1 });
+    expect(editTextOperatorsSchema.safeParse(wire('Pasted words. '.repeat(1000))).success).toBe(true);
+    expect(pageInsertSchema.safeParse(insert('x'.repeat(MAX_INSERT_TEXT))).success).toBe(true);
+    // CONTROL: the bound is still there.
+    expect(pageInsertSchema.safeParse(insert('x'.repeat(MAX_INSERT_TEXT + 1))).success).toBe(false);
   });
 
   it('an edit carries unpack only as editTextBlock, and the strict operators command refuses it', () => {

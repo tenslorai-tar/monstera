@@ -3,8 +3,9 @@ import { describe, expect, it } from 'vitest';
 import { orientationOf } from './pdfiumFfi.js';
 
 /**
- * How a text matrix sets text ([ADR-0181](../../../docs/DECISIONS/0181-right-to-left-text-is-written-in-drawing-order-and-read-back-as-typed.md)
- * Decision 7): the editor names what it will not edit by kind, and this is the one classification it reads.
+ * How a text matrix sets text. Since [ADR-0273](../../../docs/DECISIONS/0273-text-set-at-an-angle-is-edited-in-its-own-frame.md)
+ * every kind is edited, in its own frame; the kind still decides what is upright-only (a join of glyph objects along the
+ * page's x, a line's reading order), so `upright` must be answered for straight text and nothing else.
  */
 
 /** The matrix of a rotation by `degrees`, at scale `size`. */
@@ -42,7 +43,7 @@ describe('orientationOf', () => {
     expect(orientationOf(11, 0, 0, -11)).toBe('mirrored');
   });
 
-  // THE CONTROL: only `upright` is offered for editing, so every other answer must differ from it.
+  // THE CONTROL: only straight text is joined and read along the page's x, so every other answer must differ from it.
   it('answers upright for nothing but straight text', () => {
     const others = [rotation(90), rotation(180), rotation(30), [11, 0, 3, 11], [-11, 0, 0, 11]] as const;
     for (const matrix of others) expect(orientationOf(...(matrix as unknown as [number, number, number, number]))).not.toBe('upright');

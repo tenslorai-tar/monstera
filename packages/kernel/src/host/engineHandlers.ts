@@ -281,7 +281,10 @@ export type HostExtract = (session: MupdfSession, pages: PageSet) => Promise<Byt
  * ([ADR-0269](../../../../docs/DECISIONS/0269-text-inside-a-form-is-edited-in-the-forms-own-content.md)): `formText.ts`'
  * `readFormPages` in the host, injected for {@link HostExtract}'s reason.
  */
-export type HostFormPages = (session: MupdfSession, page: number) => Promise<{ readonly bytes: Uint8Array; readonly paths: readonly FormPath[] }>;
+export type HostFormPages = (
+  session: MupdfSession,
+  page: number,
+) => Promise<{ readonly bytes: Uint8Array; readonly paths: readonly FormPath[]; readonly omitted: number }>;
 
 /**
  * A region of one page, as PNG bytes **and the frame they sit in**.
@@ -887,9 +890,9 @@ export function createEngineHandlers({
       try {
         // `engine/extract`'s route: a new document, built where MuPDF is, written into the granted output directory.
         const read = await formPages(held.session, page);
-        if (read.paths.length === 0) return { ok: true, value: { bytes: 0, paths: [] } };
+        if (read.paths.length === 0) return { ok: true, value: { bytes: 0, paths: [], omitted: read.omitted } };
         const written = await files.writeOutput(held.outputDirectory, into, read.bytes);
-        return { ok: true, value: { bytes: written, paths: read.paths } };
+        return { ok: true, value: { bytes: written, paths: read.paths, omitted: read.omitted } };
       } catch (error) {
         return failed('form-pages-failed', error);
       }

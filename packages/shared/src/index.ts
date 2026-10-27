@@ -150,6 +150,8 @@ export {
 export { DEFAULT_TEXT_LINE_HEIGHT, MAX_TEXT_LINE_HEIGHT, MAX_TEXT_PADDING, MIN_TEXT_LINE_HEIGHT } from './textBoxLimits.js';
 // THE ONE RULE for where Add text's box goes, taken by the editor and by the proof that its words land on the page.
 export { NEW_TEXT_MARGIN, NEW_TEXT_MAX_MEASURE, NEW_TEXT_MIN_MEASURE, type NewTextBox, newTextBox } from './newTextBox.js';
+// THE ONE ANSWER to *how is this text set* (ADR-0273): the read, the editor and the writer each take it.
+export { type TextFrame, fromTextFrame, intoTextFrame, sameTextFrame, textFrameOf } from './textFrame.js';
 export {
   type PriorPageOrder,
   keptPermutation,

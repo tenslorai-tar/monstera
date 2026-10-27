@@ -6221,10 +6221,11 @@ export const MAX_EDIT_RUNS = 65_536;
  *
  * A page's text with room: the densest page measured, a 12 × 70 table at 6pt, is a few thousand characters. A block
  * or a run is bounded only by this, so a translated paragraph past the 4,096 a single text once had is written rather
- * than refused (JOURNAL, *No document-size refusals*, table A row 10). With {@link MAX_EDIT_RUNS} it keeps both edits
- * under the 8 MiB file a PDFium command crosses in, at their worst (`hostRoutes.test.ts`).
+ * than refused (JOURNAL, *No document-size refusals*, table A row 10). With {@link MAX_EDIT_RUNS} and an added box's
+ * {@link MAX_INSERT_TEXT} it keeps both edits under the 8 MiB file a writer command crosses in, at their worst
+ * (`hostRoutes.test.ts`); the two share it (ADR-0273 Decision 5).
  */
-export const MAX_EDIT_TEXT = 786_432;
+export const MAX_EDIT_TEXT = 524_288;
 
 /** The highest object index an edit may name, in the page-object walk's numbering: a page of 16 million objects. */
 export const MAX_OBJECT_INDEX = 16_777_215;
@@ -6719,9 +6720,13 @@ export const operatorPlaceSchema = blockPlaceSchema
 
 export type OperatorPlace = z.infer<typeof operatorPlaceSchema>;
 
-/** The most boxes one edit may add, and the most words in each (invariant L11): an added box is typed by hand. */
+/**
+ * The most boxes one edit may add, and the most characters in each (invariant L11). An added box takes what is typed or
+ * pasted into it to what one command can cross beside {@link MAX_EDIT_TEXT} (ADR-0273 Decision 5): at 4,096 a paste past
+ * it failed the wire's schema and reached the person as *Something went wrong*.
+ */
 export const MAX_PAGE_INSERTS = 2;
-export const MAX_INSERT_TEXT = 4096;
+export const MAX_INSERT_TEXT = 131_072;
 
 /**
  * A box of new text, on a page that has no run to take its style from (ADR-0180 Decision 6, corrected 2026-10-06): its

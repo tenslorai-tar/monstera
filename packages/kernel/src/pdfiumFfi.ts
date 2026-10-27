@@ -1,5 +1,15 @@
 import type { BlockMark, BlockMarkSet, BlockPlace, PageInsert, ParagraphProps } from '@monstera/contract/host';
-import { type Alignment, type EditStep, TAB_STOP, blockShape, nextTabStop, paragraphSpacing } from '@monstera/shared';
+import {
+  type Alignment,
+  type EditStep,
+  TAB_STOP,
+  type TextFrame,
+  blockShape,
+  intoTextFrame,
+  nextTabStop,
+  paragraphSpacing,
+  textFrameOf,
+} from '@monstera/shared';
 import koffi from 'koffi';
 
 import { editFaces, editFacesBound } from './editFaces.js';
@@ -81,7 +91,7 @@ import {
   unwritableCharacters,
 } from './textEditRefusals.js';
 import { readInLineOrder } from './bidiLine.js';
-import { type Orientation, isEditedInPlace, lineBaselineOf } from './textLines.js';
+import { type Orientation, isUpright, lineBaselineOf } from './textLines.js';
 import { type JoinedRun, joinRuns, membersOf } from './textRunJoin.js';
 
 /**
@@ -618,6 +628,53 @@ export interface TextRun {
    * (`/MonsteraMeasure`, ADR-0097's correction of 2026-10-17): the paragraph keeps it whatever font its words are in.
    */
   readonly measure?: number;
+  /**
+   * Where a run is not upright, the frame it is set in and its place in that frame
+   * ([ADR-0273](../../../docs/DECISIONS/0273-text-set-at-an-angle-is-edited-in-its-own-frame.md)): in the frame it is
+   * upright, so it is grouped and drawn as an upright run is. The page box above is the box AROUND its turned letters,
+   * which is wider and taller than the run; this is the run's own.
+   */
+  readonly frame?: RunFrame;
+}
+
+/** A run's frame (`textFrameOf`) and its box and first baseline in that frame's coordinates. */
+export interface RunFrame {
+  readonly matrix: TextFrame;
+  readonly left: number;
+  readonly right: number;
+  readonly bottom: number;
+  readonly top: number;
+  readonly baseline: number;
+}
+
+/**
+ * {@link RunFrame} of a run of `members`, or `undefined` where its first object is upright or draws at no size. Its box is
+ * the union of its objects' own boxes (`FPDFPageObj_GetRotatedBounds`, each object's box through its own matrix, a quad
+ * on the page) taken into the frame, where each is a rectangle; its baseline is its first object's origin in the frame.
+ */
+function runFrameOf(bindings: Bound, handle: unknown, members: readonly number[]): RunFrame | undefined {
+  const first = members[0];
+  if (first === undefined) return undefined;
+  const [a, b, c, d, e, f] = matrixOf(bindings, bindings.getObject(handle, first));
+  const matrix = textFrameOf(a, b, c, d);
+  if (matrix === null) return undefined;
+  const points: { readonly x: number; readonly y: number }[] = [];
+  for (const member of members) {
+    const quad: Record<string, number> = {};
+    if (numberFrom(bindings.rotatedBounds(bindings.getObject(handle, member), quad), 'FPDFPageObj_GetRotatedBounds') !== 1) continue;
+    for (const corner of ['1', '2', '3', '4']) {
+      points.push(intoTextFrame(matrix, numberFrom(quad[`x${corner}`], `FS_QUADPOINTSF.x${corner}`), numberFrom(quad[`y${corner}`], `FS_QUADPOINTSF.y${corner}`)));
+    }
+  }
+  if (points.length === 0) return undefined;
+  return {
+    matrix,
+    left: Math.min(...points.map((point) => point.x)),
+    right: Math.max(...points.map((point) => point.x)),
+    bottom: Math.min(...points.map((point) => point.y)),
+    top: Math.max(...points.map((point) => point.y)),
+    baseline: intoTextFrame(matrix, e, f).y,
+  };
 }
 
 /**
@@ -740,7 +797,9 @@ export function textRuns(session: PdfiumSession, page: number): Promise<PageText
       // widest of its objects', so a joined run carries it whichever of its objects was written last.
       const runs = readWalk(bindings, handle, walked).map(({ members, drawn: _drawn, ...run }) => {
         const measure = Math.max(0, ...members.map((index) => recordedMeasureOf(bindings, bindings.getObject(handle, index)) ?? 0));
-        return measure > 0 ? { ...run, measure } : run;
+        // A RUN SET AT AN ANGLE carries its frame (ADR-0273), from the one answer the writer lays it out by.
+        const frame = run.style.orientation === 'upright' ? undefined : runFrameOf(bindings, handle, members);
+        return { ...run, ...(measure > 0 ? { measure } : {}), ...(frame === undefined ? {} : { frame }) };
       });
       return { runs, unaddressable: walked.unaddressable, box: pageBoxOf(bindings, handle) };
     }),
@@ -826,7 +885,7 @@ function readWalk(
   handle: unknown,
   walked: { readonly runs: ReadonlyMap<number, WalkedRun> },
 ): JoinedRun<RunStyle>[] {
-  return readInLineOrder(joinedWalk(bindings, handle, walked), (run) => isEditedInPlace(run.style));
+  return readInLineOrder(joinedWalk(bindings, handle, walked), (run) => isUpright(run.style));
 }
 
 /**
@@ -1296,25 +1355,18 @@ function wireFontName(name: string): string {
 }
 
 /**
- * Whether a matrix sets text straight: positive scales on the diagonal and
- * nothing off it.
- *
- * The off-diagonal test is RELATIVE to the scale rather than against zero,
- * because a matrix read back as floats carries rounding — `1e-7` beside a scale
- * of 11 is not a rotation anybody drew. One part in a million of the scale is
- * below any angle a page can show: at a page's width it is a thousandth of a
- * point.
+ * Whether a matrix sets text straight: positive scales on the diagonal and nothing off it, by the ONE answer to that
+ * question (`textFrameOf`, ADR-0273), which the grouping and the operator writer take too. Its tolerance is relative to
+ * the scale, because a matrix read back as floats carries rounding: `1e-7` beside a scale of 11 is no turn anybody drew.
  */
-function isUpright(a: number, b: number, c: number, d: number): boolean {
-  const scale = Math.max(Math.abs(a), Math.abs(d));
-  if (!(a > 0 && d > 0)) return false;
-  return Math.abs(b) <= scale * 1e-6 && Math.abs(c) <= scale * 1e-6;
+function isUprightMatrix(a: number, b: number, c: number, d: number): boolean {
+  return a > 0 && d > 0 && textFrameOf(a, b, c, d) === null;
 }
 
 /**
- * HOW a text matrix sets text, for the editor to say what it will not edit and why
- * ([ADR-0181](../../../docs/DECISIONS/0181-right-to-left-text-is-written-in-drawing-order-and-read-back-as-typed.md)
- * Decision 7): `upright` is {@link isUpright}'s, the one test, and the rest is why it failed it.
+ * HOW a text matrix sets text: `upright` is {@link isUprightMatrix}'s, the one test, and the rest is how it failed it. Since
+ * [ADR-0273](../../../docs/DECISIONS/0273-text-set-at-an-angle-is-edited-in-its-own-frame.md) every kind is edited, in
+ * its frame; the kind still decides what is upright-only (a join of glyph objects, a line's reading order).
  *
  * - `mirrored`: the matrix turns the page over (a negative determinant).
  * - `slanted`: its columns are not at a right angle, a shear — an oblique drawn by the matrix and not by the font.
@@ -1322,12 +1374,12 @@ function isUpright(a: number, b: number, c: number, d: number): boolean {
  * - `turned`: any other rotation, a half turn included.
  */
 export function orientationOf(a: number, b: number, c: number, d: number): Orientation {
-  if (isUpright(a, b, c, d)) return 'upright';
+  if (isUprightMatrix(a, b, c, d)) return 'upright';
   if (a * d - b * c < 0) return 'mirrored';
   const first = Math.hypot(a, b);
   const second = Math.hypot(c, d);
   // THE COLUMNS' DOT PRODUCT against the product of their lengths: zero for a rotation, whatever the angle, and not
-  // zero for a shear. Relative, as {@link isUpright}'s test is, since a matrix read back as floats carries rounding.
+  // zero for a shear. Relative, as {@link isUprightMatrix}'s test is, since a matrix read back as floats carries rounding.
   if (first === 0 || second === 0 || Math.abs(a * c + b * d) > first * second * 1e-6) return 'slanted';
   const quarters = Math.abs(Math.atan2(b, a)) / (Math.PI / 2);
   return Math.abs(quarters - Math.round(quarters)) < 1e-6 && Math.round(quarters) % 2 === 1 ? 'vertical' : 'turned';
@@ -2912,7 +2964,7 @@ function layOutBlocks(
           // keeping the same rule for a caller that did not ask.
           for (const run of lines.flat()) {
             const matrix = matrixOn(bindings, run.object);
-            if (!isUpright(matrix.a, matrix.b, matrix.c, matrix.d)) {
+            if (!isUprightMatrix(matrix.a, matrix.b, matrix.c, matrix.d)) {
               throw refusedAt(
                 'matrix',
                 `Object ${String(run.index)} on page ${String(page)} is not set upright, so it is not edited in place`,

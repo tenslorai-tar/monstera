@@ -71,7 +71,7 @@ const { readPageRewrite } = await import('../../packages/kernel/dist/pageRewrite
 const { applyEditTextOperators } = await import('../../packages/kernel/dist/textOperatorEdit.js');
 const { applyEditTextBlock } = await import('../../packages/kernel/dist/pdfiumTextEdit.js');
 const { EditRefusedError, TextNotWritableError } = await import('../../packages/kernel/dist/textEditRefusals.js');
-const { groupIntoBlocks, isEditedInPlace, blockableOf } = await import('../../packages/kernel/dist/textLines.js');
+const { groupIntoBlocks, isUpright, blockableOf } = await import('../../packages/kernel/dist/textLines.js');
 const { bindEditFolders } = await import('../../packages/kernel/dist/editFaces.js');
 const { readCatalogueApart } = await import('../../packages/kernel/dist/fontCatalogueApart.js');
 
@@ -108,7 +108,7 @@ async function editPage(bytes, page) {
     }
   })();
   const blocks = groupIntoBlocks(
-    styled.filter((/** @type {any} */ run) => isEditedInPlace(run.style)).map((/** @type {any} */ run) => blockableOf(run)),
+    styled.filter((/** @type {any} */ run) => isUpright(run.style)).map((/** @type {any} */ run) => blockableOf(run)),
   );
   const textOf = (/** @type {any} */ block) =>
     block.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.text).join('')).join('\n');

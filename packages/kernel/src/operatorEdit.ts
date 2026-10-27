@@ -11,6 +11,8 @@ import {
   ok,
   paragraphEdges,
   paragraphSpacing,
+  sameTextFrame,
+  textFrameOf,
 } from '@monstera/shared';
 
 import type { PageFont } from './pageFonts.js';
@@ -594,16 +596,15 @@ const DESCENT_EM = 0.2;
  * holds the frame's inverse. One coordinate change, not a second layout.
  */
 function frameOf(m: Matrix): Matrix | null {
-  const length = Math.hypot(m[0], m[1]);
-  if (length === 0) return null;
-  const frame: Matrix = [m[0] / length, m[1] / length, m[2] / length, m[3] / length, 0, 0];
-  const upright = Math.abs(frame[1]) <= SAME && Math.abs(frame[2]) <= SAME && frame[0] > 0 && frame[3] > 0;
-  return upright ? null : frame;
+  // THE ONE ANSWER (`textFrameOf`), which the read groups by and the editor draws by, so a block the read offers in a
+  // frame is the block this writer lays out in it.
+  const frame = textFrameOf(m[0], m[1], m[2], m[3]);
+  return frame === null ? null : [frame[0], frame[1], frame[2], frame[3], 0, 0];
 }
 
-/** Whether two frames are one: the same turn, slant and flip, to float noise. */
+/** Whether two frames are one, by the same answer's tolerance. */
 function sameFrame(a: Matrix, b: Matrix): boolean {
-  return a.slice(0, 4).every((value, at) => Math.abs(value - (b[at] ?? 0)) <= 1e-4);
+  return sameTextFrame([a[0], a[1], a[2], a[3]], [b[0], b[1], b[2], b[3]]);
 }
 
 /**

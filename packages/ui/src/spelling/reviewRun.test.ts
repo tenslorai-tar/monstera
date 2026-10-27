@@ -229,7 +229,7 @@ function harness(script: Script): {
               : { x0: 10, y0: HEIGHT - y1, x1: 10 + text.length * 6, y1: HEIGHT - y0 };
           return [{ box, lines: [{ runs: [{ index: line, text, style: PLAIN }], box, soft: false, baseline: box.y0 }], style: PLAIN, shape: { align: 'left' as const, firstIndent: 0 } }];
         });
-        return Promise.resolve(ok({ version: version(), blocks, next: null, truncated: false, rotated: 0, angled: { turned: 0, vertical: 0, slanted: 0, mirrored: 0 }, unaddressable: 0, rewrite: 'operators' }));
+        return Promise.resolve(ok({ version: version(), blocks, next: null, truncated: false, unaddressable: 0, rewrite: 'operators' }));
       }
       case 'document.execute': {
         const command = params['command'] as Record<string, unknown>;
