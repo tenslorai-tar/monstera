@@ -222,6 +222,58 @@ function selectedLines(range: Range, layer: Element): { left: number; top: numbe
 export function holdPressedAnchor(root: HTMLElement): () => void {
   const owner = root.ownerDocument;
   let press: { readonly node: Node; readonly offset: number } | undefined;
+  /** A press that began on blank space, whose selection this owns until the button is let go ({@link nearestCaret}). */
+  let blank: { readonly node: Text; readonly offset: number } | undefined;
+
+  const blankMoved = (event: PointerEvent): void => {
+    if (blank === undefined || (event.buttons & 1) === 0) return;
+    const selection = owner.getSelection();
+    if (selection === null) return;
+    const line = event.target instanceof Element ? event.target.closest('[data-text-line]') : null;
+    const exact = line !== null && typeof owner.caretPositionFromPoint === 'function' ? owner.caretPositionFromPoint(event.clientX, event.clientY) : null;
+    // THE MOVING END IS TEXT THE POINTER REACHED: on a line, the letter under it; beside one, in its band, that line's end
+    // nearest it (`caretBesideLine`). Over blank space it has crossed nothing, so nothing is selected.
+    const focus =
+      exact !== null && exact.offsetNode.nodeType === Node.TEXT_NODE && root.contains(exact.offsetNode)
+        ? { node: exact.offsetNode, offset: exact.offset }
+        : caretBesideLine(root, event.clientX, event.clientY);
+    if (focus === null || (focus.node === blank.node && focus.offset === blank.offset)) {
+      // NOTHING CROSSED YET: the press selects nothing.
+      selection.removeAllRanges();
+      return;
+    }
+    selection.setBaseAndExtent(blank.node, blank.offset, focus.node, focus.offset);
+  };
+  const blankReleased = (): void => {
+    blank = undefined;
+    owner.removeEventListener('pointermove', blankMoved, true);
+    owner.removeEventListener('pointerup', blankReleased, true);
+    owner.removeEventListener('pointercancel', blankReleased, true);
+  };
+  /**
+   * A press on BLANK SPACE — on no line, and in no line's band — is this layer's, not the browser's: the browser puts its
+   * caret at the layer's start, the first line's first letter, measured 2026-10-27 in Chromium 151 at every blank point
+   * of a page, and the local agent measured on Windows that a drift onto words then selected from there, everything from
+   * the page's top (1,252 characters in its probe; a heading and a paragraph in the owner's video). So the press selects
+   * nothing; its anchor is the text nearest to it; and a drag selects from there to the text the pointer has reached,
+   * which is what it crossed, and nothing while it is still over blank space. The browser's own handling of the press is
+   * cancelled, so no platform's version of it can differ.
+   * The focus goes where the press would have taken it: the nearest focusable ancestor, else nowhere.
+   */
+  const pressedOnBlank = (event: PointerEvent): boolean => {
+    const anchor = nearestCaret(root, event.clientX, event.clientY);
+    event.preventDefault();
+    owner.getSelection()?.removeAllRanges();
+    const holder = root.parentElement?.closest<HTMLElement>('[tabindex]');
+    if (holder !== null && holder !== undefined) holder.focus({ preventScroll: true });
+    else if (owner.activeElement instanceof HTMLElement) owner.activeElement.blur();
+    if (anchor === null) return true;
+    blank = anchor;
+    owner.addEventListener('pointermove', blankMoved, true);
+    owner.addEventListener('pointerup', blankReleased, true);
+    owner.addEventListener('pointercancel', blankReleased, true);
+    return true;
+  };
 
   const reanchor = (): void => {
     // A LINE REPLACED UNDER THE DRAG takes its press with it: a detached node is no anchor.
@@ -247,6 +299,10 @@ export function holdPressedAnchor(root: HTMLElement): () => void {
     // only the line's last word (measured 2026-10-24). On a line it is the caret at the exact point.
     const line = event.target instanceof Element ? event.target.closest('[data-text-line]') : null;
     const beside = line === null ? caretBesideLine(root, event.clientX, event.clientY) : null;
+    if (line === null && beside === null) {
+      pressedOnBlank(event);
+      return;
+    }
     // ABSENT IN HAPPY-DOM, and in an engine without it the press is the platform's alone, as it was.
     const exact = beside === null && typeof owner.caretPositionFromPoint === 'function' ? owner.caretPositionFromPoint(event.clientX, event.clientY) : null;
     const caret = beside ?? (exact === null ? null : { node: exact.offsetNode, offset: exact.offset });
@@ -265,11 +321,40 @@ export function holdPressedAnchor(root: HTMLElement): () => void {
   owner.addEventListener('pointercancel', release, true);
   return (): void => {
     release();
+    blankReleased();
     root.removeEventListener('pointerdown', pressed);
     root.removeEventListener('mousedown', counted);
     owner.removeEventListener('mouseup', release, true);
     owner.removeEventListener('pointercancel', release, true);
   };
+}
+
+/**
+ * The caret nearest a point of the page, on whichever line's box is nearest it: where the point is level with that line,
+ * the letter under it across, else the line's start or end; `null` on a page with no line. What a press on blank space
+ * anchors at ({@link holdPressedAnchor}), and where a drag from one ends while it is over no line.
+ */
+export function nearestCaret(root: Element, x: number, y: number): { readonly node: Text; readonly offset: number } | null {
+  let best: { readonly line: Element; readonly node: Text; readonly far: number } | null = null;
+  for (const line of root.querySelectorAll('[data-text-line]')) {
+    const node = line.firstChild;
+    if (node?.nodeType !== Node.TEXT_NODE) continue;
+    const box = line.getBoundingClientRect();
+    const across = x > box.right ? x - box.right : x < box.left ? box.left - x : 0;
+    const down = y > box.bottom ? y - box.bottom : y < box.top ? box.top - y : 0;
+    const far = Math.hypot(across, down);
+    if (best === null || far < best.far) best = { line, node: node as Text, far };
+  }
+  if (best === null) return null;
+  const { line, node } = best;
+  const box = line.getBoundingClientRect();
+  if (x <= box.left) return { node, offset: 0 };
+  if (x >= box.right) return { node, offset: node.length };
+  // THE LETTER UNDER THE POINT ACROSS, asked on the line's own middle, where the browser's hit test meets its text.
+  const owner = root.ownerDocument;
+  const hit = typeof owner.caretPositionFromPoint === 'function' ? owner.caretPositionFromPoint(x, (box.top + box.bottom) / 2) : null;
+  if (hit?.offsetNode === node) return { node, offset: hit.offset };
+  return { node, offset: Math.round(((x - box.left) / (box.right - box.left)) * node.length) };
 }
 
 /**
