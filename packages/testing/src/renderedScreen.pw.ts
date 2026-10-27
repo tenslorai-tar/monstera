@@ -5277,8 +5277,18 @@ for (const look of LOOKS) {
     const own = page.locator(`${SURFACE} .m-kit__run[data-face="run:1"]`);
     const kind = page.locator(`${SURFACE} .m-kit__run[data-face="run:2"]`);
     await expect(own).toHaveAttribute('style', /font-family: "Carlito"/u);
+    // ITS NATURAL WIDTH, the fit's spacing taken off: a line still as the page drew it is fitted to the page's width
+    // (`fitDrawnLines`), so its measured width is the line box's whatever face draws it, and only the letters' own advance
+    // says which face that is.
     const faceOf = (run: typeof own) =>
-      run.evaluate((element) => ({ family: getComputedStyle(element).fontFamily.replaceAll('"', ''), width: element.getBoundingClientRect().width }));
+      run.evaluate((element) => {
+        const span = element as HTMLElement;
+        const fitted = span.style.letterSpacing;
+        span.style.letterSpacing = span.dataset['kitSpacing'] ?? '';
+        const width = span.getBoundingClientRect().width;
+        span.style.letterSpacing = fitted;
+        return { family: getComputedStyle(span).fontFamily.replaceAll('"', ''), width };
+      });
     const drawn = await faceOf(own);
     const kept = await faceOf(kind);
     // THE CHAIN'S FACE FIRST and the kind behind it; the neighbour with no answer is the kind alone.
