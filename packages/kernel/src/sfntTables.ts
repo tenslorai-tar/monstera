@@ -7,7 +7,8 @@
  * the face's whole blob: every call pinned a full copy of the font in HarfBuzz's WebAssembly memory for the life of the
  * process. Measured 2026-10-14: a ShapingFace's `metrics()` (`head`, `post`) pinned about one program copy per call, 33
  * MB over 40 calls on a 613 KB program even with collection forced, and the PDFium host grew by about 100 MB over 30
- * `document.runFonts` reads. A table read from the bytes allocates nothing in HarfBuzz.
+ * reads of the run-font channel (`document.runFonts`, since removed by ADR-0271). A table read from the bytes allocates
+ * nothing in HarfBuzz.
  *
  * ## A collection
  *
