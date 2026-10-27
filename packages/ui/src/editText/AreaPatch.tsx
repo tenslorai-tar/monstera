@@ -4,12 +4,17 @@ import { type ReactElement, useEffect, useLayoutEffect, useRef, useState } from 
 import { givePixelsBack } from '../pixelLedger.js';
 import { RenderCancelledError } from '../renderPage.js';
 
-/** A rectangle over the page in the overlay's CSS pixels, origin at the page's top left corner as it is shown. */
+/**
+ * A rectangle over the page in the overlay's CSS pixels at `zoom`, origin at the page's top left corner as it is shown.
+ * The zoom travels with it because a zoom can change between a write and its draw, and the region drawn is the page's
+ * at the zoom of the draw.
+ */
 export interface CssArea {
   readonly left: number;
   readonly top: number;
   readonly width: number;
   readonly height: number;
+  readonly zoom: number;
 }
 
 /**
@@ -48,10 +53,13 @@ export function AreaPatch({
   area,
   patch,
   onDrawn,
+  zoom,
 }: {
   /** The version of the read the edit was made over: the patch is drawn from a view newer than this. */
   readonly after: DocVersion;
   readonly area: CssArea;
+  /** The zoom the page is shown at now, which places a patch drawn at another (a tile's rule: stretched until redrawn). */
+  readonly zoom: number;
   readonly patch: PatchArea;
   readonly onDrawn: (version: DocVersion) => void;
 }): ReactElement {
@@ -89,8 +97,14 @@ export function AreaPatch({
       aria-hidden="true"
       className="m-kit-patch"
       data-kit-patch={at === undefined ? 'drawing' : 'drawn'}
+      // THE ZOOM ITS PIXELS WERE DRAWN AT, which a zoom since stretches until the draw at the new one lands.
+      data-kit-patch-zoom={at === undefined ? undefined : String(at.zoom)}
       ref={canvas}
-      style={at === undefined ? { visibility: 'hidden' } : { left: at.left, top: at.top, width: at.width, height: at.height }}
+      style={
+        at === undefined
+          ? { visibility: 'hidden' }
+          : { left: (at.left * zoom) / at.zoom, top: (at.top * zoom) / at.zoom, width: (at.width * zoom) / at.zoom, height: (at.height * zoom) / at.zoom }
+      }
     />
   );
 }

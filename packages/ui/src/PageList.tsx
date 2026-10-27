@@ -1877,12 +1877,14 @@ function PageSlot({
   const patchArea = useCallback<PatchArea>(
     async (after, area, target, signal) => {
       if (view === undefined || view.version <= after) return undefined;
-      const pixels = devicePixels();
+      // AT THE ZOOM SHOWN NOW: the area was measured at the write's, and a zoom since scales it about the page's corner.
+      const pixels = devicePixels() * (zoom / area.zoom);
       const x = Math.floor(area.left * pixels);
       const y = Math.floor(area.top * pixels);
       const region = { x, y, width: Math.ceil((area.left + area.width) * pixels) - x, height: Math.ceil((area.top + area.height) * pixels) - y };
-      await renderRegion(view.document, pdfjsPageOf(source), target, pixels * zoom, rotation, region, signal);
-      return { version: view.version, at: { left: x / pixels, top: y / pixels, width: region.width / pixels, height: region.height / pixels } };
+      await renderRegion(view.document, pdfjsPageOf(source), target, devicePixels() * zoom, rotation, region, signal);
+      const css = devicePixels();
+      return { version: view.version, at: { left: x / css, top: y / css, width: region.width / css, height: region.height / css, zoom } };
     },
     [rotation, source, view, zoom],
   );

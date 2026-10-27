@@ -101,7 +101,7 @@ const NO_FAMILIES = (): Promise<(font: string) => string | undefined> => Promise
  * The area a written edit changed, in the layer's CSS pixels with {@link PATCH_MARGIN} around it: the block as it was
  * read, turned as the page is, and the editor's frame as it last stood, which is larger where the words grew.
  */
-function editedArea(root: HTMLElement | null, placed: Placed): CssArea {
+function editedArea(root: HTMLElement | null, placed: Placed, zoom: number): CssArea {
   const turn = (placed.rotation * Math.PI) / 180;
   const [cos, sin] = [Math.cos(turn), Math.sin(turn)];
   // CSS TURNS ABOUT THE PLACED CORNER, clockwise with y down: (x, y) lands at (x cos - y sin, x sin + y cos) from it.
@@ -112,9 +112,10 @@ function editedArea(root: HTMLElement | null, placed: Placed): CssArea {
     [placed.width, placed.height],
   ].map(([x = 0, y = 0]) => ({ x: placed.left + x * cos - y * sin, y: placed.top + x * sin + y * cos }));
   const frame = root?.querySelector('[data-kit-frame]');
-  if (root !== null && frame !== null && frame !== undefined) {
+  const box = frame?.getBoundingClientRect();
+  // A FRAME WITH NO SIZE is one not laid out, whose corner is the viewport's origin and no part of the edit.
+  if (root !== null && box !== undefined && box.width > 0 && box.height > 0) {
     const own = root.getBoundingClientRect();
-    const box = frame.getBoundingClientRect();
     corners.push({ x: box.left - own.left, y: box.top - own.top }, { x: box.right - own.left, y: box.bottom - own.top });
   }
   const left = Math.min(...corners.map((corner) => corner.x)) - PATCH_MARGIN;
@@ -124,6 +125,7 @@ function editedArea(root: HTMLElement | null, placed: Placed): CssArea {
     top,
     width: Math.max(...corners.map((corner) => corner.x)) + PATCH_MARGIN - left,
     height: Math.max(...corners.map((corner) => corner.y)) + PATCH_MARGIN - top,
+    zoom,
   };
 }
 
@@ -347,7 +349,7 @@ export function EditTextLayer({
     >
       {/* UNTIL THE PAGE ITSELF IS DRAWN AT THE PATCH'S VERSION, after which the page shows the same pixels. */}
       {patch === undefined || patching === undefined || (patching.version !== undefined && drawn !== undefined && drawn >= patching.version) ? null : (
-        <AreaPatch after={patching.after} area={patching.area} key={`patch-${String(patching.after)}`} onDrawn={onPatched} patch={patch} />
+        <AreaPatch after={patching.after} area={patching.area} key={`patch-${String(patching.after)}`} onDrawn={onPatched} patch={patch} zoom={geometry.zoom} />
       )}
       {blocks?.blocks.map((block, at) => {
         const placed = place(block.box, geometry);
@@ -386,7 +388,7 @@ export function EditTextLayer({
                   setWritten({ box: block.box, version: blocks.version });
                   // THE AREA THE WRITE CHANGED, measured while the editor still shows it: the block as read and the frame
                   // as it grew, since growth overlaps what is below and the page there changed too.
-                  setPatching({ after: blocks.version, area: editedArea(root.current, placed) });
+                  setPatching({ after: blocks.version, area: editedArea(root.current, placed, geometry.zoom) });
                 }
                 else if (outcome !== 'unchanged') setNext(undefined);
                 return outcome;

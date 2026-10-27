@@ -68,6 +68,35 @@ test('a written editor lets go when its area is drawn at the new version, long b
   expect(drawn.y).toBeLessThanOrEqual(before.y);
   expect(drawn.x + drawn.width).toBeGreaterThanOrEqual(before.x + before.width);
   expect(drawn.y + drawn.height).toBeGreaterThanOrEqual(before.y + before.height);
+  // AND ONLY THE AREA: no more than the frame and the margin around it, with a pixel for rounding, so a patch of the
+  // whole page would fail here.
+  const MARGIN_PX = 4 + 1;
+  expect(drawn.x).toBeGreaterThanOrEqual(before.x - MARGIN_PX);
+  expect(drawn.y).toBeGreaterThanOrEqual(before.y - MARGIN_PX);
+  expect(drawn.x + drawn.width).toBeLessThanOrEqual(before.x + before.width + MARGIN_PX);
+  expect(drawn.y + drawn.height).toBeLessThanOrEqual(before.y + before.height + MARGIN_PX);
+
+  // A ZOOM WHILE THE PAGE'S REDRAW IS STILL HELD: the patch is drawn again at the new zoom, over the same part of the page.
+  const layer = page.locator('[data-text-edit-layer="0"]');
+  const [shownBefore, patchBefore] = [await layer.boundingBox(), await patch.boundingBox()];
+  if (shownBefore === null || patchBefore === null) throw new Error('no layer or patch before the zoom');
+  const drawnAt = await patch.getAttribute('data-kit-patch-zoom');
+  await runCommand(page, 'Zoom in');
+  // MEASURED ONCE THE PATCH IS DRAWN AT THE NEW ZOOM: until then its old drawing is stretched into place, which is right
+  // whatever the new draw does, so a measurement taken then separates nothing.
+  await expect(patch).not.toHaveAttribute('data-kit-patch-zoom', drawnAt ?? '');
+  await expect.poll(async () => (await layer.boundingBox())?.width ?? 0).toBeGreaterThan(shownBefore.width * 1.05);
+  const shownAfter = await layer.boundingBox();
+  if (shownAfter === null) throw new Error('no layer after the zoom');
+  const ratio = shownAfter.width / shownBefore.width;
+  const want = { x: (patchBefore.x - shownBefore.x) * ratio, y: (patchBefore.y - shownBefore.y) * ratio, width: patchBefore.width * ratio };
+  // THE PAGE IS STILL THE OLD VERSION'S (its redraw held), so this is the patch, at the page's own place for it.
+  await expect
+    .poll(async () => {
+      const box = await patch.boundingBox();
+      return box === null ? Number.POSITIVE_INFINITY : Math.max(Math.abs(box.x - shownAfter.x - want.x), Math.abs(box.y - shownAfter.y - want.y), Math.abs(box.width - want.width));
+    })
+    .toBeLessThan(2 * ratio + 1);
   // CONTROL: once the page draws the new version itself, the patch goes, since the page then shows the same pixels.
   await expect(page.locator('[data-text-edit-layer="0"] [data-kit-patch]')).toHaveCount(0, { timeout: MODEL_MS * 3 });
   process.stdout.write(`\nfinish to area shown: ${String(letGo)} ms (page redraw held ${String(MODEL_MS)} ms)\n`);
