@@ -23,6 +23,7 @@ import type { SettingsStore } from '../settingsStore.js';
 import { useSetting } from '../useSetting.js';
 import { type FloatBarPoint, type FloatBarRoom, type FloatBarShare, nudged, positionAt } from './floatBarPlace.js';
 import { quickToolbarModel } from './projections.js';
+import { SURFACE_PLACEMENTS, useLiveContext } from '../commandAnswers.js';
 import { railFolded } from './railFold.js';
 
 /** The reset command, run by the grip's Home key so the key and the Window menu are one action. */
@@ -90,7 +91,9 @@ function roomOf(element: HTMLElement | null): FloatBarRoom | null {
   };
 }
 
-export function QuickToolbar({ registry, context, settings }: QuickToolbarProps): ReactElement | null {
+export function QuickToolbar({ registry, context: asked, settings }: QuickToolbarProps): ReactElement | null {
+  // THE ANSWERS OF WHAT THE QUICK TOOLBAR PLACES (ADR-0272).
+  const context = useLiveContext(registry, asked, SURFACE_PLACEMENTS.quickToolbar);
   const { i18n } = useLingui();
   const open = useSetting(settings, QUICK_TOOLBAR_OPEN_SETTING);
   const position = useSetting(settings, FLOAT_BAR_POSITION_SETTING);

@@ -7,6 +7,7 @@ import { MenuScrollArrows } from '../primitives/MenuScrollArrows.js';
 import type { CommandContext, CommandRegistry } from '../registries/commands.js';
 import type { MenuContext } from '../registries/placement.js';
 import { pageSlotAt } from '../useVisiblePages.js';
+import { SURFACE_PLACEMENTS, useLiveContext } from '../commandAnswers.js';
 import { contextMenuModel, type OrderedEntry } from './projections.js';
 
 /**
@@ -40,7 +41,7 @@ import { contextMenuModel, type OrderedEntry } from './projections.js';
  */
 export function ContextMenuArea({
   registry,
-  context,
+  context: asked,
   menus,
   children,
 }: {
@@ -55,6 +56,8 @@ export function ContextMenuArea({
   readonly menus: readonly MenuContext[];
   readonly children: ReactNode;
 }): ReactElement {
+  // THE ANSWERS OF WHAT THE CONTEXT MENUS PLACE (ADR-0272).
+  const context = useLiveContext(registry, asked, SURFACE_PLACEMENTS.contextMenu);
   const groups = menuGroups(registry, context, menus);
   // `display: contents` ON BOTH BRANCHES: the region adds no box to the layout it wraps — a tab, a
   // thumbnail, the page area — and a `contextmenu` from anything inside still bubbles through it.

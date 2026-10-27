@@ -115,11 +115,11 @@ export interface CommandContext {
    */
   readonly editingText?: boolean;
   /**
-   * Every command's answers in this context, as one string (`commandAnswers`): what makes the context a NEW value when
-   * only a store a predicate reads has moved, so a surface memoized on the context draws the new state
-   * ([ADR-0258](../../../../docs/DECISIONS/0258-the-react-compiler-is-switched-on.md)'s correction of 2026-10-26).
-   * Set by `useCommandContext` for the surfaces; a predicate never reads it. Absent in a context built without it, as
-   * a case's is.
+   * The answers of the commands ONE SURFACE places, as one string (`commandAnswers.ts`): what makes that surface's
+   * context a NEW value when only a store a predicate reads has moved, so the surface, memoized on its context, draws the
+   * new state ([ADR-0272](../../../../docs/DECISIONS/0272-each-surface-subscribes-to-the-answers-of-the-commands-it-places.md)).
+   * Set by `useLiveContext` inside each surface; a predicate never reads it. Absent in the shell's context and in a
+   * context built without it, as a case's is.
    */
   readonly answers?: string;
 }

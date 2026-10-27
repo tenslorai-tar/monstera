@@ -37,6 +37,7 @@ import type { MenuBarSubmenu } from '../registries/placement.js';
 import { RECENT_RECHECK_MS } from '../recentLine.js';
 import { GIVES_FOCUS_BACK, cancelsAnotherMenu } from './menuRowClose.js';
 import { LABELLED, type RowFit, menusThatFit, nextRowFit } from './menuRowFit.js';
+import { SURFACE_PLACEMENTS, useLiveContext } from '../commandAnswers.js';
 import { arrivesByArrowKey, firstItem } from './menuRowKeys.js';
 import {
   type MenuBarCommandEntry,
@@ -138,7 +139,7 @@ const MENU_TITLES: Readonly<Record<MenuBarMenuModel['id'], MessageKey>> = {
  */
 export function MenuBar({
   registry,
-  context,
+  context: asked,
   focusBefore,
   recent,
 }: {
@@ -149,6 +150,8 @@ export function MenuBar({
   /** File › Recent's values and how one opens (ADR-0143). */
   readonly recent: RecentMenu;
 }): ReactElement {
+  // THE ANSWERS OF WHAT THE MENU ROW PLACES: its menus, its centre's commands, and the ribbon sections that are menus.
+  const context = useLiveContext(registry, asked, SURFACE_PLACEMENTS.menuBar);
   const { _ } = useLingui();
   // A COUNTER THE OPENING OF A MENU MOVES, so the model below is recomputed at that moment.
   const [, setOpened] = useState(0);

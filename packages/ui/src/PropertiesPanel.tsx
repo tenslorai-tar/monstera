@@ -100,6 +100,7 @@ import {
 } from './settings/editing.js';
 import type { SettingsStore } from './settingsStore.js';
 import { propertiesModel } from './surfaces/projections.js';
+import { SURFACE_PLACEMENTS, useLiveContext } from './commandAnswers.js';
 import { useSetting } from './useSetting.js';
 
 /** One change to the selected marks' style — each property alone, as `styleAnnotation` takes it. */
@@ -200,13 +201,15 @@ export function PropertiesPanel({
   onAuthor,
   onResize,
   registry,
-  context,
+  context: asked,
   measuring = false,
   reading,
   object,
   objectMode,
   fonts,
 }: PropertiesPanelProps): ReactElement {
+  // THE ANSWERS OF WHAT THE PROPERTIES TAB'S FOOT PLACES (ADR-0272).
+  const context = useLiveContext(registry, asked, SURFACE_PLACEMENTS.properties);
   const { i18n } = useLingui();
   const measureUnit = useSetting(settings, MEASURE_UNIT_SETTING);
   const measureRatio = useSetting(settings, MEASURE_RATIO_SETTING);

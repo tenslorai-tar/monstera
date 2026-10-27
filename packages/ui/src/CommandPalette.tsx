@@ -11,6 +11,7 @@ import { Dialog } from './primitives/Dialog.js';
 import type { CommandContext, CommandRegistry } from './registries/commands.js';
 import { useRunCommand } from './registries/useRunCommand.js';
 import { paletteModel } from './surfaces/projections.js';
+import { useLiveContext } from './commandAnswers.js';
 import { composing } from './surfaces/shortcuts.js';
 
 /**
@@ -43,7 +44,7 @@ import { composing } from './surfaces/shortcuts.js';
  */
 export function CommandPalette({
   registry,
-  context,
+  context: asked,
   onClose,
 }: {
   readonly registry: CommandRegistry;
@@ -51,6 +52,8 @@ export function CommandPalette({
   /** Closes the palette: before a command runs, on Escape, on a press outside it, and from its Close control. */
   readonly onClose: () => void;
 }): ReactElement {
+  // EVERY COMMAND'S ANSWERS: the palette reads no placements and can list any command (ADR-0272).
+  const context = useLiveContext(registry, asked, 'all');
   const { i18n } = useLingui();
   const [query, setQuery] = useState('');
   const field = useRef<HTMLInputElement | null>(null);

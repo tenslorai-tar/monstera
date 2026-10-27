@@ -460,7 +460,7 @@ import { listedFamiliesFor } from './familyFaces.js';
 import { readOnePageLinks } from './usePageLinks.js';
 import { LinkProperties } from './LinkProperties.js';
 import { GRID_DIVISION_COUNTS, type GridLook, type RulerUnit } from './rulerGeometry.js';
-import { useCommandContext } from './useCommandContext.js';
+import { CommandAnswers, CommandAnswersProvider } from './commandAnswers.js';
 import { useSetting } from './useSetting.js';
 import type { SettingsStore } from './settingsStore.js';
 import { type ShowToast, TOAST_LIFETIME, createToastStore } from './toasts.js';
@@ -5006,9 +5006,14 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
     }),
     [currentPage, open, pageCount, selectedPages, tabs, textEditorOpen, textSelection],
   );
-  // WITH EVERY COMMAND'S ANSWERS IN IT, so a surface memoized on the context draws a state a store moved (ADR-0258's
-  // correction of 2026-10-26): the surfaces take this one and subscribe to nothing.
-  const context = useCommandContext(registry, contextAsked, settings);
+  // THE ANSWERS IN A STORE THE SURFACES SUBSCRIBE TO, each for the commands it places (ADR-0272): written here after every
+  // render with the registry and the base context, and read by nothing in this component, so an answer moving renders the
+  // surfaces that draw it and not the shell.
+  const [answers] = useState(() => new CommandAnswers(settings));
+  useLayoutEffect(() => {
+    answers.update(registry, contextAsked);
+  }, [answers, registry, contextAsked]);
+  const context = contextAsked;
   useEffect(() => {
     commandContextRef.current = context;
   }, [context]);
@@ -5190,6 +5195,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
     // outside the view reached the root and React unmounted everything — a blank window,
     // measured 2026-09-21. A throw in THIS function's own body is still out of reach: a
     // boundary catches its children, never its parent.
+    <CommandAnswersProvider value={answers}>
     <ErrorBoundary
       fallback={({ reset }) => (
         <main className="m-document-surface">
@@ -5691,6 +5697,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       </PageSourcesContext.Provider>
     </main>
     </ErrorBoundary>
+    </CommandAnswersProvider>
   );
 }
 

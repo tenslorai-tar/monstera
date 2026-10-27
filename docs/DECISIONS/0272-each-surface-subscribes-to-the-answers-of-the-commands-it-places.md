@@ -53,3 +53,29 @@ trace).
 - **Each surface lists the commands it shows.** A list a person keeps is a list a person forgets; a forgotten command
   draws stale state, which is the defect ADR-0258's correction exists for.
 - **Take the compiler back out of the build.** ADR-0258's measured gains go with it.
+
+## As built, 2026-10-27
+
+Built in `packages/ui/src/commandAnswers.ts`. The first three points below differ from the text above, which stands as
+written; the rest are the proofs as run.
+
+- **The hook is `useLiveContext(registry, context, subscription)`**, not `useCommandAnswers(answers, ids)`. It takes the
+  store from a provider `App` mounts, so no surface is handed the store as a prop, and it returns the context with the
+  subscribed answers folded in, so a surface's projection call is unchanged. A subscription is a list of placement kinds
+  (`SURFACE_PLACEMENTS`, one entry per surface), every command (the palette and the focus hint, which draw any
+  command), or ids.
+- **The store notifies every listener when any answer moves**, not per command. Each surface's snapshot is the string
+  of its own ids' answers, so `useSyncExternalStore` renders only the surfaces whose string changed. The renders are
+  the ones decision 3 names; what it costs is one snapshot call per surface per change.
+- **The render count is held on a fixture, not on a Bold press in the shell.** `commandAnswers.test.tsx` counts renders
+  of a shell and two surfaces across a setting a predicate reads: the surface placing the command renders, the shell
+  and the other surface do not. Its control is a surface subscribed to every command, which renders. Mutating the hook
+  to subscribe every surface to every command turns the first case red. A count of `App`'s own renders across a Bold
+  press was not built: a React profiler reports a subtree, not one component, and `App` takes no counter.
+- `App.test.tsx`' every-command case shows every command (each `when` forced true, so a hidden command is held too),
+  runs each surface's projections, and requires every command they draw to be in that surface's subscription. Its
+  control: `rail` taken out of the ribbon's entry turns it red on `view.toggle-quick-toolbar`.
+- **The hand walk's Bold row did not move measurably** (cloud machine, Chromium 151, production build, two runs each):
+  *Bold visible* median 12.9 and 12.7 ms before, 12.7 ms after; worst 16.7 and 17.2 ms before, 13.1 ms after. The
+  probe resolves to the next painted frame and the saving falls inside one here, so this row is not the evidence.
+  `commandStateLive.pw.ts` passes all 81 cases against the rebuilt bundle.

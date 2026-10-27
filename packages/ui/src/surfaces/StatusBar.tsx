@@ -24,6 +24,7 @@ import { CommandIconButton } from './CommandIconButton.js';
 import type { SavedState } from '../savedState.js';
 import { ZOOM_STEPS, type ZoomMode } from '../zoom.js';
 import { statusBarModel, type OrderedEntry } from './projections.js';
+import { SURFACE_PLACEMENTS, useLiveContext } from '../commandAnswers.js';
 import { type DocumentFact, FACT_ORDER, factsThatFit } from './statusFacts.js';
 
 /**
@@ -93,7 +94,7 @@ export function StatusBar({
   onGoTo,
   onZoom,
   registry,
-  context,
+  context: asked,
   saved,
   byteLength,
   toolHint,
@@ -130,6 +131,8 @@ export function StatusBar({
    */
   readonly toolHint: MessageKey | undefined;
 }): ReactElement {
+  // THE ANSWERS OF WHAT THE STATUS BAR PLACES (ADR-0272).
+  const context = useLiveContext(registry, asked, SURFACE_PLACEMENTS.statusBar);
   const { i18n } = useLingui();
   // A PRESS RUNS AGAINST THE CONTEXT AT THE PRESS (`useRunCommand`), so a button's handler keeps its identity.
   const run = useRunCommand(context, registry);
