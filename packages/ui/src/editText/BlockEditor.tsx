@@ -1,6 +1,6 @@
 import { useLingui } from '@lingui/react';
 import type { BlockFormatting, EditedBlock, WindowEditAction } from '@monstera/contract';
-import { type MessageKey, TAB_STOP, toPdf, viewportPoint } from '@monstera/shared';
+import { intoTextFrame, type MessageKey, TAB_STOP, toPdf, viewportPoint } from '@monstera/shared';
 import type React from 'react';
 import { type ReactElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
@@ -93,6 +93,11 @@ export interface BlockEditorProps {
   readonly stuckRef: React.RefObject<boolean>;
   /** The names of the fonts the page's text is drawn in, for the font picker. */
   readonly pageFonts: readonly string[];
+  /**
+   * For a block of one line, the page x its words may grow to before they wrap (`oneLineReach`): the line is laid out to
+   * it here and the writer is sent it, so both break the line in one place. Absent for a block of several lines.
+   */
+  readonly reach?: number | undefined;
 }
 
 /** The handles a block is placed by, and what each says it does. */
@@ -260,6 +265,7 @@ export function BlockEditor({
   finishingRef,
   stuckRef,
   pageFonts,
+  reach,
 }: BlockEditorProps): ReactElement {
   const { _ } = useLingui();
   const frame = useRef<HTMLDivElement>(null);
@@ -270,6 +276,8 @@ export function BlockEditor({
   );
   const [mode, setMode] = useState<'box' | 'text'>(opening.at === 'box' ? 'box' : 'text');
   const [placement, setPlacement] = useState<Placement>(NOT_PLACED);
+  /** The block's words as it opened, which a finish compares with to know its words changed. */
+  const [openedText] = useState(() => editOf(opened.model).text);
   const moved = placeOf(placement, block.box) !== undefined;
   const [problem, setProblem] = useState<Exclude<BlockCommit, 'written' | 'unchanged'> | undefined>(undefined);
   const [notice, setNotice] = useState<MessageKey | undefined>(undefined);
@@ -288,7 +296,10 @@ export function BlockEditor({
   const pitch = pitchOf(block);
   const look = useMemo<Look>(() => ({ zoom: geometry.zoom, pitch, faceCss }), [geometry.zoom, pitch, faceCss]);
   // A BLOCK MOVED OFF ITS PLACE draws every paragraph: the page's copy of it is papered whole.
-  const drawn = useMemo(() => (moved ? undefined : { paragraphs: opened.model.paragraphs, wraps: opened.wraps }), [moved, opened]);
+  const drawn = useMemo(
+    () => (moved ? undefined : { paragraphs: opened.model.paragraphs, wraps: opened.wraps, widths: opened.widths, words: opened.words }),
+    [moved, opened],
+  );
 
   // THE EDITOR IS OPEN for the formatting commands to act on (ADR-0180), for its whole life.
   const actions = useRef<{ remove: () => void; nudge: (step: Nudge) => void; finish: () => void }>({
@@ -351,9 +362,12 @@ export function BlockEditor({
       settle(() => {
         const { text, formatting } = override ?? editOf(store.get().model);
         const place = placeOf(placement, block.box);
-        return onCommit(text, place === undefined ? formatting : { ...formatting, place });
+        // A BLOCK OF ONE LINE IS SENT ITS REACH, the right edge its words were laid out to here, where its words changed
+        // and the person gave it no measure (which is then the measure): words as they were need no line broken.
+        const reached = reach === undefined || place?.width !== undefined || text === openedText || text === '' ? place : { ...place, reach };
+        return onCommit(text, reached === undefined ? formatting : { ...formatting, place: reached });
       }),
-    [block.box, onCommit, placement, settle, store],
+    [block.box, onCommit, openedText, placement, reach, settle, store],
   );
   const finish = useCallback((): Promise<void> => finishWith(), [finishWith]);
   useEffect(() => {
@@ -573,14 +587,14 @@ export function BlockEditor({
         const range = words.ownerDocument.createRange();
         range.selectNodeContents(row);
         const extent = range.getBoundingClientRect();
-        if (placed.rotation === 0 && corner !== undefined && extent.height > 0) found.push({ top: extent.top - corner.top, height: extent.height });
+        if (placed.rotation === 0 && placed.matrix === undefined && corner !== undefined && extent.height > 0) found.push({ top: extent.top - corner.top, height: extent.height });
         else found.push({ top: words.offsetTop + row.offsetTop, height: row.offsetHeight });
       }
       // A PIXEL EITHER WAY, for the edge of a glyph's anti-aliasing.
       const next = found.map((cover) => ({ top: cover.top - 1, height: cover.height + 2 }));
       setCovers((now) => (JSON.stringify(now) === JSON.stringify(next) ? now : next));
     },
-    [block, geometry.zoom, placed.rotation],
+    [block, geometry.zoom, placed.rotation, placed.matrix],
   );
 
   /** What the menu may do to the BLOCK: join or split, only while nothing is unwritten (ADR-0180 Decision 7). */
@@ -627,13 +641,15 @@ export function BlockEditor({
   };
 
   // A DRAG OF A HANDLE: where the pointer went down and the placement it began from, the movement in PDF points by the
-  // page's one transform.
+  // page's one transform, and then into the block's frame where it has one (ADR-0273): a placement is stated along the
+  // block's own lines, which is where the writer applies it.
   const dragging = useRef<{ handle: Handle; x: number; y: number; from: Placement } | undefined>(undefined);
   const pdfDelta = (dx: number, dy: number): { x: number; y: number } => {
     const shown = overlayTransform(geometry);
     const origin = toPdf(viewportPoint(0, 0), shown);
     const to = toPdf(viewportPoint(dx, dy), shown);
-    return { x: to.x - origin.x, y: to.y - origin.y };
+    const onPage = { x: to.x - origin.x, y: to.y - origin.y };
+    return block.frame === undefined ? onPage : intoTextFrame(block.frame, onPage.x, onPage.y);
   };
   const handleProps = (handle: Handle) => ({
     // A PRESS ON A HANDLE KEEPS THE FOCUS where it was: the editor finishes when a press leaves the frame, not here.
@@ -700,6 +716,8 @@ export function BlockEditor({
   };
 
   const wraps = !block.lines.some((line) => line.soft) && placement.width === undefined;
+  // A BLOCK OF ONE LINE grows right as it is typed in and wraps only at its reach, where the writer will (`oneLineReach`).
+  const reachWidth = reach === undefined || placement.width !== undefined || moved ? undefined : (reach - block.box.x0) * geometry.zoom;
   return (
     // THE FRAME GROWS WITH ITS WORDS: at least the block's height, as tall as the words, so its outline shows where they
     // now reach and what they overlap (growth by overlap, ADR-0271 section 3).
@@ -742,7 +760,7 @@ export function BlockEditor({
           under={under}
         >
           <EditorSurface
-            className={`m-kit-surface${wraps ? ' m-kit-surface--lines' : ''}${moved ? ' m-kit-surface--placed' : ''}`}
+            className={`m-kit-surface${wraps ? ' m-kit-surface--lines' : ''}${reachWidth === undefined ? '' : ' m-kit-surface--reach'}${moved ? ' m-kit-surface--placed' : ''}`}
             drawn={drawn}
             editable={!busy}
             label={_(TEXT_EDIT_EDITOR_LABEL)}
@@ -753,6 +771,7 @@ export function BlockEditor({
             store={store}
             style={{
               marginTop: shift,
+              ...(reachWidth === undefined ? {} : { maxInlineSize: reachWidth }),
               ...(moved ? paper : {}),
               tabSize: `${String(TAB_STOP * geometry.zoom)}px`,
             }}

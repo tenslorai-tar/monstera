@@ -23,13 +23,13 @@ import { runCommand } from './palette.js';
 
 const ID = asDocId('00000000-0000-4000-8000-0000000000dd');
 const RUN = { size: 12, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false, italic: false, bold: false } as const;
-const BOX = { x0: 100, y0: 686, x1: 400, y1: 700 };
-
 test('a double press on a block opens its words with the caret where it fell', async ({ page }) => {
   const pdf = await PDFDocument.create();
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   pdf.addPage([612, 792]).drawText('The first paragraph', { x: 100, y: 690, size: 12, font });
   const bytes = await pdf.save();
+  // THE LINE'S BOX AS A READ REPORTS IT, as wide as the page draws its words: the editor fits the line's letters to it.
+  const BOX = { x0: 100, y0: 686, x1: 100 + font.widthOfTextAtSize('The first paragraph', 12), y1: 700 };
   await page.setViewportSize({ width: 1600, height: 1000 });
   await bridgeUnder(page, LOOKS[0], {
     opens: [{ kind: 'opened' as const, docId: ID, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'One.pdf' }],
@@ -44,9 +44,9 @@ test('a double press on a block opens its words with the caret where it fell', a
   await expect(outline).toBeVisible();
   const box = await outline.boundingBox();
   if (box === null) throw new Error('no outline');
-  // INSIDE "first": the block is 300 pt wide at zoom 1 and its words run from its left edge, so "first" spans roughly
-  // 22 to 42 pt in Helvetica 12; 32 pt is its middle, well away from either end of the block.
-  const at = { x: box.x + 32 * (box.width / 300), y: box.y + box.height / 2 };
+  // INSIDE "first", at its middle as the page draws it, well away from either end of the block.
+  const middle = font.widthOfTextAtSize('The ', 12) + font.widthOfTextAtSize('first', 12) / 2;
+  const at = { x: box.x + middle * (box.width / (BOX.x1 - BOX.x0)), y: box.y + box.height / 2 };
   const seen: number[] = [];
   await page.exposeFunction('notePress', (detail: number) => {
     seen.push(detail);

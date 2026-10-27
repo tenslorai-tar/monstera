@@ -1,5 +1,5 @@
-import { type BlockMark, type EditedBlock, sameStream } from '@monstera/contract';
-import { joinAfterLine, lineText, normaliseFamily, paragraphsOfLines } from '@monstera/shared';
+import { type BlockMark, type EditedBlock, oneCommand } from '@monstera/contract';
+import { fromTextFrame, joinAfterLine, lineText, normaliseFamily, paragraphsOfLines, sameTextFrame, type TextFrame } from '@monstera/shared';
 
 import type { TextBlock } from './textBlock.js';
 
@@ -18,6 +18,30 @@ import type { TextBlock } from './textBlock.js';
  * decision of 2026-10-18); where it does not, the words take the upper block's, and the join says so. A split names
  * each half's own old lines, so neither half changes at all but where it stands.
  */
+
+/**
+ * A box in a frame on the page: the box itself where there is no frame, and where it is set at an angle (ADR-0273) the
+ * page box around its corners taken out of the frame. What a rule about the PAGE asks of a block (past its edge, over
+ * another, nearest a point), which a box in a frame cannot answer.
+ */
+export function pageBox(block: { readonly box: TextBlock['box']; readonly frame?: TextFrame | undefined }): TextBlock['box'] {
+  const { box, frame } = block;
+  if (frame === undefined) return box;
+  const corners = [
+    fromTextFrame(frame, box.x0, box.y0),
+    fromTextFrame(frame, box.x1, box.y0),
+    fromTextFrame(frame, box.x0, box.y1),
+    fromTextFrame(frame, box.x1, box.y1),
+  ];
+  const xs = corners.map((corner) => corner.x);
+  const ys = corners.map((corner) => corner.y);
+  return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+}
+
+/** Whether two blocks are set in one frame, so their boxes, in it, can be compared as a column's. */
+function oneFrame(left: TextBlock, right: TextBlock): boolean {
+  return sameTextFrame(left.frame ?? null, right.frame ?? null);
+}
 
 /** A block's words, as the editor shows them: the one join the kernel diffs against. */
 export function wordsOfBlock(block: TextBlock): string {
@@ -157,11 +181,22 @@ export function splitEdits(block: TextBlock, paragraph: number, others: readonly
 function landsNearBelow(half: TextBlock, pitch: number, others: readonly TextBlock[]): boolean {
   const left = Math.min(...half.lines.map((line) => line.box.x0));
   const right = Math.max(...half.lines.map((line) => line.box.x1));
-  // PDF y RUNS UP: moving down subtracts.
+  // PDF y RUNS UP: moving down subtracts. IN THE HALF'S FRAME where it has one (ADR-0273): the writer moves it down its
+  // own lines, so its column is its frame's.
   const top = Math.max(...half.lines.map((line) => line.box.y1)) - pitch;
   const bottom = Math.min(...half.lines.map((line) => line.box.y0)) - pitch;
   const line = Math.max(pitch, ...half.lines.map((each) => each.box.y1 - each.box.y0));
-  return others.some((other) => other.box.x0 < right && other.box.x1 > left && other.box.y1 > bottom - line && other.box.y0 < top);
+  // A BLOCK IN ANOTHER FRAME has no column in common with it, so only being drawn over it counts: the moved half's page
+  // box against that block's, a line wide all round.
+  const moved = pageBox({ box: { x0: left, y0: bottom, x1: right, y1: top }, frame: half.frame });
+  return others.some((other) =>
+    oneFrame(half, other)
+      ? other.box.x0 < right && other.box.x1 > left && other.box.y1 > bottom - line && other.box.y0 < top
+      : (() => {
+          const there = pageBox(other);
+          return there.x0 < moved.x1 + line && there.x1 > moved.x0 - line && there.y1 > moved.y0 - line && there.y0 < moved.y1 + line;
+        })(),
+  );
 }
 
 /** The distance between a block's first two lines' tops, or `undefined` for a block of one line. */
@@ -182,7 +217,9 @@ export function neighbourOf(blocks: readonly TextBlock[], at: number, side: 'abo
   let best: { index: number; gap: number } | undefined;
   for (const [index, other] of blocks.entries()) {
     // NOT ACROSS STREAMS (ADR-0269): a block in a form and one on the page are written by two commands, never joined.
-    if (index === at || !sameStream(own, other)) continue;
+    // NOR ACROSS FRAMES (ADR-0273): a turned label beside upright text is no continuation of it, and their boxes are in
+    // two frames that cannot be compared.
+    if (index === at || !oneCommand(own, other)) continue;
     const across = Math.min(own.box.x1, other.box.x1) - Math.max(own.box.x0, other.box.x0);
     if (across < 0.5 * Math.min(own.box.x1 - own.box.x0, other.box.x1 - other.box.x0)) continue;
     // PDF y RUNS UP: the block above has the larger y, so the gap is this block's top to that one's bottom.

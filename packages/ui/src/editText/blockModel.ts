@@ -2,6 +2,7 @@ import type { BlockFormatting, BlockMarkSet, ParagraphProps, TextBlockStyle } fr
 import { joinAfterLine, lineText, paragraphEdges } from '@monstera/shared';
 
 import type { Model, Paragraph, ParagraphSetting, Run, RunStyle } from '../editorKit/model.js';
+import type { DrawnWordPlace } from '../editorKit/paint.js';
 import type { TextBlock } from '../textBlock.js';
 import { wordsOfBlock } from '../textBlockOps.js';
 
@@ -81,6 +82,13 @@ export interface OpenedBlock {
    * nobody changed is laid out at these breaks, so its lines are where the page drew them.
    */
   readonly wraps: readonly (readonly number[])[];
+  /** The width the page draws each line of each paragraph at, in points: what its laid-out letters are fitted to. */
+  readonly widths: readonly (readonly number[])[];
+  /**
+   * Where the page draws each word of each line of each paragraph, its offsets into the paragraph's words, for the lines
+   * whose runs say (`fitDrawnLines`): what a press on a letter is placed by. A line no run of which says has none.
+   */
+  readonly words: readonly (readonly (readonly DrawnWordPlace[])[])[];
 }
 
 /** A block's lines, grouped into paragraphs: a line ending soft carries on in the next. */
@@ -111,19 +119,29 @@ export function modelOfBlock(block: TextBlock): OpenedBlock {
         )
       : [];
   const wraps: number[][] = [];
+  const widths: number[][] = [];
+  const words: DrawnWordPlace[][][] = [];
   const grouped = linesByParagraph(block);
   const [firstLine, secondLine] = block.lines;
   const pitch = firstLine !== undefined && secondLine !== undefined && firstLine.baseline > secondLine.baseline ? firstLine.baseline - secondLine.baseline : undefined;
   const paragraphs = grouped.map((lines, place): Paragraph => {
     const runs: Run[] = [];
     const breaks: number[] = [];
+    const placed: DrawnWordPlace[][] = [];
     let length = 0;
     for (const [at, line] of lines.entries()) {
+      // THE LINE'S WORDS AS DRAWN, in the paragraph's offsets; none unless every run of the line says where its are.
+      const lineWords: DrawnWordPlace[] = [];
+      let every = true;
       for (const run of line.runs) {
         const style = runStyleOf(run.style, run.index);
         runs.push({ text: run.text, style, base: style });
+        const own = run.words?.filter((word) => word.to <= run.text.length && word.from < word.to);
+        if (own === undefined) every = false;
+        else lineWords.push(...own.map((word) => ({ from: length + word.from, to: length + word.to, x0: word.x0, x1: word.x1 })));
         length += run.text.length;
       }
+      placed.push(every ? lineWords : []);
       if (at === lines.length - 1) continue;
       const join = joinAfterLine(lineText(line.runs), true);
       const last = line.runs.at(-1);
@@ -135,6 +153,8 @@ export function modelOfBlock(block: TextBlock): OpenedBlock {
       breaks.push(length);
     }
     wraps.push(breaks);
+    widths.push(lines.map((line) => line.box.x1 - line.box.x0));
+    words.push(placed);
     const edge = edges[place];
     // THE SPACE THE PAGE LEAVES ABOVE THE PARAGRAPH beyond the block's even pitch: its first baseline less where the lines
     // above, set at the pitch, would put it. Measured 2026-10-24 on a contract clause of three numbered paragraphs, whose
@@ -155,7 +175,7 @@ export function modelOfBlock(block: TextBlock): OpenedBlock {
     return { ...setting, base: setting, runs: runs.length === 0 ? [{ text: '', style: blockStyle, base: blockStyle }] : runs };
   });
   const model: Model = { paragraphs };
-  return { model, wraps };
+  return { model, wraps, widths, words };
 }
 
 /** Whether `opened`'s words are the kernel's join of the block's: the check {@link modelOfBlock} exists to pass. */

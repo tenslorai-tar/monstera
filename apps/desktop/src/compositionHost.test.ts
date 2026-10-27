@@ -12,7 +12,7 @@ import {
 } from '@monstera/kernel';
 import { prepareSignature } from '@monstera/kernel/engine';
 import { type BoxedCharacter, type ComposeSkip, type FormPath, blockEditOf, replacementFieldsOf } from '@monstera/contract';
-import { type DocVersion, asDocId, err, ok } from '@monstera/shared';
+import { type DocVersion, asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 
 import { type EngineHostPlatform, createShellDependencies } from './composition.js';
@@ -2182,7 +2182,7 @@ function blockFacesEngine(): {
     formPages.push(page);
     const bytes = new TextEncoder().encode(FORM_PAGES_TEXT);
     writeFileSync(join(output, into), bytes);
-    return { ok: true, value: { bytes: bytes.length, paths: FORM_PLACEMENTS } };
+    return { ok: true, value: { bytes: bytes.length, paths: FORM_PLACEMENTS, omitted: 0 } };
   };
   return { peer, faces, formPages };
 }
@@ -2233,7 +2233,7 @@ describe('the composition root, THE READ ON OPEN through both engine hosts (ADR-
 
     // OUT OF ORDER, and with an index the pre-read holds no run for IN THE MIDDLE: an answer laid on the indices by
     // position would put the second font on 99 and none on 12.
-    const read = await handlers['document.blockFaces']({ docId: opened.docId, page: 3, indices: [30, 99, 12] });
+    const read = await handlers['document.blockFaces']({ docId: opened.docId, page: 3, indices: [30, 99, 12], version: opened.version });
 
     // HOP ONE: PDFium was asked for the page the renderer named, and handed the document's own image.
     expect(pdfium.asked).toStrictEqual([{ page: 3, image: '%PDF-1.7\n' }]);
@@ -2258,11 +2258,20 @@ describe('the composition root, THE READ ON OPEN through both engine hosts (ADR-
     expect(read).toStrictEqual(ok({ version: opened.version, fonts: [OWN_FONT, SUBSTITUTED_FONT], runs: [0, null, 1] }));
   });
 
+  it('asks NEITHER ENGINE anything for a version a write has replaced, and answers stale-target (ADR-0274)', async () => {
+    const { handlers, opened, mupdf, pdfium } = await opening('read-on-open-stale.pdf');
+    const read = await handlers['document.blockFaces']({ docId: opened.docId, page: 3, indices: [30, 99, 12], version: asDocVersion(opened.version - 1) });
+    // THE DECISION: nothing ran, which an answer at the current version alone could not show.
+    expect(pdfium.asked).toStrictEqual([]);
+    expect(mupdf.faces).toStrictEqual([]);
+    expect(read).toStrictEqual(err({ code: 'stale-target' }));
+  });
+
   it('asks MuPDF NOTHING when no asked index names a run, and answers no font for each, rather than an internal error', async () => {
     const { handlers, opened, mupdf } = await opening('read-on-open-unplaced.pdf');
     // NEITHER INDEX IS A RUN THE PRE-READ HOLDS: `engine/block-faces` takes at least one run, and an empty list sent to the
     // real host is refused by its schema and reaches the renderer as an internal failure (found by this case's author).
-    const read = await handlers['document.blockFaces']({ docId: opened.docId, page: 3, indices: [99, 98] });
+    const read = await handlers['document.blockFaces']({ docId: opened.docId, page: 3, indices: [99, 98], version: opened.version });
     // THE DECISION: no call to the host, which this fake answers whatever it is sent.
     expect(mupdf.faces).toStrictEqual([]);
     expect(read).toStrictEqual(ok({ version: opened.version, fonts: [], runs: [null, null] }));
@@ -2273,7 +2282,7 @@ describe('the composition root, THE READ ON OPEN through both engine hosts (ADR-
     const form = FORM_PLACEMENTS[1];
     if (form === undefined) throw new Error('unreachable');
 
-    const read = await handlers['document.blockFaces']({ docId: opened.docId, page: 3, indices: [30, 99, 12], form });
+    const read = await handlers['document.blockFaces']({ docId: opened.docId, page: 3, indices: [30, 99, 12], form, version: opened.version });
 
     // HOP ONE, THE FORM'S ROUTE: MuPDF built the page's placements, and PDFium read the named placement's page (the
     // second, so 1 — never the document's page 3) out of THOSE bytes rather than the document's.

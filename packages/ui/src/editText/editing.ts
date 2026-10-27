@@ -1,10 +1,11 @@
 import type { BlockFormatting, EditedBlock, FormPath, PageInsert, WindowEditAction } from '@monstera/contract';
-import { type DocVersion, newTextBox, pdfPoint, toPdf, toViewport, viewportPoint } from '@monstera/shared';
+import { type DocVersion, fromTextFrame, newTextBox, pdfPoint, type TextFrame, toPdf, toViewport, viewportPoint } from '@monstera/shared';
 
 import { type OverlayPage, overlayTransform } from '../annotations/annotationSpace.js';
 import type { BlockCommit, BlockFaces, BlocksRead, PageBlocksRead } from '../commands/documentCommands.js';
 import type { EditorSpelling } from '../editorKit/EditorMenu.js';
 import type { TextBlock } from '../textBlock.js';
+import { pageBox } from '../textBlockOps.js';
 import type { FaceKind } from './runFaces.js';
 
 /**
@@ -16,9 +17,6 @@ import type { FaceKind } from './runFaces.js';
 export interface PageBlocks extends BlocksRead {
   readonly blocks: readonly TextBlock[];
   readonly truncated: boolean;
-  readonly rotated: number;
-  /** `rotated` by kind, which the note names (ADR-0181 Decision 7). */
-  readonly angled: { readonly turned: number; readonly vertical: number; readonly slanted: number; readonly mirrored: number };
   readonly unaddressable: number;
 }
 
@@ -52,9 +50,10 @@ export interface TextEditing {
   readonly familiesOf?: () => Promise<(font: string) => string | undefined>;
   /**
    * The boxes of a page's pictures and drawings (everything but text, which the blocks are), at the version they were
-   * read, for the note that a written block now runs over one (B1.6); `undefined` where the read was refused.
+   * read, for the note that a written block now runs over one (B1.6); `undefined` where the read was refused. Only those
+   * meeting `within`, the written block's area: the whole page was many reads in the lane on a dense page.
    */
-  readonly objects: (page: number) => Promise<{ readonly version: DocVersion; readonly boxes: readonly TextBlock['box'][] } | undefined>;
+  readonly objects: (page: number, within: TextBlock['box']) => Promise<{ readonly version: DocVersion; readonly boxes: readonly TextBlock['box'][] } | undefined>;
   /**
    * The kind of face a letter is drawn in where nothing closer is known (`editing.fallback-face`). REQUIRED, and given no
    * default on the way down, so a composition that forgets the person's setting is a compile error rather than an editor
@@ -70,6 +69,12 @@ export interface Placed {
   readonly width: number;
   readonly height: number;
   readonly rotation: number;
+  /**
+   * For a block set at an angle (ADR-0273), the CSS matrix `[a, b, c, d]` that carries the box's own axes (x along its
+   * lines, y down them, in CSS pixels) onto the overlay about the placed corner: the frame and the page's turn together.
+   * Absent for upright text, which the page's turn alone places.
+   */
+  readonly matrix?: readonly [number, number, number, number];
 }
 
 /**
@@ -77,16 +82,41 @@ export interface Placed {
  * box's own at the zoom; a page drawn turned is then turned by CSS about that corner, so the editor's text runs the way
  * the page's does. Placing the four corners' bounding box instead would give a rotated page a box of the right size
  * holding text that reads the wrong way.
+ *
+ * A BLOCK SET AT AN ANGLE has its box in its frame (ADR-0273): its top-left corner is taken out of the frame onto the
+ * page, and its axes are carried by the frame and then by the page's one transform, read off that transform rather than
+ * restated here, so a page drawn turned turns a framed block too.
  */
-export function place(box: TextBlock['box'], geometry: OverlayPage): Placed {
-  const corner = toViewport(pdfPoint(box.x0, box.y1), overlayTransform(geometry));
-  return {
+export function place(box: TextBlock['box'], geometry: OverlayPage, frame?: TextFrame): Placed {
+  const shown = overlayTransform(geometry);
+  const onPage = (x: number, y: number) => (frame === undefined ? { x, y } : fromTextFrame(frame, x, y));
+  const cornerOnPage = onPage(box.x0, box.y1);
+  const corner = toViewport(pdfPoint(cornerOnPage.x, cornerOnPage.y), shown);
+  const placed = {
     left: corner.x,
     top: corner.y,
     width: (box.x1 - box.x0) * geometry.zoom,
     height: (box.y1 - box.y0) * geometry.zoom,
     rotation: geometry.rotation,
   };
+  if (frame === undefined) return placed;
+  // A CSS PIXEL ALONG EACH OF THE BOX'S AXES, where it lands on the overlay: a pixel right is 1/zoom of a point along the
+  // frame's x, a pixel down 1/zoom against its y.
+  const axis = (x: number, y: number): readonly [number, number] => {
+    const step = onPage(box.x0 + x / geometry.zoom, box.y1 + y / geometry.zoom);
+    const to = toViewport(pdfPoint(step.x, step.y), shown);
+    return [to.x - corner.x, to.y - corner.y];
+  };
+  const [a, b] = axis(1, 0);
+  const [c, d] = axis(0, -1);
+  return { ...placed, matrix: [a, b, c, d] };
+}
+
+/** The CSS matrix a placed box is drawn through about its corner: its frame's where it has one, else the page's turn. */
+export function cssMatrixOf(placed: Placed): readonly [number, number, number, number] {
+  if (placed.matrix !== undefined) return placed.matrix;
+  const turn = (placed.rotation * Math.PI) / 180;
+  return [Math.cos(turn), Math.sin(turn), -Math.sin(turn), Math.cos(turn)];
 }
 
 /** The CSS a placed box is drawn with. */
@@ -96,9 +126,14 @@ export function boxStyle(placed: Placed): { left: number; top: number; width: nu
     top: placed.top,
     width: placed.width,
     height: placed.height,
-    ...(placed.rotation === 0 ? {} : { transform: `rotate(${String(placed.rotation)}deg)` }),
+    ...(placed.matrix !== undefined
+      ? { transform: `matrix(${placed.matrix.map(String).join(', ')}, 0, 0)` }
+      : placed.rotation === 0
+        ? {}
+        : { transform: `rotate(${String(placed.rotation)}deg)` }),
   };
 }
+
 
 /**
  * How far, in points, a block's ink may cross the page's edge before it is said not to fit: a quarter of a point, under
@@ -164,8 +199,9 @@ export interface FreshBox {
 export function nearbyStyle(blocks: readonly TextBlock[], at: { readonly x: number; readonly y: number }): TextBlock['style'] | undefined {
   let nearest: { style: TextBlock['style']; far: number } | undefined;
   for (const block of blocks) {
-    const dx = Math.max(block.box.x0 - at.x, 0, at.x - block.box.x1);
-    const dy = Math.max(block.box.y0 - at.y, 0, at.y - block.box.y1);
+    const box = pageBox(block);
+    const dx = Math.max(box.x0 - at.x, 0, at.x - box.x1);
+    const dy = Math.max(box.y0 - at.y, 0, at.y - box.y1);
     const far = Math.hypot(dx, dy);
     if (nearest === undefined || far < nearest.far) nearest = { style: block.style, far };
   }

@@ -1,12 +1,15 @@
-import { paragraphsOfLines } from '@monstera/shared';
+import { paragraphsOfLines, type TextFrame } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import {
   type BlockableRun,
   type GroupableRun,
   blockableOf,
+  drawnWordsOf,
+  groupInFrames,
   groupIntoBlocks,
   groupIntoLines,
+  inItsFrame,
   settingOf,
   softEnds,
   withRises,
@@ -108,6 +111,46 @@ describe('softEnds (ADR-0097 4c, ADR-0179 Decision 2)', () => {
     expect(softEnds([first, line('answer accuracy – scored by two readers', 180)], 200)).toStrictEqual([true, false]);
     expect(softEnds([first, line('2. Answer accuracy', 90)], 200)).toStrictEqual([false, false]);
     expect(softEnds([first, line('b) answer accuracy', 90)], 200)).toStrictEqual([false, false]);
+  });
+
+  it('keeps a break before a bullet with no space after it, as a bullet set apart by position reads (the local agent’s walk)', () => {
+    const first = line('•Retrieval quality – measured on the held out set', 195);
+    expect(softEnds([first, line('•Answer accuracy – scored by two readers', 180)], 200)).toStrictEqual([false, false]);
+    // CONTROL: a dash with no space is a word's, and a line that is only a bullet begins nothing.
+    expect(softEnds([first, line('-answer accuracy – scored by two readers', 180)], 200)).toStrictEqual([true, false]);
+  });
+});
+
+describe('a line that begins at a drawn bullet begins its own block', () => {
+  const style = { font: 'f', bold: false, italic: false, size: 10, colour: { r: 0, g: 0, b: 0 } };
+  const item = (index: number, text: string, bottom: number, right: number): BlockableRun<string> => ({
+    index,
+    text,
+    bottom,
+    top: bottom + 10,
+    left: 90,
+    right,
+    style: 'body',
+    setting: settingOf(style),
+    size: style.size,
+  });
+  const ITEMS = [item(0, 'Water the seedlings at dawn', 700, 230), item(1, 'Turn the compost on Mondays', 686, 238), item(2, 'Sweep the greenhouse floor', 672, 226)];
+  /** A disc beside each item, as a browser draws a list's bullets. */
+  const DISCS = [700, 686, 672].map((bottom) => ({ x0: 76, y0: bottom + 2.5, x1: 81, y1: bottom + 7.5 }));
+
+  it('reads three items with drawn bullets as three blocks, so one that grows moves none of the others', () => {
+    expect(groupIntoBlocks(ITEMS, DISCS)).toHaveLength(3);
+    // CONTROL: the same lines with no bullets read as one paragraph, which is what an edit of one reflowed.
+    const [joined] = groupIntoBlocks(ITEMS);
+    expect(groupIntoBlocks(ITEMS)).toHaveLength(1);
+    expect(joined?.lines.map((line) => line.soft)).toStrictEqual([true, true, false]);
+  });
+
+  it('takes no shape for a bullet that is not beside a line’s start: one far to its left, or level with nothing', () => {
+    const far = DISCS.map((disc) => ({ ...disc, x0: 20, x1: 25 }));
+    expect(groupIntoBlocks(ITEMS, far)).toHaveLength(1);
+    // IN THE GAP between the first two lines (696 to 700), level with neither.
+    expect(groupIntoBlocks(ITEMS, [{ x0: 76, y0: 695.5, x1: 81, y1: 700.5 }])).toHaveLength(1);
   });
 });
 
@@ -678,5 +721,95 @@ describe('withRises', () => {
     expect(two[0]?.lines.map((line) => line.baseline)).toStrictEqual([700, 686]);
     const raised = withRises(groupIntoBlocks([at(0, '1', 72, 78, 703.96), at(1, ' Note', 78, 120, 700)]), () => 0, () => 0);
     expect(raised[0]?.lines[0]?.baseline).toBe(703.96);
+  });
+});
+
+describe('text set at an angle is grouped in its own frame (ADR-0273)', () => {
+  const TURN = [Math.cos(Math.PI / 6), Math.sin(Math.PI / 6), -Math.sin(Math.PI / 6), Math.cos(Math.PI / 6)] as const;
+  /** The page box around a frame box turned by TURN: what PDFium answers for a turned run. */
+  const around = (x0: number, y0: number, x1: number, y1: number) => {
+    const corners = [[x0, y0], [x1, y0], [x0, y1], [x1, y1]].map(([x = 0, y = 0]) => [TURN[0] * x + TURN[2] * y, TURN[1] * x + TURN[3] * y] as const);
+    return { left: Math.min(...corners.map(([x]) => x)), right: Math.max(...corners.map(([x]) => x)), bottom: Math.min(...corners.map(([, y]) => y)), top: Math.max(...corners.map(([, y]) => y)) };
+  };
+  /** A run of a two-line paragraph turned 30 degrees: its page box as read, and its frame and place in it. */
+  const turned = (index: number, text: string, bottom: number) => {
+    const frame = { matrix: TURN, left: 100, right: 200, bottom, top: bottom + 12, baseline: bottom + 3 };
+    return { index, text, ...around(100, bottom, 200, bottom + 12), style: { baseline: 0, size: 12 }, frame };
+  };
+  const PARAGRAPH = [turned(1, 'Turned thirty degrees,', 490), turned(2, 'and two lines long.', 476)];
+  const blockable = <R extends { readonly style: { readonly size: number } }>(run: R) => ({ ...run, setting: 'Face|12|0,0,0', size: run.style.size });
+
+  it('groups a turned paragraph as the upright one it is in its frame: two lines, one block, carrying the frame', () => {
+    const blocks = groupInFrames(PARAGRAPH.map((run) => blockable(inItsFrame(run))), (run) => run.frame.matrix);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]?.frame).toStrictEqual(TURN);
+    expect(blocks[0]?.lines.map((line) => line.runs.map((run) => run.text).join(''))).toStrictEqual(['Turned thirty degrees,', 'and two lines long.']);
+    // ITS BOX IS THE FRAME'S: the two lines' own extent, not the page box around them.
+    expect(blocks[0]?.box).toStrictEqual({ x0: 100, y0: 476, x1: 200, y1: 502 });
+  });
+
+  it('CONTROL: the same runs grouped by their page boxes overlap into ONE line, the reading the frame exists to avoid', () => {
+    const blocks = groupIntoBlocks(PARAGRAPH.map((run) => blockable(run)));
+    expect(blocks.flatMap((block) => block.lines)).toHaveLength(1);
+  });
+
+  it('puts a run its frame’s box and baseline, and leaves an upright run as it was read', () => {
+    const [first] = PARAGRAPH;
+    if (first === undefined) throw new Error('no run');
+    expect(inItsFrame(first)).toMatchObject({ left: 100, right: 200, bottom: 490, top: 502, style: { baseline: 493 } });
+    const upright = { left: 1, right: 2, bottom: 3, top: 4, style: { baseline: 3.5 } };
+    expect(inItsFrame(upright)).toBe(upright);
+  });
+
+  it('never joins runs of two frames, or a framed run with upright text, into one block', () => {
+    const upright = { index: 9, text: 'An upright line.', left: 100, right: 200, bottom: 490, top: 502, style: { baseline: 493, size: 12 } };
+    const slant = [1, 0, 0.25, 1] as const;
+    const sheared = { ...turned(3, 'Sheared words.', 490), frame: { ...turned(3, '', 490).frame, matrix: slant } };
+    const mixed: readonly (ReturnType<typeof blockable<typeof upright>> & { readonly frame?: { readonly matrix: TextFrame } })[] = [
+      blockable(inItsFrame(PARAGRAPH[0] ?? upright)),
+      blockable(upright),
+      blockable(inItsFrame(sheared)),
+    ];
+    const blocks = groupInFrames(mixed, (run) => run.frame?.matrix);
+    // THE SAME FRAME BOX in all three, so only the frames part them.
+    expect(blocks.map((block) => block.frame ?? null)).toStrictEqual([null, TURN, slant]);
+  });
+});
+
+describe('drawnWordsOf', () => {
+  /** Glyphs of `text` at one advance each, a space included where the page draws one. */
+  const glyphsOf = (text: string, widths: readonly number[]) => {
+    let x = 10;
+    // ASCII ALONE here, one unit a glyph.
+    return Array.from(text).map((char, at) => {
+      const left = x;
+      x += widths[at] ?? 5;
+      return { char, left, right: x };
+    });
+  };
+
+  it('gives each word from its first letter’s left to its last letter’s right, by its offsets in the text', () => {
+    expect(drawnWordsOf('ab cd', glyphsOf('ab cd', [3, 7, 2, 9, 4]))).toStrictEqual([
+      { from: 0, to: 2, x0: 10, x1: 20 },
+      { from: 3, to: 5, x0: 22, x1: 35 },
+    ]);
+  });
+
+  it('pairs a space the text page generated, which no glyph draws, as the gap it is', () => {
+    expect(drawnWordsOf('ab cd', glyphsOf('abcd', [3, 7, 9, 4]))).toStrictEqual([
+      { from: 0, to: 2, x0: 10, x1: 20 },
+      { from: 3, to: 5, x0: 20, x1: 33 },
+    ]);
+  });
+
+  it('gives no words where the text is not its glyphs letter for letter: an /ActualText, or another order', () => {
+    expect(drawnWordsOf('tab', glyphsOf(' ', [5]))).toBeUndefined();
+    expect(drawnWordsOf('ab', glyphsOf('ba', [5, 5]))).toBeUndefined();
+    // AND NOT WHERE GLYPHS ARE LEFT OVER: a pairing that consumed only some of them is not the run's.
+    expect(drawnWordsOf('ab', glyphsOf('abc', [5, 5, 5]))).toBeUndefined();
+  });
+
+  it('pairs a character outside the basic plane unit by unit', () => {
+    expect(drawnWordsOf('\u{10140}x', [{ char: '\u{10140}', left: 0, right: 8 }, { char: 'x', left: 8, right: 12 }])).toStrictEqual([{ from: 0, to: 3, x0: 0, x1: 12 }]);
   });
 });

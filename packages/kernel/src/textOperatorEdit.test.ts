@@ -83,6 +83,9 @@ describe('readingHolds, MuPDF’s read-back of the words an edit set (ADR-0266 D
   });
 });
 
+/** One edited block's reach: the first and last baselines the writer set it on, the proofs' allowance for its new extent. */
+const ONE_REACH = [{ first: expect.any(Number) as number, last: expect.any(Number) as number }];
+
 describe('applyEditTextOperators', () => {
   it('writes the heading in its own Type 3 font, MuPDF reads it back, and it survives a save and a reopen', async () => {
     await withChromium(async (session, content) => {
@@ -325,7 +328,7 @@ describe('applyEditTextOperators', () => {
       await withChromium(async (session) => {
         const runs = headingRuns(await withDocument(session, (document) => joinedContent(pageContentStreams(document.findPage(0)))));
         const drawn = await applyEditTextOperators(session, command(runs.runs[0]?.index ?? 0, 'Monstera fixture 中าำาำ.'), runs);
-        expect(drawn).toStrictEqual({ boxed: [], more: 0, noted: [] });
+        expect(drawn).toStrictEqual({ boxed: [], more: 0, noted: [], reach: ONE_REACH });
         expect(await pageWords(session)).toContain('Monsterafixture中าำาำ.');
         const written = await withDocument(session, (document) => {
           const fonts = document.findPage(0).get('Resources').get('Font');
@@ -375,6 +378,7 @@ describe('applyEditTextOperators', () => {
           more: 0,
           // AND NOTHING NOTED: both read-backs agree with the write (ADR-0270).
           noted: [],
+          reach: ONE_REACH,
         });
         expect(await pageWords(session)).toContain('Monsterafixturezap.');
         const { fonts, content } = await after(session);
@@ -402,7 +406,9 @@ describe('applyEditTextOperators', () => {
           ...command(index, words),
           ...blockEditOf([{ lines: [[index]], soft: [false], text: words }], [{ left: 100, baseline: 400, measure: 200, size: 14, text: 'A new box' }]),
         };
-        expect(await applyEditTextOperators(session, added, runs)).toStrictEqual({ boxed: [], more: 0, noted: [] });
+        // THE BOX REACHES ITS OWN BASELINE, after the block's.
+        const box = { first: expect.closeTo(400, 6) as number, last: expect.closeTo(400, 6) as number };
+        expect(await applyEditTextOperators(session, added, runs)).toStrictEqual({ boxed: [], more: 0, noted: [], reach: [...ONE_REACH, box] });
         expect(await pageWords(session)).toContain('Anewbox');
         const { fonts, content: written } = await after(session);
         expect(fonts.filter((name) => name.startsWith('MonsteraF'))).toHaveLength(1);
@@ -441,7 +447,7 @@ describe('applyEditTextOperators', () => {
         const unassigned = String.fromCodePoint(0xf0000);
         const drawn = await applyEditTextOperators(session, command(runs.runs[0]?.index ?? 0, `Monstera fixture ${unassigned}.`), runs);
         // THE PERSON IS TOLD (ADR-0177 Decision 7): the character and its page, answered by the apply.
-        expect(drawn).toStrictEqual({ boxed: [{ character: unassigned, page: 0 }], more: 0, noted: [] });
+        expect(drawn).toStrictEqual({ boxed: [{ character: unassigned, page: 0 }], more: 0, noted: [], reach: ONE_REACH });
         // THE REAL CHARACTER in MuPDF's reading: the box font's ToUnicode maps its code to U+F0000, not to the box.
         expect(await pageWords(session)).toContain(`Monsterafixture${unassigned}.`);
         expect(await pageWords(session)).not.toContain(String.fromCodePoint(0x25a1));

@@ -45,7 +45,7 @@ const mark = (page: number, index: number) => ({
   blend: 'normal' as const,
   pictured: true as const,
 });
-const BLOCKS_PART = { next: null, truncated: false, rotated: 0, angled: { turned: 0, vertical: 0, slanted: 0, mirrored: 0 }, unaddressable: 0, rewrite: 'operators' as const };
+const BLOCKS_PART = { next: null, truncated: false, unaddressable: 0, rewrite: 'operators' as const };
 
 function client(versions: { objects: number; marks: number; blocks: number }, asked: Record<string, unknown>[] = [], refused?: string) {
   return createClient(channels, (id, params) => {

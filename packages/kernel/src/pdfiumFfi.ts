@@ -1,5 +1,15 @@
 import type { BlockMark, BlockMarkSet, BlockPlace, PageInsert, ParagraphProps } from '@monstera/contract/host';
-import { type Alignment, type EditStep, TAB_STOP, blockShape, nextTabStop, paragraphSpacing } from '@monstera/shared';
+import {
+  type Alignment,
+  type EditStep,
+  TAB_STOP,
+  type TextFrame,
+  blockShape,
+  intoTextFrame,
+  nextTabStop,
+  paragraphSpacing,
+  textFrameOf,
+} from '@monstera/shared';
 import koffi from 'koffi';
 
 import { editFaces, editFacesBound } from './editFaces.js';
@@ -81,7 +91,8 @@ import {
   unwritableCharacters,
 } from './textEditRefusals.js';
 import { readInLineOrder } from './bidiLine.js';
-import { type Orientation, isEditedInPlace, lineBaselineOf } from './textLines.js';
+import { pdfTextString } from './pdfTextString.js';
+import { type DrawnWord, MAX_DRAWN_MARKERS, type Orientation, drawnWordsOf, isUpright, lineBaselineOf } from './textLines.js';
 import { type JoinedRun, joinRuns, membersOf } from './textRunJoin.js';
 
 /**
@@ -436,6 +447,13 @@ const REFERENCE_LETTERS = ['x', 'n', 'o', 'e', 'a', 'H', '0', '.'] as const;
 const AT_THE_MEASURE = 1;
 
 /**
+ * Below this share of its loose box's height, a character's ink box is the placeholder PDFium answers for a letter it has
+ * no outline for, not a glyph: measured 2026-10-27, 0.018 pt against 18 pt (a thousandth). The flattest real glyphs, a
+ * low line or a dash, are a few hundredths of the em, so a hundredth separates the two.
+ */
+const NO_GLYPH_HEIGHT = 0.01;
+
+/**
  * The least spacing a measured run is said to have, in page units: a hundredth of a point, below which a run's measured
  * spacing is read as none. Two readings of one glyph's place agree to about 1e-4 (float32 boxes), so a run set with no
  * spacing measures well under it, and no reader shows a hundredth of a point.
@@ -618,6 +636,55 @@ export interface TextRun {
    * (`/MonsteraMeasure`, ADR-0097's correction of 2026-10-17): the paragraph keeps it whatever font its words are in.
    */
   readonly measure?: number;
+  /** An upright run's words where the page draws them (`drawnWordsOf`), where its text pairs with its glyphs. */
+  readonly words?: readonly DrawnWord[];
+  /**
+   * Where a run is not upright, the frame it is set in and its place in that frame
+   * ([ADR-0273](../../../docs/DECISIONS/0273-text-set-at-an-angle-is-edited-in-its-own-frame.md)): in the frame it is
+   * upright, so it is grouped and drawn as an upright run is. The page box above is the box AROUND its turned letters,
+   * which is wider and taller than the run; this is the run's own.
+   */
+  readonly frame?: RunFrame;
+}
+
+/** A run's frame (`textFrameOf`) and its box and first baseline in that frame's coordinates. */
+export interface RunFrame {
+  readonly matrix: TextFrame;
+  readonly left: number;
+  readonly right: number;
+  readonly bottom: number;
+  readonly top: number;
+  readonly baseline: number;
+}
+
+/**
+ * {@link RunFrame} of a run of `members`, or `undefined` where its first object is upright or draws at no size. Its box is
+ * the union of its objects' own boxes (`FPDFPageObj_GetRotatedBounds`, each object's box through its own matrix, a quad
+ * on the page) taken into the frame, where each is a rectangle; its baseline is its first object's origin in the frame.
+ */
+function runFrameOf(bindings: Bound, handle: unknown, members: readonly number[]): RunFrame | undefined {
+  const first = members[0];
+  if (first === undefined) return undefined;
+  const [a, b, c, d, e, f] = matrixOf(bindings, bindings.getObject(handle, first));
+  const matrix = textFrameOf(a, b, c, d);
+  if (matrix === null) return undefined;
+  const points: { readonly x: number; readonly y: number }[] = [];
+  for (const member of members) {
+    const quad: Record<string, number> = {};
+    if (numberFrom(bindings.rotatedBounds(bindings.getObject(handle, member), quad), 'FPDFPageObj_GetRotatedBounds') !== 1) continue;
+    for (const corner of ['1', '2', '3', '4']) {
+      points.push(intoTextFrame(matrix, numberFrom(quad[`x${corner}`], `FS_QUADPOINTSF.x${corner}`), numberFrom(quad[`y${corner}`], `FS_QUADPOINTSF.y${corner}`)));
+    }
+  }
+  if (points.length === 0) return undefined;
+  return {
+    matrix,
+    left: Math.min(...points.map((point) => point.x)),
+    right: Math.max(...points.map((point) => point.x)),
+    bottom: Math.min(...points.map((point) => point.y)),
+    top: Math.max(...points.map((point) => point.y)),
+    baseline: intoTextFrame(matrix, e, f).y,
+  };
 }
 
 /**
@@ -668,6 +735,8 @@ export interface PageText {
    * column from (ADR-0097 4a).
    */
   readonly box: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number } | null;
+  /** The small shapes the page draws as a list's bullets (`drawnMarkersOf`), each by its box in page space. */
+  readonly markers: readonly { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number }[];
 }
 
 /** {@link PageText.box}: the one reading of a page's box, the writer's and the read's. */
@@ -740,11 +809,43 @@ export function textRuns(session: PdfiumSession, page: number): Promise<PageText
       // widest of its objects', so a joined run carries it whichever of its objects was written last.
       const runs = readWalk(bindings, handle, walked).map(({ members, drawn: _drawn, ...run }) => {
         const measure = Math.max(0, ...members.map((index) => recordedMeasureOf(bindings, bindings.getObject(handle, index)) ?? 0));
-        return measure > 0 ? { ...run, measure } : run;
+        // A RUN SET AT AN ANGLE carries its frame (ADR-0273), from the one answer the writer lays it out by.
+        const frame = run.style.orientation === 'upright' ? undefined : runFrameOf(bindings, handle, members);
+        // AN UPRIGHT RUN'S WORDS WHERE THE PAGE DRAWS THEM, for the editor to lay its letters over (`drawnWordsOf`).
+        const words = frame === undefined ? drawnWordsOf(run.text, members.flatMap((member) => walked.glyphs.get(member) ?? [])) : undefined;
+        return { ...run, ...(measure > 0 ? { measure } : {}), ...(frame === undefined ? {} : { frame }), ...(words === undefined ? {} : { words }) };
       });
-      return { runs, unaddressable: walked.unaddressable, box: pageBoxOf(bindings, handle) };
+      return { runs, unaddressable: walked.unaddressable, box: pageBoxOf(bindings, handle), markers: drawnMarkersOf(bindings, handle) };
     }),
   );
+}
+
+/** How far a drawn marker's sides may differ, the longer over the shorter: a disc, a square, a diamond; never a rule. */
+const MARKER_ASPECT = 2;
+
+/** The largest side a drawn marker has, in points: a bullet a list draws beside 20 pt text is under half of it. */
+const MARKER_SIDE = 12;
+
+/**
+ * The page's small drawn shapes that a list draws as its bullets (a disc, a square, a diamond as a path), each by its box:
+ * what tells the grouping a line begins a list entry where no character says so (`groupIntoBlocks`). A browser printing a
+ * list may draw its bullets so, and the text alone then reads three items as one paragraph, which an edit of one reflowed
+ * into the next (the local agent's walk of 2026-10-27). Paths only, on the page itself, near square and small; the first
+ * {@link MAX_DRAWN_MARKERS} in the page's order.
+ */
+function drawnMarkersOf(bindings: Bound, handle: unknown): PageText['markers'] {
+  const markers: { x0: number; y0: number; x1: number; y1: number }[] = [];
+  const count = numberFrom(bindings.countObjects(handle), 'FPDFPage_CountObjects');
+  for (let at = 0; at < count && markers.length < MAX_DRAWN_MARKERS; at += 1) {
+    const object: unknown = bindings.getObject(handle, at);
+    if (object === null || numberFrom(bindings.objectType(object), 'FPDFPageObj_GetType') !== PATH_OBJECT) continue;
+    const { left, bottom, right, top } = boundsOf(bindings, object);
+    const [width, height] = [right - left, top - bottom];
+    if (!(width > 0 && height > 0) || Math.max(width, height) > MARKER_SIDE) continue;
+    if (Math.max(width, height) / Math.min(width, height) > MARKER_ASPECT) continue;
+    markers.push({ x0: left, y0: bottom, x1: right, y1: top });
+  }
+  return markers;
 }
 
 /**
@@ -777,9 +878,10 @@ export function pageRuns(session: PdfiumSession, page: number): Promise<PageRuns
   return promised(() =>
     onPage(session, page, (handle) => {
       const bindings = api();
-      const runs = joinedWalk(bindings, handle, walkRuns(bindings, handle)).map(({ index, members, text, left, right, bottom, top }) => {
+      const runs = joinedWalk(bindings, handle, walkRuns(bindings, handle)).map(({ index, members, text, left, right, bottom, top, style }) => {
         const fixed = members.every((member) => objectIsMono(bindings, bindings.getObject(handle, member)));
-        return { index, members, text, left, right, bottom, top, ...(fixed ? { fixedPitch: true as const } : {}) };
+        // ITALIC BY THE STYLE THE EDITOR SHOWS (`styleOf`), so the writer judges a mark's italic by the same answer.
+        return { index, members, text, left, right, bottom, top, ...(fixed ? { fixedPitch: true as const } : {}), ...(style.italic ? { italic: true as const } : {}) };
       });
       return { textObjects: textObjectsOn(bindings, handle), runs };
     }),
@@ -811,6 +913,7 @@ export function objectRuns(session: PdfiumSession, page: number): Promise<PageTe
         })),
         unaddressable: walked.unaddressable,
         box: pageBoxOf(bindings, handle),
+        markers: drawnMarkersOf(bindings, handle),
       };
     }),
   );
@@ -826,7 +929,7 @@ function readWalk(
   handle: unknown,
   walked: { readonly runs: ReadonlyMap<number, WalkedRun> },
 ): JoinedRun<RunStyle>[] {
-  return readInLineOrder(joinedWalk(bindings, handle, walked), (run) => isEditedInPlace(run.style));
+  return readInLineOrder(joinedWalk(bindings, handle, walked), (run) => isUpright(run.style));
 }
 
 /**
@@ -912,7 +1015,7 @@ function walkRuns(
    */
   readonly unaddressableInk: number;
   /** Each drawn character of each object, in the order PDFium answered it, with where it starts across the page. */
-  readonly glyphs: ReadonlyMap<number, readonly { readonly char: string; readonly left: number; readonly origin?: number }[]>;
+  readonly glyphs: ReadonlyMap<number, readonly { readonly char: string; readonly left: number; readonly right: number; readonly origin?: number }[]>;
   /** Each object's text as PDFium answered it, by object index: the deck's input (`raws` in the walk). */
   readonly raws: ReadonlyMap<number, string>;
   /**
@@ -956,7 +1059,7 @@ function walkRuns(
       return said !== undefined && said !== '' && said.trim() === '' && numberFrom(bindings.objectType(bindings.getObject(handle, at)), 'FPDFPageObj_GetType') === TEXT_OBJECT;
     };
     const ends = new Map<number, number>();
-    const glyphs = new Map<number, { char: string; left: number; origin?: number }[]>();
+    const glyphs = new Map<number, { char: string; left: number; right: number; origin?: number }[]>();
     let unaddressable = 0;
     let unaddressableInk = 0;
     /** Each run's last drawn character, where it was a space: where its loose box ends and how wide it is. */
@@ -1066,12 +1169,30 @@ function walkRuns(
       const originX = [0];
       const originY = [0];
       const hasOrigin = numberFrom(bindings.charOrigin(textPage, at, originX, originY), 'FPDFText_GetCharOrigin') === 1;
-      placed.push({ char: character, left: inked ? x0 : (loose['left'] ?? x0), ...(hasOrigin ? { origin: originX[0] ?? 0 } : {}) });
+      placed.push({
+        char: character,
+        left: inked ? x0 : (loose['left'] ?? x0),
+        right: inked ? x1 : (loose['right'] ?? x1),
+        ...(hasOrigin ? { origin: originX[0] ?? 0 } : {}),
+      });
       glyphs.set(index, placed);
       // THE UNION, so a run's extent covers every character in it. A run sized
       // from its first character alone would lose an ascender and stop
       // overlapping the neighbour it shares a line with.
-      if (inked) {
+      // A LETTER PDFium HAS NO FACE TO DRAW answers its advance and no height: a font that is not embedded, on a computer
+      // with no face for it (measured 2026-10-27, KozMinPr6N over Adobe-Japan1 with no Japanese font installed: every
+      // character 18 pt wide and 0.018 pt high against a loose box of 18 pt, so the block was outlined flat and nothing of
+      // it could be pressed). Flat is judged against the loose box ({@link NO_GLYPH_HEIGHT}). Its LOOSE
+      // box is where it stands, from the font's own stated ascent, descent and advance, which is what a reader that does
+      // draw it uses too. A space is left out as above.
+      const looseHigh = (loose['top'] ?? 0) - (loose['bottom'] ?? 0);
+      const flat = !(x1 > x0) || high - low < NO_GLYPH_HEIGHT * looseHigh;
+      if (flat && hasLoose && looseHigh > 0 && !/\s/u.test(character)) {
+        held.left = Math.min(held.left, loose['left'] ?? x0);
+        held.right = Math.max(held.right, loose['right'] ?? x1);
+        held.bottom = Math.min(held.bottom, loose['bottom'] ?? low);
+        held.top = Math.max(held.top, loose['top'] ?? high);
+      } else if (inked) {
         held.left = Math.min(held.left, x0);
         held.right = Math.max(held.right, x1);
         held.bottom = Math.min(held.bottom, low);
@@ -1118,7 +1239,7 @@ function walkRuns(
         const after = ordered[before + 2]?.[1];
         if (after !== undefined && after.left > run.right && after.bottom < run.top && after.top > run.bottom) run.right = after.left;
         ends.set(at, run.right);
-        glyphs.set(at, [{ char: run.text, left: run.left }]);
+        glyphs.set(at, [{ char: run.text, left: run.left, right: run.right }]);
       }
       runs.clear();
       for (const [index, run] of ordered) runs.set(index, run);
@@ -1296,25 +1417,18 @@ function wireFontName(name: string): string {
 }
 
 /**
- * Whether a matrix sets text straight: positive scales on the diagonal and
- * nothing off it.
- *
- * The off-diagonal test is RELATIVE to the scale rather than against zero,
- * because a matrix read back as floats carries rounding — `1e-7` beside a scale
- * of 11 is not a rotation anybody drew. One part in a million of the scale is
- * below any angle a page can show: at a page's width it is a thousandth of a
- * point.
+ * Whether a matrix sets text straight: positive scales on the diagonal and nothing off it, by the ONE answer to that
+ * question (`textFrameOf`, ADR-0273), which the grouping and the operator writer take too. Its tolerance is relative to
+ * the scale, because a matrix read back as floats carries rounding: `1e-7` beside a scale of 11 is no turn anybody drew.
  */
-function isUpright(a: number, b: number, c: number, d: number): boolean {
-  const scale = Math.max(Math.abs(a), Math.abs(d));
-  if (!(a > 0 && d > 0)) return false;
-  return Math.abs(b) <= scale * 1e-6 && Math.abs(c) <= scale * 1e-6;
+function isUprightMatrix(a: number, b: number, c: number, d: number): boolean {
+  return a > 0 && d > 0 && textFrameOf(a, b, c, d) === null;
 }
 
 /**
- * HOW a text matrix sets text, for the editor to say what it will not edit and why
- * ([ADR-0181](../../../docs/DECISIONS/0181-right-to-left-text-is-written-in-drawing-order-and-read-back-as-typed.md)
- * Decision 7): `upright` is {@link isUpright}'s, the one test, and the rest is why it failed it.
+ * HOW a text matrix sets text: `upright` is {@link isUprightMatrix}'s, the one test, and the rest is how it failed it. Since
+ * [ADR-0273](../../../docs/DECISIONS/0273-text-set-at-an-angle-is-edited-in-its-own-frame.md) every kind is edited, in
+ * its frame; the kind still decides what is upright-only (a join of glyph objects, a line's reading order).
  *
  * - `mirrored`: the matrix turns the page over (a negative determinant).
  * - `slanted`: its columns are not at a right angle, a shear — an oblique drawn by the matrix and not by the font.
@@ -1322,12 +1436,12 @@ function isUpright(a: number, b: number, c: number, d: number): boolean {
  * - `turned`: any other rotation, a half turn included.
  */
 export function orientationOf(a: number, b: number, c: number, d: number): Orientation {
-  if (isUpright(a, b, c, d)) return 'upright';
+  if (isUprightMatrix(a, b, c, d)) return 'upright';
   if (a * d - b * c < 0) return 'mirrored';
   const first = Math.hypot(a, b);
   const second = Math.hypot(c, d);
   // THE COLUMNS' DOT PRODUCT against the product of their lengths: zero for a rotation, whatever the angle, and not
-  // zero for a shear. Relative, as {@link isUpright}'s test is, since a matrix read back as floats carries rounding.
+  // zero for a shear. Relative, as {@link isUprightMatrix}'s test is, since a matrix read back as floats carries rounding.
   if (first === 0 || second === 0 || Math.abs(a * c + b * d) > first * second * 1e-6) return 'slanted';
   const quarters = Math.abs(Math.atan2(b, a)) / (Math.PI / 2);
   return Math.abs(quarters - Math.round(quarters)) < 1e-6 && Math.round(quarters) % 2 === 1 ? 'vertical' : 'turned';
@@ -2912,7 +3026,7 @@ function layOutBlocks(
           // keeping the same rule for a caller that did not ask.
           for (const run of lines.flat()) {
             const matrix = matrixOn(bindings, run.object);
-            if (!isUpright(matrix.a, matrix.b, matrix.c, matrix.d)) {
+            if (!isUprightMatrix(matrix.a, matrix.b, matrix.c, matrix.d)) {
               throw refusedAt(
                 'matrix',
                 `Object ${String(run.index)} on page ${String(page)} is not set upright, so it is not edited in place`,
@@ -3903,6 +4017,18 @@ function markString(
   return Buffer.from(buffer.subarray(0, bytes - 2)).toString('utf16le');
 }
 
+/** A mark parameter's own bytes, by PDFium's two-call size protocol; `null` where the key holds no string. */
+function markBytes(call: (buffer: Uint8Array | null, length: number, needed: number[]) => unknown, what: string): Uint8Array | null {
+  const needed = [0];
+  if (numberFrom(call(null, 0, needed), what) !== 1) return null;
+  const bytes = needed[0] ?? 0;
+  if (bytes === 0) return new Uint8Array();
+  if (bytes > MAX_MARK_STRING_BYTES) return null;
+  const buffer = new Uint8Array(bytes);
+  if (numberFrom(call(buffer, buffer.length, needed), what) !== 1) return null;
+  return buffer;
+}
+
 /**
  * The marked content `from` stands in, set on `to` ([ADR-0181](../../../docs/DECISIONS/0181-right-to-left-text-is-written-in-drawing-order-and-read-back-as-typed.md)
  * Decision 8): each mark's name and the parameters PDFium can both read and set (numbers and strings, an `MCID` among
@@ -3980,11 +4106,12 @@ function actualTextOf(bindings: Bound, object: unknown): string | undefined {
     if (mark === null) continue;
     const kind = numberFrom(bindings.markParamType(mark, ACTUAL_TEXT), 'FPDFPageObjMark_GetParamValueType');
     if (kind !== MARK_STRING) continue;
-    const text = markString(
-      (buffer, length, needed) => bindings.markParamString(mark, ACTUAL_TEXT, buffer, length, needed),
-      'FPDFPageObjMark_GetParamStringValue',
+    // AS BYTES, decoded by the PDF's own rule (`pdfTextString`): the string call reads UTF-16 as UTF-8 and answers NULs.
+    const bytes = markBytes(
+      (buffer, length, needed) => bindings.markParamBlob(mark, ACTUAL_TEXT, buffer, length, needed),
+      'FPDFPageObjMark_GetParamBlobValue',
     );
-    if (text !== null) return text;
+    if (bytes !== null) return pdfTextString(bytes);
   }
   return undefined;
 }
@@ -4080,7 +4207,14 @@ function copyMarks(bindings: Bound, document: unknown, from: unknown, to: unknow
         if (numberFrom(bindings.markParamInt(mark, key, value), 'FPDFPageObjMark_GetParamIntValue') === 1) {
           numberFrom(bindings.markSetInt(document, to, made, key, value[0] ?? 0), 'FPDFPageObjMark_SetIntParam');
         }
-      } else if (kind === MARK_STRING || kind === MARK_NAME) {
+      } else if (kind === MARK_STRING) {
+        // A STRING'S BYTES, carried as they are: through the string call a UTF-16 one would arrive as NULs.
+        const bytes = markBytes(
+          (buffer, length, needed) => bindings.markParamBlob(mark, key, buffer, length, needed),
+          'FPDFPageObjMark_GetParamBlobValue',
+        );
+        if (bytes !== null) numberFrom(bindings.markSetBlob(document, to, made, key, bytes, bytes.length), 'FPDFPageObjMark_SetBlobParam');
+      } else if (kind === MARK_NAME) {
         const text = markString(
           (buffer, length, needed) => bindings.markParamString(mark, key, buffer, length, needed),
           'FPDFPageObjMark_GetParamStringValue',

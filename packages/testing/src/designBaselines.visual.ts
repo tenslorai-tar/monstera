@@ -564,3 +564,65 @@ for (const look of LOOKS) {
     }
   });
 }
+
+// EDIT TEXT'S OWN SCREENS (the local agent's walk, item 9): a block open with its words, the Properties panel's font list
+// open over it, and Settings' Editing page. No baseline showed any of them, so the editor's frame, handles and panel
+// could change unseen.
+const EDITED = asDocId('00000000-0000-4000-8000-0000000000f4');
+const EDIT_RUN = { size: 14, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false, italic: false, bold: false } as const;
+
+async function openForEditing(page: Page, look: Look): Promise<void> {
+  const document = await PDFDocument.create();
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  const words = 'A paragraph of words to edit';
+  document.addPage([612, 792]).drawText(words, { x: 100, y: 690, size: 14, font });
+  const bytes = await document.save();
+  const box = { x0: 100, y0: 686, x1: 100 + font.widthOfTextAtSize(words, 14), y1: 702 };
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await bridgeUnder(page, look, {
+    opens: [{ kind: 'opened', docId: EDITED, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'Edit.pdf' }],
+    documentBytes: new Map([[EDITED, bytes]]),
+    textRewrite: 'operators',
+    textBlocks: [{ box, lines: [{ runs: [{ index: 3, text: words, style: EDIT_RUN }], box, soft: false, baseline: 690 }], style: EDIT_RUN, shape: { align: 'left', firstIndent: 0 } }],
+  });
+  await page.goto('/');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', look.name);
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  await documentDrawn(page);
+  await runCommand(page, 'Edit text on the page');
+  const outline = page.locator('[data-text-edit-layer="0"] [data-text-block="0"]');
+  await outline.click();
+  await expect(page.locator('[data-kit-frame]')).toHaveAttribute('data-kit-mode', 'box');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('[data-kit-surface]')).toBeFocused();
+}
+
+for (const look of LOOKS) {
+  test(`${look.name}: Edit text with a block open, and its font list, match their baselines`, async ({ page }) => {
+    await openForEditing(page, look);
+    await parkPointer(page);
+    // THE FRAME, ITS HANDLES AND THE WORDS, the page's raster hidden so the picture is the editor's own.
+    await expect(page.locator('[data-text-edit-layer="0"]')).toHaveScreenshot(`${look.name}-edit-text-open.png`, { stylePath: RASTER_HIDDEN });
+    const panel = page.locator('[data-text-properties]');
+    await panel.getByRole('button', { name: /^Font:/u }).click();
+    await expect(panel.getByRole('combobox', { name: 'Search fonts' })).toBeFocused();
+    await parkPointer(page);
+    await expect(panel).toHaveScreenshot(`${look.name}-edit-text-font-list.png`);
+  });
+
+  test(`${look.name}: Settings, its Editing page, matches its baseline`, async ({ page }) => {
+    const bytes = await blankPdf();
+    await bridgeUnder(page, look, {
+      opens: [{ kind: 'opened', docId: EDITED, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'Blank.pdf' }],
+      documentBytes: new Map([[EDITED, bytes]]),
+    });
+    await page.goto('/');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', look.name);
+    await runCommand(page, 'Settings');
+    await page.getByRole('navigation', { name: 'Settings pages' }).getByRole('button', { name: 'Editing defaults', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Settings' });
+    await expect(dialog).toBeVisible();
+    await parkPointer(page);
+    await expect(dialog).toHaveScreenshot(`${look.name}-settings-editing.png`);
+  });
+}

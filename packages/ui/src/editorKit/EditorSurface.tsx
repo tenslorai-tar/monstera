@@ -18,8 +18,9 @@ import {
   wholeBlock,
   wordStep,
 } from './model.js';
-import { AS_DRAWN_CLASS, type Look, paragraphElement, restyleParagraph } from './paint.js';
+import { AS_DRAWN_CLASS, type DrawnWordPlace, fitDrawnLines, type Look, paragraphElement, restyleParagraph } from './paint.js';
 import type { EditorStore } from './store.js';
+import { exactCaretOf, holdAnchorAtPress } from '../pressAnchor.js';
 
 /**
  * The kit's editable surface ([ADR-0271](../../../../docs/DECISIONS/0271-the-edit-text-editor-is-rebuilt-on-the-kept-writer.md)
@@ -50,9 +51,18 @@ export interface EditorSurfaceProps {
   readonly look: Look;
   /**
    * The paragraphs as the editor opened over a drawing of them, and where that drawing broke each one's lines: a paragraph
-   * that is still that object, with every paragraph above it, is laid out at those breaks and not painted (`paint.ts`).
+   * that is still that object, with every paragraph above it, is laid out at those breaks and not painted (`paint.ts`),
+   * each of its lines fitted to the width the drawing gives it in `widths` (`fitDrawnLines`).
    */
-  readonly drawn?: { readonly paragraphs: readonly Paragraph[]; readonly wraps: readonly (readonly number[])[] } | undefined;
+  readonly drawn?:
+    | {
+        readonly paragraphs: readonly Paragraph[];
+        readonly wraps: readonly (readonly number[])[];
+        readonly widths: readonly (readonly number[])[];
+        /** Where the drawing puts each word of each line, where it says: what each line is fitted by, word by word. */
+        readonly words?: readonly (readonly (readonly DrawnWordPlace[])[])[];
+      }
+    | undefined;
   readonly label: string;
   readonly className?: string;
   readonly style?: React.CSSProperties;
@@ -123,7 +133,9 @@ export function EditorSurface({ store, look, drawn, label, className, style, edi
           }
           return kept.element;
         }
-        const made = paragraphElement(owner, paragraph, index, now, wraps);
+        // EACH DRAWN WORD IN SPANS OF ITS OWN, so it can be fitted where the page draws it (`fitDrawnLines`).
+        const cuts = asDrawn ? (was?.words?.[index] ?? []).flatMap((line) => line.flatMap((word) => [word.from, word.to])) : [];
+        const made = paragraphElement(owner, paragraph, index, now, wraps, cuts);
         built.set(paragraph, { element: made, asDrawn, look: now });
         return made;
       });
@@ -145,6 +157,14 @@ export function EditorSurface({ store, look, drawn, label, className, style, edi
         const elements = lay(model.paragraphs, moved);
         const children = Array.from(element.children);
         if (children.length !== elements.length || children.some((child, at) => child !== elements[at])) element.replaceChildren(...elements);
+        // EACH LINE AS WIDE AS THE PAGE DRAWS IT, now it is laid out: its letters over the page's (`fitDrawnLines`).
+        const widths = latest.current.drawn?.widths;
+        const words = latest.current.drawn?.words;
+        if (widths !== undefined) {
+          for (const [index, row] of elements.entries()) {
+            if (row.classList.contains(AS_DRAWN_CLASS)) fitDrawnLines(row, widths[index] ?? [], now.zoom, words?.[index] ?? []);
+          }
+        }
         // THE OPENING'S PLACES, read once, in points so a zoom does not move them.
         openedTops ??= elements.map((row) => row.offsetTop / now.zoom);
         let more = false;
@@ -352,7 +372,10 @@ export function EditorSurface({ store, look, drawn, label, className, style, edi
     element.addEventListener('copy', onCopy);
     element.addEventListener('cut', onCut);
     owner.addEventListener('selectionchange', onSelectionChange);
+    // A DRAG'S ANCHOR STAYS AT ITS PRESS (`holdAnchorAtPress`): narrow letters fail Chromium's floored re-hit-test most.
+    const unhold = holdAnchorAtPress(element, exactCaretOf);
     return () => {
+      unhold();
       unsubscribe();
       repaint.current = undefined;
       element.removeEventListener('beforeinput', onBeforeInput);

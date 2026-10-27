@@ -5,6 +5,8 @@ import {
   type ListedObject,
   MAX_EDIT_RUNS,
   MAX_EDIT_TEXT,
+  MAX_INSERT_TEXT,
+  pageInsertSchema,
   arrangeNeighbourOf,
   blockEditOf,
   blocksOfEdit,
@@ -15,7 +17,8 @@ import {
   formPathSchema,
   MAX_FORM_DEPTH,
   sameStream,
-  streamsOf,
+  oneCommand,
+  commandsOf,
   ocrPageSchema,
   replaceTextObjectSchema,
   readsUnpacked,
@@ -414,6 +417,15 @@ describe('which page is read again unpacked (ADR-0232)', () => {
     expect(readsUnpacked(36, 'operators')).toBe(false);
   });
 
+  it('an added box takes a paste far past the 4,096 characters it once refused, to its bound (ADR-0273 Decision 5)', () => {
+    const insert = (text: string) => ({ left: 72, baseline: 700, measure: 400, size: 12, text });
+    const wire = (text: string) => ({ kind: 'editTextOperators', page: 0, ...blockEditOf([]), inserts: [insert(text)], fit: 'reflow', version: 1 });
+    expect(editTextOperatorsSchema.safeParse(wire('Pasted words. '.repeat(1000))).success).toBe(true);
+    expect(pageInsertSchema.safeParse(insert('x'.repeat(MAX_INSERT_TEXT))).success).toBe(true);
+    // CONTROL: the bound is still there.
+    expect(pageInsertSchema.safeParse(insert('x'.repeat(MAX_INSERT_TEXT + 1))).success).toBe(false);
+  });
+
   it('an edit carries unpack only as editTextBlock, and the strict operators command refuses it', () => {
     const wire = { page: 0, ...blockEditOf([{ lines: [[1]], soft: [false], text: 'x' }]), fit: 'reflow', version: 1 };
     expect(editTextBlockSchema.safeParse({ kind: 'editTextBlock', ...wire, unpack: true }).success).toBe(true);
@@ -480,11 +492,21 @@ describe('a page’s blocks by stream (ADR-0269)', () => {
 
   it('groups the page’s own blocks and each form’s, in the order each stream first comes', () => {
     const blocks = [{ id: 'a' }, { id: 'b' }, { id: 'c', form: fm1 }, { id: 'd', form: fm1Again }, { id: 'e', form: fm1 }];
-    expect(streamsOf(blocks).map((stream) => [stream.form, stream.blocks.map((block) => block.id)])).toStrictEqual([
+    expect(commandsOf(blocks).map((stream) => [stream.form, stream.blocks.map((block) => block.id)])).toStrictEqual([
       [null, ['a', 'b']],
       [fm1, ['c', 'e']],
       [fm1Again, ['d']],
     ]);
+  });
+
+  it('sends text set at an angle by a command of its own, apart from upright text in the same stream (ADR-0273)', () => {
+    const turned = [0, 1, -1, 0] as const;
+    const blocks = [{ id: 'a' }, { id: 'b', frame: turned }, { id: 'c' }, { id: 'd', frame: [1e-6, 1, -1, 1e-6] as const }];
+    expect(commandsOf(blocks).map((group) => group.blocks.map((block) => block.id))).toStrictEqual([['a', 'c'], ['b', 'd']]);
+    expect(oneCommand({}, { frame: turned })).toBe(false);
+    // CONTROL: one frame, to a file's float noise, is one command; and upright with upright is too.
+    expect(oneCommand({ frame: turned }, { frame: [1e-6, 1, -1, 1e-6] })).toBe(true);
+    expect(oneCommand({}, {})).toBe(true);
   });
 
   it('tells two placements of one form apart, and a form from the page', () => {
@@ -500,5 +522,12 @@ describe('a page’s blocks by stream (ADR-0269)', () => {
     expect(formPathSchema.safeParse([]).success).toBe(false);
     expect(formPathSchema.safeParse(Array.from({ length: MAX_FORM_DEPTH + 1 }, () => fm1[0])).success).toBe(false);
     expect(formPathSchema.safeParse([{ name: 'F\u0000m', occurrence: 0 }]).success).toBe(false);
+  });
+
+  it('takes a resource name as long as ISO 32000-2 allows, 127, and refuses one past it', () => {
+    // The bound was 64, below the format's own limit, so a valid file's longer name left its form's text unoffered.
+    expect(formPathSchema.safeParse([{ name: 'F'.repeat(127), occurrence: 0 }]).success).toBe(true);
+    // CONTROL: past the format's limit no valid file names a resource, and the schema still has a bound.
+    expect(formPathSchema.safeParse([{ name: 'F'.repeat(128), occurrence: 0 }]).success).toBe(false);
   });
 });

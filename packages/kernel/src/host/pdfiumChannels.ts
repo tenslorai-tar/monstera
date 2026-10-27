@@ -21,6 +21,7 @@ import {
   sessionSchema,
 } from './engineChannels.js';
 import { pageRunsSchema } from './pageRunsWire.js';
+import { MAX_DRAWN_MARKERS } from '../textLines.js';
 
 /**
  * The channel set of the **PDFium** host
@@ -460,6 +461,36 @@ const basePdfiumChannels = {
                  * (`/MonsteraMeasure`, ADR-0097's correction of 2026-10-17); absent where none is.
                  */
                 measure: z.number().positive().max(2 * MAX_PAGE_COORDINATE).exactOptional(),
+                /** An upright run's words where the page draws them (`drawnWordsOf`): no more than its text has letters. */
+                words: z
+                  .array(
+                    z
+                      .object({
+                        from: z.number().int().nonnegative().max(PDFIUM_PRIOR_TEXT_MAX),
+                        to: z.number().int().nonnegative().max(PDFIUM_PRIOR_TEXT_MAX),
+                        x0: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
+                        x1: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
+                      })
+                      .strict(),
+                  )
+                  .max(PDFIUM_PRIOR_TEXT_MAX)
+                  .readonly()
+                  .exactOptional(),
+                /**
+                 * Where the run is not upright, its frame and its box and first baseline in that frame (`RunFrame`,
+                 * ADR-0273); absent for upright text.
+                 */
+                frame: z
+                  .object({
+                    matrix: z.tuple([z.number(), z.number(), z.number(), z.number()]).readonly(),
+                    left: z.number(),
+                    right: z.number(),
+                    bottom: z.number(),
+                    top: z.number(),
+                    baseline: z.number(),
+                  })
+                  .strict()
+                  .exactOptional(),
               })
               .strict()
               // A RUN ENDS AT OR AFTER ITS START: a host answering otherwise names objects that are no run.
@@ -494,6 +525,10 @@ const basePdfiumChannels = {
           .object({ x0: z.number(), y0: z.number(), x1: z.number(), y1: z.number() })
           .strict()
           .nullable(),
+        /** The small shapes the page draws as a list's bullets, by box (`drawnMarkersOf`): what begins a list entry. */
+        markers: z
+          .array(z.object({ x0: z.number(), y0: z.number(), x1: z.number(), y1: z.number() }).strict())
+          .max(MAX_DRAWN_MARKERS),
       })
       .strict(),
     // THE BYTE-IMAGE WIRE'S CODES, spelt out because this channel is not one of

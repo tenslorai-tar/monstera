@@ -482,8 +482,16 @@ const hebrewVisual = (text) => [...text].reverse().join('');
  *   neighbour: string,
  *   must: string[], mustNot: string[],
  *   build: (variant: Variant) => Promise<Built>,
+ *   list?: { word: string, y: number }[],
  * }} Shape
+ *
+ * `list` names a page's list items, each by its first word and the baseline it stands on: every edit of the page must
+ * leave each item's marker (a bullet as a character or a shape, a number) where it is and as far from the item's first
+ * letter as it was (`listMarkerFailures`).
  */
+
+/** The items of a list of `words` whose first baseline is `y`, one `leading` below another. @param {string[]} words @param {number} y @param {number} leading */
+const itemsAt = (words, y, leading) => words.map((word, k) => ({ word, y: y - k * leading }));
 
 /** A one-page shape from a function that fills a sheet. @param {(sheet: Sheet, faces: Awaited<ReturnType<typeof documentOf>>['faces'], doc: PDFDocument) => Promise<Record<string, unknown> | void>} fill */
 function onePage(fill) {
@@ -648,6 +656,8 @@ export const SHAPES = [
     neighbour: 'same-list',
     must: [...AGREED.must, 'keep every bullet where it is, in its own font or drawing'],
     mustNot: AGREED.mustNot,
+    // EVERY ITEM OF THE THREE LISTS, whose bullet must keep its place and its gap to the item's first letter.
+    list: [700, 620, 540].flatMap((y) => itemsAt(['Water', 'Turn', 'Sweep'], y, 16)),
     build: onePage(async (sheet, faces) => {
       const helvetica = await faces.helvetica();
       const symbol = await faces.symbol();
@@ -673,6 +683,12 @@ export const SHAPES = [
     neighbour: 'numbers',
     must: [...AGREED.must, 'keep each number at its item'],
     mustNot: AGREED.mustNot,
+    // EACH NUMBERED ITEM, its number at its gap; the second line of the first item carries no number.
+    list: [
+      { word: 'Order', y: 700 },
+      { word: 'Plant', y: 668 },
+      { word: 'Mark', y: 652 },
+    ],
     build: onePage(async (sheet, faces) => {
       const helvetica = await faces.helvetica();
       sheet.paragraph({ id: 'numbers', role: 'the numbers, a text object each', face: helvetica, size: 12, leading: 16, x: 72, y: 700, lines: ['1.', '', '2.', '3.'] });

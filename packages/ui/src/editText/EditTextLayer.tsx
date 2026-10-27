@@ -1,6 +1,6 @@
 import { useLingui } from '@lingui/react';
 import type { BlockFormatting, EditedBlock, FormPath, PageInsert, WindowEditAction } from '@monstera/contract';
-import { type DocVersion, NEW_TEXT_MARGIN } from '@monstera/shared';
+import { type DocVersion, NEW_TEXT_MARGIN, oneLineReach } from '@monstera/shared';
 import { type ReactElement, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { OverlayPage } from '../annotations/annotationSpace.js';
@@ -11,23 +11,19 @@ import {
   TEXT_EDIT_BLOCK_LABEL,
   TEXT_EDIT_COVERS,
   TEXT_EDIT_LAYER_LABEL,
-  TEXT_EDIT_MIRRORED,
   TEXT_EDIT_NONE,
   TEXT_EDIT_PAST_PAGE,
   TEXT_EDIT_RECOGNISE,
-  TEXT_EDIT_SLANTED,
   TEXT_EDIT_TRUNCATED,
-  TEXT_EDIT_TURNED,
   TEXT_EDIT_UNREADABLE,
-  TEXT_EDIT_VERTICAL,
 } from '../messages/en.js';
 import { paperAround } from '../paperAround.js';
 import type { TextBlock } from '../textBlock.js';
-import { neighbourOf, wordsOfBlock } from '../textBlockOps.js';
+import { neighbourOf, pageBox, wordsOfBlock } from '../textBlockOps.js';
 import { AreaPatch, type CssArea, type PatchArea } from './AreaPatch.js';
 import { modelOfBlock } from './blockModel.js';
 import { BlockEditor, type Opening } from './BlockEditor.js';
-import { type FreshBox, type PageBlocks, type Placed, boxStyle, fontsOfPage, freshBox, insertOf, newlyCovered, overlaps, pastItsPage, place } from './editing.js';
+import { type FreshBox, type PageBlocks, type Placed, boxStyle, cssMatrixOf, fontsOfPage, freshBox, insertOf, newlyCovered, overlaps, pastItsPage, place } from './editing.js';
 import { type ShownPage, runFamiliesOf } from './pdfjsFaces.js';
 import { type FaceKind, type FaceRead, type RunFaces, useRunFaces } from './runFaces.js';
 
@@ -71,7 +67,8 @@ export interface EditTextLayerProps {
   readonly blockFaces: (block: TextBlock, read: BlocksRead) => Promise<BlockFaces>;
   /** The text PDF.js shows on this page and the face it loaded for each piece; absent where no page is drawn. */
   readonly shown?: () => Promise<ShownPage | undefined>;
-  readonly objects?: () => Promise<{ readonly version: DocVersion; readonly boxes: readonly TextBlock['box'][] } | undefined>;
+  /** The page's pictures and drawings that meet `within`, at the version read (B1.6). */
+  readonly objects?: (within: TextBlock['box']) => Promise<{ readonly version: DocVersion; readonly boxes: readonly TextBlock['box'][] } | undefined>;
   readonly onRecognise?: () => void;
   readonly pictureNoted?: boolean;
   readonly onLeave: () => void;
@@ -102,15 +99,15 @@ const NO_FAMILIES = (): Promise<(font: string) => string | undefined> => Promise
  * read, turned as the page is, and the editor's frame as it last stood, which is larger where the words grew.
  */
 function editedArea(root: HTMLElement | null, placed: Placed, zoom: number): CssArea {
-  const turn = (placed.rotation * Math.PI) / 180;
-  const [cos, sin] = [Math.cos(turn), Math.sin(turn)];
-  // CSS TURNS ABOUT THE PLACED CORNER, clockwise with y down: (x, y) lands at (x cos - y sin, x sin + y cos) from it.
+  // CSS CARRIES THE BOX ABOUT THE PLACED CORNER by its matrix, the page's turn or a framed block's (ADR-0273): (x, y)
+  // lands at (a x + c y, b x + d y) from it.
+  const [a, b, c, d] = cssMatrixOf(placed);
   const corners = [
     [0, 0],
     [placed.width, 0],
     [0, placed.height],
     [placed.width, placed.height],
-  ].map(([x = 0, y = 0]) => ({ x: placed.left + x * cos - y * sin, y: placed.top + x * sin + y * cos }));
+  ].map(([x = 0, y = 0]) => ({ x: placed.left + a * x + c * y, y: placed.top + b * x + d * y }));
   const frame = root?.querySelector('[data-kit-frame]');
   const box = frame?.getBoundingClientRect();
   // A FRAME WITH NO SIZE is one not laid out, whose corner is the viewport's origin and no part of the edit.
@@ -127,6 +124,17 @@ function editedArea(root: HTMLElement | null, placed: Placed, zoom: number): Css
     height: Math.max(...corners.map((corner) => corner.y)) + PATCH_MARGIN - top,
     zoom,
   };
+}
+
+/**
+ * The overlay's own box around a placed block's corners: where the paper beside a block set at an angle is sampled
+ * (ADR-0273), since its own box's corners are not the overlay's.
+ */
+function overlayBox(placed: Placed): { left: number; top: number; width: number; height: number } {
+  const [a, b, c, d] = cssMatrixOf(placed);
+  const xs = [0, a * placed.width, c * placed.height, a * placed.width + c * placed.height].map((x) => placed.left + x);
+  const ys = [0, b * placed.width, d * placed.height, b * placed.width + d * placed.height].map((y) => placed.top + y);
+  return { left: Math.min(...xs), top: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) };
 }
 
 /** A box's area in PDF points squared: the order outlines are stacked in. */
@@ -206,29 +214,20 @@ export function EditTextLayer({
   const regrown =
     written === undefined || blocks === undefined || blocks.version === written.version
       ? -1
-      : blocks.blocks.findIndex((block) => overlaps(block.box, written.box) && pastItsPage(block.box, geometry.crop));
-  // THE BLOCK A WRITE GREW, and what it now runs over that it did not before (B1.6).
-  const grown = written === undefined || blocks === undefined || blocks.version === written.version ? undefined : blocks.blocks.find((block) => overlaps(block.box, written.box));
+      : blocks.blocks.findIndex((block) => overlaps(pageBox(block), written.box) && pastItsPage(pageBox(block), geometry.crop));
+  // THE BLOCK A WRITE GREW, and what it now runs over that it did not before (B1.6). EVERY BOX HERE IS THE PAGE'S: a block
+  // set at an angle has its own in its frame (ADR-0273), and two frames' boxes cannot be compared.
+  const grown = written === undefined || blocks === undefined || blocks.version === written.version ? undefined : blocks.blocks.find((block) => overlaps(pageBox(block), written.box));
   const coveredWords =
     grown === undefined || written === undefined || blocks === undefined
       ? 0
       : newlyCovered(
           written.box,
-          grown.box,
-          blocks.blocks.filter((block) => block !== grown).map((block) => block.box),
+          pageBox(grown),
+          blocks.blocks.filter((block) => block !== grown).map((block) => pageBox(block)),
         );
   const [coveredObjects, setCoveredObjects] = useState<{ readonly version: DocVersion; readonly count: number }>();
   const readAt = blocks?.version;
-  useEffect(() => {
-    if (grown === undefined || written === undefined || objects === undefined || readAt === undefined) return undefined;
-    let current = true;
-    void objects().then((read) => {
-      if (current && read?.version === readAt) setCoveredObjects({ version: readAt, count: newlyCovered(written.box, grown.box, read.boxes) });
-    });
-    return () => {
-      current = false;
-    };
-  }, [grown, written, objects, readAt]);
   const covers = grown !== undefined && (coveredWords > 0 || (coveredObjects?.version === readAt && (coveredObjects?.count ?? 0) > 0));
   /** The block pressed WHILE ANOTHER WAS OPEN, opened in the read after that one's write (ADR-0180 Decision 8). */
   const [next, setNext] = useState<{ readonly box: TextBlock['box']; readonly opening: Opening; readonly version: DocVersion } | undefined>();
@@ -236,7 +235,7 @@ export function EditTextLayer({
   useEffect(() => {
     nextRef.current = next;
   }, [next]);
-  const handed = next === undefined || blocks === undefined || blocks.version === next.version ? -1 : blocks.blocks.findIndex((block) => overlaps(block.box, next.box));
+  const handed = next === undefined || blocks === undefined || blocks.version === next.version ? -1 : blocks.blocks.findIndex((block) => overlaps(pageBox(block), next.box));
   const open = chosen ?? (handed === -1 ? (regrown === -1 ? undefined : regrown) : handed);
   const opening: Opening = chosen === undefined ? (handed === open ? (next?.opening ?? { at: 'box' }) : { at: 'end' }) : (opened?.opening ?? { at: 'box' });
   const finishingRef = useRef<(() => Promise<void>) | undefined>(undefined);
@@ -250,6 +249,34 @@ export function EditTextLayer({
   const [fresh, setFresh] = useState<{ readonly made: FreshBox; readonly version: DocVersion } | undefined>();
   const freshOpen = fresh !== undefined && fresh.version === blocks?.version ? fresh.made : undefined;
   const editing = open !== undefined || freshOpen !== undefined;
+
+  // THE CHECK AFTER A WRITE (B1.6), once per write and only when the editor has let go, about the written block's area
+  // alone: before, it read every object of the page, in many parts on a dense page, each a walk in the document's lane
+  // ahead of the next finish (77 reads, 125.7 s on the owner's laptop, ADR-0274's measurement).
+  const objectsNow = useRef(objects);
+  useEffect(() => {
+    objectsNow.current = objects;
+  }, [objects]);
+  // THE BOX BY VALUE, so a render that rebuilt the same block asks nothing.
+  const { x0: gx0, y0: gy0, x1: gx1, y1: gy1 } = grown === undefined ? { x0: Number.NaN, y0: Number.NaN, x1: Number.NaN, y1: Number.NaN } : pageBox(grown);
+  useEffect(() => {
+    const ask = objectsNow.current;
+    const grownBox = { x0: gx0, y0: gy0, x1: gx1, y1: gy1 };
+    if (editing || Number.isNaN(gx0) || written === undefined || ask === undefined || readAt === undefined) return undefined;
+    let current = true;
+    const area = {
+      x0: Math.min(written.box.x0, grownBox.x0),
+      y0: Math.min(written.box.y0, grownBox.y0),
+      x1: Math.max(written.box.x1, grownBox.x1),
+      y1: Math.max(written.box.y1, grownBox.y1),
+    };
+    void ask(area).then((read) => {
+      if (current && read?.version === readAt) setCoveredObjects({ version: readAt, count: newlyCovered(written.box, grownBox, read.boxes) });
+    });
+    return () => {
+      current = false;
+    };
+  }, [editing, gx0, gy0, gx1, gy1, written, readAt]);
 
   const openBlock = open === undefined ? undefined : blocks?.blocks[open];
   // THE OPEN BLOCK'S FACES, read once as it is selected and kept for its life (`runFaces.ts`).
@@ -287,7 +314,7 @@ export function EditTextLayer({
   if (unreadable && blocks === undefined) notes.push(<p key="unreadable">{_(TEXT_EDIT_UNREADABLE)}</p>);
   if (blocks !== undefined) {
     // NOT WHERE THE PAGE ITSELF SAYS IT IS A PICTURE: its note says so and makes the offer there (`PageList`, W7).
-    if (!pictureNoted && blocks.blocks.length === 0 && blocks.unaddressable === 0 && blocks.rotated === 0) {
+    if (!pictureNoted && blocks.blocks.length === 0 && blocks.unaddressable === 0) {
       // A PAGE WITH NO TEXT MAY BE A SCAN (ADR-0181 Decision 9): it offers to be recognised.
       notes.push(
         <p key="none">
@@ -306,11 +333,6 @@ export function EditTextLayer({
     if (blocks.truncated) notes.push(<p key="truncated">{_(TEXT_EDIT_TRUNCATED)}</p>);
     // A WRITE THAT GREW OVER SOMETHING is said, not undone (B1.6): nothing else moves, so the person is told.
     if (covers) notes.push(<p key="covers" role="status">{_(TEXT_EDIT_COVERS)}</p>);
-    const angled = blocks.angled;
-    if (angled.turned > 0) notes.push(<p key="turned">{_(TEXT_EDIT_TURNED)}</p>);
-    if (angled.vertical > 0) notes.push(<p key="vertical">{_(TEXT_EDIT_VERTICAL)}</p>);
-    if (angled.slanted > 0) notes.push(<p key="slanted">{_(TEXT_EDIT_SLANTED)}</p>);
-    if (angled.mirrored > 0) notes.push(<p key="mirrored">{_(TEXT_EDIT_MIRRORED)}</p>);
   }
 
   /** What a press or a key on an outline asks: the box, or the caret at a double press's point. */
@@ -319,7 +341,7 @@ export function EditTextLayer({
     if (editing && open !== at) {
       // ANOTHER EDITOR IS OPEN: it finishes on the press that reached here, and this block opens in the read after it.
       if (stuckRef.current) return;
-      setNext({ box: block.box, opening: how, version: blocks.version });
+      setNext({ box: pageBox(block), opening: how, version: blocks.version });
       void finishingRef.current?.();
       return;
     }
@@ -352,7 +374,7 @@ export function EditTextLayer({
         <AreaPatch after={patching.after} area={patching.area} key={`patch-${String(patching.after)}`} onDrawn={onPatched} patch={patch} zoom={geometry.zoom} />
       )}
       {blocks?.blocks.map((block, at) => {
-        const placed = place(block.box, geometry);
+        const placed = place(block.box, geometry, block.frame);
         if (at === open && openedModel !== undefined) {
           return (
             <BlockEditor
@@ -369,7 +391,7 @@ export function EditTextLayer({
                 // THE BLOCK PRESSED WHILE THIS ONE WAS OPEN, when this wrote nothing: it opens where it is.
                 const waiting = nextRef.current;
                 if (outcome === 'unchanged' && waiting !== undefined) {
-                  const target = blocks.blocks.findIndex((other, where) => where !== at && overlaps(other.box, waiting.box));
+                  const target = blocks.blocks.findIndex((other, where) => where !== at && overlaps(pageBox(other), waiting.box));
                   if (target !== -1) {
                     setOpen(target, waiting.opening);
                     return;
@@ -393,7 +415,7 @@ export function EditTextLayer({
                 }
                 if (outcome !== 'written') setCommitting((current) => (current === at ? undefined : current));
                 if (outcome === 'written') {
-                  setWritten({ box: block.box, version: blocks.version });
+                  setWritten({ box: pageBox(block), version: blocks.version });
                   // THE AREA THE WRITE CHANGED, measured while the editor still shows it: the block as read and the frame
                   // as it grew, since growth overlaps what is below and the page there changed too.
                   setPatching({ after: blocks.version, area: editedArea(root.current, placed, geometry.zoom) });
@@ -404,10 +426,20 @@ export function EditTextLayer({
               opened={openedModel}
               opening={opening}
               pageFonts={fontsOfPage(blocks.blocks)}
-              paper={paperAround(placed, paperAt)}
+              paper={paperAround(placed.matrix === undefined ? placed : overlayBox(placed), paperAt)}
               parting={chosen === at && opened?.parting === true}
-              past={pastItsPage(block.box, geometry.crop)}
+              past={pastItsPage(pageBox(block), geometry.crop)}
               placed={placed}
+              // A BLOCK OF ONE LINE, upright, grows to its column's edge or the page's margin before it wraps.
+              reach={
+                block.lines.length === 1 && block.frame === undefined
+                  ? oneLineReach(
+                      block.box,
+                      blocks.blocks.filter((other) => other !== block && other.frame === undefined).map((other) => other.box),
+                      { x0: geometry.crop[0], y0: geometry.crop[1], x1: geometry.crop[2], y1: geometry.crop[3] },
+                    )
+                  : undefined
+              }
               restructure={
                 onRestructure === undefined
                   ? undefined
@@ -425,12 +457,12 @@ export function EditTextLayer({
           );
         }
         const words = labelled[at] ?? '';
-        const past = pastItsPage(block.box, geometry.crop);
+        const past = pastItsPage(pageBox(block), geometry.crop);
         const outline = (
           <button
             aria-label={_(TEXT_EDIT_BLOCK_LABEL, { words: words.length > 40 ? `${words.slice(0, 40)}…` : words })}
             {...(past ? { 'aria-description': _(TEXT_EDIT_PAST_PAGE) } : {})}
-            className={past ? 'm-text-block m-text-block--past' : 'm-text-block'}
+            className={['m-text-block', past ? 'm-text-block--past' : '', adding ? 'm-text-block--adding' : ''].filter(Boolean).join(' ')}
             data-text-block={String(at)}
             key={`block-${String(blocks.version)}-${String(at)}`}
             onClick={(event) => {
@@ -452,7 +484,8 @@ export function EditTextLayer({
         ];
       })}
       {adding && blocks !== undefined && freshOpen === undefined ? (
-        // ADD TEXT: the empty page is a surface under the outlines, so a press on a block still edits that block.
+        // ADD TEXT: the page is a surface under the outlines, which take no press while it is armed, so a press over text
+        // places a box there too.
         <button
           aria-label={_(TEXT_ADD_SURFACE)}
           className="m-text-add-surface"
@@ -480,7 +513,7 @@ export function EditTextLayer({
             const waiting = nextRef.current;
             setFresh(undefined);
             if (outcome === 'unchanged' && waiting !== undefined) {
-              const target = blocks.blocks.findIndex((other) => overlaps(other.box, waiting.box));
+              const target = blocks.blocks.findIndex((other) => overlaps(pageBox(other), waiting.box));
               if (target !== -1) {
                 setOpen(target, waiting.opening);
                 return;

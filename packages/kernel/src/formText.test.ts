@@ -1,5 +1,5 @@
 import { PDFDocument as PdfLibDocument, PDFName, type PDFRef, StandardFonts } from '@cantoo/pdf-lib';
-import { blockEditOf, type CommandOfKind, type FormPath } from '@monstera/contract/host';
+import { blockEditOf, type CommandOfKind, type FormPath, MAX_FORM_PLACEMENTS } from '@monstera/contract/host';
 import { asDocVersion } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -158,6 +158,24 @@ describe('text inside a form (ADR-0269)', () => {
     } finally {
       await mupdfWriter.close(plain);
     }
+  });
+
+  it('counts the placements past the path’s bounds it leaves out, so the read says the page’s text is cut (ADR-0273 Decision 6)', async () => {
+    const pagesOf = async (count: number) => {
+      const session = await mupdfWriter.open(await formPage(Array.from({ length: count }, (_, at) => `q 1 0 0 1 ${String(at)} 0 cm /Fm1 Do Q`)));
+      try {
+        return await withDocument(session, (document) => formPagesDocument(document, 0));
+      } finally {
+        await mupdfWriter.close(session);
+      }
+    };
+    const past = await pagesOf(MAX_FORM_PLACEMENTS + 2);
+    expect(past.paths).toHaveLength(MAX_FORM_PLACEMENTS);
+    expect(past.omitted).toBe(2);
+    // CONTROL: at the bound nothing is left out, so a count of zero is not what every page answers.
+    const at = await pagesOf(MAX_FORM_PLACEMENTS);
+    expect(at.paths).toHaveLength(MAX_FORM_PLACEMENTS);
+    expect(at.omitted).toBe(0);
   });
 
   it('writes a word edited in a form into the form’s own stream, and leaves the page’s content as it was', async () => {

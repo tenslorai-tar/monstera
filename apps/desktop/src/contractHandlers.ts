@@ -67,6 +67,7 @@ import {
   type CapabilityRegistry,
   DocumentBusyError,
   DocumentNotOpenError,
+  StaleReadError,
   type DocumentService,
   EngineFormDataExportFailed,
   EngineAnnotationDataExportFailed,
@@ -3524,11 +3525,17 @@ function pageObjectsHandler(commands: DocumentCommands): ContractHandlers['docum
     docId,
     page,
     from,
+    within,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.pageObjects']>>> => {
     try {
       const { version, objects, truncated } = await commands.pageObjects(docId, page);
+      // ONLY WHAT MEETS THE AREA ASKED ABOUT, before the parts are cut, so a small area is one part and one walk.
+      const asked =
+        within === undefined
+          ? objects
+          : objects.filter((object) => object.left <= within.x1 && object.right >= within.x0 && object.bottom <= within.y1 && object.top >= within.y0);
       // A PART AT A TIME, `textBlocksHandler`'s reason: a page drawn one glyph per object is thousands of objects.
-      const part = listPart(objects, truncated, from, PAGE_OBJECTS_PART);
+      const part = listPart(asked, truncated, from, PAGE_OBJECTS_PART);
       return ok({ version, objects: part.items, next: part.next, truncated: part.truncated });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
@@ -3589,13 +3596,15 @@ function renderPageHandler(commands: DocumentCommands): ContractHandlers['docume
  * crosses — the host's channel and this channel's own schema — so nothing is checked here twice.
  */
 function blockFacesHandler(commands: DocumentCommands): ContractHandlers['document.blockFaces'] {
-  return async ({ docId, page, indices, form }): Promise<Awaited<ReturnType<ContractHandlers['document.blockFaces']>>> => {
+  return async ({ docId, page, indices, form, version: forVersion }): Promise<Awaited<ReturnType<ContractHandlers['document.blockFaces']>>> => {
     try {
-      const { version, fonts, runs } = await commands.blockFaces(docId, page, indices, form ?? null);
+      const { version, fonts, runs } = await commands.blockFaces(docId, page, indices, form ?? null, forVersion);
       return ok({ version, fonts, runs });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      // A WRITE REPLACED THE BLOCK first, and the read ran nothing (ADR-0274 Decision 3).
+      if (thrown instanceof StaleReadError) return err({ code: 'stale-target' });
       throw thrown;
     }
   };

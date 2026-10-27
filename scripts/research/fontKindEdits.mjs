@@ -98,7 +98,7 @@ const built = (relative) => import(pathToFileURL(join(ROOT, relative)).href);
 const pdfium = await built('packages/kernel/dist/pdfiumFfi.js');
 const { applyEditTextBlock } = await built('packages/kernel/dist/pdfiumTextEdit.js');
 const { EditRefusedError, TextNotWritableError } = await built('packages/kernel/dist/textEditRefusals.js');
-const { groupIntoBlocks, isEditedInPlace, blockableOf } = await built('packages/kernel/dist/textLines.js');
+const { groupIntoBlocks, isUpright, blockableOf } = await built('packages/kernel/dist/textLines.js');
 const { blockEditOf } = await built('packages/contract/dist/commands.js');
 pdfium.openPdfium(pdfiumLibrary(ROOT));
 
@@ -131,7 +131,7 @@ async function textObjects(bytes) {
  * @returns {any[]} `groupIntoBlocks`' answer, imported from the build by a computed path, which types as nothing
  */
 function blocksOf(runs) {
-  return groupIntoBlocks(runs.filter((run) => isEditedInPlace(run.style)).map((run) => blockableOf(run)));
+  return groupIntoBlocks(runs.filter((run) => isUpright(run.style)).map((run) => blockableOf(run)));
 }
 
 /** @param {any} block */

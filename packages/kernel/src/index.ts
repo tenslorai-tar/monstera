@@ -360,10 +360,13 @@ export {
   type EditableLine,
   type GroupableRun,
   type RisenBlock,
+  type FramedPlace,
   blockableOf,
+  groupInFrames,
   groupIntoBlocks,
   groupIntoLines,
-  isEditedInPlace,
+  inItsFrame,
+  isUpright,
   settingOf,
   softEnds,
   withRises,
@@ -451,6 +454,7 @@ export {
 } from './signingRefusals.js';
 export {
   DocumentBusyError,
+  StaleReadError,
   type DocumentContext,
   type BytesWriter,
   DocumentNotOpenError,

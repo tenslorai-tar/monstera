@@ -1,5 +1,5 @@
-import { type ContractClient, blocksReplaced, streamsOf, wordsOf } from '@monstera/contract';
-import { type DocId, type TextMatchOptions, compileQuery, lineText, paragraphsOfLines } from '@monstera/shared';
+import { type ContractClient, blocksReplaced, commandsOf, wordsOf } from '@monstera/contract';
+import { type DocId, type TextFrame, type TextMatchOptions, compileQuery, intoTextFrame, lineText, paragraphsOfLines } from '@monstera/shared';
 
 import type { CommandProblem } from '../dialogs/problemMessages.js';
 import { readWholeList } from '../readWholeList.js';
@@ -64,9 +64,10 @@ export async function replaceInDocument(
     }
     const read = await readPageBlocks(deps.client, docId, page);
     if (!read.ok) return { kind: 'refused', pages: written, problem: read.error };
-    // ONE COMMAND PER STREAM (ADR-0269): the page's own blocks, then each form's, all in the same undo step.
+    // ONE COMMAND PER STREAM AND FRAME (ADR-0269, ADR-0273): the page's own blocks, then each form's, and text set at an
+    // angle apart from upright text, all in the same undo step.
     let changed = false;
-    for (const stream of streamsOf(read.value.blocks)) {
+    for (const stream of commandsOf(read.value.blocks)) {
       const entries = blocksReplaced(stream.blocks, compiled.value.matchesIn, replace);
       if (entries.length === 0) continue;
       const outcome = await commitReplacement(deps, docId, page, read.value, stream.form, entries, step);
@@ -96,12 +97,15 @@ export async function replaceWordAt(
   if (!compiled.ok) return { kind: 'bad-pattern' };
   const read = await readPageBlocks(deps.client, docId, page);
   if (!read.ok) return { kind: 'refused', pages: 0, problem: read.error };
-  const holds = (box: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number }) =>
-    at.x >= box.x0 && at.x <= box.x1 && at.y >= box.y0 && at.y <= box.y1;
-  const blockAt = read.value.blocks.findIndex((block) => holds(block.box));
-  const block = read.value.blocks[blockAt];
+  // THE POINT IN EACH BLOCK'S OWN FRAME (ADR-0273): a block set at an angle holds its boxes there, so a page point is
+  // compared with them only once it is taken into that frame.
+  const inFrame = (frame: TextFrame | undefined) => (frame === undefined ? at : intoTextFrame(frame, at.x, at.y));
+  const holds = (point: { readonly x: number; readonly y: number }, box: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number }) =>
+    point.x >= box.x0 && point.x <= box.x1 && point.y >= box.y0 && point.y <= box.y1;
+  const block = read.value.blocks.find((each) => holds(inFrame(each.frame), each.box));
   if (block === undefined) return { kind: 'not-found' };
-  const lineAt = block.lines.findIndex((line) => holds(line.box));
+  const here = inFrame(block.frame);
+  const lineAt = block.lines.findIndex((line) => holds(here, line.box));
   const line = block.lines[lineAt];
   if (line === undefined) return { kind: 'not-found' };
   // WHERE THE LINE'S WORDS START among the block's, by the one join the words are made with: everything up to and
@@ -109,7 +113,7 @@ export async function replaceWordAt(
   const own = lineText(line.runs);
   const start = paragraphsOfLines(block.lines.slice(0, lineAt + 1).map((each) => ({ text: lineText(each.runs), soft: each.soft }))).length - own.length;
   // THE POINT ALONG THE LINE, as a place among its characters.
-  const along = start + ((at.x - line.box.x0) / Math.max(1, line.box.x1 - line.box.x0)) * own.length;
+  const along = start + ((here.x - line.box.x0) / Math.max(1, line.box.x1 - line.box.x0)) * own.length;
   const matches = compiled.value.matchesIn(wordsOf(block));
   let nearest = -1;
   let distance = Number.POSITIVE_INFINITY;
@@ -123,7 +127,7 @@ export async function replaceWordAt(
   });
   if (nearest === -1) return { kind: 'not-found' };
   // THE BLOCK'S OWN STREAM (ADR-0269), and the block's place among that stream's blocks.
-  const stream = streamsOf(read.value.blocks).find((each) => each.blocks.includes(block));
+  const stream = commandsOf(read.value.blocks).find((each) => each.blocks.includes(block));
   if (stream === undefined) return { kind: 'not-found' };
   const entries = blocksReplaced(stream.blocks, compiled.value.matchesIn, replacement, { block: stream.blocks.indexOf(block), occurrence: nearest });
   if (entries.length === 0) return { kind: 'not-found' };

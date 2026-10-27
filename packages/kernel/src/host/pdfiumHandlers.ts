@@ -94,6 +94,8 @@ export type HostTextRunsReader = (
   readonly unaddressable: number;
   /** The page box the runs are measured in, or `null`. `PageText`. */
   readonly box: PageText['box'];
+  /** The small shapes the page draws as a list's bullets. `PageText`. */
+  readonly markers: PageText['markers'];
 }>;
 
 /**
@@ -427,6 +429,7 @@ export function createPdfiumHandlers({
             truncated: found.truncated || truncated,
             unaddressable: found.unaddressable,
             box: found.box,
+            markers: [...found.markers],
           },
         };
       } catch {

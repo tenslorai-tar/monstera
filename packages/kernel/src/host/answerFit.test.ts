@@ -71,14 +71,14 @@ describe('the dense page’s text runs, at the product ceiling', () => {
   it('fit one answer and say so, and the answer is one the channel accepts', () => {
     const { kept, truncated } = boundedToAnswer(runs);
     // THE PAGE'S BOX TOO, as the host answers it: what the envelope's room is there for.
-    const answer = { runs: kept, truncated, unaddressable: 0, box: { x0: 0, y0: 0, x1: 612.0000305175781, y1: 791.9999694824219 } };
+    const answer = { runs: kept, truncated, unaddressable: 0, box: { x0: 0, y0: 0, x1: 612.0000305175781, y1: 791.9999694824219 }, markers: [] };
     expect(truncated).toBe(true);
     expect(answerBytes(answer)).toBeLessThanOrEqual(ENGINE_ANSWER_FILE_MAX_BYTES);
     expect(pdfiumChannels['engine/text-runs'].result.safeParse(JSON.parse(JSON.stringify(answer))).success).toBe(true);
   });
 
   it('CONTROL: cut by the count bound alone, the same page is over the ceiling, which is the refusal L6 met', () => {
-    const answer = { runs: runs.slice(0, ENGINE_TEXT_OBJECTS_MAX), truncated: true, unaddressable: 0, box: null };
+    const answer = { runs: runs.slice(0, ENGINE_TEXT_OBJECTS_MAX), truncated: true, unaddressable: 0, box: null, markers: [] };
     expect(answerBytes(answer)).toBeGreaterThan(ENGINE_ANSWER_FILE_MAX_BYTES);
   });
 });

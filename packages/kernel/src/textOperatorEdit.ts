@@ -5,6 +5,7 @@ import type { DrawnBoxes, Invert, MupdfSession } from './engineSeam.js';
 import { editFaces, editFacesBound, loadEditFaces } from './editFaces.js';
 import type { FaceSource } from './fontCatalogue.js';
 import { withDocument } from './mupdfWriter.js';
+import type { OperatorFaceSet as OperatorFaceSetType } from './operatorFaces.js';
 import type { PageFont } from './pageFonts.js';
 import { type ArrangeContext, type OperatorRefusal, type PageRuns, checkOperatorEdit, editOperators, pageFontsAsRead } from './operatorEdit.js';
 import { type Affine, PAPER_PIXELS_PER_POINT, coversInPageSpace } from './paperColour.js';
@@ -83,22 +84,61 @@ export function readingHolds(reading: string, words: string): boolean {
   return false;
 }
 
+/**
+ * What an operator edit answers: the drawn boxes and notes every writer answers, and how far down each edited block now
+ * reaches, its first and last baselines in the space its content is read in, as the writer set them. The reach stays in
+ * the process that wrote: the host forwards the boxes and notes by name, and a judge of the write (the corpus run's
+ * pixels) takes the block's whole new extent from it rather than from a reading that cannot tell a new letter from an
+ * old one in the same place.
+ */
+export interface OperatorWrite extends DrawnBoxes {
+  readonly reach: readonly { readonly first: number; readonly last: number }[];
+}
+
 export async function applyEditTextOperators(
   session: MupdfSession,
   command: CommandOfKind<'editTextOperators'>,
   read: PageRuns,
-): Promise<DrawnBoxes> {
+): Promise<OperatorWrite> {
   // THE FACE WRITER ON FIRST NEED, by a literal `import()` as the host loads pdf-lib (ADR-0121 Decision 3): it brings
   // HarfBuzz, +6.4 MB of resident set at import (measured 2026-10-06, Node 22.22.0 on Linux, three runs against a control
   // that imports nothing), which every MuPDF host would otherwise pay at start against a 100 MB fixed-cost budget.
   // Loaded only when the page's own fonts cannot carry the edit and this process was given a catalogue.
   // THE STANDARD-FONT TABLES the page's fonts are read with, on first need for the same reason: they bring pdf-lib.
   const standard = await loadStandardFonts();
-  const needed = editFacesBound() && (await needsAFace(session, command, read, standard));
-  // THE CATALOGUE'S MODULE TOO, where the host bound its folders (`bindEditFolders`): it brings HarfBuzz as well.
-  if (needed) await loadEditFaces();
-  const faceSet = needed ? (await import('./operatorFaces.js')).OperatorFaceSet : null;
-  return await withDocument(session, (document) => {
+  const bound = editFacesBound();
+  /** The catalogue's face set, loaded with its module, which brings HarfBuzz as well. */
+  const faceSetLoaded = async (): Promise<typeof OperatorFaceSetType> => {
+    await loadEditFaces();
+    return (await import('./operatorFaces.js')).OperatorFaceSet;
+  };
+  // ONE PASS where the page's own fonts carry the edit, and a second only where a word needs a face: the write itself
+  // asks, written with no face, and answers `undefined` before writing anything where it needs one. A dry run before every
+  // write doubled every write: measured 2026-10-27 on the text walk's dense page (39,201 runs), 2.5 of a heading edit's
+  // 7.5 seconds were the dry run's layout of a page whose own Helvetica carried the edit.
+  // A FORM KEEPS THE DRY RUN: making its placement its own copies it (`ownPlacement`) before anything is checked, and a
+  // second attempt would copy it again.
+  if (command.form === undefined) {
+    const once = await attempt(null, bound);
+    if (once !== undefined) return once;
+    const written = await attempt(await faceSetLoaded(), false);
+    if (written === undefined) throw new Error('an edit given its faces asked for faces again');
+    return written;
+  }
+  const needed = bound && (await needsAFace(session, command, read, standard));
+  const written = await attempt(needed ? await faceSetLoaded() : null, false);
+  if (written === undefined) throw new Error('an edit that may not ask for faces asked for them');
+  return written;
+
+  /**
+   * The edit written with `faceSet`, or `undefined` where `askFaces` and a word needs a face the page's fonts lack: then
+   * nothing has been written.
+   */
+  function attempt(faceSet: typeof OperatorFaceSetType | null, askFaces: boolean): Promise<OperatorWrite | undefined> {
+    return withDocument(session, (document) => attemptIn(document, faceSet, askFaces));
+  }
+
+  function attemptIn(document: PDFDocument, faceSet: typeof OperatorFaceSetType | null, askFaces: boolean): OperatorWrite | undefined {
     // THE CONTENT THE EDIT IS IN: the page's own, or a form's, made this placement's own first (ADR-0269 Decision 3).
     const target = targetOf(document, command, true);
     const { content, holder } = target;
@@ -119,10 +159,18 @@ export async function applyEditTextOperators(
     });
     if (!made.ok) {
       const refusal = made.error;
-      if (refusal.reason === 'needs-a-face') throw new TextNotWritableError(refusal.characters.join(''));
+      if (refusal.reason === 'needs-a-face') {
+        // ASKED BEFORE ANYTHING IS WRITTEN: the faces are loaded and the edit written again.
+        if (askFaces) return undefined;
+        throw new TextNotWritableError(refusal.characters.join(''));
+      }
       // NOTHING TO WRITE, split by the PDFium writer's rule (ADR-0260): the words the page shows and nothing else is the
       // answer the editor closes on; anything else was a change none of which could be written, and the editor keeps it.
       if (refusal.reason === 'unchanged') {
+        // A MARK'S BOLD IS JUDGED BY THE WEIGHT THE LETTERS LOOK, which only the faces measure (`isBold`): without them a
+        // drawn bold word stated 400 read as already not bold, and Bold taken off it was answered *unchanged* and ignored
+        // (the owner's test of milestone 1). So *unchanged* without the faces is no verdict where a mark names Bold.
+        if (askFaces && blocksOfEdit(command).some((block) => (block.marks ?? []).some((mark) => mark.set.bold !== undefined))) return undefined;
         const shown = new Map(read.runs.map((run) => [run.index, run.text] as const));
         if ((command.inserts ?? []).length === 0 && sentAsShown(blocksOfEdit(command), (run) => shown.get(run))) {
           throw new BlockUnchangedError();
@@ -159,8 +207,8 @@ export async function applyEditTextOperators(
     // (`cappedBoxes`), as the PDFium writer's apply does (ADR-0177 Decision 7).
     const boxed = (faces?.boxed ?? []).map((character) => ({ character, page: command.page }));
     // AND WHAT ITS CHECKS NOTED.
-    return { boxed, more: 0, noted };
-  });
+    return { boxed, more: 0, noted, reach: edit.baselines.map(({ first, last }) => ({ first, last })) };
+  }
 }
 
 /**

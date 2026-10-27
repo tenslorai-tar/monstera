@@ -11,6 +11,8 @@ import {
   ok,
   paragraphEdges,
   paragraphSpacing,
+  sameTextFrame,
+  textFrameOf,
 } from '@monstera/shared';
 
 import type { PageFont } from './pageFonts.js';
@@ -88,6 +90,11 @@ export interface PageRun {
   readonly top: number;
   /** Present where every object of it is set in a fixed-pitch face, by the read's one rule (`isMono`, `pdfiumFfi.ts`). */
   readonly fixedPitch?: true | undefined;
+  /**
+   * Present where it is set italic by the read's one rule (`faceOf`, the style the editor shows): what a mark's *italic*
+   * is compared with, so taking Italic off an italic word is a change and the word is set upright.
+   */
+  readonly italic?: true | undefined;
 }
 
 /**
@@ -572,12 +579,72 @@ function movesBlock(place: Omit<BlockPlace, 'block'> | undefined): boolean {
   );
 }
 
+/** Whether a block's place places it at all: moved, scaled, turned, given a measure or a step in the drawing order. */
+function placesAtAll(place: EditedBlock['place']): boolean {
+  return place !== undefined && (movesBlock(place) || place.width !== undefined || place.arrange !== undefined);
+}
+
 /** The seed a box of added text starts from, which its words replace: the PDFium writer's own one character. */
 const SEED_TEXT = '.';
 
 /** How far above and below its baseline a line of added text is taken to reach, in em: a face's ascent and descent, near enough for a centre. */
 const ASCENT_EM = 0.8;
 const DESCENT_EM = 0.2;
+
+/**
+ * THE FRAME A BLOCK IS SET IN ([ADR-0273](../../../docs/DECISIONS/0273-text-set-at-an-angle-is-edited-in-its-own-frame.md)):
+ * the turn, slant or flip its text matrix and CTM give its letters, as a linear map of unit length along the line.
+ * `null` for upright text, which every page had until ADR-0273 and which this writer lays out as it always did.
+ *
+ * ## Why the writer is NOT taught to lay out at an angle
+ *
+ * Every position the writer works out is in user space, from an operator's text matrix times its CTM, and every new
+ * object is placed through the inverse of the CTM where it stands (`toBt`). Seen through the frame's inverse, a block set
+ * at an angle is upright: an operator's text matrix times its CTM times the inverse is the identity scaled. So the frame
+ * is applied ONCE, to the CTMs and the page's marked rules the writer reads, and the layout below is the upright one,
+ * untouched; the matrices it writes come out multiplied by the frame, because `toBt` is the inverse of a CTM that already
+ * holds the frame's inverse. One coordinate change, not a second layout.
+ */
+function frameOf(m: Matrix): Matrix | null {
+  // THE ONE ANSWER (`textFrameOf`), which the read groups by and the editor draws by, so a block the read offers in a
+  // frame is the block this writer lays out in it.
+  const frame = textFrameOf(m[0], m[1], m[2], m[3]);
+  return frame === null ? null : [frame[0], frame[1], frame[2], frame[3], 0, 0];
+}
+
+/** Whether two frames are one, by the same answer's tolerance. */
+function sameFrame(a: Matrix, b: Matrix): boolean {
+  return sameTextFrame([a[0], a[1], a[2], a[3]], [b[0], b[1], b[2], b[3]]);
+}
+
+/**
+ * The frame the edit's blocks are set in, from each block's first run's first operator, or `null` where they are
+ * upright. Every block of one edit must be in one frame, and every sender keeps it so by one rule, the contract's
+ * `oneCommand`: a join or a split names blocks it allows (`neighbourOf`), and a replacement sends one command per group
+ * of it (`commandsOf`). An edit that named two frames would be two layouts in one coordinate change, so the refusal here
+ * is a guard against a sender that bypasses that rule, which no surface reaches.
+ */
+function editFrame(ops: readonly ShowOperator[], page: PageRuns, blocks: readonly EditedBlock[]): Matrix | null {
+  const byObject = new Map<number, ShowOperator>();
+  for (const op of ops) {
+    const object = op.object === null ? undefined : page.textObjects[op.object];
+    if (object !== undefined) byObject.set(object, op);
+  }
+  const runs = new Map(page.runs.map((run) => [run.index, run]));
+  let found: Matrix | null | undefined;
+  for (const block of blocks) {
+    const first = block.lines.flat()[0];
+    const member = first === undefined ? undefined : runs.get(first)?.members[0];
+    const op = member === undefined ? undefined : byObject.get(member);
+    if (op === undefined) continue;
+    const frame = frameOf(multiply(op.state.matrix, op.state.ctm));
+    if (found === undefined) found = frame;
+    else if ((found === null) !== (frame === null) || (found !== null && frame !== null && !sameFrame(found, frame))) {
+      throw new Refused({ reason: 'transformed', where: 'not-upright' });
+    }
+  }
+  return found ?? null;
+}
 
 function write(
   content: Uint8Array,
@@ -589,7 +656,23 @@ function write(
   inserts: readonly PageInsert[],
   arrangeWith: ArrangeContext,
 ): OperatorEdit {
-  const { operators: real, decorations: pageDecorations } = operatorsAndDecorations(content);
+  const parsed = operatorsAndDecorations(content);
+  // THE BLOCK'S FRAME, applied once to what the layout reads (`frameOf`): every CTM and every marked rule, in the frame's
+  // inverse. Nothing is read for an upright edit, which is every edit before ADR-0273 and stays byte for byte what it was.
+  const frame = editFrame(parsed.operators, page, blocks);
+  const unframe = frame === null ? null : inverse(frame);
+  if (frame !== null && inserts.length > 0) throw new Refused({ reason: 'transformed', where: 'not-upright' });
+  const real =
+    unframe === null ? parsed.operators : parsed.operators.map((op) => ({ ...op, state: { ...op.state, ctm: multiply(op.state.ctm, unframe) } }));
+  const pageDecorations =
+    unframe === null
+      ? parsed.decorations
+      : parsed.decorations.map((decoration) => {
+          const points = decoration.points.map(([x, y]) => apply(unframe, x, y));
+          const xs = points.map(([x]) => x);
+          const ys = points.map(([, y]) => y);
+          return { ...decoration, points, left: Math.min(...xs), right: Math.max(...xs), bottom: Math.min(...ys), top: Math.max(...ys) };
+        });
   /**
    * Whether the content sets a clip at all (a `W` or `W*` operator): only then can a clip hide the words a block sets, and
    * only then is the content read again for the windows in force (ADR-0266's correction of 2026-10-25). A false yes costs a
@@ -701,7 +784,9 @@ function write(
    * recognised words (ADR-0181 Decision 9). Read only where the content paints some text invisibly at all, since it is a
    * pass over the whole page. A picture inside a form is not among them: the page walk does not enter a form.
    */
-  const pictures = real.some((op) => op.state.render === 3)
+  // NOT IN A FRAME (ADR-0273): the pictures are in page space and the runs here in the frame's, and a scan's recognised
+  // words are read upright, so an edit in a frame has no scan's ink to cover.
+  const pictures = frame === null && real.some((op) => op.state.render === 3)
     ? contentLayout(content, arrangeWith.kinds)
         .drawn.filter((object) => object.kind === 'image')
         .map((object) => {
@@ -784,6 +869,34 @@ function write(
     }
     return { x: m[4], y: m[5], unit: m[0], up: m[3] };
   };
+
+  // THE RUNS' BOXES IN THE FRAME (ADR-0273): PDFium's box of a run is in page space and, for a run set at an angle, the
+  // upright box AROUND its turned letters, which is wider and taller than the run. In the frame each run is upright, so its
+  // box is its own operators' extent: from its first origin to its last advance, an ascent above and a descent below its
+  // baseline, the measures the writer already sets an added line by. A run some operator of which is not upright in the
+  // frame is text of another frame, never this edit's, and keeps its page box.
+  if (frame !== null) {
+    for (const [index, run] of runs) {
+      const members = run.members.map((member) => opAt.get(member));
+      if (members.some((at) => at === undefined)) continue;
+      try {
+        const extents = (members as number[]).map((at) => {
+          const origin = placed(at);
+          const size = (ops[at]?.state.size ?? 0) * origin.up;
+          return { left: origin.x, right: origin.x + (advance(at) ?? 0) * origin.unit, bottom: origin.y - DESCENT_EM * size, top: origin.y + ASCENT_EM * size };
+        });
+        runs.set(index, {
+          ...run,
+          left: Math.min(...extents.map((each) => each.left)),
+          right: Math.max(...extents.map((each) => each.right)),
+          bottom: Math.min(...extents.map((each) => each.bottom)),
+          top: Math.max(...extents.map((each) => each.top)),
+        });
+      } catch (error) {
+        if (!(error instanceof Refused)) throw error;
+      }
+    }
+  }
 
   /**
    * A word in the first of the page's fonts that carries all of it: the source's own, then a sibling (Decision 5). A
@@ -1016,8 +1129,11 @@ function write(
     // WHERE A LINE SET AFRESH STARTS: the origin of the line that keeps the paragraph's left edge, since the shape's edge
     // is where ink begins and an operator is placed by its origin.
     const blockLeft = Math.min(...lines.map((line) => line[0]?.origin.x ?? 0));
-    // A MEASURE THE PERSON GAVE is the measure, from the block's own left edge (the PDFium writer's rule).
-    const blockRight = blockPlace?.width !== undefined ? blockLeft + blockPlace.width : inkRight;
+    // A MEASURE THE PERSON GAVE is the measure, from the block's own left edge (the PDFium writer's rule). A BLOCK OF ONE
+    // LINE wraps where the editor laid it out to, its column's edge or the page's margin (`oneLineReach`, `reach`), never
+    // at its own old end: a tight box wrapped on its first added letter (the owner's test of milestone 1).
+    const reach = lines.length === 1 && blockPlace?.reach !== undefined ? Math.max(inkRight, blockPlace.reach) : inkRight;
+    const blockRight = blockPlace?.width !== undefined ? blockLeft + blockPlace.width : reach;
     const restOrigin = Math.min(...(lines.length > 1 ? lines.slice(1) : lines).map((line) => line[0]?.origin.x ?? 0));
     // EACH OLD PARAGRAPH'S OWN EDGES (ADR-0179's correction of 2026-10-24), the editor's own reading of the same lines
     // (`paragraphEdges`), so a bulleted item and the plain paragraph after it in one block are each set from their own left.
@@ -1101,15 +1217,22 @@ function write(
      * space: every tab typed there was written as a gap with no mark (step 11, 0 marks). Where no face is given either,
      * the tab is named as a character the edit needs a face for, so the caller gives it one and it is never dropped
      * unsaid.
+     *
+     * AND A RUN OF SPACES' MARK, for the same reason: two spaces typed in a font with no space were two gaps with no mark,
+     * which a text page reads as one space (measured 2026-10-27, the catalogue's TrueType subset page).
      */
-    const tabGapOf = (source: ShowOperator, restyle?: Restyle): FacePiece | undefined => {
+    const gapGlyphOf = (source: ShowOperator, restyle: Restyle | undefined, gap: '\t' | ' '): FacePiece | undefined => {
       const own = piecesOf(source, TAB_GAP, restyle);
       if (own !== null && own.length === 1) return own[0];
-      const key = `${String(indexOf.get(source))}|${JSON.stringify(restyle ?? null)}|tab`;
-      if (answers.has(key)) return answers.get(key)?.[0];
+      const key = `${String(indexOf.get(source))}|${JSON.stringify(restyle ?? null)}|gap`;
+      if (answers.has(key)) {
+        const known = answers.get(key)?.[0];
+        if (known === undefined) uncarried.add(gap);
+        return known;
+      }
       const faced = faces?.set(TAB_GAP, source, () => null, restyle) ?? null;
       const piece = faced !== null && faced.length === 1 ? faced[0] : undefined;
-      if (piece === undefined) uncarried.add('\t');
+      if (piece === undefined) uncarried.add(gap);
       answers.set(key, piece === undefined ? null : [piece]);
       return piece;
     };
@@ -1153,7 +1276,8 @@ function write(
       // WHAT A PAGE'S OPERATORS DO NOT SAY — its slant, its colour — a mark that names is a change.
       return (
         (set.bold !== undefined && set.bold !== (faces?.isBold(font) ?? statedBold(font))) ||
-        set.italic === true ||
+        // ITALIC EITHER WAY, against the slant the editor showed: off an italic word was read as no change, and ignored.
+        (set.italic !== undefined && set.italic !== (run.run.italic === true)) ||
         (set.size !== undefined && Math.abs(set.size - sizePt) > 0.05) ||
         set.colour !== undefined ||
         (set.family !== undefined && !(font.face ?? '').toLowerCase().includes(set.family.toLowerCase())) ||
@@ -1236,7 +1360,7 @@ function write(
         // `/Span <</ActualText (tab)>>`, and the next words at the next stop from the block's left edge. A font with no
         // space draws nothing there, and the gap is still the stop's.
         if (token === '\t') {
-          const piece = tabGapOf(source, restyleOf(marked));
+          const piece = gapGlyphOf(source, restyleOf(marked), '\t');
           if (piece !== undefined) {
             faces?.drawn([piece]);
             line.segments.push({ source, font: piece.font, codes: [...piece.codes], text: '\t', x: cursor, style, actual: '\t' });
@@ -1244,8 +1368,26 @@ function write(
           cursor = nextTabStop(cursor, blockLeft);
           continue;
         }
-        const pieces = piecesOf(source, token, restyleOf(marked));
-        if (pieces === null) continue;
+        const own = piecesOf(source, token, restyleOf(marked));
+        if (own === null) continue;
+        if (inRun && own.length === 0) {
+          // A SPACE OF A RUN THAT NO FONT HERE DRAWS stands on a face's space (`gapGlyphOf`), so the run's mark holds
+          // glyphs to name; the pen still moves by what the measure counted, so no word lands elsewhere than planned.
+          const gap = gapGlyphOf(source, restyleOf(marked), ' ');
+          if (gap !== undefined) {
+            faces?.drawn([gap]);
+            const last = line.segments.at(-1);
+            if (typed[index - 1] === ' ' && last?.actual !== undefined && last.actual !== '\t' && last.source === source && last.font === gap.font) {
+              last.codes.push(...gap.codes);
+              line.segments[line.segments.length - 1] = { ...last, text: `${last.text} `, actual: `${last.actual} ` };
+            } else {
+              line.segments.push({ source, font: gap.font, codes: [...gap.codes], text: ' ', x: cursor, style, actual: ' ' });
+            }
+          }
+          cursor += widthOfPieces(source, own, unit) + spacedBy(token, spacing) + stretch;
+          continue;
+        }
+        const pieces = own;
         faces?.drawn(pieces);
         const widths = pieceWidths(source, pieces, unit);
         const width = widthOfPieces(source, pieces, unit);
@@ -1420,7 +1562,8 @@ function write(
     ]);
     const marked = { marks: (block.marks ?? []).map(({ from, to }) => ({ from, to })), changes, forced };
     // A WHOLE-BLOCK COLOUR is planned as no change to the words, so the plan says whether they are the read's.
-    const colour = block.place === undefined && fit === 'reflow' && (block.paragraphs?.length ?? 0) === 0 ? wholeColour(block) : undefined;
+    // A PLACE THAT ONLY SAYS HOW FAR A ONE-LINE BLOCK MAY REACH moves nothing, so it is no place here.
+    const colour = !placesAtAll(block.place) && fit === 'reflow' && (block.paragraphs?.length ?? 0) === 0 ? wholeColour(block) : undefined;
     let formatting = colour === undefined ? marked : { marks: [], changes: (): boolean => false, forced };
     const oldGap = (line: number): number => (baselines[line - 1] ?? 0) - (baselines[line] ?? 0);
     /**
@@ -1800,10 +1943,20 @@ function write(
      * takes it away with them (the owner's L2).
      */
     const drawnStretch = (stretch: (typeof stretches)[number]): string => {
+      const fill = `${stretch.colour.map((channel) => num(channel / 255)).join(' ')} rg`;
+      const open = `${pdfName(DECORATION_TAG)} <<${pdfName(DECORATION_KEY)} (${stretch.kind})>> BDC q`;
+      // IN A FRAME (ADR-0273) the rule is a rectangle of the frame, which `toBt` turns, slants or flips: two of its corners
+      // through `toBt` would make the upright box around them, a flat rule under turned words. So the rectangle is said in
+      // the frame and `toBt` once in front of it, which is the exact shape. Upright, `toBt` keeps the axes, and the rule
+      // is the box it always was, byte for byte.
+      if (frame !== null) {
+        const box = [stretch.left, stretch.bottom, stretch.right - stretch.left, stretch.top - stretch.bottom].map(num).join(' ');
+        return `${open} ${toBt.map(num).join(' ')} cm ${fill} ${box} re f Q EMC`;
+      }
       const [x0, y0] = apply(toBt, stretch.left, stretch.bottom);
       const [x1, y1] = apply(toBt, stretch.right, stretch.top);
       const box = [Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0)].map(num).join(' ');
-      return `${pdfName(DECORATION_TAG)} <<${pdfName(DECORATION_KEY)} (${stretch.kind})>> BDC q ${stretch.colour.map((channel) => num(channel / 255)).join(' ')} rg ${box} re f Q EMC`;
+      return `${open} ${fill} ${box} re f Q EMC`;
     };
     const rules = stretches.filter((stretch) => stretch.kind !== 'behind').map(drawnStretch);
     const behind = stretches.filter((stretch) => stretch.kind === 'behind').map(drawnStretch);
@@ -1817,10 +1970,25 @@ function write(
     // `q`: over the picture, which is drawn before these words, under any highlight and the words, and before a
     // placement's `cm`, since it covers where the old words were and not where the block is put. In the page's own fill.
     if (covers.length > 0) {
-      const papers = arrangeWith.paper(covers).flatMap((cells) =>
+      // THE PAPER IS THE PAGE'S, sampled and drawn in page space: under a frame (ADR-0273) the covers are in the frame's
+      // space and `toBt` reads the frame, so both are taken back to the page's first. Only a scan's words are covered, and
+      // `pictures` reads none in a frame, so a framed edit reaches here with none; the rule is said where it is used.
+      const inPage = (box: PageBox): PageBox => {
+        if (frame === null) return box;
+        const corners = [apply(frame, box.left, box.bottom), apply(frame, box.right, box.bottom), apply(frame, box.left, box.top), apply(frame, box.right, box.top)];
+        return {
+          left: Math.min(...corners.map(([x]) => x)),
+          right: Math.max(...corners.map(([x]) => x)),
+          bottom: Math.min(...corners.map(([, y]) => y)),
+          top: Math.max(...corners.map(([, y]) => y)),
+        };
+      };
+      const drawBack = frame === null ? toBt : inverse(multiply(here, frame));
+      if (drawBack === null) throw new Refused({ reason: 'transformed', where: 'singular-ctm' });
+      const papers = arrangeWith.paper(covers.map(inPage)).flatMap((cells) =>
         cells.map(({ box, colour }) => {
-          const [x0, y0] = apply(toBt, box.left, box.bottom);
-          const [x1, y1] = apply(toBt, box.right, box.top);
+          const [x0, y0] = apply(drawBack, box.left, box.bottom);
+          const [x1, y1] = apply(drawBack, box.right, box.top);
           const rect = [Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0)].map(num).join(' ');
           return `q ${[colour.r, colour.g, colour.b].map((channel) => num(channel / 255)).join(' ')} rg ${rect} re f Q`;
         }),

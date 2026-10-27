@@ -72,6 +72,7 @@ import { PDFDocument, PDFName, StandardFonts, rgb } from '@cantoo/pdf-lib';
 import { EDIT_TEXT, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { bindNativeEngine } from '../lib/nativeEngine.mjs';
+import { expectEdit } from '../lib/editExpectations.mjs';
 import { compare, charactersOf, differencePicture, inkOf, render } from '../lib/pageDisturbance.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { exitUnverifiable } from '../lib/unverifiable.mjs';
@@ -109,8 +110,8 @@ const CASES = [
   'THE INSTRUMENT SEES THE BROCHURE’S DEFECT: two fonts of one name, edited through PDFium’s page rewrite, are refused or disturbed',
   'and the same page edited by the application’s route is made and disturbs nothing',
   'the brochure and the link-markers page: every edit of every block is made — no refusal',
-  'the brochure and the link-markers page: every edit made disturbs nothing, logs no defect, and changes the block (not vacuous)',
-  'the repository’s fixtures: every edit made disturbs nothing and logs no defect',
+  'the brochure and the link-markers page: every edit made disturbs nothing, logs no defect, fails no catalogue expectation, and changes the block (not vacuous)',
+  'the repository’s fixtures: every edit made disturbs nothing, logs no defect and fails no catalogue expectation',
   'THE OLD REPLACE: PDFium’s replace-all on the page of two fonts of one name is refused or disturbs (ADR-0267)',
   'numbered paragraphs: a word changed leaves every line where the page has it, each paragraph’s spacing kept (within 1 px)',
   'numbered paragraphs: a paragraph that grows moves the lines below by one line’s pitch, every gap below kept (within 1 px)',
@@ -119,13 +120,16 @@ const CASES = [
   'text inside a form: the brochure’s pull quote and a scaled form’s lines are offered as blocks (ADR-0269), so the gate above covers them',
   'a form drawn in two places: every edit of one placement is made and leaves the other as it was — the form is copied first',
   'a paragraph that grows over bulleted lists OVERLAPS them: every drawn bullet and every item stays where it was (ADR-0271 section 11.1)',
+  'THE CORPUS GATE: a clean count holds, and an edit disturbed, one failing an expectation, or a run that made none each fail it',
+  'THE WRITER’S REACH: a paragraph grown onto a near twin of its new line disturbs nothing within the extent the writer reports; CONTROL: judged without it, the same edit is disturbed',
 ];
 
 /**
  * @typedef {import('../lib/pageDisturbance.mjs').Box} Box
  * `logged` is how many writer defects the write's own checks NOTED in a write that was kept (ADR-0270): a read-back that
  * read the words otherwise, a byte outside the edit that changed. Each is a defect for us, and it must be 0.
- * @typedef {{ block: string, edit: string, route: string, outcome: 'made' | 'refused', disturbed: number, lost: number, inside: number, logged: number, why: string, page?: number }} Try
+ * `expectations` are the catalogue's expectations a made edit of one block failed, by name only (`expectEdit`).
+ * @typedef {{ block: string, edit: string, route: string, outcome: 'made' | 'refused', disturbed: number, lost: number, inside: number, logged: number, expectations: string[], why: string, page?: number }} Try
  */
 
 /**
@@ -204,7 +208,7 @@ async function walkPage(pdfium, kernel, bytes, index, quotes) {
   }
   const groupedOf = (/** @type {any} */ found) =>
     kernel.groupIntoBlocks(
-      found.runs.filter((/** @type {any} */ run) => kernel.isEditedInPlace(run.style)).map((/** @type {any} */ run) => kernel.blockableOf(run)),
+      found.runs.filter((/** @type {any} */ run) => kernel.isUpright(run.style)).map((/** @type {any} */ run) => kernel.blockableOf(run)),
     );
   const grouped = groupedOf(read);
   // EACH BLOCK carries the pre-read its edit is written against, and a form's block its path (ADR-0269).
@@ -271,11 +275,13 @@ async function walkPage(pdfium, kernel, bytes, index, quotes) {
     let after;
     /** @type {readonly string[]} */
     let noted = [];
+    /** How far down each edited block now reaches, as the operator writer set it; none from the PDFium route. @type {readonly { first: number, last: number }[]} */
+    let reach = [];
     try {
       if (rewrite === 'operators') {
         const copy = await kernel.mupdfWriter.open(bytes);
         try {
-          ({ noted } = await kernel.applyEditTextOperators(copy, { kind: 'editTextOperators', ...wire }, first?.runs ?? runs));
+          ({ noted, reach } = await kernel.applyEditTextOperators(copy, { kind: 'editTextOperators', ...wire }, first?.runs ?? runs));
           after = await kernel.mupdfWriter.serialise(copy);
         } finally {
           await kernel.mupdfWriter.close(copy);
@@ -289,7 +295,7 @@ async function walkPage(pdfium, kernel, bytes, index, quotes) {
         });
       }
     } catch (error) {
-      tries.push({ block: name, edit, route: rewrite, outcome: 'refused', disturbed: 0, lost: 0, inside: 0, logged: 0, why: reasonOf(error) });
+      tries.push({ block: name, edit, route: rewrite, outcome: 'refused', disturbed: 0, lost: 0, inside: 0, logged: 0, expectations: [], why: reasonOf(error) });
       return;
     }
     const areas = touched.map(zone);
@@ -306,7 +312,22 @@ async function walkPage(pdfium, kernel, bytes, index, quotes) {
     // Not a space: it draws nothing, and an edit sets a line's spaces again with its words.
     const lost = beforeCharacters.filter((each) => each.character.trim() !== '' && !areas.some((area) => area.holds(each)) && !now.has(keyOf(each))).length;
     const drawnAfter = render(kernel, after, index);
-    const zonesAllowed = [...areas.map((area) => area.ink), ...grown];
+    // THE EDITED BLOCKS' WHOLE NEW EXTENT, AS THE WRITER REPORTS IT: each block's column from its top down to a descent
+    // below the last baseline the writer set. A new letter landing exactly where an old letter of the block below was is
+    // read before and after alike, so the characters cannot tell it from the old one, and its pixels read as outside
+    // (the local agent's corpus run, 2026-10-27). The descent is 0.35 of the block's own line pitch, the ink's height
+    // over its lines.
+    // ONE REACH PER TOUCHED BLOCK, in the edit's order, or none: a page's replace-all names its blocks in its own order.
+    // WITHOUT IT ON ASKING, for the case that proves it is needed.
+    const reached = (reach.length === touched.length && kernel.withoutReach !== true ? touched : []).flatMap((block, at) => {
+      const set = reach[at];
+      const area = areas[at];
+      const lines = Math.max(1, blocks[block]?.lines.length ?? 1);
+      if (set === undefined || area === undefined) return [];
+      const descent = (0.35 * (area.ink.top - area.ink.bottom)) / lines;
+      return [{ left: area.left - 1.5, right: area.right + 1.5, top: area.ink.top + 1.5, bottom: Math.min(set.last, area.ink.bottom) - descent }];
+    });
+    const zonesAllowed = [...areas.map((area) => area.ink), ...grown, ...reached];
     const { outside, inside, farthest } = compare(before, drawnAfter, zonesAllowed);
     // AN UNSEEN EDIT TOO: words written that draw nothing are the person's typing out of sight.
     if (PICTURES !== null && (outside > 0 || lost > 0 || inside === 0)) {
@@ -314,6 +335,23 @@ async function walkPage(pdfium, kernel, bytes, index, quotes) {
       const numbered = /^(form )?block (\d+)/u.exec(name);
       const blockNumber = numbered === null ? 'page' : `${numbered[1] === undefined ? '' : 'form'}${numbered[2] ?? ''}`;
       differencePicture(join(PICTURES, `${LABEL}-block${blockNumber}-${edit.replace(/\s/gu, '-')}.png`), before, drawnAfter, zonesAllowed);
+    }
+    // THE CATALOGUE'S EXPECTATIONS (`editExpectations.mjs`), the check every test of the rebuilt editor runs, on every
+    // edit of one block: read back by both engines, nothing outside it moved, nothing unseen, no drawn font for new words.
+    // KEPT BY THEIR NAMES ONLY (the words before the first colon), since what follows may quote the document's words.
+    /** @type {string[]} */
+    let expectations = [];
+    const only = touched.length === 1 && entries.length === 1 ? blocks[touched[0] ?? -1] : undefined;
+    if (only !== undefined && first?.form === undefined) {
+      const box = { left: only.box.x0, bottom: only.box.y0, right: only.box.x1, top: only.box.y1 };
+      const expected = String(entries[0]?.text ?? '');
+      const manifest = { id: name, role: 'the edited block', text: expected, box, angle: 0, face: '', visible: true };
+      try {
+        const found = await expectEdit({ kernel: { mupdf: kernel.mupdf }, pdfium }, { before: bytes, after, page: index, block: manifest, expected, outcome: { noted } });
+        // NOT COUNTED TWICE: a write's notes are `logged` above.
+        expectations = found.map((each) => each.split(':')[0] ?? each).filter((each) => each !== 'LOGGED');      } catch (error) {
+        expectations = [`NOT JUDGED: ${String(error instanceof Error ? error.message.split(':')[0] : error)}`];
+      }
     }
     tries.push({
       block: name,
@@ -324,6 +362,7 @@ async function walkPage(pdfium, kernel, bytes, index, quotes) {
       lost,
       inside,
       logged: noted.length,
+      expectations,
       // THE NOTES ARE OUR WORDS AND NUMBERS (`textOperatorEdit.ts`), never the document's, so they may be printed.
       why: [
         outside > 0 || lost > 0 ? `${String(lost)} character(s) outside the block gone; pixels up to ${String(farthest / 2)} pt away` : '',
@@ -370,8 +409,9 @@ async function walkPage(pdfium, kernel, bytes, index, quotes) {
   if (typeof frequent === 'string') {
     const compiled = kernel.compileQuery(frequent, { caseSensitive: true, wholeWord: true, normalise: 'none' });
     const matchesIn = compiled.ok ? compiled.value.matchesIn : () => [];
-    // ONE COMMAND PER STREAM, as `replaceInDocument` sends them (ADR-0269): the page's own blocks, then each form's.
-    for (const stream of kernel.streamsOf(blocks)) {
+    // ONE COMMAND PER STREAM AND FRAME, as `replaceInDocument` sends them (ADR-0269, ADR-0273): the page's own blocks,
+    // then each form's, with text set at an angle apart from upright text.
+    for (const stream of kernel.commandsOf(blocks)) {
       const touchedBy = (/** @type {any[]} */ entries) =>
         stream.blocks.flatMap((/** @type {any} */ each) =>
           entries.some((entry) => entry.lines[0]?.[0] === each.lines[0]?.runs[0]?.index) ? [blocks.indexOf(each)] : []);
@@ -486,7 +526,7 @@ async function editFirstBlock(pdfium, kernel, bytes, text, soft) {
   } finally {
     await pdfium.pdfiumWriter.close(session);
   }
-  const blocks = kernel.groupIntoBlocks(read.runs.filter((/** @type {any} */ run) => kernel.isEditedInPlace(run.style)).map((/** @type {any} */ run) => kernel.blockableOf(run)));
+  const blocks = kernel.groupIntoBlocks(read.runs.filter((/** @type {any} */ run) => kernel.isUpright(run.style)).map((/** @type {any} */ run) => kernel.blockableOf(run)));
   const block = blocks[0];
   const lines = block.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index));
   const sent = soft ?? block.lines.map((/** @type {any} */ line) => line.soft);
@@ -535,6 +575,29 @@ async function bulletedList() {
     page.drawText(`•  Bullets in the line, ${item}`, { x: 78, y, size: 11, font: times });
     y -= 16;
   }
+  return new Uint8Array(await document.save());
+}
+
+/**
+ * A paragraph whose added words land on its twin: its last line is nearly full, so the walk's `add` wraps *with added
+ * words* onto a new line one pitch down, and there a line of its own, in grey and so a block of its own, already reads
+ * *with added words* in the same face, a fifth of a point across. The new letters are read where the old ones were, so
+ * no character says they are new, and their black over the grey is a pixel outside every zone but the writer's reach.
+ *
+ * NOT A GATE PAGE: letters that coincide within the key's half point are within PDFium's tolerance for a letter drawn
+ * twice, and PDFium reads one of them (measured 2026-10-27, exact and 0.2 pt across), so the catalogue's read-back by
+ * the editor's reading cannot hold here, and the case on it judges the pixels alone.
+ */
+async function grownOntoTwin() {
+  const document = await PDFDocument.create({ updateMetadata: false });
+  const times = await document.embedFont(StandardFonts.TimesRoman);
+  const page = document.addPage([612, 792]);
+  ['Small shops near the market sell snacks, drinks and household goods to the', 'people who pass by on their way to work, school and the bus station each day.'].forEach(
+    (line, at) => page.drawText(line, { x: 72, y: 700 - at * 14, size: 11, font: times }),
+  );
+  // 0.2 PT ACROSS: the half-point key the walk tells characters by reads the twin's letters as the new ones, and PDFium,
+  // which drops a letter drawn again exactly where it was (its fake bold rule), still reads two lines.
+  page.drawText('with added words', { x: 72.2, y: 672, size: 11, font: times, color: rgb(0.55, 0.55, 0.55) });
   return new Uint8Array(await document.save());
 }
 
@@ -698,8 +761,7 @@ async function fixtures() {
   const found = [];
   for (let page = 1; page <= 3; page += 1) found.push({ name: `brochure page ${String(page)}`, bytes: await brochure(page), pages: [0], gate: true, quotes: true });
   found.push({ name: 'link markers', bytes: await linkMarkers(), pages: [0], gate: true, quotes: true });
-  found.push({ name: 'bulleted lists', bytes: await bulletedList(), pages: [0], gate: true, quotes: true });
-  found.push({ name: 'chromium-type3.pdf', bytes: new Uint8Array(readFileSync(CHROMIUM)), pages: [0], gate: false, quotes: true });
+  found.push({ name: 'bulleted lists', bytes: await bulletedList(), pages: [0], gate: true, quotes: true });  found.push({ name: 'chromium-type3.pdf', bytes: new Uint8Array(readFileSync(CHROMIUM)), pages: [0], gate: false, quotes: true });
   for (const kind of FONT_KINDS) found.push({ name: `font kind ${kind.id}`, bytes: await buildFixture(kind.id), pages: [0], gate: false, quotes: true });
   found.push({ name: 'line-end hyphen', bytes: await lineEndHyphen(), pages: [0], gate: false, quotes: true });
   return found;
@@ -714,15 +776,40 @@ function counts(tries) {
     disturbed: made.filter(disturbedBy).length,
     unseen: made.filter((each) => each.inside === 0 && each.disturbed === 0).length,
     logged: made.filter((each) => each.logged > 0).length,
+    failing: made.filter((each) => each.expectations.length > 0).length,
   };
+}
+
+/**
+ * Why a corpus run does not hold, one sentence per reason; none where it does. A run holds only when every page was
+ * walked, every document opened, and no edit was refused, disturbed the page, went unseen, was logged by the write's
+ * own checks or failed an expectation: the figures are the gate, never only a report (the local agent's run, which ended
+ * 0 with edits disturbed).
+ * @param {ReturnType<typeof counts>} total @param {number} pagesFailed @param {number} notOpened
+ */
+function corpusVerdict(total, pagesFailed, notOpened) {
+  return [
+    pagesFailed > 0 ? `${String(pagesFailed)} page(s) whose walk failed` : '',
+    notOpened > 0 ? `${String(notOpened)} document(s) not opened` : '',
+    total.refused > 0 ? `${String(total.refused)} edit(s) refused` : '',
+    total.disturbed > 0 ? `${String(total.disturbed)} edit(s) disturbed the page` : '',
+    total.unseen > 0 ? `${String(total.unseen)} edit(s) unseen` : '',
+    total.logged > 0 ? `${String(total.logged)} edit(s) logged a writer defect` : '',
+    total.failing > 0 ? `${String(total.failing)} edit(s) failed an expectation` : '',
+    total.tries === 0 ? 'no edit was made at all' : '',
+  ].filter((each) => each !== '');
 }
 
 /** @param {string} document @param {Try[]} tries */
 function report(document, tries) {
-  const { tries: all, refused, disturbed, unseen, logged } = counts(tries);
+  const { tries: all, refused, disturbed, unseen, logged, failing } = counts(tries);
   process.stdout.write(
-    `  ${document}: ${String(all)} edit(s), ${String(refused)} refused, ${String(disturbed)} disturbed, ${String(unseen)} unseen, ${String(logged)} logged\n`,
+    `  ${document}: ${String(all)} edit(s), ${String(refused)} refused, ${String(disturbed)} disturbed, ${String(unseen)} unseen, ${String(logged)} logged, ${String(failing)} failing an expectation\n`,
   );
+  /** Each expectation failed, by name, and how many edits failed it. @type {Map<string, number>} */
+  const failed = new Map();
+  for (const each of tries) for (const name of new Set(each.expectations)) failed.set(name, (failed.get(name) ?? 0) + 1);
+  for (const [name, count] of failed) process.stdout.write(`      ${String(count)} × expectation ${name}\n`);
   /** @type {Map<string, number>} */
   const reasons = new Map();
   for (const each of tries) {
@@ -744,8 +831,8 @@ function report(document, tries) {
 async function run(pdfium, kernel) {
   /** @type {string[]} */
   const failures = [];
-  const roster = createRoster(failures, { cases: 14 });
-  if (CASES.length !== 14) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 14`);
+  const roster = createRoster(failures, { cases: 16 });
+  if (CASES.length !== 16) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 16`);
   const check = (/** @type {string} */ name, /** @type {boolean} */ held, /** @type {string} */ detail) => {
     const mark = roster.mark();
     if (!held) failures.push(`${name}\n      ${detail}`);
@@ -786,13 +873,13 @@ async function run(pdfium, kernel) {
   // NOTHING LOGGED EITHER (ADR-0270): a defect the write's checks noted is a write kept with a defect in it.
   check(
     CASES[4] ?? '',
-    gateCounts.disturbed === 0 && gateCounts.unseen === 0 && gateCounts.logged === 0,
-    describe(gate.filter((each) => each.outcome === 'made' && (disturbedBy(each) || each.inside === 0 || each.logged > 0))),
+    gateCounts.disturbed === 0 && gateCounts.unseen === 0 && gateCounts.logged === 0 && gateCounts.failing === 0,
+    describe(gate.filter((each) => each.outcome === 'made' && (disturbedBy(each) || each.inside === 0 || each.logged > 0 || each.expectations.length > 0))),
   );
   check(
     CASES[5] ?? '',
-    rest.length > 0 && counts(rest).disturbed === 0 && counts(rest).logged === 0,
-    describe(rest.filter((each) => disturbedBy(each) || each.logged > 0)),
+    rest.length > 0 && counts(rest).disturbed === 0 && counts(rest).logged === 0 && counts(rest).failing === 0,
+    describe(rest.filter((each) => disturbedBy(each) || each.logged > 0 || each.expectations.length > 0)),
   );
 
   // THE OLD REPLACE (ADR-0267's control): PDFium's replace-all of a word of the first line, the same length so the line
@@ -867,7 +954,7 @@ async function run(pdfium, kernel) {
   let twiceCheck = `${String(placements.length)} placement(s) read`;
   if (placements.length === 2 && firstPlaced !== undefined) {
     const [block] = kernel.groupIntoBlocks(
-      firstPlaced.read.runs.filter((/** @type {any} */ run) => kernel.isEditedInPlace(run.style)).map((/** @type {any} */ run) => kernel.blockableOf(run)),
+      firstPlaced.read.runs.filter((/** @type {any} */ run) => kernel.isUpright(run.style)).map((/** @type {any} */ run) => kernel.blockableOf(run)),
     );
     const lines = block.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index));
     const soft = block.lines.map((/** @type {any} */ line) => line.soft);
@@ -910,6 +997,38 @@ async function run(pdfium, kernel) {
             : '';
   }
   check(CASES[13] ?? '', overlapCheck === '', overlapCheck);
+
+  // THE CORPUS GATE, on counts made for it: clean holds, and each kind of defect alone fails it. CI has no corpus, so the
+  // gate's own case is what runs on every runner.
+  {
+    const clean = { tries: 4, refused: 0, disturbed: 0, unseen: 0, logged: 0, failing: 0 };
+    const verdicts = {
+      clean: corpusVerdict(clean, 0, 0),
+      disturbed: corpusVerdict({ ...clean, disturbed: 1 }, 0, 0),
+      failing: corpusVerdict({ ...clean, failing: 1 }, 0, 0),
+      empty: corpusVerdict({ ...clean, tries: 0 }, 0, 0),
+    };
+    check(
+      CASES[14] ?? '',
+      verdicts.clean.length === 0 && verdicts.disturbed.length === 1 && verdicts.failing.length === 1 && verdicts.empty.length === 1,
+      JSON.stringify(verdicts),
+    );
+  }
+
+  // THE WRITER'S REACH (the local agent's corpus run, 2026-10-27): a paragraph grown onto a near twin is allowed its new
+  // extent by the reach the writer reports, and the same edit judged without it is disturbed.
+  {
+    const twin = await grownOntoTwin();
+    const added = async (/** @type {any} */ judge) =>
+      (await walkPage(pdfium, judge, twin, 0, true)).find((each) => each.block.startsWith('block 0') && each.edit === 'add');
+    const withReach = await added(kernel);
+    const withoutReach = await added({ ...kernel, withoutReach: true });
+    check(
+      CASES[15] ?? '',
+      withReach?.outcome === 'made' && !disturbedBy(withReach) && withoutReach?.outcome === 'made' && withoutReach.disturbed > 0,
+      `with the reach ${JSON.stringify(withReach)}; without it ${JSON.stringify(withoutReach)}`,
+    );
+  }
 
   const countedWhole = corpus();
 
@@ -991,12 +1110,13 @@ function corpus() {
   }
   const total = counts(all);
   process.stdout.write(
-    `\n  CORPUS: ${String(total.tries)} edit(s), ${String(total.refused)} refused, ${String(total.disturbed)} disturbed, ${String(total.unseen)} unseen, ${String(total.logged)} logged, ${String(pagesFailed)} page(s) failed, ${String(notOpened)} document(s) not opened\n\n`,
+    `\n  CORPUS: ${String(total.tries)} edit(s), ${String(total.refused)} refused, ${String(total.disturbed)} disturbed, ${String(total.unseen)} unseen, ${String(total.logged)} logged, ${String(total.failing)} failing an expectation, ${String(pagesFailed)} page(s) failed, ${String(notOpened)} document(s) not opened\n\n`,
   );
   process.stdout.write(`${table.join('\n')}\n\n`);
-  // A RUN THAT COUNTED LESS THAN IT WAS ASKED TO is not a result: it ends in failure, whatever the cases said.
-  if (pagesFailed > 0 || notOpened > 0) {
-    process.stdout.write('  THE CORPUS WAS NOT COUNTED WHOLE: the figures above leave out what failed.\n');
+  // THE FIGURES ARE THE GATE: a run that counted less than it was asked to, or counted anything but clean edits, fails.
+  const verdict = corpusVerdict(total, pagesFailed, notOpened);
+  if (verdict.length > 0) {
+    process.stdout.write(`  THE CORPUS DID NOT HOLD: ${verdict.join('; ')}.\n`);
     return false;
   }
   return true;
@@ -1082,9 +1202,9 @@ if (!existsSync(library) || shim === null || !existsSync(fontsDirectory(ROOT))) 
   // LITERAL SPECIFIERS, so `proof:electronimports` and the freshness scan can read what this loads.
   const pdfium = await import('../../packages/kernel/dist/pdfiumFfi.js');
   pdfium.openPdfium(library);
-  const { blockEditOf, readsUnpacked, streamsOf } = await import('../../packages/contract/dist/commands.js');
+  const { blockEditOf, readsUnpacked, commandsOf } = await import('../../packages/contract/dist/commands.js');
   const { formPagesDocument, textPlacements } = await import('../../packages/kernel/dist/formText.js');
-  const { groupIntoBlocks, isEditedInPlace, blockableOf } = await import('../../packages/kernel/dist/textLines.js');
+  const { groupIntoBlocks, isUpright, blockableOf } = await import('../../packages/kernel/dist/textLines.js');
   const { paragraphsOfLines, lineText, compileQuery } = await import('../../packages/shared/dist/index.js');
   const { blocksReplaced, wordsOf } = await import('../../packages/contract/dist/blockReplace.js');
   const mupdf = await import('../../packages/kernel/dist/mupdfRaw.js');
@@ -1102,14 +1222,14 @@ if (!existsSync(library) || shim === null || !existsSync(fontsDirectory(ROOT))) 
   const kernel = {
     blockEditOf,
     readsUnpacked,
-    streamsOf,
+    commandsOf,
     formPagesDocument,
     textPlacements,
     compileQuery,
     blocksReplaced,
     wordsOf,
     groupIntoBlocks,
-    isEditedInPlace,
+    isUpright,
     blockableOf,
     paragraphsOfLines,
     lineText,

@@ -28,10 +28,13 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { deflateSync } from 'node:zlib';
 
+import { PDFDocument, PDFName, StandardFonts } from '@cantoo/pdf-lib';
+
 import { PDFIUM_PAGE_CONTENT, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { exitUnverifiable } from '../lib/unverifiable.mjs';
 import { PDFIUM_VERSION, pdfiumLibrary } from '../provision/pdfium.mjs';
+import { fontOfKind } from '../research/fontKindFixtures.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const REQUIRE = process.argv.includes('--require-pdfium');
@@ -58,7 +61,7 @@ openPdfium(library);
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 34 });
+const roster = createRoster(failures, { cases: 36 });
 
 /**
  * @param {string} name
@@ -512,6 +515,31 @@ async function main() {
     'the DECODED bitmap of a 2 x 2 image is exactly 16 bytes — width times height times four — so the wire’s size check has something to hold it to',
     unmasked.images[0]?.format === 'bgra' && unmasked.images[0].length === 4 * 4,
     String(unmasked.images[0]?.length),
+  );
+  // A LETTER PDFium HAS NO OUTLINE FOR stands at its loose box: an embedded subset that keeps only `x` draws `HIDDEN`
+  // with emptied glyphs, which PDFium answers 0 high on every machine — the same placeholder a non-embedded font with no
+  // face installed answers (KozMinPr6N with no Japanese font, measured 2026-10-27), without depending on what is.
+  const subsetted = async (/** @type {string} */ keep) => {
+    const doc = await PDFDocument.create({ updateMetadata: false });
+    const page = doc.addPage([612, 792]);
+    const { font, show } = fontOfKind(doc, 'truetype-subset', [...keep], await doc.embedFont(StandardFonts.Helvetica));
+    page.node.set(PDFName.of('Resources'), doc.context.obj({ Font: { F1: font } }));
+    page.node.set(PDFName.of('Contents'), doc.context.register(doc.context.flateStream(`BT /F1 18 Tf 72 700 Td ${show('HIDDEN')} Tj ET\n`)));
+    const bytes = await doc.save({ useObjectStreams: false });
+    const run = (await onImage({ bytes, opensWith: undefined }, (session) => textRuns(session, 0))).runs.find((each) => each.text === 'HIDDEN');
+    return run === undefined ? null : { bottom: run.bottom, top: run.top, height: run.top - run.bottom };
+  };
+  const emptied = await subsetted('x');
+  const kept = await subsetted('HIDDENx');
+  record(
+    'a run whose glyphs the font has no outline for is read as high as the font stands, so its block is not outlined flat',
+    emptied !== null && emptied.height > 0.5 * 18 && emptied.bottom < 700 && emptied.top > 700 + 9,
+    JSON.stringify(emptied),
+  );
+  record(
+    'CONTROL: the same run with its glyphs kept is read from its ink, and the two stand on the same line',
+    kept !== null && kept.height > 0.5 * 18 && emptied !== null && near(kept.bottom, emptied.bottom, 6),
+    `kept ${JSON.stringify(kept)}; emptied ${JSON.stringify(emptied)}`,
   );
   record(
     'the same read of the same bytes twice answers the same thing',

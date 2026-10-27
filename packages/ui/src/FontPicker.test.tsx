@@ -4,7 +4,7 @@ import type { FontFamilyEntry } from '@monstera/contract';
 import { fireEvent, render } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import { BUILT_IN_ONLY, BUILT_INTO_PDF, FontPicker, fontGroups } from './FontPicker.js';
+import { BUILT_IN_ONLY, BUILT_INTO_PDF, FontPicker, bestMatchOf, fontGroups } from './FontPicker.js';
 import { activateCatalogue, i18n } from './i18n.js';
 import {
   EN,
@@ -158,6 +158,51 @@ describe('Edit text’s groups in the one picker (the owner’s decision of 2026
     expect(marked).toHaveLength(1);
     expect(marked[0]?.closest('[data-font-choice]')?.getAttribute('data-font-choice')).toBe('Carlito');
     expect(marked[0]?.textContent).toBe('Monstera’s choice');
+    // THE MARK IS NOT IN THE OPTION'S NAME: it is the font's alone, and the mark is its description.
+    const carlito = marked[0]?.closest('[role="option"]');
+    expect(carlito?.getAttribute('aria-label')).toBe('Carlito');
+    expect(carlito?.getAttribute('aria-description')).toBe('Monstera’s choice');
+    expect(view.getAllByRole('option', { name: 'Carlito' })).toHaveLength(2);
+  });
+
+  it('Enter picks the font a search names, ahead of a closest match that only looks like it (the local agent’s walk)', () => {
+    activateCatalogue('en', EN);
+    const onPick = vi.fn();
+    // ARIMO IS ARIAL'S TWIN, listed first under Closest matches and found by a search for Arial through its `like`.
+    const list = { listed: true, families: [family({ name: 'Arial' }), family({ name: 'Arimo', origin: 'bundled', looksLike: 'Arial' })], more: 0 } as const;
+    const view = render(
+      <I18nProvider i18n={i18n}>
+        <FontPicker
+          builtIn={['Helvetica']}
+          editor={{ closest: ['Arimo'], chosen: 'Arimo', onAsOnPage: vi.fn() }}
+          inDocument={[]}
+          label={TEXT_FORMAT_FAMILY}
+          list={list}
+          onPick={onPick}
+          unset={TEXT_FORMAT_FAMILY_RUN}
+          value={undefined}
+        />
+      </I18nProvider>,
+    );
+    fireEvent.click(view.getByRole('button', { name: /^Font:/u }));
+    const search = view.getByRole('combobox', { name: 'Search fonts' });
+    fireEvent.change(search, { target: { value: 'Arial' } });
+    // CONTROL: the first option the search leaves is Arimo, which a first-match Enter took.
+    expect(view.getAllByRole('option')[0]?.getAttribute('aria-label')).toBe('Arimo');
+    fireEvent.keyDown(search, { key: 'Enter' });
+    expect(onPick).toHaveBeenCalledWith('Arial');
+  });
+
+  it('bestMatchOf: the name itself, then one it begins, then one holding it, then a twin; and the arrows still walk', () => {
+    const choices = [
+      { family: 'Arimo', like: 'Arial' },
+      { family: 'Arial Narrow', like: undefined },
+      { family: 'Arial', like: undefined },
+    ];
+    expect(bestMatchOf(choices, 'arial')).toBe(2);
+    expect(bestMatchOf(choices, 'arial n')).toBe(1);
+    expect(bestMatchOf(choices, 'narrow')).toBe(1);
+    expect(bestMatchOf(choices, '')).toBe(0);
   });
 });
 

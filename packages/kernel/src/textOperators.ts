@@ -348,6 +348,8 @@ export interface DrawnObject {
 export interface MarkedDecoration extends PageDecoration {
   readonly start: number;
   readonly end: number;
+  /** Its path's points in page space, so a block set in a frame of its own reads the rule in that frame, not its box's. */
+  readonly points: readonly (readonly [number, number])[];
 }
 
 /** One segment of a path as written: its operator, its numbers in the path's own space, and where the instruction is. */
@@ -532,8 +534,26 @@ export function contentLayout(content: Uint8Array, xobject: (name: string) => XO
   return { drawn, operators, textObjects: ends, unitOf, states };
 }
 
+/**
+ * {@link scanContent}'s answer for `content` read with no XObject kinds and no probes, kept while the bytes are: one edit
+ * asks it of the same content three times (the fonts as PDFium read them, the writer, the structural check), and on the
+ * text walk's dense page each pass over its 4.7 MB was 1.2 seconds (measured 2026-10-27). Keyed by the bytes object, so
+ * new bytes are read afresh and nothing outlives them; the answer is read-only throughout.
+ */
+const plainScans = new WeakMap<Uint8Array, ReturnType<typeof scanContent>>();
+
+/** {@link scanContent}, read once per content where nothing beyond the bytes shapes the answer. */
+function scan(content: Uint8Array, xobject?: (name: string) => XObjectKind, probes?: readonly number[]): ReturnType<typeof scanContent> {
+  if (xobject !== undefined || probes !== undefined) return scanContent(content, xobject, probes);
+  const known = plainScans.get(content);
+  if (known !== undefined) return known;
+  const read = scanContent(content);
+  plainScans.set(content, read);
+  return read;
+}
+
 /** The ONE pass over a content stream (the numbering rule and the `q` and `Q` it is read through are stated here once). */
-function scan(
+function scanContent(
   content: Uint8Array,
   xobject: (name: string) => XObjectKind = () => undefined,
   probes: readonly number[] = [],
@@ -649,6 +669,7 @@ function scan(
             bottom: Math.min(...ys),
             top: Math.max(...ys),
             colour: fillOf(content, only.settings),
+            points: only.points,
           });
         }
         break;

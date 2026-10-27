@@ -1,5 +1,5 @@
 import type { DocId, DocVersion } from '@monstera/shared';
-import { DEFAULT_TEXT_LINE_HEIGHT, MAX_TEXT_LINE_HEIGHT, MAX_TEXT_PADDING, MIN_TEXT_LINE_HEIGHT } from '@monstera/shared';
+import { DEFAULT_TEXT_LINE_HEIGHT, MAX_TEXT_LINE_HEIGHT, MAX_TEXT_PADDING, MIN_TEXT_LINE_HEIGHT, sameTextFrame, type TextFrame } from '@monstera/shared';
 import { z } from 'zod';
 
 import { isFollowable, schemeOf } from './followedLinks.js';
@@ -6221,10 +6221,11 @@ export const MAX_EDIT_RUNS = 65_536;
  *
  * A page's text with room: the densest page measured, a 12 × 70 table at 6pt, is a few thousand characters. A block
  * or a run is bounded only by this, so a translated paragraph past the 4,096 a single text once had is written rather
- * than refused (JOURNAL, *No document-size refusals*, table A row 10). With {@link MAX_EDIT_RUNS} it keeps both edits
- * under the 8 MiB file a PDFium command crosses in, at their worst (`hostRoutes.test.ts`).
+ * than refused (JOURNAL, *No document-size refusals*, table A row 10). With {@link MAX_EDIT_RUNS} and an added box's
+ * {@link MAX_INSERT_TEXT} it keeps both edits under the 8 MiB file a writer command crosses in, at their worst
+ * (`hostRoutes.test.ts`); the two share it (ADR-0273 Decision 5).
  */
-export const MAX_EDIT_TEXT = 786_432;
+export const MAX_EDIT_TEXT = 524_288;
 
 /** The highest object index an edit may name, in the page-object walk's numbering: a page of 16 million objects. */
 export const MAX_OBJECT_INDEX = 16_777_215;
@@ -6714,14 +6715,24 @@ export const operatorPlaceSchema = blockPlaceSchema
       .object({ to: z.enum(['forward', 'backward']), past: arrangeNeighbourSchema })
       .strict()
       .optional(),
+    /**
+     * For a block of ONE line, the page x its words may grow to before they wrap (`oneLineReach`, the rule the editor
+     * lays the line out by), so the line breaks written are the ones the person saw. Absent, a block wraps at its own
+     * right edge. Not a measure: nothing is moved, and a block of several lines ignores it.
+     */
+    reach: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE).optional(),
   })
   .strict();
 
 export type OperatorPlace = z.infer<typeof operatorPlaceSchema>;
 
-/** The most boxes one edit may add, and the most words in each (invariant L11): an added box is typed by hand. */
+/**
+ * The most boxes one edit may add, and the most characters in each (invariant L11). An added box takes what is typed or
+ * pasted into it to what one command can cross beside {@link MAX_EDIT_TEXT} (ADR-0273 Decision 5): at 4,096 a paste past
+ * it failed the wire's schema and reached the person as *Something went wrong*.
+ */
 export const MAX_PAGE_INSERTS = 2;
-export const MAX_INSERT_TEXT = 4096;
+export const MAX_INSERT_TEXT = 131_072;
 
 /**
  * A box of new text, on a page that has no run to take its style from (ADR-0180 Decision 6, corrected 2026-10-06): its
@@ -7146,8 +7157,11 @@ export const editTextBlockSchema = blockEditCommandObject('editTextBlock')
 /** Steps a form placement's path may take from the page: a form inside a form inside … this many deep. */
 export const MAX_FORM_DEPTH = 4;
 
-/** Characters of one step's resource name; ISO 32000-2 allows 127 bytes, and the corpus's longest is 7. */
-export const MAX_FORM_NAME = 64;
+/**
+ * Characters of one step's resource name: ISO 32000-2's own limit (127 bytes, so never more characters), so a name a
+ * valid file holds is never why its text is not offered. The corpus's longest is 7.
+ */
+export const MAX_FORM_NAME = 127;
 
 /** Placements of forms showing text read on one page; a page past this offers its first ones. */
 export const MAX_FORM_PLACEMENTS = 64;
@@ -7190,17 +7204,32 @@ export function sameStream(a: { readonly form?: FormPath }, b: { readonly form?:
 }
 
 /**
- * A page's blocks by the stream that holds them, in the order each stream's first block comes, each with its blocks in
- * their order: what a writer of several blocks sends one command per. The page's own blocks come first in a read.
+ * Whether two blocks of a page may be written by ONE command: in the same stream ({@link sameStream}) and set in the same
+ * frame (`sameTextFrame`), since a writer lays one command's blocks out in one frame (ADR-0273 Decision 3). The one answer
+ * a join, a split and a replacement take, so none can send what the writer must refuse.
  */
-export function streamsOf<B extends { readonly form?: FormPath }>(blocks: readonly B[]): { readonly form: FormPath | null; readonly blocks: readonly B[] }[] {
-  const streams: { readonly form: FormPath | null; readonly blocks: B[] }[] = [];
+export function oneCommand(
+  a: { readonly form?: FormPath; readonly frame?: TextFrame | undefined },
+  b: { readonly form?: FormPath; readonly frame?: TextFrame | undefined },
+): boolean {
+  return sameStream(a, b) && sameTextFrame(a.frame ?? null, b.frame ?? null);
+}
+
+/**
+ * A page's blocks by the command that writes them ({@link oneCommand}), in the order each group's first block comes, each
+ * with its blocks in their order: what a writer of several blocks sends one command per. The page's own blocks come first
+ * in a read.
+ */
+export function commandsOf<B extends { readonly form?: FormPath; readonly frame?: TextFrame | undefined }>(
+  blocks: readonly B[],
+): { readonly form: FormPath | null; readonly blocks: readonly B[] }[] {
+  const groups: { readonly form: FormPath | null; readonly blocks: B[] }[] = [];
   for (const block of blocks) {
-    const held = streams.find((stream) => stream.blocks[0] !== undefined && sameStream(stream.blocks[0], block));
-    if (held === undefined) streams.push({ form: block.form ?? null, blocks: [block] });
+    const held = groups.find((group) => group.blocks[0] !== undefined && oneCommand(group.blocks[0], block));
+    if (held === undefined) groups.push({ form: block.form ?? null, blocks: [block] });
     else held.blocks.push(block);
   }
-  return streams;
+  return groups;
 }
 
 // NO `unpack`: a page whose text is in a Type 3 font is never read unpacked (ADR-0232 Decision 5).

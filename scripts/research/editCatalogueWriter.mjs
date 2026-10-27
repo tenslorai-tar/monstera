@@ -7,11 +7,12 @@
  *
  * ## How an edit is sent
  *
- * PDFium reads the page as the editor does (`textRuns`, grouped by `groupIntoBlocks`); the block the manifest edits is
+ * PDFium reads the page as the editor does (`textRuns`, grouped by `groupInFrames`); the block the manifest edits is
  * the grouped block whose box most overlaps the manifest's; its new text is that block's text as read, with the words the
  * manifest's edit removes replaced by the words it inserts; and it goes to `applyEditTextOperators`, the
  * one Edit text writer (ADR-0266), with NO blocks pushed below it — the behaviour ADR-0271 keeps, so a disturbance this
- * prints below a growing block is the push it retires, not the measurement's.
+ * prints below a growing block is the push it retires, not the measurement's. That path is `writeCatalogueShape`
+ * (`scripts/lib/catalogueWrite.mjs`), the one spelling `proof:editcatalogue` runs too.
  *
  * Not sent: a block inside a form, whose route needs `main`'s form assembly, which no shared function holds yet (the
  * stage audit's XXXXXXXX-3). It is printed as not measured, never as passed.
@@ -28,6 +29,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { EDIT_TEXT, refuseStaleBuild } from '../lib/buildFreshness.mjs';
+import { writeCatalogueShape } from '../lib/catalogueWrite.mjs';
 import { expectEdit } from '../lib/editExpectations.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { bindNativeEngine } from '../lib/nativeEngine.mjs';
@@ -49,8 +51,8 @@ refuseStaleBuild(ROOT, EDIT_TEXT, 5);
 const pdfium = await import('../../packages/kernel/dist/pdfiumFfi.js');
 pdfium.openPdfium(library);
 const { blockEditOf, readsUnpacked } = await import('../../packages/contract/dist/commands.js');
-const { groupIntoBlocks, isEditedInPlace, blockableOf } = await import('../../packages/kernel/dist/textLines.js');
-const { paragraphsOfLines, lineText, asDocVersion } = await import('../../packages/shared/dist/index.js');
+const { groupInFrames, inItsFrame, blockableOf } = await import('../../packages/kernel/dist/textLines.js');
+const { paragraphsOfLines, lineText, asDocVersion, fromTextFrame } = await import('../../packages/shared/dist/index.js');
 const mupdf = await import('../../packages/kernel/dist/mupdfRaw.js');
 const { mupdfWriter } = await import('../../packages/kernel/dist/mupdfWriter.js');
 const { applyEditTextOperators } = await import('../../packages/kernel/dist/textOperatorEdit.js');
@@ -76,95 +78,13 @@ const engines = { kernel: { mupdf }, pdfium };
   process.stdout.write('  control: the check passes the correct edit and fails an unchanged page\n\n');
 }
 
+const kit = { pdfium, mupdfWriter, applyEditTextOperators, blockEditOf, readsUnpacked, groupInFrames, inItsFrame, blockableOf, paragraphsOfLines, lineText, asDocVersion, fromTextFrame, expectEdit, engines };
 /** @type {{ id: string, verdict: string }[]} */
 const results = [];
 for (const shape of SHAPES.filter((each) => ONLY === undefined || each.id === ONLY)) {
-  const base = await shape.build({});
-  const correct = await shape.build({ edit: { block: shape.edit.block, lines: shape.edit.lines } });
-  const block = /** @type {import('./editCatalogue.mjs').Block} */ (base.blocks.find((each) => each.id === shape.edit.block));
-  const expected = /** @type {string} */ (correct.blocks.find((each) => each.id === block.id)?.text);
-  if (block.form !== undefined) {
-    results.push({ id: shape.id, verdict: 'NOT MEASURED: a block inside a form (see the header)' });
-    continue;
-  }
-  const session = await pdfium.pdfiumWriter.open(base.bytes);
-  /** @type {any} */
-  let read;
-  /** @type {any} */
-  let runs;
-  try {
-    const plain = await pdfium.textRuns(session, base.page);
-    const unpacked = readsUnpacked(plain.unaddressable, 'operators');
-    if (unpacked) await pdfium.unpackedIfAsked(session, base.page, true);
-    read = unpacked ? await pdfium.textRuns(session, base.page) : plain;
-    runs = await pdfium.pageRuns(session, base.page);
-  } finally {
-    await pdfium.pdfiumWriter.close(session);
-  }
-  const grouped = groupIntoBlocks(read.runs.filter((/** @type {any} */ run) => isEditedInPlace(run.style)).map((/** @type {any} */ run) => blockableOf(run)));
-  // THE MANIFEST'S BLOCK, as the grouping read it: the grouped block whose box holds the most of the manifest's box.
-  const overlap = (/** @type {any} */ each) =>
-    Math.max(0, Math.min(each.box.x1, block.box.right) - Math.max(each.box.x0, block.box.left)) *
-    Math.max(0, Math.min(each.box.y1, block.box.top) - Math.max(each.box.y0, block.box.bottom));
-  const near = [...grouped].filter((each) => overlap(each) > 0).sort((a, b) => overlap(b) - overlap(a));
-  if (near.length === 0) {
-    results.push({ id: shape.id, verdict: 'NOT SENT: the grouping offers no block where the manifest’s is' });
-    continue;
-  }
-  /** A grouped block's text as the editor reads it. @param {any} each */
-  const textRead = (each) => paragraphsOfLines(each.lines.map((/** @type {any} */ line) => ({ text: lineText(line.runs), soft: line.soft })));
-  // THE EDIT'S OWN CHANGE, applied to the block as the grouping reads it: the words the manifest's edit removes and
-  // inserts, found by their shared start and end. Rebuilding the text from the manifest's lines instead dropped what the
-  // grouping joins to the block — a numbered list's numbers — and failed wherever it splits lines otherwise.
-  // THE EDITED BLOCK'S TEXT AS THE CATALOGUE BUILDS IT, not the edit's lines alone: a block's words include what is
-  // drawn apart from its lines, such as markers drawn later.
-  const was = block.text.split(/\s+/u);
-  const becomes = expected.split(/\s+/u);
-  let start = 0;
-  while (start < was.length && was[start] === becomes[start]) start += 1;
-  let end = 0;
-  while (end < was.length - start && was[was.length - 1 - end] === becomes[becomes.length - 1 - end]) end += 1;
-  const removed = was.slice(start, was.length - end).join(' ');
-  const inserted = becomes.slice(start, becomes.length - end).join(' ');
-  // OF THE BLOCKS WHERE THE MANIFEST'S IS, the one holding the words the edit changes: a code block groups a line to a
-  // block, and the widest line is not the edited one.
-  const chosen = near.find((each) => removed !== '' && textRead(each).includes(removed)) ?? /** @type {any} */ (near[0]);
-  const asRead = textRead(chosen);
-  if (removed === '' || !asRead.includes(removed)) {
-    results.push({ id: shape.id, verdict: `NOT SENT: the block as the grouping reads it does not hold “${removed}”` });
-    continue;
-  }
-  // THE SAME OCCURRENCE the edit changes: the words before it may hold the phrase too (a list of like lines).
-  const occurrence = was.slice(0, start).join(' ').split(removed).length - 1;
-  let at = -1;
-  for (let k = 0; k <= occurrence; k += 1) at = asRead.indexOf(removed, at + 1);
-  if (at < 0) {
-    results.push({ id: shape.id, verdict: `NOT SENT: the block as the grouping reads it holds “${removed}” fewer times than the catalogue’s` });
-    continue;
-  }
-  const text = asRead.slice(0, at) + inserted + asRead.slice(at + removed.length);
-  const entry = {
-    lines: chosen.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index)),
-    soft: chosen.lines.map((/** @type {any} */ line) => line.soft),
-    text,
-  };
-  const copy = await mupdfWriter.open(base.bytes);
-  /** @type {Uint8Array | null} */
-  let after = null;
-  /** @type {import('../lib/editExpectations.mjs').Outcome} */
-  let outcome;
-  try {
-    const { noted } = await applyEditTextOperators(copy, { kind: 'editTextOperators', page: base.page, ...blockEditOf([entry]), fit: 'reflow', version: asDocVersion(1) }, runs);
-    after = await mupdfWriter.serialise(copy);
-    if (KEEP !== undefined) writeFileSync(join(KEEP, `${shape.id}.pdf`), after);
-    outcome = { noted };
-  } catch (error) {
-    outcome = { refused: error };
-  } finally {
-    await mupdfWriter.close(copy);
-  }
-  const failures = await expectEdit(engines, { before: base.bytes, after, page: base.page, block, expected, outcome });
-  results.push({ id: shape.id, verdict: failures.length === 0 ? 'held' : failures.join('\n      ') });
+  const { verdict, after } = await writeCatalogueShape(kit, shape);
+  if (KEEP !== undefined && after !== null) writeFileSync(join(KEEP, `${shape.id}.pdf`), after);
+  results.push({ id: shape.id, verdict });
 }
 
 for (const { id, verdict } of results) process.stdout.write(`  ${id}: ${verdict}\n`);

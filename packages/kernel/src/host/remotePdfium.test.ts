@@ -555,7 +555,7 @@ describe('main’s PDFium writer', () => {
         expect(channel).toBe('engine/text-runs');
         expect(params).toMatchObject({ page: 4 });
         sent.push(params);
-        return { ok: true, value: { runs, truncated: false, unaddressable: 9, box } };
+        return { ok: true, value: { runs, truncated: false, unaddressable: 9, box, markers: [] } };
       },
     };
     // THE PAGE'S BOX, forwarded as the host said it: off the origin, so a reader that answered a default
@@ -567,7 +567,7 @@ describe('main’s PDFium writer', () => {
     // what the host said: a `toMatchObject` on the indices would pass against
     // one that dropped the text and the extent, and both are what the grouping
     // and the chooser above it are made of.
-    expect(await textRuns(imageOf(new Uint8Array([5])), 4, false)).toStrictEqual({ runs, truncated: false, unaddressable: 9, box });
+    expect(await textRuns(imageOf(new Uint8Array([5])), 4, false)).toStrictEqual({ runs, truncated: false, unaddressable: 9, box, markers: [] });
     expect(transfer.log).toStrictEqual(['write:001', 'remove:001']);
     // UNPACK CROSSES ONLY WHEN ASKED (ADR-0232): a plain read names no `unpack`, which the strict wire would also take.
     await textRuns(imageOf(new Uint8Array([5])), 4, true);
@@ -584,7 +584,7 @@ describe('main’s PDFium writer', () => {
         sent.push(params);
         return channel === 'engine/page-runs'
           ? { ok: true, value: { runs: [], textObjects: [] } }
-          : { ok: true, value: { runs: [], truncated: false, unaddressable: 0, box: { x0: 0, y0: 0, x1: 612, y1: 792 } } };
+          : { ok: true, value: { runs: [], truncated: false, unaddressable: 0, box: { x0: 0, y0: 0, x1: 612, y1: 792 }, markers: [] } };
       },
     };
     const { textRuns, pageRuns } = harness(peer, transfer);

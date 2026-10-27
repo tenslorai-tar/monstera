@@ -50,20 +50,70 @@
  * 238.0**, so equality splits the very case the grouping exists for.
  */
 
-import { blockShape, faceSeenAs } from '@monstera/shared';
+import { type TextFrame, blockShape, faceSeenAs, sameTextFrame } from '@monstera/shared';
 
 /** How a text object's matrix sets it (`orientationOf`, `pdfiumFfi.ts`): `upright` is the only one an editor is placed along. */
 export type Orientation = 'upright' | 'turned' | 'vertical' | 'slanted' | 'mirrored';
 
 /**
- * Whether text set like this is edited in place: straight text only, since an editor cannot be placed along an axis the
- * page is not set on ([ADR-0181](../../../docs/DECISIONS/0181-right-to-left-text-is-written-in-drawing-order-and-read-back-as-typed.md)
- * Decision 7). The ONE spelling of that test (B3a): the composition leaves other text out of the blocks, the join does
- * not join it, and the proofs that group runs ask the same question, so a kind added to {@link Orientation} is decided
- * here and nowhere else.
+ * Whether text is set upright, the ONE spelling of that test (B3a). It no longer decides what is edited: since
+ * [ADR-0273](../../../docs/DECISIONS/0273-text-set-at-an-angle-is-edited-in-its-own-frame.md) text at any angle is
+ * grouped in its own frame ({@link groupInFrames}). What it still decides is upright-only by its nature: glyphs drawn an
+ * object each are joined into a run along the page's x (`textRunJoin.ts`), and a line running both ways is read in the
+ * page's left-to-right order (`bidiLine.ts`). A proof that groups an upright fixture may still filter by it.
  */
-export function isEditedInPlace(style: { readonly orientation: Orientation }): boolean {
+export function isUpright(style: { readonly orientation: Orientation }): boolean {
   return style.orientation === 'upright';
+}
+
+/** A run's frame and its place in it, as the read answers it (`RunFrame`, `pdfiumFfi.ts`). */
+export interface FramedPlace {
+  readonly matrix: TextFrame;
+  readonly left: number;
+  readonly right: number;
+  readonly bottom: number;
+  readonly top: number;
+  readonly baseline: number;
+}
+
+/**
+ * A run as it is grouped: where it has a frame (ADR-0273), its box and baseline are the frame's, in which it is upright;
+ * otherwise it is as read. The baseline is the style's, where the composition reads it.
+ */
+export function inItsFrame<R extends { readonly left: number; readonly right: number; readonly bottom: number; readonly top: number; readonly style: { readonly baseline: number }; readonly frame?: FramedPlace | undefined }>(
+  run: R,
+): R {
+  const frame = run.frame;
+  if (frame === undefined) return run;
+  return { ...run, left: frame.left, right: frame.right, bottom: frame.bottom, top: frame.top, style: { ...run.style, baseline: frame.baseline } };
+}
+
+/**
+ * The blocks a person edits, FRAME BY FRAME (ADR-0273): runs of one frame are grouped by {@link groupIntoBlocks}, in that
+ * frame's coordinates where they are upright, and each block of a frame carries it. Upright runs have no frame and are
+ * grouped exactly as they always were. A block never mixes frames: two runs set at different angles are not one line.
+ *
+ * The ONE grouping for the editor's read and every walk that must agree with it (B3a). `frameOf` names a run's frame;
+ * the runs are given in their frame's coordinates already ({@link inItsFrame}).
+ */
+export function groupInFrames<R extends BlockableRun<unknown>>(
+  runs: readonly R[],
+  frameOf: (run: R) => TextFrame | undefined,
+  /** The page's drawn bullets, in page space (`groupIntoBlocks`): asked of the upright text only, whose space it is. */
+  markers: readonly DrawnMarker[] = [],
+): readonly (EditableBlock<R['style']> & { readonly frame?: TextFrame })[] {
+  const groups: { readonly frame: TextFrame | null; readonly runs: R[] }[] = [];
+  for (const run of runs) {
+    const frame = frameOf(run) ?? null;
+    const group = groups.find((each) => sameTextFrame(each.frame, frame));
+    if (group === undefined) groups.push({ frame, runs: [run] });
+    else group.runs.push(run);
+  }
+  // UPRIGHT FIRST, then each frame in the order its first run was read, so a page with no angled text is answered as before.
+  groups.sort((a, b) => (a.frame === null ? 0 : 1) - (b.frame === null ? 0 : 1));
+  return groups.flatMap(({ frame, runs: members }) =>
+    groupIntoBlocks<R['style']>(members, frame === null ? markers : []).map((block) => (frame === null ? block : { ...block, frame })),
+  );
 }
 
 /**
@@ -495,8 +545,28 @@ function longestRun<S>(piece: Piece<S>): BlockableRun<S> | undefined {
  *
  * @param runs the page's text runs, in reading order
  */
-export function groupIntoBlocks<S>(runs: readonly BlockableRun<S>[]): readonly EditableBlock<S>[] {
+export function groupIntoBlocks<S>(runs: readonly BlockableRun<S>[], markers: readonly DrawnMarker[] = []): readonly EditableBlock<S>[] {
   const pieces = piecesOf(runs, (run) => run.size);
+  /**
+   * Whether a line begins at a drawn bullet ({@link DrawnMarker}): one beside its first letter, no taller than the line,
+   * within three of its heights before it, and level with it. Such a line begins its own BLOCK, not only its own
+   * paragraph: a drawn bullet does not move with text, so an item above that grows by a line, moving the lines under it,
+   * would leave every bullet below beside the wrong words. Its own block, an item that grows overlaps the next, as any
+   * block does, and nothing moves.
+   */
+  const beginsAtMarker = (piece: Piece<S>): boolean => {
+    const height = piece.top - piece.bottom;
+    return markers.some((marker) => {
+      const middle = (marker.y0 + marker.y1) / 2;
+      return (
+        marker.y1 - marker.y0 <= height &&
+        middle >= piece.bottom &&
+        middle <= piece.top &&
+        marker.x1 <= piece.left + SAME_EDGE &&
+        piece.left - marker.x1 <= 3 * height
+      );
+    });
+  };
 
   // TOP TO BOTTOM, not reading order, for the BLOCK pass only. A block's lines
   // are top to bottom by what a block is, and reading order is the content
@@ -511,7 +581,7 @@ export function groupIntoBlocks<S>(runs: readonly BlockableRun<S>[]): readonly E
   for (const piece of pieces) {
     const height = piece.top - piece.bottom;
     const setting = settingOfPiece(piece);
-    const block = blocks.find((held) => {
+    const block = beginsAtMarker(piece) ? undefined : blocks.find((held) => {
       const above = held[held.length - 1];
       if (above === undefined) return false;
       const overlaps = piece.left < above.right && piece.right > above.left;
@@ -581,10 +651,72 @@ export function groupIntoBlocks<S>(runs: readonly BlockableRun<S>[]): readonly E
 }
 
 /**
- * What a line that begins a list entry starts with: a bullet of the kinds word processors and browsers draw, or a number
- * or a letter closed by a full stop or a bracket, then white space. The ONE statement of it in the reading.
+ * What a line that begins a list entry starts with: a bullet of the kinds word processors and browsers draw, or a dash, a
+ * star, a number or a letter closed by a full stop or a bracket, then white space. The ONE statement of it in the reading.
+ *
+ * A BULLET NEEDS NO SPACE AFTER IT: no word begins with one, and a bullet set apart from its words by position rather than
+ * by a space reads with none between them (a bullet as its own object, as a browser prints a list). With the space
+ * required, three such items read as one paragraph, and an edit of one reflowed the next onto it (the local agent's walk
+ * of 2026-10-27). A dash or a star keeps the space, since a hyphenated word begins with neither but a line may.
  */
-export const LIST_ENTRY = /^(?:[•◦▪▫‣⁃●○■□–—*-]|\(?(?:\d{1,3}|[a-z])[.)])\s/u;
+/** One word of a run as the page draws it: its letters `from` to `to` in the run's text, and where they run across. */
+export interface DrawnWord {
+  readonly from: number;
+  readonly to: number;
+  readonly x0: number;
+  readonly x1: number;
+}
+
+/**
+ * A run's words where the page draws them, from its drawn characters in the order drawn: each word of `text` (letters
+ * between spaces) from its first letter's left to its last letter's right. The editor lays its letters out word by word
+ * over these, so the letter a person presses is the letter the edit changes, whatever face stands in for the page's
+ * (the owner's video of 1.1.2609.0: on a drawn font, highlighting the first word highlighted the second and third).
+ *
+ * `undefined` where the text's letters are not the glyphs' in order, letter for letter — a run whose text is an
+ * `/ActualText`, or read in another order than drawn — since words placed from a misread pairing would be worse than
+ * the line's own fit, which is what the editor then keeps.
+ */
+export function drawnWordsOf(
+  text: string,
+  glyphs: readonly { readonly char: string; readonly left: number; readonly right: number }[],
+): readonly DrawnWord[] | undefined {
+  // THE GLYPHS AS UNITS, so a character the text page answered as two (a pair outside the basic plane) pairs unit by unit.
+  const units = glyphs.flatMap((glyph) => glyph.char.split('').map((unit) => ({ unit, glyph }))).filter(({ unit }) => unit.trim() !== '');
+  const words: DrawnWord[] = [];
+  let next = 0;
+  let open: { from: number; x0: number; x1: number } | undefined;
+  for (let at = 0; at <= text.length; at += 1) {
+    const unit = text[at];
+    if (unit === undefined || unit.trim() === '') {
+      if (open !== undefined) words.push({ from: open.from, to: at, x0: open.x0, x1: open.x1 });
+      open = undefined;
+      continue;
+    }
+    const paired = units[next];
+    if (paired?.unit !== unit) return undefined;
+    next += 1;
+    const { left, right } = paired.glyph;
+    open = open === undefined ? { from: at, x0: left, x1: Math.max(left, right) } : { from: open.from, x0: Math.min(open.x0, left), x1: Math.max(open.x1, right) };
+  }
+  return next === units.length ? words : undefined;
+}
+
+/** A small shape the page draws as a list's bullet, by its box in page space (`drawnMarkersOf`, the read's). */
+export interface DrawnMarker {
+  readonly x0: number;
+  readonly y0: number;
+  readonly x1: number;
+  readonly y1: number;
+}
+
+/** The most drawn bullets a page's read carries: a list of thousands of items is a page no one edits item by item. */
+export const MAX_DRAWN_MARKERS = 4096;
+
+/** How far past a line's first letter a drawn bullet's right edge may reach and still stand before it: a rounding. */
+const SAME_EDGE = 0.5;
+
+export const LIST_ENTRY =/^(?:[•◦▪▫‣⁃●○■□](?!\s*$)|(?:[–—*-]|\(?(?:\d{1,3}|[a-z])[.)])\s)/u;
 
 /**
  * Whether each line of a block ENDS in a soft wrap, by the typesetter's own test and no constant: a line was soft-wrapped

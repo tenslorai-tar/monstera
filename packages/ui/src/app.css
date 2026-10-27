@@ -6567,8 +6567,14 @@ optgroup {
   background: var(--accent-soft);
 }
 
-/* ADD TEXT: the empty page as a surface UNDER the outlines (they stack from z-index 1), so a press on a block still edits it
-   and a press anywhere else is where the new words go. */
+/* SHOWN AND NOT PRESSED while Add text is armed: the press is the surface's, which places a box there. */
+.m-text-block--adding {
+  pointer-events: none;
+}
+
+/* ADD TEXT: the page as a surface UNDER the outlines (they stack from z-index 1). While it is armed the outlines take no
+   press (`m-text-block--adding`), so a press over existing text places a box there as anywhere else (the owner's walk of
+   2026-10-27: a press over an outline opened no box, which before the rebuild it did). */
 .m-text-add-surface {
   position: absolute;
   inset: 0;
@@ -6676,6 +6682,12 @@ optgroup {
   min-inline-size: calc(100% + 1ch);
   white-space: pre;
   overflow-wrap: normal;
+}
+
+/* A BLOCK OF ONE LINE grows right as it is typed in, to its reach (`oneLineReach`, set inline as the most it may take),
+   and wraps there, where the writer wraps it: the two break the line in one place. */
+.m-kit-surface--reach {
+  white-space: pre-wrap;
 }
 
 /* A PARAGRAPH AS THE PAGE DREW IT (`paint.ts`): laid out at the page's breaks and nowhere else, and not painted, so the
@@ -6818,9 +6830,14 @@ optgroup {
    twelve pixels into the first letters of the first and last lines (measured 2026-10-06 on Chromium 151, `elementFromPoint`
    four pixels in from the last line's start answered the south-west handle). The visible square is small and sits
    against the frame inside its target (`::before`). `--m-handle-reach` is the target's side, which the bar and the
-   sentence above the frame clear. */
+   sentence above the frame clear.
+   AND ONE PIXEL CLEAR OF IT, `--m-handle-gap`: a target touching the frame was still over the line's last letter, since
+   a hit test snaps both boxes to whole pixels (measured 2026-10-27 on Chromium 151: a side handle starting at 872.14
+   answered `elementFromPoint` at 871.25 and on, so a drag ending on the right half of the last letter ended on the
+   handle and left that letter unselected). The visible square still touches the frame, and is not pressed (`::before`). */
 .m-kit-frame {
   --m-handle-reach: var(--space-24);
+  --m-handle-gap: 1px;
 }
 
 .m-kit-handle {
@@ -6845,6 +6862,8 @@ optgroup {
   inset-inline-start: var(--grip-x, 50%);
   inset-block-start: var(--grip-y, 50%);
   translate: -50% -50%;
+  /* THE SQUARE IS SEEN, NOT PRESSED: it touches the frame, and a press on it is the target's around it. */
+  pointer-events: none;
 }
 
 .m-kit-handle:disabled {
@@ -6855,53 +6874,54 @@ optgroup {
 .m-kit-handle--nw {
   inset-block-start: 0;
   inset-inline-start: 0;
-  translate: -100% -100%;
-  --grip-x: calc(100% - var(--space-4));
-  --grip-y: calc(100% - var(--space-4));
+  translate: calc(-100% - var(--m-handle-gap)) calc(-100% - var(--m-handle-gap));
+  --grip-x: calc(100% - var(--space-4) + var(--m-handle-gap));
+  --grip-y: calc(100% - var(--space-4) + var(--m-handle-gap));
   cursor: nwse-resize;
 }
 .m-kit-handle--n {
   inset-block-start: 0;
   inset-inline-start: 50%;
-  translate: -50% -100%;
-  --grip-y: calc(100% - var(--space-4));
+  translate: -50% calc(-100% - var(--m-handle-gap));
+  --grip-y: calc(100% - var(--space-4) + var(--m-handle-gap));
   cursor: move;
 }
 .m-kit-handle--ne {
   inset-block-start: 0;
   inset-inline-start: 100%;
-  translate: 0 -100%;
-  --grip-x: var(--space-4);
-  --grip-y: calc(100% - var(--space-4));
+  translate: var(--m-handle-gap) calc(-100% - var(--m-handle-gap));
+  --grip-x: calc(var(--space-4) - var(--m-handle-gap));
+  --grip-y: calc(100% - var(--space-4) + var(--m-handle-gap));
   cursor: nesw-resize;
 }
 .m-kit-handle--e {
   inset-block-start: 50%;
   inset-inline-start: 100%;
-  translate: 0 -50%;
-  --grip-x: var(--space-4);
+  translate: var(--m-handle-gap) -50%;
+  --grip-x: calc(var(--space-4) - var(--m-handle-gap));
   cursor: ew-resize;
 }
 .m-kit-handle--se {
   inset-block-start: 100%;
   inset-inline-start: 100%;
-  --grip-x: var(--space-4);
-  --grip-y: var(--space-4);
+  translate: var(--m-handle-gap) var(--m-handle-gap);
+  --grip-x: calc(var(--space-4) - var(--m-handle-gap));
+  --grip-y: calc(var(--space-4) - var(--m-handle-gap));
   cursor: nwse-resize;
 }
 .m-kit-handle--sw {
   inset-block-start: 100%;
   inset-inline-start: 0;
-  translate: -100% 0;
-  --grip-x: calc(100% - var(--space-4));
-  --grip-y: var(--space-4);
+  translate: calc(-100% - var(--m-handle-gap)) var(--m-handle-gap);
+  --grip-x: calc(100% - var(--space-4) + var(--m-handle-gap));
+  --grip-y: calc(var(--space-4) - var(--m-handle-gap));
   cursor: nesw-resize;
 }
 .m-kit-handle--w {
   inset-block-start: 50%;
   inset-inline-start: 0;
-  translate: -100% -50%;
-  --grip-x: calc(100% - var(--space-4));
+  translate: calc(-100% - var(--m-handle-gap)) -50%;
+  --grip-x: calc(100% - var(--space-4) + var(--m-handle-gap));
   cursor: ew-resize;
 }
 /* THE TURN HANDLE sits one reach to the right of the block, level with its middle; `TURN_REACH` is the same number. Its

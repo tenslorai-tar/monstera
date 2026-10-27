@@ -1619,10 +1619,6 @@ export const TEXT_EDIT_UNREADABLE = messageKey('surface.text-edit.unreadable');
 export const TEXT_EDIT_TRUNCATED = messageKey('surface.text-edit.truncated');
 export const TEXT_EDIT_COVERS = messageKey('surface.text-edit.covers');
 export const TEXT_EDIT_RECOGNISE = messageKey('surface.text-edit.recognise');
-export const TEXT_EDIT_TURNED = messageKey('surface.text-edit.turned');
-export const TEXT_EDIT_VERTICAL = messageKey('surface.text-edit.vertical');
-export const TEXT_EDIT_SLANTED = messageKey('surface.text-edit.slanted');
-export const TEXT_EDIT_MIRRORED = messageKey('surface.text-edit.mirrored');
 export const TEXT_EDIT_NOT_WRITABLE = messageKey('surface.text-edit.not-writable');
 /** The label beside the characters a font cannot show (ADR-0169), in the editor and the problem dialog. */
 export const TEXT_EDIT_CHARACTERS_LABEL = messageKey('surface.text-edit.characters');
@@ -4582,12 +4578,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // A SCAN HAS NO TEXT TO EDIT UNTIL IT IS READ (ADR-0181 Decision 9): the button runs the recognise command for this page,
   // so the words it finds are the ones the editor then offers.
   [TEXT_EDIT_RECOGNISE]: 'If this is a scan, recognise its words so they can be edited',
-  // ONE SENTENCE FOR EACH KIND THE PAGE HAS (ADR-0181 Decision 7), so a person is told which text is not theirs to edit
-  // and why, rather than that some text is set at an angle.
-  [TEXT_EDIT_TURNED]: 'Text turned at an angle on this page can’t be edited in place.',
-  [TEXT_EDIT_VERTICAL]: 'Text that runs up or down this page can’t be edited in place.',
-  [TEXT_EDIT_SLANTED]: 'Text this page slants itself, rather than in its font, can’t be edited in place.',
-  [TEXT_EDIT_MIRRORED]: 'Mirrored text on this page can’t be edited in place.',
   // SAYS NOTHING CHANGED FIRST, then what to do: the editor stays open with the
   // words, so the person can change the ones the font cannot show.
   // SAID IN THE EDITOR AND IN THE PROBLEM DIALOG ALIKE, so it names no key: the editor adds its own hint beneath

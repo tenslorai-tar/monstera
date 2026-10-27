@@ -61,6 +61,7 @@ export {
 // the kernel would be re-stated in the shim and the two would agree until one
 // of them changed — which is exactly what happened to the matching rule above.
 export { type TextToken, type WordCount, countWords, tokensOf, wordsOf } from './wordCount.js';
+export { LINE_GAP, oneLineReach } from './oneLineReach.js';
 export { EDGE_HANDLE_WIDTH, MINIMUM_WINDOW, PAGE_AREA_MIN_WIDTH, minimumWindowFor } from './windowSize.js';
 // A DOCUMENT'S PASSWORD AS MAIN HOLDS IT, here because a kernel type carries it and the holder is in `apps/desktop`
 // (ADR-0171's addendum).
@@ -150,6 +151,8 @@ export {
 export { DEFAULT_TEXT_LINE_HEIGHT, MAX_TEXT_LINE_HEIGHT, MAX_TEXT_PADDING, MIN_TEXT_LINE_HEIGHT } from './textBoxLimits.js';
 // THE ONE RULE for where Add text's box goes, taken by the editor and by the proof that its words land on the page.
 export { NEW_TEXT_MARGIN, NEW_TEXT_MAX_MEASURE, NEW_TEXT_MIN_MEASURE, type NewTextBox, newTextBox } from './newTextBox.js';
+// THE ONE ANSWER to *how is this text set* (ADR-0273): the read, the editor and the writer each take it.
+export { type TextFrame, fromTextFrame, intoTextFrame, sameTextFrame, textFrameOf } from './textFrame.js';
 export {
   type PriorPageOrder,
   keptPermutation,

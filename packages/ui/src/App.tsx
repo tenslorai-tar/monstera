@@ -4832,8 +4832,6 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
             version,
             blocks: items,
             truncated: last.truncated,
-            rotated: last.rotated,
-            angled: last.angled,
             unaddressable: last.unaddressable,
             // EVERY PART CARRIES THE PAGE'S WRITER; the last one's is the page's, read at the same version.
             rewrite: last.rewrite,
@@ -4858,7 +4856,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       blockFaces: (page, block, read) => readBlockFaces(client, docId, page, block, read),
       // EVERYTHING BUT TEXT, which the blocks already are: a refused read is no note rather than a second report, since
       // the note is a courtesy after a write that already landed (B1.6).
-      objects: (page) => readPageContentBoxes(client, docId, page),
+      objects: (page, within) => readPageContentBoxes(client, docId, page, within),
       // THE RIGHT-CLICK MENU'S TWO HALVES: the browser's own verbs (the Edit menu's, through the one `windowEdit`) and the
       // spelling checker's answers (the review's, through the one personal dictionary).
       native: windowEdit,

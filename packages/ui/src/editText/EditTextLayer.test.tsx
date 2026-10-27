@@ -38,8 +38,6 @@ const BLOCKS: PageBlocks = {
   version: asDocVersion(3),
   blocks: [BLOCK, OTHER],
   truncated: false,
-  rotated: 0,
-  angled: { turned: 0, vertical: 0, slanted: 0, mirrored: 0 },
   unaddressable: 0,
   rewrite: 'objects',
 };
@@ -134,7 +132,8 @@ describe('Edit text on the editor kit (ADR-0271)', () => {
     });
     expect(onCommit).toHaveBeenCalledTimes(1);
     expect(onCommit.mock.calls[0]?.[1]).toBe('Garden club news');
-    expect(onCommit.mock.calls[0]?.[3]).toStrictEqual({});
+    // NO FORMATTING, and the one-line block's reach (`oneLineReach`): its changed words wrap where they were laid out.
+    expect(onCommit.mock.calls[0]?.[3]).toStrictEqual({ place: { reach: expect.any(Number) as number } });
   });
 
   it('with the box selected, a format applies to the whole block and is written as a mark over all of it', async () => {

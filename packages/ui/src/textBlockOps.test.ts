@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { TextBlock } from './commands/documentCommands.js';
-import { joinEdits, neighbourOf, runSpans, splitEdits, styleMarks, wordsOfBlock } from './textBlockOps.js';
+import { joinEdits, neighbourOf, pageBox, runSpans, splitEdits, styleMarks, wordsOfBlock } from './textBlockOps.js';
 
 const REGULAR = { size: 11, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false, italic: false, bold: false };
 const BOLD = { ...REGULAR, bold: true, colour: { r: 200, g: 0, b: 0 } };
@@ -188,5 +188,44 @@ describe('neighbourOf', () => {
     // CONTROL: two blocks of the same form are neighbours as the page's are.
     expect(neighbourOf([{ ...first, form: [{ name: 'Fm1', occurrence: 0 }] }, inForm], 1, 'above')).toBe(0);
     expect(neighbourOf([{ ...first, form: [{ name: 'Fm1', occurrence: 1 }] }, inForm], 1, 'above')).toBeUndefined();
+  });
+
+  it('never across frames: a turned block is no continuation of upright text whose box its own box happens to sit over (ADR-0273)', () => {
+    const [first, second] = blocks;
+    if (first === undefined || second === undefined) throw new Error('the fixture lost its blocks');
+    const TURN = [0, 1, -1, 0] as const;
+    expect(neighbourOf([first, { ...second, frame: TURN }], 1, 'above')).toBeUndefined();
+    // CONTROL: two blocks of one frame are neighbours, in it, as upright ones are.
+    expect(neighbourOf([{ ...first, frame: TURN }, { ...second, frame: TURN }], 1, 'above')).toBe(0);
+  });
+});
+
+describe('pageBox', () => {
+  it('is the box itself for upright text, and the page box around a framed box’s corners', () => {
+    expect(pageBox({ box: box(10, 20, 110, 32) })).toStrictEqual(box(10, 20, 110, 32));
+    // A QUARTER TURN: the frame's x runs up the page and its y runs left.
+    expect(pageBox({ box: box(10, 20, 110, 32), frame: [0, 1, -1, 0] })).toStrictEqual(box(-32, 10, -20, 110));
+  });
+});
+
+describe('splitEdits across frames (ADR-0273)', () => {
+  const TURNED = [0, 1, -1, 0] as const;
+  const TWO = {
+    ...block(700, [
+      { runs: [[1, 'First.', REGULAR]], soft: false },
+      { runs: [[2, 'Second.', REGULAR]], soft: false },
+    ]),
+    frame: TURNED,
+  };
+
+  it('compares a framed half with a block of another frame by their page boxes: one it would be drawn over stops it', () => {
+    // TWO's second half in the frame is x 72..300, y 672..686, moved down 14: y 658..672 in the frame, which a quarter
+    // turn puts at page x -672..-658, y 72..300. An upright block there, and one well clear of it.
+    const over = { ...block(200, [{ runs: [[9, 'Under.', REGULAR]], soft: false }]), box: box(-670, 100, -600, 120) };
+    const clear = { ...block(200, [{ runs: [[9, 'Clear.', REGULAR]], soft: false }]), box: box(100, 100, 200, 120) };
+    expect(splitEdits(TWO, 1, [TWO, over])).toBeUndefined();
+    // CONTROL: an upright block whose FRAME BOX numbers would collide (72..300 by 644..658) but whose page box is far away.
+    const sameNumbers = { ...block(200, [{ runs: [[9, 'Elsewhere.', REGULAR]], soft: false }]), box: box(72, 640, 300, 655) };
+    expect(splitEdits(TWO, 1, [TWO, clear, sameNumbers])).toHaveLength(2);
   });
 });

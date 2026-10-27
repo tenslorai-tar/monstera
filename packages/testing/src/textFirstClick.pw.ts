@@ -62,7 +62,10 @@ interface LineSpec {
   readonly soft: boolean;
 }
 
-/** A block of lines set from x = 72, each line's box its words' ink at about half an em a letter. */
+/**
+ * A block of lines set from x = 72, each line's box its words' ink at about half an em a letter: an estimate, which
+ * `pageBytes` replaces with the width the page draws each line at before any editor sees it.
+ */
 function blockOf(lines: readonly LineSpec[], first: number) {
   let index = first;
   const built = lines.map((line) => {
@@ -135,13 +138,17 @@ function blockFaces() {
   return { fonts: [{ own: false, chosen, candidates: [chosen] }], runs };
 }
 
-async function pageBytes(): Promise<Uint8Array> {
+/**
+ * The page, and the blocks as a read of it reports them: each line's box as wide as the page draws its words, which is
+ * what a read's line box is (the union of its characters' ink), and what the editor fits each line's letters to.
+ */
+async function pageBytes(): Promise<{ readonly bytes: Uint8Array; readonly blocks: typeof BLOCKS }> {
   const document = await PDFDocument.create();
   const sans = await document.embedFont(StandardFonts.Helvetica);
   const mono = await document.embedFont(StandardFonts.Courier);
   const sheet = document.addPage([612, 792]);
-  for (const block of BLOCKS) {
-    for (const line of block.lines) {
+  const blocks = BLOCKS.map((block) => {
+    const lines = block.lines.map((line) => {
       let x = 72;
       for (const run of line.runs) {
         const font = run.style.mono ? mono : sans;
@@ -149,18 +156,20 @@ async function pageBytes(): Promise<Uint8Array> {
         sheet.drawText(run.text, { x, y, size: run.style.size, font });
         x += font.widthOfTextAtSize(run.text, run.style.size);
       }
-    }
-  }
-  return document.save();
+      return { ...line, box: { ...line.box, x1: x } };
+    });
+    return { ...block, lines, box: { ...block.box, x1: Math.max(...lines.map((line) => line.box.x1)) } };
+  });
+  return { bytes: await document.save(), blocks };
 }
 
 async function open(page: Page, zoom: '100pct' | '150pct', fontDelay = FONT_DELAY): Promise<void> {
-  const bytes = await pageBytes();
+  const { bytes, blocks } = await pageBytes();
   await page.setViewportSize({ width: 1800, height: 1100 });
   await bridgeUnder(page, LOOKS[0], {
     opens: [{ kind: 'opened' as const, docId: ID, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'Clicks.pdf' }],
     documentBytes: new Map([[ID, bytes]]),
-    textBlocks: BLOCKS,
+    textBlocks: blocks,
     blockFaces: blockFaces(),
     bundledFace: { bytes: new Uint8Array(FACE), released: Promise.resolve() },
     delays: { 'document.blockFaces': fontDelay },
@@ -248,11 +257,17 @@ function caretPoint(page: Page): Promise<{ x: number; y: number } | undefined> {
   });
 }
 
-/** A press as a hand makes it: down, a pixel's drift, up. */
+/**
+ * A press as a hand makes it: down, a pixel's drift, up. THE DRIFT IS STRAIGHT DOWN, so it exercises the drag path and
+ * crosses no letter: a pixel to the right from a fifth into a letter under 3.33 px wide passes its midpoint, which the
+ * browser takes for a drag that selects it (measured 2026-10-27 with the anchor hold and without it alike). The editor's
+ * fitted letters made the `t` of "the size" 2.56 px on ubuntu-latest and 3.02 on windows-latest, against 3.66 here, so
+ * the case failed there and passed here for a reason that was the font's and not the editor's.
+ */
 async function press(page: Page, x: number, y: number): Promise<void> {
   await page.mouse.move(x, y);
   await page.mouse.down();
-  await page.mouse.move(x + 1, y + 1);
+  await page.mouse.move(x, y + 1);
   await page.mouse.up();
 }
 
@@ -323,8 +338,7 @@ for (const fixture of CASES) {
         await press(page, point.x, point.y);
         await settled(page, fixture.answered);
         const caret = await caretPoint(page);
-        const facts = JSON.stringify({ at, point, caret, words });
-        expect(caret, facts).toBeDefined();
+        const facts = JSON.stringify({ at, point, caret, words });        expect(caret, facts).toBeDefined();
         expect(Math.abs((caret?.x ?? Number.NaN) - point.x), facts).toBeLessThanOrEqual(point.width / 2);
         expect(Math.abs((caret?.y ?? Number.NaN) - point.y), facts).toBeLessThanOrEqual(point.height / 2);
         await page.keyboard.type('Q');
@@ -360,13 +374,17 @@ for (const fixture of [
     await expect(page.locator(SURFACE)).toHaveCount(0);
     await expect(outline).toBeVisible();
 
+    // A FRESH READ, in a page of its own at the same size: the read on open is asked once per block and read
+    // (ADR-0274), so in the page above the faces would already be there and the letters could not be typed before them.
+    const fresh = await page.context().newPage();
+    await open(fresh, '100pct', LATE_FONTS);
     // THE BOX AND THE CARET IN ONE BREATH, and the letters with them: the faces are read from the first press.
-    await press(page, point.x, point.y);
-    await press(page, point.x, point.y);
-    await page.keyboard.type('XYZ');
+    await press(fresh, point.x, point.y);
+    await press(fresh, point.x, point.y);
+    await fresh.keyboard.type('XYZ');
     // THE KEYS WERE TYPED BEFORE THE FONTS ARRIVED, or this case separates nothing.
-    expect(await page.locator(`${SURFACE} ${CHAIN_FACE}`).count(), 'the chain’s face had not arrived when the keys were typed').toBe(0);
-    await settled(page, true);
-    await expect.poll(() => editorText(page), { message: JSON.stringify({ at, point, words }) }).toBe(`${words.slice(0, at)}XYZ${words.slice(at)}`);
+    expect(await fresh.locator(`${SURFACE} ${CHAIN_FACE}`).count(), 'the chain’s face had not arrived when the keys were typed').toBe(0);
+    await settled(fresh, true);
+    await expect.poll(() => editorText(fresh), { message: JSON.stringify({ at, point, words }) }).toBe(`${words.slice(0, at)}XYZ${words.slice(at)}`);
   });
 }

@@ -28,7 +28,7 @@ const SECOND: Paragraph = { ...SET, runs: [{ text: 'Second line', style: BODY }]
 const MODEL: Model = { paragraphs: [FIRST, SECOND] };
 const LOOK: Look = { zoom: 2, pitch: 12, faceCss: (style) => `"${style.face}"` };
 
-function surface(drawn?: { paragraphs: readonly Paragraph[]; wraps: readonly (readonly number[])[] }) {
+function surface(drawn?: { paragraphs: readonly Paragraph[]; wraps: readonly (readonly number[])[]; widths: readonly (readonly number[])[] }) {
   const store = createEditorStore({ model: MODEL, selection: caret({ paragraph: 0, offset: 0 }) });
   const view = render(<EditorSurface drawn={drawn} editable label="Words" look={LOOK} store={store} />);
   const root = view.container.querySelector<HTMLElement>('[data-kit-surface]');
@@ -112,7 +112,7 @@ describe('the kit’s editable surface', () => {
   });
 
   it('lays a paragraph still as drawn at the drawing’s breaks, unpainted, and paints it once it changes', () => {
-    const { root } = surface({ paragraphs: MODEL.paragraphs, wraps: [[2], []] });
+    const { root } = surface({ paragraphs: MODEL.paragraphs, wraps: [[2], []], widths: [[], []] });
     const first = root.querySelectorAll('[data-kit-paragraph]')[0];
     expect(first?.classList.contains('m-kit__paragraph--as-drawn')).toBe(true);
     expect(first?.querySelectorAll('br[data-kit-wrap]')).toHaveLength(1);

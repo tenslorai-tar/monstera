@@ -33,7 +33,7 @@ describe('engine/text-runs’ bound', () => {
   };
 
   it('SMALLEST_RUN_BYTES is the smallest run the schema accepts, serialised', () => {
-    const answer = { runs: [smallest], truncated: false, unaddressable: 0, box: null };
+    const answer = { runs: [smallest], truncated: false, unaddressable: 0, box: null, markers: [] };
     // ACCEPTED, or the figure would be the size of something the wire refuses.
     expect(pdfiumChannels['engine/text-runs'].result.safeParse(answer).success).toBe(true);
     expect(JSON.stringify(smallest).length).toBe(SMALLEST_RUN_BYTES);
@@ -45,7 +45,7 @@ describe('engine/text-runs’ bound', () => {
   });
 
   it('CONTROL: a run that ends before it starts is refused, so `last` says which objects a run is', () => {
-    const backwards = { runs: [{ ...smallest, index: 5, last: 4 }], truncated: false, unaddressable: 0, box: null };
+    const backwards = { runs: [{ ...smallest, index: 5, last: 4 }], truncated: false, unaddressable: 0, box: null, markers: [] };
     expect(pdfiumChannels['engine/text-runs'].result.safeParse(backwards).success).toBe(false);
   });
 });

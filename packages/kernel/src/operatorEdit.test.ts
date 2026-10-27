@@ -18,7 +18,7 @@ import {
 import { pageContentStreams } from './pageContent.js';
 import { type PageFont, pageFonts } from './pageFonts.js';
 import * as STANDARD from './standardFontTables.js';
-import { type ShowOperator, joinedContent, operatorsAndDecorations, showOperators, textObjectCount } from './textOperators.js';
+import { type ShowOperator, joinedContent, multiply, operatorsAndDecorations, showOperators, textObjectCount } from './textOperators.js';
 
 /** The marks of one edited block, as the contract carries them. */
 type EditedMarks = NonNullable<Parameters<typeof editOperators>[3][number]['marks']>;
@@ -1328,5 +1328,120 @@ describe('a placement and an added box (ADR-0188)', () => {
       const result = editOperators(content, fonts, stated(), [], null, 'reflow', [box]);
       expect(result).toStrictEqual({ ok: false, error: { reason: 'needs-a-face', characters: ['x', 'y', 'z'] } });
     });
+  });
+});
+
+describe('a block set at an angle is written in its own frame (ADR-0273)', () => {
+  const fonts = new Map([['F1', font('F1', 'abcdefghijklmnopqrstuvwxyz')]]);
+  /**
+   * A block of two lines set by `frame` (a turn, a slant or a flip), its first origin at (100, 500) and its second a
+   * line of 14 below it along the frame's own down: what a producer writes for a label turned on the page.
+   */
+  const page = (frame: readonly [number, number, number, number]) => {
+    const [a, b, c, d] = frame;
+    const second = [100 - 14 * c, 500 - 14 * d];
+    const line = (x: number, y: number, words: string) => `BT /F1 12 Tf ${[a, b, c, d, x, y].map(String).join(' ')} Tm (${words}) Tj ET\n`;
+    const content = bytes(`${line(100, 500, 'turned at an angle')}${line(second[0] ?? 0, second[1] ?? 0, 'and only two lines')}`);
+    return { content, runs: runsOf(content, fonts), second };
+  };
+  /**
+   * Edits the second line's `only` to `also`, a word as wide, so the line is set again and does not wrap (a wrap is the
+   * layout's own case), and answers the new line's text matrix in user space.
+   */
+  const editSecond = (frame: readonly [number, number, number, number]) => {
+    const { content, runs, second } = page(frame);
+    const [first, next] = runs.runs;
+    const result = editOperators(content, fonts, runs, [
+      { lines: [[first?.index ?? -1], [next?.index ?? -1]], soft: [false, false], text: 'turned at an angle\nand also two lines' },
+    ]);
+    if (!result.ok) return { refused: result.error, second };
+    // THE OPERATORS OF THE INSERTED OBJECT, read back from the edited content with the state the content gives them.
+    const inside = (op: ShowOperator) => result.value.changes.some((change) => change.inserted && op.start >= change.after.start && op.end <= change.after.end);
+    const shown = showOperators(result.value.content).find((op) => inside(op) && op.state.font === 'F1');
+    return { matrix: shown === undefined ? undefined : multiply(shown.state.matrix, shown.state.ctm), drawn: result.value.drawn, second };
+  };
+
+  it.each([
+    ['turned 30 degrees', [Math.cos(Math.PI / 6), Math.sin(Math.PI / 6), -Math.sin(Math.PI / 6), Math.cos(Math.PI / 6)]],
+    ['running up the page', [0, 1, -1, 0]],
+    ['slanted by its matrix', [1, 0, 0.25, 1]],
+    ['mirrored', [-1, 0, 0, 1]],
+  ] as const)('%s: the edited line is written, set by the same frame, where the old line stood', (_name, frame) => {
+    const answer = editSecond(frame);
+    if (answer.refused !== undefined) throw new Error(`refused: ${JSON.stringify(answer.refused)}`);
+    expect(answer.drawn).toStrictEqual(['and also two lines']);
+    const m = answer.matrix;
+    if (m === undefined) throw new Error('no line was written');
+    // THE FRAME, scaled by nothing but the font's own size, which the Tf carries: the letters turn, slant or flip as the
+    // old ones did.
+    m.slice(0, 4).forEach((value, at) => {
+      expect(value).toBeCloseTo(frame[at] ?? 0, 6);
+    });
+    // AND WHERE THE OLD SECOND LINE BEGAN, on the page, not where an upright layout would have put it.
+    expect(m[4]).toBeCloseTo(answer.second[0] ?? 0, 3);
+    expect(m[5]).toBeCloseTo(answer.second[1] ?? 0, 3);
+  });
+
+  it('an underline on a turned block is drawn turned with its words, and read back in the frame as the words’ own rule', () => {
+    const turn = [Math.cos(Math.PI / 6), Math.sin(Math.PI / 6), -Math.sin(Math.PI / 6), Math.cos(Math.PI / 6)] as const;
+    const { content, runs } = page(turn);
+    const [first, next] = runs.runs;
+    const result = editOperators(content, fonts, runs, [
+      { lines: [[first?.index ?? -1], [next?.index ?? -1]], soft: [false, false], text: 'turned at an angle\nand also two lines', marks: [{ from: 19, to: 22, set: { underline: true } }] },
+    ]);
+    if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+    const [rule] = operatorsAndDecorations(result.value.content).decorations;
+    if (rule === undefined) throw new Error('no rule was drawn');
+    // EVERY POINT OF THE RULE, taken back through the turn, lies on one of two lines a rule's thickness apart: the rule runs
+    // along the turned line, not along the page's x.
+    const back = rule.points.map(([x, y]) => -x * turn[1] + y * turn[0]);
+    expect(Math.max(...back) - Math.min(...back)).toBeLessThan(2);
+    // CONTROL: on the page the same points spread far in y, so the line above measures the turn and not a flat rule.
+    const ys = rule.points.map(([, y]) => y);
+    expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(5);
+    // AND IT IS THE WORDS' OWN: an edit of the written page that takes the underline off finds the turned rule as theirs
+    // (in the frame, `editFrame`) and takes it away with them. Read as PDFium reads what this writer wrote: each operator
+    // that shows letters a run of its own, so the rule is under the whole of `and`, its run.
+    const written = showOperators(result.value.content);
+    const shows = written.filter((op) => op.object !== null && said(op, fonts).trim() !== '');
+    const again: PageRuns = {
+      textObjects: Array.from({ length: textObjectCount(written) }, (_, at) => at),
+      runs: shows.map((op) => ({ index: op.object ?? -1, members: [op.object ?? -1], text: said(op, fonts), left: 0, right: 0, bottom: 0, top: 0 })),
+    };
+    const [heading, ...rest] = again.runs;
+    const off = editOperators(result.value.content, fonts, again, [
+      {
+        lines: [[heading?.index ?? -1], rest.map((run) => run.index)],
+        soft: [false, false],
+        text: 'turned at an angle\nand also two lines',
+        marks: [{ from: 19, to: 22, set: { underline: false } }],
+      },
+    ]);
+    if (!off.ok) throw new Error(`refused: ${JSON.stringify(off.error)}`);
+    expect(operatorsAndDecorations(off.value.content).decorations).toHaveLength(0);
+  });
+
+  it('a turned block moved by its handles moves along its own lines, the frame the editor states the move in', () => {
+    const turn = [Math.cos(Math.PI / 6), Math.sin(Math.PI / 6), -Math.sin(Math.PI / 6), Math.cos(Math.PI / 6)] as const;
+    const { content, runs } = page(turn);
+    const [first, next] = runs.runs;
+    const result = editOperators(content, fonts, runs, [
+      { lines: [[first?.index ?? -1], [next?.index ?? -1]], soft: [false, false], text: 'turned at an angle\nand only two lines', place: { move: { x: 10, y: 0 } } },
+    ]);
+    if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+    const shown = showOperators(result.value.content).find((op) => op.state.font === 'F1' && said(op, fonts).startsWith('turned'));
+    if (shown === undefined) throw new Error('no first line was written');
+    const m = multiply(shown.state.matrix, shown.state.ctm);
+    // TEN POINTS ALONG THE TURNED LINE: (10 cos 30, 10 sin 30) from where it began, not ten along the page's x.
+    expect(m[4]).toBeCloseTo(100 + 10 * turn[0], 3);
+    expect(m[5]).toBeCloseTo(500 + 10 * turn[1], 3);
+  });
+
+  it('CONTROL: the same block upright is written upright where it stood, so the cases above are the frame’s', () => {
+    const answer = editSecond([1, 0, 0, 1]);
+    if (answer.refused !== undefined) throw new Error(`refused: ${JSON.stringify(answer.refused)}`);
+    expect(answer.drawn).toStrictEqual(['and also two lines']);
+    expect(answer.matrix?.slice(0, 4)).toStrictEqual([1, 0, 0, 1]);
+    expect(answer.matrix?.[5]).toBeCloseTo(486, 3);
   });
 });

@@ -5819,6 +5819,26 @@ export const channels = {
                                * word and a regular rest is two runs in two styles, and the block's own style is one.
                                */
                               style: textBlockStyleSchema,
+                              /**
+                               * Where the page draws each of its words, for an upright run whose letters pair with its
+                               * glyphs: offsets into `text` and the word's left and right in page space. The editor lays
+                               * its letters out word by word over them, so the letter a person presses is the one the edit
+                               * changes whatever face stands in for the page's. Absent where the read could not pair them.
+                               */
+                              words: z
+                                .array(
+                                  z
+                                    .object({
+                                      from: z.number().int().nonnegative().max(MAX_RUN_TEXT),
+                                      to: z.number().int().nonnegative().max(MAX_RUN_TEXT),
+                                      x0: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
+                                      x1: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
+                                    })
+                                    .strict(),
+                                )
+                                .max(MAX_RUN_TEXT)
+                                .readonly()
+                                .exactOptional(),
                             })
                             .strict(),
                         )
@@ -5867,6 +5887,17 @@ export const channels = {
                * and an edit of it is sent with this path.
                */
               form: formPathSchema.exactOptional(),
+              /**
+               * The frame the block is set in where it is not upright
+               * ([ADR-0273](../../../docs/DECISIONS/0273-text-set-at-an-angle-is-edited-in-its-own-frame.md)): its
+               * turn, slant or flip as `[a, b, c, d]`, a point `(x, y)` of the frame being `(a x + c y, b x + d y)` on
+               * the page (`textFrameOf`). Its box, its lines' boxes and its baselines are in the frame, where it is upright;
+               * the editor draws it through the frame. Absent for upright text.
+               */
+              frame: z
+                .tuple([z.number().min(-1).max(1), z.number().min(-1).max(1), z.number(), z.number()])
+                .readonly()
+                .exactOptional(),
             })
             .strict(),
         )
@@ -5874,25 +5905,6 @@ export const channels = {
         .readonly(),
       /** Whether the engine's walk stopped at its bound, on the last part only. `document.annotations`' flag. */
       truncated: z.boolean(),
-      /**
-       * Characters on this page set at an angle, which are not offered for editing
-       * in place — an editor cannot be placed along an axis the page is not set on.
-       */
-      rotated: z.number().int().nonnegative(),
-      /**
-       * `rotated` by kind ([ADR-0181](../../../docs/DECISIONS/0181-right-to-left-text-is-written-in-drawing-order-and-read-back-as-typed.md)
-       * Decision 7), read from the matrix each run is set by: `turned` a rotation, `vertical` a quarter turn (how lines
-       * that run up or down a page are set), `slanted` a shear and `mirrored` a flip. The editor names each kind present,
-       * so a person is told which text is not theirs to edit and why. They sum to `rotated`.
-       */
-      angled: z
-        .object({
-          turned: z.number().int().nonnegative(),
-          vertical: z.number().int().nonnegative(),
-          slanted: z.number().int().nonnegative(),
-          mirrored: z.number().int().nonnegative(),
-        })
-        .strict(),
       /**
        * Characters on this page that no editing command can name.
        *
@@ -5965,7 +5977,18 @@ export const channels = {
    */
   'document.pageObjects': channel(
     'One part of the objects on a page, with each one’s kind, box and fill, in the editing engine’s numbering.',
-    z.object({ docId: docIdSchema, page: z.number().int().nonnegative(), from: listPartFromSchema }),
+    z.object({
+      docId: docIdSchema,
+      page: z.number().int().nonnegative(),
+      from: listPartFromSchema,
+      /**
+       * Only the objects whose box meets this one, in the page's coordinates; absent for every object. The check after a
+       * written block asks about the block's own area (B1.6): a dense page's every object came back in many parts, each
+       * a walk of the page in the lane, 77 of them taking 125.7 s on the owner's laptop
+       * ([ADR-0274](../../../docs/DECISIONS/0274-a-documents-lane-runs-a-write-before-a-queued-read.md)'s measurement).
+       */
+      within: pdfBoxSchema.exactOptional(),
+    }),
     z.object({
       version: docVersionSchema,
       /** Where the next part begins, or `null` for the last. {@link listPartNextSchema}. */
@@ -6083,6 +6106,12 @@ export const channels = {
       indices: z.array(z.number().int().min(0).max(MAX_OBJECT_INDEX)).min(1).max(MAX_BLOCK_FACE_RUNS).readonly(),
       /** The form placement the block is in, as `document.textBlocks` named it (ADR-0269); absent for the page's own. */
       form: formPathSchema.exactOptional(),
+      /**
+       * The version the block was read at. A write that has replaced it by the time this read reaches the lane makes the
+       * answer describe a block that is gone, so nothing runs and it answers `stale-target`
+       * ([ADR-0274](../../../docs/DECISIONS/0274-a-documents-lane-runs-a-write-before-a-queued-read.md) Decision 3).
+       */
+      version: docVersionSchema,
     }),
     z
       .object({
@@ -6111,7 +6140,7 @@ export const channels = {
       .refine((answer) => answer.runs.every((at) => at === null || at < answer.fonts.length), {
         message: 'a run names a font the answer does not carry',
       }),
-    ['document-not-open', 'document-poisoned'],
+    ['document-not-open', 'document-poisoned', 'stale-target'],
   ),
 
   'document.duplicatePages': channel(

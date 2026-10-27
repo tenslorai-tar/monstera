@@ -7,7 +7,7 @@ import { BUNDLED_FAMILIES } from '@monstera/contract';
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { type Page, expect, test } from '@playwright/test';
 
-import { openWords } from './editTextSteps.js';
+import { openWords, selectBox } from './editTextSteps.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
 import { commandsSettled } from './settled.js';
 
@@ -38,6 +38,8 @@ async function openBlock(
   section?: 'edit',
   /** A font's bytes the shim answers for a bundled family once the page releases it (`bundledFace`). */
   bundledFace?: { readonly bytes: Uint8Array<ArrayBuffer>; readonly released: Promise<void> },
+  /** How far the block is opened: its words with the caret at the end, or its box alone, no caret. */
+  opening: 'words' | 'box' = 'words',
 ): Promise<void> {
   const bytes = await onePage();
   await page.setViewportSize({ width: 1800, height: 1000 });
@@ -69,7 +71,8 @@ async function openBlock(
   await page.keyboard.press('Control+K');
   await page.keyboard.type('Edit text on the page');
   await page.keyboard.press('Enter');
-  await openWords(page, page.locator('[data-text-edit-layer="0"] [data-text-block="0"]'));
+  const outline = page.locator('[data-text-edit-layer="0"] [data-text-block="0"]');
+  await (opening === 'words' ? openWords(page, outline) : selectBox(page, outline));
 }
 
 /** The marks the one `editTextBlock` command carried. */
@@ -152,6 +155,60 @@ test.describe('Formatting in the Properties panel (K11)', () => {
       expect.objectContaining({ set: expect.objectContaining({ family: 'Times New Roman', size: 18 }) }),
     ]);
     expect(sent.filter((one) => one.channel === 'document.execute')).toHaveLength(1);
+  });
+
+  test('a font chosen with THREE WORDS selected changes exactly those three, and the highlight is still showing (the owner’s M1 test)', async ({ page }) => {
+    const sent: { channel: string; params: unknown }[] = [];
+    await openBlock(page, sent);
+    // "paragraph of words": past "A ", to the end.
+    await page.keyboard.press('Home');
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('Shift+End');
+    const selected = (): Promise<string> => page.evaluate(() => document.getSelection()?.toString() ?? '');
+    expect(await selected()).toBe('paragraph of words');
+    const panel = page.locator('[data-text-properties]');
+    await panel.getByRole('button', { name: /^Font:/u }).click();
+    const search = panel.getByRole('combobox', { name: 'Search fonts' });
+    await search.fill('Times New');
+    // BY THE MOUSE, as a hand chooses: a press on the option, away from the words.
+    await panel.getByRole('option', { name: 'Times New Roman' }).first().click();
+    // THE HIGHLIGHT STILL SHOWS, over the same words, with the words' focus back.
+    await expect(page.locator('[data-kit-surface]')).toBeFocused();
+    await expect.poll(selected).toBe('paragraph of words');
+    // EXACTLY THOSE WORDS take the face in the editor: the run of them, and not "A ".
+    const faces = await page.locator('[data-kit-surface] span[data-kit-run]').evaluateAll((spans) =>
+      spans.map((span) => [span.textContent, (span as HTMLElement).style.fontFamily.includes('Times New Roman')] as const),
+    );
+    expect(faces.filter(([, times]) => times).map(([text]) => text).join('')).toBe('paragraph of words');
+    // EVERY OTHER USE OF THE PANEL keeps it too: the size typed, the character spacing typed, each a field that takes the
+    // focus out of the words.
+    for (const [name, value] of [['Size in points', '18'], ['Character spacing in points', '1']] as const) {
+      const field = panel.getByRole('spinbutton', { name });
+      await field.fill(value);
+      await field.press('Enter');
+      await expect(page.locator('[data-kit-surface]')).toBeFocused();
+      await expect.poll(selected, `after ${name}`).toBe('paragraph of words');
+    }
+    // AND IN THE FILE: one mark over those three words' offsets, naming the family and the size.
+    await page.locator('[data-text-edit-layer="0"]').click({ position: { x: 40, y: 600 } });
+    await expect
+      .poll(() => marksSent(sent))
+      .toStrictEqual([expect.objectContaining({ from: 2, to: 20, set: expect.objectContaining({ family: 'Times New Roman', size: 18 }) })]);
+  });
+
+  test('a font chosen with the BOX selected and no caret applies to the whole block', async ({ page }) => {
+    const sent: { channel: string; params: unknown }[] = [];
+    // THE BOX ALONE, as a first press leaves it: no caret in the words.
+    await openBlock(page, sent, [], undefined, undefined, 'box');
+    const panel = page.locator('[data-text-properties]');
+    await panel.getByRole('button', { name: /^Font:/u }).click();
+    const search = panel.getByRole('combobox', { name: 'Search fonts' });
+    await search.fill('Times New');
+    // BY THE MOUSE, as a hand chooses.
+    await panel.getByRole('option', { name: 'Times New Roman' }).first().click();
+    await page.locator('[data-text-edit-layer="0"]').click({ position: { x: 40, y: 600 } });
+    await expect.poll(() => marksSent(sent)).toStrictEqual([expect.objectContaining({ from: 0, to: 20, set: expect.objectContaining({ family: 'Times New Roman' }) })]);
   });
 
   test('the ribbon has NO Format group while the editor is open (N10); the panel and Ctrl+B still format the words', async ({ page }) => {

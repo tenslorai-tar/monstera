@@ -136,8 +136,9 @@ import {
   createRemoteSessions,
   blockableOf,
   engineChannels,
-  groupIntoBlocks,
-  isEditedInPlace,
+  groupInFrames,
+  inItsFrame,
+  isUpright,
   withRises,
   hostedPdfLibExecution,
   nodeFileSurface,
@@ -1279,11 +1280,11 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     docId: DocId,
     sessions: DocumentSessions,
     page: number,
-  ): Promise<{ readonly image: PdfiumReadImage; readonly paths: readonly FormPath[] }> => {
+  ): Promise<{ readonly image: PdfiumReadImage; readonly paths: readonly FormPath[]; readonly omitted: number }> => {
     const session = sessions.mupdf;
     if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
-    const { bytes, paths } = await engineHost.formPages(session, page);
-    return { image: { bytes, opensWith: undefined }, paths };
+    const { bytes, paths, omitted } = await engineHost.formPages(session, page);
+    return { image: { bytes, opensWith: undefined }, paths, omitted };
   };
   const pdfiumReadImage = (docId: DocId, sessions: DocumentSessions): WrittenImage => ({
     opensWith: engine.opensWith(docId),
@@ -1728,24 +1729,17 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       // would have been the engine's opinion about lines, which PDFium
       // measurably does not have.
       //
-      // TEXT SET AT AN ANGLE IS COUNTED AND LEFT OUT before grouping: an editor
-      // cannot be placed along an axis the page is not set on, and a block
-      // mixing upright and rotated runs would be outlined as a box around
-      // neither.
-      // COUNTED BY KIND (ADR-0181 Decision 7), from the one classification the read makes, so the editor names which text
-      // is not its to edit and `rotated` stays the total it always was. The page's runs and every form placement's.
-      const counts = new Map<string, number>();
+      // TEXT SET AT AN ANGLE IS GROUPED IN ITS OWN FRAME (ADR-0273), where it is upright, and its blocks carry the frame:
+      // nothing is left out for its angle, so nothing is counted for it. EDIT OBJECT'S READ, which reads the page as it is
+      // for its own layer, keeps only upright text, as it always has (ADR-0264 Decision 5).
       // ONE GROUPING for the page's runs and each form placement's (ADR-0269), so a form's text is grouped as a page's is.
-      const blocksOf = (runs: typeof found.runs) => {
-        for (const run of runs) {
-          if (!isEditedInPlace(run.style)) counts.set(run.style.orientation, (counts.get(run.style.orientation) ?? 0) + run.text.length);
-        }
-        const upright = runs.filter((run) => isEditedInPlace(run.style));
+      const blocksOf = (runs: typeof found.runs, markers: typeof found.markers) => {
+        const wordsByIndex = new Map(runs.flatMap((run) => (run.words === undefined ? [] : [[run.index, run.words] as const])));
+        const grouped = (asItIs ? runs.filter((run) => isUpright(run.style)) : runs).map((run) => inItsFrame(run));
         // EACH RUN'S RISE FROM ITS LINE (the owner's N14): grouped with the page's baseline, then sent as the offset from
         // the line's (`withRises`), which is what the writer keeps and what the editor draws a superscript at.
-        return withRises(
-          groupIntoBlocks(
-            upright.map((run) => ({
+        const framed = groupInFrames(
+            grouped.map((run) => ({
               ...blockableOf(run),
               style: {
                 size: run.style.size,
@@ -1764,12 +1758,31 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
                 ...(run.style.highlight === undefined ? {} : { highlight: run.style.highlight }),
               },
             })),
-          ),
+            (run) => run.frame?.matrix,
+            // THE PAGE'S DRAWN BULLETS, so a list's items whose bullets are shapes read as items and not as one paragraph.
+            markers,
+          );
+        // EACH BLOCK'S FRAME BY NAME, not through `withRises`' spread: a field passed through a spread no type names is one
+        // the next handler that names its fields drops (`unpacked`'s lesson, above).
+        return withRises(
+          framed,
           ({ baseline: _baseline, ...style }, rise) => (rise === 0 ? style : { ...style, rise }),
           ({ baseline: _baseline, ...style }) => style,
-        );
+        ).map((risen, at) => {
+          const frame = framed[at]?.frame;
+          if (frame !== undefined) return { ...risen, frame };
+          // AN UPRIGHT BLOCK'S RUNS CARRY WHERE THEIR WORDS ARE DRAWN, by the run's index, which the grouping keeps.
+          const lines = risen.lines.map((line) => ({
+            ...line,
+            runs: line.runs.map((run) => {
+              const words = wordsByIndex.get(run.index);
+              return words === undefined ? run : { ...run, words };
+            }),
+          }));
+          return { ...risen, lines };
+        });
       };
-      const grouped = blocksOf(found.runs);
+      const grouped = blocksOf(found.runs, found.markers);
       // TEXT INSIDE A FORM (ADR-0269 Decision 1): each placement read by PDFium as a page of its own, in the page's user
       // space, its blocks after the page's own, each carrying its path. NEVER for Edit object's read, which reads the page
       // as it is (ADR-0264 Decision 5). A Type 3 font inside a form is not named by its descriptor: that read is the
@@ -1782,22 +1795,15 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
           : await Promise.all(
               placed.paths.map(async (form, at) => {
                 const read = await host.textRuns(placed.image, at, false);
-                return { form, blocks: blocksOf(read.runs) };
+                return { form, blocks: blocksOf(read.runs, read.markers), truncated: read.truncated };
               }),
             );
       const inForms = placements.flatMap(({ form, blocks }) => blocks.map((block) => ({ ...block, form })));
-      const angled = {
-        turned: counts.get('turned') ?? 0,
-        vertical: counts.get('vertical') ?? 0,
-        slanted: counts.get('slanted') ?? 0,
-        mirrored: counts.get('mirrored') ?? 0,
-      };
-      const rotated = angled.turned + angled.vertical + angled.slanted + angled.mirrored;
       return {
         blocks: [...grouped, ...inForms],
-        truncated: found.truncated,
-        rotated,
-        angled,
+        // A CUT READ IS SAID, the page's or any form's (ADR-0273 Decision 6), and so is a placement past the path's bounds,
+        // which is offered nothing: the editor says some of the page's text is not outlined, never nothing.
+        truncated: found.truncated || placements.some((each) => each.truncated) || (placed?.omitted ?? 0) > 0,
         // FORWARDED, NOT GROUPED. These characters formed no run at all — they
         // are what the engine could not place, so there is nothing here to
         // group and the count crosses as the count it is.

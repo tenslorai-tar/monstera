@@ -84,11 +84,23 @@ function inBlockSpace(box, { angle, skew = 0 }) {
   };
 }
 
-/** Whether a box's centre lies in `box` widened by `margin`. @param {Box} inner @param {Box} box @param {number} margin */
-function centredIn(inner, box, margin) {
+/**
+ * Whether a character's box stands in a block's box: its middle between the block's bottom and top, and across, its
+ * middle or more of it than `margin` inside the block's left and right (the middle alone keeps a mark of no width).
+ *
+ * ACROSS IT IS OVERLAP, NOT THE MIDDLE, because the two boxes are not the same kind: a block's box is PDFium's reading of
+ * its ink, and a character's is MuPDF's advance, a full em for an ideograph. A full stop's ink is a dot at the left of
+ * its em, so the block's ink ends there and the em's middle lies past it: measured 2026-10-27 on the CID font fixture,
+ * the block's ink ended at 239.65 and its 「。」 ran 234 to 252, and by its middle the block's own last character was a
+ * neighbour, so every edit of the block read as one that moved a character outside it.
+ * @param {Box} inner @param {Box} box @param {number} margin
+ */
+function standsIn(inner, box, margin) {
   const x = (inner.left + inner.right) / 2;
   const y = (inner.bottom + inner.top) / 2;
-  return x >= box.left - margin && x <= box.right + margin && y >= box.bottom - margin && y <= box.top + margin;
+  const across = Math.min(inner.right, box.right) - Math.max(inner.left, box.left);
+  const middle = x >= box.left - margin && x <= box.right + margin;
+  return (middle || across > margin) && y >= box.bottom - margin && y <= box.top + margin;
 }
 
 /**
@@ -125,6 +137,33 @@ function wordsIn(chars, members, direction) {
 
 /** @param {Char[]} word */
 const textOfWord = (word) => word.map((each) => each.character).join('');
+
+/** A character a line may break before and after with no space: an ideograph or kana (UAX #14, class ID). */
+const IDEOGRAPHIC = /[\p{scx=Han}\p{scx=Hiragana}\p{scx=Katakana}]/u;
+
+/**
+ * Words as the units a line breaks between: each ideograph and kana its own, since Chinese and Japanese break a line
+ * between any two of them and write no space. Measured 2026-10-27 on the CID font fixture: a heading set a quarter
+ * larger wrapped between の and 見, a break the script allows, and as one word the line read as split.
+ * @param {readonly string[]} words
+ */
+const breakableUnits = (words) =>
+  words.flatMap((word) => {
+    /** @type {string[]} */
+    const units = [];
+    let run = '';
+    for (const piece of word.match(/\P{M}\p{M}*/gu) ?? []) {
+      if (!IDEOGRAPHIC.test(piece)) {
+        run += piece;
+        continue;
+      }
+      if (run !== '') units.push(run);
+      run = '';
+      units.push(piece);
+    }
+    if (run !== '') units.push(run);
+    return units;
+  });
 
 /** The box round a word's characters. @param {Char[]} word @returns {Box} */
 const boxOfWord = (word) => ({
@@ -263,14 +302,81 @@ function linksOf(kernel, bytes, page) {
 }
 
 /**
+ * A list item a page declares: its first word, the baseline it stands on before any edit, and where its marker is drawn
+ * as a shape rather than as characters, that shape's box.
+ * @typedef {{ word: string, y: number }} ListItem
+ */
+
+/**
+ * The item's first word as MuPDF reads it, the occurrence nearest the line it stood on, and its marker: the characters
+ * on its line before it (a bullet, a number), or a drawn shape just before it. `undefined` where the word is not read.
+ * @param {readonly Char[]} chars @param {ListItem} item @param {readonly Box[]} drawn
+ */
+function itemAndMarker(chars, item, drawn) {
+  const visible = chars.filter((each) => each.character.trim() !== '');
+  /** @type {{ word: Char, line: Char[] } | undefined} */
+  let found;
+  for (const first of visible) {
+    if (first.character !== item.word[0]) continue;
+    const line = visible.filter((each) => Math.abs(each.y - first.y) <= 1).sort((a, b) => a.x - b.x);
+    const at = line.indexOf(first);
+    const spelt = line.slice(at, at + item.word.length).map((each) => each.character).join('');
+    if (spelt !== item.word || /\p{L}/u.test(line[at - 1]?.character ?? '') && (first.x - (line[at - 1]?.box.right ?? 0)) < 1) continue;
+    if (found === undefined || Math.abs(first.y - item.y) < Math.abs(found.word.y - item.y)) found = { word: first, line };
+  }
+  if (found === undefined) return undefined;
+  const { word, line } = found;
+  const height = word.box.top - word.box.bottom;
+  const before = line.filter((each) => each.box.right <= word.box.left + 0.5 && word.box.left - each.box.right <= 3 * height);
+  if (before.length > 0) {
+    return { word, marker: { left: Math.min(...before.map((each) => each.box.left)), y: word.y } };
+  }
+  const shape = drawn.find((box) => {
+    const middle = (box.bottom + box.top) / 2;
+    return middle >= word.box.bottom && middle <= word.box.top && box.right <= word.box.left + 0.5 && word.box.left - box.right <= 3 * height;
+  });
+  return { word, marker: shape === undefined ? undefined : { left: shape.left, y: (shape.bottom + shape.top) / 2 } };
+}
+
+/**
+ * EVERY LIST ITEM'S MARKER KEEPS ITS PLACE AND ITS GAP: its left to the item's first letter, and its height against the
+ * first letter's, are what they were (the local agent's walk of 2026-10-27, a browser-printed list whose edited item's
+ * bullet moved onto its words). A marker that the edit left beside other words, or whose gap closed, is a failure.
+ * @param {readonly Char[]} beforeChars @param {readonly Char[]} afterChars @param {{ items: readonly ListItem[], drawn: readonly Box[] }} list
+ */
+export function listMarkerFailures(beforeChars, afterChars, list) {
+  /** @type {string[]} */
+  const failures = [];
+  for (const item of list.items) {
+    const was = itemAndMarker(beforeChars, item, list.drawn);
+    if (was?.marker === undefined) throw new Error(`the list item “${item.word}” at ${String(item.y)} has no marker before the edit, so nothing below could fail`);
+    const now = itemAndMarker(afterChars, item, list.drawn);
+    if (now === undefined) continue;
+    if (now.marker === undefined) {
+      failures.push(`A LIST MARKER LEFT ITS ITEM: no marker stands before “${item.word}” on its line`);
+      continue;
+    }
+    const gapWas = was.word.box.left - was.marker.left;
+    const gapNow = now.word.box.left - now.marker.left;
+    const riseWas = was.word.y - was.marker.y;
+    const riseNow = now.word.y - now.marker.y;
+    if (Math.abs(gapNow - gapWas) > 0.5 || Math.abs(riseNow - riseWas) > 0.5) {
+      failures.push(`A LIST MARKER MOVED: before “${item.word}” its gap was ${gapWas.toFixed(2)} pt and is ${gapNow.toFixed(2)}, its rise ${riseWas.toFixed(2)} and ${riseNow.toFixed(2)}`);
+    }
+  }
+  return failures;
+}
+
+/**
  * Every way the edit of `block` broke what an Edit text edit must leave, as sentences; empty when it held.
  *
  * @param {{ kernel: any, pdfium: any }} engines `kernel.mupdf` is the built `mupdfRaw.js`; `pdfium` the built `pdfiumFfi.js`
- * @param {{ before: Uint8Array, after: Uint8Array | null, page: number, block: Block, expected: string, outcome?: Outcome }} edit
- *   `after` is null where the write was refused; `expected` is the block's text as the edit should leave it
+ * @param {{ before: Uint8Array, after: Uint8Array | null, page: number, block: Block, expected: string, outcome?: Outcome, list?: { items: readonly ListItem[], drawn: readonly Box[] } | undefined }} edit
+ *   `after` is null where the write was refused; `expected` is the block's text as the edit should leave it; `list` the
+ *   page's list items, whose markers must keep their place and gap ({@link listMarkerFailures})
  * @returns {Promise<string[]>}
  */
-export async function expectEdit({ kernel, pdfium }, { before, after, page, block, expected, outcome = {} }) {
+export async function expectEdit({ kernel, pdfium }, { before, after, page, block, expected, outcome = {}, list }) {
   /** @type {string[]} */
   const failures = [];
   if (outcome.refused !== undefined || after === null) {
@@ -283,7 +389,8 @@ export async function expectEdit({ kernel, pdfium }, { before, after, page, bloc
   const direction = block;
   const beforeChars = /** @type {Char[]} */ (charactersOf(kernel, before, page));
   const afterChars = /** @type {Char[]} */ (charactersOf(kernel, after, page));
-  const owned = (/** @type {Box} */ box) => centredIn(box, block.box, MARGIN);
+  if (list !== undefined) failures.push(...listMarkerFailures(beforeChars, afterChars, list));
+  const owned = (/** @type {Box} */ box) => standsIn(box, block.box, MARGIN);
   const ownBefore = beforeChars.filter((each) => owned(each.box));
   if (ownBefore.filter((each) => each.character.trim() !== '').length === 0) {
     // AN EMPTY BLOCK IS A BROKEN LOOKUP, not a clean one (CLAUDE.md item 4b): every check below would pass on it.
@@ -372,8 +479,8 @@ export async function expectEdit({ kernel, pdfium }, { before, after, page, bloc
   // WORDS AS WORDS: the read-back above leaves spaces out, so two words set against each other with neither a space nor
   // a gap pass it. The block's words, as letter runs, must be the expected ones (measured 2026-10-26: today's writer set
   // a new word against the next with no space after a re-wrap, and the page read "readerwhatever").
-  const wordsWanted = expected.match(/[\p{L}\p{N}\p{M}]+/gu) ?? [];
-  const { rest: wordsExtra, missing: wordsLost } = remainder(wordsAfter.map(textOfWord), wordsWanted, (word) => word);
+  const wordsWanted = breakableUnits(expected.match(/[\p{L}\p{N}\p{M}]+/gu) ?? []);
+  const { rest: wordsExtra, missing: wordsLost } = remainder(breakableUnits(wordsAfter.map(textOfWord)), wordsWanted, (word) => word);
   if (wordsExtra.length > 0 || wordsLost.length > 0) {
     failures.push(`WORDS RUN TOGETHER OR SPLIT (MuPDF): read “${wordsExtra.slice(0, 4).join('”, “')}” where “${wordsLost.slice(0, 4).join('”, “')}” were expected`);
   }
@@ -492,13 +599,13 @@ function undrawn(drawn, chars, { withText, without }) {
  * @param {{ kernel: any, pdfium: any }} engines @param {Uint8Array} bytes @param {number} page @param {Block} block
  */
 export async function readBlock({ kernel, pdfium }, bytes, page, block) {
-  const own = /** @type {Char[]} */ (charactersOf(kernel, bytes, page)).filter((each) => centredIn(each.box, block.box, MARGIN) && each.character.trim() !== '');
+  const own = /** @type {Char[]} */ (charactersOf(kernel, bytes, page)).filter((each) => standsIn(each.box, block.box, MARGIN) && each.character.trim() !== '');
   const { runs } = await pdfiumReading(pdfium, bytes, page);
   const box = (/** @type {{ left: number, right: number, bottom: number, top: number }} */ run) => ({ left: run.left, right: run.right, bottom: run.bottom, top: run.top });
   return {
     want: bare(block.text),
     mupdf: readings(own.map((each) => ({ text: each.character, box: each.box })), block),
-    pdfium: readings(runs.filter((run) => centredIn(box(run), block.box, MARGIN) && bare(run.text) !== '').map((run) => ({ text: run.text, box: box(run) })), block),
+    pdfium: readings(runs.filter((run) => standsIn(box(run), block.box, MARGIN) && bare(run.text) !== '').map((run) => ({ text: run.text, box: box(run) })), block),
   };
 }
 
@@ -510,7 +617,7 @@ export async function readBlock({ kernel, pdfium }, bytes, page, block) {
  */
 export async function inkedCharacters({ kernel }, bytes, page, box) {
   const drawn = render(kernel, bytes, page);
-  const own = /** @type {Char[]} */ (charactersOf(kernel, bytes, page)).filter((each) => centredIn(each.box, box, MARGIN) && each.character.trim() !== '');
+  const own = /** @type {Char[]} */ (charactersOf(kernel, bytes, page)).filter((each) => standsIn(each.box, box, MARGIN) && each.character.trim() !== '');
   const unseen = undrawn(drawn, own, textInk(kernel, bytes, page));
   return { read: own.length, unseen: unseen.map((each) => each.character).join('') };
 }

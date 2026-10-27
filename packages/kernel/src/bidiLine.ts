@@ -103,7 +103,7 @@ export function logicalLine<T extends DrawnRun>(runs: readonly T[]): LogicalLine
  * into `main` (ADR-0172 Decision 5), and `textLines.ts` is reachable from `main`.
  *
  * @param runs the page's runs, in reading order
- * @param editable whether a run is one the grouping is given (`isEditedInPlace`)
+ * @param editable whether a run is upright (`isUpright`), the only text a line is read along the page's x for
  */
 export function readInLineOrder<T extends LineableRun & DrawnRun & { readonly style: { readonly size: number } }>(
   runs: readonly T[],

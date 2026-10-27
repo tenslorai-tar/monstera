@@ -24,6 +24,7 @@ import {
   type ReadonlyCommandLog,
 } from './commandLog.js';
 import { type FileIdentity, isSameDocument, readFileIdentity } from './documentIdentity.js';
+import { DocumentLane, type LaneEntryKind } from './documentLane.js';
 // TYPE ONLY, and `import type` rather than an inline specifier: `engineSeam.ts`
 // is types-plus-one-const, and the second spelling would emit
 // `import {} from './engineSeam.js'` — a side-effect import (ADR-0026).
@@ -166,6 +167,21 @@ export class DocumentBusyError extends Error {
         'Work is refused rather than queued, so a runaway loop surfaces as a busy failure ' +
         'instead of growing without bound. ' +
         `(document ${docId.slice(0, 8)}…)`,
+    );
+  }
+}
+
+/**
+ * A read that named the version it is for, refused unrun because a write had replaced that version by the time it
+ * started (ADR-0274 Decision 3). An ordinary race, not a defect: the asker reads again if it still wants the answer.
+ */
+export class StaleReadError extends Error {
+  override readonly name = 'StaleReadError';
+
+  constructor(docId: DocId, readonly named: DocVersion, readonly current: DocVersion) {
+    super(
+      `A read for version ${String(named)} of document ${docId.slice(0, 8)}… reached the lane at version ` +
+        `${String(current)}, so its answer would describe a document already replaced; nothing ran.`,
     );
   }
 }
@@ -799,8 +815,10 @@ interface DocumentRecord {
    * structure meant to prevent it. Here the lane cannot outlive the record and
    * cannot exist without one, so "no record, no lane, miss" is the shape rather
    * than a check. It also cannot leak: dropping the record drops the lane.
+   *
+   * Its order is ADR-0274's: a queued write runs before a queued read (`DocumentLane`).
    */
-  lane: Promise<void>;
+  readonly lane: DocumentLane;
   /** Entries queued or running on {@link lane}, for the {@link MAX_QUEUED} cap. */
   queued: number;
   /**
@@ -1843,7 +1861,7 @@ export class DocumentService {
       removedSinceSave: false,
       // NOTHING AGREED YET: a signed document's first breaking edit asks.
       signaturesBreakAgreed: false,
-      lane: Promise.resolve(),
+      lane: new DocumentLane(),
       queued: 0,
       log: new CommandLog(),
       // THE IMAGE FILE'S DIRECTORY when the image is a file, so its checkpoints share it and close removes both.
@@ -2022,6 +2040,7 @@ export class DocumentService {
     // the lane has drained, and a teardown that failed still leaves copies of
     // the document on disk that nothing will ever read (ADR-0121).
     return record.lane
+      .drained()
       .then(
         () => this.#teardown(docId),
         () => this.#teardown(docId),
@@ -2180,11 +2199,32 @@ export class DocumentService {
    * earlier — the mistake that makes a renderer's staleness check pass on stale
    * content.
    *
+   * `run` is a WRITE to the lane's order (ADR-0274): it runs before every read still queued when the running entry ends.
+   * A query takes {@link read}.
+   *
    * @throws `DocumentBusyError` when the lane is saturated ({@link MAX_QUEUED}).
    * @throws if the document is not open — **get-or-miss, never get-or-create**.
    * @throws if called from inside the index lane; see the class comment.
    */
-  async run<T>(docId: DocId, work: (context: DocumentContext) => Promise<T>): Promise<Versioned<T>> {
+  run<T>(docId: DocId, work: (context: DocumentContext) => Promise<T>): Promise<Versioned<T>> {
+    return this.#enter(docId, 'write', undefined, work);
+  }
+
+  /**
+   * Runs a QUERY in this document's lane: {@link run}'s guards and stamping, after every write queued before it starts
+   * (ADR-0274). Where `forVersion` is given and the document is at another version when the read starts, nothing runs and
+   * it throws {@link StaleReadError}: the asker's answer would describe a document a write has replaced.
+   */
+  read<T>(docId: DocId, work: (context: DocumentContext) => Promise<T>, forVersion?: DocVersion): Promise<Versioned<T>> {
+    return this.#enter(docId, 'read', forVersion, work);
+  }
+
+  async #enter<T>(
+    docId: DocId,
+    kind: LaneEntryKind,
+    forVersion: DocVersion | undefined,
+    work: (context: DocumentContext) => Promise<T>,
+  ): Promise<Versioned<T>> {
     if (this.#insideIndexLane.getStore() === true) {
       throw new Error(
         'Lane ordering violation: a per-document lane was awaited from inside the index ' +
@@ -2213,10 +2253,12 @@ export class DocumentService {
     if (record.queued >= MAX_QUEUED) throw new DocumentBusyError(docId, record.queued);
     record.queued += 1;
 
-    const started = record.lane.then(() =>
+    const started = record.lane.enter(kind, () =>
       this.#executingDocument.run(docId, async () => {
         // Read here, when the work actually runs — not when it was queued.
         const version = record.version;
+        // A READ FOR A VERSION A WRITE HAS REPLACED runs nothing (ADR-0274 Decision 3).
+        if (forVersion !== undefined && forVersion !== version) throw new StaleReadError(docId, forVersion, version);
         // THE VERSION MOVES WITH THE IMAGE (CR-DOC-01). `readRange` answers whatever image the record holds at the
         // version the record holds, and the bus bumps the version at the END of a command, after awaits that follow
         // the replacement: the whole-file read below the swap, the log, the window's refresh. A range asked at the old
@@ -2355,15 +2397,9 @@ export class DocumentService {
       }),
     );
 
-    // The lane carries no failures forward. Without this, one command that
-    // threw would reject every command after it on that document — turning a
-    // single bad operation into a dead document, a worse failure than the one
-    // being reported. Same reasoning as the index lane.
-    record.lane = started.then(
-      () => undefined,
-      () => undefined,
-    );
-
+    // The lane carries no failures forward (`DocumentLane.enter`). Without that, one command that threw would reject
+    // every command after it on that document — turning a single bad operation into a dead document, a worse failure
+    // than the one being reported. Same reasoning as the index lane.
     try {
       return await started;
     } finally {

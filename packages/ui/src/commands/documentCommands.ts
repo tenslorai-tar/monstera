@@ -4862,6 +4862,16 @@ export type BlocksRead = Pick<ChannelResult<'document.textBlocks'>, 'version' | 
 /** {@link BlocksRead} with the page's blocks. */
 export type PageBlocksRead = BlocksRead & { readonly blocks: readonly TextBlock[] };
 
+/** `blocks` with no `reach` on any place: what only the operator writer reads (`OperatorPlace.reach`). */
+function withoutReach(blocks: Parameters<typeof blockEditOf>[0]): Parameters<typeof blockEditOf>[0] {
+  return blocks.map((block) => {
+    if (block.place?.reach === undefined) return block;
+    const { reach: _reach, ...place } = block.place;
+    const { place: _place, ...rest } = block;
+    return Object.keys(place).length === 0 ? rest : { ...rest, place };
+  });
+}
+
 /** The command each writer the page names is rewritten by, with the same block wire (ADR-0176 Decision 1). */
 const BLOCK_EDIT_KIND = { objects: 'editTextBlock', operators: 'editTextOperators' } as const satisfies Record<
   BlocksRead['rewrite'],
@@ -4891,7 +4901,7 @@ export const NO_BLOCK_FACES: BlockFaces = { fonts: [], runs: new Map() };
  * written as the writer writes it either way. An answer at another version describes objects the open block no longer
  * names; a refusal is a document not open or poisoned, which the edit the person makes next says in its own words.
  */
-export async function readBlockFaces(
+export function readBlockFaces(
   client: ContractClient,
   docId: DocId,
   page: number,
@@ -4899,12 +4909,37 @@ export async function readBlockFaces(
   /** The read that named the block: its version. */
   read: BlocksRead,
 ): Promise<BlockFaces> {
+  // ONCE PER BLOCK AND READ (ADR-0274's measurement: a read at every first press on a block, 0.9 s each in the lane ahead
+  // of the finish). Held on the read, so a new version asks again and the answers go with the read they describe.
+  const byRead = facesAsked.get(client) ?? new WeakMap<BlocksRead, Map<string, Promise<BlockFaces>>>();
+  facesAsked.set(client, byRead);
+  const held = byRead.get(read) ?? new Map<string, Promise<BlockFaces>>();
+  byRead.set(read, held);
+  const key = JSON.stringify([docId, page, block.form ?? null, block.lines.map((line) => line.runs.map((run) => run.index))]);
+  const known = held.get(key);
+  if (known !== undefined) return known;
+  const asking = askBlockFaces(client, docId, page, block, read);
+  held.set(key, asking);
+  return asking;
+}
+
+/** The answers {@link readBlockFaces} has asked for, by the client asked and the read that named their blocks. */
+const facesAsked = new WeakMap<ContractClient, WeakMap<BlocksRead, Map<string, Promise<BlockFaces>>>>();
+
+async function askBlockFaces(client: ContractClient, docId: DocId, page: number, block: TextBlock, read: BlocksRead): Promise<BlockFaces> {
   const indices = [...new Set(block.lines.flatMap((line) => line.runs.map((run) => run.index)))];
   const fonts: BlockFontRead[] = [];
   const runs = new Map<number, number>();
   for (let from = 0; from < indices.length; from += MAX_BLOCK_FACE_RUNS) {
     const asked = indices.slice(from, from + MAX_BLOCK_FACE_RUNS);
-    const answer = await client['document.blockFaces']({ docId, page, indices: asked, ...(block.form === undefined ? {} : { form: block.form }) });
+    const answer = await client['document.blockFaces']({
+      docId,
+      page,
+      indices: asked,
+      ...(block.form === undefined ? {} : { form: block.form }),
+      // FOR THIS READ'S VERSION: a write that replaced it first makes main run nothing (`stale-target`, ADR-0274).
+      version: read.version,
+    });
     if (!answer.ok || answer.value.version !== read.version) return NO_BLOCK_FACES;
     const base = fonts.length;
     fonts.push(...answer.value.fonts);
@@ -5021,7 +5056,8 @@ async function sendBlockEdit(
       ? {
           kind: BLOCK_EDIT_KIND.objects,
           page,
-          ...blockEditOf(blocks, inserts),
+          // NO REACH FOR PDFium's WRITER, whose place has none: the operator writer's alone wraps a one-line block there.
+          ...blockEditOf(withoutReach(blocks), inserts),
           fit: 'reflow',
           version: read.version,
           // THE INDICES NAME THE PAGE AS THE READ SAW IT: unpacked, so the writer unpacks it first (ADR-0232).
@@ -5079,7 +5115,7 @@ export function commitReplacement(
   docId: DocId,
   page: number,
   read: BlocksRead,
-  /** The stream the entries' blocks are in (`streamsOf`): the page's own, `null`, or a form's. */
+  /** The stream the entries' blocks are in (`commandsOf`): the page's own, `null`, or a form's. */
   form: FormPath | null,
   blocks: Parameters<typeof blockEditOf>[0],
   step: UndoStep,
@@ -5098,7 +5134,7 @@ export function commitBlocks(
   page: number,
   blocks: Parameters<typeof blockEditOf>[0],
   read: BlocksRead,
-  /** The stream the blocks are in, which a join or split never leaves (`sameStream`). */
+  /** The stream the blocks are in, which a join or split never leaves (`oneCommand`). */
   form: FormPath | null,
 ): Promise<BlockCommit> {
   return sendBlockEdit(deps, docId, page, read, form, blocks);
@@ -5136,11 +5172,13 @@ export async function readPageContentBoxes(
   client: DocumentCommandDeps['client'],
   docId: DocId,
   page: number,
+  /** Only what meets this area of the page, where given (`document.pageObjects`' `within`). */
+  within?: AnnotationRect,
 ): Promise<{ readonly version: DocVersion; readonly boxes: readonly AnnotationRect[] } | undefined> {
   // EVERY PART, read whole at one version (ADR-0130): a page drawn one glyph per object is thousands of objects.
   const [content, marks] = await Promise.all([
     readWholeList(
-      (from) => client['document.pageObjects']({ docId, page, from }),
+      (from) => client['document.pageObjects']({ docId, page, from, ...(within === undefined ? {} : { within }) }),
       (part) => part.objects,
     ),
     readWholeList(
