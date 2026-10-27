@@ -994,6 +994,31 @@ passed on CI's Linux leg at `8f9d22a9`; no ribbon file changed. Why is not estab
 **ZZZZZZZZ-30** — the escape guard denied an empty `node -e ""` typed ahead of a grep during this audit: the reflex, not
 the need, and nothing ran.
 
+### Correction, 2026-10-27, after the audit and before "M2 complete:"
+
+The findings above stand as recorded; this says where each one went in the commits that followed.
+
+- **Fixed:** ZZZZZZZZ-7 (`6225ecea`: the joint case holds the weight, and the writer's record of an added font says the
+  weight it set), ZZZZZZZZ-8 (`6686ed02`: the read on open crossed through the composition root, three cases),
+  ZZZZZZZZ-14 (`6ea9470e`: a quick double press, whose `detail` branches the header records as not separately
+  load-bearing), ZZZZZZZZ-16 (`7604c2ad`, `fef32ab4`), and ZZZZZZZZ-17 (`b72db607` for the style offers, the note and
+  `editorFontsOf`; `232f5e80` for the fallback face, the path from `App` to the layer still without a case).
+- **ZZZZZZZZ-13, in part** (`c1abe8c8`): the patch is bounded from above and drawn at the zoom on screen. The turned page
+  and a writer that wraps one line more than the editor are still untried.
+- **ZZZZZZZZ-12, mostly restored** (`8c1ebcfa`, `b72db607`): the menu, join and split, the handles and Alt with arrows,
+  block to block and a refusal, the reopen past the foot, the covers note, Escape during composition, a rejected commit
+  and the kit's paragraph operations. Still owed: a signed document, the shaded paper's gradient, Add text's nearby
+  style, the page's menu not opening over the editor, and a correct word offering no replacements. FEATURES rows 152 to
+  156 cite the restored tests (`4108908d`), and a row describes the read on open and the font list (`30ac58fd`).
+- **ZZZZZZZZ-9 is dormant, not live.** `readsUnpacked` is false for the operator writer and every Edit text write goes
+  there (`rewrite` is always `'operators'`), so the packed and unpacked indices agree on every path that runs today. It
+  becomes live the day a block write goes to PDFium.
+- **ZZZZZZZZ-31, found after the audit:** `8e926ee4` made a page read its text blocks only once the visible set holds
+  still for `SETTLE_MS`, and `App.test.tsx`' case *EDIT TEXT with no editing engine says so ONCE* sampled the reads one
+  microtask after the intersections moved that set: red in 3 of 4 whole-file runs, green alone. None of the three
+  reviewers ran `App.test.tsx`, and the stated limitation above did not say so. Fixed in `14facd26` by
+  waiting for the reads.
+
 ---
 
 ## 2026-10-26 — Stage audit of `8db42b52..dabf6041` — findings YYYYYYYY-1 to YYYYYYYY-22
