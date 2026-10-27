@@ -345,6 +345,17 @@ jobs:
       # The bundled open fonts (ADR-0172): twenty-one files, 9,965,868 bytes, from one pinned google/fonts commit,
       # each verified by SHA-256 and the folder checked as a whole tree, since a font in it is one the resolver
       # embeds. Both legs: the composers and the editor's proofs read these faces.
+      # THE FONTS ARE CACHED, keyed on the provisioner that holds their pins, so a run downloads them only when a pin
+      # changes: every run fetched them from ftp.gnu.org and raw.githubusercontent.com with no cache, and a 10-second
+      # timeout at ftp.gnu.org reddened one run. A restored folder is still checked against every pin before it is used
+      # (`presentAsPinned`, which removes a folder not as pinned and provisions it again): the cache saves the download,
+      # never the verification, the Electron archive's rule above.
+      - name: Cache the bundled fonts
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .tools/fonts
+          key: bundled-fonts-${{ hashFiles('scripts/provision/fonts.mjs') }}
+
       - name: Provision the bundled fonts
         run: node scripts/ci/annotate.mjs scripts/provision/fonts.mjs
 
@@ -1299,6 +1310,17 @@ jobs:
 
       # The kernel's font tests read the bundled faces and fail rather than skip without them (ADR-0172), so the floor
       # provisions them as the matrix job does.
+      # THE FONTS ARE CACHED, keyed on the provisioner that holds their pins, so a run downloads them only when a pin
+      # changes: every run fetched them from ftp.gnu.org and raw.githubusercontent.com with no cache, and a 10-second
+      # timeout at ftp.gnu.org reddened one run. A restored folder is still checked against every pin before it is used
+      # (`presentAsPinned`, which removes a folder not as pinned and provisions it again): the cache saves the download,
+      # never the verification, the Electron archive's rule above.
+      - name: Cache the bundled fonts
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .tools/fonts
+          key: bundled-fonts-${{ hashFiles('scripts/provision/fonts.mjs') }}
+
       - name: Provision the bundled fonts
         run: node scripts/ci/annotate.mjs scripts/provision/fonts.mjs
 
@@ -1410,6 +1432,17 @@ jobs:
 
       # THE BUNDLED FONTS, for the compose host's live proof below (ADR-0172): its host sets text in them, read through
       # the container's grant, so before the grant step for PDFium's reason.
+      # THE FONTS ARE CACHED, keyed on the provisioner that holds their pins, so a run downloads them only when a pin
+      # changes: every run fetched them from ftp.gnu.org and raw.githubusercontent.com with no cache, and a 10-second
+      # timeout at ftp.gnu.org reddened one run. A restored folder is still checked against every pin before it is used
+      # (`presentAsPinned`, which removes a folder not as pinned and provisions it again): the cache saves the download,
+      # never the verification, the Electron archive's rule above.
+      - name: Cache the bundled fonts
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .tools/fonts
+          key: bundled-fonts-${{ hashFiles('scripts/provision/fonts.mjs') }}
+
       - name: Provision the bundled fonts
         run: node scripts/ci/annotate.mjs scripts/provision/fonts.mjs
 
