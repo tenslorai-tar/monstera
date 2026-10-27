@@ -232,6 +232,18 @@ describe('a word typed beside drawn letters takes the weight they LOOK (ADR-0176
     }
   });
 
+  it('a FONT chosen for the drawn word is written in that family, never left in the drawn letters (the owner’s M1 test)', async () => {
+    const command: CommandOfKind<'editTextOperators'> = {
+      kind: 'editTextOperators',
+      page: 0,
+      ...blockEditOf([{ lines: [[0]], soft: [false], text: SHOWN, marks: [{ from: 0, to: SHOWN.length, set: { family: 'Arimo' } }] }]),
+      fit: 'reflow',
+      version: asDocVersion(1),
+    };
+    const names = await written(await drawnPage('Regular', 400), command);
+    expect(names.some((name) => name.includes('Arimo')), JSON.stringify(names)).toBe(true);
+  });
+
   it('CONTROL: Bold turned ON beside regular letters: it is written bold, so the person’s choice is what is set', async () => {
     const names = await written(await drawnPage('Regular', 700), typed([{ from: SHOWN.length + 1, to: SHOWN.length + 4, set: { bold: true } }]));
     expect(names.some((name) => name.endsWith('Tinos-Bold')), JSON.stringify(names)).toBe(true);
