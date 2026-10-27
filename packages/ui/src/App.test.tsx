@@ -2759,8 +2759,11 @@ describe('App', () => {
         else host.IntersectionObserver = original;
       }
 
-      // VACUITY GUARD: once is only a claim when more than one page asked.
-      expect(blockReads.length).toBeGreaterThan(1);
+      // VACUITY GUARD: once is only a claim when more than one page asked. WAITED FOR, because a page reads once the
+      // visible set has held still for `SETTLE_MS` (`useSettledPages`), and the intersections fired above moved it.
+      await vi.waitFor(() => {
+        expect(blockReads.length).toBeGreaterThan(1);
+      });
       expect(vi.mocked(reportProblem)).toHaveBeenCalledTimes(1);
       expect(vi.mocked(reportProblem).mock.calls[0]?.[1]).toStrictEqual({ code: 'engine-unavailable' });
       expect(await screen.findByText(/cannot edit text in place/u)).toBeDefined();
@@ -2773,10 +2776,9 @@ describe('App', () => {
         await Promise.resolve();
       });
       await pressCommand('Edit text');
-      await act(async () => {
-        await Promise.resolve();
+      await vi.waitFor(() => {
+        expect(blockReads.length).toBeGreaterThan(before);
       });
-      expect(blockReads.length).toBeGreaterThan(before);
     });
 
     it('EDIT OBJECT, chosen from its menu’s face, outlines the page’s objects, and a press then Delete removes the one pressed (ADR-0264)', async () => {
