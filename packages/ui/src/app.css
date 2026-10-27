@@ -6567,8 +6567,14 @@ optgroup {
   background: var(--accent-soft);
 }
 
-/* ADD TEXT: the empty page as a surface UNDER the outlines (they stack from z-index 1), so a press on a block still edits it
-   and a press anywhere else is where the new words go. */
+/* SHOWN AND NOT PRESSED while Add text is armed: the press is the surface's, which places a box there. */
+.m-text-block--adding {
+  pointer-events: none;
+}
+
+/* ADD TEXT: the page as a surface UNDER the outlines (they stack from z-index 1). While it is armed the outlines take no
+   press (`m-text-block--adding`), so a press over existing text places a box there as anywhere else (the owner's walk of
+   2026-10-27: a press over an outline opened no box, which before the rebuild it did). */
 .m-text-add-surface {
   position: absolute;
   inset: 0;

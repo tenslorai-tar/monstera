@@ -127,6 +127,23 @@ test.describe('Add text', () => {
     }
   }
 
+  test('a press over existing text while Add text is armed places a new box there, and edits nothing (the local agent’s walk)', async ({ page }) => {
+    const sent: { channel: string; params: unknown }[] = [];
+    await openForAdding(page, sent);
+    // ON THE HEADING'S OUTLINE, which is drawn and takes no press while Add text is armed.
+    const outline = page.locator('[data-text-edit-layer="0"] [data-text-block="0"]');
+    const over = await outline.boundingBox();
+    if (over === null) throw new Error('the heading has no outline');
+    await page.mouse.click(over.x + over.width / 2, over.y + over.height / 2);
+    const editor = page.locator('[data-kit-surface]');
+    await expect(editor).toBeFocused();
+    // A NEW, EMPTY BOX, not the heading opened: what is typed is the whole of the insert.
+    await expect(editor).toHaveText('');
+    await page.keyboard.type('Over the heading');
+    await page.keyboard.press('Escape');
+    await expect.poll(() => insertedWords(sent)).toStrictEqual(['Over the heading']);
+  });
+
   test('N11: Add text shows the I-beam over the empty page, where a press puts the words', async ({ page }) => {
     await openForAdding(page, []);
     const surface = page.locator('[data-text-add-surface]').first();

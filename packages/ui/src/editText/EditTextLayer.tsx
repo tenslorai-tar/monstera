@@ -433,7 +433,7 @@ export function EditTextLayer({
           <button
             aria-label={_(TEXT_EDIT_BLOCK_LABEL, { words: words.length > 40 ? `${words.slice(0, 40)}…` : words })}
             {...(past ? { 'aria-description': _(TEXT_EDIT_PAST_PAGE) } : {})}
-            className={past ? 'm-text-block m-text-block--past' : 'm-text-block'}
+            className={['m-text-block', past ? 'm-text-block--past' : '', adding ? 'm-text-block--adding' : ''].filter(Boolean).join(' ')}
             data-text-block={String(at)}
             key={`block-${String(blocks.version)}-${String(at)}`}
             onClick={(event) => {
@@ -455,7 +455,8 @@ export function EditTextLayer({
         ];
       })}
       {adding && blocks !== undefined && freshOpen === undefined ? (
-        // ADD TEXT: the empty page is a surface under the outlines, so a press on a block still edits that block.
+        // ADD TEXT: the page is a surface under the outlines, which take no press while it is armed, so a press over text
+        // places a box there too.
         <button
           aria-label={_(TEXT_ADD_SURFACE)}
           className="m-text-add-surface"
