@@ -2,6 +2,7 @@ import type { DocVersion } from '@monstera/shared';
 import { type ReactElement, useCallback, useEffect, useState } from 'react';
 
 import type { OverlayPage } from '../annotations/annotationSpace.js';
+import { useSettledRead } from '../useSettledPages.js';
 import type { PageBlocks, TextEditing } from './editing.js';
 import { EditTextLayer } from './EditTextLayer.js';
 import type { ShownPage } from './pdfjsFaces.js';
@@ -31,8 +32,11 @@ export function EditTextPage({
   pictureNoted,
   drawn,
   shown,
+  paused,
 }: {
   readonly page: number;
+  /** Whether no scroll is moving, before which the page's blocks are not read (`useSettledRead`). */
+  readonly paused: boolean;
   /** The text PDF.js shows on the page and the face it loaded for each piece (`pdfjsFaces.ts`), at the version it shows. */
   readonly shown?: () => Promise<ShownPage | undefined>;
   /** The version the page on screen is drawn from, `undefined` before it is drawn. */
@@ -52,7 +56,9 @@ export function EditTextPage({
   const answer = kept ?? (answers.current?.version === version ? answers.current : undefined);
   // ONE FUNCTION PER PAGE AND EDITING, so the layer's read of the page's objects runs once per write.
   const pageObjects = useCallback(() => editing.objects(page), [editing, page]);
+  const reads = useSettledRead(paused, version);
   useEffect(() => {
+    if (!reads) return;
     let current = true;
     void read(page).then((blocks) => {
       if (!current) return;
@@ -64,7 +70,7 @@ export function EditTextPage({
     return () => {
       current = false;
     };
-  }, [page, read, version]);
+  }, [page, read, reads, version]);
 
   return (
     <EditTextLayer

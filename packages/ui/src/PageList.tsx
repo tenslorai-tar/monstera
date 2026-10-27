@@ -27,6 +27,7 @@ import { shownTextOf } from './editText/pdfjsFaces.js';
 import { type ObjectEditing, ObjectEditPage } from './ObjectEditLayer.js';
 import { type FieldEditing, FieldDesignLayer } from './forms/FieldDesignLayer.js';
 import { type TabOrderEditing, TabOrderLayer } from './forms/TabOrderLayer.js';
+import { keysByPage } from './forms/fieldSelection.js';
 import { InlineWriter } from './InlineWriter.js';
 import type { Draft, WriteRequest } from './pageWriting.js';
 
@@ -65,6 +66,7 @@ import { type PagePlans, type PlannedPage, plannedRotation } from './pagePlan.js
 import { usePlannedPages } from './usePlannedPages.js';
 import { type PageTextAnswer, usePageText } from './usePageText.js';
 import { type PageLinkOnPage, usePageLinks } from './usePageLinks.js';
+import { useSettledPages } from './useSettledPages.js';
 import { FormLayer, type PageFill } from './forms/FormLayer.js';
 import type { FieldProblem } from './forms/fieldCheck.js';
 import type { ListedField } from './forms/fieldFill.js';
@@ -711,14 +713,23 @@ export function PageList({
   useOnColor(scroller, '--grid-on-paper', '--border-soft', ON_PAPER, 3);
   // AND THE PAGES A SELECTION IS IN, on screen or not: their layers hold the selection's ends (`useSelectedTextPages`).
   const selectedPages = useSelectedTextPages(scroller);
-  const pageText = usePageText(client, docId, version, firstFrame ? new Set([...visible, ...selectedPages]) : NOTHING_VISIBLE);
+  // THE PAGES THE SCROLL STOPPED ON, which the reads below are asked for (`useSettledPages`): a scroll passing a page
+  // starts no read of it, and no answer lands in the middle of the frames that draw the next one. The pages a selection
+  // is in are not waited for, since their layers hold the selection's ends. PAUSED is the same moment for every mounted
+  // page, which an editing mode's reads wait for (`useSettledRead`).
+  const { pages: settled, paused } = useSettledPages(firstFrame ? visible : NOTHING_VISIBLE);
+  // EACH PAGE'S SELECTED FIELDS, split once per selection (`keysByPage`): a set made per page in the loop below is new
+  // on every render, and a page handed a new one draws everything over it again.
+  const selectedFieldKeys = fieldSelection?.selected;
+  const selectedByPage = useMemo(() => keysByPage(selectedFieldKeys ?? []), [selectedFieldKeys]);
+  const pageText = usePageText(client, docId, version, firstFrame ? new Set([...settled, ...selectedPages]) : NOTHING_VISIBLE);
   // THE LINKS ON WHAT IS ON SCREEN (ADR-0167), after the first frame for the text's reason, and only where this list
   // follows links: a list with nothing to hand a press to reads nothing to draw.
   const pageLinks = usePageLinks(
     onFollowLink === undefined ? undefined : client,
     docId,
     version,
-    firstFrame ? visible : NOTHING_VISIBLE,
+    settled,
   );
   // THE FORM'S FIELDS ON WHAT IS ON SCREEN (ADR-0168), read whole once per version and handed to each visible page,
   // and only where this list fills fields.
@@ -726,7 +737,7 @@ export function PageList({
     onFillField === undefined ? undefined : client,
     docId,
     version,
-    firstFrame ? visible : NOTHING_VISIBLE,
+    settled,
   );
   // AT THE VERSION THE FIELDS WERE READ AT, never the version on show: while a write's re-read is in flight the page
   // still draws the last list, and its indices name widgets at that list's version, which the lane then judges.
@@ -1478,6 +1489,7 @@ export function PageList({
           // GATED ON THE SLOT'S OWN MEASUREMENT for `drawing`'s reason: an outline
           // placed with a neighbour's box would sit over the wrong words.
           editing={sizes.has(page) ? editing : undefined}
+          paused={paused}
           // ONLY THE REQUEST'S OWN PAGE, gated on its measurement for `drawing`'s reason.
           writing={sizes.has(page) && writing?.request.page === page ? writing : undefined}
           // THE SLOT'S OWN MEASUREMENT GATES THIS TOO, and for `drawing`'s
@@ -1515,7 +1527,7 @@ export function PageList({
           // Tab sent the focus (ADR-0226) — and so do its controls when it is handed none (`usePageFormFields`).
           fields={sizes.has(page) && fillOnPage !== undefined ? (pageFields.byPage.get(page) ?? NO_FIELDS) : undefined}
           onFillField={fillOnPage}
-          selectedFields={fieldSelection === undefined ? undefined : selectedOnPage(fieldSelection.selected, page)}
+          selectedFields={fieldSelection === undefined ? undefined : (selectedByPage.get(page) ?? NO_INDICES)}
           revealField={fieldSelection?.reveal?.page === page ? fieldSelection.reveal : undefined}
           focusField={fieldSelection?.focus?.page === page ? fieldSelection.focus : undefined}
           onFocusedField={fieldSelection?.onFocused}
@@ -1577,14 +1589,6 @@ function pagesInView(
     const slot = slotFor(page)?.getBoundingClientRect();
     return slot !== undefined && slot.height > 0 && slot.bottom > box.top && slot.top < box.bottom;
   });
-}
-
-/** The places in one page's widget walk that a selection of `page:index` keys holds. */
-function selectedOnPage(keys: ReadonlySet<string>, page: number): ReadonlySet<number> {
-  const prefix = `${String(page)}:`;
-  const held = new Set<number>();
-  for (const key of keys) if (key.startsWith(prefix)) held.add(Number(key.slice(prefix.length)));
-  return held;
 }
 
 /**
@@ -1743,6 +1747,7 @@ function PageSlot({
   drawing,
   held,
   editing,
+  paused,
   writing,
   text,
   kind,
@@ -1799,6 +1804,8 @@ function PageSlot({
   readonly drawing: PageListProps['drawing'];
   readonly held: PageListProps['held'];
   readonly editing: PageEditing | undefined;
+  /** Whether no scroll is moving (`useSettledPages`), before which an editing mode does not read the page. */
+  readonly paused: boolean;
   /** The pending request for words when it is THIS page's, otherwise `undefined`. */
   readonly writing: PageWriting | undefined;
   readonly text: readonly TextLayerLine[] | undefined;
@@ -2365,10 +2372,12 @@ function PageSlot({
           page={page}
           paperAt={paperAt}
           pictureOf={pictureOf}
+          paused={paused}
         />
       ) : (
         <EditTextPage
           paperAt={paperAt}
+          paused={paused}
           // THE VERSION THE PAGE SHOWS, set with its pixels: a written editor stays until this is the newer one (ADR-0261).
           drawn={drawnWith?.version}
           editing={editing}

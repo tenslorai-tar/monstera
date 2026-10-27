@@ -41,6 +41,7 @@ import {
   shownBy,
 } from './objectEditing.js';
 import { type PaperPaint, paperAround } from './paperAround.js';
+import { useSettledRead } from './useSettledPages.js';
 
 /**
  * Edit object's mode, drawn over one page
@@ -476,16 +477,21 @@ export function ObjectEditPage({
   editing,
   pictureOf,
   paperAt,
+  paused,
 }: {
   readonly page: number;
   readonly geometry: OverlayPage;
   readonly editing: ObjectEditing;
   readonly pictureOf: (box: Pixels) => HTMLCanvasElement | undefined;
   readonly paperAt: (x: number, y: number) => string | undefined;
+  /** Whether no scroll is moving, before which the page's objects are not read (`useSettledRead`). */
+  readonly paused: boolean;
 }): ReactElement {
   const [answer, setAnswer] = useState<{ readonly version: DocVersion; readonly objects: PageObjects | undefined }>();
   const { read, version } = editing;
+  const reads = useSettledRead(paused, version);
   useEffect(() => {
+    if (!reads) return;
     let current = true;
     void read(page).then((objects) => {
       if (current) setAnswer({ version, objects });
@@ -493,7 +499,7 @@ export function ObjectEditPage({
     return () => {
       current = false;
     };
-  }, [page, read, version]);
+  }, [page, read, reads, version]);
 
   const objects = answer?.version === version ? answer.objects : undefined;
   const { pick } = editing;

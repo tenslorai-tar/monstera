@@ -12,7 +12,7 @@ import { activateCatalogue, i18n } from '../i18n.js';
 import { EN } from '../messages/en.js';
 import type { TextBlock } from '../textBlock.js';
 import type { PageBlocks } from './editing.js';
-import { EditTextLayer } from './EditTextLayer.js';
+import { EditTextLayer, stackingOf } from './EditTextLayer.js';
 
 const STYLE = { size: 11, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false, italic: false, bold: false };
 const box = (x0: number, y0: number, x1: number, y1: number) => ({ x0, y0, x1, y1 });
@@ -213,5 +213,19 @@ describe('Edit text on the editor kit (ADR-0271)', () => {
     const { view, onLeave } = layer();
     fireEvent.keyDown(must(view.container.querySelector('[data-text-edit-layer]'), 'layer'), { key: 'Escape' });
     expect(onLeave).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('stackingOf, the outlines’ order', () => {
+  /** A block with only a box, which is all the order reads. */
+  const boxed = (width: number, height: number): TextBlock => ({ box: { x0: 0, y0: 0, x1: width, y1: height } }) as TextBlock;
+
+  it('puts each outline one above the number of larger blocks, ties level, as counting every pair did', () => {
+    // SIZES WITH TIES, in no order: equal areas are where a sort and a count could differ by one.
+    const blocks = [boxed(10, 10), boxed(40, 5), boxed(5, 20), boxed(300, 300), boxed(10, 10), boxed(1, 1), boxed(20, 10)];
+    const counted = blocks.map((block) => 1 + blocks.filter((other) => other.box.x1 * other.box.y1 > block.box.x1 * block.box.y1).length);
+    expect(stackingOf(blocks)).toStrictEqual(counted);
+    // CONTROL: the order is not trivially flat, so the comparison above separates something.
+    expect(new Set(counted).size).toBeGreaterThan(3);
   });
 });

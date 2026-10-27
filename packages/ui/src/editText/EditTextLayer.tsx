@@ -94,6 +94,27 @@ function area(box: TextBlock['box']): number {
   return (box.x1 - box.x0) * (box.y1 - box.y0);
 }
 
+/**
+ * Each block's place in the stack of outlines: one more than the number of blocks larger than it, so a smaller block
+ * that sits inside a larger one is above it. FROM ONE SORT, not a count over every block for each block: that was n²
+ * a render on a page of many blocks, and the outlines render as a scroll brings each page in.
+ */
+export function stackingOf(blocks: readonly TextBlock[]): number[] {
+  const areas = blocks.map((block) => area(block.box));
+  const larger = [...areas].sort((a, b) => b - a);
+  return areas.map((own) => {
+    // THE FIRST AREA NOT LARGER THAN THIS ONE, by halving: its place is how many are larger.
+    let low = 0;
+    let high = larger.length;
+    while (low < high) {
+      const middle = (low + high) >> 1;
+      if ((larger[middle] ?? 0) > own) low = middle + 1;
+      else high = middle;
+    }
+    return 1 + low;
+  });
+}
+
 export function EditTextLayer({
   page,
   geometry,
@@ -254,6 +275,9 @@ export function EditTextLayer({
     }
     setOpen(at, how);
   };
+  // WORKED OUT ONCE PER ANSWER, from the blocks alone: each outline's place in the stack and the words its label names.
+  const stacking = stackingOf(blocks?.blocks ?? []);
+  const labelled = (blocks?.blocks ?? []).map((block) => wordsOfBlock(block).replace(/\s+/gu, ' ').trim());
 
   return (
     <div
@@ -331,7 +355,7 @@ export function EditTextLayer({
             />
           );
         }
-        const words = wordsOfBlock(block).replace(/\s+/gu, ' ').trim();
+        const words = labelled[at] ?? '';
         const past = pastItsPage(block.box, geometry.crop);
         const outline = (
           <button
@@ -346,7 +370,7 @@ export function EditTextLayer({
               choose(at, block, event.detail >= 2 ? { at: 'point', x: event.clientX, y: event.clientY } : { at: 'box' });
             }}
             // A SMALLER BLOCK ABOVE A LARGER ONE that holds it, so the press on a heading inside a column is the heading's.
-            style={{ ...boxStyle(placed), zIndex: 1 + blocks.blocks.filter((other) => area(other.box) > area(block.box)).length }}
+            style={{ ...boxStyle(placed), zIndex: stacking[at] ?? 1 }}
             type="button"
           />
         );
