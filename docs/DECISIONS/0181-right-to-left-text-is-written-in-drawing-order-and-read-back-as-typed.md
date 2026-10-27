@@ -193,3 +193,9 @@ when a line is set again:
 
 None is a refusal. The help article on editing text says so in one plain line, beside the spacing and colour line of
 ADR-0179's correction of the same day.
+
+## Note, 2026-10-27 — Decision 7 is superseded by ADR-0273
+
+Text that is not upright is no longer left out and named: it is read, drawn and written in its own frame
+([ADR-0273](0273-text-set-at-an-angle-is-edited-in-its-own-frame.md)), so the four sentences and the counts behind them
+are removed. The decisions above stand as recorded.
