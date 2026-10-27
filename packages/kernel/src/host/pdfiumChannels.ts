@@ -21,6 +21,7 @@ import {
   sessionSchema,
 } from './engineChannels.js';
 import { pageRunsSchema } from './pageRunsWire.js';
+import { MAX_DRAWN_MARKERS } from '../textLines.js';
 
 /**
  * The channel set of the **PDFium** host
@@ -509,6 +510,10 @@ const basePdfiumChannels = {
           .object({ x0: z.number(), y0: z.number(), x1: z.number(), y1: z.number() })
           .strict()
           .nullable(),
+        /** The small shapes the page draws as a list's bullets, by box (`drawnMarkersOf`): what begins a list entry. */
+        markers: z
+          .array(z.object({ x0: z.number(), y0: z.number(), x1: z.number(), y1: z.number() }).strict())
+          .max(MAX_DRAWN_MARKERS),
       })
       .strict(),
     // THE BYTE-IMAGE WIRE'S CODES, spelt out because this channel is not one of

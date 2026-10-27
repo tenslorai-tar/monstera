@@ -41,7 +41,7 @@ import { existsSync } from 'node:fs';
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRawStream, StandardFonts, decodePDFRawStream } from '@cantoo/pdf-lib';
 
 import { EDIT_CATALOGUE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
-import { MARGIN, expectEdit, inkedCharacters, readBlock } from '../lib/editExpectations.mjs';
+import { MARGIN, expectEdit, inkedCharacters, listMarkerFailures, readBlock } from '../lib/editExpectations.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { readForEdit, writeBlockText, writeCatalogueShape } from '../lib/catalogueWrite.mjs';
 import { bindNativeEngine } from '../lib/nativeEngine.mjs';
@@ -79,6 +79,7 @@ const CASES = [
   'DRAWN UNDER AN ANNOTATION: invisible words under an annotation’s appearance are still judged unseen, as without it',
   'TEXT SET AT AN ANGLE (ADR-0273): the turned page, the turned page under a crop box and the skewed page are each offered by the editor’s grouping and written, every expectation held; CONTROL: grouped upright only, none is sent',
   'TWO TYPED SPACES are written and read back as two spaces and nothing else, on the TrueType subset page with no space glyph and on the drawn (Type 3) page',
+  'A LIST ITEM’S MARKER keeps its place and its gap to the item’s first letter when an item of each list grows to wrap, the bullet a character, its own object or a drawn shape; CONTROLS: the drawn bullets left out of the grouping, and a bullet moved 2 pt, each fail',
 ];
 
 // ------------------------------------------------------------------------------------------------- the file's shape
@@ -261,8 +262,8 @@ const CLAIMS = {
 async function run(pdfium, kernel, kit) {
   /** @type {string[]} */
   const failures = [];
-  const roster = createRoster(failures, { cases: 22 });
-  if (CASES.length !== 22) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 22`);
+  const roster = createRoster(failures, { cases: 23 });
+  if (CASES.length !== 23) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 23`);
   const check = (/** @type {string} */ name, /** @type {boolean} */ held, /** @type {string} */ detail) => {
     const mark = roster.mark();
     if (!held) failures.push(`${name}\n      ${detail}`);
@@ -343,8 +344,10 @@ async function run(pdfium, kernel, kit) {
     const edit = { block: shape.edit.block, lines: shape.edit.lines };
     const correct = await shape.build({ edit });
     const expected = /** @type {string} */ (correct.blocks.find((each) => each.id === block.id)?.text);
+    // THE PAGE'S LIST ITEMS, where it declares them: every control below is judged with their markers too.
+    const list = shape.list === undefined ? undefined : { items: shape.list, drawn: base.drawings.map((each) => each.box) };
     const judge = async (/** @type {Uint8Array | null} */ after, /** @type {string} */ want, outcome = {}) =>
-      await expectEdit(engines, { before: base.bytes, after, page, block, expected: want, outcome });
+      await expectEdit(engines, { before: base.bytes, after, page, block, expected: want, outcome, list });
     const verdict = (/** @type {string[]} */ found) => (found.length === 0 ? 'passed' : found.join(' | '));
 
     const right = await judge(correct.bytes, expected);
@@ -505,6 +508,43 @@ async function run(pdfium, kernel, kit) {
       if (!again.replace(/\|/gu, '').includes(`${word}  `)) wrongSpaces.push(`${id}: “${word}” is not followed by two spaces in ${JSON.stringify(again.slice(0, 80))}`);
     }
     check(CASES[21] ?? '', wrongSpaces.length === 0, wrongSpaces.join('\n      '));
+  }
+  // AN EDITED LIST ITEM'S BULLET STAYS WHERE IT WAS (the local agent's walk at 6fbe6389): the middle item of each of the
+  // bulleted page's three lists made long enough to wrap, through the editor's read and the operator writer, and every
+  // item's marker judged. CONTROLS: the same edits grouped with the page's drawn bullets left out, which reads the
+  // drawn-bullet list as one paragraph and so reflows the next item off its bullet; and a bullet moved two points, which
+  // the check must name, or it could not fail at all.
+  {
+    /** @type {string[]} */
+    const wrongLists = [];
+    const shape = SHAPES.find((each) => each.id === '08-bulleted-lists');
+    if (shape === undefined || shape.list === undefined) throw new Error('the bulleted page or its list items are missing');
+    const base = await shape.build({});
+    const list = { items: shape.list, drawn: base.drawings.map((each) => each.box) };
+    const textOf = (/** @type {any} */ each) => kit.paragraphsOfLines(each.lines.map((/** @type {any} */ line) => ({ text: kit.lineText(line.runs), soft: line.soft })));
+    /** Each list's middle item lengthened, one edit at a time, judged by the list check. @param {boolean} withMarkers */
+    const lengthened = async (withMarkers) => {
+      const read = await readForEdit(kit, base.bytes, base.page);
+      const grouped = withMarkers
+        ? read.grouped
+        : kit.groupInFrames(read.read.runs.map((/** @type {any} */ run) => kit.blockableOf(kit.inItsFrame(run))), (/** @type {any} */ run) => run.frame?.matrix);
+      /** @type {string[]} */
+      const found = [];
+      for (const block of grouped.filter((/** @type {any} */ each) => textOf(each).includes('on Mondays'))) {
+        const { after, outcome } = await writeBlockText(kit, base.bytes, base.page, read.runs, block, textOf(block).replace('on Mondays', 'on Mondays and on Thursdays too'));
+        if (after === null) found.push(`refused: ${String(outcome.refused)}`);
+        else found.push(...listMarkerFailures(charactersOf(kernel, base.bytes, base.page), charactersOf(kernel, after, base.page), list));
+      }
+      return found;
+    };
+    const held = await lengthened(true);
+    if (held.length > 0) wrongLists.push(...held);
+    const without = await lengthened(false);
+    if (!without.some((each) => each.startsWith('A LIST MARKER'))) wrongLists.push(`CONTROL: with the drawn bullets left out the edits still held: ${without.join(' | ') || 'no failure'}`);
+    const moved = await shape.build({ move: { block: 'symbol-bullet-1', dx: 2, dy: 0 } });
+    const nudged = listMarkerFailures(charactersOf(kernel, base.bytes, base.page), charactersOf(kernel, moved.bytes, base.page), list);
+    if (!nudged.some((each) => each.startsWith('A LIST MARKER MOVED'))) wrongLists.push(`CONTROL: a bullet moved 2 pt was not named: ${nudged.join(' | ') || 'no failure'}`);
+    check(CASES[22] ?? '', wrongLists.length === 0, wrongLists.join('\n      '));
   }
 
   process.stdout.write(

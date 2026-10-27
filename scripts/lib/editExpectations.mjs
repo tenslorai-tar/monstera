@@ -263,14 +263,81 @@ function linksOf(kernel, bytes, page) {
 }
 
 /**
+ * A list item a page declares: its first word, the baseline it stands on before any edit, and where its marker is drawn
+ * as a shape rather than as characters, that shape's box.
+ * @typedef {{ word: string, y: number }} ListItem
+ */
+
+/**
+ * The item's first word as MuPDF reads it, the occurrence nearest the line it stood on, and its marker: the characters
+ * on its line before it (a bullet, a number), or a drawn shape just before it. `undefined` where the word is not read.
+ * @param {readonly Char[]} chars @param {ListItem} item @param {readonly Box[]} drawn
+ */
+function itemAndMarker(chars, item, drawn) {
+  const visible = chars.filter((each) => each.character.trim() !== '');
+  /** @type {{ word: Char, line: Char[] } | undefined} */
+  let found;
+  for (const first of visible) {
+    if (first.character !== item.word[0]) continue;
+    const line = visible.filter((each) => Math.abs(each.y - first.y) <= 1).sort((a, b) => a.x - b.x);
+    const at = line.indexOf(first);
+    const spelt = line.slice(at, at + item.word.length).map((each) => each.character).join('');
+    if (spelt !== item.word || /\p{L}/u.test(line[at - 1]?.character ?? '') && (first.x - (line[at - 1]?.box.right ?? 0)) < 1) continue;
+    if (found === undefined || Math.abs(first.y - item.y) < Math.abs(found.word.y - item.y)) found = { word: first, line };
+  }
+  if (found === undefined) return undefined;
+  const { word, line } = found;
+  const height = word.box.top - word.box.bottom;
+  const before = line.filter((each) => each.box.right <= word.box.left + 0.5 && word.box.left - each.box.right <= 3 * height);
+  if (before.length > 0) {
+    return { word, marker: { left: Math.min(...before.map((each) => each.box.left)), y: word.y } };
+  }
+  const shape = drawn.find((box) => {
+    const middle = (box.bottom + box.top) / 2;
+    return middle >= word.box.bottom && middle <= word.box.top && box.right <= word.box.left + 0.5 && word.box.left - box.right <= 3 * height;
+  });
+  return { word, marker: shape === undefined ? undefined : { left: shape.left, y: (shape.bottom + shape.top) / 2 } };
+}
+
+/**
+ * EVERY LIST ITEM'S MARKER KEEPS ITS PLACE AND ITS GAP: its left to the item's first letter, and its height against the
+ * first letter's, are what they were (the local agent's walk of 2026-10-27, a browser-printed list whose edited item's
+ * bullet moved onto its words). A marker that the edit left beside other words, or whose gap closed, is a failure.
+ * @param {readonly Char[]} beforeChars @param {readonly Char[]} afterChars @param {{ items: readonly ListItem[], drawn: readonly Box[] }} list
+ */
+export function listMarkerFailures(beforeChars, afterChars, list) {
+  /** @type {string[]} */
+  const failures = [];
+  for (const item of list.items) {
+    const was = itemAndMarker(beforeChars, item, list.drawn);
+    if (was?.marker === undefined) throw new Error(`the list item “${item.word}” at ${String(item.y)} has no marker before the edit, so nothing below could fail`);
+    const now = itemAndMarker(afterChars, item, list.drawn);
+    if (now === undefined) continue;
+    if (now.marker === undefined) {
+      failures.push(`A LIST MARKER LEFT ITS ITEM: no marker stands before “${item.word}” on its line`);
+      continue;
+    }
+    const gapWas = was.word.box.left - was.marker.left;
+    const gapNow = now.word.box.left - now.marker.left;
+    const riseWas = was.word.y - was.marker.y;
+    const riseNow = now.word.y - now.marker.y;
+    if (Math.abs(gapNow - gapWas) > 0.5 || Math.abs(riseNow - riseWas) > 0.5) {
+      failures.push(`A LIST MARKER MOVED: before “${item.word}” its gap was ${gapWas.toFixed(2)} pt and is ${gapNow.toFixed(2)}, its rise ${riseWas.toFixed(2)} and ${riseNow.toFixed(2)}`);
+    }
+  }
+  return failures;
+}
+
+/**
  * Every way the edit of `block` broke what an Edit text edit must leave, as sentences; empty when it held.
  *
  * @param {{ kernel: any, pdfium: any }} engines `kernel.mupdf` is the built `mupdfRaw.js`; `pdfium` the built `pdfiumFfi.js`
- * @param {{ before: Uint8Array, after: Uint8Array | null, page: number, block: Block, expected: string, outcome?: Outcome }} edit
- *   `after` is null where the write was refused; `expected` is the block's text as the edit should leave it
+ * @param {{ before: Uint8Array, after: Uint8Array | null, page: number, block: Block, expected: string, outcome?: Outcome, list?: { items: readonly ListItem[], drawn: readonly Box[] } | undefined }} edit
+ *   `after` is null where the write was refused; `expected` is the block's text as the edit should leave it; `list` the
+ *   page's list items, whose markers must keep their place and gap ({@link listMarkerFailures})
  * @returns {Promise<string[]>}
  */
-export async function expectEdit({ kernel, pdfium }, { before, after, page, block, expected, outcome = {} }) {
+export async function expectEdit({ kernel, pdfium }, { before, after, page, block, expected, outcome = {}, list }) {
   /** @type {string[]} */
   const failures = [];
   if (outcome.refused !== undefined || after === null) {
@@ -283,6 +350,7 @@ export async function expectEdit({ kernel, pdfium }, { before, after, page, bloc
   const direction = block;
   const beforeChars = /** @type {Char[]} */ (charactersOf(kernel, before, page));
   const afterChars = /** @type {Char[]} */ (charactersOf(kernel, after, page));
+  if (list !== undefined) failures.push(...listMarkerFailures(beforeChars, afterChars, list));
   const owned = (/** @type {Box} */ box) => centredIn(box, block.box, MARGIN);
   const ownBefore = beforeChars.filter((each) => owned(each.box));
   if (ownBefore.filter((each) => each.character.trim() !== '').length === 0) {

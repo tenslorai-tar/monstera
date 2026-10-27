@@ -99,6 +99,8 @@ export function inItsFrame<R extends { readonly left: number; readonly right: nu
 export function groupInFrames<R extends BlockableRun<unknown>>(
   runs: readonly R[],
   frameOf: (run: R) => TextFrame | undefined,
+  /** The page's drawn bullets, in page space (`groupIntoBlocks`): asked of the upright text only, whose space it is. */
+  markers: readonly DrawnMarker[] = [],
 ): readonly (EditableBlock<R['style']> & { readonly frame?: TextFrame })[] {
   const groups: { readonly frame: TextFrame | null; readonly runs: R[] }[] = [];
   for (const run of runs) {
@@ -110,7 +112,7 @@ export function groupInFrames<R extends BlockableRun<unknown>>(
   // UPRIGHT FIRST, then each frame in the order its first run was read, so a page with no angled text is answered as before.
   groups.sort((a, b) => (a.frame === null ? 0 : 1) - (b.frame === null ? 0 : 1));
   return groups.flatMap(({ frame, runs: members }) =>
-    groupIntoBlocks<R['style']>(members).map((block) => (frame === null ? block : { ...block, frame })),
+    groupIntoBlocks<R['style']>(members, frame === null ? markers : []).map((block) => (frame === null ? block : { ...block, frame })),
   );
 }
 
@@ -543,8 +545,28 @@ function longestRun<S>(piece: Piece<S>): BlockableRun<S> | undefined {
  *
  * @param runs the page's text runs, in reading order
  */
-export function groupIntoBlocks<S>(runs: readonly BlockableRun<S>[]): readonly EditableBlock<S>[] {
+export function groupIntoBlocks<S>(runs: readonly BlockableRun<S>[], markers: readonly DrawnMarker[] = []): readonly EditableBlock<S>[] {
   const pieces = piecesOf(runs, (run) => run.size);
+  /**
+   * Whether a line begins at a drawn bullet ({@link DrawnMarker}): one beside its first letter, no taller than the line,
+   * within three of its heights before it, and level with it. Such a line begins its own BLOCK, not only its own
+   * paragraph: a drawn bullet does not move with text, so an item above that grows by a line, moving the lines under it,
+   * would leave every bullet below beside the wrong words. Its own block, an item that grows overlaps the next, as any
+   * block does, and nothing moves.
+   */
+  const beginsAtMarker = (piece: Piece<S>): boolean => {
+    const height = piece.top - piece.bottom;
+    return markers.some((marker) => {
+      const middle = (marker.y0 + marker.y1) / 2;
+      return (
+        marker.y1 - marker.y0 <= height &&
+        middle >= piece.bottom &&
+        middle <= piece.top &&
+        marker.x1 <= piece.left + SAME_EDGE &&
+        piece.left - marker.x1 <= 3 * height
+      );
+    });
+  };
 
   // TOP TO BOTTOM, not reading order, for the BLOCK pass only. A block's lines
   // are top to bottom by what a block is, and reading order is the content
@@ -559,7 +581,7 @@ export function groupIntoBlocks<S>(runs: readonly BlockableRun<S>[]): readonly E
   for (const piece of pieces) {
     const height = piece.top - piece.bottom;
     const setting = settingOfPiece(piece);
-    const block = blocks.find((held) => {
+    const block = beginsAtMarker(piece) ? undefined : blocks.find((held) => {
       const above = held[held.length - 1];
       if (above === undefined) return false;
       const overlaps = piece.left < above.right && piece.right > above.left;
@@ -629,10 +651,29 @@ export function groupIntoBlocks<S>(runs: readonly BlockableRun<S>[]): readonly E
 }
 
 /**
- * What a line that begins a list entry starts with: a bullet of the kinds word processors and browsers draw, or a number
- * or a letter closed by a full stop or a bracket, then white space. The ONE statement of it in the reading.
+ * What a line that begins a list entry starts with: a bullet of the kinds word processors and browsers draw, or a dash, a
+ * star, a number or a letter closed by a full stop or a bracket, then white space. The ONE statement of it in the reading.
+ *
+ * A BULLET NEEDS NO SPACE AFTER IT: no word begins with one, and a bullet set apart from its words by position rather than
+ * by a space reads with none between them (a bullet as its own object, as a browser prints a list). With the space
+ * required, three such items read as one paragraph, and an edit of one reflowed the next onto it (the local agent's walk
+ * of 2026-10-27). A dash or a star keeps the space, since a hyphenated word begins with neither but a line may.
  */
-export const LIST_ENTRY = /^(?:[•◦▪▫‣⁃●○■□–—*-]|\(?(?:\d{1,3}|[a-z])[.)])\s/u;
+/** A small shape the page draws as a list's bullet, by its box in page space (`drawnMarkersOf`, the read's). */
+export interface DrawnMarker {
+  readonly x0: number;
+  readonly y0: number;
+  readonly x1: number;
+  readonly y1: number;
+}
+
+/** The most drawn bullets a page's read carries: a list of thousands of items is a page no one edits item by item. */
+export const MAX_DRAWN_MARKERS = 4096;
+
+/** How far past a line's first letter a drawn bullet's right edge may reach and still stand before it: a rounding. */
+const SAME_EDGE = 0.5;
+
+export const LIST_ENTRY =/^(?:[•◦▪▫‣⁃●○■□](?!\s*$)|(?:[–—*-]|\(?(?:\d{1,3}|[a-z])[.)])\s)/u;
 
 /**
  * Whether each line of a block ENDS in a soft wrap, by the typesetter's own test and no constant: a line was soft-wrapped

@@ -92,7 +92,7 @@ import {
 } from './textEditRefusals.js';
 import { readInLineOrder } from './bidiLine.js';
 import { pdfTextString } from './pdfTextString.js';
-import { type Orientation, isUpright, lineBaselineOf } from './textLines.js';
+import { MAX_DRAWN_MARKERS, type Orientation, isUpright, lineBaselineOf } from './textLines.js';
 import { type JoinedRun, joinRuns, membersOf } from './textRunJoin.js';
 
 /**
@@ -726,6 +726,8 @@ export interface PageText {
    * column from (ADR-0097 4a).
    */
   readonly box: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number } | null;
+  /** The small shapes the page draws as a list's bullets (`drawnMarkersOf`), each by its box in page space. */
+  readonly markers: readonly { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number }[];
 }
 
 /** {@link PageText.box}: the one reading of a page's box, the writer's and the read's. */
@@ -802,9 +804,37 @@ export function textRuns(session: PdfiumSession, page: number): Promise<PageText
         const frame = run.style.orientation === 'upright' ? undefined : runFrameOf(bindings, handle, members);
         return { ...run, ...(measure > 0 ? { measure } : {}), ...(frame === undefined ? {} : { frame }) };
       });
-      return { runs, unaddressable: walked.unaddressable, box: pageBoxOf(bindings, handle) };
+      return { runs, unaddressable: walked.unaddressable, box: pageBoxOf(bindings, handle), markers: drawnMarkersOf(bindings, handle) };
     }),
   );
+}
+
+/** How far a drawn marker's sides may differ, the longer over the shorter: a disc, a square, a diamond; never a rule. */
+const MARKER_ASPECT = 2;
+
+/** The largest side a drawn marker has, in points: a bullet a list draws beside 20 pt text is under half of it. */
+const MARKER_SIDE = 12;
+
+/**
+ * The page's small drawn shapes that a list draws as its bullets (a disc, a square, a diamond as a path), each by its box:
+ * what tells the grouping a line begins a list entry where no character says so (`groupIntoBlocks`). A browser printing a
+ * list may draw its bullets so, and the text alone then reads three items as one paragraph, which an edit of one reflowed
+ * into the next (the local agent's walk of 2026-10-27). Paths only, on the page itself, near square and small; the first
+ * {@link MAX_DRAWN_MARKERS} in the page's order.
+ */
+function drawnMarkersOf(bindings: Bound, handle: unknown): PageText['markers'] {
+  const markers: { x0: number; y0: number; x1: number; y1: number }[] = [];
+  const count = numberFrom(bindings.countObjects(handle), 'FPDFPage_CountObjects');
+  for (let at = 0; at < count && markers.length < MAX_DRAWN_MARKERS; at += 1) {
+    const object: unknown = bindings.getObject(handle, at);
+    if (object === null || numberFrom(bindings.objectType(object), 'FPDFPageObj_GetType') !== PATH_OBJECT) continue;
+    const { left, bottom, right, top } = boundsOf(bindings, object);
+    const [width, height] = [right - left, top - bottom];
+    if (!(width > 0 && height > 0) || Math.max(width, height) > MARKER_SIDE) continue;
+    if (Math.max(width, height) / Math.min(width, height) > MARKER_ASPECT) continue;
+    markers.push({ x0: left, y0: bottom, x1: right, y1: top });
+  }
+  return markers;
 }
 
 /**
@@ -871,6 +901,7 @@ export function objectRuns(session: PdfiumSession, page: number): Promise<PageTe
         })),
         unaddressable: walked.unaddressable,
         box: pageBoxOf(bindings, handle),
+        markers: drawnMarkersOf(bindings, handle),
       };
     }),
   );

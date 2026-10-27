@@ -85,7 +85,8 @@ export async function writeCatalogueShape(kit, shape, options = {}) {
   if (at < 0) return { verdict: `NOT SENT: the block as the grouping reads it holds “${removed}” fewer times than the catalogue’s`, after: null };
   const text = asRead.slice(0, at) + inserted + asRead.slice(at + removed.length);
   const { after, outcome } = await writeBlockText(kit, base.bytes, base.page, runs, chosen, text);
-  const failures = await expectEdit(engines, { before: base.bytes, after, page: base.page, block, expected, outcome });
+  const list = shape.list === undefined ? undefined : { items: shape.list, drawn: base.drawings.map((/** @type {any} */ each) => each.box) };
+  const failures = await expectEdit(engines, { before: base.bytes, after, page: base.page, block, expected, outcome, list });
   return { verdict: failures.length === 0 ? 'held' : failures.join('\n      '), after };
 }
 
@@ -108,6 +109,7 @@ export async function readForEdit(kit, bytes, page) {
     const grouped = groupInFrames(
       read.runs.map((/** @type {any} */ run) => blockableOf(inItsFrame(run))),
       (/** @type {any} */ run) => run.frame?.matrix,
+      read.markers,
     );
     return { read, runs, grouped };
   } finally {

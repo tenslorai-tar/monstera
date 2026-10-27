@@ -111,6 +111,46 @@ describe('softEnds (ADR-0097 4c, ADR-0179 Decision 2)', () => {
     expect(softEnds([first, line('2. Answer accuracy', 90)], 200)).toStrictEqual([false, false]);
     expect(softEnds([first, line('b) answer accuracy', 90)], 200)).toStrictEqual([false, false]);
   });
+
+  it('keeps a break before a bullet with no space after it, as a bullet set apart by position reads (the local agent’s walk)', () => {
+    const first = line('•Retrieval quality – measured on the held out set', 195);
+    expect(softEnds([first, line('•Answer accuracy – scored by two readers', 180)], 200)).toStrictEqual([false, false]);
+    // CONTROL: a dash with no space is a word's, and a line that is only a bullet begins nothing.
+    expect(softEnds([first, line('-answer accuracy – scored by two readers', 180)], 200)).toStrictEqual([true, false]);
+  });
+});
+
+describe('a line that begins at a drawn bullet begins its own block', () => {
+  const style = { font: 'f', bold: false, italic: false, size: 10, colour: { r: 0, g: 0, b: 0 } };
+  const item = (index: number, text: string, bottom: number, right: number): BlockableRun<string> => ({
+    index,
+    text,
+    bottom,
+    top: bottom + 10,
+    left: 90,
+    right,
+    style: 'body',
+    setting: settingOf(style),
+    size: style.size,
+  });
+  const ITEMS = [item(0, 'Water the seedlings at dawn', 700, 230), item(1, 'Turn the compost on Mondays', 686, 238), item(2, 'Sweep the greenhouse floor', 672, 226)];
+  /** A disc beside each item, as a browser draws a list's bullets. */
+  const DISCS = [700, 686, 672].map((bottom) => ({ x0: 76, y0: bottom + 2.5, x1: 81, y1: bottom + 7.5 }));
+
+  it('reads three items with drawn bullets as three blocks, so one that grows moves none of the others', () => {
+    expect(groupIntoBlocks(ITEMS, DISCS)).toHaveLength(3);
+    // CONTROL: the same lines with no bullets read as one paragraph, which is what an edit of one reflowed.
+    const [joined] = groupIntoBlocks(ITEMS);
+    expect(groupIntoBlocks(ITEMS)).toHaveLength(1);
+    expect(joined?.lines.map((line) => line.soft)).toStrictEqual([true, true, false]);
+  });
+
+  it('takes no shape for a bullet that is not beside a line’s start: one far to its left, or level with nothing', () => {
+    const far = DISCS.map((disc) => ({ ...disc, x0: 20, x1: 25 }));
+    expect(groupIntoBlocks(ITEMS, far)).toHaveLength(1);
+    // IN THE GAP between the first two lines (696 to 700), level with neither.
+    expect(groupIntoBlocks(ITEMS, [{ x0: 76, y0: 695.5, x1: 81, y1: 700.5 }])).toHaveLength(1);
+  });
 });
 
 describe('a block carries its soft ends and its shape (ADR-0179)', () => {

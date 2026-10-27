@@ -12,6 +12,7 @@ import { serialiseIntoFile } from '../checkpointFile.js';
 import type { CaptureResult, CommandPrior } from '../commandLog.js';
 import type { AppliedImage, ByteImage, DrawnBoxes, ImageSession } from '../engineSeam.js';
 import type { PageRuns } from '../operatorEdit.js';
+import type { DrawnMarker } from '../textLines.js';
 import { assemblePageContent } from '../pageContentAssemble.js';
 import type { PageContent } from '../presentationContent.js';
 import type { TextRun } from '../pdfiumFfi.js';
@@ -467,6 +468,8 @@ export function remotePdfiumTextRuns(
   readonly unaddressable: number;
   /** The page box the runs are measured in, or `null` (ADR-0097 4a). */
   readonly box: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number } | null;
+  /** The small shapes the page draws as a list's bullets (`drawnMarkersOf`). */
+  readonly markers: readonly DrawnMarker[];
 }> {
   return async (image, page, unpack) => {
     const { session, area } = held();

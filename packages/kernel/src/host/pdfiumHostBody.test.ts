@@ -260,6 +260,8 @@ function start(files: Files, applied: ByteImage = new Uint8Array([9, 9, 9]), dra
         // A BOX NOTHING ELSE PRODUCES, for `unaddressable`'s reason: a handler that dropped it answers `undefined`, which
         // the schema refuses, and one that answered `null` would not read as these numbers.
         box: { x0: 3, y0: 5, x1: 611, y1: 787 },
+        // A BULLET NOTHING ELSE PRODUCES, for the same reason: a handler that dropped the field answers none.
+        markers: [{ x0: 76, y0: 618, x1: 81, y1: 623 }],
       });
     },
     // ADR-0210: one page's own content. The blob is a value nothing else here produces, and the answer carries a frame,
@@ -843,6 +845,8 @@ describe('the PDFium host body', () => {
         unaddressable: 7,
         // THE PAGE BOX CROSSES: the box a one-line block's column is taken from (ADR-0097 4a).
         box: { x0: 3, y0: 5, x1: 611, y1: 787 },
+        // AND THE DRAWN BULLETS: what tells the grouping a line begins a list entry no character marks.
+        markers: [{ x0: 76, y0: 618, x1: 81, y1: 623 }],
       },
     });
     // THE PAGE REACHED THE READER. Without this the case passes on a handler

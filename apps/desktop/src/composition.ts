@@ -1733,7 +1733,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       // nothing is left out for its angle, so nothing is counted for it. EDIT OBJECT'S READ, which reads the page as it is
       // for its own layer, keeps only upright text, as it always has (ADR-0264 Decision 5).
       // ONE GROUPING for the page's runs and each form placement's (ADR-0269), so a form's text is grouped as a page's is.
-      const blocksOf = (runs: typeof found.runs) => {
+      const blocksOf = (runs: typeof found.runs, markers: typeof found.markers) => {
         const grouped = (asItIs ? runs.filter((run) => isUpright(run.style)) : runs).map((run) => inItsFrame(run));
         // EACH RUN'S RISE FROM ITS LINE (the owner's N14): grouped with the page's baseline, then sent as the offset from
         // the line's (`withRises`), which is what the writer keeps and what the editor draws a superscript at.
@@ -1758,6 +1758,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
               },
             })),
             (run) => run.frame?.matrix,
+            // THE PAGE'S DRAWN BULLETS, so a list's items whose bullets are shapes read as items and not as one paragraph.
+            markers,
           );
         // EACH BLOCK'S FRAME BY NAME, not through `withRises`' spread: a field passed through a spread no type names is one
         // the next handler that names its fields drops (`unpacked`'s lesson, above).
@@ -1770,7 +1772,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
           return frame === undefined ? risen : { ...risen, frame };
         });
       };
-      const grouped = blocksOf(found.runs);
+      const grouped = blocksOf(found.runs, found.markers);
       // TEXT INSIDE A FORM (ADR-0269 Decision 1): each placement read by PDFium as a page of its own, in the page's user
       // space, its blocks after the page's own, each carrying its path. NEVER for Edit object's read, which reads the page
       // as it is (ADR-0264 Decision 5). A Type 3 font inside a form is not named by its descriptor: that read is the
@@ -1783,7 +1785,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
           : await Promise.all(
               placed.paths.map(async (form, at) => {
                 const read = await host.textRuns(placed.image, at, false);
-                return { form, blocks: blocksOf(read.runs), truncated: read.truncated };
+                return { form, blocks: blocksOf(read.runs, read.markers), truncated: read.truncated };
               }),
             );
       const inForms = placements.flatMap(({ form, blocks }) => blocks.map((block) => ({ ...block, form })));
