@@ -84,11 +84,22 @@ export function readingHolds(reading: string, words: string): boolean {
   return false;
 }
 
+/**
+ * What an operator edit answers: the drawn boxes and notes every writer answers, and how far down each edited block now
+ * reaches, its first and last baselines in the space its content is read in, as the writer set them. The reach stays in
+ * the process that wrote: the host forwards the boxes and notes by name, and a judge of the write (the corpus run's
+ * pixels) takes the block's whole new extent from it rather than from a reading that cannot tell a new letter from an
+ * old one in the same place.
+ */
+export interface OperatorWrite extends DrawnBoxes {
+  readonly reach: readonly { readonly first: number; readonly last: number }[];
+}
+
 export async function applyEditTextOperators(
   session: MupdfSession,
   command: CommandOfKind<'editTextOperators'>,
   read: PageRuns,
-): Promise<DrawnBoxes> {
+): Promise<OperatorWrite> {
   // THE FACE WRITER ON FIRST NEED, by a literal `import()` as the host loads pdf-lib (ADR-0121 Decision 3): it brings
   // HarfBuzz, +6.4 MB of resident set at import (measured 2026-10-06, Node 22.22.0 on Linux, three runs against a control
   // that imports nothing), which every MuPDF host would otherwise pay at start against a 100 MB fixed-cost budget.
@@ -123,11 +134,11 @@ export async function applyEditTextOperators(
    * The edit written with `faceSet`, or `undefined` where `askFaces` and a word needs a face the page's fonts lack: then
    * nothing has been written.
    */
-  function attempt(faceSet: typeof OperatorFaceSetType | null, askFaces: boolean): Promise<DrawnBoxes | undefined> {
+  function attempt(faceSet: typeof OperatorFaceSetType | null, askFaces: boolean): Promise<OperatorWrite | undefined> {
     return withDocument(session, (document) => attemptIn(document, faceSet, askFaces));
   }
 
-  function attemptIn(document: PDFDocument, faceSet: typeof OperatorFaceSetType | null, askFaces: boolean): DrawnBoxes | undefined {
+  function attemptIn(document: PDFDocument, faceSet: typeof OperatorFaceSetType | null, askFaces: boolean): OperatorWrite | undefined {
     // THE CONTENT THE EDIT IS IN: the page's own, or a form's, made this placement's own first (ADR-0269 Decision 3).
     const target = targetOf(document, command, true);
     const { content, holder } = target;
@@ -192,7 +203,7 @@ export async function applyEditTextOperators(
     // (`cappedBoxes`), as the PDFium writer's apply does (ADR-0177 Decision 7).
     const boxed = (faces?.boxed ?? []).map((character) => ({ character, page: command.page }));
     // AND WHAT ITS CHECKS NOTED.
-    return { boxed, more: 0, noted };
+    return { boxed, more: 0, noted, reach: edit.baselines.map(({ first, last }) => ({ first, last })) };
   }
 }
 

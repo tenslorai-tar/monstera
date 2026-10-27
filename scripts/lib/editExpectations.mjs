@@ -84,11 +84,23 @@ function inBlockSpace(box, { angle, skew = 0 }) {
   };
 }
 
-/** Whether a box's centre lies in `box` widened by `margin`. @param {Box} inner @param {Box} box @param {number} margin */
-function centredIn(inner, box, margin) {
+/**
+ * Whether a character's box stands in a block's box: its middle between the block's bottom and top, and across, its
+ * middle or more of it than `margin` inside the block's left and right (the middle alone keeps a mark of no width).
+ *
+ * ACROSS IT IS OVERLAP, NOT THE MIDDLE, because the two boxes are not the same kind: a block's box is PDFium's reading of
+ * its ink, and a character's is MuPDF's advance, a full em for an ideograph. A full stop's ink is a dot at the left of
+ * its em, so the block's ink ends there and the em's middle lies past it: measured 2026-10-27 on the CID font fixture,
+ * the block's ink ended at 239.65 and its 「。」 ran 234 to 252, and by its middle the block's own last character was a
+ * neighbour, so every edit of the block read as one that moved a character outside it.
+ * @param {Box} inner @param {Box} box @param {number} margin
+ */
+function standsIn(inner, box, margin) {
   const x = (inner.left + inner.right) / 2;
   const y = (inner.bottom + inner.top) / 2;
-  return x >= box.left - margin && x <= box.right + margin && y >= box.bottom - margin && y <= box.top + margin;
+  const across = Math.min(inner.right, box.right) - Math.max(inner.left, box.left);
+  const middle = x >= box.left - margin && x <= box.right + margin;
+  return (middle || across > margin) && y >= box.bottom - margin && y <= box.top + margin;
 }
 
 /**
@@ -125,6 +137,33 @@ function wordsIn(chars, members, direction) {
 
 /** @param {Char[]} word */
 const textOfWord = (word) => word.map((each) => each.character).join('');
+
+/** A character a line may break before and after with no space: an ideograph or kana (UAX #14, class ID). */
+const IDEOGRAPHIC = /[\p{scx=Han}\p{scx=Hiragana}\p{scx=Katakana}]/u;
+
+/**
+ * Words as the units a line breaks between: each ideograph and kana its own, since Chinese and Japanese break a line
+ * between any two of them and write no space. Measured 2026-10-27 on the CID font fixture: a heading set a quarter
+ * larger wrapped between の and 見, a break the script allows, and as one word the line read as split.
+ * @param {readonly string[]} words
+ */
+const breakableUnits = (words) =>
+  words.flatMap((word) => {
+    /** @type {string[]} */
+    const units = [];
+    let run = '';
+    for (const piece of word.match(/\P{M}\p{M}*/gu) ?? []) {
+      if (!IDEOGRAPHIC.test(piece)) {
+        run += piece;
+        continue;
+      }
+      if (run !== '') units.push(run);
+      run = '';
+      units.push(piece);
+    }
+    if (run !== '') units.push(run);
+    return units;
+  });
 
 /** The box round a word's characters. @param {Char[]} word @returns {Box} */
 const boxOfWord = (word) => ({
@@ -351,7 +390,7 @@ export async function expectEdit({ kernel, pdfium }, { before, after, page, bloc
   const beforeChars = /** @type {Char[]} */ (charactersOf(kernel, before, page));
   const afterChars = /** @type {Char[]} */ (charactersOf(kernel, after, page));
   if (list !== undefined) failures.push(...listMarkerFailures(beforeChars, afterChars, list));
-  const owned = (/** @type {Box} */ box) => centredIn(box, block.box, MARGIN);
+  const owned = (/** @type {Box} */ box) => standsIn(box, block.box, MARGIN);
   const ownBefore = beforeChars.filter((each) => owned(each.box));
   if (ownBefore.filter((each) => each.character.trim() !== '').length === 0) {
     // AN EMPTY BLOCK IS A BROKEN LOOKUP, not a clean one (CLAUDE.md item 4b): every check below would pass on it.
@@ -440,8 +479,8 @@ export async function expectEdit({ kernel, pdfium }, { before, after, page, bloc
   // WORDS AS WORDS: the read-back above leaves spaces out, so two words set against each other with neither a space nor
   // a gap pass it. The block's words, as letter runs, must be the expected ones (measured 2026-10-26: today's writer set
   // a new word against the next with no space after a re-wrap, and the page read "readerwhatever").
-  const wordsWanted = expected.match(/[\p{L}\p{N}\p{M}]+/gu) ?? [];
-  const { rest: wordsExtra, missing: wordsLost } = remainder(wordsAfter.map(textOfWord), wordsWanted, (word) => word);
+  const wordsWanted = breakableUnits(expected.match(/[\p{L}\p{N}\p{M}]+/gu) ?? []);
+  const { rest: wordsExtra, missing: wordsLost } = remainder(breakableUnits(wordsAfter.map(textOfWord)), wordsWanted, (word) => word);
   if (wordsExtra.length > 0 || wordsLost.length > 0) {
     failures.push(`WORDS RUN TOGETHER OR SPLIT (MuPDF): read “${wordsExtra.slice(0, 4).join('”, “')}” where “${wordsLost.slice(0, 4).join('”, “')}” were expected`);
   }
@@ -560,13 +599,13 @@ function undrawn(drawn, chars, { withText, without }) {
  * @param {{ kernel: any, pdfium: any }} engines @param {Uint8Array} bytes @param {number} page @param {Block} block
  */
 export async function readBlock({ kernel, pdfium }, bytes, page, block) {
-  const own = /** @type {Char[]} */ (charactersOf(kernel, bytes, page)).filter((each) => centredIn(each.box, block.box, MARGIN) && each.character.trim() !== '');
+  const own = /** @type {Char[]} */ (charactersOf(kernel, bytes, page)).filter((each) => standsIn(each.box, block.box, MARGIN) && each.character.trim() !== '');
   const { runs } = await pdfiumReading(pdfium, bytes, page);
   const box = (/** @type {{ left: number, right: number, bottom: number, top: number }} */ run) => ({ left: run.left, right: run.right, bottom: run.bottom, top: run.top });
   return {
     want: bare(block.text),
     mupdf: readings(own.map((each) => ({ text: each.character, box: each.box })), block),
-    pdfium: readings(runs.filter((run) => centredIn(box(run), block.box, MARGIN) && bare(run.text) !== '').map((run) => ({ text: run.text, box: box(run) })), block),
+    pdfium: readings(runs.filter((run) => standsIn(box(run), block.box, MARGIN) && bare(run.text) !== '').map((run) => ({ text: run.text, box: box(run) })), block),
   };
 }
 
@@ -578,7 +617,7 @@ export async function readBlock({ kernel, pdfium }, bytes, page, block) {
  */
 export async function inkedCharacters({ kernel }, bytes, page, box) {
   const drawn = render(kernel, bytes, page);
-  const own = /** @type {Char[]} */ (charactersOf(kernel, bytes, page)).filter((each) => centredIn(each.box, box, MARGIN) && each.character.trim() !== '');
+  const own = /** @type {Char[]} */ (charactersOf(kernel, bytes, page)).filter((each) => standsIn(each.box, box, MARGIN) && each.character.trim() !== '');
   const unseen = undrawn(drawn, own, textInk(kernel, bytes, page));
   return { read: own.length, unseen: unseen.map((each) => each.character).join('') };
 }
