@@ -3,7 +3,7 @@ import type { MessageKey } from '@monstera/shared';
 import { type ReactElement, type ReactNode, useId, useState } from 'react';
 
 import { ColourSwatches } from './ColourChoice.js';
-import { type DocumentFont, FontPicker, type FontList } from './FontPicker.js';
+import { type DocumentFont, type EditorFonts, FontPicker, type FontList } from './FontPicker.js';
 import {
   PROPERTIES_TEXT_COLOUR,
   TEXT_FORMAT_ALIGN_CENTER,
@@ -98,6 +98,8 @@ export interface TextSectionProps {
     readonly inDocument: readonly DocumentFont[];
     /** What the button says while the words have no one family the picker names. */
     readonly unset: MessageKey;
+    /** Edit text's groups and its way back to the page's faces; absent for every other consumer. */
+    readonly editor?: EditorFonts;
   };
   /** Whether a typed number is sent as it is typed, or when its field is left. */
   readonly live: boolean;
@@ -250,6 +252,7 @@ export function TextSection(props: TextSectionProps): ReactElement {
       <div className="m-text-section__font">
         <FontPicker
           builtIn={props.font.builtIn}
+          editor={props.font.editor}
           inDocument={props.font.inDocument}
           label={TEXT_FORMAT_FAMILY}
           list={props.font.list}

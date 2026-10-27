@@ -101,8 +101,11 @@ for (const [where, point] of Object.entries(OUTSIDE)) {
   test(`a click ${where} after an edit leaves nothing selected, and so do the two clicks after it`, async ({ page }) => {
     await open(page);
     const pdf = await onScreen(page);
+    // THE BOX, then the caret in its words (ADR-0271's two steps).
     await press(page, pdf(72 + 20, LINES[0].baseline + 4));
-    const editor = page.locator('[data-text-editor]');
+    await expect(page.locator('[data-kit-frame]')).toBeFocused();
+    await press(page, pdf(72 + 20, LINES[0].baseline + 4));
+    const editor = page.locator('[data-kit-surface]');
     await expect(editor).toBeFocused();
     await page.keyboard.type(' Edited');
     const outside = point(pdf);
@@ -110,7 +113,7 @@ for (const [where, point] of Object.entries(OUTSIDE)) {
     await page.waitForTimeout(400);
     expect(await selected(page), 'after the click outside').toBe('');
     // AND THE EDIT IS FINISHED: the focus is out of the words typed into.
-    expect(await page.evaluate(() => document.activeElement?.closest('[data-text-editor]')?.textContent.includes('Edited') ?? false)).toBe(false);
+    expect(await page.evaluate(() => document.activeElement?.closest('[data-kit-surface]')?.textContent.includes('Edited') ?? false)).toBe(false);
     // TWO MORE: on the words no block outlines, and on the empty page, each read after it.
     await press(page, OUTSIDE['on words no block outlines'](pdf));
     await page.waitForTimeout(400);

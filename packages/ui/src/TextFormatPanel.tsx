@@ -2,7 +2,7 @@ import { useLingui } from '@lingui/react';
 import { type ReactElement, useSyncExternalStore } from 'react';
 
 import { FORMAT_ENTRIES } from './commands/textFormatCommands.js';
-import { type DocumentFont, type FontList, RESOLVED_BUILT_IN, SUBSET_TAG } from './FontPicker.js';
+import { type DocumentFont, type EditorFonts, type FontList, RESOLVED_BUILT_IN, SUBSET_TAG } from './FontPicker.js';
 import {
   TEXT_BLOCK_REMOVE,
   TEXT_FORMAT_FAMILY_RUN,
@@ -22,7 +22,7 @@ import {
   openEditorSnapshot,
   refocusOpenEditor,
   removeOpenBlock,
-} from './textEditorControl.js';
+} from './editorKit/openEditor.js';
 import { spacingBoundOf, spacingOf } from './textFormatting.js';
 import { TextSection, type TextRow } from './TextSection.js';
 
@@ -49,6 +49,19 @@ const EDITOR_ROWS: ReadonlySet<TextRow> = new Set(['style', 'rise', 'highlight',
 
 /** The editor's paragraph verbs beyond alignment, by the table's ids: lists and indents. */
 const PARAGRAPH_EXTRAS = new Set(['bullets', 'numbering', 'indent-more', 'indent-less'].map((name) => `text.format.${name}`));
+
+/**
+ * Edit text's font groups (the owner's decision of 2026-10-26): *Closest matches* is empty until the block's read on open
+ * answers the chain's candidates (ADR-0271 Part 2b), and is not drawn while it is; *As on the page* puts every selected
+ * letter back in the face the page has it in. One object, so the picker's groups are not worked out again each render.
+ */
+const EDITOR_FONTS: EditorFonts = {
+  closest: [],
+  onAsOnPage: () => {
+    formatOpenEditor({ kind: 'set', change: { family: null } });
+    refocusOpenEditor();
+  },
+};
 
 /** A colour as `#rrggbb`. */
 function hexOf(colour: { readonly r: number; readonly g: number; readonly b: number } | undefined): string | undefined {
@@ -106,7 +119,7 @@ export function TextFormatPanel({ fonts, documentFonts }: TextFormatPanelProps):
       </header>
 
       <TextSection
-        font={{ list: fonts, builtIn: RESOLVED_BUILT_IN, inDocument, unset: TEXT_FORMAT_FAMILY_RUN }}
+        font={{ list: fonts, builtIn: RESOLVED_BUILT_IN, inDocument, unset: TEXT_FORMAT_FAMILY_RUN, editor: EDITOR_FONTS }}
         lineSpacingBounds={{ min: 0.5, max: 5, step: 0.1 }}
         live
         look={{

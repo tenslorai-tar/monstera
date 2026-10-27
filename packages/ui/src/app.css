@@ -6830,20 +6830,33 @@ optgroup {
   outline: 1px solid var(--accent-on-paper, var(--accent));
 }
 
+/* THE BOX SELECTED, no caret yet (ADR-0271 section 3): the frame itself has the focus and its outline says so; the
+   handles are the box's. */
+.m-kit-frame--box {
+  outline-width: 2px;
+}
+
+.m-kit-frame:focus {
+  outline-style: solid;
+}
+
+/* EACH KIND'S FACES, NAMED ONCE: the faces a letter falls back to where its own font has no glyph for it. Edit text's
+   editor names them by property (`runFaces.ts`), and the text box's and the mark look's kind classes take them. */
+:root {
+  --m-face-sans: Arial, Helvetica, sans-serif;
+  --m-face-serif: 'Times New Roman', Times, serif;
+  --m-face-mono: Consolas, 'Courier New', monospace;
+}
+
 /*
- * THE EDITOR IS SET LIKE THE PAGE, not like the application: each run's size,
- * weight, slant and colour, and the block's paper, are inline values, because
- * they are the document's (ADR-0145). What is the application's is the face
- * KIND — the page's own font cannot be loaded by the renderer — and it is
- * chosen by class, on each run and on the editor for text that is in no run.
+ * THE KIT'S EDITABLE SURFACE (`editorKit/EditorSurface.tsx`), set like the page, not like the application: every run's
+ * face, size, weight, slant and colour are inline values drawn from the model, because they are the document's.
  */
-.m-text-editor {
+.m-kit-surface {
   display: block;
   box-sizing: border-box;
-  /* ONE CHARACTER OF SLACK past the block: the editor is set in a face of the
-     same kind, not the page's own, and a line exactly as wide as the block would
-     otherwise wrap in the editor where it does not on the page. Where the words
-     finally break is the kernel's, measured with the page's font. */
+  /* ONE CHARACTER OF SLACK past the block, so a line exactly as wide as the block in the page's font does not wrap in the
+     editor where it does not on the page; where the words finally break is the writer's. */
   inline-size: calc(100% + 1ch);
   min-block-size: 100%;
   margin: 0;
@@ -6852,48 +6865,49 @@ optgroup {
   overflow: hidden;
   white-space: pre-wrap;
   overflow-wrap: break-word;
-  /* NO PAPER OF ITS OWN: the page shows through a row still as drawn, and each changed row's paper is a cover under it
-     (`AS_DRAWN` in `TextEditLayer.tsx`). A block moved off its place carries the paper with it (`--placed`). */
+  /* EACH PARAGRAPH RUNS THE WAY ITS OWN LETTERS SAY (ADR-0181): Hebrew and Arabic are typed right to left. */
+  unicode-bidi: plaintext;
+  /* NO PAPER OF ITS OWN: the page shows through a paragraph still as drawn, and each changed one's paper is a cover. */
   background: transparent;
   caret-color: var(--accent-on-paper, var(--accent));
-  /* THE OFFSET PARENT of the baseline marker (`useBaselineShift`), so its offset is in the editor's own frame. */
+  /* THE OFFSET PARENT of the baseline marker, so its offset is in the surface's own frame. */
   position: relative;
 }
 
-.m-text-editor--placed {
+.m-kit-surface:focus {
+  outline: none;
+}
+
+.m-kit-surface--placed {
   background: var(--page);
 }
 
-/* A BLOCK WHOSE LINES ALL END ON PURPOSE widens rather than wraps (the owner's A7): at least the block's width, as wide as
-   its longest line. */
-.m-text-editor--lines {
+/* A BLOCK WHOSE LINES ALL END ON PURPOSE widens rather than wraps (the owner's A7). */
+.m-kit-surface--lines {
   inline-size: max-content;
   min-inline-size: calc(100% + 1ch);
   white-space: pre;
   overflow-wrap: normal;
 }
 
-/* A ROW AS THE PAGE DREW IT (`AS_DRAWN` in `TextEditLayer.tsx`): its lines break where the page's do and nowhere else,
-   and nothing of it is painted, so the page's own drawing of those words is what shows until the person changes them.
-   The caret keeps the words' colour, which the editor sets apart from `color`. Every descendant, because each run
-   carries its own colour, decoration and highlight inline. */
-.m-text-editor__line--as-drawn {
+/* A PARAGRAPH AS THE PAGE DREW IT (`paint.ts`): laid out at the page's breaks and nowhere else, and not painted, so the
+   page's own drawing of those words shows until the person changes them. Every descendant, because each run carries its
+   own colour, decoration and highlight inline. */
+.m-kit__paragraph--as-drawn {
   white-space: pre;
   overflow-wrap: normal;
 }
 
-.m-text-editor__line--as-drawn,
-.m-text-editor__line--as-drawn * {
+.m-kit__paragraph--as-drawn,
+.m-kit__paragraph--as-drawn * {
   color: transparent !important;
   text-decoration-color: transparent !important;
   background-color: transparent !important;
-  /* LEFT ALONE BY FORCED COLOURS, `.m-text-layer`'s reason: they would paint `transparent` in the system's text colour and
-     draw this row over the page's own copy of it. */
+  /* LEFT ALONE BY FORCED COLOURS: they would paint `transparent` in the system's text colour over the page's copy. */
   forced-color-adjust: none;
 }
 
-/* THE PAGE'S PAPER over its own copy of a row the editor draws: placed from script in the frame's pixels, under the
-   words. The page's colour where the paper behind a point could not be read. */
+/* THE PAGE'S PAPER over its own copy of a paragraph the editor draws: placed from script, under the words. */
 .m-text-editor-cover {
   position: absolute;
   inset-inline: -1px;
@@ -6902,46 +6916,30 @@ optgroup {
 }
 
 /* WHERE THE FIRST LINE'S BASELINE IS: a marker of no size standing on it, put in and taken out within one layout. */
-.m-text-editor__baseline {
+.m-kit__baseline {
   display: inline-block;
   inline-size: 0;
   block-size: 0;
   vertical-align: baseline;
 }
 
-.m-text-editor:focus {
-  outline: none;
-}
-
-/* EACH KIND NAMES ITS FACES ONCE, as a property, so a run drawn in its own font can put that font first and keep its
-   kind behind it (ADR-0175) without a second copy of the list. */
-.m-text-editor--sans,
+/* THE TEXT BOX'S AND THE MARK LOOK'S KINDS, each by the one list above. */
 .m-inline-writer__block--sans,
 .m-mark-look__words--sans {
-  --m-kind-face: Arial, Helvetica, sans-serif;
+  --m-kind-face: var(--m-face-sans);
   font-family: var(--m-kind-face);
 }
 
-.m-text-editor--serif,
 .m-inline-writer__block--serif,
 .m-mark-look__words--serif {
-  --m-kind-face: 'Times New Roman', Times, serif;
+  --m-kind-face: var(--m-face-serif);
   font-family: var(--m-kind-face);
 }
 
-.m-text-editor--mono,
 .m-inline-writer__block--mono,
 .m-mark-look__words--mono {
-  --m-kind-face: Consolas, 'Courier New', monospace;
+  --m-kind-face: var(--m-face-mono);
   font-family: var(--m-kind-face);
-}
-
-/* A RUN IN ITS OWN FONT, the one the host rebuilt from the run's program (ADR-0175): that font first, and its kind of
-   face for a character the person types that the font does not carry. Two classes, so it outranks the kind's rule
-   whatever order the two are declared in. `--m-run-font` is set on the run from script, per run, so no stylesheet
-   declares it: its own fallback is the kind, which keeps the declaration valid on a run that has none. */
-.m-text-editor__run.m-text-editor__run--own {
-  font-family: var(--m-run-font, var(--m-kind-face)), var(--m-kind-face);
 }
 
 /*

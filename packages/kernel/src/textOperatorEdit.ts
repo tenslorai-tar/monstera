@@ -6,7 +6,9 @@ import { editFaces, editFacesBound, loadEditFaces } from './editFaces.js';
 import type { FaceSource } from './fontCatalogue.js';
 import { withDocument } from './mupdfWriter.js';
 import type { PageFont } from './pageFonts.js';
-import { type OperatorRefusal, type PageRuns, checkOperatorEdit, editOperators, pageFontsAsRead } from './operatorEdit.js';
+import { type ArrangeContext, type OperatorRefusal, type PageRuns, checkOperatorEdit, editOperators, pageFontsAsRead } from './operatorEdit.js';
+import { type Affine, PAPER_PIXELS_PER_POINT, coversInPageSpace } from './paperColour.js';
+import { scaleWithinPixelBound } from './pageSnapshot.js';
 import { addPlainState, plainStateName } from './drawnObjectEdit.js';
 import { pageContentStreams, xobjectKinds } from './pageContent.js';
 import { type StandardFontTables, loadStandardFonts, pageFonts } from './pageFonts.js';
@@ -15,7 +17,7 @@ import { BlockUnchangedError, EditRefusedError, TextNotWritableError } from './t
 import { sentAsShown } from './blockAsShown.js';
 import { joinedContent } from './textOperators.js';
 import { type FormPlacement, charactersDrawn, growFormBox, growFrames, ownPlacement, placementAt, unwrappedForm, wrappedForm } from './formText.js';
-import type { PDFDocument, PDFObject } from './mupdfRaw.js';
+import { ColorSpace, Matrix, type PDFDocument, type PDFObject } from './mupdfRaw.js';
 
 /**
  * `editTextOperators` in the MuPDF session
@@ -112,6 +114,8 @@ export async function applyEditTextOperators(
     const made = editOperators(content, fonts, read, blocksOfEdit(command), faces?.faces ?? null, command.fit, command.inserts ?? [], {
       kinds: xobjectKinds(holder),
       plainState,
+      // THE PAGE AS IT IS DRAWN NOW: nothing of the edit is written until `target.write` below.
+      paper: paperOf(document, command.page),
     });
     if (!made.ok) {
       const refusal = made.error;
@@ -176,7 +180,8 @@ function needsAFace(session: MupdfSession, command: CommandOfKind<'editTextOpera
       command.fit,
       command.inserts ?? [],
       // THE SAME ARRANGE the apply will make, so a block arranged past a picture is asked about as it will be written.
-      { kinds: xobjectKinds(holder), plainState: plainStateName(holder) },
+      // NO PAPER: this pass asks only whether a word needs a face, and a cover changes no answer to that.
+      { kinds: xobjectKinds(holder), plainState: plainStateName(holder), paper: (boxes) => boxes.map(() => []) },
     );
     return !made.ok && made.error.reason === 'needs-a-face';
   });
@@ -238,6 +243,40 @@ function targetOf(document: PDFDocument, command: CommandOfKind<'editTextOperato
         growFrames(document, command.page, placement.path, characters);
       }
     },
+  };
+}
+
+/**
+ * The paper round boxes on `page` as MuPDF draws it NOW, before the edit is written (ADR-0187, ADR-0271's correction of
+ * 2026-10-26): the page drawn once, on the first box asked, at the scale a scan's paper is read at, and each box covered
+ * by the one rule both writers take (`coversInPageSpace`). The map from page space to the raster is MuPDF's own —
+ * `getTransform()` is what it applies to the content, its flip, crop origin and `/Rotate` — so nothing about the page's
+ * turn is assumed here.
+ */
+function paperOf(document: PDFDocument, page: number): ArrangeContext['paper'] {
+  let drawn: { readonly bgra: Uint8Array; readonly width: number; readonly height: number; readonly toDevice: Affine; readonly scale: number } | null = null;
+  return (boxes) => {
+    if (drawn === null) {
+      const loaded = document.loadPage(page);
+      const [x0, y0, x1, y1] = loaded.getBounds();
+      const scale = scaleWithinPixelBound(x1 - x0, y1 - y0, PAPER_PIXELS_PER_POINT);
+      const pixmap = loaded.toPixmap(Matrix.scale(scale, scale), ColorSpace.DeviceBGR, true, true);
+      try {
+        const width = pixmap.getWidth();
+        const height = pixmap.getHeight();
+        const stride = pixmap.getStride();
+        const samples = pixmap.getPixels();
+        // FOUR BYTES A PIXEL, row after row with no padding, blue first: `paperCoverFor`'s raster.
+        const bgra = new Uint8Array(width * height * 4);
+        for (let row = 0; row < height; row += 1) bgra.set(samples.subarray(row * stride, row * stride + width * 4), row * width * 4);
+        // THE RASTER'S OWN ORIGIN, which a page box not starting at zero moves off the device's.
+        const [a, b, c, d, e, f] = Matrix.concat(loaded.getTransform(), Matrix.scale(scale, scale));
+        drawn = { bgra, width, height, toDevice: [a, b, c, d, e - pixmap.getX(), f - pixmap.getY()], scale };
+      } finally {
+        pixmap.destroy();
+      }
+    }
+    return coversInPageSpace(drawn.bgra, drawn.width, drawn.height, drawn.toDevice, drawn.scale, boxes);
   };
 }
 

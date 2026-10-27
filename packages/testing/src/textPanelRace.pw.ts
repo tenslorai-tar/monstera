@@ -2,6 +2,7 @@ import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { type Page, expect, test } from '@playwright/test';
 
+import { FRAME, SURFACE, openWords } from './editTextSteps.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
 
 /**
@@ -48,29 +49,29 @@ async function open(page: Page, writeMs: number): Promise<void> {
 
 const blockAt = (page: Page, at: number) => page.locator(`[data-text-edit-layer="0"] [data-text-block="${String(at)}"]`);
 
-/** Once the editor over `words` is open and editable, the panel's Text section is on screen. */
+/** Once the editor over `words` is open and not writing, the panel's Text section is on screen. */
 async function panelFollowsEditor(page: Page, words: RegExp, label: string): Promise<void> {
-  const editor = page.locator('[data-text-editor]');
+  const editor = page.locator(SURFACE);
   const section = page.locator('[data-text-properties] [data-text-section]');
-  // THE CLICKED BLOCK'S OWN EDITOR, editable: while the last block's write is in flight its busy editor is still the one
-  // on screen, and the clicked block opens after the write and its read.
+  // THE CLICKED BLOCK'S OWN EDITOR, not writing: while the last block's write is in flight its busy editor is still the
+  // one on screen, and the clicked block opens after the write and its read.
   await expect(editor, label).toHaveText(words, { timeout: 10_000 });
-  await expect(editor, label).toHaveAttribute('aria-busy', 'false');
+  await expect(page.locator(FRAME), label).toHaveAttribute('aria-busy', 'false');
   await expect(section, label).toBeVisible();
 }
 
 test('Escape pressed while a block’s write is in flight leaves Edit text on, and the words are written', async ({ page }) => {
   await open(page, 1500);
-  await blockAt(page, 0).click();
+  await openWords(page, blockAt(page, 0));
   await panelFollowsEditor(page, /first/u, 'the first block');
   await page.keyboard.type('x');
   await page.keyboard.press('Escape');
-  await expect(page.locator('[data-text-editor]')).toHaveAttribute('aria-busy', 'true');
+  await expect(page.locator(FRAME)).toHaveAttribute('aria-busy', 'true');
   // A SECOND ESCAPE, AS A PERSON PRESSES WHEN NOTHING SEEMS TO HAPPEN: the editor keeps the key while it writes.
-  await expect(page.locator('[data-text-editor]')).toBeFocused();
+  await expect(page.locator(SURFACE)).toBeFocused();
   await page.keyboard.press('Escape');
-  await expect(page.locator('[data-text-editor]')).toHaveCount(0, { timeout: 10_000 });
-  // STILL IN EDIT TEXT: the blocks are outlined, and one opens on a click.
+  await expect(page.locator(SURFACE)).toHaveCount(0, { timeout: 10_000 });
+  // STILL IN EDIT TEXT: the blocks are outlined, and one opens on a press.
   await blockAt(page, 1).click();
   await panelFollowsEditor(page, /second/u, 'the second block after the write');
 });
@@ -79,18 +80,18 @@ for (const writeMs of [0, 1500]) {
   test(`W8: the Text section is on screen at every open, with writes answering in ${String(writeMs)} ms`, async ({ page }) => {
     await open(page, writeMs);
     for (let round = 0; round < 4; round += 1) {
-      await blockAt(page, 0).click();
+      await openWords(page, blockAt(page, 0));
       await panelFollowsEditor(page, /first/u, `round ${String(round)}: first block`);
       await page.keyboard.type('x');
-      // FROM ONE BLOCK STRAIGHT TO THE OTHER, the first's write in flight.
+      // FROM ONE BLOCK STRAIGHT TO THE OTHER, the first's write in flight: the second's box opens after it.
       await blockAt(page, 1).click();
       await panelFollowsEditor(page, /second/u, `round ${String(round)}: second block after the first`);
       await page.keyboard.press('Escape');
-      await expect(page.locator('[data-text-editor]')).toHaveCount(0, { timeout: 10_000 });
+      await expect(page.locator(SURFACE)).toHaveCount(0, { timeout: 10_000 });
       await blockAt(page, 1).click();
       await panelFollowsEditor(page, /second/u, `round ${String(round)}: second block again after Escape`);
       await page.keyboard.press('Escape');
-      await expect(page.locator('[data-text-editor]')).toHaveCount(0, { timeout: 10_000 });
+      await expect(page.locator(SURFACE)).toHaveCount(0, { timeout: 10_000 });
     }
   });
 }

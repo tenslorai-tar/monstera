@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { PAPER_RING, paperColourAround, paperCoverFor } from './paperColour.js';
+import { PAPER_RING, coversInPageSpace, paperColourAround, paperCoverFor } from './paperColour.js';
 
 /** A raster of `width` by `height` in one colour, BGRA. */
 function raster(width: number, height: number, colour: readonly [number, number, number]): Uint8Array {
@@ -155,5 +155,47 @@ describe('paperCoverFor', () => {
     const cover = paperCoverFor(bgra, 200, 80, BOX, 2);
     const [a, b] = cover;
     expect(a !== undefined && b !== undefined && a.box.x1 > b.box.x0).toBe(true);
+  });
+});
+
+describe('coversInPageSpace, the one rule both writers turn page boxes into a cover with', () => {
+  const CREAM = [250, 240, 200] as const;
+  // A PAGE 80 PT WIDE AND 40 PT HIGH, drawn at two pixels a point: upright (y flipped), and turned a quarter.
+  const UPRIGHT = [2, 0, 0, -2, 0, 80] as const;
+  const TURNED = [0, 2, 2, 0, 0, 0] as const;
+  // A WORD'S BOX ON THE PAGE, and where its ink is on each raster.
+  const WORD = { left: 20, bottom: 10, right: 50, top: 18 };
+
+  it('carries the box to the raster by the page’s own map, covers it there, and carries the cover back', () => {
+    const bgra = raster(160, 80, CREAM);
+    paint(bgra, 160, { x0: 40, y0: 44, x1: 100, y1: 60 }, [20, 20, 20]);
+    const [[cell] = []] = coversInPageSpace(bgra, 160, 80, UPRIGHT, 2, [WORD]);
+    expect(cell?.colour).toStrictEqual({ r: 250, g: 240, b: 200 });
+    // THE INK AND A PIXEL TO SPARE, half a point, back in page space: the cover holds the word's box.
+    expect(cell?.box.left).toBeLessThanOrEqual(WORD.left);
+    expect(cell?.box.right).toBeGreaterThanOrEqual(WORD.right);
+    expect(cell?.box.bottom).toBeLessThanOrEqual(WORD.bottom);
+    expect(cell?.box.top).toBeGreaterThanOrEqual(WORD.top);
+  });
+
+  it('follows a quarter turn: on a turned page the ink is where the map says, and the cover is over the same word', () => {
+    // THE SAME WORD on a raster drawn turned: x and y trade places.
+    const bgra = raster(80, 160, CREAM);
+    paint(bgra, 80, { x0: 20, y0: 40, x1: 36, y1: 100 }, [20, 20, 20]);
+    const [[turned] = []] = coversInPageSpace(bgra, 80, 160, TURNED, 2, [WORD]);
+    expect(turned?.colour).toStrictEqual({ r: 250, g: 240, b: 200 });
+    expect(turned?.box.left).toBeLessThanOrEqual(WORD.left);
+    expect(turned?.box.top).toBeGreaterThanOrEqual(WORD.top);
+    // CONTROL: the upright map on this raster reads a ring with no ink in it, so its cover stays at the margin it began
+    // with and does not reach the word's own far edge plus its ink's spare pixel the way the right map's does.
+    const [[upright] = []] = coversInPageSpace(bgra, 80, 160, UPRIGHT, 2, [WORD]);
+    expect(upright?.box).not.toStrictEqual(turned?.box);
+  });
+
+  it('is a plain white cover over the box grown by the margin where the map cannot be inverted', () => {
+    const bgra = raster(160, 80, CREAM);
+    expect(coversInPageSpace(bgra, 160, 80, [0, 0, 0, 0, 0, 0], 2, [WORD])).toStrictEqual([
+      [{ box: { left: 18.5, bottom: 8.5, right: 51.5, top: 19.5 }, colour: { r: 255, g: 255, b: 255 } }],
+    ]);
   });
 });

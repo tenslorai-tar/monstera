@@ -437,3 +437,17 @@ the low-memory stop, which does not go through that timer. Leaving the tab ends 
 80 s after it. A window that ends without leaving — a crash, a reload — renews nothing, so no host can be held for ever,
 which a hold `main` kept until told otherwise could not promise.
 
+## Correction, 2026-10-26 — the hosts are no longer kept running on the Edit tab; they still start when it opens
+
+The owner's decision of 2026-10-26, from the local agent's measurement on the owner's laptop: keeping the editing hosts
+running while the Edit tab is in use (the correction above) cost **250 to 300 MB of idle memory** and made **no row of
+the speed table faster**. So it is withdrawn: the renderer asks `app.prepareEditing` ONCE as the Edit tab is shown, as
+the corrections of 2026-10-20 and 2026-10-21 had it, and renews nothing; the hosts stop `HOST_IDLE_MS` after their last
+call, on the Edit tab as anywhere else. **Kept:** the start as the tab opens, which saved 0.6 to 0.8 s there, and the
+font list read in the background. The low-memory stop is unchanged.
+
+What proves it is a pair across the boundary the two halves sit either side of, since `apps/desktop` may not import the
+renderer: `editingEngines.test.tsx` asks that the renderer sends one ask and none for ten minutes on the tab — longer
+than any idle time, so no constant crosses the boundary — with the renewal it replaced as its control; and
+`idleRetire.test.ts` asks that a host stops its idle time after its last call.
+

@@ -336,3 +336,62 @@ it.
 6. **Two-step opening:** the first click selects the box; the second places the cursor (section 3).
 7. **Manual font and style choice** when the person is not satisfied with the match (section 3).
 8. **Repaint only the block's area** after an edit; the full page is never waited for (section 3, Finishing).
+
+## Correction, 2026-10-26 — who does what: the cloud agent owns the writer changes
+
+The owner's decision of 2026-10-26 17:07, given after this ADR was written: **the cloud agent owns the three writer
+changes** — the owner's font rule as the only rule, no push, one write per finish — **and the read-on-open call**, as
+well as the editor kit, its adapter and the deletion of the old editor. **The local agent does only the work that needs
+the Windows machine:** the owner's corpus, the real application, speed on the owner's laptop, packaging, the visual
+baselines, merging, and moving `main`.
+
+So section 5's heading *"The writer: changes owned by the local agent"* and the local agent's column of section 9's table
+no longer say who does the work. **Section 9's table is superseded** by this paragraph; its order of milestones stands.
+What each change is, and the rule that the writer's other behaviour must not change, are unchanged.
+
+## Correction, 2026-10-26 (later) — a fourth writer change: the scan cover comes back, a line at a time
+
+The owner's decision of 2026-10-26: **the paper-colour cover of ADR-0181 Decision 9 and ADR-0187 is a fourth writer
+change.** It restores a regression. `paperColour.ts` is reached only from the PDFium writer's block edit, and every Edit
+text edit has gone to the operator writer since ADR-0266, so over a scan the new words were written invisible in the
+recognised layer's own render mode and the picture went on showing the old ones. Measured 2026-10-26 by
+`scripts/research/editCatalogueWriter.mjs --shape 22-scanned-page-ocr` on this branch: *UNSEEN: the edit changed no pixel
+of the block*, the new word drawing nothing.
+
+1. **The operator writer covers and draws.** Where a line it sets afresh was recognised words over a picture (render mode
+   3, over an image drawn before it), the line's new words are drawn visible, and the picture under the line's old ink is
+   covered with the paper that is there, by ADR-0187's rule (`paperCoverFor`, on a raster of the page taken before the
+   edit, carried into page space by the page's own mapping). The cover is drawn inside the new words' own `q … Q`, before
+   their `BT`, so it is over the picture and under the words. The picture is never changed, and the edit's checkpoint is
+   its undo (ADR-0176 Decision 7), so one Undo puts the page back.
+2. **The unit is the LINE, by the owner's answer of 2026-10-26.** A line the edit sets afresh is redrawn whole: every word
+   on it visible, including the words it kept, and its old ink covered whole. A line the edit does not reach stays as it
+   was, invisible over its own ink. Asked against two alternatives: *keep a kept word invisible while it is still over its
+   ink*, which lets a longer new word be drawn over the ink of a word beside it; and *never redraw a kept word*, which
+   leaves a word that wrapped away still showing in the picture where it was. The line is what the operator writer sets
+   afresh anyway, so the cover and what is drawn are decided by one rule.
+3. **The words a line keeps before its first changed run are set again with it** on a scan, rather than left as their own
+   operators: they are part of the line that is redrawn, and an invisible operator left beside a visible line would be
+   covered over.
+4. **Catalogue shape 22's expectation follows** (section 6): its edited line is written visible whole over a cover of the
+   whole line's ink, and its other lines stay invisible over theirs. `editExpectations.mjs` judges a scan by the line: a
+   word on a line holding a replaced or new word may be covered and must be drawn; a word on any other line must not be
+   touched.
+
+## Open question, 2026-10-26 — a format press renders the whole shell
+
+**Measured.** In `editTextHandWalk.pw.ts` on this cloud machine (Chromium 151, the production build), *Bold visible in
+the editor* reads a median of 13.6 to 20.7 ms and a worst of 21.2 to 33.7 ms over six presses, inside its 50 ms budget;
+single presses read earlier the same evening went from 22.0 to 52.1 ms, one of them over it. A CPU profile of ten Bold
+presses (unminified build, CDP sampling at 50 µs) puts about 15 ms of React work in each press, and most of it is not
+the editor: `App`, the menu bar, the ribbon and the status bar render again on every press.
+
+**The mechanism.** Bold flips a command's `checked` answer. `useCommandContext` (ADR-0258's correction) holds every
+command's answers in App, so the context changes identity and every surface memoized on it renders again, which is the
+correction working as designed: it is what keeps Loupe and Bold from showing a stale state. Typing changes no answer,
+so a keystroke does not pay it (median 7.7 to 10.0 ms).
+
+**The question for the owner.** The laptop measurement against base A decides whether the row is inside its budget
+there. If it is not, the remedy is a change to ADR-0258's correction: each surface subscribes to the answers of the
+commands it shows, so a Bold press renders the Bold button and not the shell. That is an architecture change (B4) and is
+not made without your decision. Nothing else in Milestone 2 depends on it.

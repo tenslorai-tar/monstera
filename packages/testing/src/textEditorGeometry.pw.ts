@@ -2,6 +2,7 @@ import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { type Page, expect, test } from '@playwright/test';
 
+import { SURFACE, openWords } from './editTextSteps.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
 
 /**
@@ -139,7 +140,7 @@ async function ink(page: Page, clip: { x: number; y: number; width: number; heig
 async function editorInk(page: Page, clip: { x: number; y: number; width: number; height: number }) {
   const canvas = page.locator('canvas[data-page-canvas="0"]');
   const painted = await page.addStyleTag({
-    content: '.m-text-editor__line--as-drawn,.m-text-editor__line--as-drawn *{color:black!important}',
+    content: '.m-kit__paragraph--as-drawn,.m-kit__paragraph--as-drawn *{color:black!important}',
   });
   await canvas.evaluate((element) => {
     (element as HTMLElement).style.visibility = 'hidden';
@@ -160,16 +161,20 @@ test.describe('the caret is where the person clicked, in a real browser (VVVVVVV
   // THE BROWSER'S OWN `caretPositionFromPoint`, which the unit case stubs with one fixed node whatever the point: two
   // clicks on the same block, at its first letter and at its first line's end, and a letter typed after each. A caret
   // the layer left at one fixed place would put both letters in the same place, so the pair separates it.
-  /** Opens the first block by a click at `where` in its outline, types Z, and answers the editor's text. */
+  /** Opens the first block by two presses at `where` in its outline (the box, then the caret), types Z, and answers the editor's text. */
   const typedAt = async (page: Page, where: (box: { x: number; y: number; width: number; height: number }) => { x: number; y: number }) => {
     await open(page);
     const box = await page.locator('[data-text-edit-layer="0"] [data-text-block="0"]').boundingBox();
     if (box === null) throw new Error('no outline');
     const at = where(box);
     await page.mouse.click(at.x, at.y);
-    const editor = page.locator('[data-text-editor]');
+    await page.mouse.click(at.x, at.y);
+    const editor = page.locator(SURFACE);
     await expect(editor).toBeFocused();
     await page.keyboard.type('Z');
+    // ONCE IT IS IN: a letter typed before the block's faces are read is held until they are, then put in at the press
+    // (`BlockEditor`'s held press, at most 1.5 s), so the words read the instant after the key may not hold it yet.
+    await expect(editor).toContainText('Z');
     return (await editor.innerText()).replace(/\s+/gu, ' ').trim();
   };
 
@@ -194,11 +199,10 @@ test.describe('the open editor stands where the page’s words are (A5, A7)', ()
     if (box === null || below === null) throw new Error('no outline');
     const region = { x: box.x - 4, y: box.y - 8, width: box.width + 60, height: box.height + 16 };
     const drawn = await ink(page, region);
-    await outline.click();
-    await expect(page.locator('[data-text-editor]')).toBeFocused();
+    await openWords(page, outline);
     await page.waitForTimeout(300);
     const typed = await editorInk(page, region);
-    const editor = await page.locator('[data-text-editor]').boundingBox();
+    const editor = await page.locator(SURFACE).boundingBox();
     if (editor === null) throw new Error('no editor');
     const facts = JSON.stringify({ drawn, typed, editor, box, below });
     // THE WORDS WHERE THE PAGE'S ARE, within a pixel at the top and the foot of the ink.
@@ -215,9 +219,8 @@ test.describe('the open editor stands where the page’s words are (A5, A7)', ()
     if (box === null) throw new Error('no outline');
     const region = { x: box.x - 4, y: box.y - 8, width: box.width + 200, height: box.height + 40 };
     const drawn = await ink(page, region);
-    await outline.click();
-    const editor = page.locator('[data-text-editor]');
-    await expect(editor).toBeFocused();
+    await openWords(page, outline);
+    const editor = page.locator(SURFACE);
     await page.waitForTimeout(300);
     const typed = await editorInk(page, region);
     const lines = await editor.evaluate((element) => {

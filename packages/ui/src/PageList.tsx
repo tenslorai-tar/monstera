@@ -21,7 +21,8 @@ import { MarkLookLayer } from './MarkLookLayer.js';
 import { type OverlayPage, overlayTransform } from './annotations/annotationSpace.js';
 import type { AnnotationSelection, LinkSelection } from './annotations/selectTool.js';
 import { SelectionLayer } from './SelectionLayer.js';
-import { type TextEditing, TextEditPage } from './TextEditLayer.js';
+import type { TextEditing } from './editText/editing.js';
+import { EditTextPage } from './editText/EditTextPage.js';
 import { type ObjectEditing, ObjectEditPage } from './ObjectEditLayer.js';
 import { type FieldEditing, FieldDesignLayer } from './forms/FieldDesignLayer.js';
 import { type TabOrderEditing, TabOrderLayer } from './forms/TabOrderLayer.js';
@@ -2365,9 +2366,8 @@ function PageSlot({
           pictureOf={pictureOf}
         />
       ) : (
-        <TextEditPage
+        <EditTextPage
           paperAt={paperAt}
-          pictureOf={pictureOf}
           // THE VERSION THE PAGE SHOWS, set with its pixels: a written editor stays until this is the newer one (ADR-0261).
           drawn={drawnWith?.version}
           editing={editing}

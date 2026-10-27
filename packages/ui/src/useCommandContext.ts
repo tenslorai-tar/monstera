@@ -2,7 +2,7 @@ import { useCallback, useMemo, useSyncExternalStore } from 'react';
 
 import type { CommandContext, CommandRegistry } from './registries/commands.js';
 import type { SettingsStore } from './settingsStore.js';
-import { onEditorChange } from './textEditorControl.js';
+import { onEditorChange } from './editorKit/openEditor.js';
 
 /**
  * Every command's answers in one string: whether it exists here (`when`) and, where it has one, whether its state is

@@ -34,6 +34,9 @@ import {
   EDITING_FONT_TITLE,
   EDITING_TEXT_BOX_LOOK_TITLE,
   EDITING_IMAGE_PAGES_TITLE,
+  EDITING_FALLBACK_FACE_DESCRIPTION,
+  EDITING_FALLBACK_FACE_TITLE,
+  FALLBACK_FACE_TITLES,
   EDITING_LINE_WIDTH_TITLE,
   EDITING_OPACITY_TITLE,
   EDITING_AZURE_ENDPOINT_DESCRIPTION,
@@ -233,6 +236,22 @@ export const IMAGE_PAGES_SETTING: SettingDefinition<z.ZodEnum<{ this: 'this'; al
   fallback: 'this',
   category: 'editing',
   optionTitles: IMAGE_PAGES_TITLES,
+};
+
+/**
+ * The kind of face Edit text draws a letter in where the document's own font has no glyph for it and the page says
+ * nothing of the kind: a letter typed that a subset does not carry, a family chosen that this computer cannot draw
+ * ([ADR-0271](../../../../docs/DECISIONS/0271-the-edit-text-editor-is-rebuilt-on-the-kept-writer.md) section 4). Shown
+ * only while editing; what is written is the writer's choice of font, which this does not change.
+ */
+export const FALLBACK_FACE_SETTING: SettingDefinition<z.ZodEnum<{ serif: 'serif'; sans: 'sans'; mono: 'mono' }>> = {
+  id: 'editing.fallback-face',
+  title: EDITING_FALLBACK_FACE_TITLE,
+  description: EDITING_FALLBACK_FACE_DESCRIPTION,
+  schema: z.enum(['serif', 'sans', 'mono']),
+  fallback: 'sans',
+  category: 'editing',
+  optionTitles: FALLBACK_FACE_TITLES,
 };
 
 /**

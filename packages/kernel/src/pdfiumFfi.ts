@@ -26,7 +26,7 @@ import {
   logicalOf,
   readBackOf,
 } from './bidiOrder.js';
-import { paperCoverFor, type PixelBox, type Rgb } from './paperColour.js';
+import { type Affine, PAPER_PIXELS_PER_POINT, type PageCoverCell, coversInPageSpace } from './paperColour.js';
 import {
   DECORATION_KEY,
   DECORATION_TAG,
@@ -3067,17 +3067,7 @@ function layOutBlocks(
       const scanned = blocks.map((block) =>
         mode === 'write' ? recognisedOverPictures(bindings, handle, block.lines.flat().flatMap((run) => [run.object, ...run.extras])) : [],
       );
-      const coverBoxes = scanned.flatMap((objects) =>
-        objects.map((object): Bounds => {
-          const box = boundsOf(bindings, object);
-          return {
-            left: box.left - COVER_MARGIN,
-            bottom: box.bottom - COVER_MARGIN,
-            right: box.right + COVER_MARGIN,
-            top: box.top + COVER_MARGIN,
-          };
-        }),
-      );
+      const coverBoxes = scanned.flatMap((objects) => objects.map((object): Bounds => boundsOf(bindings, object)));
       const papers = coverBoxes.length === 0 ? [] : coversRoundBoxes(bindings, handle, coverBoxes);
       let coverAt = 0;
       // THE PAGE'S MARKED DECORATIONS (the owner's L2), read once before any object moves: each block takes the ones its
@@ -4471,12 +4461,6 @@ interface Bounds {
 
 const IMAGE_OBJECT = 3;
 
-/** How many raster pixels a point of the page is, when the page is read for its paper: past what a scan's grain needs. */
-const PAPER_PIXELS_PER_POINT = 2;
-
-/** How far past a recognised word's box the paper cover reaches, in points: a scanned word's ink is wider than its box. */
-const COVER_MARGIN = 1.5;
-
 /**
  * THE RECOGNISED WORDS OF A SCAN AMONG `objects` ([ADR-0181](../../../docs/DECISIONS/0181-right-to-left-text-is-written-in-drawing-order-and-read-back-as-typed.md)
  * Decision 9): those painted invisibly (render mode 3, how an OCR text layer is drawn) that lie over a picture, so the
@@ -4502,20 +4486,13 @@ function recognisedOverPictures(bindings: Bound, handle: unknown, objects: reado
   });
 }
 
-/** One rectangle of a scan's cover, in page space, and the paper colour it is filled with. */
-interface PageCoverCell {
-  readonly box: Bounds;
-  readonly colour: Rgb;
-}
-
 /**
  * The cover for each of `boxes` on the page as it is drawn now, read once from one raster, in the order the boxes were
- * given ([ADR-0187](../../../docs/DECISIONS/0187-a-scans-edited-words-are-covered-where-the-ink-is-with-the-paper-that-is-there.md)):
- * each box grown through the ink that touches it, in cells filled with the paper that is there (`paperCoverFor`).
+ * given, by the one rule both writers take (`coversInPageSpace`, ADR-0187).
  *
- * The cover is worked out on the raster and written in page space, so the page's own mapping stands between the two, and
- * a mapping is read from the page rather than assumed: where the page is rotated or its box does not start at the origin
- * a device pixel is not a page unit away.
+ * THE MAP IS THE PAGE'S OWN, from three corners: PDFium's mapping is affine (a scale, a quarter turn at most, a shift), so
+ * where the page's width and height are carried to the device gives it to the pixel over the whole page and not to a
+ * pixel over a point. A page handle PDFium refuses to map maps to nothing, which the shared rule covers in white.
  */
 function coversRoundBoxes(bindings: Bound, handle: unknown, boxes: readonly Bounds[]): PageCoverCell[][] {
   const pageWidth = numberFrom(bindings.pageWidth(handle), 'FPDF_GetPageWidthF');
@@ -4529,61 +4506,21 @@ function coversRoundBoxes(bindings: Bound, handle: unknown, boxes: readonly Boun
     if (numberFrom(bindings.pageToDevice(handle, 0, 0, width, height, 0, x, y, deviceX, deviceY), 'FPDF_PageToDevice') !== 1) return undefined;
     return [deviceX[0] ?? 0, deviceY[0] ?? 0];
   };
-  // THE MAPPING BACK, from three corners of the page: the page's own mapping is affine (a scale, a quarter turn at most,
-  // a shift), so where the page's width and height are carried to the device gives its inverse, to the pixel over the
-  // whole page and not to a pixel over a point.
   const origin = deviceOf(0, 0);
   const alongX = deviceOf(pageWidth, 0);
   const alongY = deviceOf(0, pageHeight);
-  // A PLAIN WHITE COVER, here and below, only where the mapping cannot be inverted (VVVVVVV-30): `FPDF_PageToDevice` fails
-  // only for a page handle that is not one, and the determinant is zero or not finite only for a page of no width or no
-  // height — a page that shows nothing, so the cover patches nothing a person can see.
-  if (origin === undefined || alongX === undefined || alongY === undefined) {
-    return boxes.map((box) => [{ box, colour: { r: 255, g: 255, b: 255 } }]);
-  }
-  const a = (alongX[0] - origin[0]) / pageWidth;
-  const b = (alongX[1] - origin[1]) / pageWidth;
-  const c = (alongY[0] - origin[0]) / pageHeight;
-  const d = (alongY[1] - origin[1]) / pageHeight;
-  const determinant = a * d - b * c;
-  const pageOf = (x: number, y: number): readonly [number, number] => [
-    (d * (x - origin[0]) - c * (y - origin[1])) / determinant,
-    (-b * (x - origin[0]) + a * (y - origin[1])) / determinant,
-  ];
-  return boxes.map((box) => {
-    // THE PAGE'S OWN MAPPING, rotation included: the four corners of the box, where they fall on this raster.
-    const xs: number[] = [];
-    const ys: number[] = [];
-    for (const [x, y] of [
-      [box.left, box.bottom],
-      [box.left, box.top],
-      [box.right, box.bottom],
-      [box.right, box.top],
-    ] as const) {
-      const device = deviceOf(x, y);
-      if (device === undefined || !Number.isFinite(determinant) || determinant === 0) return [{ box, colour: { r: 255, g: 255, b: 255 } }];
-      xs.push(device[0]);
-      ys.push(device[1]);
-    }
-    const seed: PixelBox = { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
-    return paperCoverFor(raster.bgra, width, height, seed, PAPER_PIXELS_PER_POINT).map((cell) => {
-      const corners = [
-        pageOf(cell.box.x0, cell.box.y0),
-        pageOf(cell.box.x1, cell.box.y0),
-        pageOf(cell.box.x0, cell.box.y1),
-        pageOf(cell.box.x1, cell.box.y1),
-      ];
-      return {
-        box: {
-          left: Math.min(...corners.map((corner) => corner[0])),
-          bottom: Math.min(...corners.map((corner) => corner[1])),
-          right: Math.max(...corners.map((corner) => corner[0])),
-          top: Math.max(...corners.map((corner) => corner[1])),
-        },
-        colour: cell.colour,
-      };
-    });
-  });
+  const toDevice: Affine =
+    origin === undefined || alongX === undefined || alongY === undefined
+      ? [0, 0, 0, 0, 0, 0]
+      : [
+          (alongX[0] - origin[0]) / pageWidth,
+          (alongX[1] - origin[1]) / pageWidth,
+          (alongY[0] - origin[0]) / pageHeight,
+          (alongY[1] - origin[1]) / pageHeight,
+          origin[0],
+          origin[1],
+        ];
+  return coversInPageSpace(raster.bgra, width, height, toDevice, PAPER_PIXELS_PER_POINT, boxes);
 }
 
 /** One object's box, read through `FPDFPageObj_GetBounds`. */

@@ -20,7 +20,7 @@ import { applyEditTextOperators } from './textOperatorEdit.js';
  * and said, never refused. So a box written off the page is a box that "wrote", and the person sees nothing — the
  * silent drop. This reading clips to the page as a reader shows it, so a word here is a word a person can see.
  *
- * The press is turned into the box exactly as the editor does it (`TextEditLayer.tsx`' `freshBox`): the point through
+ * The press is turned into the box exactly as the editor does it (`editText/editing.ts`' `freshBox`): the point through
  * the page transform, the left clamped into the page's width, the first baseline 0.8 of the size below the press.
  *
  * The CONTROL is a press below the page's foot, whose words must be found NOT on the page, so the reading is shown able

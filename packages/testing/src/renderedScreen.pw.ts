@@ -24,6 +24,7 @@ import { type Page, expect, test } from '@playwright/test';
 // ONE BRIDGE for both Playwright runs — §10.7's baselines drive the renderer the same way (B3a),
 // and `LOOKS` is theirs too: §10.4's gate and §10.7's baselines check the same three themes, and
 // two lists would drift the day one gains a fourth (audit finding IIIIII-2).
+import { SURFACE, openWords, selectBox } from './editTextSteps.js';
 import { LOOKS, type Look, bridge, bridgeUnder } from './pageBridge.js';
 import { againstPaper } from './contrast.js';
 import { readsAtTextFloor } from './inkOnScreen.js';
@@ -4894,9 +4895,8 @@ for (const look of LOOKS) {
     await page.keyboard.press('Control+K');
     await page.keyboard.type('Edit text on the page');
     await page.keyboard.press('Enter');
-    await page.locator('[data-text-edit-layer="0"] [data-text-block="0"]').click();
-    const editor = page.locator('[data-text-editor]');
-    await expect(editor).toBeFocused();
+    await openWords(page, page.locator('[data-text-edit-layer="0"] [data-text-block="0"]'));
+    const editor = page.locator(SURFACE);
     await page.keyboard.type(' typed here');
     await page.keyboard.press('Escape');
 
@@ -5020,9 +5020,8 @@ for (const look of LOOKS) {
     // in dark and 1.49:1 in high contrast).
     expect(await againstPaper(outline, 'border-top-color')).toBeGreaterThanOrEqual(3);
 
-    await outline.click();
-    const editor = page.locator('[data-text-editor]');
-    await expect(editor).toBeFocused();
+    await openWords(page, outline);
+    const editor = page.locator(SURFACE);
     expect(await againstPaper(page.locator('.m-text-editor-frame'), 'outline-color')).toBeGreaterThanOrEqual(3);
     // THE CARET, which nothing measured (OOOOOOO-9): the editor draws it in the paper-solved accent.
     expect(await againstPaper(editor, 'caret-color')).toBeGreaterThanOrEqual(3);
@@ -5034,7 +5033,7 @@ for (const look of LOOKS) {
       'A paragraph of words set on the page\nand a second line.',
     );
     // NOTHING OF THE EDITOR'S IS PAINTED until the words are changed (cloud run 19, `AS_DRAWN`): the page shows.
-    const untouched = await editor.locator('.m-text-editor__run').evaluateAll((spans) => spans.map((span) => getComputedStyle(span).color));
+    const untouched = await editor.locator('.m-kit__run').evaluateAll((spans) => spans.map((span) => getComputedStyle(span).color));
     expect(untouched).toStrictEqual(['rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0)']);
     // A LETTER TYPED AND TAKEN BACK leaves its paragraph drawn by the editor, which is what is measured below: once at the
     // block's start and once at its end, so both of its lines are drawn. Not where the click put the caret: that is the
@@ -5047,7 +5046,7 @@ for (const look of LOOKS) {
     }
     // EACH RUN AS THE PAGE SETS IT (ADR-0145): its size at the scale the page is drawn at, its fill, its weight —
     // computed, so it is what the browser draws and not what was asked of it.
-    const runs = await editor.locator('.m-text-editor__run').evaluateAll((spans) =>
+    const runs = await editor.locator('.m-kit__run').evaluateAll((spans) =>
       spans.map((span) => {
         const style = getComputedStyle(span);
         return { size: Number.parseFloat(style.fontSize), colour: style.color, weight: style.fontWeight };
@@ -5078,11 +5077,11 @@ for (const look of LOOKS) {
     expect(targets.filter((target) => target.width < 23.5 || target.height < 23.5).map((target) => target.handle)).toStrictEqual([]);
     expect(overlap({ x: frame.x - 12, y: frame.y - 12, width: 24, height: 24 }, frame)).toBeCloseTo(144, 0);
     // THE FIRST LETTERS OF EACH LINE are the editor's, read at the point four pixels in from the line's start.
-    const startsOfLines = await editor.locator('.m-text-editor__line').evaluateAll((lines) =>
+    const startsOfLines = await editor.locator('[data-kit-paragraph]').evaluateAll((lines) =>
       lines.map((line) => {
         const rect = line.getBoundingClientRect();
         const found = document.elementFromPoint(rect.x + 4, rect.y + rect.height / 2);
-        return found !== null && found.closest('[data-text-editor]') !== null;
+        return found !== null && found.closest('[data-kit-surface]') !== null;
       }),
     );
     expect(startsOfLines).toStrictEqual([true, true]);
@@ -5101,8 +5100,8 @@ for (const look of LOOKS) {
       await editor.evaluate((root) => {
         const focus = document.getSelection()?.focusNode;
         const element = focus instanceof Element ? focus : (focus?.parentElement ?? null);
-        const run = element?.closest('.m-text-editor__run') ?? null;
-        const spans = [...root.querySelectorAll('.m-text-editor__run')];
+        const run = element?.closest('.m-kit__run') ?? null;
+        const spans = [...root.querySelectorAll('.m-kit__run')];
         return { inRun: run !== null, last: run !== null && run === spans[spans.length - 1], text: run?.textContent ?? '' };
       }),
     ).toStrictEqual({ inRun: true, last: true, text: 'and a second line. More' });
@@ -5194,9 +5193,8 @@ for (const look of LOOKS) {
     await expect(said).toHaveText('This text no longer fits on the page');
     await expect(said).toBeInViewport();
 
-    await past.click();
-    const editor = page.locator('[data-text-editor]');
-    await expect(editor).toBeFocused();
+    await openWords(page, past);
+    const editor = page.locator(SURFACE);
     expect(await editor.evaluate((element) => (element as HTMLElement).innerText)).toBe(lines.join('\n'));
     const status = page.locator('.m-text-editor-frame [role="status"]');
     await expect(status).toHaveText('This text no longer fits on the page');
@@ -5204,7 +5202,7 @@ for (const look of LOOKS) {
     await expect(status).toBeInViewport();
     // THE LAST LINE CAN BE SEEN, not only present: scrolled to, it is in the window, and the point at its middle is the
     // editor's, so nothing between the editor and the window clips it below the page's foot.
-    const lastLine = editor.locator('.m-text-editor__line').last();
+    const lastLine = editor.locator('[data-kit-paragraph]').last();
     await lastLine.scrollIntoViewIfNeeded();
     await expect(lastLine).toBeInViewport();
     const last = await lastLine.boundingBox();
@@ -5214,7 +5212,7 @@ for (const look of LOOKS) {
       ({ x, y }) => {
         const found = document.elementFromPoint(x, y);
         return {
-          editors: found !== null && found.closest('[data-text-editor]') !== null,
+          editors: found !== null && found.closest('[data-kit-surface]') !== null,
           found: found === null ? 'nothing' : `${found.tagName} ${String(found.getAttribute('class'))}`,
         };
       },
@@ -5278,17 +5276,20 @@ for (const look of LOOKS) {
     await page.keyboard.press('Control+K');
     await page.keyboard.type('Edit text on the page');
     await page.keyboard.press('Enter');
-    await page.locator('[data-text-edit-layer="0"] [data-text-block="0"]').click();
+    // THE BOX IS ENOUGH: the faces are read as it is selected, before any caret (ADR-0271 section 3).
+    await selectBox(page, page.locator('[data-text-edit-layer="0"] [data-text-block="0"]'));
 
-    const own = page.locator('[data-text-editor] .m-text-editor__run[data-run="1"]');
-    const kind = page.locator('[data-text-editor] .m-text-editor__run[data-run="2"]');
-    await expect(own).toHaveAttribute('data-run-font', /^m-run-[a-zA-Z0-9]+-0$/u);
-    const family = (await own.getAttribute('data-run-font')) ?? '';
+    // EACH RUN BY THE FACE IT IS KEYED BY: neither names a font, so each is its own run's (`faceKeyOf`).
+    const own = page.locator(`${SURFACE} .m-kit__run[data-face="run:1"]`);
+    const kind = page.locator(`${SURFACE} .m-kit__run[data-face="run:2"]`);
+    await expect(own).toHaveAttribute('style', /font-family: "m-kit-[a-zA-Z0-9-]+"/u);
+    const family = ((await own.evaluate((element) => (element as HTMLElement).style.fontFamily)).split(',')[0] ?? '').replaceAll('"', '');
     const faceOf = (run: typeof own) =>
-      run.evaluate((element) => ({ family: getComputedStyle(element).fontFamily, width: element.getBoundingClientRect().width }));
+      run.evaluate((element) => ({ family: getComputedStyle(element).fontFamily.replaceAll('"', ''), width: element.getBoundingClientRect().width }));
     const drawn = await faceOf(own);
     const kept = await faceOf(kind);
     // ITS OWN FONT FIRST and the kind behind it; the neighbour with none is the kind alone.
+    expect(family.startsWith('m-kit-')).toBe(true);
     expect(drawn.family.startsWith(family)).toBe(true);
     expect(drawn.family).toContain('monospace');
     expect(kept.family.startsWith('Consolas')).toBe(true);
@@ -5309,7 +5310,7 @@ for (const look of LOOKS) {
 
     // THE FACE LEAVES WITH THE EDITOR: Escape with nothing changed closes it, and the document holds the face no more.
     await page.keyboard.press('Escape');
-    await expect(page.locator('[data-text-editor]')).toHaveCount(0);
+    await expect(page.locator('[data-kit-surface]')).toHaveCount(0);
     expect(await loaded(family)).toBe(false);
   });
 }

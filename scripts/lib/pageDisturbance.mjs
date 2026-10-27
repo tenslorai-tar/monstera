@@ -51,9 +51,63 @@ export function render(kernel, bytes, index) {
 }
 
 /**
- * Every character MuPDF reads on page `index` of `bytes`: what it is, its origin and its box, in PDF space.
+ * MuPDF's drawing of page `index` with every text operation left out — fills, strokes and clips of text alike — at
+ * {@link render}'s size and place, so a pixel of one is the same pixel of the other. What text draws is the difference.
+ *
+ * MuPDF, not PDFium: PDFium draws a font the file does not embed from the MACHINE's fonts, so a Japanese line drew on a
+ * runner with a Japanese font and nothing on one without (CI's Linux leg, 2026-10-26), and a check built on it judged
+ * the machine. MuPDF's fallback faces are compiled into the shim, the same on every runner.
+ * @param {any} kernel @param {Uint8Array} bytes @param {number} index @returns {Render}
+ */
+export function renderWithoutText(kernel, bytes, index) {
+  const { mupdf } = kernel;
+  const document = mupdf.PDFDocument.openDocument(bytes, 'application/pdf');
+  try {
+    const page = document.loadPage(index);
+    const transform = page.getTransform();
+    const matrix = mupdf.Matrix.scale(SCALE, SCALE);
+    // THE SAME BOX the full drawing takes, read from it rather than worked out again.
+    const reference = page.toPixmap(matrix, mupdf.ColorSpace.DeviceRGB, false, false);
+    const [x0, y0, width, height] = [reference.getX(), reference.getY(), reference.getWidth(), reference.getHeight()];
+    reference.destroy();
+    const pixmap = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, [x0, y0, x0 + width, y0 + height], false);
+    pixmap.clear(255);
+    const draw = new mupdf.DrawDevice(mupdf.Matrix.identity, pixmap);
+    /** @param {string} name */
+    const forward = (name) => (/** @type {unknown[]} */ ...args) => draw[name](...args);
+    const kept = ['fillPath', 'strokePath', 'clipPath', 'clipStrokePath', 'fillShade', 'fillImage', 'fillImageMask', 'clipImageMask', 'popClip', 'beginMask', 'endMask', 'beginGroup', 'endGroup', 'beginTile', 'endTile', 'beginLayer', 'endLayer'];
+    // A CLIP BY TEXT is still a clip a later pop closes, so it is kept as a clip — of an empty path, which lets nothing
+    // through: what showed through the letters goes with them. Filled, stroked and invisible text is left out.
+    const filter = new mupdf.Device({
+      ...Object.fromEntries(kept.map((name) => [name, forward(name)])),
+      clipText: () => draw.clipPath(new mupdf.Path(), false, mupdf.Matrix.identity),
+      clipStrokeText: () => draw.clipPath(new mupdf.Path(), false, mupdf.Matrix.identity),
+    });
+    page.run(filter, matrix);
+    filter.close();
+    draw.close();
+    const out = {
+      width,
+      height,
+      rgb: new Uint8Array(pixmap.getPixels()),
+      /** @type {(x: number, y: number) => [number, number]} */
+      toDevice: (x, y) => [
+        (x * transform[0] + y * transform[2] + transform[4]) * SCALE - x0,
+        (x * transform[1] + y * transform[3] + transform[5]) * SCALE - y0,
+      ],
+    };
+    pixmap.destroy();
+    return out;
+  } finally {
+    document.destroy();
+  }
+}
+
+/**
+ * Every character MuPDF reads on page `index` of `bytes`: what it is, its origin and its box, in PDF space, and the name
+ * MuPDF gives its font — `Type3 (n 0 R)` for a drawn one.
  * @param {any} kernel @param {Uint8Array} bytes @param {number} index
- * @returns {{ character: string, x: number, y: number, box: Box }[]}
+ * @returns {{ character: string, x: number, y: number, box: Box, font: string }[]}
  */
 export function charactersOf(kernel, bytes, index) {
   const { mupdf } = kernel;
@@ -66,17 +120,18 @@ export function charactersOf(kernel, bytes, index) {
     const det = a * d - b * c;
     /** @param {number} x @param {number} y @returns {[number, number]} */
     const toPdf = (x, y) => [(d * (x - e) - c * (y - f)) / det, (a * (y - f) - b * (x - e)) / det];
-    /** @type {{ character: string, x: number, y: number, box: Box }[]} */
+    /** @type {{ character: string, x: number, y: number, box: Box, font: string }[]} */
     const found = [];
     const text = page.toStructuredText('preserve-whitespace');
     try {
       text.walk({
-        /** @param {string} character @param {[number, number]} origin @param {unknown} _font @param {number} _size @param {number[]} quad */
-        onChar: (character, origin, _font, _size, quad) => {
+        /** @param {string} character @param {[number, number]} origin @param {{ getName: () => string }} font @param {number} _size @param {number[]} quad */
+        onChar: (character, origin, font, _size, quad) => {
           const [x, y] = toPdf(origin[0], origin[1]);
           const corners = [0, 2, 4, 6].map((at) => toPdf(quad[at] ?? 0, quad[at + 1] ?? 0));
           found.push({
             character,
+            font: font.getName(),
             x,
             y,
             box: {
@@ -168,18 +223,18 @@ export function differencePicture(path, before, after, allowed) {
 }
 
 /**
- * How many pixels differ between two renders outside `allowed` (each a box in PDF space, widened by {@link EDGE}), and
- * how many differ inside it.
- * @param {Render} before @param {Render} after @param {Box[]} allowed
+ * How many pixels differ between two renders outside `allowed` (each a box in PDF space, widened by `edge`, {@link EDGE}
+ * unless a caller has measured its own), and how many differ inside it.
+ * @param {Render} before @param {Render} after @param {Box[]} allowed @param {number} [edge]
  */
-export function compare(before, after, allowed) {
+export function compare(before, after, allowed, edge = EDGE) {
   if (before.width !== after.width || before.height !== after.height) return { outside: Number.POSITIVE_INFINITY, inside: 0, farthest: Number.POSITIVE_INFINITY };
   const zones = allowed.map((box) => {
     const corners = [
-      before.toDevice(box.left - EDGE, box.bottom - EDGE),
-      before.toDevice(box.right + EDGE, box.top + EDGE),
-      before.toDevice(box.left - EDGE, box.top + EDGE),
-      before.toDevice(box.right + EDGE, box.bottom - EDGE),
+      before.toDevice(box.left - edge, box.bottom - edge),
+      before.toDevice(box.right + edge, box.top + edge),
+      before.toDevice(box.left - edge, box.top + edge),
+      before.toDevice(box.right + edge, box.bottom - edge),
     ];
     return {
       x0: Math.floor(Math.min(...corners.map(([x]) => x))),

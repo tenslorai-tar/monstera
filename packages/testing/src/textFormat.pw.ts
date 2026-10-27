@@ -7,6 +7,7 @@ import { BUNDLED_FAMILIES } from '@monstera/contract';
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { type Page, expect, test } from '@playwright/test';
 
+import { openWords } from './editTextSteps.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
 import { commandsSettled } from './settled.js';
 
@@ -69,8 +70,7 @@ async function openBlock(
   await page.keyboard.press('Control+K');
   await page.keyboard.type('Edit text on the page');
   await page.keyboard.press('Enter');
-  await page.locator('[data-text-edit-layer="0"] [data-text-block="0"]').click();
-  await expect(page.locator('[data-text-editor]')).toBeFocused();
+  await openWords(page, page.locator('[data-text-edit-layer="0"] [data-text-block="0"]'));
 }
 
 /** The marks the one `editTextBlock` command carried. */
@@ -139,11 +139,11 @@ test.describe('Formatting in the Properties panel (K11)', () => {
     await search.fill('Times New');
     await search.press('Enter');
     // THE EDITOR IS STILL OPEN, and the words have the focus back.
-    await expect(page.locator('[data-text-editor]')).toBeFocused();
+    await expect(page.locator('[data-kit-surface]')).toBeFocused();
     const size = panel.getByRole('spinbutton', { name: 'Size in points' });
     await size.fill('18');
     await size.press('Enter');
-    await expect(page.locator('[data-text-editor]')).toBeFocused();
+    await expect(page.locator('[data-kit-surface]')).toBeFocused();
     // NONE, read once settled (DDDDDDDD-4): straight after the gesture the read could come before a send.
     expect(await commandsSettled(page, () => sent.filter((one) => one.channel === 'document.execute').length, 'the edits sent')).toBe(0);
 
@@ -170,7 +170,7 @@ test.describe('Formatting in the Properties panel (K11)', () => {
     await page.keyboard.press('Control+A');
     await page.keyboard.press('Control+B');
     await expect(panel.getByRole('button', { name: 'Bold' })).toHaveAttribute('aria-pressed', 'true');
-    await expect(page.locator('[data-text-editor]')).toBeFocused();
+    await expect(page.locator('[data-kit-surface]')).toBeFocused();
   });
 
   test('a bundled family is drawn in its own face once that face ARRIVES, in a list already on screen (ADR-0250, ADR-0258)', async ({
@@ -205,7 +205,7 @@ test.describe('Formatting in the Properties panel (K11)', () => {
     await expect.poll(() => drawnIn(family)).toBe(family);
   });
 
-  test('the font picker lists the page’s own font first, its subset tag stripped, then this computer’s: names alone (N12)', async ({ page }) => {
+  test('the font picker lists the page’s own font first, its subset tag stripped, then All fonts, then As on the page: names alone (N12)', async ({ page }) => {
     const sent: { channel: string; params: unknown }[] = [];
     await openBlock(page, sent);
     const panel = page.locator('[data-text-properties]');
@@ -213,14 +213,17 @@ test.describe('Formatting in the Properties panel (K11)', () => {
     const groups = panel.getByRole('listbox').getByRole('group');
     await expect(groups.first()).toHaveAccessibleName('In this document');
     await expect(groups.first().getByRole('option')).toHaveText(['Garamond']);
-    // THE COMPUTER'S, from the shim's list, and a bundled one, each by its name and nothing else.
-    await expect(panel.getByRole('group', { name: 'On this computer' }).getByRole('option', { name: 'Calibri' })).toBeVisible();
-    await expect(panel.getByRole('option', { name: 'Carlito', exact: true })).toBeVisible();
+    // EDIT TEXT'S GROUPS (the owner's decision of 2026-10-26): the computer's and the bundled ones in ONE list.
+    await expect(panel.getByRole('group', { name: 'All fonts' }).getByRole('option', { name: 'Calibri' })).toBeVisible();
+    await expect(panel.getByRole('group', { name: 'All fonts' }).getByRole('option', { name: 'Carlito', exact: true })).toBeVisible();
+    await expect(panel.getByRole('group', { name: 'On this computer' })).toHaveCount(0);
+    // AND THE WAY BACK, last.
+    await expect(panel.getByRole('option').last()).toHaveText('As on the page');
     // THE SHIM LISTS A FAMILY WHOSE LICENCE FORBIDS EMBEDDING, and the picker leaves it out; the family beside it in the
     // same list is the control that the list was read.
     await expect(panel.locator('[data-font-choice="Locked Display"]')).toHaveCount(0);
     await expect(panel.locator('[data-font-choice="Arial"]')).not.toHaveCount(0);
-    const texts = await panel.getByRole('option').evaluateAll((each) => each.map((node) => [node.textContent, node.getAttribute('data-font-choice')]));
+    const texts = await panel.locator('[data-font-choice]').evaluateAll((each) => each.map((node) => [node.textContent, node.getAttribute('data-font-choice')]));
     expect(texts.filter(([text, name]) => text !== name)).toStrictEqual([]);
   });
 
@@ -259,10 +262,10 @@ test.describe('Formatting in the Properties panel (K11)', () => {
     await expect(letters).toBeEnabled();
     await expect(letters).toBeFocused();
     await letters.press('Enter');
-    await expect(page.locator('[data-text-editor]')).toBeFocused();
+    await expect(page.locator('[data-kit-surface]')).toBeFocused();
     // AN UPPER-CASE J, as Caps Lock sends it: a chord compared in lower case alone went unanswered.
     await page.keyboard.press('Control+J');
-    await expect(page.locator('[data-text-editor] > div').first()).toHaveAttribute('data-align', 'justify');
+    await expect(page.locator('[data-kit-surface] > [data-kit-paragraph]').first()).toHaveCSS('text-align', 'justify');
     const after = panel.getByRole('spinbutton', { name: 'Space after the paragraph in points' });
     await after.fill('6');
     await after.press('Enter');
@@ -283,7 +286,7 @@ test.describe('Formatting in the Properties panel (K11)', () => {
   test('a size typed digit by digit formats the selected word only, not its paragraph from the second digit on', async ({ page }) => {
     const sent: { channel: string; params: unknown }[] = [];
     await openBlock(page, sent);
-    await page.locator('[data-text-editor]').getByText('A paragraph of words').dblclick({ position: { x: 40, y: 6 } });
+    await page.locator('[data-kit-surface]').getByText('A paragraph of words').dblclick({ position: { x: 40, y: 6 } });
     // WHAT A DOUBLE-CLICK CHOOSES IS THE PLATFORM'S: Chromium on Windows takes the word AND the space after it (its
     // `SelectTrailingWhitespaceEnabled` editing behaviour), and on Linux the word alone — CI run 38207412421 sent 2 to 12
     // on windows where ubuntu sent 2 to 11. Read here, so the case asserts what the person chose is what is formatted.
@@ -310,7 +313,7 @@ test.describe('Formatting in the Properties panel (K11)', () => {
     await openBlock(page, sent);
     const size = page.locator('[data-text-properties]').getByRole('spinbutton', { name: 'Size in points' });
     await size.evaluate((field) => {
-      const editor = document.querySelector('[data-text-editor]');
+      const editor = document.querySelector('[data-kit-surface]');
       const walker = editor === null ? null : document.createTreeWalker(editor, 4);
       for (let node = walker?.nextNode() ?? null; node !== null; node = walker?.nextNode() ?? null) {
         const at = node.textContent?.indexOf('paragraph') ?? -1;
@@ -335,7 +338,7 @@ test.describe('Formatting in the Properties panel (K11)', () => {
   test('Tab in the words types a TAB CHARACTER, drawn at the next stop, and the one write carries it (K8)', async ({ page }) => {
     const sent: { channel: string; params: unknown }[] = [];
     await openBlock(page, sent);
-    const editor = page.locator('[data-text-editor]');
+    const editor = page.locator('[data-kit-surface]');
     await page.keyboard.press('Home');
     await page.keyboard.press('Tab');
     // THE FOCUS STAYS IN THE WORDS, and the editor holds the character, at the shared stop's width.
@@ -356,7 +359,7 @@ test.describe('Formatting in the Properties panel (K11)', () => {
     const sent: { channel: string; params: unknown }[] = [];
     await openBlock(page, sent);
     await page.locator('[data-text-properties]').getByRole('button', { name: 'Bold' }).click();
-    await expect(page.locator('[data-text-editor]')).toBeFocused();
+    await expect(page.locator('[data-kit-surface]')).toBeFocused();
     // NONE, read once settled (DDDDDDDD-4): straight after the gesture the read could come before a send.
     expect(await commandsSettled(page, () => sent.filter((one) => one.channel === 'document.execute').length, 'the edits sent')).toBe(0);
   });

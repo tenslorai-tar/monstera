@@ -348,6 +348,14 @@ export const TEXT_PUSH = [
 export const LINE_END_MARKS = [['packages/kernel/src', 'packages/kernel/dist/index.js', 'tsc'], ...NATIVE_ENGINE];
 
 /**
+ * What `editCatalogue.proof.mjs` runs: PDFium's reading, drawing and page objects, and MuPDF's reading, drawing and
+ * writer, through `editExpectations.mjs`. The kernel's whole `src`, for {@link TYPE3_EDIT}'s reason, and the native engine.
+ *
+ * @type {BuildEdge[]}
+ */
+export const EDIT_CATALOGUE = [['packages/kernel/src', 'packages/kernel/dist/index.js', 'tsc'], ...NATIVE_ENGINE];
+
+/**
  * What `editorFidelityFixture.proof.mjs` runs: PDFium's reading and the grouping, through `editorFidelityFixture.mjs`.
  * The kernel's whole `src`, for {@link TYPE3_EDIT}'s reason.
  *
@@ -742,6 +750,7 @@ export const ARTEFACT_EDGES = {
   'proof:editobject': EDIT_OBJECT,
   // EDIT TEXT'S WRITER on every block (ADR-0266): the same reading, grouping, encoder and MuPDF writer, and the route.
   'proof:edittext': EDIT_TEXT,
+  'proof:editcatalogue': EDIT_CATALOGUE,
   'proof:shimpassword': SHIM_PASSWORD,
   // THE WORD EXPORT'S PICTURES, read back by a zip reader and a PNG decoder that are not the writer's.
   'proof:wordpictures': WORD_PICTURES,

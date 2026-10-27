@@ -453,6 +453,17 @@ jobs:
           node scripts/ci/annotate.mjs scripts/proofs/editText.proof.mjs
           ${{ runner.os == 'Windows' && '--require-engines' || '' }}
 
+      # Cloud run 22: the catalogue of difficult pages the rebuilt Edit text
+      # editor is held to, each built at test time, and the check a later
+      # test runs after an edit. Every page must read back as its manifest
+      # says, and every damaged edit — a neighbour moved half a point, a word
+      # missing, invisible or in a drawn font, nothing changed, a drawing or
+      # a link removed — must fail the check for its own reason.
+      - name: Prove the edit catalogue and its expectation check
+        run: >
+          node scripts/ci/annotate.mjs scripts/proofs/editCatalogue.proof.mjs
+          ${{ runner.os == 'Windows' && '--require-engines' || '' }}
+
       # A markup made from a whole line's two ends covers its first glyph to
       # its last, on Times not embedded, embedded TrueType, Type 3 and
       # Identity-H CID lines; the kernel half of lineEnds.pw.ts, and the holder

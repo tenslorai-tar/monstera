@@ -4,7 +4,7 @@ import { ok } from '@monstera/shared';
 import { renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { EDITING_RENEW_MS, useEditingEnginesKept } from './editingEngines.js';
+import { useEditingEnginesStarted } from './editingEngines.js';
 
 /** A client that counts `app.prepareEditing`. */
 function counting() {
@@ -17,7 +17,10 @@ function counting() {
   return { client, asked };
 }
 
-describe('the editing hosts kept running while the Edit tab is in use (ADR-0048’s correction, item 7a)', () => {
+/** Longer than any host's idle time, so a case over it needs no copy of `main`'s constant across the boundary. */
+const TEN_MINUTES = 10 * 60_000;
+
+describe('the editing hosts started as the Edit tab opens, and not kept up there (ADR-0048’s correction of 2026-10-26)', () => {
   beforeEach(() => {
     vi.useFakeTimers();
   });
@@ -25,37 +28,39 @@ describe('the editing hosts kept running while the Edit tab is in use (ADR-0048�
     vi.useRealTimers();
   });
 
-  it('asks at once, then again every renewal for as long as the tab is in use', () => {
+  it('asks once as the tab comes into use and NEVER AGAIN while it stays in use, so the hosts stop by their idle rule', () => {
+    // THE CONTROL is the code this replaced: it renewed the ask every 20 s, and over ten minutes on the tab asked 31
+    // times, each a call that restarted the hosts' idle time. One ask is what lets `main`'s idle rule end them
+    // (`idleRetire.test.ts`: a host stops its idle time after its last call).
     const { client, asked } = counting();
     renderHook(() => {
-      useEditingEnginesKept(client, true);
+      useEditingEnginesStarted(client, true);
     });
     expect(asked).toStrictEqual(['app.prepareEditing']);
-    // TWO MINUTES IN THE TAB, the owner's case: six renewals, so the hosts' 60 s idle never runs out.
-    vi.advanceTimersByTime(2 * 60_000);
-    expect(asked).toHaveLength(1 + (2 * 60_000) / EDITING_RENEW_MS);
-    // A RENEWAL SOONER THAN THE IDLE TIME, with room to spare: what keeps the hosts up between renewals.
-    expect(EDITING_RENEW_MS).toBeLessThan(60_000 / 2);
+    vi.advanceTimersByTime(TEN_MINUTES);
+    expect(asked).toStrictEqual(['app.prepareEditing']);
   });
 
-  it('CONTROL: leaving the tab ends the renewals, so the hosts stop by their idle rule', () => {
+  it('asks again when the tab comes into use again, so a return to it starts the hosts before the first read', () => {
     const { client, asked } = counting();
-    const { rerender } = renderHook(({ active }: { active: boolean }) => {
-      useEditingEnginesKept(client, active);
-    }, { initialProps: { active: true } });
-    vi.advanceTimersByTime(EDITING_RENEW_MS);
-    expect(asked).toHaveLength(2);
+    const { rerender } = renderHook(
+      ({ active }: { active: boolean }) => {
+        useEditingEnginesStarted(client, active);
+      },
+      { initialProps: { active: true } },
+    );
     rerender({ active: false });
-    vi.advanceTimersByTime(5 * EDITING_RENEW_MS);
-    expect(asked).toHaveLength(2);
+    vi.advanceTimersByTime(TEN_MINUTES);
+    rerender({ active: true });
+    expect(asked).toStrictEqual(['app.prepareEditing', 'app.prepareEditing']);
   });
 
   it('asks nothing while the tab is not in use', () => {
     const { client, asked } = counting();
     renderHook(() => {
-      useEditingEnginesKept(client, false);
+      useEditingEnginesStarted(client, false);
     });
-    vi.advanceTimersByTime(5 * EDITING_RENEW_MS);
+    vi.advanceTimersByTime(TEN_MINUTES);
     expect(asked).toStrictEqual([]);
   });
 });

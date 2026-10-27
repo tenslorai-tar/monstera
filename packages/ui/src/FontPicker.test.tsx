@@ -8,8 +8,10 @@ import { BUILT_IN_ONLY, BUILT_INTO_PDF, FontPicker, fontGroups } from './FontPic
 import { activateCatalogue, i18n } from './i18n.js';
 import {
   EN,
+  FONT_GROUP_ALL,
   FONT_GROUP_BUILT_IN,
   FONT_GROUP_BUNDLED,
+  FONT_GROUP_CLOSEST,
   FONT_GROUP_COMPUTER,
   FONT_GROUP_DOCUMENT,
   FONT_GROUP_RECENT,
@@ -80,6 +82,58 @@ describe('fontGroups, the one font list’s groups (D1 to D4)', () => {
   it('CONTROL: with no list read the fonts every PDF has are still offered, so the picker is never empty', () => {
     const groups = fontGroups({ listed: false, families: [], more: 0 },[], [], BUILT_INTO_PDF, '');
     expect(groups.map((group) => group.title)).toStrictEqual([FONT_GROUP_BUILT_IN]);
+  });
+});
+
+describe('Edit text’s groups in the one picker (the owner’s decision of 2026-10-26)', () => {
+  it('lists In this document, Closest matches, then All fonts — installed, bundled and the standard faces, each once', () => {
+    const groups = fontGroups(LIST, [{ name: 'ABCDEF+Garamond', partial: true }], ['Arial'], ['Helvetica', 'Arial'], '', { closest: ['Carlito', 'Arial'] });
+    expect(groups.map((group) => group.title)).toStrictEqual([FONT_GROUP_DOCUMENT, FONT_GROUP_CLOSEST, FONT_GROUP_ALL]);
+    expect(groups[1]?.choices.map((choice) => choice.family)).toStrictEqual(['Carlito', 'Arial']);
+    // ONE LIST, no Recent: every font this consumer can set, a licence that forbids embedding left out as everywhere.
+    expect(groups[2]?.choices.map((choice) => choice.family)).toStrictEqual(['Arial', 'Carlito', 'Helvetica']);
+    // CONTROL: the same inputs with no Edit text groups are the ordinary five, so the other consumers are unchanged.
+    expect(fontGroups(LIST, [{ name: 'ABCDEF+Garamond', partial: true }], ['Arial'], ['Helvetica', 'Arial'], '').map((group) => group.title)).toStrictEqual([
+      FONT_GROUP_DOCUMENT,
+      FONT_GROUP_RECENT,
+      FONT_GROUP_COMPUTER,
+      FONT_GROUP_BUNDLED,
+      FONT_GROUP_BUILT_IN,
+    ]);
+  });
+
+  it('draws no Closest matches while the chain has answered none', () => {
+    const groups = fontGroups(LIST, [], [], ['Helvetica'], '', { closest: [] });
+    expect(groups.map((group) => group.title)).toStrictEqual([FONT_GROUP_ALL]);
+  });
+
+  it('offers As on the page last, by keys as by a press, and it calls the way back rather than picking a family', () => {
+    activateCatalogue('en', EN);
+    const onPick = vi.fn();
+    const onAsOnPage = vi.fn();
+    const view = render(
+      <I18nProvider i18n={i18n}>
+        <FontPicker
+          builtIn={['Helvetica']}
+          editor={{ closest: [], onAsOnPage }}
+          inDocument={[]}
+          label={TEXT_FORMAT_FAMILY}
+          list={LIST}
+          onPick={onPick}
+          unset={TEXT_FORMAT_FAMILY_RUN}
+          value="Arial"
+        />
+      </I18nProvider>,
+    );
+    fireEvent.click(view.getByRole('button', { name: 'Font: Arial' }));
+    const options = view.getAllByRole('option');
+    expect(options.at(-1)?.textContent).toBe('As on the page');
+    const search = view.getByRole('combobox', { name: 'Search fonts' });
+    // UP FROM THE FIRST wraps to the last, which is As on the page.
+    fireEvent.keyDown(search, { key: 'ArrowUp' });
+    fireEvent.keyDown(search, { key: 'Enter' });
+    expect(onAsOnPage).toHaveBeenCalledTimes(1);
+    expect(onPick).not.toHaveBeenCalled();
   });
 });
 

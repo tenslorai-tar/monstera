@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { type Page, expect, test } from '@playwright/test';
 
+import { openWords } from './editTextSteps.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
 
 /**
@@ -118,7 +119,7 @@ async function open(page: Page, zoom: string): Promise<void> {
     content:
       // THE OUTLINE'S HOVER TINT TOO: an open block has no outline, so a pointer resting on one tints only the capture before.
       '.m-text-editor-handle,.m-text-editor-problem{visibility:hidden!important}.m-text-block{border-color:transparent!important;outline:none!important;background:transparent!important}' +
-      '.m-text-editor-frame{outline:none!important;border-color:transparent!important}[data-text-editor]{caret-color:transparent!important}',
+      '.m-text-editor-frame{outline:none!important;border-color:transparent!important}[data-kit-surface]{caret-color:transparent!important}',
   });
 }
 
@@ -181,20 +182,20 @@ function changed(a: readonly number[], b: readonly number[]): number {
  * stands on its baseline. A row is one of the page's paragraphs; a line inside it ends at a soft break the editor drew.
  */
 function editorLines(page: Page): Promise<{ text: string; baseline: number; boxes: number }[]> {
-  return page.locator('[data-text-editor]').evaluate((editor) => {
+  return page.locator('[data-kit-surface]').evaluate((editor) => {
     const owner = editor.ownerDocument;
     const found: { text: string; baseline: number; boxes: number }[] = [];
-    for (const row of editor.querySelectorAll<HTMLElement>(':scope > div')) {
+    for (const row of editor.querySelectorAll<HTMLElement>(':scope > [data-kit-paragraph]')) {
       // THE ROW'S LINES split where the browser broke them: by the tops of its text's own rectangles.
       const range = owner.createRange();
       range.selectNodeContents(row);
       const tops = [...new Set(Array.from(range.getClientRects(), (rect) => Math.round(rect.top)))];
       const texts = row.innerText.split('\n');
       const starts: Node[] = [row];
-      for (const br of row.querySelectorAll('br[data-soft-wrap]')) starts.push(br);
+      for (const br of row.querySelectorAll('br[data-kit-wrap]')) starts.push(br);
       starts.forEach((start, at) => {
         const marker = owner.createElement('span');
-        marker.className = 'm-text-editor__baseline';
+        marker.className = 'm-kit__baseline';
         if (start === row) row.prepend(marker);
         else (start as Element).after(marker);
         found.push({ text: texts[at] ?? '', baseline: marker.getBoundingClientRect().top, boxes: at === 0 ? tops.length : 0 });
@@ -220,8 +221,7 @@ for (const zoom of ['100pct', '200pct'] as const) {
       const first = await pixels(page, region);
       const second = await pixels(page, region);
       const spread = changed(first, second);
-      await outline.click();
-      await expect(page.locator('[data-text-editor]')).toBeFocused();
+      await openWords(page, outline);
       // THE RUN FONTS ANSWERED AND LOADED, which is the moment a face change would show.
       await page.waitForTimeout(500);
       // THE SAME PLACE ON THE PAGE, or the comparison is of two places.
@@ -243,7 +243,7 @@ for (const zoom of ['100pct', '200pct'] as const) {
       const [one, two] = block.lines;
       if (one !== undefined && two !== undefined) {
         const pitch = (one.baseline - two.baseline) * shown.zoom;
-        const heights = await page.locator('[data-text-editor] > div').evaluateAll((rows) => rows.map((row) => (row as HTMLElement).offsetHeight));
+        const heights = await page.locator('[data-kit-surface] > [data-kit-paragraph]').evaluateAll((rows) => rows.map((row) => (row as HTMLElement).offsetHeight));
         expect.soft(heights, facts).toStrictEqual(paragraphSizes(block).map((size) => Math.round(size * pitch)));
       }
     });
@@ -283,12 +283,14 @@ test('typing in one command of the code block draws that command alone, in a fix
   });
   const before = await Promise.all(block.lines.map((line) => pixels(page, band(line))));
   // AT THE END OF THE SECOND COMMAND, where the person clicks to add to it.
+  // THE BOX, then the caret there (ADR-0271's two steps).
   await page.mouse.click(shown.x(second.box.x1) - 1, shown.y(second.baseline) - 3);
-  await expect(page.locator('[data-text-editor]')).toBeFocused();
+  await page.mouse.click(shown.x(second.box.x1) - 1, shown.y(second.baseline) - 3);
+  await expect(page.locator('[data-kit-surface]')).toBeFocused();
   await page.keyboard.press('End');
   await page.keyboard.type(' now');
   await page.waitForTimeout(400);
-  const rows = await page.locator('[data-text-editor] > div').evaluateAll((elements) => elements.map((row) => row.textContent));
+  const rows = await page.locator('[data-kit-surface] > [data-kit-paragraph]').evaluateAll((elements) => elements.map((row) => row.textContent));
   expect(rows).toStrictEqual(block.lines.map((line, index) => `${lineText(line)}${index === 1 ? ' now' : ''}`));
   const after = await Promise.all(block.lines.map((line) => pixels(page, band(line))));
   const moved = after.map((shot, index) => changed(before[index] ?? [], shot));
@@ -296,7 +298,7 @@ test('typing in one command of the code block draws that command alone, in a fix
   expect([moved[0], moved[2], moved[3]], JSON.stringify(moved)).toStrictEqual([0, 0, 0]);
   expect(moved[1], JSON.stringify(moved)).toBeGreaterThan(50);
   // IN A FIXED-PITCH FACE: every character of the drawn command advances the same width.
-  const widths = await page.locator('[data-text-editor] > div').nth(1).evaluate((row) => {
+  const widths = await page.locator('[data-kit-surface] > [data-kit-paragraph]').nth(1).evaluate((row) => {
     const walker = row.ownerDocument.createTreeWalker(row, NodeFilter.SHOW_TEXT);
     const found: number[] = [];
     for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
@@ -311,7 +313,7 @@ test('typing in one command of the code block draws that command alone, in a fix
   });
   expect(Math.max(...widths) - Math.min(...widths), JSON.stringify(widths)).toBeLessThan(0.5);
   // AND NOTHING OF THE PAGE'S COPY UNDER IT: the editor's own words made transparent, the second command's band is paper.
-  await page.addStyleTag({ content: '[data-text-editor] *{color:transparent!important}' });
+  await page.addStyleTag({ content: '[data-kit-surface] *{color:transparent!important}' });
   await page.waitForTimeout(100);
   const papered = await pixels(page, band(second));
   const white = papered.map((value, index) => (index % 4 === 3 ? 255 : 255));
@@ -325,8 +327,8 @@ test('opening and closing a block shows, in every frame, the page’s own drawin
     const frames: { readonly open: boolean; readonly drawnRows: number; readonly covers: number; readonly opaque: number }[] = [];
     Reflect.set(window, 'editorFrames', frames);
     const sample = (): void => {
-      const editor = document.querySelector('[data-text-editor]');
-      const rows = editor === null ? [] : Array.from(editor.querySelectorAll(':scope > div'));
+      const editor = document.querySelector('[data-kit-surface]');
+      const rows = editor === null ? [] : Array.from(editor.querySelectorAll(':scope > [data-kit-paragraph]'));
       frames.push({
         open: editor !== null,
         drawnRows: rows.filter((row) => getComputedStyle(row).color !== 'rgba(0, 0, 0, 0)').length,
@@ -337,11 +339,10 @@ test('opening and closing a block shows, in every frame, the page’s own drawin
     };
     requestAnimationFrame(sample);
   });
-  await page.locator(`[data-text-edit-layer="0"] [data-text-block="${String(at)}"]`).click();
-  await expect(page.locator('[data-text-editor]')).toBeFocused();
+  await openWords(page, page.locator(`[data-text-edit-layer="0"] [data-text-block="${String(at)}"]`));
   await page.waitForTimeout(400);
   await page.keyboard.press('Escape');
-  await expect(page.locator('[data-text-editor]')).toHaveCount(0);
+  await expect(page.locator('[data-kit-surface]')).toHaveCount(0);
   await page.waitForTimeout(300);
   const frames = await page.evaluate(() => {
     Reflect.set(window, 'editorFramesStop', true);

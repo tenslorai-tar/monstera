@@ -5,8 +5,10 @@ import { type ReactElement, useEffect, useId, useMemo, useRef, useState, useSync
 
 import { drawFamilies, drawnWith, facesGiven, previewFamilyOf, subscribeFaces } from './familyFaces.js';
 import {
+  FONT_GROUP_ALL,
   FONT_GROUP_BUILT_IN,
   FONT_GROUP_BUNDLED,
+  FONT_GROUP_CLOSEST,
   FONT_GROUP_COMPUTER,
   FONT_GROUP_DOCUMENT,
   FONT_GROUP_RECENT,
@@ -102,6 +104,18 @@ export interface FontGroup {
  */
 export { SUBSET_TAG };
 
+/**
+ * What Edit text adds to the one picker (the owner's decision of 2026-10-26, ADR-0271 section 3): the families closest
+ * to the words it is set over, best first, and the way back to the page's own faces. A consumer that passes this sees
+ * *In this document*, *Closest matches*, *All fonts* and *As on the page*; every other consumer keeps its own groups.
+ */
+export interface EditorFonts {
+  /** The chain's candidates for the words, best first; none until the block's read-on-open answers them. */
+  readonly closest: readonly string[];
+  /** Puts every selected letter back in the face the page has it in. */
+  readonly onAsOnPage: () => void;
+}
+
 /** The groups a picker shows for `query`, each without an empty one, in the owner's order. Pure, for its tests. */
 export function fontGroups(
   list: FontList,
@@ -109,6 +123,8 @@ export function fontGroups(
   recent: readonly string[],
   builtIn: readonly string[],
   query: string,
+  /** Edit text's groups instead of the ordinary ones ({@link EditorFonts}). */
+  editor?: { readonly closest: readonly string[] },
 ): FontGroup[] {
   const wanted = query.trim().toLowerCase();
   const matches = (choice: FontChoice): boolean =>
@@ -129,6 +145,29 @@ export function fontGroups(
   // picker, so a family chosen in one consumer that another cannot set (a real font, then a callout's picker) would be
   // offered where choosing it is refused.
   const offered = new Set([...seen, ...known.keys(), ...builtIn.map((family) => family.toLowerCase())]);
+  if (editor !== undefined) {
+    // EDIT TEXT'S GROUPS: the document's, the closest to these words, then every font this consumer can set as one list —
+    // installed, bundled and the standard faces the resolver stands in for — each name once.
+    const all = new Set<string>();
+    const everything = [...families.map(ofEntry), ...builtIn.map(plain)].filter((choice) => {
+      const key = choice.family.toLowerCase();
+      if (all.has(key)) return false;
+      all.add(key);
+      return true;
+    });
+    const editorGroups: FontGroup[] = [
+      { title: FONT_GROUP_DOCUMENT, choices: document },
+      {
+        title: FONT_GROUP_CLOSEST,
+        choices: editor.closest.map((family) => {
+          const entry = known.get(family.toLowerCase());
+          return entry === undefined ? plain(family) : ofEntry(entry);
+        }),
+      },
+      { title: FONT_GROUP_ALL, choices: everything },
+    ];
+    return editorGroups.map((group) => ({ ...group, choices: group.choices.filter(matches) })).filter((group) => group.choices.length > 0);
+  }
   const groups: FontGroup[] = [
     { title: FONT_GROUP_DOCUMENT, choices: document },
     {
@@ -166,9 +205,14 @@ export interface FontPickerProps {
   readonly inDocument: readonly DocumentFont[];
   readonly builtIn: readonly string[];
   readonly onPick: (family: string) => void;
+  /** Edit text's groups and its way back to the page's faces; absent, the ordinary groups. */
+  readonly editor?: EditorFonts | undefined;
 }
 
-export function FontPicker({ label, value, unset, list, inDocument, builtIn, onPick }: FontPickerProps): ReactElement {
+/** The choice that puts the page's own faces back, last in Edit text's list: no family, so it is told apart by identity. */
+const AS_ON_PAGE: FontChoice = { family: '', like: undefined };
+
+export function FontPicker({ label, value, unset, list, inDocument, builtIn, onPick, editor }: FontPickerProps): ReactElement {
   const { _ } = useLingui();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -189,7 +233,11 @@ export function FontPicker({ label, value, unset, list, inDocument, builtIn, onP
     setOpen(false);
     setQuery('');
   });
-  const groups = useMemo(() => fontGroups(list, inDocument, recentlyChosen(), builtIn, query), [list, inDocument, builtIn, query]);
+  const closest = editor?.closest;
+  const groups = useMemo(
+    () => fontGroups(list, inDocument, recentlyChosen(), builtIn, query, closest === undefined ? undefined : { closest }),
+    [list, inDocument, builtIn, query, closest],
+  );
   /** The computer's list as read, or `undefined` while it is read and where the consumer offers none. */
   const read = readList(list);
   // EACH LISTED FAMILY GIVEN ITS FACE as the list is drawn (ADR-0250), once a window (`drawFamilies`), and drawn again
@@ -206,14 +254,18 @@ export function FontPicker({ label, value, unset, list, inDocument, builtIn, onP
     const preview = previewOf(name);
     return preview === undefined ? undefined : { fontFamily: `"${preview}"` };
   };
-  const flat = groups.flatMap((group) => group.choices);
+  const flat = [...groups.flatMap((group) => group.choices), ...(editor === undefined ? [] : [AS_ON_PAGE])];
   const choose = (choice: FontChoice): void => {
-    rememberFamily(choice.family);
     // THE FOCUS BACK TO THE FIELD before the list is unmounted, for Escape's reason below; a consumer that wants it
     // elsewhere (the text editor's panel puts it back in the words) moves it on from here.
     face.current?.focus();
     setOpen(false);
     setQuery('');
+    if (choice === AS_ON_PAGE) {
+      editor?.onAsOnPage();
+      return;
+    }
+    rememberFamily(choice.family);
     onPick(choice.family);
   };
   /** Where each group's first choice falls in the one list the keys walk. */
@@ -337,8 +389,26 @@ export function FontPicker({ label, value, unset, list, inDocument, builtIn, onP
                 </div>
               );
             })}
+            {editor === undefined ? null : (
+              // AS ON THE PAGE, last and always there: what puts the page's own faces back on the letters chosen.
+              <div
+                aria-selected={flat.length - 1 === active}
+                className="m-font-picker__option"
+                data-font-as-on-page=""
+                id={optionId(flat.length - 1)}
+                onClick={() => {
+                  choose(AS_ON_PAGE);
+                }}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                }}
+                role="option"
+              >
+                <span className="m-font-picker__option-name">{_(unset)}</span>
+              </div>
+            )}
           </div>
-          {flat.length === 0 && list !== undefined ? (
+          {groups.length === 0 && list !== undefined ? (
             <p className="m-font-picker__note">{_(FONT_NONE_MATCH, { query })}</p>
           ) : null}
         </div>

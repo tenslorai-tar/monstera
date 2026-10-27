@@ -5,10 +5,11 @@ import { type Page, expect, test } from '@playwright/test';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
 
 /**
- * Keys typed the moment a block is clicked in Edit text land in its words (N5, 2026-10-23): the text walk's step 9 sent
- * an edit carrying the page's own words, and one reading was that keys typed before the editor was ready were lost.
- * This presses the block and types in the same breath — no wait for the editor, its focus or its caret — and requires
- * every key in the editor; the control types after the editor is open and editable, as a person who pauses does.
+ * Keys typed the moment the caret is put in a block land in its words (N5, 2026-10-23): one reading of the text walk's
+ * step 9 was that keys typed before the editor was ready were lost. Edit text opens in two presses (ADR-0271 section 3):
+ * the first selects the box, the second puts the caret. This makes both presses and types in the same breath — no wait
+ * for the editor, its focus or its caret — and requires every key in the words; the control types after the words are
+ * focused, as a person who pauses does.
  */
 
 const ID = asDocId('00000000-0000-4000-8000-0000000000da');
@@ -50,10 +51,11 @@ for (const typed of ['at once', 'CONTROL: once the editor is open'] as const) {
     const block = page.locator('[data-text-edit-layer="0"] [data-text-block="0"]');
     const area = await block.boundingBox();
     if (area === null) throw new Error('the block has no box');
-    // AT THE BLOCK'S END, so a caret placed by the press is after the words and the keys add to them.
+    // THE BOX, then the caret AT THE BLOCK'S END, so the keys add to the words.
     await page.mouse.click(area.x + area.width - 2, area.y + area.height / 2);
-    const editor = page.locator('[data-text-editor]');
-    if (typed !== 'at once') await expect(editor).toHaveAttribute('contenteditable', 'plaintext-only');
+    await page.mouse.click(area.x + area.width - 2, area.y + area.height / 2);
+    const editor = page.locator('[data-kit-surface]');
+    if (typed !== 'at once') await expect(editor).toBeFocused();
     await page.keyboard.type(' grows');
     await expect(editor).toContainText('grows', { timeout: 5000 });
     expect((await editor.innerText()).replace(/\s+/gu, ' ').trim()).toBe(`${WORDS} grows`);
