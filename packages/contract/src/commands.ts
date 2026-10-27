@@ -7157,8 +7157,11 @@ export const editTextBlockSchema = blockEditCommandObject('editTextBlock')
 /** Steps a form placement's path may take from the page: a form inside a form inside … this many deep. */
 export const MAX_FORM_DEPTH = 4;
 
-/** Characters of one step's resource name; ISO 32000-2 allows 127 bytes, and the corpus's longest is 7. */
-export const MAX_FORM_NAME = 64;
+/**
+ * Characters of one step's resource name: ISO 32000-2's own limit (127 bytes, so never more characters), so a name a
+ * valid file holds is never why its text is not offered. The corpus's longest is 7.
+ */
+export const MAX_FORM_NAME = 127;
 
 /** Placements of forms showing text read on one page; a page past this offers its first ones. */
 export const MAX_FORM_PLACEMENTS = 64;
