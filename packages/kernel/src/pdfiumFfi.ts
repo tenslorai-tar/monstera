@@ -447,6 +447,13 @@ const REFERENCE_LETTERS = ['x', 'n', 'o', 'e', 'a', 'H', '0', '.'] as const;
 const AT_THE_MEASURE = 1;
 
 /**
+ * Below this share of its loose box's height, a character's ink box is the placeholder PDFium answers for a letter it has
+ * no outline for, not a glyph: measured 2026-10-27, 0.018 pt against 18 pt (a thousandth). The flattest real glyphs, a
+ * low line or a dash, are a few hundredths of the em, so a hundredth separates the two.
+ */
+const NO_GLYPH_HEIGHT = 0.01;
+
+/**
  * The least spacing a measured run is said to have, in page units: a hundredth of a point, below which a run's measured
  * spacing is read as none. Two readings of one glyph's place agree to about 1e-4 (float32 boxes), so a run set with no
  * spacing measures well under it, and no reader shows a hundredth of a point.
@@ -1172,7 +1179,20 @@ function walkRuns(
       // THE UNION, so a run's extent covers every character in it. A run sized
       // from its first character alone would lose an ascender and stop
       // overlapping the neighbour it shares a line with.
-      if (inked) {
+      // A LETTER PDFium HAS NO FACE TO DRAW answers its advance and no height: a font that is not embedded, on a computer
+      // with no face for it (measured 2026-10-27, KozMinPr6N over Adobe-Japan1 with no Japanese font installed: every
+      // character 18 pt wide and 0.018 pt high against a loose box of 18 pt, so the block was outlined flat and nothing of
+      // it could be pressed). Flat is judged against the loose box ({@link NO_GLYPH_HEIGHT}). Its LOOSE
+      // box is where it stands, from the font's own stated ascent, descent and advance, which is what a reader that does
+      // draw it uses too. A space is left out as above.
+      const looseHigh = (loose['top'] ?? 0) - (loose['bottom'] ?? 0);
+      const flat = !(x1 > x0) || high - low < NO_GLYPH_HEIGHT * looseHigh;
+      if (flat && hasLoose && looseHigh > 0 && !/\s/u.test(character)) {
+        held.left = Math.min(held.left, loose['left'] ?? x0);
+        held.right = Math.max(held.right, loose['right'] ?? x1);
+        held.bottom = Math.min(held.bottom, loose['bottom'] ?? low);
+        held.top = Math.max(held.top, loose['top'] ?? high);
+      } else if (inked) {
         held.left = Math.min(held.left, x0);
         held.right = Math.max(held.right, x1);
         held.bottom = Math.min(held.bottom, low);
