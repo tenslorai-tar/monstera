@@ -1018,6 +1018,10 @@ The findings above stand as recorded; this says where each one went in the commi
   microtask after the intersections moved that set: red in 3 of 4 whole-file runs, green alone. None of the three
   reviewers ran `App.test.tsx`, and the stated limitation above did not say so. Fixed in `14facd26` by
   waiting for the reads.
+- **Correction, 2026-10-27, M2b.** ZZZZZZZZ-6 and ZZZZZZZZ-20 are decided by the owner (ADR-0271's answer): a split is
+  offered only where its moved half stays a line clear of the text below, and the editor waits for the page only where
+  its area cannot be drawn, now tested. ZZZZZZZZ-12's five owed cases and ZZZZZZZZ-17's App path are held by tests, each
+  red under its mutation; the App path also found the fallback face optional with a silent default, now required.
 
 The checklist below was missing from this entry when it was recorded and when the correction above was written;
 Guards refused it at `79eeae48` (`documentConsistency.mjs`, 0 of 11 items answered). The answers cover the audited
