@@ -5,6 +5,7 @@ import type { DrawnBoxes, Invert, MupdfSession } from './engineSeam.js';
 import { editFaces, editFacesBound, loadEditFaces } from './editFaces.js';
 import type { FaceSource } from './fontCatalogue.js';
 import { withDocument } from './mupdfWriter.js';
+import type { OperatorFaceSet as OperatorFaceSetType } from './operatorFaces.js';
 import type { PageFont } from './pageFonts.js';
 import { type ArrangeContext, type OperatorRefusal, type PageRuns, checkOperatorEdit, editOperators, pageFontsAsRead } from './operatorEdit.js';
 import { type Affine, PAPER_PIXELS_PER_POINT, coversInPageSpace } from './paperColour.js';
@@ -94,11 +95,39 @@ export async function applyEditTextOperators(
   // Loaded only when the page's own fonts cannot carry the edit and this process was given a catalogue.
   // THE STANDARD-FONT TABLES the page's fonts are read with, on first need for the same reason: they bring pdf-lib.
   const standard = await loadStandardFonts();
-  const needed = editFacesBound() && (await needsAFace(session, command, read, standard));
-  // THE CATALOGUE'S MODULE TOO, where the host bound its folders (`bindEditFolders`): it brings HarfBuzz as well.
-  if (needed) await loadEditFaces();
-  const faceSet = needed ? (await import('./operatorFaces.js')).OperatorFaceSet : null;
-  return await withDocument(session, (document) => {
+  const bound = editFacesBound();
+  /** The catalogue's face set, loaded with its module, which brings HarfBuzz as well. */
+  const faceSetLoaded = async (): Promise<typeof OperatorFaceSetType> => {
+    await loadEditFaces();
+    return (await import('./operatorFaces.js')).OperatorFaceSet;
+  };
+  // ONE PASS where the page's own fonts carry the edit, and a second only where a word needs a face: the write itself
+  // asks, written with no face, and answers `undefined` before writing anything where it needs one. A dry run before every
+  // write doubled every write: measured 2026-10-27 on the text walk's dense page (39,201 runs), 2.5 of a heading edit's
+  // 7.5 seconds were the dry run's layout of a page whose own Helvetica carried the edit.
+  // A FORM KEEPS THE DRY RUN: making its placement its own copies it (`ownPlacement`) before anything is checked, and a
+  // second attempt would copy it again.
+  if (command.form === undefined) {
+    const once = await attempt(null, bound);
+    if (once !== undefined) return once;
+    const written = await attempt(await faceSetLoaded(), false);
+    if (written === undefined) throw new Error('an edit given its faces asked for faces again');
+    return written;
+  }
+  const needed = bound && (await needsAFace(session, command, read, standard));
+  const written = await attempt(needed ? await faceSetLoaded() : null, false);
+  if (written === undefined) throw new Error('an edit that may not ask for faces asked for them');
+  return written;
+
+  /**
+   * The edit written with `faceSet`, or `undefined` where `askFaces` and a word needs a face the page's fonts lack: then
+   * nothing has been written.
+   */
+  function attempt(faceSet: typeof OperatorFaceSetType | null, askFaces: boolean): Promise<DrawnBoxes | undefined> {
+    return withDocument(session, (document) => attemptIn(document, faceSet, askFaces));
+  }
+
+  function attemptIn(document: PDFDocument, faceSet: typeof OperatorFaceSetType | null, askFaces: boolean): DrawnBoxes | undefined {
     // THE CONTENT THE EDIT IS IN: the page's own, or a form's, made this placement's own first (ADR-0269 Decision 3).
     const target = targetOf(document, command, true);
     const { content, holder } = target;
@@ -119,7 +148,11 @@ export async function applyEditTextOperators(
     });
     if (!made.ok) {
       const refusal = made.error;
-      if (refusal.reason === 'needs-a-face') throw new TextNotWritableError(refusal.characters.join(''));
+      if (refusal.reason === 'needs-a-face') {
+        // ASKED BEFORE ANYTHING IS WRITTEN: the faces are loaded and the edit written again.
+        if (askFaces) return undefined;
+        throw new TextNotWritableError(refusal.characters.join(''));
+      }
       // NOTHING TO WRITE, split by the PDFium writer's rule (ADR-0260): the words the page shows and nothing else is the
       // answer the editor closes on; anything else was a change none of which could be written, and the editor keeps it.
       if (refusal.reason === 'unchanged') {
@@ -160,7 +193,7 @@ export async function applyEditTextOperators(
     const boxed = (faces?.boxed ?? []).map((character) => ({ character, page: command.page }));
     // AND WHAT ITS CHECKS NOTED.
     return { boxed, more: 0, noted };
-  });
+  }
 }
 
 /**

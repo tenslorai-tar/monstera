@@ -10,6 +10,18 @@ const latin1 = (codes: Uint8Array): string => new TextDecoder('latin1').decode(c
  * `scripts/research/type3Correspondence.mjs`, which reads through this module; these cases pin the shapes it measured
  * without PDFium, so a change to the rule is red here before it is red anywhere slower.
  */
+describe('one pass over a content per edit', () => {
+  it('reads the same bytes once however many ask, and new bytes afresh', () => {
+    const content = bytes('BT /F1 12 Tf 20 360 Td (first) Tj ET');
+    // THE SAME ANSWER, not an equal one: the fonts, the writer and the check of one edit take one pass between them.
+    expect(showOperators(content)).toBe(showOperators(content));
+    // CONTROL: the same text in new bytes is read again, so the answer above is the bytes' and not a constant.
+    const again = bytes('BT /F1 12 Tf 20 360 Td (first) Tj ET');
+    expect(showOperators(again)).not.toBe(showOperators(content));
+    expect(showOperators(again)).toStrictEqual(showOperators(content));
+  });
+});
+
 describe('showOperators', () => {
   it('numbers only the operators that show a code: an empty string and a TJ of spacing alone make no object', () => {
     const operators = showOperators(

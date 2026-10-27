@@ -69,6 +69,32 @@ async function threeFonts(): Promise<Uint8Array> {
   return doc.save({ useObjectStreams: false });
 }
 
+describe('pageFonts reads one font object once', () => {
+  it('gives names of one object one reading, each name its own entry; and two objects two readings', async () => {
+    // A PAGE AS pdf-lib WRITES ONE: a new name for every line drawn, every name the same Helvetica. The text walk's dense
+    // page had 39,201 such names, each read again.
+    const doc = await PDFDocument.create({ updateMetadata: false });
+    const page = doc.addPage([300, 300]);
+    const helvetica = doc.context.register(doc.context.obj({ Type: 'Font', Subtype: 'Type1', BaseFont: 'Helvetica', Encoding: 'WinAnsiEncoding' }));
+    const times = doc.context.register(doc.context.obj({ Type: 'Font', Subtype: 'Type1', BaseFont: 'Times-Roman', Encoding: 'WinAnsiEncoding' }));
+    page.node.set(PDFName.of('Resources'), doc.context.obj({ Font: { F1: helvetica, F2: helvetica, F3: helvetica, F4: times } }));
+    const session = await mupdfWriter.open(await doc.save());
+    try {
+      const fonts = await withDocument(session, (document) => pageFonts(document.findPage(0), STANDARD));
+      expect([...fonts.keys()]).toStrictEqual(['F1', 'F2', 'F3', 'F4']);
+      expect([...fonts.values()].map((font) => font.resource)).toStrictEqual(['F1', 'F2', 'F3', 'F4']);
+      // ONE READING: the measure a reading makes is the same function for every name of the object.
+      expect(fonts.get('F2')?.width).toBe(fonts.get('F1')?.width);
+      expect(fonts.get('F3')?.toUnicode).toBe(fonts.get('F1')?.toUnicode);
+      // CONTROL: another object is read for itself.
+      expect(fonts.get('F4')?.width).not.toBe(fonts.get('F1')?.width);
+      expect(fonts.get('F4')?.face).toBe('Times-Roman');
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+});
+
 describe('pageFonts', () => {
   it('reads each font’s kind, face and weight, the leaf inheriting the tree’s resources', async () => {
     const session = await mupdfWriter.open(await threeFonts());
