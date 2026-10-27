@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
-import type { EditedBlock, WindowEditAction } from '@monstera/contract';
+import type { EditedBlock, PageInsert, WindowEditAction } from '@monstera/contract';
 import { type MessageKey, asDocVersion } from '@monstera/shared';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -298,6 +298,49 @@ describe('the right-click menu on the open editor (ADR-0180 Decision 8)', () => 
     });
     expect(made.onCommit).toHaveBeenCalledTimes(1);
     expect(made.onCommit.mock.calls[0]?.[1]).toBe('the quikc fox!');
+  });
+});
+
+describe('Add text takes the style of the words nearby (the owner’s B4.3)', () => {
+  const NEARBY = { size: 11, colour: { r: 20, g: 40, b: 60 }, serif: true, mono: false, italic: false, bold: true };
+  /** A paragraph whose box runs 586 to 600 up the page, set 11 point bold serif in a blue, its runs naming `font`. */
+  const styled = (font?: string): TextBlock => {
+    const style = font === undefined ? NEARBY : { ...NEARBY, font };
+    const made = block(9, ['A paragraph above.'], 600, 500);
+    return { ...made, style, lines: made.lines.map((line) => ({ ...line, runs: line.runs.map((run) => ({ ...run, style })) })) };
+  };
+
+  /** Presses the empty page at (100, 200) of the layer, types `A new note` into the box it opens, and finishes. */
+  async function addOn(blocks: PageBlocks) {
+    const onInsert = vi.fn((_insert: PageInsert, _read: BlocksRead) => Promise.resolve<BlockCommit>('written'));
+    const made = layer(blocks, () => Promise.resolve('written'), { adding: true, onInsert });
+    fireEvent.click(must(made.view.container.querySelector<HTMLElement>('[data-text-add-surface]'), 'add surface'), { clientX: 100, clientY: 200, detail: 1 });
+    act(() => {
+      typeAt(made.surface(), 'A new note', { paragraph: 0, offset: 0 });
+    });
+    await escape(made.surface());
+    expect(onInsert).toHaveBeenCalledTimes(1);
+    return must(onInsert.mock.calls[0]?.[0], 'insert');
+  }
+
+  it('a box begun beside a paragraph is sent in its size, weight, slant and colour, and its kind’s family', async () => {
+    // THE PAGE IS 792 HIGH AT ZOOM 1: a press 200 down is 592 up, inside the paragraph's band (586 to 600).
+    const insert = await addOn(read(5, [styled()]));
+    expect(insert).toMatchObject({
+      size: 11,
+      base: { family: 'Times New Roman', bold: true, italic: false, colour: { r: 20, g: 40, b: 60 } },
+      text: 'A new note',
+    });
+  });
+
+  it('beside words whose font the page names, the box is set in THAT font, by its name', async () => {
+    const insert = await addOn(read(5, [styled('ABCDEF+Garamond')]));
+    expect(insert.base?.family).toBe('ABCDEF+Garamond');
+  });
+
+  it('CONTROL: on a page with no words the box starts in 12 point black Arial, so the cases above are the nearby style', async () => {
+    const insert = await addOn(read(5, []));
+    expect(insert).toMatchObject({ size: 12, base: { family: 'Arial', bold: false, italic: false, colour: { r: 0, g: 0, b: 0 } }, text: 'A new note' });
   });
 });
 
