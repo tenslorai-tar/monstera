@@ -288,7 +288,10 @@ export function BlockEditor({
   const pitch = pitchOf(block);
   const look = useMemo<Look>(() => ({ zoom: geometry.zoom, pitch, faceCss }), [geometry.zoom, pitch, faceCss]);
   // A BLOCK MOVED OFF ITS PLACE draws every paragraph: the page's copy of it is papered whole.
-  const drawn = useMemo(() => (moved ? undefined : { paragraphs: opened.model.paragraphs, wraps: opened.wraps, widths: opened.widths }), [moved, opened]);
+  const drawn = useMemo(
+    () => (moved ? undefined : { paragraphs: opened.model.paragraphs, wraps: opened.wraps, widths: opened.widths, words: opened.words }),
+    [moved, opened],
+  );
 
   // THE EDITOR IS OPEN for the formatting commands to act on (ADR-0180), for its whole life.
   const actions = useRef<{ remove: () => void; nudge: (step: Nudge) => void; finish: () => void }>({

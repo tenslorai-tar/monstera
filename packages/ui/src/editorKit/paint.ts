@@ -56,16 +56,33 @@ export function paintRun(span: HTMLElement, style: RunStyle, look: Look): void {
   span.dataset['face'] = style.face;
 }
 
+/** A word of a line as the page draws it: its letters `from` to `to` in the paragraph's words, and its left and right in points. */
+export interface DrawnWordPlace {
+  readonly from: number;
+  readonly to: number;
+  readonly x0: number;
+  readonly x1: number;
+}
+
 /**
  * A paragraph's element: its runs, and where `wraps` is given its lines broken at those offsets and the paragraph not
- * painted. `index` is its place in the model, which the selection mapping reads.
+ * painted. `index` is its place in the model, which the selection mapping reads. `cuts` are offsets where a span ends
+ * without a break, so each word the page places has spans of its own to fit (`fitDrawnLines`).
  */
-export function paragraphElement(owner: Document, paragraph: Paragraph, index: number, look: Look, wraps: readonly number[] | undefined): HTMLElement {
+export function paragraphElement(
+  owner: Document,
+  paragraph: Paragraph,
+  index: number,
+  look: Look,
+  wraps: readonly number[] | undefined,
+  cuts: readonly number[] = [],
+): HTMLElement {
   const element = owner.createElement('div');
   element.className = wraps === undefined ? PARAGRAPH_CLASS : `${PARAGRAPH_CLASS} ${AS_DRAWN_CLASS}`;
   element.setAttribute(PARAGRAPH_ATTRIBUTE, String(index));
   paintParagraph(element, paragraph, look);
-  const breaks = [...(wraps ?? [])];
+  const breaks = new Set(wraps ?? []);
+  const ends = [...new Set([...breaks, ...cuts])].sort((a, b) => a - b);
   let at = 0;
   for (const [place, run] of paragraph.runs.entries()) {
     let text = run.text;
@@ -78,10 +95,13 @@ export function paragraphElement(owner: Document, paragraph: Paragraph, index: n
       paintRun(made, run.style, look);
       return made;
     };
-    // A RUN CROSSING ONE OF THE PAGE'S BREAKS is two spans with the break between them.
-    while (breaks.length > 0 && (breaks[0] ?? 0) <= at + text.length && (breaks[0] ?? 0) > at) {
-      const cut = (breaks.shift() ?? 0) - at;
-      element.append(span(text.slice(0, cut)), wrapBreak(owner));
+    // A RUN CROSSING ONE OF THE PAGE'S BREAKS is two spans with the break between them, and one crossing a cut two spans.
+    while (ends.length > 0 && (ends[0] ?? 0) <= at + text.length) {
+      const end = ends.shift() ?? 0;
+      if (end <= at) continue;
+      const cut = end - at;
+      element.append(span(text.slice(0, cut)));
+      if (breaks.has(end)) element.append(wrapBreak(owner));
       at += cut;
       text = text.slice(cut);
       cutAny = true;
@@ -141,15 +161,34 @@ export function restyleParagraph(element: HTMLElement, paragraph: Paragraph, loo
  *
  * `widths` is the paragraph's lines' drawn widths in points, in order; a line with no width given is left as laid out.
  * Measured from the first letter to the last that is not a space, since a soft wrap's space is not drawn on the page.
+ *
+ * ## Word by word where the page says where its words are
+ *
+ * Spread over a line, the difference puts its ENDS right and nothing between them: a stand-in whose letters are narrow
+ * where the page's are wide and wide where they are narrow leaves the middle of the line a word or more out, and the word
+ * a person highlights is not the word the edit then formats (the owner's video of 1.1.2609.0, a drawn font: the first
+ * word highlighted the second and third). So where `words` gives a line's words as drawn, each word is fitted to its own
+ * width and moved to its own place from the line's first, and the letters a person presses lie under the page's.
  */
-export function fitDrawnLines(element: HTMLElement, widths: readonly number[], zoom: number): void {
+export function fitDrawnLines(element: HTMLElement, widths: readonly number[], zoom: number, words: readonly (readonly DrawnWordPlace[])[] = []): void {
   const owner = element.ownerDocument;
   const lines: HTMLElement[][] = [[]];
+  /** Where each span's letters begin in the paragraph's words. */
+  const starts = new Map<HTMLElement, number>();
+  let offset = 0;
   for (const child of Array.from(element.children)) {
     if (child instanceof HTMLElement && child.dataset['kitWrap'] !== undefined) lines.push([]);
-    else if (child instanceof HTMLElement && child.dataset['kitRun'] !== undefined) lines.at(-1)?.push(child);
+    else if (child instanceof HTMLElement && child.dataset['kitRun'] !== undefined) {
+      lines.at(-1)?.push(child);
+      starts.set(child, offset);
+      offset += child.textContent.length;
+    }
   }
   for (const [at, spans] of lines.entries()) {
+    const placed = words[at] ?? [];
+    for (const span of spans) span.style.marginLeft = '';
+    if (placed.length > 0 && fitWords(spans, starts, placed, zoom)) continue;
+    for (const span of spans) span.style.marginLeft = '';
     const target = widths[at];
     if (target === undefined || spans.length === 0) continue;
     for (const span of spans) span.style.letterSpacing = span.dataset['kitSpacing'] ?? '';
@@ -178,6 +217,56 @@ export function fitDrawnLines(element: HTMLElement, widths: readonly number[], z
       span.style.letterSpacing = own === '' ? `${String(extra)}px` : `calc(${own} + ${String(extra)}px)`;
     }
   }
+}
+
+/**
+ * {@link fitDrawnLines} for one line whose words the page places: each word's letters spaced to its drawn width, then
+ * each word after the first moved by its left margin to stand as far from the first as the page draws it. False where a
+ * word has no spans of its own (the words were cut elsewhere than these), and the line is then fitted whole.
+ */
+function fitWords(spans: readonly HTMLElement[], starts: ReadonlyMap<HTMLElement, number>, placed: readonly DrawnWordPlace[], zoom: number): boolean {
+  const owner = spans[0]?.ownerDocument;
+  if (owner === undefined) return false;
+  const groups = placed.map((word) => ({
+    word,
+    spans: spans.filter((span) => {
+      const from = starts.get(span) ?? -1;
+      return from >= word.from && from + span.textContent.length <= word.to && span.textContent.length > 0;
+    }),
+  }));
+  if (groups.some(({ word, spans: own }) => own.reduce((sum, span) => sum + span.textContent.length, 0) !== word.to - word.from)) return false;
+  const rangeOf = (own: readonly HTMLElement[]): Range | undefined => {
+    const first = own[0]?.firstChild;
+    const last = own.at(-1)?.firstChild;
+    if (!(first instanceof Text) || !(last instanceof Text)) return undefined;
+    const range = owner.createRange();
+    range.setStart(first, 0);
+    range.setEnd(last, last.data.length);
+    return range;
+  };
+  for (const span of spans) span.style.letterSpacing = span.dataset['kitSpacing'] ?? '';
+  // EACH WORD AS WIDE AS THE PAGE DRAWS IT.
+  for (const { word, spans: own } of groups) {
+    const natural = rangeOf(own)?.getBoundingClientRect().width ?? 0;
+    // NO LAYOUT, NOTHING TO FIT: a document with no layout engine measures every range as nothing.
+    if (!(natural > 0)) return false;
+    const extra = ((word.x1 - word.x0) * zoom - natural) / (word.to - word.from);
+    for (const span of own) {
+      const mine = span.dataset['kitSpacing'] ?? '';
+      span.style.letterSpacing = mine === '' ? `${String(extra)}px` : `calc(${mine} + ${String(extra)}px)`;
+    }
+  }
+  // EACH WORD WHERE THE PAGE DRAWS IT FROM THE LINE'S FIRST, in order, since a margin moves every word after it.
+  const first = groups[0];
+  const origin = first === undefined ? undefined : rangeOf(first.spans)?.getBoundingClientRect().left;
+  if (first === undefined || origin === undefined) return false;
+  for (const { word, spans: own } of groups.slice(1)) {
+    const lead = own[0];
+    const left = rangeOf(own)?.getBoundingClientRect().left;
+    if (lead === undefined || left === undefined) return false;
+    lead.style.marginLeft = `${String(origin + (word.x0 - first.word.x0) * zoom - left)}px`;
+  }
+  return true;
 }
 
 function wrapBreak(owner: Document): HTMLElement {

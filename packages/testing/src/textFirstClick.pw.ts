@@ -62,7 +62,10 @@ interface LineSpec {
   readonly soft: boolean;
 }
 
-/** A block of lines set from x = 72, each line's box its words' ink at about half an em a letter. */
+/**
+ * A block of lines set from x = 72, each line's box its words' ink at about half an em a letter: an estimate, which
+ * `pageBytes` replaces with the width the page draws each line at before any editor sees it.
+ */
 function blockOf(lines: readonly LineSpec[], first: number) {
   let index = first;
   const built = lines.map((line) => {
@@ -135,13 +138,17 @@ function blockFaces() {
   return { fonts: [{ own: false, chosen, candidates: [chosen] }], runs };
 }
 
-async function pageBytes(): Promise<Uint8Array> {
+/**
+ * The page, and the blocks as a read of it reports them: each line's box as wide as the page draws its words, which is
+ * what a read's line box is (the union of its characters' ink), and what the editor fits each line's letters to.
+ */
+async function pageBytes(): Promise<{ readonly bytes: Uint8Array; readonly blocks: typeof BLOCKS }> {
   const document = await PDFDocument.create();
   const sans = await document.embedFont(StandardFonts.Helvetica);
   const mono = await document.embedFont(StandardFonts.Courier);
   const sheet = document.addPage([612, 792]);
-  for (const block of BLOCKS) {
-    for (const line of block.lines) {
+  const blocks = BLOCKS.map((block) => {
+    const lines = block.lines.map((line) => {
       let x = 72;
       for (const run of line.runs) {
         const font = run.style.mono ? mono : sans;
@@ -149,18 +156,20 @@ async function pageBytes(): Promise<Uint8Array> {
         sheet.drawText(run.text, { x, y, size: run.style.size, font });
         x += font.widthOfTextAtSize(run.text, run.style.size);
       }
-    }
-  }
-  return document.save();
+      return { ...line, box: { ...line.box, x1: x } };
+    });
+    return { ...block, lines, box: { ...block.box, x1: Math.max(...lines.map((line) => line.box.x1)) } };
+  });
+  return { bytes: await document.save(), blocks };
 }
 
 async function open(page: Page, zoom: '100pct' | '150pct', fontDelay = FONT_DELAY): Promise<void> {
-  const bytes = await pageBytes();
+  const { bytes, blocks } = await pageBytes();
   await page.setViewportSize({ width: 1800, height: 1100 });
   await bridgeUnder(page, LOOKS[0], {
     opens: [{ kind: 'opened' as const, docId: ID, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'Clicks.pdf' }],
     documentBytes: new Map([[ID, bytes]]),
-    textBlocks: BLOCKS,
+    textBlocks: blocks,
     blockFaces: blockFaces(),
     bundledFace: { bytes: new Uint8Array(FACE), released: Promise.resolve() },
     delays: { 'document.blockFaces': fontDelay },

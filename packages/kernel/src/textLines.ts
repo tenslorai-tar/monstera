@@ -659,6 +659,49 @@ export function groupIntoBlocks<S>(runs: readonly BlockableRun<S>[], markers: re
  * required, three such items read as one paragraph, and an edit of one reflowed the next onto it (the local agent's walk
  * of 2026-10-27). A dash or a star keeps the space, since a hyphenated word begins with neither but a line may.
  */
+/** One word of a run as the page draws it: its letters `from` to `to` in the run's text, and where they run across. */
+export interface DrawnWord {
+  readonly from: number;
+  readonly to: number;
+  readonly x0: number;
+  readonly x1: number;
+}
+
+/**
+ * A run's words where the page draws them, from its drawn characters in the order drawn: each word of `text` (letters
+ * between spaces) from its first letter's left to its last letter's right. The editor lays its letters out word by word
+ * over these, so the letter a person presses is the letter the edit changes, whatever face stands in for the page's
+ * (the owner's video of 1.1.2609.0: on a drawn font, highlighting the first word highlighted the second and third).
+ *
+ * `undefined` where the text's letters are not the glyphs' in order, letter for letter — a run whose text is an
+ * `/ActualText`, or read in another order than drawn — since words placed from a misread pairing would be worse than
+ * the line's own fit, which is what the editor then keeps.
+ */
+export function drawnWordsOf(
+  text: string,
+  glyphs: readonly { readonly char: string; readonly left: number; readonly right: number }[],
+): readonly DrawnWord[] | undefined {
+  // THE GLYPHS AS UNITS, so a character the text page answered as two (a pair outside the basic plane) pairs unit by unit.
+  const units = glyphs.flatMap((glyph) => glyph.char.split('').map((unit) => ({ unit, glyph }))).filter(({ unit }) => unit.trim() !== '');
+  const words: DrawnWord[] = [];
+  let next = 0;
+  let open: { from: number; x0: number; x1: number } | undefined;
+  for (let at = 0; at <= text.length; at += 1) {
+    const unit = text[at];
+    if (unit === undefined || unit.trim() === '') {
+      if (open !== undefined) words.push({ from: open.from, to: at, x0: open.x0, x1: open.x1 });
+      open = undefined;
+      continue;
+    }
+    const paired = units[next];
+    if (paired?.unit !== unit) return undefined;
+    next += 1;
+    const { left, right } = paired.glyph;
+    open = open === undefined ? { from: at, x0: left, x1: Math.max(left, right) } : { from: open.from, x0: Math.min(open.x0, left), x1: Math.max(open.x1, right) };
+  }
+  return next === units.length ? words : undefined;
+}
+
 /** A small shape the page draws as a list's bullet, by its box in page space (`drawnMarkersOf`, the read's). */
 export interface DrawnMarker {
   readonly x0: number;

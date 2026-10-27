@@ -1,6 +1,7 @@
 import { type LineMatch, findInLines, toPdf, viewportPoint } from '@monstera/shared';
 import { type ReactElement, useEffect, useLayoutEffect, useRef } from 'react';
 
+import { exactCaretOf, holdAnchorAtPress } from './pressAnchor.js';
 import type { OverlayPage } from './annotations/annotationSpace.js';
 import { engineBoxOnScreen, overlayTransform } from './annotations/annotationSpace.js';
 import { type HighlightPainter, type SearchHighlight, sharedPainter } from './searchHighlight.js';
@@ -179,49 +180,17 @@ function selectedLines(range: Range, layer: Element): { left: number; top: numbe
 }
 
 /**
- * Keeps a drag's selection anchored where the press put it, which Chromium 151 does not always do.
+ * Keeps a drag's selection on the page's text anchored where the press put it (`holdAnchorAtPress`, the mechanism and
+ * its repair), and answers a press on blank space itself.
  *
- * ## The mechanism, read from Chromium's `selection_controller.cc` and `mouse_event_manager.cc`
- *
- * A press places a caret where the pointer is, hit-tested at its exact, fractional point. Chromium also keeps
- * `mouse_down_pos_`, which is that point FLOORED to whole pixels, and on each drag event while the selection is not yet
- * a range `HandleMouseDraggedEvent` hit-tests `mouse_down_pos_` again and collapses the selection there. Where a
- * character's midpoint lies between the two points that caret is not the press's, so the selection changes,
- * `NotifySelectionChanged` reads a caret and sets the state back to *placed caret*, and every later drag event takes
- * the same branch and collapses again, at the pointer. The anchor travels with the pointer, nothing is selected, and
- * the release marks nothing.
- *
- * Measured 2026-10-05 in Chromium 151.0.7922.34, pressing at every half pixel across the start of two lines at five
- * horizontal scales and then dragging: a drag failed exactly where the caret at the press point and the caret at its
- * floor differ, with no failure that rule missed and no failure it predicted that did not happen, and the transform is not needed (it
- * fails at scale 1 too). It needs a pointer whose position is a fraction of a pixel, since flooring a whole number
- * changes nothing: Playwright's pointer always is, and that is the condition measured; whether a scaled Windows
- * display delivers one was not measured. Given one, a line fails or works by where its first letters fall, so the
- * same lines fail on every press at their start, the shape of F-C8's two lines that could not be highlighted while
- * the lines either side of them could. A plain drag to copy fails the same way; the markup tools only made it visible.
- *
- * ## The repair restores the press's own caret, and touches nothing else
- *
- * The anchor is the caret at the press's exact point (`caretPositionFromPoint`, the hit test the press itself made).
- * The point comes from `pointerdown`: `MouseEvent.clientX` is a whole number in Chromium, so reading it there would be
- * the floored point again. The moving end is left where Chromium put it, and only a selection whose anchor has left the
- * press is re-anchored; a range makes `NotifySelectionChanged` read *extended*, and from the next drag event Chromium
- * extends from the press as it does for every other drag.
- *
- * **Never before the first drag event.** That event decides whether the press starts a drag of selected text, by
- * asking whether `mouse_down_pos_` lies inside the selection, and only then updates the selection. With the exact caret
- * the press itself already matches, so the first re-anchor can only follow the collapse that event makes, after the
- * decision. Anchored at the floored point instead, the re-anchor ran on the press, put a one character range under the
- * pointer, and the first move started a text drag and cancelled the pointer (measured the same day).
- *
- * A double or triple click selects by word or line, and a shift-press extends a selection whose anchor is already
- * set, so neither is held; `PointerEvent.detail` is 0, so the click count is read from `mousedown`, which follows.
+ * On a line the anchor is the caret at the press's exact point. BESIDE A LINE it is that line's nearest end
+ * (`caretBesideLine`): on the layer between lines Chromium places it at the end of the nearest LONG line, and a drag
+ * from 1 pt before *This Agreement…* selected nothing, or only the line's last word (measured 2026-10-24).
  *
  * @returns the cleanup that removes every listener this added
  */
 export function holdPressedAnchor(root: HTMLElement): () => void {
   const owner = root.ownerDocument;
-  let press: { readonly node: Node; readonly offset: number } | undefined;
   /**
    * A press that began on blank space, whose selection this owns until the button is let go: where it was pressed, and
    * its anchor once the pointer has reached a line's letters (`undefined` until then).
@@ -285,57 +254,19 @@ export function holdPressedAnchor(root: HTMLElement): () => void {
     return true;
   };
 
-  const reanchor = (): void => {
-    // A LINE REPLACED UNDER THE DRAG takes its press with it: a detached node is no anchor.
-    if (press?.node.isConnected !== true) return;
-    const selection = owner.getSelection();
-    const focus = selection?.focusNode ?? null;
-    if (selection === null || focus === null) return;
-    if (selection.anchorNode === press.node && selection.anchorOffset === press.offset) return;
-    // A CARET AT THE PRESS is no selection to make: the pointer is back where it began.
-    if (focus === press.node && selection.focusOffset === press.offset) return;
-    selection.setBaseAndExtent(press.node, press.offset, focus, selection.focusOffset);
-  };
-  const release = (): void => {
-    press = undefined;
-    owner.removeEventListener('selectionchange', reanchor);
-  };
-  const pressed = (event: PointerEvent): void => {
-    release();
-    // A TOUCH selects by a long press, through none of the drag path above.
-    if (event.button !== 0 || event.shiftKey || event.pointerType === 'touch') return;
-    // BESIDE A LINE the press means that line's nearest end (`caretBesideLine`): on the layer between lines Chromium
-    // places it at the end of the nearest LONG line, and a drag from 1 pt before *This Agreement…* selected nothing, or
-    // only the line's last word (measured 2026-10-24). On a line it is the caret at the exact point.
+  // ON A LINE, the caret at the exact point (absent in happy-dom, where the press is the platform's alone); beside one,
+  // its nearest end; on blank space, nothing held, the press this layer's own.
+  const unhold = holdAnchorAtPress(root, (event) => {
     const place = pressPlace(root, event);
     if (place === 'blank') {
       pressedOnBlank(event);
-      return;
+      return null;
     }
-    const beside = place === 'line' ? null : place;
-    // ABSENT IN HAPPY-DOM, and in an engine without it the press is the platform's alone, as it was.
-    const exact = beside === null && typeof owner.caretPositionFromPoint === 'function' ? owner.caretPositionFromPoint(event.clientX, event.clientY) : null;
-    const caret = beside ?? (exact === null ? null : { node: exact.offsetNode, offset: exact.offset });
-    if (caret?.node.nodeType !== Node.TEXT_NODE || !root.contains(caret.node)) return;
-    press = caret;
-    owner.addEventListener('selectionchange', reanchor);
-  };
-  const counted = (event: MouseEvent): void => {
-    if (event.detail > 1) release();
-  };
-
-  root.addEventListener('pointerdown', pressed);
-  root.addEventListener('mousedown', counted);
-  // ON THE DOCUMENT, so a release anywhere ends the press: a drag routinely ends off the page.
-  owner.addEventListener('mouseup', release, true);
-  owner.addEventListener('pointercancel', release, true);
+    return place === 'line' ? exactCaretOf(event) : place;
+  });
   return (): void => {
-    release();
+    unhold();
     blankReleased();
-    root.removeEventListener('pointerdown', pressed);
-    root.removeEventListener('mousedown', counted);
-    owner.removeEventListener('mouseup', release, true);
-    owner.removeEventListener('pointercancel', release, true);
   };
 }
 

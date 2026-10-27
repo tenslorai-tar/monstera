@@ -1734,6 +1734,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       // for its own layer, keeps only upright text, as it always has (ADR-0264 Decision 5).
       // ONE GROUPING for the page's runs and each form placement's (ADR-0269), so a form's text is grouped as a page's is.
       const blocksOf = (runs: typeof found.runs, markers: typeof found.markers) => {
+        const wordsByIndex = new Map(runs.flatMap((run) => (run.words === undefined ? [] : [[run.index, run.words] as const])));
         const grouped = (asItIs ? runs.filter((run) => isUpright(run.style)) : runs).map((run) => inItsFrame(run));
         // EACH RUN'S RISE FROM ITS LINE (the owner's N14): grouped with the page's baseline, then sent as the offset from
         // the line's (`withRises`), which is what the writer keeps and what the editor draws a superscript at.
@@ -1769,7 +1770,16 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
           ({ baseline: _baseline, ...style }) => style,
         ).map((risen, at) => {
           const frame = framed[at]?.frame;
-          return frame === undefined ? risen : { ...risen, frame };
+          if (frame !== undefined) return { ...risen, frame };
+          // AN UPRIGHT BLOCK'S RUNS CARRY WHERE THEIR WORDS ARE DRAWN, by the run's index, which the grouping keeps.
+          const lines = risen.lines.map((line) => ({
+            ...line,
+            runs: line.runs.map((run) => {
+              const words = wordsByIndex.get(run.index);
+              return words === undefined ? run : { ...run, words };
+            }),
+          }));
+          return { ...risen, lines };
         });
       };
       const grouped = blocksOf(found.runs, found.markers);

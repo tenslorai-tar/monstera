@@ -92,7 +92,7 @@ import {
 } from './textEditRefusals.js';
 import { readInLineOrder } from './bidiLine.js';
 import { pdfTextString } from './pdfTextString.js';
-import { MAX_DRAWN_MARKERS, type Orientation, isUpright, lineBaselineOf } from './textLines.js';
+import { type DrawnWord, MAX_DRAWN_MARKERS, type Orientation, drawnWordsOf, isUpright, lineBaselineOf } from './textLines.js';
 import { type JoinedRun, joinRuns, membersOf } from './textRunJoin.js';
 
 /**
@@ -629,6 +629,8 @@ export interface TextRun {
    * (`/MonsteraMeasure`, ADR-0097's correction of 2026-10-17): the paragraph keeps it whatever font its words are in.
    */
   readonly measure?: number;
+  /** An upright run's words where the page draws them (`drawnWordsOf`), where its text pairs with its glyphs. */
+  readonly words?: readonly DrawnWord[];
   /**
    * Where a run is not upright, the frame it is set in and its place in that frame
    * ([ADR-0273](../../../docs/DECISIONS/0273-text-set-at-an-angle-is-edited-in-its-own-frame.md)): in the frame it is
@@ -802,7 +804,9 @@ export function textRuns(session: PdfiumSession, page: number): Promise<PageText
         const measure = Math.max(0, ...members.map((index) => recordedMeasureOf(bindings, bindings.getObject(handle, index)) ?? 0));
         // A RUN SET AT AN ANGLE carries its frame (ADR-0273), from the one answer the writer lays it out by.
         const frame = run.style.orientation === 'upright' ? undefined : runFrameOf(bindings, handle, members);
-        return { ...run, ...(measure > 0 ? { measure } : {}), ...(frame === undefined ? {} : { frame }) };
+        // AN UPRIGHT RUN'S WORDS WHERE THE PAGE DRAWS THEM, for the editor to lay its letters over (`drawnWordsOf`).
+        const words = frame === undefined ? drawnWordsOf(run.text, members.flatMap((member) => walked.glyphs.get(member) ?? [])) : undefined;
+        return { ...run, ...(measure > 0 ? { measure } : {}), ...(frame === undefined ? {} : { frame }), ...(words === undefined ? {} : { words }) };
       });
       return { runs, unaddressable: walked.unaddressable, box: pageBoxOf(bindings, handle), markers: drawnMarkersOf(bindings, handle) };
     }),
@@ -1003,7 +1007,7 @@ function walkRuns(
    */
   readonly unaddressableInk: number;
   /** Each drawn character of each object, in the order PDFium answered it, with where it starts across the page. */
-  readonly glyphs: ReadonlyMap<number, readonly { readonly char: string; readonly left: number; readonly origin?: number }[]>;
+  readonly glyphs: ReadonlyMap<number, readonly { readonly char: string; readonly left: number; readonly right: number; readonly origin?: number }[]>;
   /** Each object's text as PDFium answered it, by object index: the deck's input (`raws` in the walk). */
   readonly raws: ReadonlyMap<number, string>;
   /**
@@ -1047,7 +1051,7 @@ function walkRuns(
       return said !== undefined && said !== '' && said.trim() === '' && numberFrom(bindings.objectType(bindings.getObject(handle, at)), 'FPDFPageObj_GetType') === TEXT_OBJECT;
     };
     const ends = new Map<number, number>();
-    const glyphs = new Map<number, { char: string; left: number; origin?: number }[]>();
+    const glyphs = new Map<number, { char: string; left: number; right: number; origin?: number }[]>();
     let unaddressable = 0;
     let unaddressableInk = 0;
     /** Each run's last drawn character, where it was a space: where its loose box ends and how wide it is. */
@@ -1157,7 +1161,12 @@ function walkRuns(
       const originX = [0];
       const originY = [0];
       const hasOrigin = numberFrom(bindings.charOrigin(textPage, at, originX, originY), 'FPDFText_GetCharOrigin') === 1;
-      placed.push({ char: character, left: inked ? x0 : (loose['left'] ?? x0), ...(hasOrigin ? { origin: originX[0] ?? 0 } : {}) });
+      placed.push({
+        char: character,
+        left: inked ? x0 : (loose['left'] ?? x0),
+        right: inked ? x1 : (loose['right'] ?? x1),
+        ...(hasOrigin ? { origin: originX[0] ?? 0 } : {}),
+      });
       glyphs.set(index, placed);
       // THE UNION, so a run's extent covers every character in it. A run sized
       // from its first character alone would lose an ascender and stop
@@ -1209,7 +1218,7 @@ function walkRuns(
         const after = ordered[before + 2]?.[1];
         if (after !== undefined && after.left > run.right && after.bottom < run.top && after.top > run.bottom) run.right = after.left;
         ends.set(at, run.right);
-        glyphs.set(at, [{ char: run.text, left: run.left }]);
+        glyphs.set(at, [{ char: run.text, left: run.left, right: run.right }]);
       }
       runs.clear();
       for (const [index, run] of ordered) runs.set(index, run);

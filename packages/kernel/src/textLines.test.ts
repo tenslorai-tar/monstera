@@ -5,6 +5,7 @@ import {
   type BlockableRun,
   type GroupableRun,
   blockableOf,
+  drawnWordsOf,
   groupInFrames,
   groupIntoBlocks,
   groupIntoLines,
@@ -772,5 +773,43 @@ describe('text set at an angle is grouped in its own frame (ADR-0273)', () => {
     const blocks = groupInFrames(mixed, (run) => run.frame?.matrix);
     // THE SAME FRAME BOX in all three, so only the frames part them.
     expect(blocks.map((block) => block.frame ?? null)).toStrictEqual([null, TURN, slant]);
+  });
+});
+
+describe('drawnWordsOf', () => {
+  /** Glyphs of `text` at one advance each, a space included where the page draws one. */
+  const glyphsOf = (text: string, widths: readonly number[]) => {
+    let x = 10;
+    // ASCII ALONE here, one unit a glyph.
+    return Array.from(text).map((char, at) => {
+      const left = x;
+      x += widths[at] ?? 5;
+      return { char, left, right: x };
+    });
+  };
+
+  it('gives each word from its first letter’s left to its last letter’s right, by its offsets in the text', () => {
+    expect(drawnWordsOf('ab cd', glyphsOf('ab cd', [3, 7, 2, 9, 4]))).toStrictEqual([
+      { from: 0, to: 2, x0: 10, x1: 20 },
+      { from: 3, to: 5, x0: 22, x1: 35 },
+    ]);
+  });
+
+  it('pairs a space the text page generated, which no glyph draws, as the gap it is', () => {
+    expect(drawnWordsOf('ab cd', glyphsOf('abcd', [3, 7, 9, 4]))).toStrictEqual([
+      { from: 0, to: 2, x0: 10, x1: 20 },
+      { from: 3, to: 5, x0: 20, x1: 33 },
+    ]);
+  });
+
+  it('gives no words where the text is not its glyphs letter for letter: an /ActualText, or another order', () => {
+    expect(drawnWordsOf('tab', glyphsOf(' ', [5]))).toBeUndefined();
+    expect(drawnWordsOf('ab', glyphsOf('ba', [5, 5]))).toBeUndefined();
+    // AND NOT WHERE GLYPHS ARE LEFT OVER: a pairing that consumed only some of them is not the run's.
+    expect(drawnWordsOf('ab', glyphsOf('abc', [5, 5, 5]))).toBeUndefined();
+  });
+
+  it('pairs a character outside the basic plane unit by unit', () => {
+    expect(drawnWordsOf('\u{10140}x', [{ char: '\u{10140}', left: 0, right: 8 }, { char: 'x', left: 8, right: 12 }])).toStrictEqual([{ from: 0, to: 3, x0: 0, x1: 12 }]);
   });
 });

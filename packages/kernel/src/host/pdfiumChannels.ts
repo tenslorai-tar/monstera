@@ -461,6 +461,21 @@ const basePdfiumChannels = {
                  * (`/MonsteraMeasure`, ADR-0097's correction of 2026-10-17); absent where none is.
                  */
                 measure: z.number().positive().max(2 * MAX_PAGE_COORDINATE).exactOptional(),
+                /** An upright run's words where the page draws them (`drawnWordsOf`): no more than its text has letters. */
+                words: z
+                  .array(
+                    z
+                      .object({
+                        from: z.number().int().nonnegative().max(PDFIUM_PRIOR_TEXT_MAX),
+                        to: z.number().int().nonnegative().max(PDFIUM_PRIOR_TEXT_MAX),
+                        x0: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
+                        x1: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
+                      })
+                      .strict(),
+                  )
+                  .max(PDFIUM_PRIOR_TEXT_MAX)
+                  .readonly()
+                  .exactOptional(),
                 /**
                  * Where the run is not upright, its frame and its box and first baseline in that frame (`RunFrame`,
                  * ADR-0273); absent for upright text.

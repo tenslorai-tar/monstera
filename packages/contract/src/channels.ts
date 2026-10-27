@@ -5819,6 +5819,26 @@ export const channels = {
                                * word and a regular rest is two runs in two styles, and the block's own style is one.
                                */
                               style: textBlockStyleSchema,
+                              /**
+                               * Where the page draws each of its words, for an upright run whose letters pair with its
+                               * glyphs: offsets into `text` and the word's left and right in page space. The editor lays
+                               * its letters out word by word over them, so the letter a person presses is the one the edit
+                               * changes whatever face stands in for the page's. Absent where the read could not pair them.
+                               */
+                              words: z
+                                .array(
+                                  z
+                                    .object({
+                                      from: z.number().int().nonnegative().max(MAX_RUN_TEXT),
+                                      to: z.number().int().nonnegative().max(MAX_RUN_TEXT),
+                                      x0: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
+                                      x1: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
+                                    })
+                                    .strict(),
+                                )
+                                .max(MAX_RUN_TEXT)
+                                .readonly()
+                                .exactOptional(),
                             })
                             .strict(),
                         )
