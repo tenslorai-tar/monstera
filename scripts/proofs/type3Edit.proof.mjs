@@ -89,6 +89,13 @@ function check(name, held, detail) {
 const squeezed = (/** @type {string} */ text) => text.replace(/\s/gu, '');
 
 /**
+ * The boxes and notes a write answers, by name: what the host forwards (`engine/apply`), and what these cases are about.
+ * The in-process writer also answers each block's `reach`, which stays in the process that wrote, so a comparison of the
+ * whole answer would be a claim about a field no case here is for.
+ */
+const forwarded = (/** @type {any} */ drawn) => JSON.stringify({ boxed: drawn.boxed, more: drawn.more, noted: drawn.noted });
+
+/**
  * @param {any} pdfium
  * @param {any} kernel
  */
@@ -434,7 +441,7 @@ async function run(pdfium, kernel) {
     faced.outcome.ok &&
       faced.saved !== null &&
       // AND NOTHING NOTED (ADR-0270): the writer's read-backs found no defect to log.
-      JSON.stringify(faced.outcome.drawn) === JSON.stringify({ boxed: [{ character: UNASSIGNED, page: 0 }], more: 0, noted: [] }),
+      forwarded(faced.outcome.drawn) === JSON.stringify({ boxed: [{ character: UNASSIGNED, page: 0 }], more: 0, noted: [] }),
     `the edit needing a face answered ${faced.outcome.ok ? JSON.stringify(faced.outcome.drawn) : String(faced.outcome.error)}.`,
   );
   const facedRead = faced.saved === null ? null : await readRuns(faced.saved);
@@ -490,7 +497,7 @@ async function run(pdfium, kernel) {
       secondNow !== null &&
       near(secondNow.top, secondBefore.top) &&
       near(secondNow.left, secondBefore.left) &&
-      JSON.stringify(reflowed.outcome.drawn) === JSON.stringify({ boxed: [], more: 0, noted: [] }),
+      forwarded(reflowed.outcome.drawn) === JSON.stringify({ boxed: [], more: 0, noted: [] }),
     `the second heading read at ${JSON.stringify(secondNow)} against ${JSON.stringify(secondBefore)}; the edit answered ${reflowed.outcome.ok ? JSON.stringify(reflowed.outcome.drawn) : String(reflowed.outcome.error)}.`,
   );
 }
