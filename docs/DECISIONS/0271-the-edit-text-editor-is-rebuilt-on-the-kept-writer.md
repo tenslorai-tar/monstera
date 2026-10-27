@@ -396,6 +396,9 @@ there. If it is not, the remedy is a change to ADR-0258's correction: each surfa
 commands it shows, so a Bold press renders the Bold button and not the shell. That is an architecture change (B4) and is
 not made without your decision. Nothing else in Milestone 2 depends on it.
 
+**Answered by the owner, 2026-10-27:** yes, each surface subscribes only to the answers of the commands it shows
+([ADR-0272](0272-each-surface-subscribes-to-the-answers-of-the-commands-it-places.md)), built last in Milestone 2.
+
 ## Open questions, 2026-10-27 — split, and a repaint that cannot be drawn
 
 Both were found by the stage audit of `dabf6041..f1c1dc16` (ZZZZZZZZ-6 and ZZZZZZZZ-20, `docs/JOURNAL.md`).

@@ -91,3 +91,10 @@ takes the same context.
   subscribed; that list is one array in one hook.
 - **Opting the surfaces out of the compiler.** Gives back what this ADR measured, and is still wrong under any other
   memoization of the same values.
+
+## Note, 2026-10-27 — the correction's mechanism is replaced by ADR-0272
+
+The finding above stands: a predicate reads stores the compiler cannot see, and a surface must be told when its answers
+move. How it is told changes, by the owner's decision of 2026-10-27: the answers move into a store, and each surface
+subscribes to the commands its placement can show, so an answer renders the surfaces that draw it and not the shell
+([ADR-0272](0272-each-surface-subscribes-to-the-answers-of-the-commands-it-places.md)).
