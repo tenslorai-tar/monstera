@@ -1865,6 +1865,9 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       if (pdfiumHost === null) return { fonts: [], runs: indices.map(() => null) };
       const read = await pageRunsOf(docId, sessions, page, form);
       const runs = blockFaceRunsOf(read, indices);
+      // NO RUN TO ASK ABOUT is no font for each index, answered here: the host's channel takes at least one run, and an
+      // empty list sent to it is refused by its schema and reached the renderer as an internal failure.
+      if (runs.length === 0) return { fonts: [], runs: indices.map(() => null) };
       return facesInOrder(indices, runs, await engineHost.blockFaces(session, { page, ...(form === null ? {} : { form }) }, runs));
     },
     // THE EDITABLE POWERPOINT EXPORT'S TWO READS (ADR-0210), composed here for the reads above's reason: a byte-image engine
