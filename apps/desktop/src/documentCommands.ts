@@ -3034,7 +3034,7 @@ export class DocumentCommands {
    *   `execute` throws, for the same reasons.
    */
   async viewModel(docId: DocId, pages: readonly number[]): Promise<DocumentViewModel> {
-    const { version, value } = await this.#documents.run(docId, async () => {
+    const { version, value } = await this.#documents.read(docId, async () => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
@@ -3100,7 +3100,7 @@ export class DocumentCommands {
     const compiled = compileQuery(query, options);
     if (!compiled.ok) throw new InvalidSearchPatternError(query, compiled.error);
 
-    const { version, value } = await this.#documents.run(docId, async () => {
+    const { version, value } = await this.#documents.read(docId, async () => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
@@ -3154,7 +3154,7 @@ export class DocumentCommands {
     page: number,
     limit: number,
   ): Promise<PageTextLayerResult> {
-    const { version, value } = await this.#documents.run(docId, async () => {
+    const { version, value } = await this.#documents.read(docId, async () => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
@@ -3183,7 +3183,7 @@ export class DocumentCommands {
    * @throws the same set `viewModel` throws, for the same reasons.
    */
   async pageWordCount(docId: DocId, page: number): Promise<PageWordCountResult> {
-    const { version, value } = await this.#documents.run(docId, async () => {
+    const { version, value } = await this.#documents.read(docId, async () => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
@@ -3220,7 +3220,7 @@ export class DocumentCommands {
     pair?: { readonly label?: AskLabel; readonly bound: number },
   ): Promise<AskWindow> {
     const { docId } = about;
-    const { value } = await this.#documents.run(docId, async () => {
+    const { value } = await this.#documents.read(docId, async () => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
@@ -3283,7 +3283,7 @@ export class DocumentCommands {
     readonly sent: AskSent;
   }> {
     const { docId, page } = about;
-    const { value } = await this.#documents.run(docId, async () => {
+    const { value } = await this.#documents.read(docId, async () => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
@@ -3312,7 +3312,7 @@ export class DocumentCommands {
    * @throws the set `askPicture` throws when the document has no usable session
    */
   async firstPagePicture(docId: DocId): Promise<Uint8Array | 'none'> {
-    const { value } = await this.#documents.run(docId, async (): Promise<Uint8Array | 'none'> => {
+    const { value } = await this.#documents.read(docId, async (): Promise<Uint8Array | 'none'> => {
       // A FILE THAT OPENS ONLY WITH A PASSWORD KEEPS NO PICTURE of its page, which would be a copy anyone can open of
       // what the password protects (the owner, CR-DOC-11). Asked before the session, since a locked document has none.
       if (this.#engine.opensOnlyWithPassword(docId)) return 'none';
@@ -3350,7 +3350,7 @@ export class DocumentCommands {
    * @throws the same set `viewModel` throws, for the same reasons.
    */
   async pageStructure(docId: DocId, page: number): Promise<PageStructureResult> {
-    const { version, value } = await this.#documents.run(docId, async () => {
+    const { version, value } = await this.#documents.read(docId, async () => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
@@ -3389,7 +3389,7 @@ export class DocumentCommands {
    * @throws the same set `viewModel` throws, for the same reasons.
    */
   async pageLinks(docId: DocId, page: number): Promise<DocumentPageLinks> {
-    const { version, value } = await this.#documents.run(docId, async () => {
+    const { version, value } = await this.#documents.read(docId, async () => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
@@ -3409,7 +3409,7 @@ export class DocumentCommands {
    * @throws the same set `viewModel` throws, for the same reasons.
    */
   async pageWordBoxes(docId: DocId, page: number): Promise<{ readonly version: DocVersion } & PageWordBoxes> {
-    const { version, value } = await this.#documents.run(docId, async () => {
+    const { version, value } = await this.#documents.read(docId, async () => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
@@ -3432,7 +3432,7 @@ export class DocumentCommands {
    * @throws the same set `viewModel` throws, for the same reasons.
    */
   async destinations(docId: DocId): Promise<DocumentDestinations> {
-    const { version, value } = await this.#documents.run(docId, async () => {
+    const { version, value } = await this.#documents.read(docId, async () => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
@@ -3468,7 +3468,7 @@ export class DocumentCommands {
   async signatures(
     docId: DocId,
   ): Promise<{ readonly signatures: readonly ReadSignature[]; readonly unreadable: boolean }> {
-    return this.#documents.run(docId, async () => {
+    return this.#documents.read(docId, async () => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
@@ -3500,7 +3500,7 @@ export class DocumentCommands {
   }
 
   async layers(docId: DocId): Promise<DocumentLayers> {
-    const { version, value } = await this.#documents.run(docId, async () => {
+    const { version, value } = await this.#documents.read(docId, async () => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
@@ -3515,7 +3515,7 @@ export class DocumentCommands {
 
   /** Every font the document names, inside the document's lane: `layers`' guards in `layers`' order (B2.8). */
   async fonts(docId: DocId): Promise<DocumentFonts> {
-    const { version, value } = await this.#documents.run(docId, async () => {
+    const { version, value } = await this.#documents.read(docId, async () => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
@@ -3530,7 +3530,7 @@ export class DocumentCommands {
 
   /** Where each kind of page stamp is (ADR-0246), inside the document's lane: `fonts`' guards in `fonts`' order. */
   async pageMarks(docId: DocId): Promise<{ readonly version: DocVersion; readonly marks: PageMarksRead }> {
-    const { version, value } = await this.#documents.run(docId, async () => {
+    const { version, value } = await this.#documents.read(docId, async () => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
@@ -3553,7 +3553,7 @@ export class DocumentCommands {
    * just moved.
    */
   async annotations(docId: DocId): Promise<DocumentAnnotations> {
-    const { version, value } = await this.#documents.run(docId, async () => {
+    const { version, value } = await this.#documents.read(docId, async () => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
@@ -3576,7 +3576,7 @@ export class DocumentCommands {
    * index has just moved.
    */
   async formFields(docId: DocId): Promise<DocumentFormFields> {
-    const { version, value } = await this.#documents.run(docId, async () => {
+    const { version, value } = await this.#documents.read(docId, async () => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
@@ -3598,7 +3598,7 @@ export class DocumentCommands {
    * proposal be discarded when the page it describes has moved.
    */
   async flatFieldCandidates(docId: DocId, page: number): Promise<DocumentFlatFields> {
-    const { version, value } = await this.#documents.run(docId, async () => {
+    const { version, value } = await this.#documents.read(docId, async () => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
@@ -3624,7 +3624,7 @@ export class DocumentCommands {
    * document has moved on.
    */
   async formFieldProperties(docId: DocId, handles: readonly FormFieldHandle[]): Promise<DocumentFieldProperties> {
-    const { version, value } = await this.#documents.run(docId, async () => {
+    const { version, value } = await this.#documents.read(docId, async () => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
@@ -3642,7 +3642,7 @@ export class DocumentCommands {
    * a person filled in is a form's size, never a document's, so it is held whole to be sent.
    */
   async submitFormData(docId: DocId, format: EncodedFormDataFormat, fields: readonly string[] | null): Promise<Uint8Array> {
-    const { value } = await this.#documents.run(docId, async () => {
+    const { value } = await this.#documents.read(docId, async () => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
@@ -3656,7 +3656,7 @@ export class DocumentCommands {
 
   /** What one push button does, step by step (ADR-0259): {@link formFieldProperties}' body and lane, for one handle. */
   async buttonActions(docId: DocId, handle: FormFieldHandle): Promise<{ readonly version: DocVersion; readonly steps: readonly ButtonStep[] | null }> {
-    const { version, value } = await this.#documents.run(docId, async () => {
+    const { version, value } = await this.#documents.read(docId, async () => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
@@ -3675,7 +3675,7 @@ export class DocumentCommands {
    * session holds, which a command mutates in place.
    */
   async pageBarcodes(docId: DocId, page: number): Promise<DocumentBarcodes> {
-    const { version, value } = await this.#documents.run(docId, async () => {
+    const { version, value } = await this.#documents.read(docId, async () => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
@@ -3733,7 +3733,7 @@ export class DocumentCommands {
    * stamped with the version it describes.
    */
   async accessibilityCheck(docId: DocId): Promise<{ readonly version: DocVersion } & AccessibilityReportOnWire> {
-    const { version, value } = await this.#documents.run(docId, async () => {
+    const { version, value } = await this.#documents.read(docId, async () => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
@@ -3795,7 +3795,7 @@ export class DocumentCommands {
    * EngineUnavailableError} is the one that says so.
    */
   async textBlocks(docId: DocId, page: number, asItIs = false): Promise<DocumentTextBlocks> {
-    const { version, value } = await this.#documents.run(docId, async () => {
+    const { version, value } = await this.#documents.read(docId, async () => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
@@ -3818,7 +3818,7 @@ export class DocumentCommands {
    * built on a stale list would name an object the document has moved past.
    */
   async pageObjects(docId: DocId, page: number): Promise<DocumentPageObjects> {
-    const { version, value } = await this.#documents.run(docId, async () => {
+    const { version, value } = await this.#documents.read(docId, async () => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
@@ -3852,7 +3852,7 @@ export class DocumentCommands {
     width: number,
     height: number,
   ): Promise<DocumentPageRaster> {
-    const { version, value } = await this.#documents.run(docId, async () => {
+    const { version, value } = await this.#documents.read(docId, async () => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
@@ -3867,24 +3867,30 @@ export class DocumentCommands {
 
   /**
    * A block's faces, the read on open, inside the document's lane: {@link renderPage}'s guards in its order and for its
-   * reason, since this read too hands PDFium the document's bytes. The version comes back so the editor drops an answer
-   * for a page that has moved.
+   * reason, since this read too hands PDFium the document's bytes. FOR THE VERSION THE BLOCK WAS READ AT: one a write has
+   * replaced by the time the read starts runs nothing (`StaleReadError`, ADR-0274), since its answer would describe a block
+   * that is gone.
    */
   async blockFaces(
     docId: DocId,
     page: number,
     indices: readonly number[],
     form: FormPath | null,
+    forVersion: DocVersion,
   ): Promise<BlockFaces & { readonly version: DocVersion }> {
-    const { version, value } = await this.#documents.run(docId, async () => {
-      const failures = this.#engine.poisoned(docId);
-      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+    const { version, value } = await this.#documents.read(
+      docId,
+      async () => {
+        const failures = this.#engine.poisoned(docId);
+        if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
-      const sessions = this.#engine.sessions(docId);
-      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+        const sessions = this.#engine.sessions(docId);
+        if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
-      return this.#blockFaces(docId, sessions, page, indices, form);
-    });
+        return this.#blockFaces(docId, sessions, page, indices, form);
+      },
+      forVersion,
+    );
     return { version, fonts: value.fonts, runs: value.runs };
   }
 
@@ -3901,7 +3907,7 @@ export class DocumentCommands {
    * changes nothing.
    */
   async duplicates(docId: DocId): Promise<DocumentDuplicates> {
-    const { version, value } = await this.#documents.run(docId, async () => {
+    const { version, value } = await this.#documents.read(docId, async () => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 

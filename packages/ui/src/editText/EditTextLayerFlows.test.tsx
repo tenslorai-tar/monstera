@@ -607,6 +607,24 @@ describe('a write that grows over something else says so (B1.6)', () => {
     expect(made.view.container.querySelector('[role="status"]')?.textContent).toBe(COVERS);
   });
 
+  it('asks for the objects ONCE per write, and only those meeting the written block’s old and new extent (ADR-0274)', async () => {
+    const objects = vi.fn((_within: TextBlock['box']) => Promise.resolve({ version: asDocVersion(4), boxes: [box(90, 545, 150, 580)] }));
+    const made = await writeBody(read(4, [HEADING, grownTo(540)]), { objects });
+    for (let render = 0; render < 3; render += 1) {
+      await act(async () => {
+        await Promise.resolve();
+      });
+    }
+    // ONE READ, where every object of the page in many parts was asked before.
+    expect(objects).toHaveBeenCalledTimes(1);
+    const within = objects.mock.calls[0]?.[0];
+    // THE AREA IS THE BLOCK'S, never the page's: the block grew down to 540 from its own box.
+    expect(within).toBeDefined();
+    expect((within?.x1 ?? 0) - (within?.x0 ?? 0)).toBeLessThan(612);
+    expect(within?.y0).toBeLessThanOrEqual(540);
+    expect(made.view.container.querySelector('[role="status"]')?.textContent).toBe(COVERS);
+  });
+
   it('CONTROL: growth over nothing, or over what the block ALREADY covered, says nothing', async () => {
     const clear = await writeBody(read(4, [HEADING, grownTo(540), beside(400)]));
     expect(clear.view.container.textContent).not.toContain(COVERS);

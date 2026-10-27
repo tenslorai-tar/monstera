@@ -454,6 +454,7 @@ export {
 } from './signingRefusals.js';
 export {
   DocumentBusyError,
+  StaleReadError,
   type DocumentContext,
   type BytesWriter,
   DocumentNotOpenError,

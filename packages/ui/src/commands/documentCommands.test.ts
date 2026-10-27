@@ -7591,12 +7591,27 @@ describe('readBlockFaces', () => {
       return Promise.resolve(ok({ version: asDocVersion(4), fonts: [font(false)], runs: [0, null, 0] }));
     });
     const read = await readBlockFaces(client, DOC, 3, blockOf(3), AT_FOUR);
-    expect(asked).toStrictEqual([{ docId: DOC, page: 3, indices: [0, 1, 2] }]);
+    expect(asked).toStrictEqual([{ docId: DOC, page: 3, indices: [0, 1, 2], version: asDocVersion(4) }]);
     expect(read.fonts).toStrictEqual([font(false)]);
     expect([...read.runs]).toStrictEqual([[0, 0], [2, 0]]);
     // CONTROL: the page's own block above named no form, so the path here is the block's and not a constant.
     await readBlockFaces(client, DOC, 3, blockOf(3, [{ name: 'Fm1', occurrence: 0 }]), AT_FOUR);
-    expect(asked.at(-1)).toStrictEqual({ docId: DOC, page: 3, indices: [0, 1, 2], form: [{ name: 'Fm1', occurrence: 0 }] });
+    expect(asked.at(-1)).toStrictEqual({ docId: DOC, page: 3, indices: [0, 1, 2], form: [{ name: 'Fm1', occurrence: 0 }], version: asDocVersion(4) });
+  });
+
+  it('asks ONCE per block and read, however often the block is opened, and again for a new read (ADR-0274)', async () => {
+    let asks = 0;
+    const client = createClient(channels, () => {
+      asks += 1;
+      return Promise.resolve(ok({ version: asDocVersion(4), fonts: [font(false)], runs: [0] }));
+    });
+    const read: BlocksRead = { version: asDocVersion(4), rewrite: 'operators' };
+    // FIVE FIRST PRESSES on one block of one read: the measured shape, a read at every one.
+    for (let press = 0; press < 5; press += 1) await readBlockFaces(client, DOC, 0, blockOf(1), read);
+    expect(asks).toBe(1);
+    // A NEW READ, a new version of the page: its blocks are asked about again.
+    await readBlockFaces(client, DOC, 0, blockOf(1), { version: asDocVersion(5), rewrite: 'operators' });
+    expect(asks).toBe(2);
   });
 
   it('a block past one read asks in reads of MAX_BLOCK_FACE_RUNS, and the second read’s places follow the first’s fonts', async () => {

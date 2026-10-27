@@ -67,7 +67,8 @@ export interface EditTextLayerProps {
   readonly blockFaces: (block: TextBlock, read: BlocksRead) => Promise<BlockFaces>;
   /** The text PDF.js shows on this page and the face it loaded for each piece; absent where no page is drawn. */
   readonly shown?: () => Promise<ShownPage | undefined>;
-  readonly objects?: () => Promise<{ readonly version: DocVersion; readonly boxes: readonly TextBlock['box'][] } | undefined>;
+  /** The page's pictures and drawings that meet `within`, at the version read (B1.6). */
+  readonly objects?: (within: TextBlock['box']) => Promise<{ readonly version: DocVersion; readonly boxes: readonly TextBlock['box'][] } | undefined>;
   readonly onRecognise?: () => void;
   readonly pictureNoted?: boolean;
   readonly onLeave: () => void;
@@ -227,16 +228,6 @@ export function EditTextLayer({
         );
   const [coveredObjects, setCoveredObjects] = useState<{ readonly version: DocVersion; readonly count: number }>();
   const readAt = blocks?.version;
-  useEffect(() => {
-    if (grown === undefined || written === undefined || objects === undefined || readAt === undefined) return undefined;
-    let current = true;
-    void objects().then((read) => {
-      if (current && read?.version === readAt) setCoveredObjects({ version: readAt, count: newlyCovered(written.box, pageBox(grown), read.boxes) });
-    });
-    return () => {
-      current = false;
-    };
-  }, [grown, written, objects, readAt]);
   const covers = grown !== undefined && (coveredWords > 0 || (coveredObjects?.version === readAt && (coveredObjects?.count ?? 0) > 0));
   /** The block pressed WHILE ANOTHER WAS OPEN, opened in the read after that one's write (ADR-0180 Decision 8). */
   const [next, setNext] = useState<{ readonly box: TextBlock['box']; readonly opening: Opening; readonly version: DocVersion } | undefined>();
@@ -258,6 +249,34 @@ export function EditTextLayer({
   const [fresh, setFresh] = useState<{ readonly made: FreshBox; readonly version: DocVersion } | undefined>();
   const freshOpen = fresh !== undefined && fresh.version === blocks?.version ? fresh.made : undefined;
   const editing = open !== undefined || freshOpen !== undefined;
+
+  // THE CHECK AFTER A WRITE (B1.6), once per write and only when the editor has let go, about the written block's area
+  // alone: before, it read every object of the page, in many parts on a dense page, each a walk in the document's lane
+  // ahead of the next finish (77 reads, 125.7 s on the owner's laptop, ADR-0274's measurement).
+  const objectsNow = useRef(objects);
+  useEffect(() => {
+    objectsNow.current = objects;
+  }, [objects]);
+  // THE BOX BY VALUE, so a render that rebuilt the same block asks nothing.
+  const { x0: gx0, y0: gy0, x1: gx1, y1: gy1 } = grown === undefined ? { x0: Number.NaN, y0: Number.NaN, x1: Number.NaN, y1: Number.NaN } : pageBox(grown);
+  useEffect(() => {
+    const ask = objectsNow.current;
+    const grownBox = { x0: gx0, y0: gy0, x1: gx1, y1: gy1 };
+    if (editing || Number.isNaN(gx0) || written === undefined || ask === undefined || readAt === undefined) return undefined;
+    let current = true;
+    const area = {
+      x0: Math.min(written.box.x0, grownBox.x0),
+      y0: Math.min(written.box.y0, grownBox.y0),
+      x1: Math.max(written.box.x1, grownBox.x1),
+      y1: Math.max(written.box.y1, grownBox.y1),
+    };
+    void ask(area).then((read) => {
+      if (current && read?.version === readAt) setCoveredObjects({ version: readAt, count: newlyCovered(written.box, grownBox, read.boxes) });
+    });
+    return () => {
+      current = false;
+    };
+  }, [editing, gx0, gy0, gx1, gy1, written, readAt]);
 
   const openBlock = open === undefined ? undefined : blocks?.blocks[open];
   // THE OPEN BLOCK'S FACES, read once as it is selected and kept for its life (`runFaces.ts`).

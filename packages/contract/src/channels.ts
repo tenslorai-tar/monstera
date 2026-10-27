@@ -5977,7 +5977,18 @@ export const channels = {
    */
   'document.pageObjects': channel(
     'One part of the objects on a page, with each one’s kind, box and fill, in the editing engine’s numbering.',
-    z.object({ docId: docIdSchema, page: z.number().int().nonnegative(), from: listPartFromSchema }),
+    z.object({
+      docId: docIdSchema,
+      page: z.number().int().nonnegative(),
+      from: listPartFromSchema,
+      /**
+       * Only the objects whose box meets this one, in the page's coordinates; absent for every object. The check after a
+       * written block asks about the block's own area (B1.6): a dense page's every object came back in many parts, each
+       * a walk of the page in the lane, 77 of them taking 125.7 s on the owner's laptop
+       * ([ADR-0274](../../../docs/DECISIONS/0274-a-documents-lane-runs-a-write-before-a-queued-read.md)'s measurement).
+       */
+      within: pdfBoxSchema.exactOptional(),
+    }),
     z.object({
       version: docVersionSchema,
       /** Where the next part begins, or `null` for the last. {@link listPartNextSchema}. */
@@ -6095,6 +6106,12 @@ export const channels = {
       indices: z.array(z.number().int().min(0).max(MAX_OBJECT_INDEX)).min(1).max(MAX_BLOCK_FACE_RUNS).readonly(),
       /** The form placement the block is in, as `document.textBlocks` named it (ADR-0269); absent for the page's own. */
       form: formPathSchema.exactOptional(),
+      /**
+       * The version the block was read at. A write that has replaced it by the time this read reaches the lane makes the
+       * answer describe a block that is gone, so nothing runs and it answers `stale-target`
+       * ([ADR-0274](../../../docs/DECISIONS/0274-a-documents-lane-runs-a-write-before-a-queued-read.md) Decision 3).
+       */
+      version: docVersionSchema,
     }),
     z
       .object({
@@ -6123,7 +6140,7 @@ export const channels = {
       .refine((answer) => answer.runs.every((at) => at === null || at < answer.fonts.length), {
         message: 'a run names a font the answer does not carry',
       }),
-    ['document-not-open', 'document-poisoned'],
+    ['document-not-open', 'document-poisoned', 'stale-target'],
   ),
 
   'document.duplicatePages': channel(

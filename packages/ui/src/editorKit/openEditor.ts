@@ -88,7 +88,7 @@ export const KEEPS_EDITOR = 'data-keeps-editor';
 let open: OpenEditor | undefined;
 let unsubscribeStore: (() => void) | undefined;
 const listeners = new Set<() => void>();
-/** Counts every change: the editor opening, closing, or its store publishing. */
+/** Counts every change a subscriber can see: the editor opening, closing, or what {@link openEditorSnapshot} shows moving. */
 let revision = 0;
 
 const announce = (): void => {
@@ -96,17 +96,35 @@ const announce = (): void => {
   for (const listener of [...listeners]) listener();
 };
 
+/** What {@link openEditorSnapshot} last showed, as one comparable string, while an editor is open. */
+let shownKey: string | undefined;
+
+/**
+ * A change in the open editor's store, announced ONLY WHERE WHAT A SUBSCRIBER READS MOVED: its words' state, its
+ * paragraph's, its fonts or its faces. A letter typed changes none of them, and announcing it anyway re-rendered the
+ * Properties panel and recomputed every command's `when` on every key (the local agent's measurement on the owner's
+ * laptop, 2026-10-27: keystrokes from 12 / 23 ms at M1 to 22 / 36 ms).
+ */
+const storeChanged = (): void => {
+  const key = JSON.stringify(shownNow());
+  if (key === shownKey) return;
+  shownKey = key;
+  announce();
+};
+
 /** Registers the open editor; the answer unregisters it. */
 export function registerEditor(editor: OpenEditor): () => void {
   unsubscribeStore?.();
   open = editor;
-  unsubscribeStore = editor.store.subscribe(announce);
+  unsubscribeStore = editor.store.subscribe(storeChanged);
+  shownKey = JSON.stringify(shownNow());
   announce();
   return () => {
     if (open !== editor) return;
     unsubscribeStore?.();
     unsubscribeStore = undefined;
     open = undefined;
+    shownKey = undefined;
     announce();
   };
 }
@@ -249,10 +267,13 @@ let snapshot: { readonly revision: number; readonly value: EditorSnapshot } | un
 
 /** `useSyncExternalStore`'s snapshot: ONE OBJECT PER REVISION, the same object until something it shows changes. */
 export function openEditorSnapshot(): EditorSnapshot {
-  if (snapshot?.revision !== revision) {
-    snapshot = { revision, value: { state: openEditorState(), paragraph: openParagraphState(), fonts: openEditorFonts(), faces: openEditorFaces() } };
-  }
+  if (snapshot?.revision !== revision) snapshot = { revision, value: shownNow() };
   return snapshot.value;
+}
+
+/** What a control showing the open editor reads, made now. */
+function shownNow(): EditorSnapshot {
+  return { state: openEditorState(), paragraph: openParagraphState(), fonts: openEditorFonts(), faces: openEditorFaces() };
 }
 
 /** The sizes a step up or down moves through, a word processor's list. */

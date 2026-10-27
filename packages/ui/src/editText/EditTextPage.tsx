@@ -4,6 +4,7 @@ import { type ReactElement, useCallback, useEffect, useState } from 'react';
 import type { OverlayPage } from '../annotations/annotationSpace.js';
 import { useSettledRead } from '../useSettledPages.js';
 import type { PatchArea } from './AreaPatch.js';
+import type { TextBlock } from '../textBlock.js';
 import type { PageBlocks, TextEditing } from './editing.js';
 import { EditTextLayer } from './EditTextLayer.js';
 import type { ShownPage } from './pdfjsFaces.js';
@@ -59,7 +60,7 @@ export function EditTextPage({
   const kept = behind ? [answers.current, answers.previous].find((each) => each?.version === holding) : undefined;
   const answer = kept ?? (answers.current?.version === version ? answers.current : undefined);
   // ONE FUNCTION PER PAGE AND EDITING, so the layer's read of the page's objects runs once per write.
-  const pageObjects = useCallback(() => editing.objects(page), [editing, page]);
+  const pageObjects = useCallback((within: TextBlock['box']) => editing.objects(page, within), [editing, page]);
   const reads = useSettledRead(paused, version);
   useEffect(() => {
     if (!reads) return;

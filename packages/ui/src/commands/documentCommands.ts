@@ -4891,7 +4891,7 @@ export const NO_BLOCK_FACES: BlockFaces = { fonts: [], runs: new Map() };
  * written as the writer writes it either way. An answer at another version describes objects the open block no longer
  * names; a refusal is a document not open or poisoned, which the edit the person makes next says in its own words.
  */
-export async function readBlockFaces(
+export function readBlockFaces(
   client: ContractClient,
   docId: DocId,
   page: number,
@@ -4899,12 +4899,37 @@ export async function readBlockFaces(
   /** The read that named the block: its version. */
   read: BlocksRead,
 ): Promise<BlockFaces> {
+  // ONCE PER BLOCK AND READ (ADR-0274's measurement: a read at every first press on a block, 0.9 s each in the lane ahead
+  // of the finish). Held on the read, so a new version asks again and the answers go with the read they describe.
+  const byRead = facesAsked.get(client) ?? new WeakMap<BlocksRead, Map<string, Promise<BlockFaces>>>();
+  facesAsked.set(client, byRead);
+  const held = byRead.get(read) ?? new Map<string, Promise<BlockFaces>>();
+  byRead.set(read, held);
+  const key = JSON.stringify([docId, page, block.form ?? null, block.lines.map((line) => line.runs.map((run) => run.index))]);
+  const known = held.get(key);
+  if (known !== undefined) return known;
+  const asking = askBlockFaces(client, docId, page, block, read);
+  held.set(key, asking);
+  return asking;
+}
+
+/** The answers {@link readBlockFaces} has asked for, by the client asked and the read that named their blocks. */
+const facesAsked = new WeakMap<ContractClient, WeakMap<BlocksRead, Map<string, Promise<BlockFaces>>>>();
+
+async function askBlockFaces(client: ContractClient, docId: DocId, page: number, block: TextBlock, read: BlocksRead): Promise<BlockFaces> {
   const indices = [...new Set(block.lines.flatMap((line) => line.runs.map((run) => run.index)))];
   const fonts: BlockFontRead[] = [];
   const runs = new Map<number, number>();
   for (let from = 0; from < indices.length; from += MAX_BLOCK_FACE_RUNS) {
     const asked = indices.slice(from, from + MAX_BLOCK_FACE_RUNS);
-    const answer = await client['document.blockFaces']({ docId, page, indices: asked, ...(block.form === undefined ? {} : { form: block.form }) });
+    const answer = await client['document.blockFaces']({
+      docId,
+      page,
+      indices: asked,
+      ...(block.form === undefined ? {} : { form: block.form }),
+      // FOR THIS READ'S VERSION: a write that replaced it first makes main run nothing (`stale-target`, ADR-0274).
+      version: read.version,
+    });
     if (!answer.ok || answer.value.version !== read.version) return NO_BLOCK_FACES;
     const base = fonts.length;
     fonts.push(...answer.value.fonts);
@@ -5136,11 +5161,13 @@ export async function readPageContentBoxes(
   client: DocumentCommandDeps['client'],
   docId: DocId,
   page: number,
+  /** Only what meets this area of the page, where given (`document.pageObjects`' `within`). */
+  within?: AnnotationRect,
 ): Promise<{ readonly version: DocVersion; readonly boxes: readonly AnnotationRect[] } | undefined> {
   // EVERY PART, read whole at one version (ADR-0130): a page drawn one glyph per object is thousands of objects.
   const [content, marks] = await Promise.all([
     readWholeList(
-      (from) => client['document.pageObjects']({ docId, page, from }),
+      (from) => client['document.pageObjects']({ docId, page, from, ...(within === undefined ? {} : { within }) }),
       (part) => part.objects,
     ),
     readWholeList(

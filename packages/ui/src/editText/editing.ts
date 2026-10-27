@@ -50,9 +50,10 @@ export interface TextEditing {
   readonly familiesOf?: () => Promise<(font: string) => string | undefined>;
   /**
    * The boxes of a page's pictures and drawings (everything but text, which the blocks are), at the version they were
-   * read, for the note that a written block now runs over one (B1.6); `undefined` where the read was refused.
+   * read, for the note that a written block now runs over one (B1.6); `undefined` where the read was refused. Only those
+   * meeting `within`, the written block's area: the whole page was many reads in the lane on a dense page.
    */
-  readonly objects: (page: number) => Promise<{ readonly version: DocVersion; readonly boxes: readonly TextBlock['box'][] } | undefined>;
+  readonly objects: (page: number, within: TextBlock['box']) => Promise<{ readonly version: DocVersion; readonly boxes: readonly TextBlock['box'][] } | undefined>;
   /**
    * The kind of face a letter is drawn in where nothing closer is known (`editing.fallback-face`). REQUIRED, and given no
    * default on the way down, so a composition that forgets the person's setting is a compile error rather than an editor
