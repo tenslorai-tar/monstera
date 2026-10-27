@@ -311,6 +311,21 @@ async function settle(): Promise<void> {
   });
 }
 
+/**
+ * Until the pages' text has been read and its answer has landed: EVERY case that asserts what a page's read produces
+ * waits here, never on {@link settle} alone. A page reads once the visible set has held still (`useSettledPages`), on a
+ * timer — at once for the first set, `SETTLE_MS` for a later one — so two microtasks may or may not be enough, and the
+ * cases that took them failed on CI's Linux leg now and then (the picture page's note at 1e09f522 and 6fbe6389; the App
+ * case of ZZZZZZZZ-31 before them). A case asserting that a read draws NOTHING needs the read to have happened even
+ * more, or it passes before the page has asked.
+ */
+async function readsAnswered(textAsked: readonly unknown[]): Promise<void> {
+  await vi.waitFor(() => {
+    expect(textAsked.length).toBeGreaterThan(0);
+  });
+  await settle();
+}
+
 describe('PageList', () => {
   it('renders a slot for every page before anything is drawn', async () => {
     const { client } = clientAnswering();
@@ -627,7 +642,7 @@ describe('PageList', () => {
         menuAt={undefined}
       />,
     );
-    await settle();
+    await readsAnswered(textAsked);
 
     // ONE PAGE, AND IT IS THE VISIBLE ONE, zero-based as every page index
     // crossing the contract is. A layer that fetched the whole document would
@@ -695,7 +710,7 @@ describe('PageList', () => {
   });
 
   it('renders one selectable element per line, carrying the channel’s text', async () => {
-    const { client } = clientAnswering(LINES);
+    const { client, textAsked } = clientAnswering(LINES);
     const { container } = render(
       <PageList
         client={client}
@@ -720,7 +735,7 @@ describe('PageList', () => {
         menuAt={undefined}
       />,
     );
-    await settle();
+    await readsAnswered(textAsked);
 
     const rendered = [...container.querySelectorAll('.m-text-line')].map((el) => el.textContent);
     // THE TEXT ITSELF, not a count. A count passes for a layer that rendered
@@ -739,7 +754,7 @@ describe('PageList', () => {
    * offering an explanation for something that needs none.
    */
   it('says why a picture-only page has nothing to select', async () => {
-    const { client } = clientAnswering([], 'image-only');
+    const { client, textAsked } = clientAnswering([], 'image-only');
     const { container } = render(
       <PageList
         client={client}
@@ -764,7 +779,7 @@ describe('PageList', () => {
         menuAt={undefined}
       />,
     );
-    await settle();
+    await readsAnswered(textAsked);
 
     expect(container.querySelector('[data-page-note="0"]')?.textContent).toContain('picture');
     // CONTROL FOR W7: outside Edit text the note offers nothing, since recognition there is the OCR command's.
@@ -772,7 +787,7 @@ describe('PageList', () => {
   });
 
   it('W7: in Edit text, a picture page’s note offers to recognise it, and the press recognises THAT page', async () => {
-    const { client } = clientAnswering([], 'image-only');
+    const { client, textAsked } = clientAnswering([], 'image-only');
     const onRecognise = vi.fn();
     const editing: TextEditing = {
       mode: 'text',
@@ -824,7 +839,7 @@ describe('PageList', () => {
         editing={editing}
       />,
     );
-    await settle();
+    await readsAnswered(textAsked);
     const note = container.querySelector('[data-page-note="0"]');
     const offer = note?.querySelector('button');
     if (offer === null || offer === undefined) throw new Error('the picture page offers no recognition');
@@ -839,7 +854,7 @@ describe('PageList', () => {
     // render an empty layer; only one of them is a page a reader is wondering
     // about. A note here would be an explanation of a blank page, which is the
     // wired-tools defect wearing a sentence.
-    const { client } = clientAnswering([], 'empty');
+    const { client, textAsked } = clientAnswering([], 'empty');
     const { container } = render(
       <PageList
         client={client}
@@ -864,13 +879,13 @@ describe('PageList', () => {
         menuAt={undefined}
       />,
     );
-    await settle();
+    await readsAnswered(textAsked);
 
     expect(container.querySelector('[data-page-note="0"]')).toBeNull();
   });
 
   it('places a line at the box the channel sent, converted through the page', async () => {
-    const { client } = clientAnswering(LINES);
+    const { client, textAsked } = clientAnswering(LINES);
     const { container } = render(
       <PageList
         client={client}
@@ -895,7 +910,7 @@ describe('PageList', () => {
         menuAt={undefined}
       />,
     );
-    await settle();
+    await readsAnswered(textAsked);
 
     const first = container.querySelector('.m-text-line');
     if (!(first instanceof HTMLElement)) throw new Error('a line was rendered');
@@ -913,7 +928,7 @@ describe('PageList', () => {
   });
 
   it('mounts NO layer for a page with no text, rather than an empty one', async () => {
-    const { client } = clientAnswering([]);
+    const { client, textAsked } = clientAnswering([]);
     const { container } = render(
       <PageList
         client={client}
@@ -938,7 +953,7 @@ describe('PageList', () => {
         menuAt={undefined}
       />,
     );
-    await settle();
+    await readsAnswered(textAsked);
 
     // An empty layer would still accept pointer events, so it would swallow
     // drags meant for the page while offering nothing to select. *Absent* is
