@@ -161,6 +161,66 @@ describe('the right-click menu on the open editor (ADR-0180 Decision 8)', () => 
     expect(made.onCommit.mock.calls[0]?.[1]).toBe('the quick fox');
   });
 
+  it('over a CORRECTLY spelt word the menu offers no replacements and no dictionary, only the editing verbs', async () => {
+    const { spell, look } = spelling();
+    const made = layer(APART, () => Promise.resolve('written'), { spell });
+    openForWords(made, 1);
+    // `the`, which the spelling knows: it is asked, and answers nothing to offer.
+    selectIn(made.surface(), { paragraph: 0, offset: 1 });
+    await rightClick(made.surface());
+    await screen.findByRole('menuitem', { name: 'Paste' });
+    expect(look).toHaveBeenCalledWith('the');
+    expect(screen.queryByRole('menuitem', { name: 'quick' })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: /to the dictionary/u })).toBeNull();
+    // CONTROL: the same menu over `quikc` offers both, so the absences above are the word's.
+    await act(async () => {
+      fireEvent.keyDown(must(screen.getByRole('menu'), 'menu'), { key: 'Escape' });
+      await Promise.resolve();
+    });
+    selectIn(made.surface(), { paragraph: 0, offset: 6 });
+    await rightClick(made.surface());
+    expect(await screen.findByRole('menuitem', { name: 'quick' })).toBeDefined();
+    expect(screen.getByRole('menuitem', { name: 'Add “quikc” to the dictionary' })).toBeDefined();
+  });
+
+  it('the PAGE’S OWN MENU is not opened by a right-click over the editor, and is by one over the page', async () => {
+    const pageMenu = vi.fn();
+    const onCommit = vi.fn(() => Promise.resolve<BlockCommit>('written'));
+    const view = render(
+      <I18nProvider i18n={i18n}>
+        <div data-testid="page" onContextMenu={pageMenu}>
+          <EditTextLayer
+            blockFaces={() => Promise.resolve(NO_BLOCK_FACES)}
+            blocks={APART}
+            geometry={{ ...GEOMETRY, crop: [...GEOMETRY.crop] }}
+            onCommit={onCommit}
+            onLeave={vi.fn()}
+            page={0}
+            paperAt={() => undefined}
+          />
+        </div>
+      </I18nProvider>,
+    );
+    fireEvent.click(must(view.container.querySelector<HTMLElement>('[data-text-block="1"]'), 'outline'), { detail: 1 });
+    act(() => {
+      fireEvent.keyDown(must(view.container.querySelector<HTMLElement>('[data-kit-frame]'), 'frame'), { key: 'Enter' });
+    });
+    await rightClick(must(view.container.querySelector<HTMLElement>('[data-kit-surface]'), 'surface'));
+    const paste = await screen.findByRole('menuitem', { name: 'Paste' });
+    expect(pageMenu).not.toHaveBeenCalled();
+    // AND OVER THE OPEN MENU ITSELF: Base UI's trigger stops a right-click over the words, but the popup is a portal
+    // outside it whose events still bubble up React's tree, so only `EditorMenu`'s own wrapper stops this one.
+    fireEvent.contextMenu(paste);
+    expect(pageMenu).not.toHaveBeenCalled();
+    // CONTROL: a right-click on the page outside the editor reaches the page's menu, so the case above is the editor's.
+    await act(async () => {
+      fireEvent.keyDown(must(screen.getByRole('menu'), 'menu'), { key: 'Escape' });
+      await Promise.resolve();
+    });
+    fireEvent.contextMenu(screen.getByTestId('page'));
+    expect(pageMenu).toHaveBeenCalledTimes(1);
+  });
+
   it('Add to the dictionary calls the spelling’s keep with the word, and a refusal is said beside the words', async () => {
     const { spell, keep } = spelling(SPELLING_DICTIONARY_FULL);
     const made = layer(APART, () => Promise.resolve('written'), { spell });
