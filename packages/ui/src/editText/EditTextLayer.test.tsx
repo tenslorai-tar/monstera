@@ -150,6 +150,44 @@ describe('Edit text on the editor kit (ADR-0271)', () => {
     expect(onCommit.mock.calls[0]?.[3]).toStrictEqual({ marks: [{ from: 0, to: 11, set: { bold: true } }] });
   });
 
+  it('ONE WRITE PER FINISH: a format, typing and a handle drag write nothing, and the finish writes all three at once', async () => {
+    const { outline, frame, surface, onCommit } = layer();
+    fireEvent.click(outline(0), { detail: 1 });
+    act(() => {
+      formatOpenEditor({ kind: 'toggle', property: 'bold' });
+    });
+    expect(onCommit).not.toHaveBeenCalled();
+    act(() => {
+      fireEvent.keyDown(must(frame(), 'frame'), { key: 'Enter' });
+    });
+    act(() => {
+      typeAt(surface(), ' news', { paragraph: 0, offset: 11 });
+    });
+    expect(onCommit).not.toHaveBeenCalled();
+    const handle = must(frame()?.querySelector<HTMLElement>('[data-handle="e"]'), 'width handle');
+    // POINTER CAPTURE IS THE BROWSER'S, which happy-dom does not keep; the drag reads only the pointer's coordinates.
+    handle.setPointerCapture = vi.fn();
+    handle.releasePointerCapture = vi.fn();
+    act(() => {
+      fireEvent.pointerDown(handle, { clientX: 300, clientY: 690, pointerId: 1 });
+      fireEvent.pointerMove(handle, { clientX: 340, clientY: 690, pointerId: 1 });
+      fireEvent.pointerMove(handle, { clientX: 360, clientY: 690, pointerId: 1 });
+      fireEvent.pointerUp(handle, { clientX: 360, clientY: 690, pointerId: 1 });
+    });
+    // THE DECISION: three changes and no write among them.
+    expect(onCommit).not.toHaveBeenCalled();
+    await act(async () => {
+      fireEvent.keyDown(surface(), { key: 'Escape' });
+      await Promise.resolve();
+    });
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(onCommit.mock.calls[0]?.[1]).toBe('Garden club news');
+    const formatting = onCommit.mock.calls[0]?.[3] as { marks?: unknown[]; place?: { width?: number } } | undefined;
+    // ALL THREE IN THE ONE COMMAND: the bold, the words and the width the handle gave.
+    expect(JSON.stringify(formatting?.marks)).toContain('"bold":true');
+    expect(formatting?.place?.width).toBeGreaterThan(228);
+  });
+
   it('a press OUTSIDE finishes and keeps the changes', async () => {
     const { outline, surface, onCommit } = layer();
     fireEvent.click(outline(0), { detail: 1 });
