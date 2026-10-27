@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
-import type { EditedBlock, WindowEditAction } from '@monstera/contract';
+import type { EditedBlock, PageInsert, WindowEditAction } from '@monstera/contract';
 import { type MessageKey, asDocVersion } from '@monstera/shared';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -161,6 +161,66 @@ describe('the right-click menu on the open editor (ADR-0180 Decision 8)', () => 
     expect(made.onCommit.mock.calls[0]?.[1]).toBe('the quick fox');
   });
 
+  it('over a CORRECTLY spelt word the menu offers no replacements and no dictionary, only the editing verbs', async () => {
+    const { spell, look } = spelling();
+    const made = layer(APART, () => Promise.resolve('written'), { spell });
+    openForWords(made, 1);
+    // `the`, which the spelling knows: it is asked, and answers nothing to offer.
+    selectIn(made.surface(), { paragraph: 0, offset: 1 });
+    await rightClick(made.surface());
+    await screen.findByRole('menuitem', { name: 'Paste' });
+    expect(look).toHaveBeenCalledWith('the');
+    expect(screen.queryByRole('menuitem', { name: 'quick' })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: /to the dictionary/u })).toBeNull();
+    // CONTROL: the same menu over `quikc` offers both, so the absences above are the word's.
+    await act(async () => {
+      fireEvent.keyDown(must(screen.getByRole('menu'), 'menu'), { key: 'Escape' });
+      await Promise.resolve();
+    });
+    selectIn(made.surface(), { paragraph: 0, offset: 6 });
+    await rightClick(made.surface());
+    expect(await screen.findByRole('menuitem', { name: 'quick' })).toBeDefined();
+    expect(screen.getByRole('menuitem', { name: 'Add “quikc” to the dictionary' })).toBeDefined();
+  });
+
+  it('the PAGE’S OWN MENU is not opened by a right-click over the editor, and is by one over the page', async () => {
+    const pageMenu = vi.fn();
+    const onCommit = vi.fn(() => Promise.resolve<BlockCommit>('written'));
+    const view = render(
+      <I18nProvider i18n={i18n}>
+        <div data-testid="page" onContextMenu={pageMenu}>
+          <EditTextLayer
+            blockFaces={() => Promise.resolve(NO_BLOCK_FACES)}
+            blocks={APART}
+            geometry={{ ...GEOMETRY, crop: [...GEOMETRY.crop] }}
+            onCommit={onCommit}
+            onLeave={vi.fn()}
+            page={0}
+            paperAt={() => undefined}
+          />
+        </div>
+      </I18nProvider>,
+    );
+    fireEvent.click(must(view.container.querySelector<HTMLElement>('[data-text-block="1"]'), 'outline'), { detail: 1 });
+    act(() => {
+      fireEvent.keyDown(must(view.container.querySelector<HTMLElement>('[data-kit-frame]'), 'frame'), { key: 'Enter' });
+    });
+    await rightClick(must(view.container.querySelector<HTMLElement>('[data-kit-surface]'), 'surface'));
+    const paste = await screen.findByRole('menuitem', { name: 'Paste' });
+    expect(pageMenu).not.toHaveBeenCalled();
+    // AND OVER THE OPEN MENU ITSELF: Base UI's trigger stops a right-click over the words, but the popup is a portal
+    // outside it whose events still bubble up React's tree, so only `EditorMenu`'s own wrapper stops this one.
+    fireEvent.contextMenu(paste);
+    expect(pageMenu).not.toHaveBeenCalled();
+    // CONTROL: a right-click on the page outside the editor reaches the page's menu, so the case above is the editor's.
+    await act(async () => {
+      fireEvent.keyDown(must(screen.getByRole('menu'), 'menu'), { key: 'Escape' });
+      await Promise.resolve();
+    });
+    fireEvent.contextMenu(screen.getByTestId('page'));
+    expect(pageMenu).toHaveBeenCalledTimes(1);
+  });
+
   it('Add to the dictionary calls the spelling’s keep with the word, and a refusal is said beside the words', async () => {
     const { spell, keep } = spelling(SPELLING_DICTIONARY_FULL);
     const made = layer(APART, () => Promise.resolve('written'), { spell });
@@ -241,15 +301,95 @@ describe('the right-click menu on the open editor (ADR-0180 Decision 8)', () => 
   });
 });
 
+describe('Add text takes the style of the words nearby (the owner’s B4.3)', () => {
+  const NEARBY = { size: 11, colour: { r: 20, g: 40, b: 60 }, serif: true, mono: false, italic: false, bold: true };
+  /** A paragraph whose box runs 586 to 600 up the page, set 11 point bold serif in a blue, its runs naming `font`. */
+  const styled = (font?: string): TextBlock => {
+    const style = font === undefined ? NEARBY : { ...NEARBY, font };
+    const made = block(9, ['A paragraph above.'], 600, 500);
+    return { ...made, style, lines: made.lines.map((line) => ({ ...line, runs: line.runs.map((run) => ({ ...run, style })) })) };
+  };
+
+  /** Presses the empty page at (100, 200) of the layer, types `A new note` into the box it opens, and finishes. */
+  async function addOn(blocks: PageBlocks) {
+    const onInsert = vi.fn((_insert: PageInsert, _read: BlocksRead) => Promise.resolve<BlockCommit>('written'));
+    const made = layer(blocks, () => Promise.resolve('written'), { adding: true, onInsert });
+    fireEvent.click(must(made.view.container.querySelector<HTMLElement>('[data-text-add-surface]'), 'add surface'), { clientX: 100, clientY: 200, detail: 1 });
+    act(() => {
+      typeAt(made.surface(), 'A new note', { paragraph: 0, offset: 0 });
+    });
+    await escape(made.surface());
+    expect(onInsert).toHaveBeenCalledTimes(1);
+    return must(onInsert.mock.calls[0]?.[0], 'insert');
+  }
+
+  it('a box begun beside a paragraph is sent in its size, weight, slant and colour, and its kind’s family', async () => {
+    // THE PAGE IS 792 HIGH AT ZOOM 1: a press 200 down is 592 up, inside the paragraph's band (586 to 600).
+    const insert = await addOn(read(5, [styled()]));
+    expect(insert).toMatchObject({
+      size: 11,
+      base: { family: 'Times New Roman', bold: true, italic: false, colour: { r: 20, g: 40, b: 60 } },
+      text: 'A new note',
+    });
+  });
+
+  it('beside words whose font the page names, the box is set in THAT font, by its name', async () => {
+    const insert = await addOn(read(5, [styled('ABCDEF+Garamond')]));
+    expect(insert.base?.family).toBe('ABCDEF+Garamond');
+  });
+
+  it('CONTROL: on a page with no words the box starts in 12 point black Arial, so the cases above are the nearby style', async () => {
+    const insert = await addOn(read(5, []));
+    expect(insert).toMatchObject({ size: 12, base: { family: 'Arial', bold: false, italic: false, colour: { r: 0, g: 0, b: 0 } }, text: 'A new note' });
+  });
+});
+
+describe('the paper over a changed paragraph (ADR-0271 section 3)', () => {
+  /** Opens BODY, changes its words, and answers the looks of the covers laid over the page's copy of them. */
+  function coversAfterTyping(paperAt: (x: number, y: number) => string | undefined): { backgroundImage: string; backgroundColor: string }[] {
+    const made = layer(APART, () => Promise.resolve('written'), { paperAt });
+    openForWords(made, 1);
+    act(() => {
+      typeAt(made.surface(), '!', { paragraph: 0, offset: 13 });
+    });
+    const covers = [...made.view.container.querySelectorAll<HTMLElement>('.m-kit-cover')];
+    // THE CHANGED PARAGRAPH IS PAPERED, or the looks below would be of nothing.
+    expect(covers.length).toBeGreaterThan(0);
+    const looks = covers.map((cover) => ({ backgroundImage: cover.style.backgroundImage, backgroundColor: cover.style.backgroundColor }));
+    made.view.unmount();
+    return looks;
+  }
+
+  it('is a GRADIENT where the page behind the block is shaded, top to bottom, ending at the colours sampled', () => {
+    // BODY is placed 178 to 192 down the layer; the paper is sampled 3 pixels outside each corner, 175 and 195.
+    const looks = coversAfterTyping((_x, y) => (y < 185 ? 'rgb(200, 200, 200)' : 'rgb(100, 100, 100)'));
+    for (const look of looks) {
+      expect(look.backgroundImage).toBe('linear-gradient(to bottom, rgb(200, 200, 200), rgb(100, 100, 100))');
+      expect(look.backgroundColor).toBe('');
+    }
+  });
+
+  it('CONTROL: three corners of four agreeing is flat paper with a stray neighbour, drawn in one colour', () => {
+    const looks = coversAfterTyping((x, y) => (x < 70 && y < 180 ? 'rgb(0, 0, 0)' : 'rgb(250, 250, 250)'));
+    for (const look of looks) {
+      expect(look.backgroundColor).toBe('rgb(250, 250, 250)');
+      expect(look.backgroundImage).toBe('');
+    }
+  });
+});
+
 describe('join and split from the menu (ADR-0180 Decision 7)', () => {
-  /** An upper block of three paragraphs, and one 22 points below it: close enough to be its continuation. */
+  /**
+   * An upper block of three paragraphs, and one 41 points below it: near enough to be its continuation (within four
+   * sizes, 44), and far enough that a split's half moved down 14 points still stands a line clear of it.
+   */
   const UPPER = block(1, ['First paragraph.', 'Second paragraph.', 'Third.'], 728);
-  const LOWER = block(4, ['The block below.'], 664);
+  const LOWER = block(4, ['The block below.'], 645);
   const STACKED = read(7, [UPPER, LOWER]);
 
-  function stacked() {
+  function stacked(blocks: PageBlocks = STACKED) {
     const onRestructure = vi.fn((_edits: EditedBlock[], _read: BlocksRead) => Promise.resolve<BlockCommit>('written'));
-    const made = layer(STACKED, () => Promise.resolve('written'), { onRestructure });
+    const made = layer(blocks, () => Promise.resolve('written'), { onRestructure });
     openForWords(made, 0);
     return { ...made, onRestructure };
   }
@@ -301,6 +441,16 @@ describe('join and split from the menu (ADR-0180 Decision 7)', () => {
     const edits = made.onRestructure.mock.calls[0]?.[0];
     expect(edits?.map((edit) => edit.text)).toStrictEqual(['First paragraph.', 'Second paragraph.\nThird.']);
     expect(edits?.[1]?.place).toStrictEqual({ move: { x: 0, y: -14 } });
+  });
+
+  it('NOT offered where the moved half would land within a line of the text below, so nothing joins it (ADR-0271)', async () => {
+    // THE BLOCK BELOW 22 POINTS UNDER: the half moved down 14 would end 8 points above it, under a line.
+    const made = stacked(read(7, [UPPER, block(4, ['The block below.'], 664)]));
+    selectIn(made.surface(), { paragraph: 1, offset: 1 });
+    await rightClick(made.surface());
+    await screen.findByRole('menuitem', { name: 'Paste' });
+    // THE JOIN IS STILL OFFERED, so the menu was asked for block operations and the split alone was withheld.
+    expect(offered()).toStrictEqual(['join-below']);
   });
 
   it('NOT offered once words are typed: a join writes the block as the page has it, and would drop them', async () => {

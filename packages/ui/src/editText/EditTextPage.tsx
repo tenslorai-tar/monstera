@@ -80,7 +80,7 @@ export function EditTextPage({
     <EditTextLayer
       adding={editing.adding}
       blocks={answer?.blocks}
-      fallbackFace={editing.fallbackFace ?? 'sans'}
+      fallbackFace={editing.fallbackFace}
       {...(editing.familiesOf === undefined ? {} : { familiesOf: editing.familiesOf })}
       geometry={geometry}
       native={editing.native}

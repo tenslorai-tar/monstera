@@ -123,7 +123,9 @@ export function EditorMenu({
   };
 
   return (
-    // THE EVENT STOPS HERE (`onContextMenu` on the wrapper, after the trigger has seen it), so the page's menu is not opened.
+    // THE PAGE'S MENU IS NOT OPENED over the editor. A right-click over the words is stopped by Base UI's trigger itself
+    // (`stopEvent` in its `handleContextMenu`); one over the open popup is not, because the popup is a portal outside the
+    // trigger whose events still bubble up React's tree, and this wrapper is what stops those.
     <div
       className="m-context-menu-region"
       onContextMenu={(event) => {

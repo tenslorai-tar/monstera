@@ -9,7 +9,7 @@ import { NO_BLOCK_FACES } from '../commands/documentCommands.js';
 import { pointOf } from '../editorKit/dom.js';
 import { formatOpenEditor } from '../editorKit/openEditor.js';
 import { activateCatalogue, i18n } from '../i18n.js';
-import { EN } from '../messages/en.js';
+import { EN, TEXT_EDIT_HELD } from '../messages/en.js';
 import type { TextBlock } from '../textBlock.js';
 import type { PatchArea } from './AreaPatch.js';
 import type { PageBlocks } from './editing.js';
@@ -222,6 +222,34 @@ describe('Edit text on the editor kit (ADR-0271)', () => {
     expect(onCommit).toHaveBeenCalledTimes(1);
   });
 
+  it('A SIGNED DOCUMENT LEFT AS IT WAS keeps the editor and the words with its sentence, a press away asks nothing again, and Escape puts them back (ADR-0149)', async () => {
+    const { outline, frame, surface, onCommit } = layer(() => Promise.resolve('held'));
+    fireEvent.click(outline(0), { detail: 1 });
+    act(() => {
+      typeAt(surface(), '!', { paragraph: 0, offset: 11 });
+    });
+    await act(async () => {
+      fireEvent.keyDown(surface(), { key: 'Escape' });
+      await Promise.resolve();
+    });
+    // THE SIGNED DOCUMENT'S OWN SENTENCE, not a refusal's: the person chose to leave the signatures verifying.
+    expect(frame()?.querySelector('[role="alert"]')?.textContent).toBe(EN[TEXT_EDIT_HELD]);
+    expect(surface().textContent).toBe('Garden club!');
+    // A PRESS AWAY, which finishes an editor anywhere else, asks nothing again: the question is once per finish.
+    await act(async () => {
+      document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(frame()).not.toBeNull();
+    // AND ESCAPE PUTS THE WORDS BACK, writing nothing.
+    act(() => {
+      fireEvent.keyDown(surface(), { key: 'Escape' });
+    });
+    expect(frame()).toBeNull();
+    expect(onCommit).toHaveBeenCalledTimes(1);
+  });
+
   it('a page with no text offers to RECOGNISE it, and the button calls onRecognise; a page with blocks does not (ADR-0181)', () => {
     const onRecognise = vi.fn();
     const empty: PageBlocks = { ...BLOCKS, blocks: [] };
@@ -299,6 +327,51 @@ describe('Edit text on the editor kit (ADR-0271)', () => {
     expect(view.container.querySelector('[data-kit-patch="drawn"]')).not.toBeNull();
     view.rerender(props(4));
     expect(view.container.querySelector('[data-kit-patch]')).toBeNull();
+  });
+
+  it.each([
+    ['REFUSES', () => Promise.reject(new Error('the area could not be drawn'))],
+    ['has NO NEWER VIEW to draw from', () => Promise.resolve(undefined)],
+  ] as const)('where the area draw %s, the written editor WAITS for the page’s own read at the new version (the owner’s decision, ADR-0271)', async (_how, answer) => {
+    const patch = vi.fn<PatchArea>(answer);
+    const props = (blocks: PageBlocks) => (
+      <I18nProvider i18n={i18n}>
+        <EditTextLayer
+          blockFaces={() => Promise.resolve(NO_BLOCK_FACES)}
+          blocks={blocks}
+          drawn={blocks.version}
+          geometry={{ ...GEOMETRY, crop: [...GEOMETRY.crop] }}
+          onCommit={() => Promise.resolve('written')}
+          onLeave={vi.fn()}
+          page={0}
+          paperAt={() => undefined}
+          patch={patch}
+        />
+      </I18nProvider>
+    );
+    const view = render(props(BLOCKS));
+    const frame = () => view.container.querySelector<HTMLElement>('[data-kit-frame]');
+    const surface = () => must(view.container.querySelector<HTMLElement>('[data-kit-surface]'), 'surface');
+    fireEvent.click(must(view.container.querySelector<HTMLElement>('[data-text-block="0"]'), 'outline'), { detail: 1 });
+    act(() => {
+      typeAt(surface(), '!', { paragraph: 0, offset: 11 });
+    });
+    await act(async () => {
+      fireEvent.keyDown(surface(), { key: 'Escape' });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    // THE DRAW WAS ASKED FOR AND CAME TO NOTHING, and the editor holds the written words over the page meanwhile.
+    expect(patch).toHaveBeenCalledTimes(1);
+    expect(frame()).not.toBeNull();
+    expect(surface().textContent).toBe('Garden club!');
+    expect(view.container.querySelector('[data-kit-patch="drawn"]')).toBeNull();
+    // THE PAGE'S OWN READ AT THE NEW VERSION, as `EditTextPage` hands it down once the page is drawn from it: now it lets go.
+    await act(async () => {
+      view.rerender(props({ ...BLOCKS, version: asDocVersion(4) }));
+      await Promise.resolve();
+    });
+    expect(frame()).toBeNull();
   });
 
   it('Escape with no block open leaves the mode', () => {

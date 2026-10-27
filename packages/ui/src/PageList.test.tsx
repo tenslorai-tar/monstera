@@ -793,6 +793,7 @@ describe('PageList', () => {
       onRecognise,
       onLeave: vi.fn(),
       adding: false,
+      fallbackFace: 'sans',
       onInsert: () => Promise.resolve('unchanged'),
       onAdded: vi.fn(),
       native: vi.fn(),

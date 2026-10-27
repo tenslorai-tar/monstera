@@ -81,6 +81,8 @@ export interface BlockEditorProps {
     | {
         readonly above: TextBlock | undefined;
         readonly below: TextBlock | undefined;
+        /** The page's blocks, which a split's moved half must stay a line clear of (`splitEdits`). */
+        readonly page: readonly TextBlock[];
         readonly apply: (edits: EditedBlock[], kept?: boolean) => Promise<BlockCommit>;
         readonly families: () => Promise<(font: string) => string | undefined>;
       }
@@ -584,9 +586,9 @@ export function BlockEditor({
   /** What the menu may do to the BLOCK: join or split, only while nothing is unwritten (ADR-0180 Decision 7). */
   const blockOps = (paragraph: number | undefined): EditorOps => {
     if (restructure === undefined || busy || problem !== undefined || store.changed() || moved) return {};
-    const { above, below, apply, families } = restructure;
+    const { above, below, page, apply, families } = restructure;
     // THE PARAGRAPH AS THE PAGE HAS IT: nothing is unwritten here, so the model's paragraphs are the page's.
-    const split = paragraph === undefined ? undefined : splitEdits(block, paragraph);
+    const split = paragraph === undefined ? undefined : splitEdits(block, paragraph, page);
     const join = async (upper: TextBlock, lower: TextBlock): Promise<BlockCommit> => {
       const { edits, kept } = joinEdits(upper, lower, await families());
       return apply(edits, kept);

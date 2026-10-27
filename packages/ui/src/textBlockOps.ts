@@ -116,10 +116,14 @@ export function joinEdits(
 /**
  * One block made two, before its paragraph `paragraph` (1 or more): each half names its own old lines and its own words,
  * so neither changes, and the second is moved down by a line so the gap between the halves is wider than the grouping
- * joins across. `undefined` where there is no paragraph there to split before. Nothing else moves: the second half may
- * overlap what is below it, as a block that grows does (ADR-0271 section 11.1).
+ * joins across. `undefined` where there is no paragraph there to split before.
+ *
+ * **And `undefined` where the moved half would land within a line of the text below** (the owner's decision of
+ * 2026-10-27, ADR-0271): nothing below moves, so a half that came within a line of a block under it in its column would
+ * be grouped with it on the next read, or drawn over it. `others` is the rest of the page's blocks, required so that no
+ * caller can offer a split without asking.
  */
-export function splitEdits(block: TextBlock, paragraph: number): EditedBlock[] | undefined {
+export function splitEdits(block: TextBlock, paragraph: number, others: readonly TextBlock[]): EditedBlock[] | undefined {
   const words = wordsOfBlock(block).split('\n');
   if (paragraph < 1 || paragraph >= words.length) return undefined;
   // THE LINES EACH PARAGRAPH HOLDS: a paragraph ends at the first line that is not soft.
@@ -137,11 +141,27 @@ export function splitEdits(block: TextBlock, paragraph: number): EditedBlock[] |
   const first: TextBlock = { ...block, lines: block.lines.slice(0, firstLineOfSecond) };
   const second: TextBlock = { ...block, lines: block.lines.slice(firstLineOfSecond) };
   const pitch = pitchBetween(block) ?? block.style.size * 1.2;
+  if (landsNearBelow(second, pitch, others.filter((other) => other !== block))) return undefined;
   const down = { move: { x: 0, y: -pitch } };
   return [
     { ...linesOf(first), text: words.slice(0, paragraph).join('\n') },
     { ...linesOf(second), text: words.slice(paragraph).join('\n'), place: down },
   ];
+}
+
+/**
+ * Whether `half`, moved down by `pitch`, would stand within a line of a block in its column: one under it closer than a
+ * line, or one it would be drawn over. The line is the larger of the pitch and the half's tallest line, since the
+ * grouping joins across a gap smaller than a line's own height (`groupIntoBlocks`) and the pitch alone may be less.
+ */
+function landsNearBelow(half: TextBlock, pitch: number, others: readonly TextBlock[]): boolean {
+  const left = Math.min(...half.lines.map((line) => line.box.x0));
+  const right = Math.max(...half.lines.map((line) => line.box.x1));
+  // PDF y RUNS UP: moving down subtracts.
+  const top = Math.max(...half.lines.map((line) => line.box.y1)) - pitch;
+  const bottom = Math.min(...half.lines.map((line) => line.box.y0)) - pitch;
+  const line = Math.max(pitch, ...half.lines.map((each) => each.box.y1 - each.box.y0));
+  return others.some((other) => other.box.x0 < right && other.box.x1 > left && other.box.y1 > bottom - line && other.box.y0 < top);
 }
 
 /** The distance between a block's first two lines' tops, or `undefined` for a block of one line. */
