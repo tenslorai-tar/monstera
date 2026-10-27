@@ -58,12 +58,27 @@ async function open(page: Page, sent: number[]): Promise<void> {
   await page.keyboard.press('Enter');
 }
 
-test('the written words stay in the editor until the page can draw them, then the editor goes', async ({ page }) => {
+test('the written words are on screen in every frame until the page can draw them: the editor, then their drawn area', async ({ page }) => {
   const sent: number[] = [];
   await open(page, sent);
   await openWords(page, page.locator('[data-text-edit-layer="0"] [data-text-block="0"]'));
   const editor = page.locator(SURFACE);
+  const patch = page.locator('[data-text-edit-layer="0"] [data-kit-patch="drawn"]');
   await page.keyboard.type(' grows');
+  // EVERY FRAME FROM THE PRESS ON is sampled for one of the two that show the written words: the editor while it holds
+  // them (ADR-0261 Decision 7), then the edited area drawn at the new version (the note of 2026-10-27, ADR-0271).
+  await page.evaluate(() => {
+    const state = { frames: 0, bare: 0, stop: false };
+    (window as unknown as { held: typeof state }).held = state;
+    const look = (): void => {
+      if (state.stop) return;
+      state.frames += 1;
+      const words = document.querySelector('[data-kit-surface]')?.textContent ?? '';
+      if (!words.includes('grows') && document.querySelector('[data-kit-patch="drawn"]') === null) state.bare += 1;
+      requestAnimationFrame(look);
+    };
+    requestAnimationFrame(look);
+  });
   await page.keyboard.press('Escape');
   await expect.poll(() => sent.length).toBe(1);
   const answered = (sent[0] ?? 0) + WRITE_MS;
@@ -71,12 +86,21 @@ test('the written words stay in the editor until the page can draw them, then th
   // INSIDE THE WINDOW the decision is about: the write is answered and the page cannot have drawn the new version yet.
   await page.waitForTimeout(Math.max(0, answered + MODEL_MS / 2 - Date.now()));
   expect(Date.now()).toBeLessThan(answered + MODEL_MS);
-  await expect(editor).toHaveText('The first paragraph grows');
-  // LOCKED: a key now would go into words already written, and changes nothing.
-  await expect(editor).toHaveAttribute('aria-readonly', 'true');
+  await expect(patch).toBeVisible();
+  await expect(editor).toHaveCount(0);
+  // A KEY NOW goes into nothing: the words are written, and it writes no second time.
   await page.keyboard.type('X');
-  await expect(editor).toHaveText('The first paragraph grows');
+  const held = await page.evaluate(() => {
+    const state = (window as unknown as { held: { frames: number; bare: number; stop: boolean } }).held;
+    state.stop = true;
+    return { frames: state.frames, bare: state.bare };
+  });
+  // THE DECISION: no frame between the press and here showed the old words bare. CONTROL: frames were sampled at all.
+  expect(held.frames).toBeGreaterThan(10);
+  expect(held.bare).toBe(0);
 
-  // AND IT GOES once the page has drawn the version the write produced.
-  await expect(editor).toHaveCount(0, { timeout: MODEL_MS + 10_000 });
+  // AND THE AREA GOES once the page has drawn the version the write produced, which then shows the same words.
+  await expect(page.locator('[data-text-edit-layer="0"] [data-kit-patch]')).toHaveCount(0, { timeout: MODEL_MS + 10_000 });
+  expect(sent).toHaveLength(1);
 });
+
