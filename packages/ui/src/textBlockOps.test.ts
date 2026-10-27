@@ -111,7 +111,7 @@ describe('splitEdits', () => {
   ]);
 
   it('divides the lines and the words at the paragraph, each half keeping its own', () => {
-    const halves = splitEdits(TWO, 1);
+    const halves = splitEdits(TWO, 1, []);
     expect(halves?.[0]).toMatchObject({ lines: [[1], [2]], text: 'First para continues.' });
     expect(halves?.[1]).toMatchObject({ lines: [[3]], text: 'Second para.' });
     // THE TWO TOGETHER ARE THE WORDS THEY WERE, so nothing was dropped between them.
@@ -119,7 +119,7 @@ describe('splitEdits', () => {
   });
 
   it('moves the second half down by a line, the movement that keeps the grouping from joining them again', () => {
-    const halves = splitEdits(TWO, 1);
+    const halves = splitEdits(TWO, 1, []);
     expect(halves?.[1]?.place).toStrictEqual({ move: { x: 0, y: -14 } });
     expect(halves?.[0]?.place).toBeUndefined();
     // AND NOTHING ELSE: the two halves are the whole edit, and the text below stays where it is (ADR-0271 section 11.1).
@@ -127,9 +127,34 @@ describe('splitEdits', () => {
   });
 
   it('is nothing where there is no paragraph to split before', () => {
-    expect(splitEdits(TWO, 0)).toBeUndefined();
-    expect(splitEdits(TWO, 2)).toBeUndefined();
-    expect(splitEdits(LOWER, 1)).toBeUndefined();
+    expect(splitEdits(TWO, 0, [])).toBeUndefined();
+    expect(splitEdits(TWO, 2, [])).toBeUndefined();
+    expect(splitEdits(LOWER, 1, [])).toBeUndefined();
+  });
+
+  /** A one-line block in TWO's column whose top is at `top`. */
+  const under = (top: number): TextBlock => block(top, [{ runs: [[9, 'Below.', REGULAR]], soft: false }]);
+
+  it('is nothing where the moved half would land within a line of the text below (the owner’s decision, ADR-0271)', () => {
+    // TWO's second half is its last line, 658 to 672; moved down 14 it is 644 to 658, and a line under that is 630.
+    expect(splitEdits(TWO, 1, [TWO, under(631)])).toBeUndefined();
+    // DRAWN OVER: a block the moved half would land on.
+    expect(splitEdits(TWO, 1, [TWO, under(650)])).toBeUndefined();
+    // CONTROL, at the boundary: a block exactly a line under the moved half is clear, so the case above is the line's.
+    expect(splitEdits(TWO, 1, [TWO, under(630)])).toHaveLength(2);
+  });
+
+  it('CONTROL: a block close below in ANOTHER column, or the block itself, does not stop the split', () => {
+    const beside: TextBlock = { ...under(640), box: box(320, 626, 500, 640) };
+    expect(splitEdits(TWO, 1, [TWO, beside])).toHaveLength(2);
+    // A SECOND HALF OF TWO LINES, which moved down a line still lies inside the block's own box: the page's list holds
+    // the block, and it is not text below.
+    const THREE = block(700, [
+      { runs: [[1, 'First.', REGULAR]], soft: false },
+      { runs: [[2, 'Second, ', REGULAR]], soft: true },
+      { runs: [[3, 'and on.', REGULAR]], soft: false },
+    ]);
+    expect(splitEdits(THREE, 1, [THREE])).toHaveLength(2);
   });
 });
 

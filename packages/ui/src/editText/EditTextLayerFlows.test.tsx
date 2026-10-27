@@ -242,14 +242,17 @@ describe('the right-click menu on the open editor (ADR-0180 Decision 8)', () => 
 });
 
 describe('join and split from the menu (ADR-0180 Decision 7)', () => {
-  /** An upper block of three paragraphs, and one 22 points below it: close enough to be its continuation. */
+  /**
+   * An upper block of three paragraphs, and one 41 points below it: near enough to be its continuation (within four
+   * sizes, 44), and far enough that a split's half moved down 14 points still stands a line clear of it.
+   */
   const UPPER = block(1, ['First paragraph.', 'Second paragraph.', 'Third.'], 728);
-  const LOWER = block(4, ['The block below.'], 664);
+  const LOWER = block(4, ['The block below.'], 645);
   const STACKED = read(7, [UPPER, LOWER]);
 
-  function stacked() {
+  function stacked(blocks: PageBlocks = STACKED) {
     const onRestructure = vi.fn((_edits: EditedBlock[], _read: BlocksRead) => Promise.resolve<BlockCommit>('written'));
-    const made = layer(STACKED, () => Promise.resolve('written'), { onRestructure });
+    const made = layer(blocks, () => Promise.resolve('written'), { onRestructure });
     openForWords(made, 0);
     return { ...made, onRestructure };
   }
@@ -301,6 +304,16 @@ describe('join and split from the menu (ADR-0180 Decision 7)', () => {
     const edits = made.onRestructure.mock.calls[0]?.[0];
     expect(edits?.map((edit) => edit.text)).toStrictEqual(['First paragraph.', 'Second paragraph.\nThird.']);
     expect(edits?.[1]?.place).toStrictEqual({ move: { x: 0, y: -14 } });
+  });
+
+  it('NOT offered where the moved half would land within a line of the text below, so nothing joins it (ADR-0271)', async () => {
+    // THE BLOCK BELOW 22 POINTS UNDER: the half moved down 14 would end 8 points above it, under a line.
+    const made = stacked(read(7, [UPPER, block(4, ['The block below.'], 664)]));
+    selectIn(made.surface(), { paragraph: 1, offset: 1 });
+    await rightClick(made.surface());
+    await screen.findByRole('menuitem', { name: 'Paste' });
+    // THE JOIN IS STILL OFFERED, so the menu was asked for block operations and the split alone was withheld.
+    expect(offered()).toStrictEqual(['join-below']);
   });
 
   it('NOT offered once words are typed: a join writes the block as the page has it, and would drop them', async () => {

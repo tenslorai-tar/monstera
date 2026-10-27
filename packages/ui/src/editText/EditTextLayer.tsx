@@ -414,6 +414,7 @@ export function EditTextLayer({
                   : {
                       above: blocks.blocks[neighbourOf(blocks.blocks, at, 'above') ?? -1],
                       below: blocks.blocks[neighbourOf(blocks.blocks, at, 'below') ?? -1],
+                      page: blocks.blocks,
                       apply: (edits, kept) => onRestructure(edits, blocks, block.form ?? null, kept),
                       families: familiesOf,
                     }
