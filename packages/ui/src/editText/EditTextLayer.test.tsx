@@ -9,7 +9,7 @@ import { NO_BLOCK_FACES } from '../commands/documentCommands.js';
 import { pointOf } from '../editorKit/dom.js';
 import { formatOpenEditor } from '../editorKit/openEditor.js';
 import { activateCatalogue, i18n } from '../i18n.js';
-import { EN } from '../messages/en.js';
+import { EN, TEXT_EDIT_HELD } from '../messages/en.js';
 import type { TextBlock } from '../textBlock.js';
 import type { PatchArea } from './AreaPatch.js';
 import type { PageBlocks } from './editing.js';
@@ -219,6 +219,34 @@ describe('Edit text on the editor kit (ADR-0271)', () => {
     });
     expect(frame()).toBeNull();
     // CONTROL: the put-back wrote nothing more.
+    expect(onCommit).toHaveBeenCalledTimes(1);
+  });
+
+  it('A SIGNED DOCUMENT LEFT AS IT WAS keeps the editor and the words with its sentence, a press away asks nothing again, and Escape puts them back (ADR-0149)', async () => {
+    const { outline, frame, surface, onCommit } = layer(() => Promise.resolve('held'));
+    fireEvent.click(outline(0), { detail: 1 });
+    act(() => {
+      typeAt(surface(), '!', { paragraph: 0, offset: 11 });
+    });
+    await act(async () => {
+      fireEvent.keyDown(surface(), { key: 'Escape' });
+      await Promise.resolve();
+    });
+    // THE SIGNED DOCUMENT'S OWN SENTENCE, not a refusal's: the person chose to leave the signatures verifying.
+    expect(frame()?.querySelector('[role="alert"]')?.textContent).toBe(EN[TEXT_EDIT_HELD]);
+    expect(surface().textContent).toBe('Garden club!');
+    // A PRESS AWAY, which finishes an editor anywhere else, asks nothing again: the question is once per finish.
+    await act(async () => {
+      document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(frame()).not.toBeNull();
+    // AND ESCAPE PUTS THE WORDS BACK, writing nothing.
+    act(() => {
+      fireEvent.keyDown(surface(), { key: 'Escape' });
+    });
+    expect(frame()).toBeNull();
     expect(onCommit).toHaveBeenCalledTimes(1);
   });
 
