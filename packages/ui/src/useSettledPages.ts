@@ -10,9 +10,11 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
  * A page's text, links and form fields are read the moment it is on screen (`usePageText`, `usePageLinks`,
  * `usePageFormFields`), and each answer that lands is a render of the whole page list. During a scroll the visible set
  * changes every few frames, so a long scroll started a read for every page it passed and took their answers in the
- * middle of drawing the next ones, on the frames that most need to be short. None of the three draws anything a person
- * sees while scrolling past: the text is what a press selects, the links what a press follows, the fields what a
- * press fills. So they are asked for the pages the scroll stopped on, a moment after it stopped.
+ * middle of drawing the next ones, on the frames that most need to be short. Nearly nothing of the three is seen while
+ * scrolling past: the text is what a press selects, the links what a press follows, the fields what a press fills. The
+ * one thing seen is the text read's answer that a page is a picture, which draws the page's note offering recognition;
+ * it now appears a moment after the scroll stops on the page rather than as the page arrives. So the reads are asked for
+ * the pages the scroll stopped on, a moment after it stopped.
  *
  * ## What "paused" is
  *

@@ -15,6 +15,7 @@ import { NO_BLOCK_FACES } from './commands/documentCommands.js';
 import { PageList } from './PageList.js';
 import type { PageBlocks, TextEditing } from './editText/editing.js';
 import { FIRST_PAGE } from './pageNumbering.js';
+import { SETTLE_MS } from './useSettledPages.js';
 import { activateCatalogue, i18n } from './i18n.js';
 import { EN } from './messages/en.js';
 import type { DocumentView } from './documentView.js';
@@ -635,6 +636,60 @@ describe('PageList', () => {
     expect(textAsked).toStrictEqual([
       { docId: DOC, page: 0, limit: MAX_TEXT_LAYER_LINES },
     ]);
+  });
+
+  it('asks for NO page a scroll passes, and for the page it stops on once it has paused (useSettledPages)', async () => {
+    const { client, textAsked } = clientAnswering(LINES);
+    render(
+      <PageList
+        client={client}
+        view={viewDrawing()}
+        pageCount={5}
+        docId={DOC}
+        version={VERSION}
+        onCurrentPage={vi.fn()}
+        mode={SCALE_1}
+        onZoomStep={vi.fn()}
+        onShownZoom={vi.fn()}
+        goTo={undefined}
+        startAt={FIRST_PAGE.kernel}
+        onWentTo={vi.fn()}
+        loupe={false}
+        drawsPages
+        rulers={false}
+        showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
+        unit="in"
+        search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
+        menuAt={undefined}
+      />,
+    );
+    await settle();
+    const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+    // THE SCROLL: each step RENDERED on its own, 20 ms apart, well inside the pause, so a list that read on every
+    // visible set would ask for pages 1 and 2 here. Asserting only the end state would pass that list too.
+    for (const [from, to] of [
+      [0, 1],
+      [1, 2],
+      [2, 3],
+    ] as const) {
+      await act(async () => {
+        report([
+          { page: from, visible: false },
+          { page: to, visible: true },
+        ]);
+        await pause(20);
+      });
+    }
+    const passed = textAsked.filter((asked) => asked.page === 1 || asked.page === 2);
+    expect(passed).toStrictEqual([]);
+    // THE STOP: after the pause, the page the scroll stopped on is read, and the passed ones still are not.
+    await act(async () => {
+      await pause(SETTLE_MS + 50);
+    });
+    await settle();
+    expect(textAsked.map((asked) => asked.page)).toContain(3);
+    expect(textAsked.filter((asked) => asked.page === 1 || asked.page === 2)).toStrictEqual([]);
   });
 
   it('renders one selectable element per line, carrying the channel’s text', async () => {
