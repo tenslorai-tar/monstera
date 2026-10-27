@@ -37,6 +37,7 @@ import { writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import { startWalk, writesIdle } from './liveWalk.mjs';
+import { editTextOpening } from './textWalkSteps.mjs';
 
 const WINDOW_MS = 3000;
 const CONTROL_MS = 300;
@@ -476,9 +477,8 @@ await measure('edit text', async (run) => {
   const area = await block.boundingBox();
   if (area === null) throw new Error('the block has no box');
   return timed({ x: area.x - 6, y: area.y - 6, width: area.width + 60, height: area.height + 12 }, async () => {
-    await block.click();
-    await page.locator('[data-text-editor]').waitFor({ timeout: 15_000 });
-    await page.keyboard.press('End');
+    // THE BOX SELECTED, then Enter: the caret at the words' end (ADR-0271's two-step opening).
+    await editTextOpening(page).openWords(block);
     await page.keyboard.type(' X');
     await page.keyboard.press('Escape');
   });

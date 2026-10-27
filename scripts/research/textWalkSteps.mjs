@@ -18,15 +18,121 @@ const expect = defaultExpect.configure({ timeout: 30_000 });
 /** @typedef {{ ms: number, busy: boolean, problem: string | null }} EditorSample */
 
 /**
+ * EDIT TEXT OPENS A BLOCK IN TWO STEPS (ADR-0271 section 3), and these are the only way a walk opens one (B3a): the first
+ * press SELECTS THE BOX — its frame up and focused, no caret in the words — and a second press inside it puts the caret
+ * where it lands; Enter on the box puts it at the words' end; a double press does both at once. Walks that take no other
+ * text step call this alone; {@link textSteps} carries it.
+ *
+ * @param {import('playwright').Page} page
+ */
+export function editTextOpening(page) {
+  /** The open editor's words. */
+  const editor = () => page.locator('[data-kit-surface]');
+  /** The open editor's frame: `data-kit-mode` is `box` after a first press, `text` once the caret is in the words. */
+  const frame = () => page.locator('[data-kit-frame]');
+
+  /**
+   * A point inside `outline`, in the window: `at` from its top left, `'middle'` for its centre (where a locator's own
+   * `click()` presses), or by default its middle across and its first line down.
+   * @param {import('playwright').Locator} outline
+   * @param {{ x: number, y: number } | 'middle'} [at]
+   */
+  async function pointIn(outline, at) {
+    const box = await outline.boundingBox();
+    if (box === null) throw new Error('the block is not on screen');
+    if (at === 'middle') return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    return at === undefined ? { x: box.x + box.width / 2, y: box.y + Math.min(8, box.height / 2) } : { x: box.x + at.x, y: box.y + at.y };
+  }
+
+  /**
+   * The first press, at `at` in `outline` (see {@link pointIn}): the box selected, and nothing yet in the words.
+   * @param {import('playwright').Locator} outline
+   * @param {{ x: number, y: number } | 'middle'} [at]
+   */
+  async function selectBox(outline, at) {
+    const point = await pointIn(outline, at);
+    await page.mouse.click(point.x, point.y);
+    await expect(frame()).toBeFocused();
+    await expect(frame()).toHaveAttribute('data-kit-mode', 'box');
+    return point;
+  }
+
+  /**
+   * Both presses, at the same point: the caret in the words where the second landed.
+   *
+   * A PAUSE LONGER THAN A DOUBLE PRESS between them, as a hand that looks at the selected box before pressing again:
+   * Windows' double-click time is 500 ms unless a person changed it, and two presses inside it are the double press,
+   * which {@link openByDoubleClick} walks on its own.
+   * @param {import('playwright').Locator} outline
+   * @param {{ x: number, y: number } | 'middle'} [at]
+   */
+  async function openAt(outline, at) {
+    const point = await selectBox(outline, at);
+    await page.waitForTimeout(700);
+    await page.mouse.click(point.x, point.y);
+    await expect(frame()).toHaveAttribute('data-kit-mode', 'text');
+    await expect(editor()).toBeFocused();
+  }
+
+  /**
+   * The box selected, then Enter: the caret at the end of the words.
+   * @param {import('playwright').Locator} outline
+   */
+  async function openWords(outline) {
+    await selectBox(outline);
+    await page.keyboard.press('Enter');
+    await expect(frame()).toHaveAttribute('data-kit-mode', 'text');
+    await expect(editor()).toBeFocused();
+  }
+
+  /**
+   * One double press on a block not yet selected: the box selected and the caret at the point, in one gesture.
+   * @param {import('playwright').Locator} outline
+   * @param {{ x: number, y: number } | 'middle'} [at]
+   */
+  async function openByDoubleClick(outline, at) {
+    const point = await pointIn(outline, at);
+    await page.mouse.dblclick(point.x, point.y);
+    await expect(frame()).toHaveAttribute('data-kit-mode', 'text');
+    await expect(editor()).toBeFocused();
+  }
+
+  /**
+   * Where the caret stands in the open editor, in the window, and whether it stands at the character boundary the browser
+   * itself names under `point` (`caretRangeFromPoint`): the press that put it there must have put it at that boundary.
+   * @param {{ x: number, y: number }} point
+   */
+  async function caretAgainst(point) {
+    return page.evaluate(([px, py]) => {
+      /** @typedef {{ getBoundingClientRect: () => { left: number, top: number, height: number }, startContainer: unknown, startOffset: number }} Range */
+      const dom = /** @type {{ caretRangeFromPoint: (x: number, y: number) => Range | null, getSelection: () => { rangeCount: number, getRangeAt: (at: number) => Range, isCollapsed: boolean } | null }} */ (
+        Reflect.get(globalThis, 'document')
+      );
+      const selection = dom.getSelection();
+      if (selection === null || selection.rangeCount === 0) return null;
+      const range = selection.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+      const named = dom.caretRangeFromPoint(px ?? 0, py ?? 0);
+      return {
+        collapsed: selection.isCollapsed,
+        caretX: rect.left,
+        atNamedBoundary: named !== null && named.startContainer === range.startContainer && named.startOffset === range.startOffset,
+      };
+    }, [point.x, point.y]);
+  }
+
+  return { editor, frame, selectBox, openAt, openWords, openByDoubleClick, caretAgainst };
+}
+
+/**
  * The text steps over one walk.
  *
  * @param {{ page: import('playwright').Page, output: string, saveTo: (path: string) => Promise<void>, command: (title: string) => Promise<void> }} walk
  */
 export function textSteps(walk) {
   const { page, output, saveTo, command } = walk;
-
-  /** The open editor's words. */
-  const editor = () => page.locator('[data-text-editor]');
+  const opening = editTextOpening(page);
+  const { editor, frame } = opening;
   /** The Properties panel's text section, while an editor is open. */
   const panel = () => page.locator('[data-text-properties]');
 
@@ -77,7 +183,7 @@ export function textSteps(walk) {
       .poll(
         async () =>
           ((await page.locator('html').getAttribute('data-writes')) ?? '0') === '0' &&
-          ((await editor().count()) === 0 || (await problems()).length > 0),
+          ((await frame().count()) === 0 || (await problems()).length > 0),
         // 120 S, the longest write a walk has measured: one that embeds a font stayed up past 30 s on 2026-10-13 on this
         // machine's i5-3230M (`textWalk.mjs`' step 18). Settling sooner returns sooner; this is the bound on a hang.
         { timeout: 120_000, intervals: [100] },
@@ -126,7 +232,8 @@ export function textSteps(walk) {
         const dom = /** @type {{ querySelector: (selector: string) => { getAttribute: (name: string) => string | null, textContent: string | null } | null }} */ (
           Reflect.get(globalThis, 'document')
         );
-        const open = dom.querySelector('[data-text-editor]');
+        // THE FRAME CARRIES `aria-busy`, the words do not.
+        const open = dom.querySelector('[data-kit-frame]');
         const problem = dom.querySelector('.m-text-editor-problem');
         return { open: open !== null, busy: open?.getAttribute('aria-busy') === 'true', problem: problem?.textContent ?? null };
       });
@@ -152,7 +259,7 @@ export function textSteps(walk) {
     return path;
   }
 
-  return { editor, panel, ensureEditText, clickPage, pressAway, problems, chooseFont, savedCopy };
+  return { ...opening, panel, ensureEditText, clickPage, pressAway, problems, chooseFont, savedCopy };
 }
 
 /**

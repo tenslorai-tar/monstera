@@ -32,6 +32,7 @@ import { join, resolve } from 'node:path';
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 
 import { startWalk, writesDone, writesLanded } from './liveWalk.mjs';
+import { editTextOpening } from './textWalkSteps.mjs';
 
 const argv = process.argv.slice(2);
 const option = (/** @type {string} */ name) => {
@@ -118,10 +119,9 @@ async function launch(appData) {
     if ((await control.getAttribute('aria-pressed')) !== 'true') await control.click();
     const block = page.locator('[data-text-edit-layer]:visible [data-text-block]').first();
     await block.waitFor({ timeout: 60_000 });
-    await block.click();
-    await page.locator('[data-text-editor]').first().waitFor({ timeout: 60_000 });
+    // THE BOX SELECTED, then Enter: the caret at the words' end (ADR-0271's two-step opening).
+    await editTextOpening(page).openWords(block);
     const editorOpenMs = Date.now() - chose;
-    await page.keyboard.press('End');
     await page.keyboard.type(' now');
     const before = await writesDone(page);
     const finished = Date.now();

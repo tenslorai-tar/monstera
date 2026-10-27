@@ -24,6 +24,7 @@ import { expect as defaultExpect } from '@playwright/test';
 
 import { byRole, processTreeMemory } from '../lib/processMemory.mjs';
 import { root, startWalk } from './liveWalk.mjs';
+import { editTextOpening } from './textWalkSteps.mjs';
 
 const expect = defaultExpect.configure({ timeout: 30_000 });
 const MB = 1024 * 1024;
@@ -131,16 +132,12 @@ await step('C. one Edit text action, its write landed and its hosts settled', as
   await section('Edit');
   const tool = page.getByRole('button', { name: 'Edit text', exact: true }).first();
   if ((await tool.getAttribute('aria-pressed')) !== 'true') await command('Edit text on the page');
-  const block = page.locator('[data-text-block]').nth(1);
-  const box = await block.boundingBox();
-  if (box === null) throw new Error('no second text block on the first page');
-  await page.mouse.click(box.x + box.width / 2, box.y + Math.min(8, box.height / 2));
-  await expect(page.locator('[data-text-editor]')).toBeFocused();
+  await editTextOpening(page).openAt(page.locator('[data-text-block]').nth(1));
   await page.keyboard.type(' walked');
   const pageBox = await page.locator('canvas.m-page:visible').first().boundingBox();
   if (pageBox === null) throw new Error('the page is not on screen');
   await page.mouse.click(pageBox.x + pageBox.width - 20, Math.max(pageBox.y, 230) + 20);
-  await expect(page.locator('[data-text-editor]')).toHaveCount(0);
+  await expect(page.locator('[data-kit-frame]')).toHaveCount(0);
   await page.waitForTimeout(15_000);
   return point('c-edit');
 });

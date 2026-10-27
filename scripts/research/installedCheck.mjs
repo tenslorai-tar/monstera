@@ -79,6 +79,7 @@ import { chromium } from '@playwright/test';
 import { PALETTE_DRIVER, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { pdftotextPath } from '../provision/poppler.mjs';
+import { editTextOpening } from './textWalkSteps.mjs';
 import { DISPLAY_NAME } from '../release/packageMsix.mjs';
 
 const ROOT = repoRoot();
@@ -567,10 +568,8 @@ try {
     await runCommand(page, 'Edit text on the page');
     const block = page.locator('[data-text-edit-layer] [data-text-block]').first();
     await block.waitFor({ timeout: 30_000 });
-    await block.click();
-    const editor = page.locator('[data-text-editor]');
-    await editor.waitFor({ timeout: 15_000 });
-    await page.keyboard.press('Control+End');
+    // THE BOX SELECTED, then Enter: the caret at the words' end (ADR-0271's two-step opening).
+    await editTextOpening(page).openWords(block);
     await page.keyboard.type(` ${MARKER}`);
     await page.keyboard.press('Escape');
     await page.waitForTimeout(3000);

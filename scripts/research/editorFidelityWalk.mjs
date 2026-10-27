@@ -32,7 +32,7 @@ const CODE = [
 
 const walk = await startWalk('editor-fidelity');
 const { page, open, section, step, finish, output } = walk;
-const { editor, panel, ensureEditText, pressAway, savedCopy } = textSteps(walk);
+const { editor, panel, ensureEditText, pressAway, savedCopy, openAt } = textSteps(walk);
 const copy = join(output, 'editor-fidelity.pdf');
 await copyFile(FIXTURE_PDF, copy);
 await open(copy);
@@ -58,8 +58,7 @@ async function blockStarting(start) {
   /** @type {string[]} */
   const seen = [];
   for (let at = 0; at < count; at += 1) {
-    await blocks.nth(at).click();
-    await editor().waitFor();
+    await openAt(blocks.nth(at), 'middle');
     const words = ((await editor().textContent()) ?? '').trimStart();
     seen.push(words.slice(0, 16));
     await page.keyboard.press('Escape');
@@ -76,8 +75,7 @@ await step('cloud-19 1: each block opened and left with no key pressed writes no
   const written = await writesDone(page);
   const count = await blocks.count();
   for (let at = 0; at < count; at += 1) {
-    await blocks.nth(at).click();
-    await editor().waitFor();
+    await openAt(blocks.nth(at), 'middle');
     const said = await pressAway(10, 10);
     if (said.length > 0) throw new Error(`block ${String(at)}: ${JSON.stringify(said)}`);
     await editor().waitFor({ state: 'detached' });
@@ -95,8 +93,7 @@ await step('cloud-19 2: a word changed in the justified paragraph, the same leng
   // ADR-0249's rule and not this check's question (measured here 2026-10-25: ` Typed` at its end, every block below 14 px).
   const at = await blockStarting('The committee met');
   const before = await outlines();
-  await blocks.nth(at).click();
-  await editor().waitFor();
+  await openAt(blocks.nth(at), 'middle');
   await editor().evaluate((element) => {
     const walker = element.ownerDocument.createTreeWalker(element, 4);
     for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
@@ -127,8 +124,7 @@ await step('cloud-19 2: a word changed in the justified paragraph, the same leng
 
 await step('cloud-19 3: a character added to the first command, written and saved, and every command is still its own line', async () => {
   const at = await blockStarting('git clone');
-  await blocks.nth(at).click();
-  await editor().waitFor();
+  await openAt(blocks.nth(at), 'middle');
   // THE CARET AFTER THE FIRST COMMAND by its own text: End goes to the end of a VISUAL line, and a long command wraps.
   await editor().evaluate((element, command) => {
     const walker = element.ownerDocument.createTreeWalker(element, 4);
@@ -161,8 +157,7 @@ await step('cloud-19 3: a character added to the first command, written and save
 await step('cloud-19 4: a highlight dragged across the Times paragraph’s two whole lines is one marked highlight per line', async () => {
   await ensureEditText();
   const at = await blockStarting('This paragraph is set in Times');
-  await blocks.nth(at).click();
-  await editor().waitFor();
+  await openAt(blocks.nth(at), 'middle');
   const box = await editor().boundingBox();
   if (box === null) throw new Error('no editor box');
   // FROM BEFORE THE FIRST WORD TO PAST THE LAST, as a hand drags: the first line's left at its middle, the last's right.

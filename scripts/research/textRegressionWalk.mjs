@@ -122,7 +122,7 @@ async function everydayPage() {
 
 const walk = await startWalk('text-regression');
 const { page, output, open, section, step, finish } = walk;
-const { editor, panel, ensureEditText, pressAway, problems, chooseFont, savedCopy } = textSteps(walk);
+const { editor, panel, ensureEditText, pressAway, problems, chooseFont, savedCopy, openAt } = textSteps(walk);
 
 // LITERAL SPECIFIERS, so `proof:electronimports` can read what this loads.
 const { buildProducerSubsetPdf, PRODUCER_MARK } = await import('../../packages/kernel/dist/producerSubsetFixture.js');
@@ -146,8 +146,7 @@ async function openBlock(start) {
   await ensureEditText();
   const box = await block(start).boundingBox();
   if (box === null) throw new Error(`no block beginning “${start}” on the page`);
-  await page.mouse.click(box.x + box.width - 3, box.y + box.height - Math.min(6, box.height / 2));
-  await expect(editor()).toBeFocused();
+  await openAt(block(start), { x: box.width - 3, y: box.height - Math.min(6, box.height / 2) });
   await page.keyboard.press('Control+End');
   return box;
 }
@@ -161,7 +160,7 @@ async function commit() {
 }
 
 /**
- * Each run of the open editor: its words, whether it is drawn in a face the editor loaded from the page (`data-run-font`
+ * Each run of the open editor: its words, whether it is drawn in a face the editor loaded from the page (its first family
  * naming one, and the browser's own `fonts.check` answering that the family is loaded), and the computed family and
  * weight its WORDS are drawn in.
  *
@@ -172,7 +171,7 @@ async function commit() {
  */
 async function runsDrawn() {
   return editor()
-    .locator('.m-text-editor__run')
+    .locator('.m-kit__run')
     .evaluateAll((spans) =>
       spans.map((span) => {
         const view = span.ownerDocument.defaultView;
@@ -190,7 +189,8 @@ async function runsDrawn() {
         const family = families.size === 0 ? firstFamily(span) : [...families].join(' + ');
         return {
           text: span.textContent ?? '',
-          runFont: span.getAttribute('data-run-font'),
+          // THE RUN'S OWN FIRST FAMILY: the kit names a face it loaded from the page `m-kit-…` (`runFaces.ts`).
+          runFont: (span.style.fontFamily.split(',')[0] ?? '').trim().replaceAll('"', ''),
           family,
           loaded: family !== '' && !family.includes(' + ') && span.ownerDocument.fonts.check(`12px "${family}"`),
           weight: weight || (view?.getComputedStyle(span).fontWeight ?? ''),
@@ -234,7 +234,7 @@ await step('1. a serif page with a bold lead-in keeps its look while the block i
   await openBlock(SERIF.lead);
   // EVERY RUN IN THE PAGE'S OWN FACE, loaded: a run left in the editor's kind of face is the sans the owner saw.
   /** @param {Awaited<ReturnType<typeof runsDrawn>>} runs */
-  const own = (runs) => runs.every((run) => (run.runFont ?? '').startsWith('m-run-') && run.loaded);
+  const own = (runs) => runs.every((run) => (run.runFont ?? '').startsWith('m-kit-') && run.loaded);
   await expect.poll(async () => own(await runsDrawn()), { timeout: 15_000 }).toBe(true);
   const before = await runsDrawn();
   // THE LEAD-IN STILL BOLD: the page states no weight, so this is the program's and the name's.
