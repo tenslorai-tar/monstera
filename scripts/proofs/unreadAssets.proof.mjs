@@ -16,12 +16,12 @@
  * Usage: node scripts/proofs/unreadAssets.proof.mjs
  */
 
-import { CONTROL, CONTROL_UNREAD, classesStyled, isTest, unreadIn } from '../lib/unreadAssets.mjs';
+import { CONTROL, CONTROL_UNREAD, classesStyled, isTest, settingIdsIn, unreadIn } from '../lib/unreadAssets.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 13 });
+const roster = createRoster(failures, { cases: 21 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -91,6 +91,70 @@ function unread(input) {
     found.includes('message:KEY_DEAD') && found.includes('message:KEY_IN_DEAD_TABLE'),
     `reported ${JSON.stringify(found)}`,
   );
+}
+
+// THE CATALOGUE'S OWN RECORD IS NOT A TABLE. The English record names every key as a computed property name to give it
+// its words, and the application imports it, so taking it for a table read every key: a planted dead key with its
+// English words was reported by nothing (measured 2026-10-27, the stage audit of dabf6041..f1c1dc16).
+{
+  const catalogue = {
+    file: 'packages/ui/src/messages/en.ts',
+    text: [
+      "export const KEY_USED = messageKey('a');",
+      "export const KEY_WORDS_ONLY = messageKey('b');",
+      "export const KEY_SPACED =messageKey('c');",
+      "export const EN: Readonly<Record<MessageKey, string>> = {\n  [KEY_USED]: 'Used',\n  [KEY_WORDS_ONLY]: 'Words only',\n  [KEY_SPACED]: 'Spaced',\n};",
+    ].join('\n'),
+  };
+  const found = unread({ catalogue, sources: [catalogue, { file: 'i18n.ts', text: 'activate(EN); _(KEY_USED); _(KEY_SPACED);' }] });
+  check('a key with its words in the English record and no other reader is reported', found.includes('message:KEY_WORDS_ONLY'), `reported ${JSON.stringify(found)}`);
+  check('a key written without the space before messageKey is parsed and judged', !found.includes('message:KEY_SPACED') && found.length === 1, `reported ${JSON.stringify(found)}`);
+  let refused = '';
+  try {
+    unread({ catalogue: { file: catalogue.file, text: "const HIDDEN = messageKey('d');" } });
+  } catch (error) {
+    refused = String(error);
+  }
+  check('a key the parse cannot see refuses the run rather than passing it', refused.includes('found 0 of its 1 keys'), `answered ${refused || 'without refusing'}`);
+}
+
+// A SETTING'S TITLE IS READ IN THE SETTINGS DEFINITIONS, and a comment or a visual test names without reading.
+{
+  const catalogue = { file: 'packages/ui/src/messages/en.ts', text: "export const TITLE_OF_SETTING = messageKey('a');\nexport const KEY_IN_COMMENT = messageKey('b');" };
+  const found = unread({
+    catalogue,
+    sources: [catalogue, { file: 'packages/ui/src/settings/one.ts', text: 'export const S = { title: TITLE_OF_SETTING };' }, { file: 'x.tsx', text: '// KEY_IN_COMMENT\n/* KEY_IN_COMMENT */ go();' }],
+  });
+  check('a key the settings definitions read is read', !found.includes('message:TITLE_OF_SETTING'), `reported ${JSON.stringify(found)}`);
+  check('a key named only in comments is reported, and a visual capture is a test', found.includes('message:KEY_IN_COMMENT') && isTest('gallery.visual.ts'), `reported ${JSON.stringify(found)}`);
+}
+
+// A SETTING WHOSE ID IS A CONSTANT, one whose id is an expression, and a holder that closes with a bracket.
+{
+  const definitions = [
+    {
+      file: 'packages/ui/src/settings/two.ts',
+      text: [
+        "export const READ_ID = 'two.read';",
+        "export const DEAD_ID = 'two.dead';",
+        'export const BY_READ = {\n  id: READ_ID,\n};',
+        'export const BY_DEAD = {\n  id: DEAD_ID,\n};',
+        'export const MADE = make({\n  id: \'two.made\',\n});',
+        'const UNHELD = make({\n  id: \'two.unheld\',\n});',
+        'export const LOOPED = names.map((name) => ({\n  id: KEYS[name].setting,\n}));',
+      ].join('\n'),
+    },
+  ];
+  const sources = [...definitions, { file: 'd.tsx', text: 'useSetting(READ_ID); useSetting(MADE);' }];
+  const found = unread({ settings: definitions, sources });
+  check(
+    'a setting whose id is a constant is judged: read through it, and reported by its id when nothing reads it',
+    !found.includes('setting:two.read') && found.includes('setting:two.dead'),
+    `reported ${JSON.stringify(found)}`,
+  );
+  check('a setting after a definition that closes with a bracket is not credited to it', found.includes('setting:two.unheld') && !found.includes('setting:two.made'), `reported ${JSON.stringify(found)}`);
+  const { notFollowed } = settingIdsIn(definitions, sources);
+  check('an id written as an expression is named as not followed, not counted read', JSON.stringify(notFollowed.map((each) => each.expression)) === JSON.stringify(['KEYS[name].setting']), `named ${JSON.stringify(notFollowed)}`);
 }
 
 // SETTINGS.

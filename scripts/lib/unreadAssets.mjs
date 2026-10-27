@@ -92,7 +92,9 @@ export function classesStyled(css) {
 function namesIn(sources) {
   const tokens = new Set();
   const prefixes = new Set();
-  for (const { text } of sources) {
+  for (const source of sources) {
+    // A COMMENT NAMES WITHOUT READING, as a test does.
+    const text = withoutComments(source.text);
     for (const match of text.matchAll(/[A-Za-z_][\w.-]*/gu)) {
       // A TOKEN AND EACH OF ITS DOTTED PARTS: `editing.fallback-face` names the setting, and a class is never dotted.
       tokens.add(match[0]);
@@ -104,6 +106,64 @@ function namesIn(sources) {
 }
 
 /**
+ * A source's text without its block comments and its whole-line comments. A `//` after code is left, since a string
+ * holding a URL would otherwise lose its tail; a comment that shares a line with code is rare here and reads as a name.
+ * @param {string} text
+ */
+export function withoutComments(text) {
+  return text.replace(/\/\*[\s\S]*?\*\//gu, ' ').replace(/^\s*\/\/.*$/gmu, '');
+}
+
+/**
+ * Every `id:` in the settings definitions, sorted by what it holds: a setting's id as a dotted literal, a constant
+ * that holds one, an undotted literal (a settings CATEGORY, not a setting), a type (`id: SettingCategory;`), or an
+ * expression the text cannot follow. Every `id:` lands in exactly one, so one the parse does not recognise is listed
+ * rather than lost.
+ * @param {readonly Source[]} settings @param {readonly Source[]} sources
+ */
+export function settingIdsIn(settings, sources) {
+  /** @type {Map<string, string>} */
+  const constants = new Map();
+  for (const { text } of sources) {
+    for (const match of withoutComments(text).matchAll(/\b([A-Z][A-Z0-9_]*)\s*=\s*'([a-z][\w-]*\.[\w.-]+)'/gu)) constants.set(match[1] ?? '', match[2] ?? '');
+  }
+  /** @type {{ id: string, constant?: string, holder?: string, file: string }[]} */
+  const ids = [];
+  /** @type {{ expression: string, file: string }[]} */
+  const notFollowed = [];
+  let counted = 0;
+  let sorted = 0;
+  for (const definition of settings) {
+    const text = withoutComments(definition.text);
+    counted += [...text.matchAll(/\bid\s*:/gu)].length;
+    for (const match of text.matchAll(/\bid\s*:\s*([^,\n}]+)/gu)) {
+      sorted += 1;
+      const value = (match[1] ?? '').trim();
+      // THE CONSTANT THAT HOLDS IT, where one does: the nearest `export const NAME` above the id with no line between
+      // them that closes a definition, whichever bracket closes it.
+      const before = text.slice(0, match.index);
+      const holder = [...before.matchAll(/^export const ([A-Z][A-Z0-9_]*)\b/gmu)].at(-1)?.[1];
+      const closed = Math.max(...[...before.matchAll(/^\}/gmu)].map((each) => each.index ?? -1), -1);
+      const near = holder !== undefined && before.lastIndexOf(`export const ${holder}`) > closed ? holder : undefined;
+      const literal = /^'([^']*)'$/u.exec(value)?.[1];
+      if (literal !== undefined) {
+        // AN UNDOTTED LITERAL is a category's id, which the registry groups by and no one reads as a value.
+        if (literal.includes('.')) ids.push({ id: literal, ...(near === undefined ? {} : { holder: near }), file: definition.file });
+      } else if (/^[A-Z][A-Z0-9_]*$/u.test(value)) {
+        const id = constants.get(value);
+        if (id === undefined) notFollowed.push({ expression: value, file: definition.file });
+        else ids.push({ id, constant: value, ...(near === undefined ? {} : { holder: near }), file: definition.file });
+      } else if (!value.endsWith(';')) {
+        notFollowed.push({ expression: value, file: definition.file });
+      }
+    }
+  }
+  // A BROKEN PARSE IS NOT A CLEAN TREE: every `id:` the text holds was sorted into one of the kinds above.
+  if (sorted !== counted) throw new Error(`the settings parse sorted ${String(sorted)} of the ${String(counted)} ids the definitions hold`);
+  return { ids, notFollowed };
+}
+
+/**
  * The rule, over named texts, which is what makes it provable: a proof that wrote files would be testing the walker.
  * @param {{ stylesheets: readonly Source[], catalogue: Source | null, settings: readonly Source[], sources: readonly Source[] }} input
  * @returns {Unread[]}
@@ -111,8 +171,10 @@ function namesIn(sources) {
 export function unreadIn({ stylesheets, catalogue, settings, sources }) {
   /** @type {Unread[]} */
   const unread = [];
-  const readers = sources.filter(({ file }) => !CATALOGUES.has(file) && !file.startsWith(SETTINGS_DIR));
-  const { tokens, prefixes } = namesIn(readers);
+  // TWO READER SETS. A setting's title is a message key the settings definitions read, so they read keys and classes;
+  // they do not read SETTINGS, since a definition naming itself and the registry listing it are not uses.
+  const { tokens, prefixes } = namesIn(sources.filter(({ file }) => !CATALOGUES.has(file)));
+  const settingReaders = namesIn(sources.filter(({ file }) => !CATALOGUES.has(file) && !file.startsWith(SETTINGS_DIR))).tokens;
   const prefixList = [...prefixes];
 
   for (const sheet of stylesheets) {
@@ -123,15 +185,21 @@ export function unreadIn({ stylesheets, catalogue, settings, sources }) {
   }
 
   if (catalogue !== null) {
-    const keys = [...catalogue.text.matchAll(/^export const ([A-Z][A-Z0-9_]*) = messageKey\(/gmu)].map((match) => match[1] ?? '');
+    const text = withoutComments(catalogue.text);
+    const keys = [...text.matchAll(/^export const ([A-Z][A-Z0-9_]*)\s*=\s*messageKey\(/gmu)].map((match) => match[1] ?? '');
+    // A BROKEN PARSE IS NOT A CLEAN CATALOGUE: every call that makes a key made one this parse found.
+    const calls = [...text.matchAll(/\bmessageKey\(/gu)].length;
+    if (calls !== keys.length) throw new Error(`the catalogue parse found ${String(keys.length)} of its ${String(calls)} keys`);
     // EVERY OTHER EXPORT of the catalogue and the names its body uses, for the fixed point: a table of titles is read
-    // through its own name, and every key it holds is read with it.
+    // through its own name, and every key it holds is read with it. A key as a COMPUTED PROPERTY NAME (`[KEY]: 'Open'`)
+    // is the catalogue giving it its words, not a table choosing it, so those are left out: the English record names
+    // every key that way, and counting it as a table read them all.
     const exportsOf = new Map();
-    const blocks = catalogue.text.split(/^(?=export )/mu);
+    const blocks = text.split(/^(?=export )/mu);
     for (const block of blocks) {
       const name = /^export (?:const|function) ([A-Za-z_]\w*)/u.exec(block)?.[1];
       if (name === undefined || keys.includes(name)) continue;
-      exportsOf.set(name, new Set(block.match(/[A-Z][A-Z0-9_]+/gu) ?? []));
+      exportsOf.set(name, new Set(block.replace(/\[\s*[A-Z][A-Z0-9_]*\s*\]\s*:/gu, ' ').match(/[A-Z][A-Z0-9_]+/gu) ?? []));
     }
     const read = new Set(keys.filter((key) => tokens.has(key)));
     const readExports = new Set([...exportsOf.keys()].filter((name) => tokens.has(name)));
@@ -154,17 +222,9 @@ export function unreadIn({ stylesheets, catalogue, settings, sources }) {
     for (const key of keys) if (!read.has(key)) unread.push({ kind: 'message', name: key, file: catalogue.file });
   }
 
-  for (const definition of settings) {
-    const text = definition.text;
-    for (const match of text.matchAll(/\bid:\s*'([a-z][\w-]*\.[\w.-]+)'/gu)) {
-      const id = match[1] ?? '';
-      // THE CONSTANT THAT HOLDS IT, where one does: the nearest `export const NAME` above the id.
-      const before = text.slice(0, match.index);
-      const holder = [...before.matchAll(/^export const ([A-Z][A-Z0-9_]*)\b/gmu)].at(-1)?.[1];
-      const holderIsNear = holder !== undefined && before.lastIndexOf(`export const ${holder}`) > before.lastIndexOf('\n};');
-      if (tokens.has(id) || (holderIsNear && tokens.has(holder))) continue;
-      unread.push({ kind: 'setting', name: id, file: definition.file });
-    }
+  for (const { id, constant, holder, file } of settingIdsIn(settings, sources).ids) {
+    if (settingReaders.has(id) || (constant !== undefined && settingReaders.has(constant)) || (holder !== undefined && settingReaders.has(holder))) continue;
+    unread.push({ kind: 'setting', name: id, file });
   }
   return unread;
 }
@@ -219,7 +279,7 @@ function filesIn(dir, wanted) {
 }
 
 /** A test, which names things without reading them. @param {string} name */
-export const isTest = (name) => /\.(test|spec|pw|capture)\.[cm]?[jt]sx?$/u.test(name);
+export const isTest = (name) => /\.(test|spec|pw|capture|visual)\.[cm]?[jt]sx?$/u.test(name);
 
 /** The tree's own input to the rule. @param {string} root */
 export function treeInput(root = repoRoot()) {
@@ -246,6 +306,10 @@ if (isMain(import.meta.url)) {
   const unread = unreadIn(input);
   process.stdout.write(`  ok  the scan reported its control's three unread assets and passed its three read ones\n`);
   for (const each of unread) process.stdout.write(`  UNREAD ${each.kind} ${each.name} (${each.file})\n`);
+  // NAMED, not counted as read: a setting whose id is an expression is out of this scan's reach, and says which.
+  for (const { expression, file } of settingIdsIn(input.settings, input.sources).notFollowed) {
+    process.stdout.write(`  note  a setting id this scan does not follow, judged by nothing here: ${expression} (${file})\n`);
+  }
   process.stdout.write(`${unread.length === 0 ? '  ok ' : 'FAIL'} ${String(unread.length)} unread asset(s) among ${String(input.stylesheets.length)} stylesheet(s), the message catalogue and ${String(input.settings.length)} settings module(s)\n`);
   process.exitCode = unread.length === 0 ? 0 : 1;
 }
