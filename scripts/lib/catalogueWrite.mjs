@@ -30,33 +30,14 @@
  * @returns {Promise<{ readonly verdict: string, readonly after: Uint8Array | null }>}
  */
 export async function writeCatalogueShape(kit, shape, options = {}) {
-  const { pdfium, mupdfWriter, applyEditTextOperators, blockEditOf, readsUnpacked, groupInFrames, inItsFrame, blockableOf, paragraphsOfLines, lineText, asDocVersion, fromTextFrame, expectEdit, engines } = kit;
+  const { paragraphsOfLines, lineText, fromTextFrame, expectEdit, engines } = kit;
   const base = await shape.build({});
   const correct = await shape.build({ edit: { block: shape.edit.block, lines: shape.edit.lines } });
   const block = base.blocks.find((/** @type {any} */ each) => each.id === shape.edit.block);
   const expected = /** @type {string} */ (correct.blocks.find((/** @type {any} */ each) => each.id === block.id)?.text);
   if (block.form !== undefined) return { verdict: 'NOT MEASURED: a block inside a form (see the walk’s header)', after: null };
-  const session = await pdfium.pdfiumWriter.open(base.bytes);
-  /** @type {any} */
-  let read;
-  /** @type {any} */
-  let runs;
-  try {
-    const plain = await pdfium.textRuns(session, base.page);
-    const unpacked = readsUnpacked(plain.unaddressable, 'operators');
-    if (unpacked) await pdfium.unpackedIfAsked(session, base.page, true);
-    read = unpacked ? await pdfium.textRuns(session, base.page) : plain;
-    runs = await pdfium.pageRuns(session, base.page);
-  } finally {
-    await pdfium.pdfiumWriter.close(session);
-  }
-  // THE EDITOR'S GROUPING, frame by frame (ADR-0273): text at an angle is grouped in its own frame, as the read does.
-  const grouped =
-    options.group?.(read.runs) ??
-    groupInFrames(
-      read.runs.map((/** @type {any} */ run) => blockableOf(inItsFrame(run))),
-      (/** @type {any} */ run) => run.frame?.matrix,
-    );
+  const { read, runs, grouped: editors } = await readForEdit(kit, base.bytes, base.page);
+  const grouped = options.group?.(read.runs) ?? editors;
   /** A grouped block's box on the page: a framed block's corners taken back out of its frame. @param {any} each */
   const onPage = (each) => {
     if (each.frame === undefined) return each.box;
@@ -103,25 +84,58 @@ export async function writeCatalogueShape(kit, shape, options = {}) {
   for (let k = 0; k <= occurrence; k += 1) at = asRead.indexOf(removed, at + 1);
   if (at < 0) return { verdict: `NOT SENT: the block as the grouping reads it holds “${removed}” fewer times than the catalogue’s`, after: null };
   const text = asRead.slice(0, at) + inserted + asRead.slice(at + removed.length);
+  const { after, outcome } = await writeBlockText(kit, base.bytes, base.page, runs, chosen, text);
+  const failures = await expectEdit(engines, { before: base.bytes, after, page: base.page, block, expected, outcome });
+  return { verdict: failures.length === 0 ? 'held' : failures.join('\n      '), after };
+}
+
+/**
+ * A page read as the editor reads it: PDFium's runs (read again unpacked where the read asks it), the page's operator
+ * runs the writer takes, and the runs grouped by the editor's own grouping, frame by frame (ADR-0273).
+ *
+ * @param {WriteKit} kit @param {Uint8Array} bytes @param {number} page
+ * @returns {Promise<{ readonly read: any, readonly runs: any, readonly grouped: readonly any[] }>}
+ */
+export async function readForEdit(kit, bytes, page) {
+  const { pdfium, readsUnpacked, groupInFrames, inItsFrame, blockableOf } = kit;
+  const session = await pdfium.pdfiumWriter.open(bytes);
+  try {
+    const plain = await pdfium.textRuns(session, page);
+    const unpacked = readsUnpacked(plain.unaddressable, 'operators');
+    if (unpacked) await pdfium.unpackedIfAsked(session, page, true);
+    const read = unpacked ? await pdfium.textRuns(session, page) : plain;
+    const runs = await pdfium.pageRuns(session, page);
+    const grouped = groupInFrames(
+      read.runs.map((/** @type {any} */ run) => blockableOf(inItsFrame(run))),
+      (/** @type {any} */ run) => run.frame?.matrix,
+    );
+    return { read, runs, grouped };
+  } finally {
+    await pdfium.pdfiumWriter.close(session);
+  }
+}
+
+/**
+ * One grouped block given new words, written by the operator writer as `main` routes it: the bytes it left, and what it
+ * said (its notes, or its refusal).
+ *
+ * @param {WriteKit} kit @param {Uint8Array} bytes @param {number} page @param {any} runs @param {any} block @param {string} text
+ * @returns {Promise<{ readonly after: Uint8Array | null, readonly outcome: any }>}
+ */
+export async function writeBlockText(kit, bytes, page, runs, block, text) {
+  const { mupdfWriter, applyEditTextOperators, blockEditOf, asDocVersion } = kit;
   const entry = {
-    lines: chosen.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index)),
-    soft: chosen.lines.map((/** @type {any} */ line) => line.soft),
+    lines: block.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index)),
+    soft: block.lines.map((/** @type {any} */ line) => line.soft),
     text,
   };
-  const copy = await mupdfWriter.open(base.bytes);
-  /** @type {Uint8Array | null} */
-  let after = null;
-  /** @type {any} */
-  let outcome;
+  const copy = await mupdfWriter.open(bytes);
   try {
-    const { noted } = await applyEditTextOperators(copy, { kind: 'editTextOperators', page: base.page, ...blockEditOf([entry]), fit: 'reflow', version: asDocVersion(1) }, runs);
-    after = await mupdfWriter.serialise(copy);
-    outcome = { noted };
+    const { noted } = await applyEditTextOperators(copy, { kind: 'editTextOperators', page, ...blockEditOf([entry]), fit: 'reflow', version: asDocVersion(1) }, runs);
+    return { after: await mupdfWriter.serialise(copy), outcome: { noted } };
   } catch (error) {
-    outcome = { refused: error };
+    return { after: null, outcome: { refused: error } };
   } finally {
     await mupdfWriter.close(copy);
   }
-  const failures = await expectEdit(engines, { before: base.bytes, after, page: base.page, block, expected, outcome });
-  return { verdict: failures.length === 0 ? 'held' : failures.join('\n      '), after };
 }

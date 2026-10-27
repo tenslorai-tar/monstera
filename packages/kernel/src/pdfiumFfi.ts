@@ -91,6 +91,7 @@ import {
   unwritableCharacters,
 } from './textEditRefusals.js';
 import { readInLineOrder } from './bidiLine.js';
+import { pdfTextString } from './pdfTextString.js';
 import { type Orientation, isUpright, lineBaselineOf } from './textLines.js';
 import { type JoinedRun, joinRuns, membersOf } from './textRunJoin.js';
 
@@ -3955,6 +3956,18 @@ function markString(
   return Buffer.from(buffer.subarray(0, bytes - 2)).toString('utf16le');
 }
 
+/** A mark parameter's own bytes, by PDFium's two-call size protocol; `null` where the key holds no string. */
+function markBytes(call: (buffer: Uint8Array | null, length: number, needed: number[]) => unknown, what: string): Uint8Array | null {
+  const needed = [0];
+  if (numberFrom(call(null, 0, needed), what) !== 1) return null;
+  const bytes = needed[0] ?? 0;
+  if (bytes === 0) return new Uint8Array();
+  if (bytes > MAX_MARK_STRING_BYTES) return null;
+  const buffer = new Uint8Array(bytes);
+  if (numberFrom(call(buffer, buffer.length, needed), what) !== 1) return null;
+  return buffer;
+}
+
 /**
  * The marked content `from` stands in, set on `to` ([ADR-0181](../../../docs/DECISIONS/0181-right-to-left-text-is-written-in-drawing-order-and-read-back-as-typed.md)
  * Decision 8): each mark's name and the parameters PDFium can both read and set (numbers and strings, an `MCID` among
@@ -4032,11 +4045,12 @@ function actualTextOf(bindings: Bound, object: unknown): string | undefined {
     if (mark === null) continue;
     const kind = numberFrom(bindings.markParamType(mark, ACTUAL_TEXT), 'FPDFPageObjMark_GetParamValueType');
     if (kind !== MARK_STRING) continue;
-    const text = markString(
-      (buffer, length, needed) => bindings.markParamString(mark, ACTUAL_TEXT, buffer, length, needed),
-      'FPDFPageObjMark_GetParamStringValue',
+    // AS BYTES, decoded by the PDF's own rule (`pdfTextString`): the string call reads UTF-16 as UTF-8 and answers NULs.
+    const bytes = markBytes(
+      (buffer, length, needed) => bindings.markParamBlob(mark, ACTUAL_TEXT, buffer, length, needed),
+      'FPDFPageObjMark_GetParamBlobValue',
     );
-    if (text !== null) return text;
+    if (bytes !== null) return pdfTextString(bytes);
   }
   return undefined;
 }
@@ -4132,7 +4146,14 @@ function copyMarks(bindings: Bound, document: unknown, from: unknown, to: unknow
         if (numberFrom(bindings.markParamInt(mark, key, value), 'FPDFPageObjMark_GetParamIntValue') === 1) {
           numberFrom(bindings.markSetInt(document, to, made, key, value[0] ?? 0), 'FPDFPageObjMark_SetIntParam');
         }
-      } else if (kind === MARK_STRING || kind === MARK_NAME) {
+      } else if (kind === MARK_STRING) {
+        // A STRING'S BYTES, carried as they are: through the string call a UTF-16 one would arrive as NULs.
+        const bytes = markBytes(
+          (buffer, length, needed) => bindings.markParamBlob(mark, key, buffer, length, needed),
+          'FPDFPageObjMark_GetParamBlobValue',
+        );
+        if (bytes !== null) numberFrom(bindings.markSetBlob(document, to, made, key, bytes, bytes.length), 'FPDFPageObjMark_SetBlobParam');
+      } else if (kind === MARK_NAME) {
         const text = markString(
           (buffer, length, needed) => bindings.markParamString(mark, key, buffer, length, needed),
           'FPDFPageObjMark_GetParamStringValue',

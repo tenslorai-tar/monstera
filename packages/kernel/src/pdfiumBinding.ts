@@ -73,6 +73,9 @@ export interface Bound {
   readonly markParamType: Native;
   readonly markParamInt: Native;
   readonly markParamString: Native;
+  /** A string parameter's own bytes, which {@link markParamString} decodes as UTF-8 and so loses where they are UTF-16. */
+  readonly markParamBlob: Native;
+  readonly markSetBlob: Native;
   readonly addMark: Native;
   readonly markSetInt: Native;
   readonly markParamFloat: Native;
@@ -381,6 +384,16 @@ export function openPdfium(libraryPath: string): void {
     markParamString: native(
       library.func(
         'int FPDFPageObjMark_GetParamStringValue(void *mark, const char *key, _Out_ uint8_t *buffer, unsigned long length, _Out_ unsigned long *needed)',
+      ),
+    ),
+    markParamBlob: native(
+      library.func(
+        'int FPDFPageObjMark_GetParamBlobValue(void *mark, const char *key, _Out_ uint8_t *buffer, unsigned long length, _Out_ unsigned long *needed)',
+      ),
+    ),
+    markSetBlob: native(
+      library.func(
+        'int FPDFPageObjMark_SetBlobParam(void *document, void *object, void *mark, const char *key, const uint8_t *value, unsigned long length)',
       ),
     ),
     addMark: native(library.func('void *FPDFPageObj_AddMark(void *object, const char *name)')),

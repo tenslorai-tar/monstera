@@ -43,7 +43,7 @@ import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRawStream, Stand
 import { EDIT_CATALOGUE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { MARGIN, expectEdit, inkedCharacters, readBlock } from '../lib/editExpectations.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
-import { writeCatalogueShape } from '../lib/catalogueWrite.mjs';
+import { readForEdit, writeBlockText, writeCatalogueShape } from '../lib/catalogueWrite.mjs';
 import { bindNativeEngine } from '../lib/nativeEngine.mjs';
 import { charactersOf, compare, render, SCALE } from '../lib/pageDisturbance.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
@@ -78,6 +78,7 @@ const CASES = [
   'CONTROL: the new word set against its neighbour with no space fails the check, as words run together',
   'DRAWN UNDER AN ANNOTATION: invisible words under an annotation’s appearance are still judged unseen, as without it',
   'TEXT SET AT AN ANGLE (ADR-0273): the turned page, the turned page under a crop box and the skewed page are each offered by the editor’s grouping and written, every expectation held; CONTROL: grouped upright only, none is sent',
+  'TWO TYPED SPACES are written and read back as two spaces and nothing else, on the TrueType subset page with no space glyph and on the drawn (Type 3) page',
 ];
 
 // ------------------------------------------------------------------------------------------------- the file's shape
@@ -260,8 +261,8 @@ const CLAIMS = {
 async function run(pdfium, kernel, kit) {
   /** @type {string[]} */
   const failures = [];
-  const roster = createRoster(failures, { cases: 21 });
-  if (CASES.length !== 21) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 21`);
+  const roster = createRoster(failures, { cases: 22 });
+  if (CASES.length !== 22) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 22`);
   const check = (/** @type {string} */ name, /** @type {boolean} */ held, /** @type {string} */ detail) => {
     const mark = roster.mark();
     if (!held) failures.push(`${name}\n      ${detail}`);
@@ -471,6 +472,39 @@ async function run(pdfium, kernel, kit) {
       if (!without.verdict.startsWith('NOT SENT')) wrongAngled.push(`${id}: grouped upright only, it was ${without.verdict === 'held' ? 'held' : `judged “${without.verdict}”`}, not left unsent`);
     }
     check(CASES[20] ?? '', wrongAngled.length === 0, wrongAngled.join('\n      '));
+  }
+  // TWO TYPED SPACES ARE WRITTEN AND READ BACK AS TWO SPACES (the local agent's walk at 6fbe6389): on the drawn page the
+  // writer marks them in UTF-16, which the reader once took through a call that reads it as UTF-8 and so as NUL, space,
+  // NUL; on the subset page the font has no space, and the run was two unmarked gaps that a text page reads as one.
+  {
+    /** @type {string[]} */
+    const wrongSpaces = [];
+    for (const [id, word] of /** @type {const} */ ([['01-truetype-subset', 'The'], ['04-all-fonts-drawn-type3', 'This']])) {
+      const shape = SHAPES.find((each) => each.id === id);
+      if (shape === undefined) {
+        wrongSpaces.push(`${id}: no such shape`);
+        continue;
+      }
+      const base = await shape.build({});
+      const before = await readForEdit(kit, base.bytes, base.page);
+      const textOf = (/** @type {any} */ each) => kit.paragraphsOfLines(each.lines.map((/** @type {any} */ line) => ({ text: kit.lineText(line.runs), soft: line.soft })));
+      const block = before.grouped.find((each) => textOf(each).startsWith(`${word} `));
+      if (block === undefined) {
+        wrongSpaces.push(`${id}: no block begins “${word}”`);
+        continue;
+      }
+      const typed = textOf(block).replace(`${word} `, `${word}  `);
+      const { after, outcome } = await writeBlockText(kit, base.bytes, base.page, before.runs, block, typed);
+      if (after === null) {
+        wrongSpaces.push(`${id}: the write was refused: ${String(outcome.refused)}`);
+        continue;
+      }
+      const again = (await readForEdit(kit, after, base.page)).read.runs.map((/** @type {any} */ run) => run.text).join('|');
+      // eslint-disable-next-line no-control-regex -- the defect this case exists for is a control character in the read
+      if (/[\u0000-\u0008\u000B-\u001F]/u.test(again)) wrongSpaces.push(`${id}: the read holds a control character: ${JSON.stringify(again.slice(0, 80))}`);
+      if (!again.replace(/\|/gu, '').includes(`${word}  `)) wrongSpaces.push(`${id}: “${word}” is not followed by two spaces in ${JSON.stringify(again.slice(0, 80))}`);
+    }
+    check(CASES[21] ?? '', wrongSpaces.length === 0, wrongSpaces.join('\n      '));
   }
 
   process.stdout.write(

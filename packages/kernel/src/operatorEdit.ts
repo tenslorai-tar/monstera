@@ -1202,15 +1202,22 @@ function write(
      * space: every tab typed there was written as a gap with no mark (step 11, 0 marks). Where no face is given either,
      * the tab is named as a character the edit needs a face for, so the caller gives it one and it is never dropped
      * unsaid.
+     *
+     * AND A RUN OF SPACES' MARK, for the same reason: two spaces typed in a font with no space were two gaps with no mark,
+     * which a text page reads as one space (measured 2026-10-27, the catalogue's TrueType subset page).
      */
-    const tabGapOf = (source: ShowOperator, restyle?: Restyle): FacePiece | undefined => {
+    const gapGlyphOf = (source: ShowOperator, restyle: Restyle | undefined, gap: '\t' | ' '): FacePiece | undefined => {
       const own = piecesOf(source, TAB_GAP, restyle);
       if (own !== null && own.length === 1) return own[0];
-      const key = `${String(indexOf.get(source))}|${JSON.stringify(restyle ?? null)}|tab`;
-      if (answers.has(key)) return answers.get(key)?.[0];
+      const key = `${String(indexOf.get(source))}|${JSON.stringify(restyle ?? null)}|gap`;
+      if (answers.has(key)) {
+        const known = answers.get(key)?.[0];
+        if (known === undefined) uncarried.add(gap);
+        return known;
+      }
       const faced = faces?.set(TAB_GAP, source, () => null, restyle) ?? null;
       const piece = faced !== null && faced.length === 1 ? faced[0] : undefined;
-      if (piece === undefined) uncarried.add('\t');
+      if (piece === undefined) uncarried.add(gap);
       answers.set(key, piece === undefined ? null : [piece]);
       return piece;
     };
@@ -1337,7 +1344,7 @@ function write(
         // `/Span <</ActualText (tab)>>`, and the next words at the next stop from the block's left edge. A font with no
         // space draws nothing there, and the gap is still the stop's.
         if (token === '\t') {
-          const piece = tabGapOf(source, restyleOf(marked));
+          const piece = gapGlyphOf(source, restyleOf(marked), '\t');
           if (piece !== undefined) {
             faces?.drawn([piece]);
             line.segments.push({ source, font: piece.font, codes: [...piece.codes], text: '\t', x: cursor, style, actual: '\t' });
@@ -1345,8 +1352,26 @@ function write(
           cursor = nextTabStop(cursor, blockLeft);
           continue;
         }
-        const pieces = piecesOf(source, token, restyleOf(marked));
-        if (pieces === null) continue;
+        const own = piecesOf(source, token, restyleOf(marked));
+        if (own === null) continue;
+        if (inRun && own.length === 0) {
+          // A SPACE OF A RUN THAT NO FONT HERE DRAWS stands on a face's space (`gapGlyphOf`), so the run's mark holds
+          // glyphs to name; the pen still moves by what the measure counted, so no word lands elsewhere than planned.
+          const gap = gapGlyphOf(source, restyleOf(marked), ' ');
+          if (gap !== undefined) {
+            faces?.drawn([gap]);
+            const last = line.segments.at(-1);
+            if (typed[index - 1] === ' ' && last?.actual !== undefined && last.actual !== '\t' && last.source === source && last.font === gap.font) {
+              last.codes.push(...gap.codes);
+              line.segments[line.segments.length - 1] = { ...last, text: `${last.text} `, actual: `${last.actual} ` };
+            } else {
+              line.segments.push({ source, font: gap.font, codes: [...gap.codes], text: ' ', x: cursor, style, actual: ' ' });
+            }
+          }
+          cursor += widthOfPieces(source, own, unit) + spacedBy(token, spacing) + stretch;
+          continue;
+        }
+        const pieces = own;
         faces?.drawn(pieces);
         const widths = pieceWidths(source, pieces, unit);
         const width = widthOfPieces(source, pieces, unit);
