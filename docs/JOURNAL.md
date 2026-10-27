@@ -892,6 +892,110 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-27 — Stage audit of `dabf6041..f1c1dc16` — findings ZZZZZZZZ-1 to ZZZZZZZZ-30
+
+Cloud run 23 (ADR-0271), Milestones 1 and 2 of the Edit text rebuild, before the "M2 complete:" commit: the editor kit,
+the two-step opening, the font list's groups, the scan cover, the push's removal, the read on open, the run-font
+route's removal, the area repaint, smooth scrolling, the unread-asset scan and the clean up. `npm run audit:scope` at
+`f1c1dc16`: 44 commits, 200 files, within one batch until the next file; 15 proofs added, 66 modified, 5 removed; 21
+source files added, 70 changed, 7 removed. The audit was owed by the gate on the commit after.
+
+**Method.** Three read-only reviewers, one each for the writer side, the editor side, and the tooling and documents,
+were given the range and CLAUDE.md's checklist, not this author's view. Every finding marked *executed* was re-run here
+before it was recorded. **Stated limitation, not a pass:** the reviewers read the modified proofs' diffs and ran none of
+the writer proofs end to end; the research walks run only on Windows and were judged by reading; the deleted editor
+test's 1,834 lines were mapped to replacements by grep, not case by case.
+
+### Fixed
+
+**ZZZZZZZZ-1** — the unread-asset scan could not report a message key: the English record names every key as a computed
+property name and was counted as a table that reads them, and that masked the settings definitions being excluded as
+readers of keys (about 199 setting titles). It also dropped `=messageKey(` and the five settings whose id is a
+constant, with no count to notice. Executed: a planted dead key with its words was reported by nothing. Fixed with a
+count anchor for both parses, and 16 keys it then found removed (`97ecd197`); the proof's eight new cases each fail on
+the old rule. This scan was this run's own instrument, and its first report of "0 unread keys" was false.
+**ZZZZZZZZ-2** — the catalogue's unseen check compared a contents-only drawing with one that ran the annotations, so an
+invisible word under an annotation read as drawn. Executed. Fixed, with case 20 red on the old drawing (`00b5aedd`).
+**ZZZZZZZZ-3** — `textCommitHold.pw.ts` asserted ADR-0261 Decision 7 as first written and failed once `04b961e2` let the
+editor go at its drawn area; it was not in the rendered set that commit reported. Rewritten to the property, every frame
+showing the written words, with a control of 2 bare frames (`315922e3`).
+**ZZZZZZZZ-4** — a paragraph beginning in Hebrew was laid out left to right in the kit editor: `unicode-bidi: plaintext`
+was on the surface, and each paragraph is its own block and does not inherit it. Executed (a rendered case placed the
+closing "!" at the far right). Fixed on the paragraph, with `editTextBidi.pw.ts` red before (in the commits after this
+one).
+**ZZZZZZZZ-5** — FEATURES rows 148 and 151 to 156 cited the deleted `TextEditLayer.test.tsx` and described one-click
+opening and the retired run font; the help described the retired font rule; `sfntTables.ts` named the removed channel.
+Corrected in the commits after this one; rows 152 to 156 now say their editor half is owed (ZZZZZZZZ-12).
+
+### Recorded, not fixed here
+
+**ZZZZZZZZ-6 — split, for the owner.** `827e5f2d` applied ADR-0271's "growth overlaps" to a split too: a split's second
+half moves down a line and the text below stays, so the next read can join them as one block, which VVVVVVV-25 had
+fixed. The two records that showed it were deleted with the push. ADR-0271 decides growth, not split. A QUESTION commit
+asks.
+**ZZZZZZZZ-7** — `blockFaces.test.ts`' joint case compares the face FAMILY only, and on its fixture every font asked
+answers the same family; only the weight differs and is not asserted. Executed by the reviewer in a scratch copy.
+**ZZZZZZZZ-8** — the composition's `blockFaces` delegate (`pageRunsOf`, `blockFaceRunsOf`, the host, `facesInOrder`) is
+crossed by no test: the pair's second blind spot.
+**ZZZZZZZZ-9** — the face read lost `unpack`: Edit text's block read is unpacked where text is packed, and
+`document.blockFaces` maps the indices through a packed page read. The case that pinned `unpack: true` was deleted in
+`20a5bd57` without a word. Display only; nothing written is affected.
+**ZZZZZZZZ-10** — two opinions of a scan's recognised words (`operatorEdit.ts` `overAScan`, `pdfiumFfi.ts`
+`recognisedOverPictures`), B3a; the PDFium one is dormant while every Edit text write goes to the operator writer.
+**ZZZZZZZZ-11** — no catalogue control now reaches `astray`'s `y > column.top`; the upward control was moved to the width
+for a sound reason (a clip hides it) and nothing replaced it. And the catalogue's line rule for scans re-derives a line
+geometrically beside the read's own lines, with a 0.15 that carries no reading (B6).
+**ZZZZZZZZ-12 — the editor half of many done rows is owed.** `97437a2c` deleted `TextEditLayer.test.tsx` and these
+cases have no replacement: the right-click menu (one word replaced, the dictionary and its refusal, Cut, Copy and Paste,
+no finish while the menu has the focus), join and split in the editor, the move, scale and turn handles and Alt+arrow,
+a click on another block writing the open one first and a refusal stopping the next, a signed document, the reopen past
+the page's foot, the covers notice, Escape during composition, a rejected commit freeing the editor, the shaded paper's
+gradient, Add text's nearby style, and the kit's list, indent and spacing operations. No new FEATURES row describes the
+kit, the two steps, the font groups, the fallback face, the area repaint or the read on open.
+**ZZZZZZZZ-13** — the area patch's tests assert it covers the block and never that it is only the block's area; the
+turned page, a zoom change between the write and the redraw (the area is fixed CSS pixels while the draw takes the new
+zoom), and a writer that wraps one line more than the editor are untried.
+**ZZZZZZZZ-14** — no test reaches a quick double press (`detail` 2): Playwright's presses all arrive with `detail` 1.
+**ZZZZZZZZ-15** — the speed probe's control is a 120 ms timer against a lower bound, which cannot fail at the 30 and
+50 ms the rows decide, and the probe stops before the frame's paint. The area patch's 110 to 136 ms is a runner-side
+time around a polling wait, a ceiling. The scroll figures of `8e926ee4` came from an uncommitted probe.
+**ZZZZZZZZ-16** — `useSettledPages.ts` says none of its three reads draws anything seen while scrolling; the text read's
+`kind` draws the picture page's note, which now waits for the pause. And what PageList hands the hook's results to is
+untested, so restoring `visible` there stays green.
+**ZZZZZZZZ-17** — new UI rules with no test: the Bold and Italic toggles offered by the family's styles, the nearest-style
+note, `editorFontsOf`, and the fallback face reaching the editor.
+**ZZZZZZZZ-18** — B3a, twice in the editor: "the editor was left" is decided by `BlockEditor`'s `away` and by
+`openEditor`'s `leavesEditor`, which disagree on a disconnected target and on a menu; and the slot draws the patch from
+`source` while it reads PDF.js's text from `page`.
+**ZZZZZZZZ-19** — the ADR index rows of 0179, 0180, 0261 and 0271 do not carry the corrections and notes this range
+added, and `documentConsistency.mjs` checks only that a row says "correct" anywhere, so an old correction passes for any
+number of new ones, and a heading "Note, DATE" is not seen at all.
+**ZZZZZZZZ-20** — ADR-0261's note landed in the feature commit (`04b961e2`), and it records a fallback (the page's own
+redraw still closes the editor where the area cannot be drawn) that ADR-0271's "the full page is never waited for" does
+not decide. It stays as the failure path; the owner may rule.
+**ZZZZZZZZ-21** — ARCHITECTURE §3 still calls `fonts.bundledFace` "a fourth byte crossing" after the third was removed.
+**ZZZZZZZZ-22** — the joint test is an unexecuted Windows walk (`f1c1dc16` says so), and two walks re-derive the face
+stack's spelling as a string, so a respelt stack makes their checks pass vacuously.
+**ZZZZZZZZ-23** — `InlineWriter.tsx` still names the deleted `TextEditLayer` in a comment; the owner's rule keeps that
+file unedited.
+**ZZZZZZZZ-24** — `editCatalogueWriter.mjs` counts a word's occurrence in the catalogue's text and uses it in the
+grouping's, which differ where the grouping adds list numbers.
+**ZZZZZZZZ-25** — `startupWalk` and `markLatencyWalk` now time a press and Enter where base A timed one press: not like
+for like.
+**ZZZZZZZZ-26** — a subset whose `cmap` disagrees with its glyphs (SSSSSSS-14) was guarded for the retired rebuilt font;
+the face PDF.js loaded is now what the editor draws in, and the same disagreement was not checked there.
+**ZZZZZZZZ-27** — the unread-asset scan names the one setting id it cannot follow (`AI_PROVIDERS[provider].keySetting`)
+and judges nothing about those settings.
+**ZZZZZZZZ-28** — small check changes: `textFirstClick` waits for attached where it waited for visible; the hand walk's
+font step asserts only that the family changed; `textBlockOps.test`'s halves count can no longer separate anything;
+`documentCommands.test`'s growth control casts the removed `push` field through.
+**ZZZZZZZZ-29** — `renderedScreen.pw.ts` "a CAPTION THAT GROWS" fails in this cloud sandbox on the committed tree and
+passed on CI's Linux leg at `8f9d22a9`; no ribbon file changed. Why is not established.
+**ZZZZZZZZ-30** — the escape guard denied an empty `node -e ""` typed ahead of a grep during this audit: the reflex, not
+the need, and nothing ran.
+
+---
+
 ## 2026-10-26 — Stage audit of `8db42b52..dabf6041` — findings YYYYYYYY-1 to YYYYYYYY-22
 
 Cloud run 22, before any code of the Edit text rebuild's Part 2 (the owner's order of 2026-10-26): main at `2ea30acc` —
