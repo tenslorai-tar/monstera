@@ -619,8 +619,10 @@ function sameFrame(a: Matrix, b: Matrix): boolean {
 
 /**
  * The frame the edit's blocks are set in, from each block's first run's first operator, or `null` where they are
- * upright. Every block of one edit must be in one frame: a join or a split names blocks of one frame (`neighbourOf`), and
- * an edit that named two frames would be two layouts in one coordinate change.
+ * upright. Every block of one edit must be in one frame, and every sender keeps it so by one rule, the contract's
+ * `oneCommand`: a join or a split names blocks it allows (`neighbourOf`), and a replacement sends one command per group
+ * of it (`commandsOf`). An edit that named two frames would be two layouts in one coordinate change, so the refusal here
+ * is a guard against a sender that bypasses that rule, which no surface reaches.
  */
 function editFrame(ops: readonly ShowOperator[], page: PageRuns, blocks: readonly EditedBlock[]): Matrix | null {
   const byObject = new Map<number, ShowOperator>();
