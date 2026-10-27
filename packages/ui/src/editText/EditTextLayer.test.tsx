@@ -301,6 +301,51 @@ describe('Edit text on the editor kit (ADR-0271)', () => {
     expect(view.container.querySelector('[data-kit-patch]')).toBeNull();
   });
 
+  it.each([
+    ['REFUSES', () => Promise.reject(new Error('the area could not be drawn'))],
+    ['has NO NEWER VIEW to draw from', () => Promise.resolve(undefined)],
+  ] as const)('where the area draw %s, the written editor WAITS for the page’s own read at the new version (the owner’s decision, ADR-0271)', async (_how, answer) => {
+    const patch = vi.fn<PatchArea>(answer);
+    const props = (blocks: PageBlocks) => (
+      <I18nProvider i18n={i18n}>
+        <EditTextLayer
+          blockFaces={() => Promise.resolve(NO_BLOCK_FACES)}
+          blocks={blocks}
+          drawn={blocks.version}
+          geometry={{ ...GEOMETRY, crop: [...GEOMETRY.crop] }}
+          onCommit={() => Promise.resolve('written')}
+          onLeave={vi.fn()}
+          page={0}
+          paperAt={() => undefined}
+          patch={patch}
+        />
+      </I18nProvider>
+    );
+    const view = render(props(BLOCKS));
+    const frame = () => view.container.querySelector<HTMLElement>('[data-kit-frame]');
+    const surface = () => must(view.container.querySelector<HTMLElement>('[data-kit-surface]'), 'surface');
+    fireEvent.click(must(view.container.querySelector<HTMLElement>('[data-text-block="0"]'), 'outline'), { detail: 1 });
+    act(() => {
+      typeAt(surface(), '!', { paragraph: 0, offset: 11 });
+    });
+    await act(async () => {
+      fireEvent.keyDown(surface(), { key: 'Escape' });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    // THE DRAW WAS ASKED FOR AND CAME TO NOTHING, and the editor holds the written words over the page meanwhile.
+    expect(patch).toHaveBeenCalledTimes(1);
+    expect(frame()).not.toBeNull();
+    expect(surface().textContent).toBe('Garden club!');
+    expect(view.container.querySelector('[data-kit-patch="drawn"]')).toBeNull();
+    // THE PAGE'S OWN READ AT THE NEW VERSION, as `EditTextPage` hands it down once the page is drawn from it: now it lets go.
+    await act(async () => {
+      view.rerender(props({ ...BLOCKS, version: asDocVersion(4) }));
+      await Promise.resolve();
+    });
+    expect(frame()).toBeNull();
+  });
+
   it('Escape with no block open leaves the mode', () => {
     const { view, onLeave } = layer();
     fireEvent.keyDown(must(view.container.querySelector('[data-text-edit-layer]'), 'layer'), { key: 'Escape' });
