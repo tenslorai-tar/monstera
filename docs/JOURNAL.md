@@ -1019,6 +1019,78 @@ The findings above stand as recorded; this says where each one went in the commi
   reviewers ran `App.test.tsx`, and the stated limitation above did not say so. Fixed in `14facd26` by
   waiting for the reads.
 
+The checklist below was missing from this entry when it was recorded and when the correction above was written;
+Guards refused it at `79eeae48` (`documentConsistency.mjs`, 0 of 11 items answered). The answers cover the audited
+range and the fixes after it.
+
+### 1. Root cause or workaround?
+
+Each fix names its mechanism in its commit. The unread-asset scan was blind because the English record names keys as
+computed properties, which it read as definitions only (ZZZZZZZZ-1, fixed in the scan's rule, not by listing keys).
+The bidi defect was `unicode-bidi` set on an element that never held a paragraph (ZZZZZZZZ-4). ZZZZZZZZ-31's fix waits
+for a read the design defers; it loosens nothing, since a mode that never reads still fails. No check was loosened in
+the range: when a FEATURES row went past its word target, my own additions were shortened and the target stayed.
+
+### 2. Easy shape only?
+
+Yes, three times: the joint face case had one family for every font, so only the weight could differ and was not
+asserted (ZZZZZZZZ-7); the catalogue's unseen check had no annotation over a word (-2); the area patch was tried only
+at the zoom it was written at (-13, fixed for zoom in `c1abe8c8`; the turned page is still untried).
+
+### 2a.
+
+The unread-asset scan moved message keys from unjudged to judged (`97ecd197`), which is a strengthening wherever the
+scan runs; it runs in CI on every leg. The text walk's joint test is a derivation that runs only on Windows, so it
+covers nothing on Linux and says so (-22).
+
+### 3. Would CI have caught it?
+
+Read from runs, not from the files: at `79eeae48` CI passed every job, which includes ZZZZZZZZ-31's App test and the
+restored editor tests. This Guards failure was not caught locally, because `check:docs` is never run by hand here; it
+is Guards' job, and it caught it. ZZZZZZZZ-9, -10 and -11 would not be caught by CI: they are dormant paths and a
+control no catalogue shape reaches.
+
+### 4. Non-vacuous?
+
+Each fix in the range was shown red without it: the area patch's upper bound and zoom case (77 px off without the fix),
+the commit hold's frame sampler (2 bare frames), the bidi case's control (a paragraph beginning in English), ADR-0272's
+render count (red with every surface subscribed to everything) and its subscription case (red with `rail` removed),
+and the fallback face case (red with the setting ignored).
+
+### 4a.
+
+The speed probe's control is a 120 ms timer against a lower bound and cannot resolve the 30 and 50 ms the rows decide
+(-15); the hand walk's Bold row cannot see a saving smaller than one frame, which is why ADR-0272's evidence is the
+render count rather than that row.
+
+### 4b.
+
+The unread-asset scan is a search and carries its own positive control, planted unread assets it must find on every
+run; it was blind to message keys until -1 was fixed, and it names the one setting id it cannot follow (-27).
+
+### 4c.
+
+The unread-asset proof's case count is a literal (21) beside its list. ADR-0272's subscription case derives its ids
+from the registry, which is the direction the danger runs (a command added, never one quietly lost), and asserts that
+the walk found commands on every surface, so an empty model cannot pass.
+
+### 5. Executed or asserted?
+
+Executed: the unit and rendered cases named above, `commandStateLive.pw.ts` (81), the hand walk (3), the catalogue
+proof, and the reviewers' scratch cases where marked. Asserted only: the joint test and the research walks, which run
+on Windows (-22, -25).
+
+### 6. Architecture before the feature?
+
+The amendments preceded their code: `7f55ad5d` before the push's removal, `93e82cb8` before the faces, `cfec56d3`
+(ADR-0272) before the surfaces' subscriptions. ADR-0261's note landed in its feature commit (-20).
+
+### 7. Documents?
+
+ZZZZZZZZ-5, -12, -19, -21 and -23. FEATURES rows 152 to 156 now cite the restored tests (`4108908d`) and a row
+describes the read on open and the font list (`30ac58fd`). ADR-0272 carries an as-built note where the build differs
+from its text.
+
 ---
 
 ## 2026-10-26 — Stage audit of `8db42b52..dabf6041` — findings YYYYYYYY-1 to YYYYYYYY-22
