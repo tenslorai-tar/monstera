@@ -89,8 +89,20 @@ const chooseFont = async (family) => {
   fontChoiceSamples.push({ family, samples: await steps.chooseFont(family) });
 };
 
+// THE JOINT (ADR-0271 section 5): steps 1 to 3 and 6 are the editor, its one command, the real writer in its real host,
+// the file, and a reopen, each read back from a saved copy. JOINED is a word no test file contains, so finding it in a
+// file can only be this edit, and its absence after the Undo can only be the Undo.
+const JOINED = 'jointwalk';
+/** The first page's words as PDF.js reads them from a saved copy of the document on show. */
+const firstPageSaved = async (/** @type {string} */ name) => (await savedWords(await savedCopy(name)))[0] ?? '';
+/** @type {string | undefined} */
+let unedited;
+
 await step('1. Edit text: a click between two letters, typing, Backspace twice, Shift+Ctrl+Left, Ctrl+B lights Bold', async () => {
   await open(document);
+  unedited = await firstPageSaved('01-before.pdf');
+  // CONTROL: the word is not in the document before the walk types it.
+  expect(unedited.includes(JOINED), 'the document already holds the joint word').toBe(false);
   await section('Edit');
   await ensureEditText();
   const block = page.locator('[data-text-block]').nth(1);
@@ -98,7 +110,7 @@ await step('1. Edit text: a click between two letters, typing, Backspace twice, 
   if (box === null) throw new Error('no second block on the first page');
   // BETWEEN TWO LETTERS in the middle of the paragraph, not at its end.
   await openAt(box.x + box.width / 2, box.y + Math.min(8, box.height / 2));
-  await page.keyboard.type(' walked');
+  await page.keyboard.type(` ${JOINED}ed`);
   await page.keyboard.press('Backspace');
   await page.keyboard.press('Backspace');
   await page.keyboard.press('Control+Shift+ArrowLeft');
@@ -128,12 +140,18 @@ await step('3. a click away writes it; one Ctrl+Z undoes steps 1 and 2 together,
   // waits for the first to LAND, as a hand does; sent together they left a later Add text editor open for good. Three
   // 6 s sleeps stood for these three waits (GGGGGGGG-3).
   await writesLanded(page, writing);
+  // WRITTEN, read from the file the writer made.
+  expect(await firstPageSaved('03-written.pdf'), 'the written file does not carry the edit').toContain(JOINED);
   const undoing = await writesDone(page);
   await page.keyboard.press('Control+Z');
   await writesLanded(page, undoing);
+  // ONE UNDO PUTS THE PAGE BACK WHOLE: the words, the format and the font of steps 1 and 2 together, read as the same
+  // words the page had before step 1.
+  expect(await firstPageSaved('03-undone.pdf'), 'one Undo did not put the page back').toBe(unedited);
   const redoing = await writesDone(page);
   await page.keyboard.press('Control+Y');
   await writesLanded(page, redoing);
+  expect(await firstPageSaved('03-redone.pdf'), 'Redo did not bring the edit back').toContain(JOINED);
 });
 
 await step('4. Add text: two lines typed on a blank area, ended with Escape, and the words kept', async () => {
@@ -237,7 +255,10 @@ await step('6. saved, closed and reopened: the words are there, editable, findab
   await command('Find');
   await page.keyboard.type('line two');
   await page.keyboard.press('Enter');
+  // THE JOINT'S LAST LEG: the saved file, read by a second reader, carries the Edit text edit as well as the Add text.
+  expect(words[0] ?? '', 'the saved file does not carry the Edit text edit').toContain(JOINED);
   return {
+    editedSaved: (words[0] ?? '').includes(JOINED),
     addedTextSaved: words.some((text) => text.includes('Added by the walk')),
     secondLineSaved: words.some((text) => text.includes('line two')),
     fontsNamed: fonts,
