@@ -1,4 +1,4 @@
-import { type BlockMark, type EditedBlock, sameStream } from '@monstera/contract';
+import { type BlockMark, type EditedBlock, oneCommand } from '@monstera/contract';
 import { fromTextFrame, joinAfterLine, lineText, normaliseFamily, paragraphsOfLines, sameTextFrame, type TextFrame } from '@monstera/shared';
 
 import type { TextBlock } from './textBlock.js';
@@ -219,7 +219,7 @@ export function neighbourOf(blocks: readonly TextBlock[], at: number, side: 'abo
     // NOT ACROSS STREAMS (ADR-0269): a block in a form and one on the page are written by two commands, never joined.
     // NOR ACROSS FRAMES (ADR-0273): a turned label beside upright text is no continuation of it, and their boxes are in
     // two frames that cannot be compared.
-    if (index === at || !sameStream(own, other) || !oneFrame(own, other)) continue;
+    if (index === at || !oneCommand(own, other)) continue;
     const across = Math.min(own.box.x1, other.box.x1) - Math.max(own.box.x0, other.box.x0);
     if (across < 0.5 * Math.min(own.box.x1 - own.box.x0, other.box.x1 - other.box.x0)) continue;
     // PDF y RUNS UP: the block above has the larger y, so the gap is this block's top to that one's bottom.

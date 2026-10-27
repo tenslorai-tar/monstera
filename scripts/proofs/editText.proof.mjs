@@ -409,8 +409,9 @@ async function walkPage(pdfium, kernel, bytes, index, quotes) {
   if (typeof frequent === 'string') {
     const compiled = kernel.compileQuery(frequent, { caseSensitive: true, wholeWord: true, normalise: 'none' });
     const matchesIn = compiled.ok ? compiled.value.matchesIn : () => [];
-    // ONE COMMAND PER STREAM, as `replaceInDocument` sends them (ADR-0269): the page's own blocks, then each form's.
-    for (const stream of kernel.streamsOf(blocks)) {
+    // ONE COMMAND PER STREAM AND FRAME, as `replaceInDocument` sends them (ADR-0269, ADR-0273): the page's own blocks,
+    // then each form's, with text set at an angle apart from upright text.
+    for (const stream of kernel.commandsOf(blocks)) {
       const touchedBy = (/** @type {any[]} */ entries) =>
         stream.blocks.flatMap((/** @type {any} */ each) =>
           entries.some((entry) => entry.lines[0]?.[0] === each.lines[0]?.runs[0]?.index) ? [blocks.indexOf(each)] : []);
@@ -1201,7 +1202,7 @@ if (!existsSync(library) || shim === null || !existsSync(fontsDirectory(ROOT))) 
   // LITERAL SPECIFIERS, so `proof:electronimports` and the freshness scan can read what this loads.
   const pdfium = await import('../../packages/kernel/dist/pdfiumFfi.js');
   pdfium.openPdfium(library);
-  const { blockEditOf, readsUnpacked, streamsOf } = await import('../../packages/contract/dist/commands.js');
+  const { blockEditOf, readsUnpacked, commandsOf } = await import('../../packages/contract/dist/commands.js');
   const { formPagesDocument, textPlacements } = await import('../../packages/kernel/dist/formText.js');
   const { groupIntoBlocks, isUpright, blockableOf } = await import('../../packages/kernel/dist/textLines.js');
   const { paragraphsOfLines, lineText, compileQuery } = await import('../../packages/shared/dist/index.js');
@@ -1221,7 +1222,7 @@ if (!existsSync(library) || shim === null || !existsSync(fontsDirectory(ROOT))) 
   const kernel = {
     blockEditOf,
     readsUnpacked,
-    streamsOf,
+    commandsOf,
     formPagesDocument,
     textPlacements,
     compileQuery,

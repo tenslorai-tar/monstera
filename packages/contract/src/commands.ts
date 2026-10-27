@@ -1,5 +1,5 @@
 import type { DocId, DocVersion } from '@monstera/shared';
-import { DEFAULT_TEXT_LINE_HEIGHT, MAX_TEXT_LINE_HEIGHT, MAX_TEXT_PADDING, MIN_TEXT_LINE_HEIGHT } from '@monstera/shared';
+import { DEFAULT_TEXT_LINE_HEIGHT, MAX_TEXT_LINE_HEIGHT, MAX_TEXT_PADDING, MIN_TEXT_LINE_HEIGHT, sameTextFrame, type TextFrame } from '@monstera/shared';
 import { z } from 'zod';
 
 import { isFollowable, schemeOf } from './followedLinks.js';
@@ -7201,17 +7201,32 @@ export function sameStream(a: { readonly form?: FormPath }, b: { readonly form?:
 }
 
 /**
- * A page's blocks by the stream that holds them, in the order each stream's first block comes, each with its blocks in
- * their order: what a writer of several blocks sends one command per. The page's own blocks come first in a read.
+ * Whether two blocks of a page may be written by ONE command: in the same stream ({@link sameStream}) and set in the same
+ * frame (`sameTextFrame`), since a writer lays one command's blocks out in one frame (ADR-0273 Decision 3). The one answer
+ * a join, a split and a replacement take, so none can send what the writer must refuse.
  */
-export function streamsOf<B extends { readonly form?: FormPath }>(blocks: readonly B[]): { readonly form: FormPath | null; readonly blocks: readonly B[] }[] {
-  const streams: { readonly form: FormPath | null; readonly blocks: B[] }[] = [];
+export function oneCommand(
+  a: { readonly form?: FormPath; readonly frame?: TextFrame | undefined },
+  b: { readonly form?: FormPath; readonly frame?: TextFrame | undefined },
+): boolean {
+  return sameStream(a, b) && sameTextFrame(a.frame ?? null, b.frame ?? null);
+}
+
+/**
+ * A page's blocks by the command that writes them ({@link oneCommand}), in the order each group's first block comes, each
+ * with its blocks in their order: what a writer of several blocks sends one command per. The page's own blocks come first
+ * in a read.
+ */
+export function commandsOf<B extends { readonly form?: FormPath; readonly frame?: TextFrame | undefined }>(
+  blocks: readonly B[],
+): { readonly form: FormPath | null; readonly blocks: readonly B[] }[] {
+  const groups: { readonly form: FormPath | null; readonly blocks: B[] }[] = [];
   for (const block of blocks) {
-    const held = streams.find((stream) => stream.blocks[0] !== undefined && sameStream(stream.blocks[0], block));
-    if (held === undefined) streams.push({ form: block.form ?? null, blocks: [block] });
+    const held = groups.find((group) => group.blocks[0] !== undefined && oneCommand(group.blocks[0], block));
+    if (held === undefined) groups.push({ form: block.form ?? null, blocks: [block] });
     else held.blocks.push(block);
   }
-  return streams;
+  return groups;
 }
 
 // NO `unpack`: a page whose text is in a Type 3 font is never read unpacked (ADR-0232 Decision 5).

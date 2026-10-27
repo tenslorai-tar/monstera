@@ -17,7 +17,8 @@ import {
   formPathSchema,
   MAX_FORM_DEPTH,
   sameStream,
-  streamsOf,
+  oneCommand,
+  commandsOf,
   ocrPageSchema,
   replaceTextObjectSchema,
   readsUnpacked,
@@ -491,11 +492,21 @@ describe('a page’s blocks by stream (ADR-0269)', () => {
 
   it('groups the page’s own blocks and each form’s, in the order each stream first comes', () => {
     const blocks = [{ id: 'a' }, { id: 'b' }, { id: 'c', form: fm1 }, { id: 'd', form: fm1Again }, { id: 'e', form: fm1 }];
-    expect(streamsOf(blocks).map((stream) => [stream.form, stream.blocks.map((block) => block.id)])).toStrictEqual([
+    expect(commandsOf(blocks).map((stream) => [stream.form, stream.blocks.map((block) => block.id)])).toStrictEqual([
       [null, ['a', 'b']],
       [fm1, ['c', 'e']],
       [fm1Again, ['d']],
     ]);
+  });
+
+  it('sends text set at an angle by a command of its own, apart from upright text in the same stream (ADR-0273)', () => {
+    const turned = [0, 1, -1, 0] as const;
+    const blocks = [{ id: 'a' }, { id: 'b', frame: turned }, { id: 'c' }, { id: 'd', frame: [1e-6, 1, -1, 1e-6] as const }];
+    expect(commandsOf(blocks).map((group) => group.blocks.map((block) => block.id))).toStrictEqual([['a', 'c'], ['b', 'd']]);
+    expect(oneCommand({}, { frame: turned })).toBe(false);
+    // CONTROL: one frame, to a file's float noise, is one command; and upright with upright is too.
+    expect(oneCommand({ frame: turned }, { frame: [1e-6, 1, -1, 1e-6] })).toBe(true);
+    expect(oneCommand({}, {})).toBe(true);
   });
 
   it('tells two placements of one form apart, and a form from the page', () => {

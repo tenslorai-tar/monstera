@@ -5115,7 +5115,7 @@ export function commitReplacement(
   docId: DocId,
   page: number,
   read: BlocksRead,
-  /** The stream the entries' blocks are in (`streamsOf`): the page's own, `null`, or a form's. */
+  /** The stream the entries' blocks are in (`commandsOf`): the page's own, `null`, or a form's. */
   form: FormPath | null,
   blocks: Parameters<typeof blockEditOf>[0],
   step: UndoStep,
@@ -5134,7 +5134,7 @@ export function commitBlocks(
   page: number,
   blocks: Parameters<typeof blockEditOf>[0],
   read: BlocksRead,
-  /** The stream the blocks are in, which a join or split never leaves (`sameStream`). */
+  /** The stream the blocks are in, which a join or split never leaves (`oneCommand`). */
   form: FormPath | null,
 ): Promise<BlockCommit> {
   return sendBlockEdit(deps, docId, page, read, form, blocks);
