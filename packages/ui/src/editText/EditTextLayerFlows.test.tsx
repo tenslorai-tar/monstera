@@ -301,6 +301,40 @@ describe('the right-click menu on the open editor (ADR-0180 Decision 8)', () => 
   });
 });
 
+describe('the paper over a changed paragraph (ADR-0271 section 3)', () => {
+  /** Opens BODY, changes its words, and answers the looks of the covers laid over the page's copy of them. */
+  function coversAfterTyping(paperAt: (x: number, y: number) => string | undefined): { backgroundImage: string; backgroundColor: string }[] {
+    const made = layer(APART, () => Promise.resolve('written'), { paperAt });
+    openForWords(made, 1);
+    act(() => {
+      typeAt(made.surface(), '!', { paragraph: 0, offset: 13 });
+    });
+    const covers = [...made.view.container.querySelectorAll<HTMLElement>('.m-kit-cover')];
+    // THE CHANGED PARAGRAPH IS PAPERED, or the looks below would be of nothing.
+    expect(covers.length).toBeGreaterThan(0);
+    const looks = covers.map((cover) => ({ backgroundImage: cover.style.backgroundImage, backgroundColor: cover.style.backgroundColor }));
+    made.view.unmount();
+    return looks;
+  }
+
+  it('is a GRADIENT where the page behind the block is shaded, top to bottom, ending at the colours sampled', () => {
+    // BODY is placed 178 to 192 down the layer; the paper is sampled 3 pixels outside each corner, 175 and 195.
+    const looks = coversAfterTyping((_x, y) => (y < 185 ? 'rgb(200, 200, 200)' : 'rgb(100, 100, 100)'));
+    for (const look of looks) {
+      expect(look.backgroundImage).toBe('linear-gradient(to bottom, rgb(200, 200, 200), rgb(100, 100, 100))');
+      expect(look.backgroundColor).toBe('');
+    }
+  });
+
+  it('CONTROL: three corners of four agreeing is flat paper with a stray neighbour, drawn in one colour', () => {
+    const looks = coversAfterTyping((x, y) => (x < 70 && y < 180 ? 'rgb(0, 0, 0)' : 'rgb(250, 250, 250)'));
+    for (const look of looks) {
+      expect(look.backgroundColor).toBe('rgb(250, 250, 250)');
+      expect(look.backgroundImage).toBe('');
+    }
+  });
+});
+
 describe('join and split from the menu (ADR-0180 Decision 7)', () => {
   /**
    * An upper block of three paragraphs, and one 41 points below it: near enough to be its continuation (within four
