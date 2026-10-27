@@ -191,6 +191,27 @@ export function fontGroups(
   return groups.map((group) => ({ ...group, choices: group.choices.filter(matches) })).filter((group) => group.choices.length > 0);
 }
 
+/**
+ * Where in `flat` the choice that best answers `query` is: a name that IS what was typed, else one that begins with it,
+ * else one that holds it, else one that only looks like it (a metric twin's `like`), the earliest of each kind. A search
+ * for *Arial* once took the first entry of Closest matches, Arimo, which is listed for it only as its twin, ahead of
+ * Arial itself under All fonts. Nothing typed is the first choice.
+ */
+export function bestMatchOf(flat: readonly FontChoice[], query: string): number {
+  const wanted = query.trim().toLowerCase();
+  if (wanted === '') return 0;
+  const rank = (choice: FontChoice): number => {
+    const name = choice.family.toLowerCase();
+    if (name === wanted) return 0;
+    if (name.startsWith(wanted)) return 1;
+    if (name.includes(wanted)) return 2;
+    return 3;
+  };
+  let best = 0;
+  for (const [at, choice] of flat.entries()) if (rank(choice) < rank(flat[best] ?? choice)) best = at;
+  return best;
+}
+
 /** The families this session chose, latest first: the *Recent* group. A session's, so nothing is written to settings. */
 const RECENT_LIMIT = 5;
 let recentFamilies: readonly string[] = [];
@@ -221,7 +242,8 @@ export function FontPicker({ label, value, unset, list, inDocument, builtIn, onP
   const { _ } = useLingui();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const [active, setActive] = useState(0);
+  /** The choice the arrows moved to since the search last changed; until they move, the best match (`bestMatchOf`). */
+  const [stepped, setStepped] = useState<number | undefined>(undefined);
   const listId = useId();
   const optionId = (at: number): string => `${listId}-${String(at)}`;
   const search = useRef<HTMLInputElement>(null);
@@ -260,6 +282,7 @@ export function FontPicker({ label, value, unset, list, inDocument, builtIn, onP
     return preview === undefined ? undefined : { fontFamily: `"${preview}"` };
   };
   const flat = [...groups.flatMap((group) => group.choices), ...(editor === undefined ? [] : [AS_ON_PAGE])];
+  const active = stepped ?? bestMatchOf(flat, query);
   const choose = (choice: FontChoice): void => {
     // THE FOCUS BACK TO THE FIELD before the list is unmounted, for Escape's reason below; a consumer that wants it
     // elsewhere (the text editor's panel puts it back in the words) moves it on from here.
@@ -284,7 +307,7 @@ export function FontPicker({ label, value, unset, list, inDocument, builtIn, onP
         ref={face}
         onClick={() => {
           setOpen((now) => !now);
-          setActive(0);
+          setStepped(undefined);
           // THE SEARCH TAKES THE KEYS once the list is open, so a person types a name at once.
           requestAnimationFrame(() => search.current?.focus());
         }}
@@ -322,13 +345,13 @@ export function FontPicker({ label, value, unset, list, inDocument, builtIn, onP
             className="m-font-picker__search"
             onChange={(event) => {
               setQuery(event.target.value);
-              setActive(0);
+              setStepped(undefined);
             }}
             onKeyDown={(event) => {
               if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
                 event.preventDefault();
                 const step = event.key === 'ArrowDown' ? 1 : -1;
-                setActive((now) => (flat.length === 0 ? 0 : (now + step + flat.length) % flat.length));
+                setStepped(flat.length === 0 ? 0 : (active + step + flat.length) % flat.length);
               } else if (event.key === 'Enter') {
                 event.preventDefault();
                 const picked = flat[Math.min(active, flat.length - 1)];
@@ -376,6 +399,10 @@ export function FontPicker({ label, value, unset, list, inDocument, builtIn, onP
                         role="option"
                         // THE WHOLE NAME ON HOVER: a name wider than the list is shortened, never scrolled to (T1).
                         title={choice.family}
+                        // ITS NAME IS THE FONT'S ALONE, and the mark beside it is said as its description: a name holding
+                        // the mark was what a search and the chosen font's label read back.
+                        aria-label={choice.family}
+                        {...(group.title === FONT_GROUP_CLOSEST && choice.family === editor?.chosen ? { 'aria-description': _(FONT_CLOSEST_CHOSEN) } : {})}
                       >
                         {/* EACH NAME IN ITS OWN TYPEFACE, or the face the writer would set it in; where neither can be
                             drawn, in the interface font and said so to a reader of the page (the owner's locked decision 6). */}
@@ -390,7 +417,7 @@ export function FontPicker({ label, value, unset, list, inDocument, builtIn, onP
                         )}
                         {/* MONSTERA'S CHOICE among the closest: the face a new word is set in until the person picks. */}
                         {group.title === FONT_GROUP_CLOSEST && choice.family === editor?.chosen ? (
-                          <span className="m-font-picker__option-note" data-font-chosen="">
+                          <span aria-hidden="true" className="m-font-picker__option-note" data-font-chosen="">
                             {_(FONT_CLOSEST_CHOSEN)}
                           </span>
                         ) : null}
