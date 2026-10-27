@@ -45,10 +45,6 @@ import { LOOKS, bridgeUnder } from './pageBridge.js';
 const ID = asDocId('00000000-0000-4000-8000-0000000000f9');
 const FIXTURES = join(dirname(createRequire(import.meta.url).resolve('../package.json')), 'fixtures', 'text-edit');
 const BYTES = new Uint8Array(readFileSync(join(FIXTURES, 'editor-fidelity.pdf')));
-/** Liberation Sans, the program the embedded paragraph carries, from where `fontKindFixtures.mjs` reads it. */
-const LIBERATION = new Uint8Array(
-  readFileSync(join(dirname(createRequire(import.meta.url).resolve('pdfjs-dist/package.json')), 'standard_fonts', 'LiberationSans-Regular.ttf')),
-);
 /** A channel moves by more than this to count as changed: past the 8-bit rounding of one blend, under any glyph's edge. */
 const CHANNEL_TOLERANCE = 8;
 
@@ -90,21 +86,12 @@ const CASES = [
   { name: 'a paragraph in Times, not embedded', at: blockNamed('This paragraph is set in Times') },
 ] as const;
 
-/** Every run of the embedded paragraph answered the font's own program, as the host answers a run it rebuilt. */
-function runFonts(): { fonts: Uint8Array<ArrayBuffer>[]; runs: Map<number, number> } {
-  const embedded = BLOCKS[blockNamed('This paragraph is set in a font')];
-  const runs = new Map<number, number>();
-  for (const line of embedded?.lines ?? []) for (const run of line.runs) runs.set(run.index, 0);
-  return { fonts: [new Uint8Array(LIBERATION)], runs };
-}
-
 async function open(page: Page, zoom: string): Promise<void> {
   await page.setViewportSize({ width: 1800, height: 1100 });
   await bridgeUnder(page, LOOKS[0], {
     opens: [{ kind: 'opened' as const, docId: ID, version: asDocVersion(1), byteLength: BYTES.byteLength, name: 'Fidelity.pdf' }],
     documentBytes: new Map([[ID, BYTES]]),
-    textBlocks: BLOCKS.map((block) => ({ ...block, style: block.lines[0]?.runs[0]?.style, shape: (block as unknown as { shape: unknown }).shape, push: { below: [], room: 0 } })) as never,
-    runFonts: runFonts(),
+    textBlocks: BLOCKS.map((block) => ({ ...block, style: block.lines[0]?.runs[0]?.style, shape: (block as unknown as { shape: unknown }).shape })) as never,
     settings: { 'viewing.starting-zoom': zoom },
   });
   await page.goto('/');
@@ -118,8 +105,8 @@ async function open(page: Page, zoom: string): Promise<void> {
   await page.addStyleTag({
     content:
       // THE OUTLINE'S HOVER TINT TOO: an open block has no outline, so a pointer resting on one tints only the capture before.
-      '.m-text-editor-handle,.m-text-editor-problem{visibility:hidden!important}.m-text-block{border-color:transparent!important;outline:none!important;background:transparent!important}' +
-      '.m-text-editor-frame{outline:none!important;border-color:transparent!important}[data-kit-surface]{caret-color:transparent!important}',
+      '.m-kit-handle,.m-kit-problem{visibility:hidden!important}.m-text-block{border-color:transparent!important;outline:none!important;background:transparent!important}' +
+      '.m-kit-frame{outline:none!important;border-color:transparent!important}[data-kit-surface]{caret-color:transparent!important}',
   });
 }
 
@@ -222,7 +209,7 @@ for (const zoom of ['100pct', '200pct'] as const) {
       const second = await pixels(page, region);
       const spread = changed(first, second);
       await openWords(page, outline);
-      // THE RUN FONTS ANSWERED AND LOADED, which is the moment a face change would show.
+      // THE READ ON OPEN ANSWERED AND ITS FACES DRAWN, which is the moment a face change would show.
       await page.waitForTimeout(500);
       // THE SAME PLACE ON THE PAGE, or the comparison is of two places.
       expect(await regionOf(page, block)).toStrictEqual(region);
@@ -332,7 +319,7 @@ test('opening and closing a block shows, in every frame, the page’s own drawin
       frames.push({
         open: editor !== null,
         drawnRows: rows.filter((row) => getComputedStyle(row).color !== 'rgba(0, 0, 0, 0)').length,
-        covers: document.querySelectorAll('.m-text-editor-cover').length,
+        covers: document.querySelectorAll('.m-kit-cover').length,
         opaque: editor === null ? 0 : getComputedStyle(editor).backgroundColor === 'rgba(0, 0, 0, 0)' ? 0 : 1,
       });
       if (Reflect.get(window, 'editorFramesStop') !== true) requestAnimationFrame(sample);

@@ -106,6 +106,7 @@ import {
   type HostPageAdjustmentReader,
   type HostPageRewriteReader,
   type HostTextFacesReader,
+  type HostBlockFacesReader,
   type HostPageLinksReader,
   type RemotePageTextReader,
   type HostWordBoxesReader,
@@ -137,7 +138,6 @@ import {
   engineChannels,
   groupIntoBlocks,
   isEditedInPlace,
-  pushesOfPage,
   withRises,
   hostedPdfLibExecution,
   nodeFileSurface,
@@ -158,7 +158,6 @@ import {
   remotePdfiumPageObjects,
   remotePdfiumPageContent,
   remotePdfiumRenderPage,
-  remotePdfiumRunFonts,
   remotePdfiumPageRuns,
   remotePdfiumTextRuns,
   remotePdfiumWriter,
@@ -189,6 +188,10 @@ import {
   remoteMupdfPageAdjustment,
   remoteMupdfPageRewrite,
   remoteMupdfTextFaces,
+  remoteMupdfBlockFaces,
+  blockFaceRunsOf,
+  facesInOrder,
+  type PageRuns,
   namedByDescriptor,
   remoteMupdfPageLinks,
   remoteMupdfPageText,
@@ -1292,6 +1295,20 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       return bytes.byteLength;
     },
   });
+  /**
+   * A page's runs with their members, as PDFium reads them, for the page's own content or one form placement on it
+   * (ADR-0269): the one pre-read the operator writer's edit and the editor's read on open both take, so a run is the
+   * same objects to both. A process with no PDFium host cannot name which objects a run is.
+   */
+  const pageRunsOf = async (docId: DocId, sessions: DocumentSessions, page: number, form: FormPath | null): Promise<PageRuns> => {
+    if (pdfiumHost === null) throw new EngineUnavailableError('reading which objects a page’s text is made of');
+    if (form === null) return pdfiumHost.pageRuns(pdfiumReadImage(docId, sessions), page);
+    // A FORM'S BLOCKS (ADR-0269): its placement's page, from the same build of the placements the read offered them on.
+    const placed = await formPagesOf(docId, sessions, page);
+    const at = placed.paths.findIndex((path) => sameFormPath(path, form));
+    if (at === -1) throw new EditRefusedError('set-text', 0, `page ${String(page)} no longer draws the form the edit names`);
+    return pdfiumHost.pageRuns(placed.image, at);
+  };
   // THE SAME FLUSH, STAGED: the bytes stay where the host wrote them until they are placed, so a save, a copy and a
   // refreshed image never hold them in `main` (ADR-0121 Decision 2 and its addendum). `currentBytes`' check, the
   // same writer's session.
@@ -1753,19 +1770,10 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         );
       };
       const grouped = blocksOf(found.runs);
-      // WHAT EACH BLOCK PUSHES WHEN IT GROWS (ADR-0249 Decision 2), decided here beside the grouping and nowhere else: the
-      // column below it and the room to the footer or the bottom margin, measured against the page box the runs were read
-      // in, and nothing on a page with no box or one read in part (`pushesOfPage`).
-      const pushes = pushesOfPage(
-        grouped.map((block) => block.box),
-        found,
-      );
       // TEXT INSIDE A FORM (ADR-0269 Decision 1): each placement read by PDFium as a page of its own, in the page's user
-      // space, its blocks after the page's own — so the page's blocks keep their places, which `push` names them by — each
-      // carrying its path. Each pushes the blocks below it among its own placement's, as the page's do, those named by
-      // their place in the page's whole list (the correction of 2026-10-25); never across a stream. NEVER for Edit object's
-      // read, which reads the page as it is (ADR-0264 Decision 5). A Type 3 font inside a form is not named by its
-      // descriptor: that read is the page's (ADR-0256).
+      // space, its blocks after the page's own, each carrying its path. NEVER for Edit object's read, which reads the page
+      // as it is (ADR-0264 Decision 5). A Type 3 font inside a form is not named by its descriptor: that read is the
+      // page's (ADR-0256).
       const placed = asItIs ? null : await formPagesOf(docId, sessions, page);
       const host = pdfiumHost;
       const placements =
@@ -1774,22 +1782,10 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
           : await Promise.all(
               placed.paths.map(async (form, at) => {
                 const read = await host.textRuns(placed.image, at, false);
-                return { form, read, blocks: blocksOf(read.runs) };
+                return { form, blocks: blocksOf(read.runs) };
               }),
             );
-      let offset = grouped.length;
-      const inForms = placements.flatMap(({ form, read, blocks }) => {
-        const own = pushesOfPage(
-          blocks.map((block) => block.box),
-          read,
-        );
-        const first = offset;
-        offset += blocks.length;
-        return blocks.map((block, at) => {
-          const push = own[at] ?? { below: [], room: 0 };
-          return { ...block, push: { ...push, below: push.below.map((index) => index + first) }, form };
-        });
-      });
+      const inForms = placements.flatMap(({ form, blocks }) => blocks.map((block) => ({ ...block, form })));
       const angled = {
         turned: counts.get('turned') ?? 0,
         vertical: counts.get('vertical') ?? 0,
@@ -1798,7 +1794,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       };
       const rotated = angled.turned + angled.vertical + angled.slanted + angled.mirrored;
       return {
-        blocks: [...grouped.map((block, at) => ({ ...block, push: pushes[at] ?? { below: [], room: 0 } })), ...inForms],
+        blocks: [...grouped, ...inForms],
         truncated: found.truncated,
         rotated,
         angled,
@@ -1856,26 +1852,23 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         png: encodePng(raster.bgra, raster.width, raster.height),
       };
     },
-    // A BLOCK'S RUN FONTS, rebuilt in the PDFium host from the runs' own programs and checked there (ADR-0175): this
-    // layer only carries them. A process with no PDFium host has none, and the editor draws every run in its kind of face.
-    runFonts: async (docId, sessions, page, indices, unpack) => {
-      if (pdfiumHost === null) return { fonts: [], runs: indices.map(() => null) };
-      const { fonts, runs } = await pdfiumHost.runFonts(pdfiumReadImage(docId, sessions), page, indices, unpack);
-      // EACH COPIED INTO A BUFFER OF ITS OWN: they are views cut from one file read, and structured clone sends a view's
-      // whole buffer to the renderer, so a font sent as a view would carry its neighbours with it (`DocumentRunFontsReader`).
-      return { fonts: fonts.map((font) => new Uint8Array(font)), runs };
-    },
     // A PAGE'S RUNS WITH THEIR MEMBERS, `editTextOperators`' pre-read (ADR-0176): `textBlocks`' two forced steps, the
     // current image and the PDFium host. A process with no PDFium host cannot name which objects a run is, so the edit
     // is refused for the engine that is missing rather than written against a guess.
-    pageRuns: async (docId, sessions, { page, form }) => {
-      if (pdfiumHost === null) throw new EngineUnavailableError('reading which objects a page’s text is made of');
-      if (form === null) return pdfiumHost.pageRuns(pdfiumReadImage(docId, sessions), page);
-      // A FORM'S BLOCKS (ADR-0269): its placement's page, from the same build of the placements the read offered them on.
-      const placed = await formPagesOf(docId, sessions, page);
-      const at = placed.paths.findIndex((path) => sameFormPath(path, form));
-      if (at === -1) throw new EditRefusedError('set-text', 0, `page ${String(page)} no longer draws the form the edit names`);
-      return pdfiumHost.pageRuns(placed.image, at);
+    pageRuns: (docId, sessions, { page, form }) => pageRunsOf(docId, sessions, page, form),
+    // THE READ ON OPEN (ADR-0271 section 5): the block's runs from the edit's own pre-read, translated to the content's
+    // numbering, and the MuPDF host's answer of what the writer does with a new word in each of their fonts. A process
+    // with no PDFium host cannot name a run's objects, and answers no font, so the editor draws each run in its kind.
+    blockFaces: async (docId, sessions, page, indices, form) => {
+      const session = sessions.mupdf;
+      if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+      if (pdfiumHost === null) return { fonts: [], runs: indices.map(() => null) };
+      const read = await pageRunsOf(docId, sessions, page, form);
+      const runs = blockFaceRunsOf(read, indices);
+      // NO RUN TO ASK ABOUT is no font for each index, answered here: the host's channel takes at least one run, and an
+      // empty list sent to it is refused by its schema and reached the renderer as an internal failure.
+      if (runs.length === 0) return { fonts: [], runs: indices.map(() => null) };
+      return facesInOrder(indices, runs, await engineHost.blockFaces(session, { page, ...(form === null ? {} : { form }) }, runs));
     },
     // THE EDITABLE POWERPOINT EXPORT'S TWO READS (ADR-0210), composed here for the reads above's reason: a byte-image engine
     // is asked about a document by being handed its bytes, and `currentImage` is the one route to them. The words a scan was
@@ -2525,6 +2518,8 @@ function engineSessionOpener(
   readonly pageRewrite: HostPageRewriteReader;
   /** One page's fonts' descriptor faces, from whichever host is live (ADR-0256). */
   readonly textFaces: HostTextFacesReader;
+  /** The faces a block's new words are set in, from whichever host is live (ADR-0271 section 5). */
+  readonly blockFaces: HostBlockFacesReader;
   /** One page's word boxes, from whichever host is live (ADR-0137). */
   readonly wordBoxes: HostWordBoxesReader;
   /** The document's outline, from whichever host is live. */
@@ -2759,6 +2754,7 @@ function engineSessionOpener(
     pageAdjustment: remoteMupdfPageAdjustment(client, remote),
     pageRewrite: remoteMupdfPageRewrite(client, remote),
     textFaces: remoteMupdfTextFaces(client, remote),
+    blockFaces: remoteMupdfBlockFaces(client, remote),
     wordBoxes: remoteMupdfWordBoxes(client, remote),
     destinations: remoteMupdfDestinations(client, remote),
     ocr: remoteMupdfOcr(client, remote),
@@ -2892,6 +2888,19 @@ function engineSessionOpener(
       );
     }
     return textFaces(session, page);
+  };
+
+  /** The read on open's half of the same registration (ADR-0271 section 5). See {@link pageText}. */
+  const readBlockFacesThroughHost: HostBlockFacesReader = (session, at, runs) => {
+    const blockFaces = bound?.blockFaces ?? null;
+    if (blockFaces === null) {
+      throw new Error(
+        'A block-faces read reached the engine with no host reader registered. A session was ' +
+          'resolved for this document, so one was issued by a host — the supervisor and the ' +
+          'host connection have diverged.',
+      );
+    }
+    return blockFaces(session, at, runs);
   };
 
   /** The word-box read's half of the same registration. See {@link pageText}. */
@@ -3720,6 +3729,7 @@ function engineSessionOpener(
     pageAdjustment: readPageAdjustmentThroughHost,
     pageRewrite: readPageRewriteThroughHost,
     textFaces: readTextFacesThroughHost,
+    blockFaces: readBlockFacesThroughHost,
     wordBoxes: readWordBoxesThroughHost,
     destinations: readDestinationsThroughHost,
     ocr: recogniseThroughHost,
@@ -3786,8 +3796,6 @@ type PdfiumPageObjects = ReturnType<typeof remotePdfiumPageObjects>;
 /** One page rasterised, over the same wire. */
 type PdfiumRenderPage = ReturnType<typeof remotePdfiumRenderPage>;
 
-/** A block's run fonts rebuilt, over the same wire (ADR-0175). */
-type PdfiumRunFonts = ReturnType<typeof remotePdfiumRunFonts>;
 type PdfiumPageRuns = ReturnType<typeof remotePdfiumPageRuns>;
 /** One page's own content, over the same wire (ADR-0210). */
 type PdfiumPageContent = ReturnType<typeof remotePdfiumPageContent>;
@@ -3845,7 +3853,6 @@ function pdfiumHostBinding(
   readonly textRuns: PdfiumTextRuns;
   readonly pageObjects: PdfiumPageObjects;
   readonly renderPage: PdfiumRenderPage;
-  readonly runFonts: PdfiumRunFonts;
   readonly pageRuns: PdfiumPageRuns;
   readonly pageContent: PdfiumPageContent;
   /** Whether the PDFium host starts on this computer — `pdfium.dll` loaded, as a first edit loads it — for whoever asked. */
@@ -3861,7 +3868,6 @@ function pdfiumHostBinding(
     readonly textRuns: PdfiumTextRuns;
   readonly pageObjects: PdfiumPageObjects;
   readonly renderPage: PdfiumRenderPage;
-  readonly runFonts: PdfiumRunFonts;
   readonly pageRuns: PdfiumPageRuns;
   readonly pageContent: PdfiumPageContent;
     /** The granted pair, so `close` can remove exactly what `connect` created. */
@@ -4002,7 +4008,6 @@ function pdfiumHostBinding(
       textRuns: remotePdfiumTextRuns(client, held, transfer),
       pageObjects: remotePdfiumPageObjects(client, held, transfer),
       renderPage: remotePdfiumRenderPage(client, held, transfer),
-      runFonts: remotePdfiumRunFonts(client, held, transfer),
       pageRuns: remotePdfiumPageRuns(client, held, transfer),
       pageContent: remotePdfiumPageContent(client, held, transfer),
       paths,
@@ -4094,7 +4099,6 @@ function pdfiumHostBinding(
     pageObjects: (image, page) => counting(async () => (await ensure()).pageObjects(image, page)),
     renderPage: (image, page, width, height, withoutText) =>
       counting(async () => (await ensure()).renderPage(image, page, width, height, withoutText)),
-    runFonts: (image, page, indices, unpack) => counting(async () => (await ensure()).runFonts(image, page, indices, unpack)),
     pageRuns: (image, page) => counting(async () => (await ensure()).pageRuns(image, page)),
     pageContent: (image, page) => counting(async () => (await ensure()).pageContent(image, page)),
     retireIfIdle,

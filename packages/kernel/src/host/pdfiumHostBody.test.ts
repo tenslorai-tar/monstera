@@ -303,16 +303,6 @@ function start(files: Files, applied: ByteImage = new Uint8Array([9, 9, 9]), dra
       // teach the case nothing about the handler.
       return Promise.resolve(new Uint8Array(width * height * 4).fill(7));
     },
-    runFonts: (image, page, indices) => {
-      calls.push(`run-fonts:${String(page)}:${indices.join(',')}:${seen(image)}`);
-      if (image.bytes.length === 1 && image.bytes[0] === 0) throw new Error('PDFium refused the document');
-      // RUNS 4 AND 6 SHARE A FONT, RUN 8 HAS ANOTHER, and every other run none: the handler must write both fonts one
-      // after the other and pass the places through, and a block of runs with none must write nothing.
-      const fonts = [new Uint8Array([0, 1, 0, 0, 5]), new Uint8Array([0x4f, 0x54, 0x54, 0x4f])];
-      const place = (index: number): number | null => (index === 4 || index === 6 ? 0 : index === 8 ? 1 : null);
-      const runs = indices.map(place);
-      return Promise.resolve({ fonts: runs.some((at) => at !== null) ? fonts : [], runs });
-    },
     pageRuns: (image, page) => {
       calls.push(`page-runs:${String(page)}:${seen(image)}`);
       if (image.bytes.length === 1 && image.bytes[0] === 0) throw new Error('PDFium refused the document');
@@ -647,11 +637,9 @@ describe('the PDFium host body', () => {
     stream = stubStream();
     const files = emptyFiles();
     const drawn = Array.from({ length: 70 }, (_, at) => ({ character: String.fromCodePoint(0x4e00 + at), page: 0 }));
-    // AND A MOVED BLOCK (ADR-0249), which crosses whole: a handler that dropped it answers `[]`.
-    const moved = [{ block: 1, box: { x0: 72, y0: 560, x1: 540, y1: 590 }, down: 14.5 }];
     // AND A WRITER DEFECT NOTED (ADR-0270), which crosses whole too.
     const noted = ['page 0: a note'];
-    const { session } = await openArea(files, { boxed: drawn, more: 0, moved, noted });
+    const { session } = await openArea(files, { boxed: drawn, more: 0, noted });
     files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([4, 5]));
     stream.feed(
       request('a1', 'engine/apply', {
@@ -665,12 +653,11 @@ describe('the PDFium host body', () => {
     );
     await stream.whenSent(2);
     const answer = answerIn(stream.sent[1]) as {
-      body: { ok: boolean; value: { boxed: unknown[]; more: number; moved: unknown[]; noted: unknown[] } };
+      body: { ok: boolean; value: { boxed: unknown[]; more: number; noted: unknown[] } };
     };
     expect(answer.body.ok, JSON.stringify(answer)).toBe(true);
     expect(answer.body.value.boxed).toStrictEqual(drawn.slice(0, 64));
     expect(answer.body.value.more).toBe(6);
-    expect(answer.body.value.moved).toStrictEqual(moved);
     expect(answer.body.value.noted).toStrictEqual(noted);
   });
 
@@ -854,7 +841,7 @@ describe('the PDFium host body', () => {
         // this page no command can name — text inside a Form XObject, which
         // the object walk reports as one `form` and does not descend into.
         unaddressable: 7,
-        // THE PAGE BOX CROSSES (ADR-0249 Decision 2): main measures a page's margins against it.
+        // THE PAGE BOX CROSSES: the box a one-line block's column is taken from (ADR-0097 4a).
         box: { x0: 3, y0: 5, x1: 611, y1: 787 },
       },
     });
@@ -924,35 +911,6 @@ describe('the PDFium host body', () => {
       body: { ok: false, error: { code: 'engine-refused' } },
     });
     expect(files.written.size).toBe(0);
-  });
-
-  /**
-   * A BLOCK'S FONTS ARE WRITTEN WHERE A RASTER IS (ADR-0175), into the output directory one after another with their
-   * sizes answered, and a block whose runs have none answers no sizes and writes nothing. Each case is the other's
-   * control: a handler answering every block alike fails one of them.
-   */
-  it('writes a block’s fonts into the OUTPUT directory in order, and for runs with none answers no sizes and writes nothing', async () => {
-    stream = stubStream();
-    const files = emptyFiles();
-    const { session, calls } = await openArea(files);
-    files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([9]));
-
-    const ask = (id: string, indices: number[]) =>
-      request(id, 'engine/run-fonts', { session, from: IN, password: null, into: OUT, page: 1, indices });
-    stream.feed(ask('r1', [4, 5, 8, 6]));
-    await stream.whenSent(2);
-    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: true, value: { sizes: [5, 4], runs: [0, null, 1, 0] } } });
-    expect(Array.from(files.written.get(`${AREA.outputDirectory}|${OUT}`) ?? [])).toStrictEqual([
-      0, 1, 0, 0, 5, 0x4f, 0x54, 0x54, 0x4f,
-    ]);
-
-    files.written.clear();
-    stream.feed(ask('r2', [5, 7]));
-    await stream.whenSent(3);
-    expect(answerIn(stream.sent[2])).toMatchObject({ body: { ok: true, value: { sizes: [], runs: [null, null] } } });
-    expect(files.written.size).toBe(0);
-    // THE PAGE AND THE RUNS REACHED THE READER, each time, as one read per block.
-    expect(calls).toStrictEqual(['run-fonts:1:4,5,8,6:9', 'run-fonts:1:5,7:9']);
   });
 
   it('asks for a page with no text only when told to, and the flag reaches the rasteriser (ADR-0210)', async () => {
@@ -1032,17 +990,6 @@ describe('the PDFium host body', () => {
     stream.feed(request('c1', 'engine/page-content', { session, from: IN, password: null, into: OUT, page: 0 }, ANSWER));
     await stream.whenSent(2);
 
-    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: false, error: { code: 'engine-refused' } } });
-    expect(files.written.size).toBe(0);
-  });
-
-  it('refuses a block’s fonts the document cannot answer, writing nothing', async () => {
-    stream = stubStream();
-    const files = emptyFiles();
-    const { session } = await openArea(files);
-    files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([0]));
-    stream.feed(request('r1', 'engine/run-fonts', { session, from: IN, password: null, into: OUT, page: 0, indices: [4] }));
-    await stream.whenSent(2);
     expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: false, error: { code: 'engine-refused' } } });
     expect(files.written.size).toBe(0);
   });

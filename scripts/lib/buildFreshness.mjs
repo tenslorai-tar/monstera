@@ -164,9 +164,7 @@ export const PDFIUM_COMMAND = [
   ['packages/kernel/src/boxFont.ts', 'packages/kernel/dist/boxFont.js', 'tsc'],
   // AND THE ONE RULE for a subset's name, by which an edit finds a sibling (Decision 4).
   ['packages/kernel/src/subsetName.ts', 'packages/kernel/dist/subsetName.js', 'tsc'],
-  // AND THE CHECK a run's font passes before it is offered to the editor (ADR-0175).
-  ['packages/kernel/src/runFont.ts', 'packages/kernel/dist/runFont.js', 'tsc'],
-  // AND THE PRODUCER'S PAGE the run font cases read a producer's subsets from (the owner's N14).
+  // AND THE PRODUCER'S PAGE the producer subset cases read (the owner's N14).
   ['packages/kernel/src/producerSubsetFixture.ts', 'packages/kernel/dist/producerSubsetFixture.js', 'tsc'],
   // AND THE FOUR THE PROOF IMPORTS DIRECTLY, which the case "every registered proof's imports are covered" named
   // (SSSSSSS-2): the operator numbering `pageRuns` is compared against (ADR-0176), the refusals it classifies, the
@@ -326,20 +324,6 @@ export const TYPE3_EDIT = [
 ];
 
 /**
- * What `textPush.proof.mjs` runs (ADR-0249): the PDFium writer and reading, the grouping and `pushesOf` beside it, the
- * contract's encoder, the shared paragraph join, and MuPDF as the second reader. The kernel's whole `src`, for
- * {@link TYPE3_EDIT}'s reason.
- *
- * @type {BuildEdge[]}
- */
-export const TEXT_PUSH = [
-  ['packages/kernel/src', 'packages/kernel/dist/index.js', 'tsc'],
-  ['packages/contract/src/commands.ts', 'packages/contract/dist/commands.js', 'tsc'],
-  ['packages/shared/src', 'packages/shared/dist/index.js', 'tsc'],
-  ...NATIVE_ENGINE,
-];
-
-/**
  * What `lineEndMarks.proof.mjs` runs: the page-text read and the text layer the renderer is handed, and the markup
  * writer, on the native engine. The kernel's whole `src`, for {@link TYPE3_EDIT}'s reason.
  *
@@ -437,8 +421,6 @@ export const FONT_WORK_APART = [
   ['packages/kernel/src/composeApart.ts', 'packages/kernel/dist/composeApart.js', 'tsc'],
   ['packages/kernel/src/markdownCompose.ts', 'packages/kernel/dist/markdownCompose.js', 'tsc'],
   ['packages/kernel/src/fontCatalogue.ts', 'packages/kernel/dist/fontCatalogue.js', 'tsc'],
-  ['packages/kernel/src/runFont.ts', 'packages/kernel/dist/runFont.js', 'tsc'],
-  ['packages/kernel/src/runFontApart.ts', 'packages/kernel/dist/runFontApart.js', 'tsc'],
   ['packages/kernel/src/composeOutcome.ts', 'packages/kernel/dist/composeOutcome.js', 'tsc'],
   ['packages/kernel/src/textShaping.ts', 'packages/kernel/dist/textShaping.js', 'tsc'],
 ];
@@ -732,8 +714,6 @@ export const ARTEFACT_EDGES = {
   'proof:inlineimages': INLINE_IMAGES,
   // PDFium's reading and MuPDF's operator writer, end to end on a Type 3 page (ADR-0176).
   'proof:type3edit': TYPE3_EDIT,
-  // A growing paragraph pushing the text below it, written by PDFium and read back by MuPDF (ADR-0249).
-  'proof:textpush': TEXT_PUSH,
   // A whole line marked from its two ends covers its first glyph to its last on every font kind (cloud run 18, F1).
   'proof:lineendmarks': LINE_END_MARKS,
   // The page Edit text's fidelity case opens and its blocks, held to the reading PDFium and the grouping make (cloud run 19).

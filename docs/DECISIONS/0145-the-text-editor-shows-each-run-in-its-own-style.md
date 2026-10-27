@@ -66,3 +66,12 @@ not measured on a page; a real page's runs are tens to hundreds, a few kilobytes
 - **An editor per run.** A person edits a line's words as one text and types across the boundary between two runs.
 - **Keeping one style and choosing it better.** The commit before this one does that, and it is right for every block
   set alike; it cannot be right for a line that is not.
+
+## Correction, 2026-10-26 — Decisions 2 and 3 are replaced by the editor kit; Decision 1 stands
+
+[ADR-0271](0271-the-edit-text-editor-is-rebuilt-on-the-kept-writer.md) replaced and deleted the plain-text editable
+element of Decisions 2 and 3. The editor kit (`packages/ui/src/editorKit`) holds a model of paragraphs and styled runs,
+cancels every input event and applies it to the model, and draws from the model; what crosses back is made from the
+model, not read as `innerText`. Decision 3's guarantee is kept by another route: a paste is inserted as plain text in the
+style of the run it lands in, so nothing pasted brings markup in. Decision 1, each run's style on `document.textBlocks`,
+is unchanged and is what the kit's runs are built from.

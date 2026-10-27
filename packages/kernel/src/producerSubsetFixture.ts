@@ -55,7 +55,6 @@ function embedProducerFont(
   postscript: string,
   text: string,
   bold: boolean,
-  rewritten: { readonly swap: readonly [string, string] | null } | null = null,
 ): ProducerFont {
   const subset = subsetFont(program, { unicodes: Array.from(text, (character) => character.codePointAt(0) ?? 0) });
   if (subset === null) throw new Error(`HarfBuzz would not subset ${postscript}`);
@@ -66,20 +65,9 @@ function embedProducerFont(
     if (glyph === undefined || glyph === 0) throw new Error(`${postscript} has no glyph for ${character}`);
     glyphs.set(character, glyph);
   }
-  // A PRODUCER THAT REWROTE ITS CODES (`buildRewrittenCodesPdf`): the two characters are drawn with each other's
-  // glyphs and the ToUnicode names them as themselves, while the program keeps its own `cmap`, which still names the
-  // glyphs by their true characters — so the `cmap` and what the page draws disagree.
-  if (rewritten?.swap != null) {
-    const [first, second] = rewritten.swap;
-    const one = glyphs.get(first);
-    const two = glyphs.get(second);
-    if (one === undefined || two === undefined) throw new Error(`${postscript} was not subset for ${first} and ${second}`);
-    glyphs.set(first, two);
-    glyphs.set(second, one);
-  }
   const bare = withTables(
     subset,
-    new Map(LEFT_OUT.filter((tag) => rewritten === null || tag !== 'cmap').map((tag) => [tag, null])),
+    new Map(LEFT_OUT.map((tag) => [tag, null])),
   );
   const scale = 1000 / face.unitsPerEm;
   const metrics = face.metrics();
@@ -199,24 +187,6 @@ export async function buildProducerSubsetPdf(
   return wholeFile(document, { useObjectStreams: false });
 }
 
-/**
- * A page whose embedded subset KEEPS its `cmap` and draws `swap`'s two characters with each other's glyphs, its
- * ToUnicode naming each as itself: a producer that rewrote its codes (SSSSSSS-14). `runFont.ts`' decision is the
- * comparison of the `cmap`'s glyph with what PDFium draws, which a subset with no `cmap` never reaches. One line of
- * `text`, 12 points, at 72, 700.
- *
- * @param program the face's program (Carlito-Regular in the cases)
- * @param swap two characters `text` holds
- */
-export async function buildRewrittenCodesPdf(program: Uint8Array, text: string, swap: readonly [string, string] | null): Promise<Uint8Array> {
-  const document = await PDFDocument.create();
-  const page = document.addPage([612, 792]);
-  const font = embedProducerFont(document, program, 'Carlito', text, false, { swap });
-  page.node.setFontDictionary(PDFName.of('F1'), font.ref);
-  const content = ['BT', '/F1 12 Tf', '72 700 Td', `<${font.show(text)}> Tj`, 'ET'].join('\n');
-  page.node.set(PDFName.of('Contents'), document.context.register(document.context.flateStream(new TextEncoder().encode(content))));
-  return wholeFile(document, { useObjectStreams: false });
-}
 
 /** How far a word gap moves the pen on a {@link buildGapSpacedPdf} page, in thousandths of the size: a quarter em. */
 export const GAP_SPACING = 250;

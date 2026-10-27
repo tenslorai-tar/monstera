@@ -676,7 +676,7 @@ export function createContractHandlers(deps: {
     'document.textBlocks': textBlocksHandler(deps.commands),
     'document.pageObjects': pageObjectsHandler(deps.commands),
     'document.renderPage': renderPageHandler(deps.commands),
-    'document.runFonts': runFontsHandler(deps.commands),
+    'document.blockFaces': blockFacesHandler(deps.commands),
     'document.duplicatePages': duplicatePagesHandler(deps.commands),
     // NEITHER OF THESE VALIDATES A STORED VALUE, and that is the boundary
     // deferring rather than the boundary being lax. `SettingsRegistry.read`
@@ -3585,14 +3585,13 @@ function renderPageHandler(commands: DocumentCommands): ContractHandlers['docume
 }
 
 /**
- * A block's run fonts (ADR-0175). The caps are held where the bytes are made and where they cross — the host's channel
- * and this channel's own schema — so nothing is checked here twice; the lane's refusals are named, and anything else is
- * a defect that is recorded as one.
+ * A block's faces, the read on open (ADR-0271 section 5). The bounds are held where the answer is made and where it
+ * crosses — the host's channel and this channel's own schema — so nothing is checked here twice.
  */
-function runFontsHandler(commands: DocumentCommands): ContractHandlers['document.runFonts'] {
-  return async ({ docId, page, indices, unpack }): Promise<Awaited<ReturnType<ContractHandlers['document.runFonts']>>> => {
+function blockFacesHandler(commands: DocumentCommands): ContractHandlers['document.blockFaces'] {
+  return async ({ docId, page, indices, form }): Promise<Awaited<ReturnType<ContractHandlers['document.blockFaces']>>> => {
     try {
-      const { version, fonts, runs } = await commands.runFonts(docId, page, indices, unpack === true);
+      const { version, fonts, runs } = await commands.blockFaces(docId, page, indices, form ?? null);
       return ok({ version, fonts, runs });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });

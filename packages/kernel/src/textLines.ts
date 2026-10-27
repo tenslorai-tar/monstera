@@ -50,8 +50,6 @@
  * 238.0**, so equality splits the very case the grouping exists for.
  */
 
-import { MAX_PUSHED_BLOCKS } from '@monstera/contract/host';
-
 import { blockShape, faceSeenAs } from '@monstera/shared';
 
 /** How a text object's matrix sets it (`orientationOf`, `pdfiumFfi.ts`): `upright` is the only one an editor is placed along. */
@@ -580,101 +578,6 @@ export function groupIntoBlocks<S>(runs: readonly BlockableRun<S>[]): readonly E
       },
     ];
   });
-}
-
-/** What a block pushes when it grows: the blocks below it in its column, and how far they may go. */
-export interface PushedColumn {
-  /** The blocks it pushes, by their place in the page's blocks, in that order. Empty for a footer and a block with nothing below. */
-  readonly below: readonly number[];
-  /** How far down, in points, the lowest of {@link below} may go before it reaches the footer or the bottom margin. */
-  readonly room: number;
-}
-
-/**
- * What each block of a page pushes when it grows
- * ([ADR-0249](../../../docs/DECISIONS/0249-a-paragraph-that-grows-pushes-the-text-below-it-down.md) Decision 2): the one
- * answer to *which text is below a block, in its column*, decided here beside the grouping, which is the one place `main`
- * decides anything about a page's text (ADR-0096 Decision 2).
- *
- * ## The column is ADR-0096's own relation, closed
- *
- * A block is below another when the two overlap horizontally and its top is lower — `groupIntoBlocks`' two comparisons.
- * The set is CLOSED under that relation: a block below one that is pushed is pushed too, so text moved down never lands on
- * text that stayed. The owner's wording, *overlaps the edited block's extent*, is its first step.
- *
- * ## The margins are the page's own, and no number is in them
- *
- * The bottom margin mirrors the top one: as far up from the page box's bottom as the page's highest text sits down from
- * its top. A block lying wholly inside it is the footer, which never moves; the room ends at the footer's top, or at the
- * margin where there is no footer (the owner's locked decision 3).
- *
- * @param page the page box the boxes are measured in
- */
-export function pushesOf(boxes: readonly BlockBox[], page: BlockBox): readonly PushedColumn[] {
-  if (boxes.length === 0) return [];
-  const highest = Math.max(...boxes.map((box) => box.y1));
-  const margin = page.y0 + Math.max(0, page.y1 - highest);
-  const footer = boxes.map((box) => box.y1 <= margin);
-  const footerTops = boxes.filter((_, at) => footer[at] === true).map((box) => box.y1);
-  const limit = footerTops.length === 0 ? margin : Math.max(...footerTops);
-  // ONE SWEEP DOWN THE PAGE PER BLOCK, never a worklist over every pair. The relation only ever reaches a STRICTLY lower
-  // top, so visiting the blocks from the highest top down decides every block a candidate could be reached from before
-  // the candidate itself. And what is reached is ONE INTERVAL: each block reached overlaps one reached before it, so their
-  // extents chain from this block's into one, and a candidate overlaps a reached block exactly when it overlaps that
-  // interval. The worklist this replaces was cubic in the blocks, and ran in `main` on every page read for editing: a
-  // stacked column of 515 took about 2 s a call (`textLines.test.ts`' MAX_PUSHED_BLOCKS case, 2026-10-18). This is
-  // quadratic, and the same sets (proven against that worklist in the same file).
-  const downward = [...boxes.keys()]
-    .filter((at) => footer[at] !== true)
-    .sort((a, b) => (boxes[b]?.y1 ?? 0) - (boxes[a]?.y1 ?? 0));
-  return boxes.map((box, at): PushedColumn => {
-    if (footer[at] === true) return { below: [], room: 0 };
-    let left = box.x0;
-    let right = box.x1;
-    const pushed: number[] = [];
-    let row = downward.findIndex((other) => (boxes[other]?.y1 ?? 0) < box.y1);
-    if (row === -1) row = downward.length;
-    // A ROW OF EQUAL TOPS IS DECIDED AGAINST WHAT IS ABOVE IT ONLY, then widens the interval: none of it reaches another.
-    while (row < downward.length) {
-      const top = boxes[downward[row] ?? 0]?.y1;
-      let rowLeft = left;
-      let rowRight = right;
-      for (; row < downward.length && boxes[downward[row] ?? 0]?.y1 === top; row += 1) {
-        const other = downward[row] ?? 0;
-        const candidate = boxes[other];
-        if (candidate !== undefined && candidate.x0 < right && left < candidate.x1) {
-          pushed.push(other);
-          rowLeft = Math.min(rowLeft, candidate.x0);
-          rowRight = Math.max(rowRight, candidate.x1);
-        }
-      }
-      left = rowLeft;
-      right = rowRight;
-    }
-    const below = pushed.sort((a, b) => a - b);
-    const lowest = Math.min(...below.map((other) => boxes[other]?.y0 ?? Number.POSITIVE_INFINITY));
-    // MORE BLOCKS BELOW THAN ONE EDIT MAY CARRY have no room: the editor then says so rather than send an edit the
-    // contract refuses (`MAX_PUSHED_BLOCKS`).
-    const carried = below.length <= MAX_PUSHED_BLOCKS;
-    return { below, room: below.length === 0 || !carried ? 0 : Math.max(0, lowest - limit) };
-  });
-}
-
-/** What a block pushes where it pushes nothing. */
-const PUSHES_NOTHING: PushedColumn = { below: [], room: 0 };
-
-/**
- * What each block of a page's READ pushes: {@link pushesOf} over the page box the runs were read in, and nothing where
- * the read cannot answer it. A page with no box has no margins to measure the room against. A page the engine's walk
- * stopped part-way through (`truncated`) has blocks below a block that are only the runs it read, and moving those would
- * leave the rest where they stood, so the text would part (the text walk's L6, 2026-10-17: a heading over 39,200 runs).
- */
-export function pushesOfPage(
-  boxes: readonly BlockBox[],
-  read: { readonly box: BlockBox | null; readonly truncated: boolean },
-): readonly PushedColumn[] {
-  if (read.box === null || read.truncated) return boxes.map(() => PUSHES_NOTHING);
-  return pushesOf(boxes, read.box);
 }
 
 /**

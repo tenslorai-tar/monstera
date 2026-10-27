@@ -1,23 +1,16 @@
-import { withBrowserTables, withCmap, withTables } from './fontSubset.js';
+import { withTables } from './fontSubset.js';
 import type { OutlineCommand } from './textShaping.js';
 
 /**
- * A font built from the outlines PDFium draws for a run's characters, for the editor to draw that run in
- * ([ADR-0238](../../../docs/DECISIONS/0238-a-run-whose-program-is-not-an-sfnt-is-drawn-in-a-font-built-from-its-drawn-glyphs.md)).
+ * An OpenType font with CFF outlines written from outlines alone, which `cidFont.ts` embeds for a CFF face, and the one
+ * conversion of a HarfBuzz outline into cubic steps the composers draw with. Cubic throughout, as a CFF charstring and
+ * a PDF path both are, so nothing is approximated. No font is built here from what a page draws (ADR-0271, the owner's
+ * font rule).
  *
- * ## Why it is built and not copied
- *
- * A Type 1 or bare CFF program is no font a browser loads, and a TrueType program whose `cmap` names other glyphs than
- * the page draws is a font that would draw the wrong letters (ADR-0175 Decision 2). What PDFium DRAWS for a character is
- * the page's answer whatever the program's kind: its outline (`FPDFFont_GetGlyphPath`, cubic, in ems) and its width. So
- * the font is written from those numbers alone — an OpenType font with CFF outlines, whose curves are cubic as PDFium's
- * are, so nothing is converted — and the document's program never reaches the renderer: no bytecode, no hinting, no
- * table of the producer's.
- *
- * Pure: the outlines arrive as {@link PathGlyph}s the caller read, so the writer is proven with no PDFium.
+ * Pure: the outlines arrive as {@link PathGlyph}s the caller made, so the writer is proven with no engine.
  */
 
-/** One step of an outline, in thousandths of an em, y up: PDFium's three segment kinds and a contour's close. */
+/** One step of an outline, in thousandths of an em, y up: a move, a line, a cubic curve; a contour's close is implied. */
 export type PathStep =
   | { readonly kind: 'move'; readonly x: number; readonly y: number }
   | { readonly kind: 'line'; readonly x: number; readonly y: number }
@@ -31,49 +24,14 @@ export type PathStep =
       readonly y: number;
     };
 
-/** What PDFium draws for one character: its width and its outline, in thousandths of an em. */
+/** One glyph: its width and its outline, in thousandths of an em. */
 export interface PathGlyph {
   readonly advance: number;
   readonly steps: readonly PathStep[];
 }
-
-/** The most glyphs one built font holds: a run's characters are a page's, and a font past this is not one page's. */
-export const MAX_PATH_GLYPHS = 4096;
-
-/**
- * The font, mapping each code point in `glyphs` to the glyph built from its outline; `null` where there is nothing to
- * build or more than {@link MAX_PATH_GLYPHS} characters.
- *
- * @param glyphs what PDFium draws for every character the run holds, by code point
- * @param metrics the face's vertical metrics in thousandths of an em, for the line box the browser lays the run in
- */
-export function pathFontFor(
-  glyphs: ReadonlyMap<number, PathGlyph>,
-  metrics: { readonly ascender: number; readonly descender: number },
-): Uint8Array | null {
-  if (glyphs.size === 0 || glyphs.size > MAX_PATH_GLYPHS) return null;
-  const points = [...glyphs.keys()].sort((left, right) => left - right);
-  // GLYPH 0 IS .notdef, drawing nothing; each character's glyph is its place in `points` after it.
-  const outlines: PathGlyph[] = [{ advance: 0, steps: [] }, ...points.map((point) => glyphs.get(point) ?? { advance: 0, steps: [] })];
-  const ascender = Math.round(metrics.ascender);
-  const descender = Math.round(metrics.descender);
-  const font = cffProgram(outlines, { ascender, descender }, 'MonsteraRunFont');
-  const mapped = withCmap(
-    font,
-    points.map((point, at) => [point, at + 1] as const),
-  );
-  return withBrowserTables(mapped, 'MonsteraRunFont', {
-    ascender,
-    descender,
-    firstChar: points[0] ?? 0,
-    lastChar: points.at(-1) ?? 0,
-  });
-}
-
 /**
  * An OpenType font with CFF outlines holding `outlines` in order — glyph 0 first, which should be `.notdef` — and no
- * `cmap`: what {@link pathFontFor} gives a browser once it adds one, and what `cidFont.ts` embeds for a CFF face, whose
- * codes reach their glyphs by number alone.
+ * `cmap`: what `cidFont.ts` embeds for a CFF face, whose codes reach their glyphs by number alone.
  */
 export function cffProgram(
   outlines: readonly PathGlyph[],

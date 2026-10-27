@@ -152,6 +152,7 @@ import { Button } from '../primitives/Button.js';
 import { IconButton } from '../primitives/IconButton.js';
 import type { CommandContext, CommandRegistry } from '../registries/commands.js';
 import { useRunCommand } from '../registries/useRunCommand.js';
+import { SURFACE_PLACEMENTS, useLiveContext } from '../commandAnswers.js';
 import { propertiesModel } from '../surfaces/projections.js';
 
 /**
@@ -258,8 +259,10 @@ export function FieldPropertiesPanel({
   fonts,
   documentFonts,
   registry,
-  context,
+  context: asked,
 }: FieldPropertiesPanelProps): ReactElement {
+  // THE ANSWERS OF WHAT THE PROPERTIES TAB'S FOOT PLACES (ADR-0272).
+  const context = useLiveContext(registry, asked, SURFACE_PLACEMENTS.properties);
   const { i18n } = useLingui();
   const first = selected[0];
   const [answer, setAnswer] = useState<

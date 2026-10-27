@@ -290,6 +290,15 @@ jobs:
       - name: Every var() names a custom property something declares
         run: node scripts/ci/annotate.mjs scripts/lib/definedTokens.mjs
 
+      # The other direction from the scan above: not a use with no definition but a definition with no use. A deleted
+      # screen takes its imports with it and the compiler says so; its stylesheet rules, its message keys and its
+      # settings stay, and nothing else reads them (ADR-0271, the owner's no-traces rule for the rebuilt editor).
+      - name: Prove the unread-asset scan can see, refuse and tolerate
+        run: node scripts/ci/annotate.mjs scripts/proofs/unreadAssets.proof.mjs
+
+      - name: Every stylesheet class, message key and setting has a reader
+        run: node scripts/ci/annotate.mjs scripts/lib/unreadAssets.mjs
+
       - name: Prove the second-wiring-place scan can see, refuse and tolerate
         run: node scripts/ci/annotate.mjs scripts/proofs/secondWiringPlace.proof.mjs
 
@@ -419,16 +428,6 @@ jobs:
       - name: Prove a Type 3 page is edited by PDFium's reading and MuPDF's writer
         run: >
           node scripts/ci/annotate.mjs scripts/proofs/type3Edit.proof.mjs
-          ${{ runner.os == 'Windows' && '--require-engines' || '' }}
-
-      # ADR-0249, the owner's decision of 2026-10-16. A paragraph grown by one
-      # line moves the small print under it down by exactly one line, read
-      # back from the saved bytes by MuPDF; the control is the same edit
-      # without the push, which leaves the new line on the small print. A
-      # second column and the footer stay; a page with no room moves nothing.
-      - name: Prove a growing paragraph pushes the text below it down
-        run: >
-          node scripts/ci/annotate.mjs scripts/proofs/textPush.proof.mjs
           ${{ runner.os == 'Windows' && '--require-engines' || '' }}
 
       # ADR-0264 Decision 7, the gate the owner set before Edit object's

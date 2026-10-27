@@ -2,11 +2,12 @@ import { useLingui } from '@lingui/react';
 import type { BlockFormatting, EditedBlock, WindowEditAction } from '@monstera/contract';
 import { type MessageKey, TAB_STOP, toPdf, viewportPoint } from '@monstera/shared';
 import type React from 'react';
-import { type ReactElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { type ReactElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
 import { type OverlayPage, overlayTransform } from '../annotations/annotationSpace.js';
 import type { BlockCommit } from '../commands/documentCommands.js';
 import { type CommandProblem, problemMessage, problemParticulars } from '../dialogs/problemMessages.js';
+import { facesGiven, subscribeFaces } from '../familyFaces.js';
 import { positionOf, readSelection, writeSelection } from '../editorKit/dom.js';
 import { type EditorOps, EditorMenu, type EditorSpelling } from '../editorKit/EditorMenu.js';
 import { EditorSurface } from '../editorKit/EditorSurface.js';
@@ -31,7 +32,7 @@ import { joinEdits, splitEdits } from '../textBlockOps.js';
 import { dragged, type Handle, NOT_PLACED, type Nudge, nudged, type Placement, placeOf, placeTransform } from '../textPlacement.js';
 import { type OpenedBlock, editOf } from './blockModel.js';
 import { type Placed, boxStyle } from './editing.js';
-import { type FaceKind, type RunFaces, faceCssOf } from './runFaces.js';
+import { type FaceKind, type RunFaces, editorFacesOf, faceCssOf } from './runFaces.js';
 
 /**
  * One block open for editing, on the editor kit
@@ -80,7 +81,6 @@ export interface BlockEditorProps {
     | {
         readonly above: TextBlock | undefined;
         readonly below: TextBlock | undefined;
-        readonly under: readonly TextBlock[];
         readonly apply: (edits: EditedBlock[], kept?: boolean) => Promise<BlockCommit>;
         readonly families: () => Promise<(font: string) => string | undefined>;
       }
@@ -218,14 +218,14 @@ function EditorProblem({ problem }: { readonly problem: Exclude<BlockCommit, 'wr
   const { _ } = useLingui();
   if (problem === 'held') {
     return (
-      <div className="m-text-editor-problem" role="alert">
+      <div className="m-kit-problem" role="alert">
         <p>{_(TEXT_EDIT_HELD)}</p>
       </div>
     );
   }
   const particulars = problemParticulars(problem.refused);
   return (
-    <div className="m-text-editor-problem" role="alert">
+    <div className="m-kit-problem" role="alert">
       <p>{_(problemMessage(problem.refused))}</p>
       {particulars === undefined ? null : (
         <dl className="m-command-problem-reference">
@@ -280,7 +280,9 @@ export function BlockEditor({
   const [shift, setShift] = useState(0);
 
   // THE FACES the page's runs are drawn in, else their kind, else the person's fallback (`runFaces.ts`).
-  const faceCss = useMemo(() => faceCssOf(faces, block, fallback), [faces, block, fallback]);
+  // AND AGAIN EACH TIME A FAMILY IS GIVEN ITS FACE: the chain's families load as the read answers (`drawFamiliesNamed`).
+  const given = useSyncExternalStore(subscribeFaces, facesGiven);
+  const faceCss = useMemo(() => faceCssOf(faces, block, fallback, given), [faces, block, fallback, given]);
   const pitch = pitchOf(block);
   const look = useMemo<Look>(() => ({ zoom: geometry.zoom, pitch, faceCss }), [geometry.zoom, pitch, faceCss]);
   // A BLOCK MOVED OFF ITS PLACE draws every paragraph: the page's copy of it is papered whole.
@@ -310,8 +312,9 @@ export function BlockEditor({
           actions.current.finish();
         },
         fonts: fontsAtOpen,
+        faces: editorFacesOf(faces),
       }),
-    [store, fontsAtOpen],
+    [store, fontsAtOpen, faces],
   );
 
   /** Sends ONE write for this editor and takes its outcome, the words' write and a join's or a split's alike (B3a). */
@@ -581,9 +584,9 @@ export function BlockEditor({
   /** What the menu may do to the BLOCK: join or split, only while nothing is unwritten (ADR-0180 Decision 7). */
   const blockOps = (paragraph: number | undefined): EditorOps => {
     if (restructure === undefined || busy || problem !== undefined || store.changed() || moved) return {};
-    const { above, below, under, apply, families } = restructure;
+    const { above, below, apply, families } = restructure;
     // THE PARAGRAPH AS THE PAGE HAS IT: nothing is unwritten here, so the model's paragraphs are the page's.
-    const split = paragraph === undefined ? undefined : splitEdits(block, paragraph, under);
+    const split = paragraph === undefined ? undefined : splitEdits(block, paragraph);
     const join = async (upper: TextBlock, lower: TextBlock): Promise<BlockCommit> => {
       const { edits, kept } = joinEdits(upper, lower, await families());
       return apply(edits, kept);
@@ -700,7 +703,7 @@ export function BlockEditor({
     // now reach and what they overlap (growth by overlap, ADR-0271 section 3).
     <div
       aria-busy={busy}
-      className={`m-text-editor-frame m-kit-frame${mode === 'box' ? ' m-kit-frame--box' : ''}`}
+      className={`m-kit-frame${mode === 'box' ? ' m-kit-frame--box' : ''}`}
       data-kit-frame=""
       data-kit-mode={mode}
       onKeyDown={onBoxKey}
@@ -709,10 +712,10 @@ export function BlockEditor({
       tabIndex={-1}
     >
       {(moved ? [{ top: 0, height: undefined }] : covers).map((cover, at) => (
-        <div aria-hidden="true" className="m-text-editor-cover" key={at} style={{ top: cover.top, height: cover.height ?? '100%', ...paper }} />
+        <div aria-hidden="true" className="m-kit-cover" key={at} style={{ top: cover.top, height: cover.height ?? '100%', ...paper }} />
       ))}
       <div
-        className="m-text-editor-placer"
+        className="m-kit-placer"
         data-placed={moved ? '' : undefined}
         style={{
           ...(placement.width === undefined ? {} : { width: placement.width * geometry.zoom }),
@@ -757,7 +760,7 @@ export function BlockEditor({
         {(placeable ? HANDLES : []).map(({ handle, label }) => (
           <button
             aria-label={_(label)}
-            className={`m-text-editor-handle m-text-editor-handle--${handle}`}
+            className={`m-kit-handle m-kit-handle--${handle}`}
             data-handle={handle}
             disabled={busy}
             key={handle}
@@ -770,11 +773,11 @@ export function BlockEditor({
       {problem !== undefined ? (
         <EditorProblem problem={problem} />
       ) : notice !== undefined ? (
-        <div className="m-text-editor-problem" role="status">
+        <div className="m-kit-problem" role="status">
           <p>{_(notice)}</p>
         </div>
       ) : past ? (
-        <div className="m-text-editor-problem m-text-editor-problem--above" role="status">
+        <div className="m-kit-problem m-kit-problem--above" role="status">
           <p>{_(TEXT_EDIT_PAST_PAGE)}</p>
         </div>
       ) : null}

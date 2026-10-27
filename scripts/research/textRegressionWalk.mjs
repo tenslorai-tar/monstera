@@ -122,7 +122,7 @@ async function everydayPage() {
 
 const walk = await startWalk('text-regression');
 const { page, output, open, section, step, finish } = walk;
-const { editor, panel, ensureEditText, pressAway, problems, chooseFont, savedCopy, openAt } = textSteps(walk);
+const { editor, panel, ensureEditText, openAt, pressAway, problems, chooseFont, savedCopy } = textSteps(walk);
 
 // LITERAL SPECIFIERS, so `proof:electronimports` can read what this loads.
 const { buildProducerSubsetPdf, PRODUCER_MARK } = await import('../../packages/kernel/dist/producerSubsetFixture.js');
@@ -146,7 +146,7 @@ async function openBlock(start) {
   await ensureEditText();
   const box = await block(start).boundingBox();
   if (box === null) throw new Error(`no block beginning “${start}” on the page`);
-  await openAt(block(start), { x: box.width - 3, y: box.height - Math.min(6, box.height / 2) });
+  await openAt(box.x + box.width - 3, box.y + box.height - Math.min(6, box.height / 2));
   await page.keyboard.press('Control+End');
   return box;
 }
@@ -160,9 +160,9 @@ async function commit() {
 }
 
 /**
- * Each run of the open editor: its words, whether it is drawn in a face the editor loaded from the page (its first family
- * naming one, and the browser's own `fonts.check` answering that the family is loaded), and the computed family and
- * weight its WORDS are drawn in.
+ * Each run of the open editor: its words, whether it is drawn in a face of its own (its inline family names one first,
+ * where a run left in its kind starts with the kind's variable, `runFaces.ts`' `faceCssOf`, and the browser's own
+ * `fonts.check` answers that the family is loaded), and the computed family and weight its WORDS are drawn in.
  *
  * READ FROM EACH TEXT NODE'S OWN ELEMENT, never from the run span alone: a family chosen in Properties is applied by
  * `formatRange` as a formatting span INSIDE the run, so the run span's computed family stays the run's own while its
@@ -189,8 +189,7 @@ async function runsDrawn() {
         const family = families.size === 0 ? firstFamily(span) : [...families].join(' + ');
         return {
           text: span.textContent ?? '',
-          // THE RUN'S OWN FIRST FAMILY: the kit names a face it loaded from the page `m-kit-…` (`runFaces.ts`).
-          runFont: (span.style.fontFamily.split(',')[0] ?? '').trim().replaceAll('"', ''),
+          ownFace: !(span.getAttribute('style') ?? '').includes('font-family: var(--m-face-'),
           family,
           loaded: family !== '' && !family.includes(' + ') && span.ownerDocument.fonts.check(`12px "${family}"`),
           weight: weight || (view?.getComputedStyle(span).fontWeight ?? ''),
@@ -234,7 +233,7 @@ await step('1. a serif page with a bold lead-in keeps its look while the block i
   await openBlock(SERIF.lead);
   // EVERY RUN IN THE PAGE'S OWN FACE, loaded: a run left in the editor's kind of face is the sans the owner saw.
   /** @param {Awaited<ReturnType<typeof runsDrawn>>} runs */
-  const own = (runs) => runs.every((run) => (run.runFont ?? '').startsWith('m-kit-') && run.loaded);
+  const own = (runs) => runs.every((run) => run.ownFace && run.loaded);
   await expect.poll(async () => own(await runsDrawn()), { timeout: 15_000 }).toBe(true);
   const before = await runsDrawn();
   // THE LEAD-IN STILL BOLD: the page states no weight, so this is the program's and the name's.
@@ -282,16 +281,9 @@ await step('4. Enter breaks a line where it is pressed, and the break is saved',
   await page.keyboard.press('Control+Home');
   for (let at = 0; at < 3; at += 1) await page.keyboard.press('Control+ArrowRight');
   await page.keyboard.press('Enter');
-  // THE TEXT BELOW, SHOWN MOVED BEFORE THE WRITE (ADR-0249 Decision 5): the break makes the paragraph a line longer in the
-  // editor, and the two blocks under it in its column, the small print and the form's label, are drawn that much lower
-  // while it is open, with nothing said, as the page has room.
-  const shownPush = async () => ({
-    pushed: await page.locator('[data-text-pushed]').count(),
-    said: await page.locator('.m-text-editor-problem').count(),
-    height: await editor().evaluate((root) => Number(Reflect.get(root, 'offsetHeight') ?? -1)),
-  });
-  await expect.poll(async () => JSON.stringify(await shownPush()), { timeout: 10_000 }).toContain('"pushed":2');
-  expect((await shownPush()).said).toBe(0);
+  // NOTHING SAID: the break makes the paragraph a line longer, and the block grows down over what is below it
+  // (ADR-0271 section 11.1), which the editor's frame shows and no sentence does.
+  expect(await problems()).toStrictEqual([]);
   // WHERE THE SMALL PRINT WAS: the page as built, which this tab opened unchanged (a copy saved now would end the editor).
   const smallBefore = await smallPrintBaseline(everyday);
   await commit();
@@ -303,9 +295,11 @@ await step('4. Enter breaks a line where it is pressed, and the break is saved',
   expect(second, JSON.stringify(items)).toBeDefined();
   // ON TWO LINES: the second line's baseline below the first's.
   expect(second?.y ?? 0).toBeLessThan((first?.y ?? 0) - 1);
-  // AND WRITTEN AS SHOWN (ADR-0249): the small print one line, 14.4 points, lower in the saved file.
+  // AND NOTHING BELOW MOVED (ADR-0271 section 11.1): the small print where it was in the saved file, the paragraph
+  // overlapping it rather than moving it.
   const smallAfter = await smallPrintBaseline(saved);
-  expect(Math.abs((smallBefore ?? 0) - (smallAfter ?? 0) - 14.4), JSON.stringify({ smallBefore, smallAfter })).toBeLessThanOrEqual(0.2);
+  expect(smallBefore !== undefined && smallAfter !== undefined, 'the small print was read before and after').toBe(true);
+  expect(Math.abs((smallBefore ?? 0) - (smallAfter ?? 0)), JSON.stringify({ smallBefore, smallAfter })).toBeLessThanOrEqual(0.2);
   return { first, second, smallBefore, smallAfter };
 });
 
@@ -328,9 +322,9 @@ await step('5. two spaces typed stay two spaces, on screen and in the saved file
   // edit is not ended with a press away — that would write the older words over the edit — but with the editor's words
   // left as they are and a second reopen after the writes are idle, so the record says whether the read lagged or was wrong.
   const offered = await page.locator('[data-text-block]').evaluateAll((blocks) => blocks.map((each) => each.getAttribute('aria-label') ?? ''));
-  // THE BLOCK THAT HOLDS THE TYPED WORDS, by its outline's label where the label shows them. Until ADR-0249 they wrapped
-  // onto a line over the small print and were read as the start of its block; the small print now moves down, so they
-  // are the paragraph's, whose label is cut before them.
+  // THE BLOCK THAT HOLDS THE TYPED WORDS, by its outline's label where the label shows them: a line the earlier steps
+  // wrapped may sit over the small print (nothing below moves, ADR-0271 section 11.1), and the read may then group it
+  // with the small print's block, so the block is found by its words and not assumed to be the paragraph.
   const holding = offered.find((label) => label.includes('two spaces'))?.match(/^Edit “(.{1,20})/u)?.[1];
   await openBlock(holding ?? 'Every walk step');
   const shown = await editor().innerText();
@@ -380,16 +374,14 @@ await step(`7. choosing ${INSTALLED} for the paragraph shows it, keeps its lines
   await commit();
   const saved = await savedCopy('07-font.pdf');
   expect((await savedFonts(saved)).some((name) => name.includes(INSTALLED))).toBe(true);
-  // ITS LINES KEPT (A4): no line it had is lost. A wider face may wrap it onto one more, which until ADR-0249 drew that
-  // line over the small print, so this asked for the same count; the text below now moves down instead, asserted next.
+  // ITS LINES KEPT (A4): no line it had is lost. A wider face may wrap it onto one more, which then overlaps what is
+  // below it (ADR-0271 section 11.1).
   const after = await paragraphBaselines(saved);
   expect(after.length, JSON.stringify({ before, after })).toBeGreaterThanOrEqual(before.length);
-  // NOTHING COVERED (ADR-0249): the small print stands as far below the paragraph's last line as it did, within a point.
+  // NOTHING BELOW MOVED: the small print where it was, within a fifth of a point.
   const smallAfter = await smallPrintBaseline(saved);
-  const gapBefore = (before.at(-1) ?? 0) - (smallBefore ?? 0);
-  const gapAfter = (after.at(-1) ?? 0) - (smallAfter ?? 0);
   expect(smallBefore !== undefined && smallAfter !== undefined, 'the small print was read before and after').toBe(true);
-  expect(gapAfter, JSON.stringify({ before, after, smallBefore, smallAfter })).toBeGreaterThanOrEqual(gapBefore - 1);
+  expect(Math.abs((smallBefore ?? 0) - (smallAfter ?? 0)), JSON.stringify({ before, after, smallBefore, smallAfter })).toBeLessThanOrEqual(0.2);
   return { before, after, smallBefore, smallAfter, samples };
 });
 

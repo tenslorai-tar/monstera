@@ -11,10 +11,11 @@ import { render as renderBare, act, fireEvent } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { NO_RUN_FONTS } from './commands/documentCommands.js';
+import { NO_BLOCK_FACES } from './commands/documentCommands.js';
 import { PageList } from './PageList.js';
 import type { PageBlocks, TextEditing } from './editText/editing.js';
 import { FIRST_PAGE } from './pageNumbering.js';
+import { SETTLE_MS } from './useSettledPages.js';
 import { activateCatalogue, i18n } from './i18n.js';
 import { EN } from './messages/en.js';
 import type { DocumentView } from './documentView.js';
@@ -637,6 +638,62 @@ describe('PageList', () => {
     ]);
   });
 
+  it('asks for NO page a scroll passes, and for the page it stops on once it has paused (useSettledPages)', async () => {
+    const { client, textAsked } = clientAnswering(LINES);
+    render(
+      <PageList
+        client={client}
+        view={viewDrawing()}
+        pageCount={5}
+        docId={DOC}
+        version={VERSION}
+        onCurrentPage={vi.fn()}
+        mode={SCALE_1}
+        onZoomStep={vi.fn()}
+        onShownZoom={vi.fn()}
+        goTo={undefined}
+        startAt={FIRST_PAGE.kernel}
+        onWentTo={vi.fn()}
+        loupe={false}
+        drawsPages
+        rulers={false}
+        showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
+        unit="in"
+        search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
+        menuAt={undefined}
+      />,
+    );
+    await settle();
+    const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+    // THE SCROLL: each step RENDERED on its own, 20 ms apart, well inside the pause, so a list that read on every
+    // visible set would ask for pages 1 and 2 here. Asserting only the end state would pass that list too.
+    for (const [from, to] of [
+      [0, 1],
+      [1, 2],
+      [2, 3],
+    ] as const) {
+      await act(async () => {
+        report([
+          { page: from, visible: false },
+          { page: to, visible: true },
+        ]);
+        await pause(20);
+      });
+    }
+    /** The page a recorded read asked for, from the params it was sent with. */
+    const pageAsked = (asked: unknown): unknown => (typeof asked === 'object' && asked !== null && 'page' in asked ? asked.page : undefined);
+    const passed = textAsked.filter((asked) => pageAsked(asked) === 1 || pageAsked(asked) === 2);
+    expect(passed).toStrictEqual([]);
+    // THE STOP: after the pause, the page the scroll stopped on is read, and the passed ones still are not.
+    await act(async () => {
+      await pause(SETTLE_MS + 50);
+    });
+    await settle();
+    expect(textAsked.map(pageAsked)).toContain(3);
+    expect(textAsked.filter((asked) => pageAsked(asked) === 1 || pageAsked(asked) === 2)).toStrictEqual([]);
+  });
+
   it('renders one selectable element per line, carrying the channel’s text', async () => {
     const { client } = clientAnswering(LINES);
     const { container } = render(
@@ -732,7 +789,7 @@ describe('PageList', () => {
           rewrite: 'objects',
         }),
       onCommit: () => Promise.resolve('unchanged'),
-      runFonts: () => Promise.resolve(NO_RUN_FONTS),
+      blockFaces: () => Promise.resolve(NO_BLOCK_FACES),
       onRecognise,
       onLeave: vi.fn(),
       adding: false,

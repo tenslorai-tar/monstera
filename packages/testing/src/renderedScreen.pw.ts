@@ -378,8 +378,6 @@ for (const look of LOOKS) {
 const BODY_RUN = { size: 12, colour: { r: 30, g: 30, b: 30 }, serif: false, mono: false, italic: false, bold: false };
 /** A block no case here is about the shape of: left-aligned with no first-line indent (ADR-0179). */
 const LEFT_SHAPE = { align: 'left', firstIndent: 0 } as const;
-/** A block that pushes nothing when it grows (ADR-0249): no case here is about the push. */
-const NO_PUSH = { below: [], room: 0 };
 const SET_APART_RUN = { size: 16, colour: { r: 66, g: 83, b: 149 }, serif: false, mono: false, italic: false, bold: true };
 
 /** A one-page document built here, so the case needs no fixture from the corpus (B10). */
@@ -4884,7 +4882,6 @@ for (const look of LOOKS) {
           ],
           style: BODY_RUN,
           shape: LEFT_SHAPE,
-          push: NO_PUSH,
         },
       ],
     });
@@ -4900,7 +4897,7 @@ for (const look of LOOKS) {
     await page.keyboard.type(' typed here');
     await page.keyboard.press('Escape');
 
-    const said = page.locator('.m-text-editor-problem');
+    const said = page.locator('.m-kit-problem');
     await expect(said).toContainText('Monstera couldn’t make this change without disturbing other text on the page, so nothing was changed.');
     await expect(said).toContainText('read-back 0');
     // ONLY ESC IS OFFERED where no words can pass (RRRRRRR-16, 83fb33fc): a font this build cannot rewrite refuses any
@@ -4977,7 +4974,6 @@ for (const look of LOOKS) {
           ],
           style: BODY_RUN,
           shape: LEFT_SHAPE,
-          push: NO_PUSH,
         },
       ],
     });
@@ -5022,7 +5018,7 @@ for (const look of LOOKS) {
 
     await openWords(page, outline);
     const editor = page.locator(SURFACE);
-    expect(await againstPaper(page.locator('.m-text-editor-frame'), 'outline-color')).toBeGreaterThanOrEqual(3);
+    expect(await againstPaper(page.locator('.m-kit-frame'), 'outline-color')).toBeGreaterThanOrEqual(3);
     // THE CARET, which nothing measured (OOOOOOO-9): the editor draws it in the paper-solved accent.
     expect(await againstPaper(editor, 'caret-color')).toBeGreaterThanOrEqual(3);
     // CONTROLS on the instrument: the page's canvas paints no outline and the body's caret is the default, so each has
@@ -5060,7 +5056,7 @@ for (const look of LOOKS) {
     // handle. Eight handles are required first: no handle at all would leave the overlap list empty for the wrong reason.
     // CONTROL: the target the handles had before, 24 px centred on the frame's corner, overlaps the frame by a quarter of
     // itself, which is what this measure reports for it.
-    const placerBox = await page.locator('.m-text-editor-placer').boundingBox();
+    const placerBox = await page.locator('.m-kit-placer').boundingBox();
     expect(placerBox).not.toBeNull();
     const frame = placerBox ?? { x: 0, y: 0, width: 0, height: 0 };
     const overlap = (a: { x: number; y: number; width: number; height: number }, b: typeof frame) =>
@@ -5151,7 +5147,6 @@ for (const look of LOOKS) {
           ],
           style: BODY_RUN,
           shape: LEFT_SHAPE,
-          push: NO_PUSH,
         },
         {
           box,
@@ -5163,7 +5158,6 @@ for (const look of LOOKS) {
           })),
           style: BODY_RUN,
           shape: LEFT_SHAPE,
-          push: NO_PUSH,
         },
       ],
     });
@@ -5196,7 +5190,7 @@ for (const look of LOOKS) {
     await openWords(page, past);
     const editor = page.locator(SURFACE);
     expect(await editor.evaluate((element) => (element as HTMLElement).innerText)).toBe(lines.join('\n'));
-    const status = page.locator('.m-text-editor-frame [role="status"]');
+    const status = page.locator('.m-kit-frame [role="status"]');
     await expect(status).toHaveText('This text no longer fits on the page');
     // IN THE WINDOW, above the words: below them it was past the foot they ran off, and out of sight.
     await expect(status).toBeInViewport();
@@ -5232,20 +5226,19 @@ for (const look of LOOKS) {
   });
 }
 
-// A RUN DRAWN IN ITS OWN FONT (ADR-0175), in a real browser and every look: the font crosses as bytes, loads as a face
-// under the renderer's own policy, and the run is DRAWN in it, while the run beside it with none keeps its kind of face.
-// LIBERATION SANS from pdfjs-dist, which every install has, given to a MONO run: a proportional face and a monospace one
-// set the same words to different widths, so the width says which face drew them — a family name alone would pass for a
-// face that never loaded.
-const RUN_FONT = new Uint8Array(
+// A RUN DRAWN IN THE FACE THE WRITER WILL SET ITS NEW WORDS IN (ADR-0271), in a real browser and every look: the read on
+// open names the chain's family, the editor gives that bundled family its face, and the run is DRAWN in it, while the
+// run beside it with no answer keeps its kind of face. LIBERATION SANS from pdfjs-dist, which every install has, is the
+// face the shim answers for the family, given to a MONO run: a proportional face and a monospace one set the same words
+// to different widths, so the width says which face drew them — a family name alone would pass for a face that never
+// loaded.
+const CHAIN_FACE_BYTES = new Uint8Array(
   readFileSync(createRequire(import.meta.url).resolve('pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf')),
 );
 const MONO_RUN = { ...BODY_RUN, mono: true };
 
 for (const look of LOOKS) {
-  test(`${look.name}: a run is DRAWN in the font the host rebuilt, its neighbour in its kind, and the face leaves with the editor`, async ({
-    page,
-  }) => {
+  test(`${look.name}: a run is DRAWN in the chain’s face the read on open names, its neighbour in its kind`, async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     const bytes = await onePagePdf();
     const docId = asDocId('00000000-0000-4000-8000-0000000000e3');
@@ -5253,6 +5246,7 @@ for (const look of LOOKS) {
     // measured 69.97 px against Consolas' 85.78 on windows-latest (run 37416673829, 2026-10-06), 0.82 of it, where a
     // fifth narrower was asked. An `i` is 0.222 em in Liberation Sans against 0.55 in Consolas and 0.602 in DejaVu Sans Mono.
     const words = 'iiiiiiiiiiii';
+    const chosen = { family: 'Carlito', weight: 400, italic: false, styles: ['regular' as const, 'bold' as const] };
     await bridgeUnder(page, look, {
       opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'fonts.pdf' }],
       documentBytes: new Map([[docId, bytes]]),
@@ -5265,10 +5259,10 @@ for (const look of LOOKS) {
           ],
           style: MONO_RUN,
           shape: LEFT_SHAPE,
-          push: NO_PUSH,
         },
       ],
-      runFonts: { fonts: [RUN_FONT], runs: new Map([[1, 0]]) },
+      blockFaces: { fonts: [{ own: false, chosen, candidates: [chosen] }], runs: new Map([[1, 0]]) },
+      bundledFace: { bytes: CHAIN_FACE_BYTES, released: Promise.resolve() },
     });
     await page.goto('/');
     await page.getByRole('button', { name: 'Open PDF…' }).click();
@@ -5282,36 +5276,26 @@ for (const look of LOOKS) {
     // EACH RUN BY THE FACE IT IS KEYED BY: neither names a font, so each is its own run's (`faceKeyOf`).
     const own = page.locator(`${SURFACE} .m-kit__run[data-face="run:1"]`);
     const kind = page.locator(`${SURFACE} .m-kit__run[data-face="run:2"]`);
-    await expect(own).toHaveAttribute('style', /font-family: "m-kit-[a-zA-Z0-9-]+"/u);
-    const family = ((await own.evaluate((element) => (element as HTMLElement).style.fontFamily)).split(',')[0] ?? '').replaceAll('"', '');
+    await expect(own).toHaveAttribute('style', /font-family: "Carlito"/u);
     const faceOf = (run: typeof own) =>
       run.evaluate((element) => ({ family: getComputedStyle(element).fontFamily.replaceAll('"', ''), width: element.getBoundingClientRect().width }));
     const drawn = await faceOf(own);
     const kept = await faceOf(kind);
-    // ITS OWN FONT FIRST and the kind behind it; the neighbour with none is the kind alone.
-    expect(family.startsWith('m-kit-')).toBe(true);
-    expect(drawn.family.startsWith(family)).toBe(true);
+    // THE CHAIN'S FACE FIRST and the kind behind it; the neighbour with no answer is the kind alone.
+    expect(drawn.family.startsWith('Carlito')).toBe(true);
     expect(drawn.family).toContain('monospace');
     expect(kept.family.startsWith('Consolas')).toBe(true);
     // DRAWN IN IT: the same words, set proportionally, are under three fifths of the kind's monospace (about 0.4 on
     // both platforms; a face that never loaded falls back to the monospace and measures 1).
     expect(drawn.width).toBeLessThan(kept.width * 0.6);
-    const loaded = (name: string) =>
-      page.evaluate((wanted) => [...document.fonts].some((face) => face.family === wanted && face.status === 'loaded'), name);
-    expect(await loaded(family)).toBe(true);
 
-    await page.screenshot({ path: test.info().outputPath(`run-font-${look.name}.png`) });
+    await page.screenshot({ path: test.info().outputPath(`chain-face-${look.name}.png`) });
     const results = await new AxeBuilder({ page }).analyze();
     const blocking = results.violations.filter((violation) => BLOCKING.has(String(violation.impact)));
     expect(
       blocking,
       blocking.map((violation) => `${String(violation.impact)}: ${violation.id} — ${violation.help}`).join('\n'),
     ).toEqual([]);
-
-    // THE FACE LEAVES WITH THE EDITOR: Escape with nothing changed closes it, and the document holds the face no more.
-    await page.keyboard.press('Escape');
-    await expect(page.locator('[data-kit-surface]')).toHaveCount(0);
-    expect(await loaded(family)).toBe(false);
   });
 }
 

@@ -132,12 +132,13 @@ await step('C. one Edit text action, its write landed and its hosts settled', as
   await section('Edit');
   const tool = page.getByRole('button', { name: 'Edit text', exact: true }).first();
   if ((await tool.getAttribute('aria-pressed')) !== 'true') await command('Edit text on the page');
-  await editTextOpening(page).openAt(page.locator('[data-text-block]').nth(1));
+  // TWO STEPS (ADR-0271 section 3): the press selects the box, Enter puts the caret at the end of its words.
+  await editTextOpening(page).openWords(page.locator('[data-text-block]').nth(1));
   await page.keyboard.type(' walked');
   const pageBox = await page.locator('canvas.m-page:visible').first().boundingBox();
   if (pageBox === null) throw new Error('the page is not on screen');
   await page.mouse.click(pageBox.x + pageBox.width - 20, Math.max(pageBox.y, 230) + 20);
-  await expect(page.locator('[data-kit-frame]')).toHaveCount(0);
+  await expect(page.locator('[data-kit-surface]')).toHaveCount(0);
   await page.waitForTimeout(15_000);
   return point('c-edit');
 });

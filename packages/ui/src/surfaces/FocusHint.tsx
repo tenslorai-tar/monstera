@@ -3,6 +3,7 @@ import type { ReactElement } from 'react';
 
 import { FOCUS_HINT } from '../messages/en.js';
 import type { CommandContext, CommandRegistry } from '../registries/commands.js';
+import { useLiveContext } from '../commandAnswers.js';
 import { shortcutMapOf } from './projections.js';
 
 /** The way out of Focus is the chord §10.3 names: *"Esc returns"*. */
@@ -21,11 +22,13 @@ const LEAVE_CHORD = 'escape';
  */
 export function FocusHint({
   registry,
-  context,
+  context: asked,
 }: {
   readonly registry: CommandRegistry;
   readonly context: CommandContext;
 }): ReactElement | null {
+  // EVERY COMMAND'S ANSWERS: the hint finds its command by its key, not by a placement (ADR-0272).
+  const context = useLiveContext(registry, asked, 'all');
   const { _ } = useLingui();
   const leave = shortcutMapOf(registry).get(LEAVE_CHORD);
   if (leave?.shortcut === undefined || !(leave.when?.(context) ?? true)) return null;

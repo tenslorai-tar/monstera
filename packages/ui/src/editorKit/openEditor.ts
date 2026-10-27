@@ -1,4 +1,4 @@
-import type { BlockMarkSet, PARAGRAPH_ALIGNMENTS } from '@monstera/contract';
+import type { BlockMarkSet, FaceStyle, PARAGRAPH_ALIGNMENTS } from '@monstera/contract';
 
 import { type FormatAction as KitAction, type StyleValue, format } from './format.js';
 import { type Alignment, type FormatState as KitState, type RunStyle, isCollapsed, styleAt } from './model.js';
@@ -35,6 +35,16 @@ export interface OpenEditor {
   readonly finish: () => void;
   /** The names of the fonts the page's text is drawn in: the picker's *In this document*. */
   readonly fonts: readonly string[];
+  /** The chain's faces for the words in `face` (the kit's face key), from the block's read on open; absent while read. */
+  readonly faces?: (face: string) => EditorFaces | undefined;
+}
+
+/** The chain's faces for the words at the selection: the picker's *Closest matches*, and the styles each family has. */
+export interface EditorFaces {
+  /** Best first, one per family, Monstera's choice among them. */
+  readonly closest: readonly { readonly family: string; readonly styles: readonly FaceStyle[] }[];
+  /** The family Monstera sets a new word in, which the picker marks. */
+  readonly chosen: string | undefined;
 }
 
 /** A formatting action as a command or a panel asks it: the contract's names for the letters' properties. */
@@ -209,11 +219,30 @@ export function openParagraphState(): ParagraphState | undefined {
   return paragraph === undefined ? undefined : { align: paragraph.align, lineSpacing: paragraph.lineSpacing, spaceAfter: paragraph.spaceAfter };
 }
 
-/** What a control showing the open editor reads: its words' state, its paragraph's, and its page's fonts. */
+/**
+ * The chain's faces for the words at the selection: those of the face they are in, else of the face they were in on the
+ * page (a family the person chose is not one the read answered), else none.
+ */
+export function openEditorFaces(): EditorFaces | undefined {
+  if (open?.faces === undefined) return undefined;
+  const { model, selection, pending } = open.store.get();
+  const at = isCollapsed(selection) ? selection.focus : selection.anchor;
+  const here = pending ?? styleAt(model, at);
+  const paragraph = model.paragraphs[at.paragraph];
+  let offset = 0;
+  const run = paragraph?.runs.find((each) => {
+    offset += each.text.length;
+    return offset >= at.offset;
+  });
+  return open.faces(here.face) ?? (run?.base === undefined ? undefined : open.faces(run.base.face));
+}
+
+/** What a control showing the open editor reads: its words' state, its paragraph's, its page's fonts and its faces. */
 export interface EditorSnapshot {
   readonly state: FormatState | undefined;
   readonly paragraph: ParagraphState | undefined;
   readonly fonts: readonly string[];
+  readonly faces: EditorFaces | undefined;
 }
 
 let snapshot: { readonly revision: number; readonly value: EditorSnapshot } | undefined;
@@ -221,7 +250,7 @@ let snapshot: { readonly revision: number; readonly value: EditorSnapshot } | un
 /** `useSyncExternalStore`'s snapshot: ONE OBJECT PER REVISION, the same object until something it shows changes. */
 export function openEditorSnapshot(): EditorSnapshot {
   if (snapshot?.revision !== revision) {
-    snapshot = { revision, value: { state: openEditorState(), paragraph: openParagraphState(), fonts: openEditorFonts() } };
+    snapshot = { revision, value: { state: openEditorState(), paragraph: openParagraphState(), fonts: openEditorFonts(), faces: openEditorFaces() } };
   }
   return snapshot.value;
 }

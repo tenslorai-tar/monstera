@@ -80,7 +80,6 @@ export const OPEN_DOCUMENT_TITLE = messageKey('command.open-document.title');
 export const CLOSE_LABEL = messageKey('action.close.label');
 export const DIALOG_CANCEL = messageKey('action.dialog-cancel.label');
 export const DIALOG_OK = messageKey('action.dialog-ok.label');
-export const DOCUMENT_SURFACE_LABEL = messageKey('surface.document.label');
 export const THEME_TITLE = messageKey('setting.appearance-theme.title');
 export const REDUCE_MOTION_TITLE = messageKey('setting.appearance-reduce-motion.title');
 export const REDUCE_MOTION_DESCRIPTION = messageKey('setting.appearance-reduce-motion.description');
@@ -595,17 +594,10 @@ export const PRINT_PAGES_NOTE = messageKey('dialog.print.pages-note');
 export const GROUP_COMPARE = messageKey('surface.ribbon.group.compare');
 export const GROUP_COMMENT_FILES = messageKey('surface.ribbon.group.comment-files');
 export const ACCESSIBILITY_COMMAND_TITLE = messageKey('command.accessibility-check.title');
-export const ACCESSIBILITY_TITLE = messageKey('dialog.accessibility-check.title');
 export const ACCESSIBILITY_SUMMARY = messageKey('dialog.accessibility-check.summary');
 export const ACCESSIBILITY_NOT_CONFORMANCE = messageKey('dialog.accessibility-check.not-conformance');
 export const ACCESSIBILITY_REFUSED = messageKey('dialog.accessibility-check.refused');
-export const ACCESSIBILITY_MACHINE_HEADING = messageKey('dialog.accessibility-check.machine-heading');
 export const ACCESSIBILITY_PERSON_HEADING = messageKey('dialog.accessibility-check.person-heading');
-export const ACCESSIBILITY_PAGES = messageKey('dialog.accessibility-check.pages');
-export const ACCESSIBILITY_VERDICT_PASSED = messageKey('dialog.accessibility-check.verdict.passed');
-export const ACCESSIBILITY_VERDICT_FAILED = messageKey('dialog.accessibility-check.verdict.failed');
-export const ACCESSIBILITY_VERDICT_NOT_APPLICABLE = messageKey('dialog.accessibility-check.verdict.not-applicable');
-export const ACCESSIBILITY_VERDICT_NOT_DETERMINED = messageKey('dialog.accessibility-check.verdict.not-determined');
 export const ACCESSIBILITY_RULE_5_1 = messageKey('dialog.accessibility-check.rule.5-1');
 export const ACCESSIBILITY_RULE_6_2_1 = messageKey('dialog.accessibility-check.rule.6.2-1');
 export const ACCESSIBILITY_RULE_7_1_4 = messageKey('dialog.accessibility-check.rule.7.1-4');
@@ -1021,7 +1013,6 @@ export const WORD_COUNT_LINES_LABEL = messageKey('dialog.word-count.lines');
 export const WORD_COUNT_CJK_LABEL = messageKey('dialog.word-count.cjk');
 export const WORD_COUNT_PARTIAL = messageKey('dialog.word-count.partial');
 export const PAGE_STRUCTURE_COMMAND_TITLE = messageKey('command.page-structure.title');
-export const PAGE_STRUCTURE_TITLE = messageKey('dialog.page-structure.title');
 export const PAGE_STRUCTURE_PAGE = messageKey('dialog.page-structure.page');
 export const PAGE_STRUCTURE_UNTAGGED = messageKey('dialog.page-structure.untagged');
 export const PAGE_STRUCTURE_LINES = messageKey('dialog.page-structure.lines');
@@ -1694,9 +1685,6 @@ export const TEXT_FORMAT_COLOUR_GREEN = messageKey('surface.text-format.colour-g
 export const TEXT_FORMAT_COLOUR_BLUE = messageKey('surface.text-format.colour-blue');
 export const TEXT_FORMAT_COLOUR_PURPLE = messageKey('surface.text-format.colour-purple');
 export const TEXT_FORMAT_SPACING = messageKey('surface.text-format.spacing');
-export const TEXT_FORMAT_SPACING_SINGLE = messageKey('surface.text-format.spacing-single');
-export const TEXT_FORMAT_SPACING_ONE_HALF = messageKey('surface.text-format.spacing-one-half');
-export const TEXT_FORMAT_SPACING_DOUBLE = messageKey('surface.text-format.spacing-double');
 export const TEXT_FORMAT_HIGHLIGHT = messageKey('surface.text-format.highlight');
 export const TEXT_FORMAT_HIGHLIGHT_NONE = messageKey('surface.text-format.highlight-none');
 export const TEXT_FORMAT_HIGHLIGHT_CUSTOM = messageKey('surface.text-format.highlight-custom');
@@ -1716,6 +1704,12 @@ export const FONT_GROUP_COMPUTER = messageKey('surface.font-picker.group-compute
 export const FONT_GROUP_BUNDLED = messageKey('surface.font-picker.group-bundled');
 export const FONT_GROUP_BUILT_IN = messageKey('surface.font-picker.group-built-in');
 export const FONT_GROUP_CLOSEST = messageKey('surface.font-picker.group-closest');
+export const FONT_CLOSEST_CHOSEN = messageKey('surface.font-picker.closest-chosen');
+export const FONT_STYLE_NEAREST = messageKey('surface.font-picker.style-nearest');
+export const FONT_STYLE_REGULAR = messageKey('surface.font-picker.style-regular');
+export const FONT_STYLE_BOLD = messageKey('surface.font-picker.style-bold');
+export const FONT_STYLE_ITALIC = messageKey('surface.font-picker.style-italic');
+export const FONT_STYLE_BOLD_ITALIC = messageKey('surface.font-picker.style-bold-italic');
 export const FONT_GROUP_ALL = messageKey('surface.font-picker.group-all');
 export const FONT_LIST_UNREAD = messageKey('surface.font-picker.unread');
 export const FONT_LIST_EMPTY = messageKey('surface.font-picker.empty');
@@ -2022,8 +2016,6 @@ export const FORM_FIELD_NAME_TOO_LONG = messageKey('dialog.form-field.name-too-l
 export const FORM_FIELD_NAME_SEGMENT = messageKey('dialog.form-field.name-segment');
 export const FORM_FIELD_NAME_TAKEN = messageKey('dialog.form-field.name-taken');
 export const FORM_FIELD_NAME_PARENT = messageKey('dialog.form-field.name-parent');
-export const FORM_FIELD_OPTION_SUGGESTION = messageKey('dialog.form-field.option-suggestion');
-export const FORM_FIELD_OPTIONS_EMPTY = messageKey('dialog.form-field.options-empty');
 export const FORMS_KIND_TEXT = messageKey('surface.forms.kind.text');
 export const FORMS_KIND_CHECKBOX = messageKey('surface.forms.kind.checkbox');
 export const FORMS_KIND_RADIO = messageKey('surface.forms.kind.radio');
@@ -2256,6 +2248,10 @@ export const STATUS_ZOOM_GROUP = messageKey('surface.status.zoom-group');
 export const STATUS_ZOOM_SLIDER = messageKey('surface.status.zoom-slider');
 export const STATUS_TOOL_LINE = messageKey('surface.status.tool-line');
 export const STATUS_CHROME_GROUP = messageKey('surface.status.chrome-group');
+/** v5-02's *"24 pages · 2.4 MB"* in the status bar's document line. */
+export const STATUS_PAGES = messageKey('surface.status.pages');
+export const STATUS_SIZE_KB = messageKey('surface.status.size-kb');
+export const STATUS_SIZE_MB = messageKey('surface.status.size-mb');
 /**
  * Where this document stands against its file — the owner's document export draws
  * *"Saved 2 min ago"* in the status bar, and this is the set that sentence needs.
@@ -2263,11 +2259,6 @@ export const STATUS_CHROME_GROUP = messageKey('surface.status.chrome-group');
  * **Every one of them is about THIS WINDOW watching a save**, never about the file's own age,
  * which a renderer holding no path could not read (invariant 2).
  */
-export const STATUS_SAVED_STATE = messageKey('surface.status.saved-state');
-/** v5-02's *"24 pages · 2.4 MB"* in the status bar's document line. */
-export const STATUS_PAGES = messageKey('surface.status.pages');
-export const STATUS_SIZE_KB = messageKey('surface.status.size-kb');
-export const STATUS_SIZE_MB = messageKey('surface.status.size-mb');
 export const STATUS_UNSAVED = messageKey('surface.status.unsaved');
 export const STATUS_SAVED = messageKey('surface.status.saved');
 export const STATUS_SAVED_JUST_NOW = messageKey('surface.status.saved-just-now');
@@ -3069,7 +3060,6 @@ export const GROUP_ADJUST = messageKey('surface.ribbon.group.adjust');
 export const GROUP_MANAGE = messageKey('surface.ribbon.group.manage');
 export const GROUP_DATA = messageKey('surface.ribbon.group.data');
 export const GROUP_DISPLAY = messageKey('surface.ribbon.group.display');
-export const GROUP_NAVIGATE = messageKey('surface.ribbon.group.navigate');
 export const GROUP_APPLICATION = messageKey('surface.ribbon.group.application');
 /** TOOLS › OCR, which `BUILD-PROMPT.md`:472 names as D6's ribbon placement. */
 export const GROUP_OCR = messageKey('surface.ribbon.group.ocr');
@@ -3614,7 +3604,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [CLOSE_LABEL]: 'Close',
   [DIALOG_CANCEL]: 'Cancel',
   [DIALOG_OK]: 'OK',
-  [DOCUMENT_SURFACE_LABEL]: 'Document',
   [THEME_TITLE]: 'Theme',
   // v5-10's Appearance rows. *Also on when Windows asks* is true of the build: `applyMotion` reads both.
   [REDUCE_MOTION_TITLE]: 'Reduce motion',
@@ -3910,7 +3899,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [WORD_COUNT_PARTIAL]:
     'Counted {counted} of {total, plural, one {# page} other {# pages}} — these totals are incomplete.',
   [PAGE_STRUCTURE_COMMAND_TITLE]: 'Reading order',
-  [PAGE_STRUCTURE_TITLE]: 'Reading order',
   [PAGE_STRUCTURE_PAGE]: 'Items on page {page}, in the order a screen reader reads them.',
   [PAGE_STRUCTURE_UNTAGGED]: 'This page has no tags, so a screen reader has no reading order to follow here.',
   [PAGE_STRUCTURE_LINES]: '{count, plural, one {# line of text} other {# lines of text}}',
@@ -4666,9 +4654,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TEXT_FORMAT_COLOUR_BLUE]: 'Blue',
   [TEXT_FORMAT_COLOUR_PURPLE]: 'Purple',
   [TEXT_FORMAT_SPACING]: 'Line spacing',
-  [TEXT_FORMAT_SPACING_SINGLE]: 'Single',
-  [TEXT_FORMAT_SPACING_ONE_HALF]: '1.5',
-  [TEXT_FORMAT_SPACING_DOUBLE]: 'Double',
   [TEXT_FORMAT_HIGHLIGHT]: 'Highlight',
   [TEXT_FORMAT_HIGHLIGHT_NONE]: 'No highlight',
   [TEXT_FORMAT_HIGHLIGHT_CUSTOM]: 'Other highlight colour',
@@ -4687,6 +4672,12 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FONT_GROUP_BUNDLED]: 'Included with Monstera',
   [FONT_GROUP_BUILT_IN]: 'Built into PDF',
   [FONT_GROUP_CLOSEST]: 'Closest matches',
+  [FONT_CLOSEST_CHOSEN]: 'Monstera’s choice',
+  [FONT_STYLE_NEAREST]: '{family} has no {wanted}, so {nearest} is used.',
+  [FONT_STYLE_REGULAR]: 'Regular',
+  [FONT_STYLE_BOLD]: 'Bold',
+  [FONT_STYLE_ITALIC]: 'Italic',
+  [FONT_STYLE_BOLD_ITALIC]: 'Bold Italic',
   [FONT_GROUP_ALL]: 'All fonts',
   [FONT_LIST_UNREAD]: 'The fonts on this computer could not be listed, so the fonts every PDF has are offered.',
   [FONT_LIST_EMPTY]: 'No fonts were found on this computer.',
@@ -4876,8 +4867,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FORM_FIELD_NAME_TAKEN]: 'This form already has a field with that name. Choose another name.',
   [FORM_FIELD_NAME_PARENT]:
     'That name clashes with another field, because a dot groups fields. Choose a name that is not the start of another field’s name, and does not start with one.',
-  [FORM_FIELD_OPTION_SUGGESTION]: 'Option {number}',
-  [FORM_FIELD_OPTIONS_EMPTY]: 'Give it at least one choice, or nobody can pick anything.',
   [FORMS_KIND_TEXT]: 'Text',
   [FORMS_KIND_CHECKBOX]: 'Tick box',
   [FORMS_KIND_RADIO]: 'Option',
@@ -5324,7 +5313,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [STATUS_NAVIGATION]: 'Page navigation',
   [STATUS_ZOOM_GROUP]: 'Zoom',
   [STATUS_CHROME_GROUP]: 'Panels and Float bar',
-  [STATUS_SAVED_STATE]: 'Saved state',
   [STATUS_PAGES]: '{count, plural, one {# page} other {# pages}}',
   [STATUS_SIZE_KB]: '{size, number} KB',
   [STATUS_SIZE_MB]: '{size, number} MB',
@@ -6344,19 +6332,12 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [GROUP_COMPARE]: 'Compare',
   [GROUP_COMMENT_FILES]: 'Comment files',
   [ACCESSIBILITY_COMMAND_TITLE]: 'Accessibility check',
-  [ACCESSIBILITY_TITLE]: 'Accessibility check',
   [ACCESSIBILITY_SUMMARY]:
     '{failed, plural, =0 {No automatic check found a problem.} one {One check found a problem.} other {# checks found a problem.}} {undetermined, plural, =0 {} one {One more needs a person to look at it.} other {# more need a person to look at them.}}',
   [ACCESSIBILITY_NOT_CONFORMANCE]:
     'These are the PDF/UA checks a computer can make from the file. They do not show the document is accessible: the checks below need a person.',
   [ACCESSIBILITY_REFUSED]: 'The document could not be checked. It may be busy or no longer open.',
-  [ACCESSIBILITY_MACHINE_HEADING]: 'Automatic checks',
   [ACCESSIBILITY_PERSON_HEADING]: 'Checks for a person',
-  [ACCESSIBILITY_PAGES]: '{count, plural, one {Page {pages}} other {Pages {pages}}}',
-  [ACCESSIBILITY_VERDICT_PASSED]: 'Passed',
-  [ACCESSIBILITY_VERDICT_FAILED]: 'Failed',
-  [ACCESSIBILITY_VERDICT_NOT_APPLICABLE]: 'Does not apply',
-  [ACCESSIBILITY_VERDICT_NOT_DETERMINED]: 'Could not be decided',
   [ACCESSIBILITY_RULE_5_1]: 'The file says it follows PDF/UA',
   [ACCESSIBILITY_RULE_6_2_1]: 'The file is marked as tagged',
   [ACCESSIBILITY_RULE_7_1_4]: 'The tags are not marked as suspect',
@@ -7106,7 +7087,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [GROUP_MANAGE]: 'Manage',
   [GROUP_DATA]: 'Data',
   [GROUP_DISPLAY]: 'Display',
-  [GROUP_NAVIGATE]: 'Navigate',
   [GROUP_APPLICATION]: 'Application',
   [GROUP_OCR]: 'OCR',
   [GROUP_CONVERT]: 'Convert',

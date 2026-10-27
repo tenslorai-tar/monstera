@@ -135,6 +135,30 @@ describe('Edit text’s groups in the one picker (the owner’s decision of 2026
     expect(onAsOnPage).toHaveBeenCalledTimes(1);
     expect(onPick).not.toHaveBeenCalled();
   });
+
+  it('marks Monstera’s choice among the Closest matches, and only there', () => {
+    activateCatalogue('en', EN);
+    const view = render(
+      <I18nProvider i18n={i18n}>
+        <FontPicker
+          builtIn={['Helvetica']}
+          editor={{ closest: ['Carlito', 'Arial'], chosen: 'Carlito', onAsOnPage: vi.fn() }}
+          inDocument={[]}
+          label={TEXT_FORMAT_FAMILY}
+          list={LIST}
+          onPick={vi.fn()}
+          unset={TEXT_FORMAT_FAMILY_RUN}
+          value="Arial"
+        />
+      </I18nProvider>,
+    );
+    fireEvent.click(view.getByRole('button', { name: 'Font: Arial' }));
+    const marked = view.container.querySelectorAll('[data-font-chosen]');
+    // CONTROL: Carlito is also under All fonts, where it is not marked.
+    expect(marked).toHaveLength(1);
+    expect(marked[0]?.closest('[data-font-choice]')?.getAttribute('data-font-choice')).toBe('Carlito');
+    expect(marked[0]?.textContent).toBe('Monstera’s choice');
+  });
 });
 
 describe('FontPicker', () => {

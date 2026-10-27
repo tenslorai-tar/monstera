@@ -69,7 +69,7 @@ export function toggleChord(event: {
 }
 
 /** The class of a span the formatting made. */
-export const FORMAT_CLASS = 'm-text-editor__fmt';
+export const FORMAT_CLASS = 'm-inline-writer__fmt';
 
 /** How a paragraph the person set is carried in its element: the contract's paragraph settings, named once there (B3a). */
 type ParagraphSetting = Omit<ParagraphProps, 'block' | 'paragraph'>;
@@ -106,18 +106,10 @@ export function effectiveFmt(node: Node, root: HTMLElement): Fmt {
 }
 
 /**
- * The page's own style of the run a node is in: weight, slant and size, read from the run's inline style. FROM THE NODE
- * ITSELF, so a position that is an element (an empty run, which holds no letter to ask from) reads its own run (W4).
- *
- * A NODE IN NO RUN IS IN THE BLOCK'S OWN STYLE, which the editor root carries and draws it in: words typed into a new
- * box land beside its empty run, and a paste or a line typed below the last belongs to no run either (W4).
+ * The style the typing box's words are in before the person sets any: weight, slant and size, read from the box's root,
+ * which carries them and draws every word in them.
  */
-function runBase(node: Node, root: HTMLElement): RunLook {
-  for (let at: Node | null = node; at !== null && at !== root; at = at.parentNode) {
-    if (at instanceof HTMLElement && at.dataset['size'] !== undefined && at.classList.contains('m-text-editor__run')) {
-      return styleOf(at);
-    }
-  }
+function boxLook(root: HTMLElement): RunLook {
   return root.dataset['size'] === undefined ? { ...styleOf(root), size: undefined } : styleOf(root);
 }
 
@@ -161,7 +153,7 @@ export interface FormatState {
 
 /** What the words at a node ARE now: the run's own, with the person's formatting over it. */
 export function stateAt(node: Node, root: HTMLElement): FormatState {
-  const base = runBase(node, root);
+  const base = boxLook(root);
   const fmt = effectiveFmt(node, root);
   // THE PERSON'S HIGHLIGHT over the words' own (L2); `null` is one taken off.
   const highlight = fmt.highlight === undefined ? base.highlight : (fmt.highlight ?? undefined);
@@ -182,7 +174,7 @@ export function stateAt(node: Node, root: HTMLElement): FormatState {
 /** Draws a formatting span from its `data-fmt`: the one place the inline style is made. */
 function paint(span: HTMLElement, root: HTMLElement, zoom: number): void {
   const fmt = fmtOf(span);
-  const base = runBase(span, root);
+  const base = boxLook(root);
   span.classList.add(FORMAT_CLASS);
   span.style.fontWeight = fmt.bold === undefined ? '' : fmt.bold ? '700' : '400';
   span.style.fontStyle = fmt.italic === undefined ? '' : fmt.italic ? 'italic' : 'normal';
@@ -343,7 +335,7 @@ function paragraphsOf(root: HTMLElement): { text: string; paragraphs: Paragraph[
  * a family, spacing or a rise the run does not say is kept.
  */
 function beyondRun(node: Node, root: HTMLElement): Fmt {
-  const base = runBase(node, root);
+  const base = boxLook(root);
   const set: Fmt = { ...effectiveFmt(node, root) };
   if (set.bold === base.bold) delete set.bold;
   if (set.italic === base.italic) delete set.italic;

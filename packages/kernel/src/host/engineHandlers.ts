@@ -53,6 +53,7 @@ import type { PageFill } from '../cellFills.js';
 import type { ScanTable } from '../scanTableShape.js';
 import type { PageRewrite } from '../pageRewrite.js';
 import type { TextFaces } from '../textFaceRanges.js';
+import type { BlockFaceRun, BlockFaces } from '../blockFaceAnswer.js';
 import type { LinkAddress, ListedPageLinks } from '../pageLinks.js';
 import type { PageWordBoxes } from '../wordBoxes.js';
 import type { PageTextRead } from '../textStructure.js';
@@ -146,6 +147,13 @@ export type HostTextFacesReader = (session: MupdfSession, page: number) => Promi
 
 /** One page's word boxes (ADR-0137): `readPageWordBoxes` in the host, `remoteMupdfWordBoxes` across the pipe. */
 export type HostWordBoxesReader = (session: MupdfSession, page: number) => Promise<PageWordBoxes>;
+
+/** What the writer does with a new word in each font of a block (ADR-0271 section 5): `readBlockFaces` in the host. */
+export type HostBlockFacesReader = (
+  session: MupdfSession,
+  at: { readonly page: number; readonly form?: FormPath | undefined },
+  runs: readonly BlockFaceRun[],
+) => Promise<BlockFaces>;
 
 /**
  * Recognises one page's text and word boxes.
@@ -561,6 +569,8 @@ export interface EngineHandlerParts {
   readonly textFaces: HostTextFacesReader;
   /** A page's word boxes (ADR-0137). `engine/word-boxes`. */
   readonly wordBoxes: HostWordBoxesReader;
+  /** The faces a block's new words are set in (ADR-0271 section 5). `engine/block-faces`. */
+  readonly blockFaces: HostBlockFacesReader;
   /** How this process turns a raster into characters. `engine/ocr-page`. */
   readonly ocr: HostOcrReader;
   readonly destinations: HostDestinationsReader;
@@ -655,6 +665,7 @@ export function createEngineHandlers({
   pageRewrite,
   textFaces,
   wordBoxes,
+  blockFaces,
   ocr,
   destinations,
   layers,
@@ -1123,6 +1134,14 @@ export function createEngineHandlers({
       return { ok: true, value: { fonts: [...faces.fonts], ranges: [...faces.ranges], truncated: faces.truncated } };
     },
 
+    'engine/block-faces': async ({ session, page, form, runs }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      // NO try/catch, for the link read's reason.
+      const faces = await blockFaces(held.session, { page, ...(form === undefined ? {} : { form }) }, runs);
+      return { ok: true, value: { fonts: [...faces.fonts], runs: [...faces.runs] } };
+    },
+
     'engine/word-boxes': async ({ session, page }) => {
       const held = sessions.lookup(session);
       if (held === undefined) return gone;
@@ -1498,10 +1517,6 @@ export function createEngineHandlers({
       if (drawn.boxed.length > 0 || drawn.more > 0) {
         throw new Error(`"${whole.kind}" drew characters as boxes on engine/apply, whose answer cannot carry them.`);
       }
-      // NOR DOES ONE MOVE A BLOCK (ADR-0249): only a text edit does, and every text edit is `engine/apply-file`'s.
-      if (drawn.moved.length > 0) {
-        throw new Error(`"${whole.kind}" moved blocks on engine/apply, whose answer cannot carry them.`);
-      }
       return { ok: true, value: {} };
     },
 
@@ -1530,14 +1545,12 @@ export function createEngineHandlers({
         if (error instanceof BlockUnchangedError) return { ok: false, error: { code: 'text-unchanged' } } as const;
         throw error;
       }
-      // THE ONE CAP (`cappedBoxes`), which the PDFium host's answer takes too: two would cut a list two ways.
-      // AND THE BLOCKS IT MOVED (ADR-0249), whole: one per pushed block, which the command already bounds. AND WHAT ITS
+      // THE ONE CAP (`cappedBoxes`), which the PDFium host's answer takes too: two would cut a list two ways. AND WHAT ITS
       // CHECKS NOTED (ADR-0270), each held to the frame's bound: a note cut short still says what it is.
       return {
         ok: true,
         value: {
           ...cappedBoxes(drawn),
-          moved: [...drawn.moved],
           noted: drawn.noted.slice(0, MAX_WRITER_NOTES).map((note) => note.slice(0, MAX_WRITER_NOTE)),
         },
       };

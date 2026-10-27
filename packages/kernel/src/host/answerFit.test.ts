@@ -70,7 +70,7 @@ describe('the dense page’s text runs, at the product ceiling', () => {
 
   it('fit one answer and say so, and the answer is one the channel accepts', () => {
     const { kept, truncated } = boundedToAnswer(runs);
-    // THE PAGE'S BOX TOO (ADR-0249), as the host answers it: what the envelope's room is there for.
+    // THE PAGE'S BOX TOO, as the host answers it: what the envelope's room is there for.
     const answer = { runs: kept, truncated, unaddressable: 0, box: { x0: 0, y0: 0, x1: 612.0000305175781, y1: 791.9999694824219 } };
     expect(truncated).toBe(true);
     expect(answerBytes(answer)).toBeLessThanOrEqual(ENGINE_ANSWER_FILE_MAX_BYTES);

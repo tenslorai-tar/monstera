@@ -192,3 +192,12 @@ edge and not from its own start, CONTROL a line a side bearing off keeps its own
 `proof:edittext`, document 12 reads 0 disturbed where it read 2. Decision 1 is built after the editor's own placement of
 paragraphs (cloud run 19) is merged, so the two take one function; until then document 8's five disturbed edits, all of
 this shape, are its open evidence.
+
+## Correction, 2026-10-26 — Decision 7's box is the rebuilt editor kit's, drawn in the faces ADR-0271 names
+
+[ADR-0271](0271-the-edit-text-editor-is-rebuilt-on-the-kept-writer.md) replaced and deleted the editor that built
+Decision 7. The editor kit still wraps a paragraph at the block's measure, takes its alignment and indent, and puts the
+caret where the click fell, now on the second click of two (ADR-0271 section 3); but it no longer draws in fonts the
+host rebuilds (ADR-0175): unchanged words in the face the page already loaded, changed and new words in the face the
+writer will write, and only the paragraphs that changed are drawn, the page's own pixels showing for the rest.
+Decisions 1 to 6, 8 and 9, and the corrections above, are the wire's and the writers', and are unchanged.

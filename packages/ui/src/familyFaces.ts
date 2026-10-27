@@ -121,6 +121,15 @@ export function drawFamilies(families: readonly FontFamilyEntry[]): void {
   gave();
 }
 
+/**
+ * {@link drawFamilies} for the listed families of these names: the faces an open block's new words are set in, which the
+ * editor draws before any picker has drawn the list. A name not in the list as read is given nothing.
+ */
+export function drawFamiliesNamed(names: readonly string[]): void {
+  const wanted = new Set(names.map((name) => name.toLowerCase()));
+  drawFamilies(listed.filter((family) => wanted.has(family.name.toLowerCase())));
+}
+
 async function addBundled(family: BundledFamily, client: ContractClient): Promise<void> {
   const answer = await client['app.bundledFace']({ family }).catch(() => undefined);
   if (!answer?.ok) return;

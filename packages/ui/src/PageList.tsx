@@ -22,10 +22,13 @@ import { type OverlayPage, overlayTransform } from './annotations/annotationSpac
 import type { AnnotationSelection, LinkSelection } from './annotations/selectTool.js';
 import { SelectionLayer } from './SelectionLayer.js';
 import type { TextEditing } from './editText/editing.js';
+import type { PatchArea } from './editText/AreaPatch.js';
 import { EditTextPage } from './editText/EditTextPage.js';
+import { shownTextOf } from './editText/pdfjsFaces.js';
 import { type ObjectEditing, ObjectEditPage } from './ObjectEditLayer.js';
 import { type FieldEditing, FieldDesignLayer } from './forms/FieldDesignLayer.js';
 import { type TabOrderEditing, TabOrderLayer } from './forms/TabOrderLayer.js';
+import { keysByPage } from './forms/fieldSelection.js';
 import { InlineWriter } from './InlineWriter.js';
 import type { Draft, WriteRequest } from './pageWriting.js';
 
@@ -64,6 +67,7 @@ import { type PagePlans, type PlannedPage, plannedRotation } from './pagePlan.js
 import { usePlannedPages } from './usePlannedPages.js';
 import { type PageTextAnswer, usePageText } from './usePageText.js';
 import { type PageLinkOnPage, usePageLinks } from './usePageLinks.js';
+import { useSettledPages } from './useSettledPages.js';
 import { FormLayer, type PageFill } from './forms/FormLayer.js';
 import type { FieldProblem } from './forms/fieldCheck.js';
 import type { ListedField } from './forms/fieldFill.js';
@@ -710,14 +714,23 @@ export function PageList({
   useOnColor(scroller, '--grid-on-paper', '--border-soft', ON_PAPER, 3);
   // AND THE PAGES A SELECTION IS IN, on screen or not: their layers hold the selection's ends (`useSelectedTextPages`).
   const selectedPages = useSelectedTextPages(scroller);
-  const pageText = usePageText(client, docId, version, firstFrame ? new Set([...visible, ...selectedPages]) : NOTHING_VISIBLE);
+  // THE PAGES THE SCROLL STOPPED ON, which the reads below are asked for (`useSettledPages`): a scroll passing a page
+  // starts no read of it, and no answer lands in the middle of the frames that draw the next one. The pages a selection
+  // is in are not waited for, since their layers hold the selection's ends. PAUSED is the same moment for every mounted
+  // page, which an editing mode's reads wait for (`useSettledRead`).
+  const { pages: settled, paused } = useSettledPages(firstFrame ? visible : NOTHING_VISIBLE);
+  // EACH PAGE'S SELECTED FIELDS, split once per selection (`keysByPage`): a set made per page in the loop below is new
+  // on every render, and a page handed a new one draws everything over it again.
+  const selectedFieldKeys = fieldSelection?.selected;
+  const selectedByPage = useMemo(() => keysByPage(selectedFieldKeys ?? []), [selectedFieldKeys]);
+  const pageText = usePageText(client, docId, version, firstFrame ? new Set([...settled, ...selectedPages]) : NOTHING_VISIBLE);
   // THE LINKS ON WHAT IS ON SCREEN (ADR-0167), after the first frame for the text's reason, and only where this list
   // follows links: a list with nothing to hand a press to reads nothing to draw.
   const pageLinks = usePageLinks(
     onFollowLink === undefined ? undefined : client,
     docId,
     version,
-    firstFrame ? visible : NOTHING_VISIBLE,
+    settled,
   );
   // THE FORM'S FIELDS ON WHAT IS ON SCREEN (ADR-0168), read whole once per version and handed to each visible page,
   // and only where this list fills fields.
@@ -725,7 +738,7 @@ export function PageList({
     onFillField === undefined ? undefined : client,
     docId,
     version,
-    firstFrame ? visible : NOTHING_VISIBLE,
+    settled,
   );
   // AT THE VERSION THE FIELDS WERE READ AT, never the version on show: while a write's re-read is in flight the page
   // still draws the last list, and its indices name widgets at that list's version, which the lane then judges.
@@ -1477,6 +1490,7 @@ export function PageList({
           // GATED ON THE SLOT'S OWN MEASUREMENT for `drawing`'s reason: an outline
           // placed with a neighbour's box would sit over the wrong words.
           editing={sizes.has(page) ? editing : undefined}
+          paused={paused}
           // ONLY THE REQUEST'S OWN PAGE, gated on its measurement for `drawing`'s reason.
           writing={sizes.has(page) && writing?.request.page === page ? writing : undefined}
           // THE SLOT'S OWN MEASUREMENT GATES THIS TOO, and for `drawing`'s
@@ -1514,7 +1528,7 @@ export function PageList({
           // Tab sent the focus (ADR-0226) — and so do its controls when it is handed none (`usePageFormFields`).
           fields={sizes.has(page) && fillOnPage !== undefined ? (pageFields.byPage.get(page) ?? NO_FIELDS) : undefined}
           onFillField={fillOnPage}
-          selectedFields={fieldSelection === undefined ? undefined : selectedOnPage(fieldSelection.selected, page)}
+          selectedFields={fieldSelection === undefined ? undefined : (selectedByPage.get(page) ?? NO_INDICES)}
           revealField={fieldSelection?.reveal?.page === page ? fieldSelection.reveal : undefined}
           focusField={fieldSelection?.focus?.page === page ? fieldSelection.focus : undefined}
           onFocusedField={fieldSelection?.onFocused}
@@ -1576,14 +1590,6 @@ function pagesInView(
     const slot = slotFor(page)?.getBoundingClientRect();
     return slot !== undefined && slot.height > 0 && slot.bottom > box.top && slot.top < box.bottom;
   });
-}
-
-/** The places in one page's widget walk that a selection of `page:index` keys holds. */
-function selectedOnPage(keys: ReadonlySet<string>, page: number): ReadonlySet<number> {
-  const prefix = `${String(page)}:`;
-  const held = new Set<number>();
-  for (const key of keys) if (key.startsWith(prefix)) held.add(Number(key.slice(prefix.length)));
-  return held;
 }
 
 /**
@@ -1742,6 +1748,7 @@ function PageSlot({
   drawing,
   held,
   editing,
+  paused,
   writing,
   text,
   kind,
@@ -1798,6 +1805,8 @@ function PageSlot({
   readonly drawing: PageListProps['drawing'];
   readonly held: PageListProps['held'];
   readonly editing: PageEditing | undefined;
+  /** Whether no scroll is moving (`useSettledPages`), before which an editing mode does not read the page. */
+  readonly paused: boolean;
   /** The pending request for words when it is THIS page's, otherwise `undefined`. */
   readonly writing: PageWriting | undefined;
   readonly text: readonly TextLayerLine[] | undefined;
@@ -1863,6 +1872,22 @@ function PageSlot({
   );
   const paperAt = useCallback((x: number, y: number): string | undefined => paperIn(own.current, x, y), []);
   const pictureOf = useCallback((box: { x0: number; y0: number; x1: number; y1: number }) => pictureIn(own.current, box), []);
+  // ONE AREA OF THE NEWEST VIEW, drawn alone for a written edit (`AreaPatch`): the overlay's CSS pixels times the
+  // device's are the region's, since the region is drawn at the shown zoom, from the view's page the slot draws.
+  const patchArea = useCallback<PatchArea>(
+    async (after, area, target, signal) => {
+      if (view === undefined || view.version <= after) return undefined;
+      // AT THE ZOOM SHOWN NOW: the area was measured at the write's, and a zoom since scales it about the page's corner.
+      const pixels = devicePixels() * (zoom / area.zoom);
+      const x = Math.floor(area.left * pixels);
+      const y = Math.floor(area.top * pixels);
+      const region = { x, y, width: Math.ceil((area.left + area.width) * pixels) - x, height: Math.ceil((area.top + area.height) * pixels) - y };
+      await renderRegion(view.document, pdfjsPageOf(source), target, devicePixels() * zoom, rotation, region, signal);
+      const css = devicePixels();
+      return { version: view.version, at: { left: x / css, top: y / css, width: region.width / css, height: region.height / css, zoom } };
+    },
+    [rotation, source, view, zoom],
+  );
   // THE VIEW THE PIXELS ON SCREEN CAME FROM, set when a draw has presented: the drawing overlay holds a
   // released shape until this moves past the view it was released over (`AnnotationOverlay.drawnWith`).
   const [drawnWith, setDrawnWith] = useState<DocumentView | undefined>(undefined);
@@ -2364,16 +2389,26 @@ function PageSlot({
           page={page}
           paperAt={paperAt}
           pictureOf={pictureOf}
+          paused={paused}
         />
       ) : (
         <EditTextPage
           paperAt={paperAt}
+          paused={paused}
+          patch={patchArea}
           // THE VERSION THE PAGE SHOWS, set with its pixels: a written editor stays until this is the newer one (ADR-0261).
           drawn={drawnWith?.version}
           editing={editing}
           geometry={{ crop: size.crop, rotation: size.rotation, zoom }}
           page={page}
           pictureNoted={kind === 'image-only'}
+          // PDF.JS'S FACES for the page's fonts, which an open block's unchanged words are drawn in (`pdfjsFaces.ts`). A
+          // read the view's closing cut short (its version moved) lends none, and the words are drawn in the chain's face.
+          shown={async () =>
+            view === undefined
+              ? undefined
+              : { version: view.version, items: await shownTextOf(view.document, pdfjsPageOf(page), globalThis.document.fonts).catch(() => []) }
+          }
         />
       )}
       {drawing === undefined || size === undefined ? null : (
@@ -2458,9 +2493,9 @@ function paperIn(slot: HTMLElement | null, x: number, y: number): string | undef
 
 /**
  * The drawn page's own pixels inside `box`, a rectangle in the WINDOW's CSS pixels, copied into a canvas of their own;
- * or `undefined` where nothing is drawn there yet. What Edit text draws moved below a growing block (ADR-0249 Decision
- * 5): the page as it is, taken from every canvas the page is drawn in, tiles included, at the drawing's own
- * resolution so a picture is not blurred by the copy. In the window's pixels, so no caller has to share this slot's
+ * or `undefined` where nothing is drawn there yet. What Edit object draws a picture it moves from: the page as it is,
+ * taken from every canvas the page is drawn in, tiles included, at the drawing's own resolution so a picture is not
+ * blurred by the copy. In the window's pixels, so no caller has to share this slot's
  * origin to name a place on it.
  */
 function pictureIn(slot: HTMLElement | null, box: { x0: number; y0: number; x1: number; y1: number }): HTMLCanvasElement | undefined {

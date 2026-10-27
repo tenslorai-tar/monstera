@@ -12,9 +12,7 @@ import {
   MAX_CALCULATED_NAME,
   MAX_CALCULATED_PRIORS,
   MAX_CALCULATED_TEXT,
-  MAX_EDIT_RUNS,
   MAX_MERGE_DOCUMENTS,
-  MAX_PUSHED_BLOCKS,
   addAnnotationSchema,
   textRewriteSchema,
   pageSetSchema,
@@ -127,6 +125,14 @@ import type { KindsRoutedTo } from '../commandRouting.js';
 import { COPY_STANDINGS } from '../openCopy.js';
 import type { PlaceholderRequest } from '../signatureHole.js';
 import { TEXT_FACE_FONTS_MAX, TEXT_FACE_NAME_MAX, TEXT_FACE_RANGES_MAX } from '../textFaceRanges.js';
+import {
+  BLOCK_FACE_CANDIDATES_MAX,
+  BLOCK_FACE_FAMILY_MAX,
+  BLOCK_FACE_FONTS_MAX,
+  BLOCK_FACE_RUNS_MAX,
+  BLOCK_FACE_TEXT_MAX,
+  FACE_STYLES,
+} from '../blockFaceAnswer.js';
 import { PAGE_TEXT_READS } from '../textStructure.js';
 import { PROBE_CODE_MAX_CHARS, PROBE_CODE_PATTERN } from './containment.js';
 import { pageRunsSchema } from './pageRunsWire.js';
@@ -135,23 +141,8 @@ import { pageRunsSchema } from './pageRunsWire.js';
 export const MAX_WRITER_NOTES = 8;
 export const MAX_WRITER_NOTE = 400;
 
-/**
- * The blocks a text edit moved down (ADR-0249 Decision 4), as a host answers them beside its boxes: each its place in the
- * edit, where its objects stood and how far down it went — `engineSeam.ts`' `MovedBlock`. At most one per pushed block,
- * `MAX_PUSHED_BLOCKS`. Kernel-only: `main` moves the markup on them and the renderer is told nothing of it.
- */
-export const movedBlocksShape = {
-  moved: z
-    .array(
-      z
-        .object({
-          block: z.number().int().nonnegative().max(MAX_EDIT_RUNS),
-          box: z.object({ x0: z.number(), y0: z.number(), x1: z.number(), y1: z.number() }).strict(),
-          down: z.number().positive(),
-        })
-        .strict(),
-    )
-    .max(MAX_PUSHED_BLOCKS),
+/** What a text edit's host answers beside its boxes. Kernel-only: the renderer is told nothing of it. */
+export const writerNotesShape = {
   /**
    * Writer defects a kept write's own checks found (ADR-0270), for the diagnostics log: a few, each a short line of our
    * words and numbers. Bounded so a host that found many cannot fill the frame; the proof counts the same checks at 0.
@@ -373,6 +364,16 @@ export const ENGINE_OCR_WORD_TEXT_MAX = 256;
  * cast to satisfy this schema and no reshaping to satisfy the type.
  */
 const ocrBoxSchema = z.tuple([z.number(), z.number(), z.number(), z.number()]).readonly();
+
+/** A face `engine/block-faces` names (`blockFaceAnswer.ts`' `FaceChoice`): a family, the weight and slant set, its styles. */
+const faceChoiceSchema = z
+  .object({
+    family: z.string().min(1).max(BLOCK_FACE_FAMILY_MAX),
+    weight: z.number().min(1).max(1000),
+    italic: z.boolean(),
+    styles: z.array(z.enum(FACE_STYLES)).max(FACE_STYLES.length).readonly(),
+  })
+  .strict();
 
 /**
  * A link's rectangle, in the page's own units.
@@ -1789,7 +1790,7 @@ export const byteImageWire = {
   read: { from: outputNameSchema, password: documentPasswordSchema.nullable() },
   write: { into: outputNameSchema },
   // AND WHAT IT DREW AS BOXES (ADR-0174): only the apply knows, so its answer carries them, capped and counted.
-  wrote: z.object({ bytes: z.number().int().nonnegative(), ...drawnBoxesShape, ...movedBlocksShape }).strict(),
+  wrote: z.object({ bytes: z.number().int().nonnegative(), ...drawnBoxesShape, ...writerNotesShape }).strict(),
   transferFailures: ['asset-missing', 'engine-refused'],
 } as const satisfies WireShape<
   z.ZodRawShape,
@@ -2254,9 +2255,9 @@ export const engineChannels = {
         reads: pageRunsSchema,
       })
       .strict(),
-    // WHAT IT DREW AS BOXES (ADR-0177 Decision 7), capped and counted as the PDFium host's answer carries them; AND THE
-    // BLOCKS IT MOVED DOWN (ADR-0249), as the PDFium host's answer carries them.
-    z.object({ ...drawnBoxesShape, ...movedBlocksShape }).strict(),
+    // WHAT IT DREW AS BOXES (ADR-0177 Decision 7), capped and counted as the PDFium host's answer carries them; AND WHAT
+    // ITS CHECKS NOTED.
+    z.object({ ...drawnBoxesShape, ...writerNotesShape }).strict(),
     // `text-unchanged` (ADR-0260): an operator edit that sent the words its blocks already say, and nothing else.
     ['no-such-session', 'text-not-writable', 'edit-refused', 'text-unchanged'],
   ),
@@ -2985,6 +2986,54 @@ export const engineChannels = {
           )
           .max(TEXT_FACE_RANGES_MAX),
         truncated: z.boolean(),
+      })
+      .strict(),
+    ['no-such-session'],
+  ),
+
+  /**
+   * What the operator writer does with a new word in each of a block's fonts, the read on open
+   * ([ADR-0271](../../../../docs/DECISIONS/0271-the-edit-text-editor-is-rebuilt-on-the-kept-writer.md) section 5,
+   * `blockFaces.ts`): asked once when a block is selected. The runs come already in the content's numbering
+   * (`blockFaceRunsOf`), so no page's pre-read crosses for it.
+   */
+  'engine/block-faces': channel(
+    'Reads which face the writer sets a new word in, for each font of one block’s runs.',
+    z
+      .object({
+        session: sessionSchema,
+        page: z.number().int().nonnegative(),
+        form: formPathSchema.exactOptional(),
+        runs: z
+          .array(
+            z
+              .object({
+                index: z.number().int().nonnegative(),
+                object: z.number().int().nonnegative(),
+                text: z.string().max(BLOCK_FACE_TEXT_MAX),
+              })
+              .strict(),
+          )
+          .min(1)
+          .max(BLOCK_FACE_RUNS_MAX)
+          .readonly(),
+      })
+      .strict(),
+    z
+      .object({
+        fonts: z
+          .array(
+            z
+              .object({
+                own: z.boolean(),
+                chosen: faceChoiceSchema.nullable(),
+                candidates: z.array(faceChoiceSchema).max(BLOCK_FACE_CANDIDATES_MAX).readonly(),
+              })
+              .strict(),
+          )
+          .max(BLOCK_FACE_FONTS_MAX)
+          .readonly(),
+        runs: z.array(z.number().int().nonnegative().max(BLOCK_FACE_FONTS_MAX - 1).nullable()).max(BLOCK_FACE_RUNS_MAX).readonly(),
       })
       .strict(),
     ['no-such-session'],

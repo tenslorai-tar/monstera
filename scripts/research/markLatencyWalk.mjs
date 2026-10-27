@@ -477,7 +477,7 @@ await measure('edit text', async (run) => {
   const area = await block.boundingBox();
   if (area === null) throw new Error('the block has no box');
   return timed({ x: area.x - 6, y: area.y - 6, width: area.width + 60, height: area.height + 12 }, async () => {
-    // THE BOX SELECTED, then Enter: the caret at the words' end (ADR-0271's two-step opening).
+    // TWO STEPS (ADR-0271 section 3): the press selects the box, Enter puts the caret at the end of its words.
     await editTextOpening(page).openWords(block);
     await page.keyboard.type(' X');
     await page.keyboard.press('Escape');

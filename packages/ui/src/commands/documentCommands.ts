@@ -22,7 +22,7 @@ import {
   MAX_TOC_ENTRIES,
   MAX_TOC_TITLE_CHARACTERS,
   type OutlineEntry,
-  MAX_FONT_RUNS,
+  MAX_BLOCK_FACE_RUNS,
   blockEditOf,
   pageSetOf,
   type CommandWalk,
@@ -4859,7 +4859,7 @@ export type { TextBlock } from '../textBlock.js';
  */
 export type BlocksRead = Pick<ChannelResult<'document.textBlocks'>, 'version' | 'rewrite' | 'unpacked'>;
 
-/** {@link BlocksRead} with the page's blocks, among which a block's `push.below` names the text below it (ADR-0249). */
+/** {@link BlocksRead} with the page's blocks. */
 export type PageBlocksRead = BlocksRead & { readonly blocks: readonly TextBlock[] };
 
 /** The command each writer the page names is rewritten by, with the same block wire (ADR-0176 Decision 1). */
@@ -4868,43 +4868,44 @@ const BLOCK_EDIT_KIND = { objects: 'editTextBlock', operators: 'editTextOperator
   'editTextBlock' | 'editTextOperators'
 >;
 
-/** A block's run fonts as the editor draws them: each font once, and each run's font by the run's first object. */
-export interface RunFonts {
-  readonly fonts: readonly Uint8Array<ArrayBuffer>[];
-  /** A run's place in `fonts`, by its first object. A run absent here has none and is drawn in its kind of face. */
+/** One font of a block as the read on open answers it (`document.blockFaces`, ADR-0271 section 5). */
+export type BlockFontRead = ChannelResult<'document.blockFaces'>['fonts'][number];
+
+/** A block's faces: each of its fonts once, and each run's font by the run's first object. */
+export interface BlockFaces {
+  readonly fonts: readonly BlockFontRead[];
+  /** A run's place in `fonts`, by its first object. A run absent here is drawn in the face PDF.js loaded, or its kind. */
   readonly runs: ReadonlyMap<number, number>;
 }
 
-/** No run has a font: the editor draws every run in its kind of face, as it did before ADR-0175. */
-export const NO_RUN_FONTS: RunFonts = { fonts: [], runs: new Map() };
+/** No font answered: every run is drawn in the face PDF.js loaded for it, or its kind of face. */
+export const NO_BLOCK_FACES: BlockFaces = { fonts: [], runs: new Map() };
 
 /**
- * The fonts the PDFium host rebuilt for `block`'s runs (ADR-0175), read in as few reads as `MAX_FONT_RUNS` allows —
- * one for any block but a very long one, since every read costs the host a write of the document's image.
+ * The read on open for `block` (ADR-0271 section 5): what the writer does with a new word in each of its fonts, in as
+ * few reads as `MAX_BLOCK_FACE_RUNS` allows, asked once when the block is selected and never while it is typed in.
  *
- * ## Anything but an answer at `version` is NO FONTS, and that is the feature's own outcome rather than a loss
+ * ## Anything but an answer at `version` is NO FACES, and the words typed are untouched by it
  *
- * A run without its font is drawn in its kind of face, which is how every run was drawn before ADR-0175 and how a run
- * in a font the host declines is drawn now. An answer at another version describes objects the open block no longer
- * names. A refusal is a document not open or poisoned, which the edit the person makes next says in its own words, or
- * an incident `main` has already recorded; the editor is not the place to say either a second time, and the words the
- * person types are untouched by it.
+ * Without the answer a new word is drawn in the face PDF.js loaded for its run, or the run's kind of face, and is
+ * written as the writer writes it either way. An answer at another version describes objects the open block no longer
+ * names; a refusal is a document not open or poisoned, which the edit the person makes next says in its own words.
  */
-export async function readRunFonts(
+export async function readBlockFaces(
   client: ContractClient,
   docId: DocId,
   page: number,
   block: TextBlock,
-  /** The read that named the block: its version, and whether it named the page unpacked (ADR-0232). */
+  /** The read that named the block: its version. */
   read: BlocksRead,
-): Promise<RunFonts> {
+): Promise<BlockFaces> {
   const indices = [...new Set(block.lines.flatMap((line) => line.runs.map((run) => run.index)))];
-  const fonts: Uint8Array<ArrayBuffer>[] = [];
+  const fonts: BlockFontRead[] = [];
   const runs = new Map<number, number>();
-  for (let from = 0; from < indices.length; from += MAX_FONT_RUNS) {
-    const asked = indices.slice(from, from + MAX_FONT_RUNS);
-    const answer = await client['document.runFonts']({ docId, page, indices: asked, ...(read.unpacked === true ? { unpack: true } : {}) });
-    if (!answer.ok || answer.value.version !== read.version) return NO_RUN_FONTS;
+  for (let from = 0; from < indices.length; from += MAX_BLOCK_FACE_RUNS) {
+    const asked = indices.slice(from, from + MAX_BLOCK_FACE_RUNS);
+    const answer = await client['document.blockFaces']({ docId, page, indices: asked, ...(block.form === undefined ? {} : { form: block.form }) });
+    if (!answer.ok || answer.value.version !== read.version) return NO_BLOCK_FACES;
     const base = fonts.length;
     fonts.push(...answer.value.fonts);
     asked.forEach((index, at) => {
@@ -4958,7 +4959,7 @@ export async function commitTextBlock(
   page: number,
   block: TextBlock,
   text: string,
-  /** The read that named the block, with the page's blocks, among which `block.push.below` names the text below it. */
+  /** The read that named the block, with the page's blocks. */
   read: PageBlocksRead,
   /** What spans of the words are, and how paragraphs are set, where the person chose (ADR-0180). */
   formatting: BlockFormatting = {},
@@ -4966,16 +4967,6 @@ export async function commitTextBlock(
   const before = wordsOfBlock(block);
   // UNCHANGED ONLY WHEN THE WORDS AND THEIR FORMATTING both are: a bold word is an edit with the same words (ADR-0180).
   if (text === before && !isFormatted(formatting)) return 'unchanged';
-  // THE TEXT BELOW IT, IN ITS COLUMN, rides in the same edit to be moved down by what this block grows (ADR-0249 Decision
-  // 3): the blocks `main` named, with their words as read, so the writer moves them and writes none of them. Where `main`
-  // measured no room nothing could move, so none is sent; and a block the person placed pushes nothing.
-  const below =
-    formatting.place !== undefined || block.push.room <= 0
-      ? []
-      : block.push.below.flatMap((at) => {
-          const under = read.blocks[at];
-          return under === undefined ? [] : [under];
-        });
   // A BLOCK ONLY PLACED — moved, scaled or turned, its words, marks, paragraphs and measure unchanged — is placed by the
   // operator writer on every page (ADR-0240's correction of 2026-10-19): it carries the lines' operators as they were,
   // where PDFium's writer would generate the whole page again and refuse a font it cannot write back. Not on a page read
@@ -4987,6 +4978,7 @@ export async function commitTextBlock(
     (formatting.marks?.length ?? 0) === 0 &&
     (formatting.paragraphs?.length ?? 0) === 0 &&
     read.unpacked !== true;
+  // THE BLOCK ALONE: one that grows overlaps what is below it, and nothing else on the page moves (ADR-0271 section 11.1).
   return sendBlockEdit(deps, docId, page, onlyPlaced ? { ...read, rewrite: 'operators' } : read, block.form ?? null, [
     {
       lines: block.lines.map((line) => line.runs.map((run) => run.index)),
@@ -4994,12 +4986,6 @@ export async function commitTextBlock(
       text,
       ...formatting,
     },
-    ...below.map((under) => ({
-      lines: under.lines.map((line) => line.runs.map((run) => run.index)),
-      soft: under.lines.map((line) => line.soft),
-      text: wordsOfBlock(under),
-      push: { by: 0, room: block.push.room },
-    })),
   ]);
 }
 

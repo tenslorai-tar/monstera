@@ -29,6 +29,7 @@ import type { SettingsStore } from '../settingsStore.js';
 import { useSetting } from '../useSetting.js';
 import { type RibbonEntry, type RibbonSection, railModel, ribbonModel } from './projections.js';
 import { railCapacity, railFolded } from './railFold.js';
+import { SURFACE_PLACEMENTS, useLiveContext } from '../commandAnswers.js';
 import { RibbonMore, RibbonMoreGauge } from './RibbonMore.js';
 import { restEntries, splitFold, type StackSize } from './ribbonFolding.js';
 import { useRibbonFold } from './useRibbonFold.js';
@@ -199,7 +200,9 @@ function RibbonTool({
   );
 }
 
-export function Ribbon({ registry, context, settings, showing, values }: RibbonProps): ReactElement | null {
+export function Ribbon({ registry, context: asked, settings, showing, values }: RibbonProps): ReactElement | null {
+  // THE ANSWERS OF WHAT THE RIBBON PLACES, so a command's new state renders the ribbon and not the shell (ADR-0272).
+  const context = useLiveContext(registry, asked, SURFACE_PLACEMENTS.ribbon);
   const { i18n } = useLingui();
   const chosen = useSetting(settings, RIBBON_SECTION_SETTING);
   const mode = useSetting(settings, LAYOUT_MODE_SETTING);

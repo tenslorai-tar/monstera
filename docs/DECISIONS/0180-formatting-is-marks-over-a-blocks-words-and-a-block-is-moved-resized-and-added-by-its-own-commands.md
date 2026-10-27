@@ -165,3 +165,15 @@ page is a defect rather than a placeholder. Each needs those decisions widened a
 [ADR-0228](0228-the-formatting-set-is-whole-in-both-text-writers-and-a-tab-is-a-marked-gap.md) widens Decision 1's mark
 set (strikethrough, highlight, character spacing) and Decision 2's paragraph settings (justify, space after), and
 withdraws Decision 8: Tab inserts a tab character, written as a marked gap (the owner's K8).
+
+## Correction, 2026-10-26 — the editor half is the rebuilt editor kit's; the wire is unchanged
+
+[ADR-0271](0271-the-edit-text-editor-is-rebuilt-on-the-kept-writer.md) replaced the editor that built this ADR's editor
+half (`TextEditLayer.tsx`, `textEditorControl.ts`, its DOM read `readEditor` for Edit text) with the editor kit
+(`packages/ui/src/editorKit`) and its Edit text adapter (`packages/ui/src/editText`), and deleted the old one. What
+crosses to the writers is still Decisions 1 and 2's `marks` and `paragraphs` on the same block wire, now made from the
+kit's model (`blockModel.ts`' `editOf`) rather than read from a DOM. Decision 7's join and split are still one edit,
+but nothing below a block is moved any more (ADR-0249's push retired, ADR-0271 section 11.1): a split may overlap the
+text below it. The placement handles and keys and the editor's own right-click menu are carried into the kit's block
+editor unchanged in what they do. A click on another block now writes the open one and SELECTS the next, the first of
+the two steps ADR-0271 section 3 opens a block in.

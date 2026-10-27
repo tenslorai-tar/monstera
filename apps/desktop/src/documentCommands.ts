@@ -62,7 +62,6 @@ import {
   keptLookOf,
   placedMarkOf,
   sourceIdsOf,
-  MAX_PLACED_ANNOTATIONS,
   type BoxedInEditEntry,
   cappedBoxes,
   type PageAdjustment,
@@ -124,6 +123,7 @@ import {
   type RecognisedPage,
   type PageRewrite,
   type PageRuns,
+  type BlockFaces,
   type SaveDependencies,
   type CopyOutcome,
   type DocumentCopyOutcome,
@@ -166,12 +166,7 @@ import {
   TimestampUnreachableError,
   type DocusignSigner,
   EngineCallFailed,
-  type PushedColumn,
   type RisenBlock,
-  type MovedBlock,
-  KINDS_ON_WORDS,
-  movedDown,
-  movedUnder,
   writeDocumentCopy,
   writeDocumentSplit,
   writeStreamedDocument,
@@ -2154,8 +2149,7 @@ export type DocumentTextBlocksReader = (
 /** The blocks, stamped with the version the lane read them at. */
 export interface DocumentTextBlocks {
   readonly version: DocVersion;
-  /** Each block, and what it pushes when it grows (`pushesOf`, ADR-0249 Decision 2). */
-  readonly blocks: readonly (RisenBlock<TextBlockStyle> & { readonly push: PushedColumn })[];
+  readonly blocks: readonly RisenBlock<TextBlockStyle>[];
   readonly truncated: boolean;
   /**
    * Characters on this page set at an angle, which are not offered for editing
@@ -2230,23 +2224,17 @@ export interface DocumentPageObjects {
 }
 
 /**
- * The fonts the editor draws a block's runs in, rebuilt by the PDFium host from the runs' own programs, each once, with
- * each run's place among them or `null` for none (ADR-0175). The third sanctioned byte crossing; the document's own
- * program never leaves the host.
- *
- * `Uint8Array<ArrayBuffer>`, {@link DocumentPageRasteriser}'s `png` reason: structured clone sends a view's WHOLE
- * buffer, so a view onto a shared one would hand the renderer whatever else shares it — here the block's other fonts,
- * which arrive cut from one file. The composition copies each into a buffer of its own, so the narrower type is true
- * rather than asserted.
+ * The read on open (ADR-0271 section 5): what the operator writer does with a new word in each font of a block's runs,
+ * and each run's font among them, in the order asked. `form` names the placement the block is in, or `null` for the
+ * page's own content.
  */
-export type DocumentRunFontsReader = (
+export type DocumentBlockFacesReader = (
   docId: DocId,
   sessions: DocumentSessions,
   page: number,
   indices: readonly number[],
-  /** The indices name the page read unpacked (ADR-0232). */
-  unpack: boolean,
-) => Promise<{ readonly fonts: readonly Uint8Array<ArrayBuffer>[]; readonly runs: readonly (number | null)[] }>;
+  form: FormPath | null,
+) => Promise<BlockFaces>;
 
 /**
  * What the editable PowerPoint export reads of a page, in the editing engine (ADR-0210): the page's own content, and the
@@ -2627,8 +2615,8 @@ export interface DocumentCommandsParts {
   readonly pageObjects: DocumentPageObjectsReader;
   /** The editing engine's raster of a page, or a thrower. */
   readonly renderPage: DocumentPageRasteriser;
-  /** A block's run fonts rebuilt by the editing engine's host, each once (ADR-0175). */
-  readonly runFonts: DocumentRunFontsReader;
+  /** What the writer does with a new word in each font of a block's runs, the read on open (ADR-0271). */
+  readonly blockFaces: DocumentBlockFacesReader;
   /** The editable PowerPoint export's reads of a page, or a thrower (ADR-0210). */
   readonly presentation: DocumentPresentationReader;
   readonly duplicates: DocumentDuplicatesReader;
@@ -2891,7 +2879,7 @@ export class DocumentCommands {
   readonly #textBlocks: DocumentTextBlocksReader;
   readonly #pageObjects: DocumentPageObjectsReader;
   readonly #renderPage: DocumentPageRasteriser;
-  readonly #runFonts: DocumentRunFontsReader;
+  readonly #blockFaces: DocumentBlockFacesReader;
   readonly #presentation: DocumentPresentationReader;
   readonly #duplicates: DocumentDuplicatesReader;
   readonly #copy: CopySource;
@@ -2982,7 +2970,7 @@ export class DocumentCommands {
     this.#textBlocks = parts.textBlocks;
     this.#pageObjects = parts.pageObjects;
     this.#renderPage = parts.renderPage;
-    this.#runFonts = parts.runFonts;
+    this.#blockFaces = parts.blockFaces;
     this.#presentation = parts.presentation;
     this.#duplicates = parts.duplicates;
     this.#copy = parts.copy;
@@ -3887,20 +3875,16 @@ export class DocumentCommands {
   }
 
   /**
-   * A block's run fonts, inside the document's lane: {@link renderPage}'s guards in its order and for its reason, since
-   * this read too hands PDFium the document's bytes, and a font read interleaved with an apply could check a run against
-   * a page that is neither. The version comes back so the editor drops fonts for a page that has moved.
+   * A block's faces, the read on open, inside the document's lane: {@link renderPage}'s guards in its order and for its
+   * reason, since this read too hands PDFium the document's bytes. The version comes back so the editor drops an answer
+   * for a page that has moved.
    */
-  async runFonts(
+  async blockFaces(
     docId: DocId,
     page: number,
     indices: readonly number[],
-    unpack: boolean,
-  ): Promise<{
-    readonly version: DocVersion;
-    readonly fonts: readonly Uint8Array<ArrayBuffer>[];
-    readonly runs: readonly (number | null)[];
-  }> {
+    form: FormPath | null,
+  ): Promise<BlockFaces & { readonly version: DocVersion }> {
     const { version, value } = await this.#documents.run(docId, async () => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
@@ -3908,7 +3892,7 @@ export class DocumentCommands {
       const sessions = this.#engine.sessions(docId);
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
-      return this.#runFonts(docId, sessions, page, indices, unpack);
+      return this.#blockFaces(docId, sessions, page, indices, form);
     });
     return { version, fonts: value.fonts, runs: value.runs };
   }
@@ -4051,9 +4035,6 @@ export class DocumentCommands {
       );
       // A DEFECT THE WRITE'S OWN CHECKS FOUND in a write that was kept (ADR-0270): to the log, never to the person.
       for (const note of drawn.noted) this.#engine.writerDefect(docId, command.kind, note);
-      // THE MARKUP ON TEXT THE EDIT PUSHED DOWN moves with it (ADR-0249 Decision 4): by its own writer, MuPDF, in this
-      // lane straight after the edit, so nothing comes between and each command joins the edit's undo step (ADR-0200).
-      const followed = drawn.moved.length === 0 ? 0 : await this.#moveMarkupOnMovedText(docId, context, command, drawn.moved);
       // A PROTECT MOVES THE HOLDER, in the lane and after the bus recorded it, so every later open of a copy has the
       // key the document opens with now (ADR-0171 Decision 8).
       const terms = protectionTermsOf(command);
@@ -4075,7 +4056,7 @@ export class DocumentCommands {
       // COPIES A PROTECT COULD NOT SEAL (ADR-0178), empty for every other command: the person is owed them.
       return {
         byteLength: context.byteLength,
-        historyDropped: trimmed.droppedEntries + followed,
+        historyDropped: trimmed.droppedEntries,
         ...cappedBoxes(drawn),
         unsealedCopies: unsealed.copies.copies,
         unsealedUndoCopies: unsealed.copies.undoCopies,
@@ -4108,59 +4089,6 @@ export class DocumentCommands {
       for (const [place, page] of window.entries()) if (boxes[place] === null) skippedPages.push(page);
     }
     return skippedPages;
-  }
-
-  /**
-   * Moves the marks and links that sit on text a block edit pushed down, by the amount each block went
-   * ([ADR-0249](../../../docs/DECISIONS/0249-a-paragraph-that-grows-pushes-the-text-below-it-down.md) Decision 4).
-   *
-   * ## Inside the edit's lane, so the join cannot fail
-   *
-   * Each move is its own command — `placeAnnotation` for the marks, `editLink` for each link — by MuPDF, the writer of
-   * record for both (B3), and each joins the edit's undo step at the version the command before it produced (ADR-0200).
-   * Nothing else can run in this lane between them, so one Undo takes back the edit, the push and the markup together.
-   * Which marks ride is the kernel's one answer (`markupOnMovedText.ts`).
-   *
-   * @returns the undo steps the moves cost, which the edit's answer adds to its own
-   */
-  async #moveMarkupOnMovedText(
-    docId: DocId,
-    context: DocumentContext,
-    command: Command,
-    moved: readonly MovedBlock[],
-  ): Promise<number> {
-    if (command.kind !== 'editTextBlock' && command.kind !== 'editTextOperators') return 0;
-    const { page } = command;
-    // THE SESSIONS AS THEY ARE NOW: the edit installed a new image, which the MuPDF session was rebuilt from.
-    const sessionsNow = (): DocumentSessions => {
-      const sessions = this.#engine.sessions(docId);
-      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
-      return sessions;
-    };
-    let dropped = 0;
-    const joined = async <K extends CommandKind>(next: CommandOfKind<K>): Promise<void> => {
-      const { trimmed } = await ledgered(this.#engine, docId, next.kind, () =>
-        this.#bus.execute<K>(sessionsNow(), context, next, this.#byteImage(docId, sourceIdsOf(next)), context.version),
-      );
-      dropped += trimmed.droppedEntries;
-    };
-    const { annotations } = await this.#annotations(docId, sessionsNow());
-    const placements = annotations.flatMap((annotation) => {
-      if (annotation.page !== page || annotation.rect === null || !KINDS_ON_WORDS.has(annotation.kind)) return [];
-      const under = movedUnder(annotation.rect, moved);
-      return under === undefined ? [] : [{ index: annotation.index, rect: movedDown(annotation.rect, under) }];
-    });
-    // ONE COMMAND FOR THE MARKS, up to its bound: a page with more marks on moved text than that keeps the rest where they
-    // were, which no real page reaches.
-    if (placements.length > 0) {
-      await joined({ kind: 'placeAnnotation', page, placements: placements.slice(0, MAX_PLACED_ANNOTATIONS), version: context.version });
-    }
-    const { links } = await this.#pageLinks(docId, sessionsNow(), page);
-    for (const [index, link] of links.entries()) {
-      const under = movedUnder(link.rect, moved);
-      if (under !== undefined) await joined({ kind: 'editLink', page, index, rect: movedDown(link.rect, under), version: context.version });
-    }
-    return dropped;
   }
 
   /**

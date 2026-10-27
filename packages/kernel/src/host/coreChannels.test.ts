@@ -95,6 +95,8 @@ const MUPDF_READS = [
   'engine/page-rewrite',
   // A PAGE'S FONTS' DESCRIPTOR FACES ARE ONE OF MuPDF'S READS: PDFium's API reaches no descriptor key (ADR-0256).
   'engine/text-faces',
+  // A BLOCK'S FACES ARE ONE OF MuPDF'S READS: the writer's own font rule runs over this session's resources (ADR-0271).
+  'engine/block-faces',
   // A PAGE'S WORD BOXES ARE ONE OF MuPDF'S READS: its characters' quads, walked from the structured text (ADR-0137).
   'engine/word-boxes',
   // RECOGNITION IS ONE OF MuPDF'S READS, and that is §3's matrix rather than a
@@ -291,12 +293,12 @@ describe('the core channel set', () => {
     // refusal is what says the parameter was used rather than defaulted to
     // `z.object({})`, which accepts an empty object and would pass on both.
     const applied = coreEngineChannels(OTHER)['engine/apply'].result;
-    expect(applied.safeParse({ bytes: 12, boxed: [], more: 0, moved: [], noted: [] }).success).toBe(true);
+    expect(applied.safeParse({ bytes: 12, boxed: [], more: 0, noted: [] }).success).toBe(true);
     expect(applied.safeParse({}).success).toBe(false);
     // AND THE BOXES ARE REQUIRED (ADR-0174): a count with no list is a host that dropped what the person is owed.
     expect(applied.safeParse({ bytes: 12 }).success).toBe(false);
     // AND WHAT ITS CHECKS NOTED (ADR-0270): an answer without it is a host that dropped a defect we are owed.
-    expect(applied.safeParse({ bytes: 12, boxed: [], more: 0, moved: [] }).success).toBe(false);
+    expect(applied.safeParse({ bytes: 12, boxed: [], more: 0 }).success).toBe(false);
   });
 
   it('takes the engine’s command union rather than closing over MuPDF’s', () => {

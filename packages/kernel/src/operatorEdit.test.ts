@@ -200,7 +200,7 @@ describe('editOperators on the Chromium print', () => {
     await chromium((content, fonts) => {
       const page = runsOf(content, fonts);
       const heading = page.runs[0];
-      const block = { lines: [{ runs: [{ index: heading?.index ?? -1, text: heading?.text ?? '' }], soft: false }], push: { below: [], room: 0 } };
+      const block = { lines: [{ runs: [{ index: heading?.index ?? -1, text: heading?.text ?? '' }], soft: false }] };
       const matchesIn = (words: string) => {
         const at = words.indexOf('heading');
         return at < 0 ? [] : [{ offset: at, length: 'heading'.length }];
@@ -1121,8 +1121,8 @@ describe('checkOperatorEdit', () => {
   });
 
   describe('an edit of several blocks, each inserted object read against its own words (2026-10-24)', () => {
-    // THE BLOCKS EDITED IN THE OPPOSITE ORDER TO THE ONE THEY SIT IN: a replace of every match, or a block and the blocks
-    // it pushes, edits in the order it is given, and each new object goes where its own lines are. Read as one
+    // THE BLOCKS EDITED IN THE OPPOSITE ORDER TO THE ONE THEY SIT IN: a replace of every match edits in the order it is
+    // given, and each new object goes where its own lines are. Read as one
     // concatenation in the edit's order, `dexabx` against the `abxdex` the content draws, every such edit was refused.
     const two = bytes(['BT /F1 10 Tf 1 0 0 1 72 300 Tm (abc) Tj ET', 'BT /F1 10 Tf 1 0 0 1 72 100 Tm (def) Tj ET'].join('\n'));
     const both = editOperators(two, fonts, runsOf(two, fonts), [
@@ -1134,6 +1134,20 @@ describe('checkOperatorEdit', () => {
       if (!both.ok) throw new Error(`refused: ${JSON.stringify(both.error)}`);
       expect(both.value.drawn).toStrictEqual(['abx', 'dex']);
       expect(checkOperatorEdit(two, both.value, fonts)).toStrictEqual({ ok: true, value: undefined });
+    });
+
+    it('a block that GROWS onto a second line leaves the block below it byte for byte where it was (ADR-0271 section 11.1)', () => {
+      // THE FIRST BLOCK ONE LINE AT 300, wrapped onto a second by a newline typed in it; the block below at 290, one line
+      // under it, which the grown block now overlaps.
+      const page = bytes(['BT /F1 10 Tf 1 0 0 1 72 300 Tm (abc) Tj ET', 'BT /F1 10 Tf 1 0 0 1 72 290 Tm (def) Tj ET'].join('\n'));
+      const grown = editOperators(page, fonts, runsOf(page, fonts), [{ lines: [[0]], soft: [false], text: 'abc\nabx' }]);
+      if (!grown.ok) throw new Error(`refused: ${JSON.stringify(grown.error)}`);
+      expect(grown.value.baselines[0]?.last).toBeLessThan(300);
+      const written = new TextDecoder('latin1').decode(grown.value.content);
+      // THE BLOCK BELOW'S OWN INSTRUCTIONS, unchanged, and emptied by nothing.
+      expect(written).toContain('BT /F1 10 Tf 1 0 0 1 72 290 Tm (def) Tj ET');
+      expect(grown.value.emptied).not.toContain(1);
+      expect(checkOperatorEdit(page, grown.value, fonts)).toStrictEqual({ ok: true, value: undefined });
     });
 
     it('CONTROL: words that read right only joined together are refused, object by object', () => {

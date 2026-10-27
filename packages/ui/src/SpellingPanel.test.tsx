@@ -67,7 +67,7 @@ function drawn(lines: readonly string[]): { readonly sent: unknown[]; readonly s
         const plain = { size: 11, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false, italic: false, bold: false };
         const blocks = lines.map((text, line) => {
           const at = { x0: 0, y0: 700 - (line * 20 + 12), x1: 500, y1: 700 - line * 20 };
-          return { box: at, lines: [{ runs: [{ index: line, text, style: plain }], box: at, soft: false, baseline: at.y0 }], style: plain, shape: { align: 'left' as const, firstIndent: 0 }, push: { below: [], room: 0 } };
+          return { box: at, lines: [{ runs: [{ index: line, text, style: plain }], box: at, soft: false, baseline: at.y0 }], style: plain, shape: { align: 'left' as const, firstIndent: 0 } };
         });
         return Promise.resolve(ok({ version: asDocVersion(1), blocks, next: null, truncated: false, rotated: 0, angled: { turned: 0, vertical: 0, slanted: 0, mirrored: 0 }, unaddressable: 0, rewrite: 'operators' }));
       }

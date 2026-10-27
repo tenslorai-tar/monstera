@@ -4208,28 +4208,31 @@ export const MAX_LIBRARY_ENTRIES = 16;
 export const MAX_LIBRARY_PICTURE_BYTES = 2 * 1024 * 1024;
 
 /**
- * The most bytes one run's font may cross in (`document.runFonts`, ADR-0175): the third sanctioned byte crossing, a font
- * the PDFium host rebuilt from an embedded program. Here and not beside the channel, because the host that builds the
- * font refuses one past it and a host takes its contract values from `@monstera/contract/host`. One mebibyte is past
- * every Latin subset a PDF carries (the Arimo subset an edit makes is 2,888 bytes, measured 2026-10-06) and short of a
- * whole CJK face, which the editor draws in its kind of face instead: a font past it is not offered, never cut.
+ * The most runs one `document.blockFaces` read names, and so the most one `engine/block-faces` request carries. Each
+ * run crosses to the host with its words, up to {@link MAX_BLOCK_FACE_TEXT} of them, so sixty-four keeps a request
+ * under a third of the host's 256 KiB frame at its worst (`hostRoutes.test.ts`). A block of more runs is asked in reads
+ * of this many: the bound decides how many reads a long block costs rather than whether its faces are read.
  */
-export const MAX_RUN_FONT_BYTES = 1024 * 1024;
+export const MAX_BLOCK_FACE_RUNS = 64;
+
+/** The most of one run's words a `document.blockFaces` read carries to the host: the sample a face is chosen for. */
+export const MAX_BLOCK_FACE_TEXT = 200;
 
 /**
- * The most runs one `document.runFonts` read names. A block's runs are its text objects, and a producer that writes a
- * word per object makes a paragraph of hundreds; the editor asks in reads of this many, each costing one write of the
- * document's image for the host, so the bound decides how many writes a long block costs rather than whether its
- * fonts are read.
- */
-export const MAX_FONT_RUNS = 4096;
-
-/**
- * The most fonts one `document.runFonts` answer carries: one per distinct font among the runs it was asked about,
- * however many runs share it. A run in a font past the sixteenth is answered with none and drawn in its kind of face,
- * so an answer is at most sixteen times {@link MAX_RUN_FONT_BYTES}.
+ * The most fonts one `document.blockFaces` answer carries: one per distinct font among the runs it was asked about,
+ * however many runs share it. A run in a font past the sixteenth is answered with none and drawn in its kind of face.
  */
 export const MAX_BLOCK_FONTS = 16;
+
+/** The styles a family has, as the editor's style choice names them (`document.blockFaces`, ADR-0271 section 3). */
+export const FACE_STYLES = ['regular', 'bold', 'italic', 'bold-italic'] as const;
+export type FaceStyle = (typeof FACE_STYLES)[number];
+
+/** The most faces `document.blockFaces` offers a font as its *Closest matches*: the owner's three to five. */
+export const MAX_FACE_CANDIDATES = 5;
+
+/** The longest family name `document.blockFaces` carries: past every family name a catalogue has read. */
+export const MAX_FACE_FAMILY = 256;
 
 /** A picture's name, as main takes it from the file's own name: bounded, and shown as text. */
 export const MAX_LIBRARY_NAME = 64;
@@ -6716,32 +6719,6 @@ export const operatorPlaceSchema = blockPlaceSchema
 
 export type OperatorPlace = z.infer<typeof operatorPlaceSchema>;
 
-/**
- * The most blocks one edit may push (invariant L11): the blocks below one block in its column, on one page. Set by the file
- * a PDFium command crosses in, measured 2026-10-16 by `commands.test.ts`' worst encoding: 8,337,707 bytes with one push
- * and about 59 bytes for each more, against 8,388,608, so 512 leaves about 20 KB. A column with more blocks below than
- * this is said to have no room (`pushesOf`), so an edit never carries more.
- */
-export const MAX_PUSHED_BLOCKS = 512;
-
-/**
- * A block of the edit that is there to be MOVED, not written
- * ([ADR-0249](../../../docs/DECISIONS/0249-a-paragraph-that-grows-pushes-the-text-below-it-down.md) Decision 3): it is
- * below block `by` in its column, as `document.textBlocks`' `push` named it, and the writer moves it down by what `by`
- * grew — or not at all where that passes `room`, the points `main` measured to the footer or the bottom margin. Its words
- * are the read's; a writer refuses an edit whose diff names a run of a pushed block.
- */
-export const blockPushSchema = z
-  .object({
-    block: z.number().int().min(0).max(MAX_EDIT_RUNS),
-    /** The block whose growth moves this one: earlier in the edit, and not itself pushed. */
-    by: z.number().int().min(0).max(MAX_EDIT_RUNS),
-    room: z.number().nonnegative().max(2 * MAX_PAGE_COORDINATE),
-  })
-  .strict();
-
-export type BlockPush = z.infer<typeof blockPushSchema>;
-
 /** The most boxes one edit may add, and the most words in each (invariant L11): an added box is typed by hand. */
 export const MAX_PAGE_INSERTS = 2;
 export const MAX_INSERT_TEXT = 4096;
@@ -6790,8 +6767,6 @@ export interface EditedBlock extends BlockFormatting {
   /** Per line: whether its end was a soft wrap. The last line's is `false`: it ends nothing. */
   readonly soft: readonly boolean[];
   readonly text: string;
-  /** Present on a block that is in the edit to be moved by another's growth, and never written (ADR-0249). */
-  readonly push?: Omit<BlockPush, 'block'>;
 }
 
 /**
@@ -6835,8 +6810,6 @@ export const blockEditSchema = z
     places: z.array(blockPlaceSchema).max(MAX_BLOCK_PLACES).optional(),
     /** Boxes of new text, laid out by the same writer as a block's words. An edit may hold only these. */
     inserts: z.array(pageInsertSchema).max(MAX_PAGE_INSERTS).optional(),
-    /** The blocks in the edit to be moved down by another's growth, never written (ADR-0249 Decision 3). */
-    pushes: z.array(blockPushSchema).max(MAX_PUSHED_BLOCKS).optional(),
   })
   .strict();
 
@@ -6868,7 +6841,6 @@ export function blockEditAgrees(edit: OperatorBlockEdit): boolean {
     paragraphs = [],
     places = [],
     inserts = [],
-    pushes = [],
   } = edit;
   // AN ADDED BOX'S MARKS AND PARAGRAPHS ARE BOUNDED BY ITS OWN WORDS, as a block's are, and ascend the same way.
   const insertsAgree = inserts.every((insert) => {
@@ -6896,24 +6868,9 @@ export function blockEditAgrees(edit: OperatorBlockEdit): boolean {
       softLines.length === 0 &&
       marks.length === 0 &&
       paragraphs.length === 0 &&
-      places.length === 0 &&
-      pushes.length === 0
+      places.length === 0
     );
   }
-  // A PUSHED BLOCK IS MOVED AND NEVER WRITTEN (ADR-0249 Decision 3): pushes ascend by block, each names a block of the
-  // edit pushed by an EARLIER one that is not itself pushed, and a pushed block carries no mark, setting or placement,
-  // which would be something written or placed that nobody typed.
-  const pushed = new Set(pushes.map((push) => push.block));
-  const pushesAgree = pushes.every(
-    (push, at) =>
-      push.block < blockStarts.length &&
-      push.by < push.block &&
-      !pushed.has(push.by) &&
-      (at === 0 || push.block > (pushes[at - 1]?.block ?? -1)) &&
-      !marks.some((mark) => mark.block === push.block) &&
-      !paragraphs.some((setting) => setting.block === push.block) &&
-      !places.some((place) => place.block === push.block),
-  );
   // PLACES ASCEND BY BLOCK, name a block of the edit, and each says something: a place that names nothing is a block the
   // writer would re-lay out for no change. An arrange says where in the drawing order (ADR-0264 Decision 5).
   const placesAgree = places.every(
@@ -6970,8 +6927,7 @@ export function blockEditAgrees(edit: OperatorBlockEdit): boolean {
     marksAgree &&
     paragraphsAgree &&
     placesAgree &&
-    insertsAgree &&
-    pushesAgree
+    insertsAgree
   );
 }
 
@@ -6985,7 +6941,6 @@ export function blockEditOf(blocks: readonly EditedBlock[], inserts: PageInsert[
   const marks: BlockMark[] = [];
   const paragraphs: ParagraphProps[] = [];
   const places: OperatorPlace[] = [];
-  const pushes: BlockPush[] = [];
   let text = '';
   for (const [place, block] of blocks.entries()) {
     blockStarts.push(lineStarts.length);
@@ -6994,7 +6949,6 @@ export function blockEditOf(blocks: readonly EditedBlock[], inserts: PageInsert[
     for (const mark of block.marks ?? []) marks.push({ ...mark, block: place });
     for (const setting of block.paragraphs ?? []) paragraphs.push({ ...setting, block: place });
     if (block.place !== undefined) places.push({ ...block.place, block: place });
-    if (block.push !== undefined) pushes.push({ ...block.push, block: place });
     for (const [at, line] of block.lines.entries()) {
       if (block.soft[at] === true && at < block.lines.length - 1) softLines.push(lineStarts.length);
       lineStarts.push(runs.length);
@@ -7013,7 +6967,6 @@ export function blockEditOf(blocks: readonly EditedBlock[], inserts: PageInsert[
     ...(paragraphs.length === 0 ? {} : { paragraphs }),
     ...(places.length === 0 ? {} : { places }),
     ...(inserts.length === 0 ? {} : { inserts }),
-    ...(pushes.length === 0 ? {} : { pushes }),
   };
 }
 
@@ -7027,7 +6980,6 @@ export function blocksOfEdit(edit: OperatorBlockEdit): EditedBlock[] {
     const marks = (edit.marks ?? []).filter((mark) => mark.block === block).map(({ block: _block, ...mark }) => mark);
     const paragraphs = (edit.paragraphs ?? []).filter((setting) => setting.block === block).map(({ block: _block, ...rest }) => rest);
     const placed = (edit.places ?? []).find((setting) => setting.block === block);
-    const pushed = (edit.pushes ?? []).find((push) => push.block === block);
     return {
       lines: Array.from({ length: end - first }, (_, at) => lineOf(first + at)),
       soft: Array.from({ length: end - first }, (_, at) => soft.has(first + at)),
@@ -7035,7 +6987,6 @@ export function blocksOfEdit(edit: OperatorBlockEdit): EditedBlock[] {
       ...(marks.length === 0 ? {} : { marks }),
       ...(paragraphs.length === 0 ? {} : { paragraphs }),
       ...(placed === undefined ? {} : { place: (({ block: _block, ...rest }) => rest)(placed) }),
-      ...(pushed === undefined ? {} : { push: { by: pushed.by, room: pushed.room } }),
     };
   });
 }
@@ -7240,8 +7191,7 @@ export function sameStream(a: { readonly form?: FormPath }, b: { readonly form?:
 
 /**
  * A page's blocks by the stream that holds them, in the order each stream's first block comes, each with its blocks in
- * their order: what a writer of several blocks sends one command per. The page's own blocks come first in a read, so
- * their stream's blocks keep the places `push.below` names them by.
+ * their order: what a writer of several blocks sends one command per. The page's own blocks come first in a read.
  */
 export function streamsOf<B extends { readonly form?: FormPath }>(blocks: readonly B[]): { readonly form: FormPath | null; readonly blocks: readonly B[] }[] {
   const streams: { readonly form: FormPath | null; readonly blocks: B[] }[] = [];

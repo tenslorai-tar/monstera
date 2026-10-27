@@ -57,6 +57,7 @@ import type {
   HostPageTextReader,
   HostTextFacesReader,
   HostWordBoxesReader,
+  HostBlockFacesReader,
 } from './engineHandlers.js';
 
 /**
@@ -460,6 +461,15 @@ export function remoteMupdfPageRewrite(client: ClientApi<EngineChannels>, sessio
 /** One page's fonts' descriptor faces, over the boundary (ADR-0256) — {@link remoteMupdfPageRewrite}' shape. */
 export function remoteMupdfTextFaces(client: ClientApi<EngineChannels>, sessions: RemoteSessions): HostTextFacesReader {
   return async (session, page) => answered('engine/text-faces', await client['engine/text-faces']({ session: sessions.handleFor(session), page }));
+}
+
+/** A block's faces, over the boundary (ADR-0271 section 5) — {@link remoteMupdfTextFaces}' shape. */
+export function remoteMupdfBlockFaces(client: ClientApi<EngineChannels>, sessions: RemoteSessions): HostBlockFacesReader {
+  return async (session, at, runs) =>
+    answered(
+      'engine/block-faces',
+      await client['engine/block-faces']({ session: sessions.handleFor(session), page: at.page, ...(at.form === undefined ? {} : { form: at.form }), runs }),
+    );
 }
 
 /** One page's word boxes, over the boundary (ADR-0137) — {@link remoteMupdfPageFills}' shape, for its reason. */

@@ -11,7 +11,7 @@ import {
   type PreparedSignature,
 } from '@monstera/kernel';
 import { prepareSignature } from '@monstera/kernel/engine';
-import { type BoxedCharacter, type ComposeSkip, blockEditOf, replacementFieldsOf } from '@monstera/contract';
+import { type BoxedCharacter, type ComposeSkip, type FormPath, blockEditOf, replacementFieldsOf } from '@monstera/contract';
 import { type DocVersion, asDocId, err, ok } from '@monstera/shared';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 
@@ -1277,9 +1277,8 @@ function pdfiumPeer(drawn: readonly { character: string; page: number }[] = []):
     const { into } = params as { into: string };
     const bytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31]);
     writeFileSync(join(area.output, into), bytes);
-    // AND THE BOXES IT DREW, which a case hands it (ADR-0174), none by default; no block moved (ADR-0249); nothing noted
-    // (ADR-0270).
-    return { ok: true, value: { bytes: bytes.length, boxed: [...drawn], more: 0, moved: [], noted: [] } };
+    // AND THE BOXES IT DREW, which a case hands it (ADR-0174), none by default; nothing noted (ADR-0270).
+    return { ok: true, value: { bytes: bytes.length, boxed: [...drawn], more: 0, noted: [] } };
   };
 
   return {
@@ -2119,6 +2118,183 @@ describe('the composition root, with BOTH engine hosts', () => {
     // the first host for a command that was never going to run — and it would
     // read as this same failure.
     expect(mupdf.harness.calls).not.toContain('peer.request:engine/serialise');
+  });
+});
+
+/**
+ * PDFium's pre-read for the read on open, numbered so a translation that did not happen shows: no run's index is its
+ * first object's place among the text objects (10 is the 0th, 12 the 1st, 20 the 3rd, 30 the 5th), so a run sent with
+ * its index where the content's numbering belongs is a different number on the wire.
+ */
+const PAGE_RUNS = {
+  textObjects: [10, 12, 15, 20, 21, 30],
+  runs: [
+    { index: 10, members: [10], text: 'zero', left: 0, right: 10, bottom: 0, top: 10 },
+    { index: 12, members: [12, 15], text: 'alpha', left: 0, right: 10, bottom: 20, top: 30 },
+    { index: 20, members: [20, 21], text: 'beta', left: 0, right: 10, bottom: 40, top: 50 },
+    { index: 30, members: [30], text: 'gamma', left: 0, right: 10, bottom: 60, top: 70 },
+  ],
+};
+
+/** A font that carries its own new words, and one whose new words the chain sets in another face. Distinct, so a swap shows. */
+const OWN_FONT = { own: true, chosen: null, candidates: [] };
+const SUBSTITUTED_FONT = {
+  own: false,
+  chosen: { family: 'Noto Serif', weight: 700, italic: false, styles: ['regular', 'bold'] },
+  candidates: [{ family: 'Noto Serif', weight: 700, italic: false, styles: ['regular', 'bold'] }],
+};
+
+/**
+ * The MuPDF host's answer, for the runs in the order they crossed: the first run sent is in {@link OWN_FONT} and the
+ * second in {@link SUBSTITUTED_FONT}. Positional, as the host's is, so only the root's reorder puts each on its index.
+ */
+const BLOCK_FACES = { fonts: [OWN_FONT, SUBSTITUTED_FONT], runs: [0, 1] };
+
+/** The bytes the MuPDF peer writes for `engine/form-pages`: distinct from the document's, so PDFium's input says which it read. */
+const FORM_PAGES_TEXT = '%PDF-1.7 the page’s form placements\n';
+
+/** The placements {@link FORM_PAGES_TEXT} holds, in its page order: the one a case names is the SECOND, so its page is 1. */
+const FORM_PLACEMENTS: readonly FormPath[] = [[{ name: 'Fm0', occurrence: 0 }], [{ name: 'Fm1', occurrence: 0 }]];
+
+/**
+ * A MuPDF peer for the read on open: {@link serialisingEngine}, plus `engine/form-pages` written into the granted output
+ * directory as the host writes it, and `engine/block-faces` answered {@link BLOCK_FACES}. Both record what they were
+ * asked, which is what the cases assert: the end state is the answer, and the hops are the calls.
+ */
+function blockFacesEngine(): {
+  readonly peer: FakePeer;
+  readonly faces: Record<string, unknown>[];
+  readonly formPages: number[];
+} {
+  const inner = serialisingEngine();
+  let output: string | null = null;
+  const faces: Record<string, unknown>[] = [];
+  const formPages: number[] = [];
+  const peer: FakePeer = (channel, params) => {
+    if (channel === 'engine/open') output = (params as { outputDirectory: string }).outputDirectory;
+    if (channel === 'engine/block-faces') {
+      faces.push(params as Record<string, unknown>);
+      return { ok: true, value: BLOCK_FACES };
+    }
+    if (channel !== 'engine/form-pages') return inner(channel, params);
+    if (output === null) throw new Error('engine/form-pages before engine/open');
+    const { page, into } = params as { page: number; into: string };
+    formPages.push(page);
+    const bytes = new TextEncoder().encode(FORM_PAGES_TEXT);
+    writeFileSync(join(output, into), bytes);
+    return { ok: true, value: { bytes: bytes.length, paths: FORM_PLACEMENTS } };
+  };
+  return { peer, faces, formPages };
+}
+
+/**
+ * A PDFium peer that answers `engine/page-runs` {@link PAGE_RUNS}, and records the page it was asked for and the bytes of
+ * the image it was handed — read from inside the peer, the only moment the input exists ({@link pdfiumPeer}'s reason).
+ */
+function pageRunsPeer(): { readonly peer: FakePeer; readonly asked: { page: number; image: string }[] } {
+  const inner = pdfiumPeer();
+  let snapshot: string | null = null;
+  const asked: { page: number; image: string }[] = [];
+  const peer: FakePeer = (channel, params) => {
+    if (channel === 'engine/open') snapshot = (params as { snapshotDirectory: string }).snapshotDirectory;
+    if (channel !== 'engine/page-runs') return inner.peer(channel, params);
+    if (snapshot === null) throw new Error('engine/page-runs before engine/open');
+    const { page, from } = params as { page: number; from: string };
+    asked.push({ page, image: readFileSync(join(snapshot, from), 'utf8') });
+    return { ok: true, value: PAGE_RUNS };
+  };
+  return { peer, asked };
+}
+
+describe('the composition root, THE READ ON OPEN through both engine hosts (ADR-0271 section 5)', () => {
+  // THE DELEGATE BETWEEN THE TWO HALVES, which no other case crosses (finding ZZZZZZZZ-8): `documentCommands.test.ts`
+  // stubs the reader, the kernel's tests call `blockFaceRunsOf` and `facesInOrder` directly, and `remoteEngine.test.ts`
+  // crosses only the host's channel. A dropped `form`, indices sent where the content's numbering belongs, or answers put
+  // back on the wrong runs would pass all three — the wired-tools rule's second blind spot.
+  const opening = async (name: string) => {
+    const mupdf = blockFacesEngine();
+    const pdfium = pageRunsPeer();
+    const first = platformAnswering(mupdf.peer);
+    const second = platformAnswering(pdfium.peer);
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
+      appInfo,
+      pickDocument: () => Promise.resolve(aDocument(name)),
+      enginePlatform: first.platform,
+      pdfiumPlatform: second.platform,
+    });
+    const opened = await handlers['document.open']({});
+    if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
+    return { handlers, opened: opened.value, mupdf, pdfium, first };
+  };
+
+  it('asks PDFium for the page, MuPDF for the runs in the content’s numbering, and puts each font back on its index', async () => {
+    const { handlers, opened, mupdf, pdfium, first } = await opening('read-on-open.pdf');
+
+    // OUT OF ORDER, and with an index the pre-read holds no run for IN THE MIDDLE: an answer laid on the indices by
+    // position would put the second font on 99 and none on 12.
+    const read = await handlers['document.blockFaces']({ docId: opened.docId, page: 3, indices: [30, 99, 12] });
+
+    // HOP ONE: PDFium was asked for the page the renderer named, and handed the document's own image.
+    expect(pdfium.asked).toStrictEqual([{ page: 3, image: '%PDF-1.7\n' }]);
+    // AND NO FORM'S PAGES WERE BUILT, the page's own content being what was asked about.
+    expect(mupdf.formPages).toStrictEqual([]);
+    expect(first.harness.calls).not.toContain('peer.request:engine/form-pages');
+
+    // HOP TWO: MuPDF was asked about the runs in the order asked, each named by its first object's place among the text
+    // objects (30 is the 5th, 12 the 1st), the unplaced 99 left out, and no form.
+    expect(mupdf.faces).toStrictEqual([
+      {
+        session: 'ab0f',
+        page: 3,
+        runs: [
+          { index: 30, object: 5, text: 'gamma' },
+          { index: 12, object: 1, text: 'alpha' },
+        ],
+      },
+    ]);
+
+    // HOP THREE: each font is back on the index that asked for it, and the index the host could not place answers none.
+    expect(read).toStrictEqual(ok({ version: opened.version, fonts: [OWN_FONT, SUBSTITUTED_FONT], runs: [0, null, 1] }));
+  });
+
+  it('asks MuPDF NOTHING when no asked index names a run, and answers no font for each, rather than an internal error', async () => {
+    const { handlers, opened, mupdf } = await opening('read-on-open-unplaced.pdf');
+    // NEITHER INDEX IS A RUN THE PRE-READ HOLDS: `engine/block-faces` takes at least one run, and an empty list sent to the
+    // real host is refused by its schema and reaches the renderer as an internal failure (found by this case's author).
+    const read = await handlers['document.blockFaces']({ docId: opened.docId, page: 3, indices: [99, 98] });
+    // THE DECISION: no call to the host, which this fake answers whatever it is sent.
+    expect(mupdf.faces).toStrictEqual([]);
+    expect(read).toStrictEqual(ok({ version: opened.version, fonts: [], runs: [null, null] }));
+  });
+
+  it('reads a FORM’s runs from its placement’s page of the built form pages, and names the form to MuPDF', async () => {
+    const { handlers, opened, mupdf, pdfium } = await opening('read-on-open-form.pdf');
+    const form = FORM_PLACEMENTS[1];
+    if (form === undefined) throw new Error('unreachable');
+
+    const read = await handlers['document.blockFaces']({ docId: opened.docId, page: 3, indices: [30, 99, 12], form });
+
+    // HOP ONE, THE FORM'S ROUTE: MuPDF built the page's placements, and PDFium read the named placement's page (the
+    // second, so 1 — never the document's page 3) out of THOSE bytes rather than the document's.
+    expect(mupdf.formPages).toStrictEqual([3]);
+    expect(pdfium.asked).toStrictEqual([{ page: 1, image: FORM_PAGES_TEXT }]);
+
+    // HOP TWO: the document's page and the form both reached MuPDF, with the runs in the content's numbering.
+    expect(mupdf.faces).toStrictEqual([
+      {
+        session: 'ab0f',
+        page: 3,
+        form,
+        runs: [
+          { index: 30, object: 5, text: 'gamma' },
+          { index: 12, object: 1, text: 'alpha' },
+        ],
+      },
+    ]);
+
+    // HOP THREE, as for the page's own content.
+    expect(read).toStrictEqual(ok({ version: opened.version, fonts: [OWN_FONT, SUBSTITUTED_FONT], runs: [0, null, 1] }));
   });
 });
 

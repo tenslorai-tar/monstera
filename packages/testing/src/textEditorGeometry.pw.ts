@@ -49,9 +49,6 @@ async function pageBytes(): Promise<Uint8Array> {
   return document.save();
 }
 
-/** A block that pushes nothing when it grows (ADR-0249): this file is about where the editor sits, not the push. */
-const NO_PUSH = { below: [], room: 0 };
-
 function blocks(labelStyle: typeof LABEL | typeof WIDE) {
   const [first, second, small, label] = LINES;
   const lineOf = (line: (typeof LINES)[number], index: number, style: typeof SANS | typeof SMALL | typeof LABEL | typeof WIDE) => ({
@@ -66,10 +63,9 @@ function blocks(labelStyle: typeof LABEL | typeof WIDE) {
       lines: [lineOf(first, 1, SANS), lineOf(second, 2, SANS)],
       style: SANS,
       shape: { align: 'left' as const, firstIndent: 0 },
-      push: NO_PUSH,
     },
-    { box: inkBox(small), lines: [lineOf(small, 3, SMALL)], style: SMALL, shape: { align: 'left' as const, firstIndent: 0 }, push: NO_PUSH },
-    { box: inkBox(label), lines: [lineOf(label, 4, labelStyle)], style: labelStyle, shape: { align: 'left' as const, firstIndent: 0 }, push: NO_PUSH },
+    { box: inkBox(small), lines: [lineOf(small, 3, SMALL)], style: SMALL, shape: { align: 'left' as const, firstIndent: 0 } },
+    { box: inkBox(label), lines: [lineOf(label, 4, labelStyle)], style: labelStyle, shape: { align: 'left' as const, firstIndent: 0 } },
   ];
 }
 
@@ -92,7 +88,7 @@ async function open(page: Page, labelStyle: typeof LABEL | typeof WIDE = LABEL):
   await expect(page.locator('[data-text-edit-layer="0"] [data-text-block="2"]')).toBeVisible();
   // THE OUTLINES AND HANDLES HIDDEN, so the only dark pixels are words.
   await page.addStyleTag({
-    content: '.m-text-editor-handle,.m-text-editor-problem{visibility:hidden!important}.m-text-block{border-color:transparent!important;outline:none!important}.m-text-editor-frame{outline:none!important;border-color:transparent!important}',
+    content: '.m-kit-handle,.m-kit-problem{visibility:hidden!important}.m-text-block{border-color:transparent!important;outline:none!important}.m-kit-frame{outline:none!important;border-color:transparent!important}',
   });
 }
 

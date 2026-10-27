@@ -124,13 +124,14 @@ await step('M3. ONE Edit text action: a paragraph clicked, a word typed, a click
   await section('Edit');
   const tool = page.getByRole('button', { name: 'Edit text', exact: true }).first();
   if ((await tool.getAttribute('aria-pressed')) !== 'true') await command('Edit text on the page');
-  await editTextOpening(page).openAt(page.locator('[data-text-block]').nth(1));
+  // TWO STEPS (ADR-0271 section 3): the press selects the box, Enter puts the caret at the end of its words.
+  await editTextOpening(page).openWords(page.locator('[data-text-block]').nth(1));
   await page.keyboard.type(' walked');
   // A CLICK AWAY in the page's right margin, below the ribbon, as textWalk's step 3 makes it.
   const pageBox = await page.locator('canvas.m-page:visible').first().boundingBox();
   if (pageBox === null) throw new Error('the page is not on screen');
   await page.mouse.click(pageBox.x + pageBox.width - 20, Math.max(pageBox.y, 230) + 20);
-  await expect(page.locator('[data-kit-frame]')).toHaveCount(0);
+  await expect(page.locator('[data-kit-surface]')).toHaveCount(0);
   // A WRITE TAKES 3 TO 5 S (textWalk's reading of 2026-10-12), then the hosts it started settle.
   await page.waitForTimeout(15_000);
   const read = await reading();
@@ -179,7 +180,7 @@ const LAST_TEN_MB = 20;
 const typedAt = (edit) => `x${String(edit)}x`;
 
 await step('M3b. a long session (Part 2 item 13): twenty edits, three fonts applied in turn, memory read every five', async () => {
-  const { editor, ensureEditText, pressAway, chooseFont, openWords } = textSteps({ page, output, saveTo, command });
+  const { editor, ensureEditText, pressAway, chooseFont } = textSteps({ page, output, saveTo, command });
   // BUNDLED FAMILIES, so the three are there on every machine and each is a face the edit really sets (ADR-0172).
   const families = ['Carlito', 'Tinos', 'Arimo'];
   await ensureEditText();
@@ -188,7 +189,11 @@ await step('M3b. a long session (Part 2 item 13): twenty edits, three fonts appl
   /** @type {{ edit: number; family: string; problem: string | null }[]} */
   const refused = [];
   for (let edit = 1; edit <= LONG_EDITS; edit += 1) {
-    await openWords(page.locator('[data-text-block]').nth(1));
+    const block = page.locator('[data-text-block]').nth(1);
+    const box = await block.boundingBox();
+    if (box === null) throw new Error(`no second text block on the page at edit ${String(edit)}`);
+    await page.mouse.click(box.x + box.width / 2, box.y + Math.min(8, box.height / 2));
+    await expect(editor()).toBeFocused();
     await page.keyboard.press('Control+A');
     const family = families[(edit - 1) % families.length] ?? 'Carlito';
     const samples = await chooseFont(family);
@@ -229,13 +234,17 @@ await step('M3b. a long session (Part 2 item 13): twenty edits, three fonts appl
 });
 
 await step('M3c. an idle PDFium host stops with documents open (item 13b), and what its restart costs the next edit', async () => {
-  const { editor, ensureEditText, pressAway, openWords } = textSteps({ page, output, saveTo, command });
+  const { editor, ensureEditText, pressAway } = textSteps({ page, output, saveTo, command });
   /** One edit, timed from the press on the block to its editor closing on the written words. */
   const timedEdit = async (/** @type {string} */ word) => {
     await ensureEditText();
+    const block = page.locator('[data-text-block]').nth(1);
+    const box = await block.boundingBox();
+    if (box === null) throw new Error('no second text block on the page');
     const started = Date.now();
-    // THE BOX SELECTED, then Enter: the caret at the words' end, with no pause a second press would add to the time.
-    await openWords(page.locator('[data-text-block]').nth(1));
+    await page.mouse.click(box.x + box.width / 2, box.y + Math.min(8, box.height / 2));
+    await expect(editor()).toBeFocused();
+    await page.keyboard.press('End');
     await page.keyboard.type(` ${word}`);
     expect(await pressAway(), `the editor said something at the press away after "${word}"`).toStrictEqual([]);
     await expect(editor()).toHaveCount(0);

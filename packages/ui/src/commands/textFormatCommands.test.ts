@@ -24,7 +24,6 @@ const WORDS: TextBlock = {
   lines: [{ runs: [{ index: 1, text: 'words', style: STYLE }], box: BOX, soft: false, baseline: 689 }],
   style: STYLE,
   shape: { align: 'left', firstIndent: 0 },
-  push: { below: [], room: 0 },
 };
 
 /** An open editor over the one block, its whole words selected, as the box is when first pressed. */

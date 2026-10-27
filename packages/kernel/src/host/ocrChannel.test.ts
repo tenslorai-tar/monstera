@@ -158,6 +158,9 @@ async function joined(ocr: HostOcrReader): Promise<{
       textFaces: () => {
         throw new Error('no case here reads the fonts’ faces');
       },
+      blockFaces: () => {
+        throw new Error('no case here reads a block’s faces');
+      },
       wordBoxes: () => {
         throw new Error('a recognition must not read the word boxes');
       },

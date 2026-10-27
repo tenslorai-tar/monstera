@@ -568,7 +568,7 @@ try {
     await runCommand(page, 'Edit text on the page');
     const block = page.locator('[data-text-edit-layer] [data-text-block]').first();
     await block.waitFor({ timeout: 30_000 });
-    // THE BOX SELECTED, then Enter: the caret at the words' end (ADR-0271's two-step opening).
+    // TWO STEPS (ADR-0271 section 3): the press selects the box, Enter puts the caret at the end of its words.
     await editTextOpening(page).openWords(block);
     await page.keyboard.type(` ${MARKER}`);
     await page.keyboard.press('Escape');

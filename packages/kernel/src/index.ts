@@ -153,6 +153,7 @@ export {
   type HostPageAdjustmentReader,
   type HostPageRewriteReader,
   type HostTextFacesReader,
+  type HostBlockFacesReader,
   type HostPageLinksReader,
   type HostPageTextReader,
   type HostWordBoxesReader,
@@ -339,8 +340,6 @@ export {
   remotePdfiumPageObjects,
   remotePdfiumPageRuns,
   remotePdfiumRenderPage,
-  remotePdfiumRunFonts,
-  type RunFonts,
   remotePdfiumTextRuns,
   remotePdfiumWriter,
 } from './host/remotePdfium.js';
@@ -356,7 +355,6 @@ export type { PageRewrite } from './pageRewrite.js';
 // of (ADR-0096).
 export {
   type BlockBox,
-  type PushedColumn,
   type BlockableRun,
   type EditableBlock,
   type EditableLine,
@@ -366,15 +364,10 @@ export {
   groupIntoBlocks,
   groupIntoLines,
   isEditedInPlace,
-  pushesOf,
-  pushesOfPage,
   settingOf,
   softEnds,
   withRises,
 } from './textLines.js';
-// WHICH MARKS RIDE WITH PUSHED TEXT (ADR-0249 Decision 4): pure, so main asks it beside the command it sends.
-export { KINDS_ON_WORDS, movedDown, movedUnder } from './markupOnMovedText.js';
-export type { MovedBlock } from './engineSeam.js';
 // THE REFUSAL, from a module that imports nothing, so main can name it without
 // loading the engine that throws it (`signingRefusals.ts`' shape).
 export {
@@ -426,6 +419,7 @@ export {
   remoteMupdfPageAdjustment,
   remoteMupdfPageRewrite,
   remoteMupdfTextFaces,
+  remoteMupdfBlockFaces,
   remoteMupdfPageLinks,
   remoteMupdfPageText,
   type RemotePageTextReader,
@@ -434,6 +428,8 @@ export {
 export type { PageWordBoxes } from './wordBoxes.js';
 // PURE, and apart from `textFaces.ts`, which binds MuPDF (ADR-0256): `main` reads the answer without loading the engine.
 export { type TextFaces, namedByDescriptor } from './textFaceRanges.js';
+// PURE, and apart from `blockFaces.ts`, which binds MuPDF (ADR-0271 section 5): the read on open's shape and its runs.
+export { type BlockFaceRun, type BlockFaces, type FaceChoice, blockFaceRunsOf, facesInOrder } from './blockFaceAnswer.js';
 export { type CellFill, type PageFill, cellFillOf, withCellFills } from './cellFills.js';
 export {
   type CanonicalPath,

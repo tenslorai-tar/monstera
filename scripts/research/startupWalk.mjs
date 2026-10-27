@@ -119,7 +119,7 @@ async function launch(appData) {
     if ((await control.getAttribute('aria-pressed')) !== 'true') await control.click();
     const block = page.locator('[data-text-edit-layer]:visible [data-text-block]').first();
     await block.waitFor({ timeout: 60_000 });
-    // THE BOX SELECTED, then Enter: the caret at the words' end (ADR-0271's two-step opening).
+    // TWO STEPS (ADR-0271 section 3): the press selects the box, Enter puts the caret at the end of its words.
     await editTextOpening(page).openWords(block);
     const editorOpenMs = Date.now() - chose;
     await page.keyboard.type(' now');

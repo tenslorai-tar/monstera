@@ -189,7 +189,7 @@ import {
   type DocumentPageObjectsReader,
   type DocumentPresentationReader,
   type DocumentPageRasteriser,
-  type DocumentRunFontsReader,
+  type DocumentBlockFacesReader,
   EngineUnavailableError,
   suggestedComposedName,
   suggestedUrlName,
@@ -711,8 +711,8 @@ const noPageObjects: DocumentPageObjectsReader = () =>
 const noRenderPage: DocumentPageRasteriser = () =>
   Promise.reject(new EngineUnavailableError('rendering a page with the second engine'));
 
-/** The composition's answer with no PDFium host: no run has a font (ADR-0175), which is an answer and not a refusal. */
-const noRunFonts: DocumentRunFontsReader = (_docId, _sessions, _page, indices) =>
+/** The read on open, answering no font: a case about a block's faces supplies its own (ADR-0271 section 5). */
+const noBlockFaces: DocumentBlockFacesReader = (_docId, _sessions, _page, indices) =>
   Promise.resolve({ fonts: [], runs: indices.map(() => null) });
 
 /** The editable PowerPoint export's reads, absent: a case that exports editable supplies them (ADR-0210). */
@@ -943,7 +943,7 @@ const INERT = {
   textBlocks: noTextBlocks,
   pageObjects: noPageObjects,
   renderPage: noRenderPage,
-  runFonts: noRunFonts,
+  blockFaces: noBlockFaces,
   pageRuns: noPageRuns,
   presentation: noPresentation,
   duplicates: noDuplicates,
@@ -1059,7 +1059,7 @@ const LOCAL_READS = {
   textBlocks: noTextBlocks,
   pageObjects: noPageObjects,
   renderPage: noRenderPage,
-  runFonts: noRunFonts,
+  blockFaces: noBlockFaces,
   pageRuns: noPageRuns,
   presentation: noPresentation,
   duplicates: localDuplicates,
@@ -6177,18 +6177,14 @@ describe('placeSignature — a plain signature, resolved as a certificate signat
   });
 
   /**
-   * An edit whose writer answers the blocks it pushed down, through a bus that records what it is asked and answers as the
-   * writer would, and the page's marks and links as main reads them. `moved` is what the edit answers.
+   * An edit through a bus that records what it is asked and answers as the writer would, `noted` its checks' notes, and
+   * the page's marks and links as main reads them: marks and links on the edited text, which nothing moves.
    */
-  async function pushingEdit(
-    moved: readonly { block: number; box: { x0: number; y0: number; x1: number; y1: number }; down: number }[],
-    noted: readonly string[] = [],
-    logged: { readonly event: string; readonly detail: string }[] = [],
-  ) {
+  async function notingEdit(noted: readonly string[], logged: { readonly event: string; readonly detail: string }[] = []) {
     const made = await PDFDocument.create();
     made.addPage([612, 792]);
     const bytes = await made.save();
-    const path = join(directory, `push-${String(moved.length)}.pdf`);
+    const path = join(directory, `noted-${String(noted.length)}.pdf`);
     writeFileSync(path, bytes);
     const registry = new CapabilityRegistry();
     const own = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING, checkpointDirectory: CHECKPOINTS });
@@ -6203,13 +6199,13 @@ describe('placeSignature — a plain signature, resolved as a certificate signat
         return Promise.resolve({
           entry: {},
           trimmed: { droppedEntries: 0 },
-          drawn: { boxed: [], more: 0, moved: command.kind === 'editTextBlock' ? moved : [], noted: command.kind === 'editTextBlock' ? noted : [] },
+          drawn: { boxed: [], more: 0, noted: command.kind === 'editTextBlock' ? noted : [] },
           version: 0,
         });
       },
     } as unknown as CommandBus;
-    // ON THE MOVED TEXT: a highlight (index 0) and a sticky note (2). OFF IT: a square on it, which is no mark of words (1);
-    // a highlight on another page (3); a highlight beside the text (4).
+    // ON THE TEXT: a highlight (index 0), a square (1) and a sticky note (2); a highlight on another page (3) and one beside
+    // the text (4).
     const mark = (page: number, index: number, kind: string, rect: { x0: number; y0: number; x1: number; y1: number }) => ({ page, index, kind, rect });
     const annotations = [
       mark(0, 0, 'highlight', { x0: 80, y0: 640, x1: 200, y1: 652 }),
@@ -6225,7 +6221,7 @@ describe('placeSignature — a plain signature, resolved as a certificate signat
       bus,
       engine: held,
       annotations: () => Promise.resolve({ annotations: annotations as never, truncated: false }),
-      // A LINK ON THE MOVED TEXT (0) and one above it (1).
+      // A LINK ON THE TEXT (0) and one above it (1).
       pageLinks: () => Promise.resolve({ links: [link({ x0: 90, y0: 641, x1: 150, y1: 651 }), link({ x0: 90, y0: 700, x1: 150, y1: 710 })] as never, truncated: false }),
     });
     const edit: Command = {
@@ -6244,28 +6240,9 @@ describe('placeSignature — a plain signature, resolved as a certificate signat
     return asked;
   }
 
-  it('THE MARKS AND LINKS ON TEXT AN EDIT PUSHED DOWN move with it, each joining the edit’s undo step (ADR-0249 Decision 4)', async () => {
-    const asked = await pushingEdit([{ block: 1, box: { x0: 72, y0: 636, x1: 300, y1: 656 }, down: 14 }]);
-    expect(asked.map(({ command }) => command.kind)).toStrictEqual(['editTextBlock', 'placeAnnotation', 'editLink']);
-    // THE MARKS OF WORDS ON THE MOVED BLOCK, fourteen points down; the square, the other page's and the one beside stay.
-    expect(asked[1]?.command).toMatchObject({
-      kind: 'placeAnnotation',
-      page: 0,
-      placements: [
-        { index: 0, rect: { x0: 80, y0: 626, x1: 200, y1: 638 } },
-        { index: 2, rect: { x0: 250, y0: 628, x1: 270, y1: 636 } },
-      ],
-    });
-    expect(asked[2]?.command).toMatchObject({ kind: 'editLink', page: 0, index: 0, rect: { x0: 90, y0: 627, x1: 150, y1: 637 } });
-    // EACH JOINS THE STEP, at the version the command before it produced; the edit itself joins nothing.
-    expect(asked[0]?.joinsStep).toBeUndefined();
-    expect(asked[1]?.joinsStep).toBeDefined();
-    expect(asked[2]?.joinsStep).toBeDefined();
-  });
-
   it('LOGS a writer defect a kept edit’s checks noted, as a shell failure, and the edit stands (ADR-0270)', async () => {
     const logged: { readonly event: string; readonly detail: string }[] = [];
-    const asked = await pushingEdit([], ['page 0: MuPDF’s reading does not hold 1 line(s) the edit set'], logged);
+    const asked = await notingEdit(['page 0: MuPDF’s reading does not hold 1 line(s) the edit set'], logged);
     // THE EDIT WAS MADE: nothing refused it.
     expect(asked.map(({ command }) => command.kind)).toStrictEqual(['editTextBlock']);
     expect(logged).toHaveLength(1);
@@ -6276,12 +6253,12 @@ describe('placeSignature — a plain signature, resolved as a certificate signat
 
   it('CONTROL: an edit whose checks noted nothing logs nothing', async () => {
     const logged: { readonly event: string; readonly detail: string }[] = [];
-    await pushingEdit([], [], logged);
+    await notingEdit([], logged);
     expect(logged).toStrictEqual([]);
   });
 
-  it('CONTROL: an edit that moved nothing sends nothing after it', async () => {
-    const asked = await pushingEdit([]);
+  it('an edit sends NOTHING after it: the marks and links on the page stay where they are (ADR-0271 section 11.1)', async () => {
+    const asked = await notingEdit([]);
     expect(asked.map(({ command }) => command.kind)).toStrictEqual(['editTextBlock']);
   });
 });

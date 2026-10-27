@@ -23,7 +23,6 @@ function block(lines: { runs: [number, string, TextBlock['lines'][number]['runs'
     })),
     style: REGULAR,
     shape: { align: 'left', firstIndent: 0 },
-    push: { below: [], room: 0 },
   };
 }
 

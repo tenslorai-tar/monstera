@@ -32,7 +32,7 @@
  */
 import { existsSync } from 'node:fs';
 
-import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRawStream, decodePDFRawStream } from '@cantoo/pdf-lib';
+import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRawStream, StandardFonts, decodePDFRawStream } from '@cantoo/pdf-lib';
 
 import { EDIT_CATALOGUE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { MARGIN, expectEdit, inkedCharacters, readBlock } from '../lib/editExpectations.mjs';
@@ -68,6 +68,7 @@ const CASES = [
   'CONTROL: the link removed fails the check, as a link changed (the page with a link)',
   'CONTROL: on the scan, a cover under a word the edit kept fails the check, as a kept word covered (ADR-0187)',
   'CONTROL: the new word set against its neighbour with no space fails the check, as words run together',
+  'DRAWN UNDER AN ANNOTATION: invisible words under an annotation’s appearance are still judged unseen, as without it',
 ];
 
 // ------------------------------------------------------------------------------------------------- the file's shape
@@ -250,8 +251,8 @@ const CLAIMS = {
 async function run(pdfium, kernel) {
   /** @type {string[]} */
   const failures = [];
-  const roster = createRoster(failures, { cases: 19 });
-  if (CASES.length !== 19) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 19`);
+  const roster = createRoster(failures, { cases: 20 });
+  if (CASES.length !== 20) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 20`);
   const check = (/** @type {string} */ name, /** @type {boolean} */ held, /** @type {string} */ detail) => {
     const mark = roster.mark();
     if (!held) failures.push(`${name}\n      ${detail}`);
@@ -419,6 +420,27 @@ async function run(pdfium, kernel) {
   for (const at of controls) {
     const times = ran[at] ?? 0;
     check(CASES[at] ?? '', times > 0 && (wrong[at]?.length ?? 1) === 0, times === 0 ? 'the control ran on no page' : (wrong[at] ?? []).join('\n      '));
+  }
+  // THE TWO DRAWINGS THE UNSEEN CHECK COMPARES ARE OF THE SAME THINGS. Invisible words with an annotation's filled
+  // appearance over them: the drawing without text once ran the annotations and the drawing with it did not, so the
+  // annotation alone made the pixels differ and the words read as drawn. The page without the annotation is the pair.
+  {
+    const unseenUnder = async (/** @type {boolean} */ annotated) => {
+      const document = await PDFDocument.create({ updateMetadata: false });
+      const sheet = document.addPage([300, 200]);
+      const font = await document.embedFont(StandardFonts.Helvetica);
+      const context = document.context;
+      sheet.node.set(PDFName.of('Resources'), context.obj({ Font: { F1: font.ref } }));
+      sheet.node.set(PDFName.of('Contents'), context.register(context.stream('BT 3 Tr /F1 12 Tf 1 0 0 1 40 100 Tm (HIDDEN) Tj ET')));
+      if (annotated) {
+        const look = context.register(context.stream('0.2 0.4 0.9 rg 0 0 120 30 re f', { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 120, 30] }));
+        sheet.node.set(PDFName.of('Annots'), context.obj([context.register(context.obj({ Type: 'Annot', Subtype: 'Square', Rect: [30, 90, 150, 120], AP: { N: look } }))]));
+      }
+      const inked = await inkedCharacters(engines, await document.save({ useObjectStreams: false }), 0, { left: 30, bottom: 90, right: 150, top: 120 });
+      return `${String(inked.read)}:${inked.unseen}`;
+    };
+    const [plain, annotated] = [await unseenUnder(false), await unseenUnder(true)];
+    check(CASES[19] ?? '', plain === '6:HIDDEN' && annotated === plain, `without the annotation ${plain}, with it ${annotated}`);
   }
 
   process.stdout.write(

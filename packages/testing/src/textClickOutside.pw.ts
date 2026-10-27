@@ -52,7 +52,6 @@ async function open(page: Page): Promise<void> {
         lines: [{ runs: [{ index: at + 1, text: line.text, style: RUN }], box, soft: false, baseline: line.baseline }],
         style: RUN,
         shape: { align: 'left' as const, firstIndent: 0 },
-        push: { below: [], room: 0 },
       };
     }),
   });

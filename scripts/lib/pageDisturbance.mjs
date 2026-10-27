@@ -83,7 +83,10 @@ export function renderWithoutText(kernel, bytes, index) {
       clipText: () => draw.clipPath(new mupdf.Path(), false, mupdf.Matrix.identity),
       clipStrokeText: () => draw.clipPath(new mupdf.Path(), false, mupdf.Matrix.identity),
     });
-    page.run(filter, matrix);
+    // THE PAGE'S CONTENTS ONLY, as {@link render} draws them (`toPixmap`'s showExtras false): with the annotations run
+    // here too, an annotation's appearance over a character made the two drawings differ there whatever the text drew,
+    // and an invisible word under one was judged drawn (the stage audit of dabf6041..f1c1dc16, measured).
+    page.runPageContents(filter, matrix);
     filter.close();
     draw.close();
     const out = {

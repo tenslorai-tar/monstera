@@ -43,9 +43,9 @@ const RUN_FACE = 'run:';
 
 /**
  * The face a page run is drawn in, as the kit keys it: the font's name where the page gives one, else the run itself,
- * since the host may still rebuild that run's program (`document.runFonts` answers by run, not by name) and a run with
- * neither is drawn in its kind. The ONE key the model and the face loader both take (B3a): keyed by name alone, a run
- * the page names no font for lost the face the host rebuilt for it.
+ * since the read on open and PDF.js's faces are matched by run, not by name (`runFaces.ts`), and a run with
+ * neither is drawn in its kind. The ONE key the model and the face reader both take (B3a): keyed by name alone, a run
+ * the page names no font for would share one face with every other such run.
  */
 export function faceKeyOf(style: TextBlockStyle, run: number): string {
   return style.font ?? `${RUN_FACE}${String(run)}`;

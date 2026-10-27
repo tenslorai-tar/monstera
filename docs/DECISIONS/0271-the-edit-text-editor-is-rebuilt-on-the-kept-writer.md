@@ -395,3 +395,34 @@ so a keystroke does not pay it (median 7.7 to 10.0 ms).
 there. If it is not, the remedy is a change to ADR-0258's correction: each surface subscribes to the answers of the
 commands it shows, so a Bold press renders the Bold button and not the shell. That is an architecture change (B4) and is
 not made without your decision. Nothing else in Milestone 2 depends on it.
+
+**Answered by the owner, 2026-10-27:** yes, each surface subscribes only to the answers of the commands it shows
+([ADR-0272](0272-each-surface-subscribes-to-the-answers-of-the-commands-it-places.md)), built last in Milestone 2.
+
+## Open questions, 2026-10-27 — split, and a repaint that cannot be drawn
+
+Both were found by the stage audit of `dabf6041..f1c1dc16` (ZZZZZZZZ-6 and ZZZZZZZZ-20, `docs/JOURNAL.md`).
+
+**1. Does a split move the text below it?** Section 11.1 decides growth: a block that grows overlaps what is below it,
+and nothing else moves. The push's removal (`827e5f2d`) applied the same to a split, which this ADR does not decide. A
+split makes the paragraph at the pointer, and those after it, a block of their own, moved down a line so the two stay
+apart, and now leaves the text below where it is. **What that costs, read from the records the removal deleted:** where
+the moved half lands within a line of the text below, the next read groups the two as one block, so a split can join
+the second half to the paragraph under it (VVVVVVV-25 had fixed exactly that by moving the text below). The options:
+
+- (a) **Keep it as built**: a split overlaps like growth, and the person moves the new block if it joins. Nothing moves
+  that the person did not touch.
+- (b) **A split moves the text below by the line it adds**, as before the push's removal, and only for a split. This is
+  a narrow return of the push's move, with its line ownership, for one command.
+- (c) **A split never lands within a line of the text below**: the second half is placed where it already was, a line
+  break inside the block becoming two blocks with no gap added, so nothing needs to move and nothing joins.
+
+My recommendation is (c): it keeps section 11.1's rule that nothing else moves, and it removes the cause rather than
+moving the neighbour. It is a writer change, so it waits for your answer; until then (a) stands as built.
+
+**2. When the edited area cannot be drawn, may the editor wait for the page?** Section 3 says the full page is never
+waited for after an edit. As built (`04b961e2`, ADR-0261's note), the editor lets go when its area is drawn at the new
+version; if that draw fails, or no newer view arrives, the editor stays over the words until the page's own redraw, as
+before. The alternative is to let go after a bound (for example one second) whatever is drawn, which shows the old
+words for a moment where the draw failed. My recommendation is to keep the wait as the failure path: a failed area draw
+is rare, and showing old words is the defect ADR-0261 fixed.

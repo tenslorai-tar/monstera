@@ -103,9 +103,6 @@ export interface Bound {
   readonly fontAscent: Native;
   readonly fontDescent: Native;
   readonly glyphWidth: Native;
-  readonly glyphPath: Native;
-  readonly glyphPathSegments: Native;
-  readonly glyphPathSegment: Native;
   readonly segmentPoint: Native;
   readonly loadStandardFont: Native;
   readonly loadFont: Native;
@@ -497,15 +494,11 @@ export function openPdfium(libraryPath: string): void {
     // measure a pitch from.
     fontAscent: native(library.func('int FPDFFont_GetAscent(void *font, float size, _Out_ float *ascent)')),
     fontDescent: native(library.func('int FPDFFont_GetDescent(void *font, float size, _Out_ float *descent)')),
-    // WHAT PDFium DRAWS FOR A CHARACTER, the readings a run's font is checked against (ADR-0175). Both take a CODE POINT
-    // where their header says "glyph", measured 2026-10-06: the path is in ems whatever the size, and the width in
-    // thousandths at a size of 1000. The path is PDFium's, owned by the font, and freed with it.
+    // A CHARACTER'S ADVANCE IN A FONT at a size (`fontAdvance`). It takes a CODE POINT where its header says "glyph",
+    // measured 2026-10-06: the width is in thousandths at a size of 1000.
     glyphWidth: native(
       library.func('int FPDFFont_GetGlyphWidth(void *font, uint32_t glyph, float size, _Out_ float *width)'),
     ),
-    glyphPath: native(library.func('void *FPDFFont_GetGlyphPath(void *font, uint32_t glyph, float size)')),
-    glyphPathSegments: native(library.func('int FPDFGlyphPath_CountGlyphSegments(void *path)')),
-    glyphPathSegment: native(library.func('void *FPDFGlyphPath_GetGlyphPathSegment(void *path, int index)')),
     segmentPoint: native(library.func('int FPDFPathSegment_GetPoint(void *segment, _Out_ float *x, _Out_ float *y)')),
     // ONE OF THE FOURTEEN STANDARD FONTS, for a write the page's own font cannot
     // carry (ADR-0097). Loaded by name and never embedded — every conforming

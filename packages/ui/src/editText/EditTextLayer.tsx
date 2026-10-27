@@ -4,7 +4,7 @@ import { type DocVersion, NEW_TEXT_MARGIN } from '@monstera/shared';
 import { type ReactElement, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { OverlayPage } from '../annotations/annotationSpace.js';
-import type { BlockCommit, BlocksRead, PageBlocksRead, RunFonts } from '../commands/documentCommands.js';
+import type { BlockCommit, BlockFaces, BlocksRead, PageBlocksRead } from '../commands/documentCommands.js';
 import type { EditorSpelling } from '../editorKit/EditorMenu.js';
 import {
   TEXT_ADD_SURFACE,
@@ -24,10 +24,12 @@ import {
 import { paperAround } from '../paperAround.js';
 import type { TextBlock } from '../textBlock.js';
 import { neighbourOf, wordsOfBlock } from '../textBlockOps.js';
+import { AreaPatch, type CssArea, type PatchArea } from './AreaPatch.js';
 import { modelOfBlock } from './blockModel.js';
 import { BlockEditor, type Opening } from './BlockEditor.js';
-import { type FreshBox, type PageBlocks, boxStyle, fontsOfPage, freshBox, insertOf, newlyCovered, overlaps, pastItsPage, place } from './editing.js';
-import { type FaceKind, useRunFaces } from './runFaces.js';
+import { type FreshBox, type PageBlocks, type Placed, boxStyle, fontsOfPage, freshBox, insertOf, newlyCovered, overlaps, pastItsPage, place } from './editing.js';
+import { type ShownPage, runFamiliesOf } from './pdfjsFaces.js';
+import { type FaceKind, type FaceRead, type RunFaces, useRunFaces } from './runFaces.js';
 
 /**
  * Text edited where it is on the page — Edit text's mode, drawn over one page
@@ -65,7 +67,10 @@ export interface EditTextLayerProps {
   readonly onRestructure?: (edits: EditedBlock[], read: BlocksRead, form: FormPath | null, kept?: boolean) => Promise<BlockCommit>;
   readonly familiesOf?: () => Promise<(font: string) => string | undefined>;
   readonly onCommit: (block: TextBlock, text: string, read: PageBlocksRead, formatting?: BlockFormatting) => Promise<BlockCommit>;
-  readonly runFonts: (block: TextBlock, read: BlocksRead) => Promise<RunFonts>;
+  /** The read on open for a block (`document.blockFaces`). */
+  readonly blockFaces: (block: TextBlock, read: BlocksRead) => Promise<BlockFaces>;
+  /** The text PDF.js shows on this page and the face it loaded for each piece; absent where no page is drawn. */
+  readonly shown?: () => Promise<ShownPage | undefined>;
   readonly objects?: () => Promise<{ readonly version: DocVersion; readonly boxes: readonly TextBlock['box'][] } | undefined>;
   readonly onRecognise?: () => void;
   readonly pictureNoted?: boolean;
@@ -80,14 +85,74 @@ export interface EditTextLayerProps {
   readonly paperAt: (x: number, y: number) => string | undefined;
   /** The kind of face a letter is drawn in where nothing closer is known (`editing.fallback-face`). */
   readonly fallbackFace?: FaceKind;
+  /** Draws one area of the page at the newest version (`AreaPatch`); absent where nothing can, and the page's redraw is waited for. */
+  readonly patch?: PatchArea;
+  /** The version the page on screen is drawn from, which a patch is kept until. */
+  readonly drawn?: DocVersion;
 }
+
+/** The margin drawn around an edited area, in CSS pixels: a letter's antialiased edge reaches past its box. */
+const PATCH_MARGIN = 4;
 
 /** No family known for any font: a join carries none. */
 const NO_FAMILIES = (): Promise<(font: string) => string | undefined> => Promise.resolve(() => undefined);
 
+/**
+ * The area a written edit changed, in the layer's CSS pixels with {@link PATCH_MARGIN} around it: the block as it was
+ * read, turned as the page is, and the editor's frame as it last stood, which is larger where the words grew.
+ */
+function editedArea(root: HTMLElement | null, placed: Placed, zoom: number): CssArea {
+  const turn = (placed.rotation * Math.PI) / 180;
+  const [cos, sin] = [Math.cos(turn), Math.sin(turn)];
+  // CSS TURNS ABOUT THE PLACED CORNER, clockwise with y down: (x, y) lands at (x cos - y sin, x sin + y cos) from it.
+  const corners = [
+    [0, 0],
+    [placed.width, 0],
+    [0, placed.height],
+    [placed.width, placed.height],
+  ].map(([x = 0, y = 0]) => ({ x: placed.left + x * cos - y * sin, y: placed.top + x * sin + y * cos }));
+  const frame = root?.querySelector('[data-kit-frame]');
+  const box = frame?.getBoundingClientRect();
+  // A FRAME WITH NO SIZE is one not laid out, whose corner is the viewport's origin and no part of the edit.
+  if (root !== null && box !== undefined && box.width > 0 && box.height > 0) {
+    const own = root.getBoundingClientRect();
+    corners.push({ x: box.left - own.left, y: box.top - own.top }, { x: box.right - own.left, y: box.bottom - own.top });
+  }
+  const left = Math.min(...corners.map((corner) => corner.x)) - PATCH_MARGIN;
+  const top = Math.min(...corners.map((corner) => corner.y)) - PATCH_MARGIN;
+  return {
+    left,
+    top,
+    width: Math.max(...corners.map((corner) => corner.x)) + PATCH_MARGIN - left,
+    height: Math.max(...corners.map((corner) => corner.y)) + PATCH_MARGIN - top,
+    zoom,
+  };
+}
+
 /** A box's area in PDF points squared: the order outlines are stacked in. */
 function area(box: TextBlock['box']): number {
   return (box.x1 - box.x0) * (box.y1 - box.y0);
+}
+
+/**
+ * Each block's place in the stack of outlines: one more than the number of blocks larger than it, so a smaller block
+ * that sits inside a larger one is above it. FROM ONE SORT, not a count over every block for each block: that was n²
+ * a render on a page of many blocks, and the outlines render as a scroll brings each page in.
+ */
+export function stackingOf(blocks: readonly TextBlock[]): number[] {
+  const areas = blocks.map((block) => area(block.box));
+  const larger = [...areas].sort((a, b) => b - a);
+  return areas.map((own) => {
+    // THE FIRST AREA NOT LARGER THAN THIS ONE, by halving: its place is how many are larger.
+    let low = 0;
+    let high = larger.length;
+    while (low < high) {
+      const middle = (low + high) >> 1;
+      if ((larger[middle] ?? 0) > own) low = middle + 1;
+      else high = middle;
+    }
+    return 1 + low;
+  });
 }
 
 export function EditTextLayer({
@@ -103,7 +168,8 @@ export function EditTextLayer({
   onRestructure,
   familiesOf = NO_FAMILIES,
   onCommit,
-  runFonts,
+  blockFaces,
+  shown = NOTHING_SHOWN,
   objects,
   onRecognise,
   pictureNoted = false,
@@ -111,13 +177,23 @@ export function EditTextLayer({
   onHolding,
   paperAt,
   fallbackFace = 'sans',
+  patch,
+  drawn,
 }: EditTextLayerProps): ReactElement {
   const { _ } = useLingui();
+  const root = useRef<HTMLDivElement>(null);
   /** The open block: its place in the answer, the version that answer was read at, and how it was opened. */
   const [opened, setOpened] = useState<{ readonly at: number; readonly version: DocVersion; readonly opening: Opening; readonly parting?: boolean } | undefined>();
+  /** A written edit's area, the version of the read it was made over, and the version it was drawn at once it is. */
+  const [patching, setPatching] = useState<{ readonly after: DocVersion; readonly area: CssArea; readonly version?: DocVersion } | undefined>();
+  const onPatched = useCallback((version: DocVersion): void => {
+    setPatching((current) => (current === undefined ? undefined : { ...current, version }));
+  }, []);
+  // A WRITTEN EDITOR LETS GO when its area is drawn at the new version: the patch shows the words from here.
+  const patched = opened?.parting === true && patching?.version !== undefined && patching.after === opened.version;
   // A NEW READ CLOSES THE EDITOR, DERIVED rather than reset in an effect: an open block's indices describe the version it
   // was read at, and an editor over a newer answer would write words over objects the page no longer has.
-  const chosen = opened !== undefined && opened.version === blocks?.version ? opened.at : undefined;
+  const chosen = opened !== undefined && opened.version === blocks?.version && !patched ? opened.at : undefined;
   const [committing, setCommitting] = useState<number | undefined>();
   // HOLDING FROM THE MOMENT THE WRITE IS SENT: the version moves at the answer, and the page must already keep the read.
   const holding = chosen !== undefined && (opened?.parting === true || committing === chosen) ? opened?.version : undefined;
@@ -177,16 +253,23 @@ export function EditTextLayer({
 
   const openBlock = open === undefined ? undefined : blocks?.blocks[open];
   // THE OPEN BLOCK'S FACES, read once as it is selected and kept for its life (`runFaces.ts`).
-  // ONE READ PER BLOCK AND VERSION: the parent hands a new `runFonts` each render, and it asks the same question.
-  const runFontsNow = useRef(runFonts);
+  // ONE READ PER BLOCK AND VERSION: the parent hands new functions each render, and they ask the same question.
+  const readsNow = useRef({ blockFaces, shown });
   useEffect(() => {
-    runFontsNow.current = runFonts;
-  }, [runFonts]);
+    readsNow.current = { blockFaces, shown };
+  }, [blockFaces, shown]);
   const readFaces = useMemo(
-    () => (openBlock === undefined || blocks === undefined ? undefined : () => runFontsNow.current(openBlock, blocks)),
+    () =>
+      openBlock === undefined || blocks === undefined
+        ? undefined
+        : async (): Promise<FaceRead> => {
+            const [faces, page] = await Promise.all([readsNow.current.blockFaces(openBlock, blocks), readsNow.current.shown()]);
+            // PDF.JS'S TEXT AT ANOTHER VERSION describes words the open block may no longer have, so it lends no face.
+            return { faces, shown: page?.version === blocks.version ? runFamiliesOf(openBlock, page.items) : new Map() };
+          },
     [openBlock, blocks],
   );
-  const faces = useRunFaces(openBlock, readFaces, `${String(blocks?.version ?? '')}-${String(open ?? -1)}-${String(page)}`);
+  const faces = useRunFaces(openBlock, readFaces);
   const openedModel = useMemo(() => (openBlock === undefined ? undefined : modelOfBlock(openBlock)), [openBlock]);
   const freshModel = useMemo(() => (freshOpen === undefined ? undefined : modelOfBlock(freshOpen.block)), [freshOpen]);
 
@@ -242,6 +325,9 @@ export function EditTextLayer({
     }
     setOpen(at, how);
   };
+  // WORKED OUT ONCE PER ANSWER, from the blocks alone: each outline's place in the stack and the words its label names.
+  const stacking = stackingOf(blocks?.blocks ?? []);
+  const labelled = (blocks?.blocks ?? []).map((block) => wordsOfBlock(block).replace(/\s+/gu, ' ').trim());
 
   return (
     <div
@@ -258,8 +344,13 @@ export function EditTextLayer({
         const holder = anchor instanceof Element ? anchor : (anchor?.parentElement ?? null);
         if ((holder?.closest('[data-kit-surface]') ?? null) === null) selection.removeAllRanges();
       }}
+      ref={root}
       role="group"
     >
+      {/* UNTIL THE PAGE ITSELF IS DRAWN AT THE PATCH'S VERSION, after which the page shows the same pixels. */}
+      {patch === undefined || patching === undefined || (patching.version !== undefined && drawn !== undefined && drawn >= patching.version) ? null : (
+        <AreaPatch after={patching.after} area={patching.area} key={`patch-${String(patching.after)}`} onDrawn={onPatched} patch={patch} zoom={geometry.zoom} />
+      )}
       {blocks?.blocks.map((block, at) => {
         const placed = place(block.box, geometry);
         if (at === open && openedModel !== undefined) {
@@ -291,9 +382,22 @@ export function EditTextLayer({
               }}
               onCommit={async (text, formatting) => {
                 setCommitting(at);
-                const outcome = await onCommit(block, text, blocks, formatting);
+                let outcome: BlockCommit;
+                try {
+                  outcome = await onCommit(block, text, blocks, formatting);
+                } catch (error: unknown) {
+                  // A WRITE THAT THREW holds nothing, as a refused one does not: the editor's own catch says it beside the
+                  // words, and the page must not go on keeping the read for a write that will never land.
+                  setCommitting((current) => (current === at ? undefined : current));
+                  throw error;
+                }
                 if (outcome !== 'written') setCommitting((current) => (current === at ? undefined : current));
-                if (outcome === 'written') setWritten({ box: block.box, version: blocks.version });
+                if (outcome === 'written') {
+                  setWritten({ box: block.box, version: blocks.version });
+                  // THE AREA THE WRITE CHANGED, measured while the editor still shows it: the block as read and the frame
+                  // as it grew, since growth overlaps what is below and the page there changed too.
+                  setPatching({ after: blocks.version, area: editedArea(root.current, placed, geometry.zoom) });
+                }
                 else if (outcome !== 'unchanged') setNext(undefined);
                 return outcome;
               }}
@@ -310,10 +414,6 @@ export function EditTextLayer({
                   : {
                       above: blocks.blocks[neighbourOf(blocks.blocks, at, 'above') ?? -1],
                       below: blocks.blocks[neighbourOf(blocks.blocks, at, 'below') ?? -1],
-                      under: block.push.below.flatMap((index) => {
-                        const below = blocks.blocks[index];
-                        return below === undefined ? [] : [below];
-                      }),
                       apply: (edits, kept) => onRestructure(edits, blocks, block.form ?? null, kept),
                       families: familiesOf,
                     }
@@ -323,7 +423,7 @@ export function EditTextLayer({
             />
           );
         }
-        const words = wordsOfBlock(block).replace(/\s+/gu, ' ').trim();
+        const words = labelled[at] ?? '';
         const past = pastItsPage(block.box, geometry.crop);
         const outline = (
           <button
@@ -338,7 +438,7 @@ export function EditTextLayer({
               choose(at, block, event.detail >= 2 ? { at: 'point', x: event.clientX, y: event.clientY } : { at: 'box' });
             }}
             // A SMALLER BLOCK ABOVE A LARGER ONE that holds it, so the press on a heading inside a column is the heading's.
-            style={{ ...boxStyle(placed), zIndex: 1 + blocks.blocks.filter((other) => area(other.box) > area(block.box)).length }}
+            style={{ ...boxStyle(placed), zIndex: stacking[at] ?? 1 }}
             type="button"
           />
         );
@@ -411,4 +511,7 @@ export function EditTextLayer({
 }
 
 /** A box of new text has no faces of its own to read: its words are drawn in the nearby words' kind. */
-const NO_FACES = { settled: true, loaded: new Map<string, string>() } as const;
+const NO_FACES: RunFaces = { settled: true, loaded: new Map(), fonts: new Map() };
+
+/** No page drawn to read PDF.js's faces from: every run is drawn in the chain's face, or its kind. */
+const NOTHING_SHOWN = (): Promise<ShownPage | undefined> => Promise.resolve(undefined);

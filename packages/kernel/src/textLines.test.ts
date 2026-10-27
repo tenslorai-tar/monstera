@@ -1,16 +1,12 @@
-import { MAX_PUSHED_BLOCKS } from '@monstera/contract/host';
 import { paragraphsOfLines } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import {
-  type BlockBox,
   type BlockableRun,
   type GroupableRun,
   blockableOf,
   groupIntoBlocks,
   groupIntoLines,
-  pushesOf,
-  pushesOfPage,
   settingOf,
   softEnds,
   withRises,
@@ -682,164 +678,5 @@ describe('withRises', () => {
     expect(two[0]?.lines.map((line) => line.baseline)).toStrictEqual([700, 686]);
     const raised = withRises(groupIntoBlocks([at(0, '1', 72, 78, 703.96), at(1, ' Note', 78, 120, 700)]), () => 0, () => 0);
     expect(raised[0]?.lines[0]?.baseline).toBe(703.96);
-  });
-});
-
-describe('pushesOfPage: nothing is pushed where the read cannot answer it', () => {
-  const PAGE = { x0: 0, y0: 0, x1: 612, y1: 792 };
-  const heading = { x0: 72, y0: 690, x1: 540, y1: 720 };
-  const body = { x0: 72, y0: 100, x1: 540, y1: 680 };
-
-  it('a page read in part pushes nothing, for any block', () => {
-    expect(pushesOfPage([heading, body], { box: PAGE, truncated: true })).toStrictEqual([
-      { below: [], room: 0 },
-      { below: [], room: 0 },
-    ]);
-  });
-
-  it('nor does a page with no box', () => {
-    expect(pushesOfPage([heading, body], { box: null, truncated: false })).toStrictEqual([
-      { below: [], room: 0 },
-      { below: [], room: 0 },
-    ]);
-  });
-
-  it('CONTROL: the same page read whole pushes the body below the heading', () => {
-    expect(pushesOfPage([heading, body], { box: PAGE, truncated: false })[0]?.below).toStrictEqual([1]);
-  });
-});
-
-describe('pushesOf (ADR-0249 Decision 2)', () => {
-  /** A Letter page, and a block by its left, bottom, right and top. */
-  const PAGE = { x0: 0, y0: 0, x1: 612, y1: 792 };
-  const box = (x0: number, y0: number, x1: number, y1: number) => ({ x0, y0, x1, y1 });
-  // THE PAGE'S TOP MARGIN IS 72 (its highest text's top is 720), so its bottom margin ends at 72 and a block wholly under
-  // that is the footer.
-  const heading = box(72, 690, 540, 720);
-  const paragraph = box(72, 600, 540, 680);
-  const smallPrint = box(72, 560, 540, 590);
-  const footer = box(280, 40, 330, 52);
-
-  it('pushes the text below a block in its column, and the room runs to the footer’s top', () => {
-    const pushes = pushesOf([heading, paragraph, smallPrint, footer], PAGE);
-    expect(pushes[1]).toStrictEqual({ below: [2], room: 560 - 52 });
-    expect(pushes[0]).toStrictEqual({ below: [1, 2], room: 560 - 52 });
-  });
-
-  it('CONTROL: a block in the second column does not move, and neither does the footer', () => {
-    const left = box(72, 600, 290, 680);
-    const right = box(320, 500, 540, 590);
-    const underLeft = box(72, 500, 290, 590);
-    const pushes = pushesOf([heading, left, right, underLeft, footer], PAGE);
-    // THE RIGHT COLUMN IS NOT BELOW THE LEFT: they do not overlap horizontally. The footer is in no block's push.
-    expect(pushes[1]?.below).toStrictEqual([3]);
-    expect(pushes.flatMap((push) => push.below)).not.toContain(4);
-    expect(pushes[4]).toStrictEqual({ below: [], room: 0 });
-  });
-
-  it('closes the column: text below a pushed block is pushed too, so moved text never lands on text that stayed', () => {
-    // THE CAPTION overlaps the small print and not the narrow paragraph; pushed with the small print, it is pushed too.
-    const narrow = box(72, 600, 200, 680);
-    const wide = box(72, 560, 540, 590);
-    const caption = box(400, 500, 540, 540);
-    const pushes = pushesOf([heading, narrow, wide, caption, footer], PAGE);
-    expect(pushes[1]?.below).toStrictEqual([2, 3]);
-    expect(pushes[1]?.room).toBe(500 - 52);
-  });
-
-  it('with no footer, the room runs to the mirrored bottom margin', () => {
-    const pushes = pushesOf([heading, paragraph, smallPrint], PAGE);
-    expect(pushes[1]?.room).toBe(560 - 72);
-  });
-
-  it('a page with no room left has room 0, and a block with nothing below pushes nothing', () => {
-    const lowest = box(72, 60, 540, 100);
-    const pushes = pushesOf([heading, paragraph, lowest], PAGE);
-    // THE LOWEST TEXT ALREADY REACHES THE MARGIN (72) from above it, so there is no room: 60 is under 72.
-    expect(pushes[1]).toStrictEqual({ below: [2], room: 0 });
-    expect(pushes[2]).toStrictEqual({ below: [], room: 0 });
-  });
-
-  describe('the one sweep answers the worklist it replaced, on every page shape', () => {
-    type Box = BlockBox;
-    /** THE WORKLIST `pushesOf` ran until 2026-10-18, verbatim but for its name: the closure by definition, cubic. */
-    function worklistBelow(boxes: readonly Box[], page: Box): number[][] {
-      const highest = Math.max(...boxes.map((b) => b.y1));
-      const margin = page.y0 + Math.max(0, page.y1 - highest);
-      const footer = boxes.map((b) => b.y1 <= margin);
-      const sideBySide = (a: Box, b: Box): boolean => a.x0 < b.x1 && b.x0 < a.x1;
-      return boxes.map((b, at) => {
-        if (footer[at] === true) return [];
-        const pushed = new Set<number>();
-        const reached: Box[] = [b];
-        for (const above of reached) {
-          for (const [other, candidate] of boxes.entries()) {
-            if (other === at || pushed.has(other) || footer[other] === true) continue;
-            if (sideBySide(candidate, above) && candidate.y1 < above.y1) {
-              pushed.add(other);
-              reached.push(candidate);
-            }
-          }
-        }
-        return [...pushed].sort((x, y) => x - y);
-      });
-    }
-    /** A seeded generator, so a failing page is the same page on the next run. */
-    function generator(seed: number): () => number {
-      let state = seed;
-      return () => {
-        state = (Math.imul(state, 1_664_525) + 1_013_904_223) >>> 0;
-        return state / 2 ** 32;
-      };
-    }
-    /**
-     * Pages built to reach the sweep's edges: tops on a coarse grid, so rows of EQUAL tops are common; edges on a grid,
-     * so extents that only TOUCH are common; some blocks zero wide; some inside the bottom margin, the footer.
-     */
-    function pageOf(random: () => number, count: number): Box[] {
-      return Array.from({ length: count }, () => {
-        const x0 = Math.floor(random() * 12) * 50;
-        const wide = random() < 0.1 ? 0 : (1 + Math.floor(random() * 4)) * 50;
-        const y1 = 20 + Math.floor(random() * 30) * 25;
-        return box(x0, y1 - 10, x0 + wide, y1);
-      });
-    }
-
-    it('on 400 seeded pages of up to 60 blocks, every block pushes the same blocks', () => {
-      const random = generator(20_261_018);
-      let compared = 0;
-      let pushing = 0;
-      for (let page = 0; page < 400; page += 1) {
-        const boxes = pageOf(random, 1 + Math.floor(random() * 60));
-        const expected = worklistBelow(boxes, PAGE);
-        expect(pushesOf(boxes, PAGE).map((column) => [...column.below]), `page ${String(page)}`).toStrictEqual(expected);
-        compared += boxes.length;
-        pushing += expected.filter((below) => below.length > 1).length;
-      }
-      // THE PAGES REACH WHAT THEY ARE FOR: thousands of blocks, and many pushing more than one block, so the closure, not
-      // only the first step, is what was compared.
-      expect(compared).toBeGreaterThan(10_000);
-      expect(pushing).toBeGreaterThan(2_000);
-    });
-
-    it('CONTROL: a row of equal tops does not reach along itself, which a sweep widening per block would', () => {
-      // THE ONE PLACE the sweep could disagree with the worklist where a page shape decides it: a block widening the
-      // interval for the next block of its OWN top. A is under the top block; B, at A's top, overlaps A only; C, lower,
-      // overlaps B only. The worklist reaches neither B (not lower than A) nor so C.
-      const boxes = [box(0, 700, 100, 720), box(50, 480, 150, 500), box(140, 480, 250, 500), box(200, 280, 250, 300)];
-      expect(worklistBelow(boxes, PAGE)[0]).toStrictEqual([1]);
-      expect(pushesOf(boxes, PAGE).map((column) => [...column.below])).toStrictEqual(worklistBelow(boxes, PAGE));
-    });
-  });
-
-  it('a column with more blocks below than one edit may carry has no room, so the editor warns rather than send it', () => {
-    // ONE A POINT HIGH, stacked under the paragraph: MAX_PUSHED_BLOCKS of them is carried, one more is not.
-    const stack = (count: number) => Array.from({ length: count }, (_, at) => box(72, 590 - at - 0.5, 540, 590 - at));
-    const carried = pushesOf([heading, paragraph, ...stack(MAX_PUSHED_BLOCKS)], PAGE)[1];
-    const over = pushesOf([heading, paragraph, ...stack(MAX_PUSHED_BLOCKS + 1)], PAGE)[1];
-    expect(carried?.below).toHaveLength(MAX_PUSHED_BLOCKS);
-    expect(carried?.room).toBeGreaterThan(0);
-    expect(over?.below).toHaveLength(MAX_PUSHED_BLOCKS + 1);
-    expect(over?.room).toBe(0);
   });
 });

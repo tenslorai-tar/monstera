@@ -28,6 +28,7 @@ import { snapshotRegion } from '../pageSnapshot.js';
 import { readPageGeometry } from '../pageGeometry.js';
 import { readPageRewrite } from '../pageRewrite.js';
 import { readTextFaces } from '../textFaces.js';
+import { readBlockFaces } from '../blockFaces.js';
 import { readDestinations } from '../destinations.js';
 import { readLayers } from '../layers.js';
 import { readDocumentFonts } from '../documentFonts.js';
@@ -69,6 +70,7 @@ import {
   remoteMupdfPageAdjustment,
   remoteMupdfPageRewrite,
   remoteMupdfTextFaces,
+  remoteMupdfBlockFaces,
   remoteMupdfWordBoxes,
   remoteMupdfAccessibility,
   type SessionAssets,
@@ -265,6 +267,7 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
   readonly pageAdjustment: ReturnType<typeof remoteMupdfPageAdjustment>;
   readonly pageRewrite: ReturnType<typeof remoteMupdfPageRewrite>;
   readonly textFaces: ReturnType<typeof remoteMupdfTextFaces>;
+  readonly blockFaces: ReturnType<typeof remoteMupdfBlockFaces>;
   readonly wordBoxes: ReturnType<typeof remoteMupdfWordBoxes>;
   readonly accessibility: ReturnType<typeof remoteMupdfAccessibility>;
   readonly sessions: ReturnType<typeof createRemoteSessions>;
@@ -356,6 +359,7 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
       pageRewrite: readPageRewrite,
       textFaces: readTextFaces,
       wordBoxes: readPageWordBoxes,
+      blockFaces: readBlockFaces,
       // NOT THE REAL READER, where its neighbours above are. `recognisePage`
       // instantiates 2.8 MB of Tesseract WASM and takes about four seconds per
       // page, and no case in this file drives the channel — so the production
@@ -428,6 +432,7 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
     pageAdjustment: remoteMupdfPageAdjustment(client, sessions),
     pageRewrite: remoteMupdfPageRewrite(client, sessions),
     textFaces: remoteMupdfTextFaces(client, sessions),
+    blockFaces: remoteMupdfBlockFaces(client, sessions),
     wordBoxes: remoteMupdfWordBoxes(client, sessions),
     accessibility: remoteMupdfAccessibility(client, sessions),
     sessions,
@@ -674,6 +679,24 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
       expect(crossed.truncated).toBe(false);
       // THE SAME ANSWER AS IN PROCESS, so the wire carries the reader's answer whole.
       expect(crossed).toStrictEqual(await readTextFaces(type3.session, 0));
+    } finally {
+      await mupdfWriter.close(type3.session);
+    }
+  });
+
+  it('the BLOCK-FACES read crosses: the print’s heading font is a drawn one, which may carry no new word (ADR-0271 section 5)', async () => {
+    const chromium = new Uint8Array(
+      readFileSync(fileURLToPath(new URL('../../../testing/fixtures/text-edit/chromium-type3.pdf', import.meta.url))),
+    );
+    const type3 = await joined(chromium);
+    try {
+      const runs = [{ index: 0, object: 0, text: 'heading' }];
+      const crossed = await type3.blockFaces(type3.token, { page: 0 }, runs);
+      // ONE FONT, the heading's, and it is a drawn one: the read names it, so the equality below is not of two empties.
+      expect(crossed.runs).toStrictEqual([0]);
+      expect(crossed.fonts.map((font) => font.own)).toStrictEqual([false]);
+      // THE SAME ANSWER AS IN PROCESS, so the wire carries the reader's answer whole.
+      expect(crossed).toStrictEqual(await readBlockFaces(type3.session, { page: 0 }, runs));
     } finally {
       await mupdfWriter.close(type3.session);
     }
@@ -960,6 +983,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         textFaces: () => {
           throw new Error('unused');
         },
+        blockFaces: () => {
+          throw new Error('unused');
+        },
         wordBoxes: () => {
           throw new Error('unused');
         },
@@ -1144,6 +1170,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         },
         textFaces: () => {
           throw new Error('the rotation-refusal case must not read the fonts’ faces');
+        },
+        blockFaces: () => {
+          throw new Error('the rotation-refusal case must not read a block’s faces');
         },
         wordBoxes: () => {
           throw new Error('the rotation-refusal case must not read word boxes');
@@ -1368,7 +1397,7 @@ describe('an operator edit over engine/apply-file answers its boxes (ADR-0177 De
   it('names a character no face carries, with its page, after crossing the pipe', async () => {
     // PAST THE BASIC MULTILINGUAL PLANE, whose every point GNU Unifont, the last face, draws (ADR-0270).
     const unassigned = String.fromCodePoint(0xf0000);
-    expect(await edit(`Monstera fixture ${unassigned}.`)).toStrictEqual({ boxed: [{ character: unassigned, page: 0 }], more: 0, moved: [], noted: [] });
+    expect(await edit(`Monstera fixture ${unassigned}.`)).toStrictEqual({ boxed: [{ character: unassigned, page: 0 }], more: 0, noted: [] });
   });
 
   it('names the first sixty-four boxes and counts the rest, by the one cap', async () => {
@@ -1381,6 +1410,6 @@ describe('an operator edit over engine/apply-file answers its boxes (ADR-0177 De
   });
 
   it('answers no box for a word set in faces alone, so the list above is the edit’s and not a constant', async () => {
-    expect(await edit('Monstera fixture zap.')).toStrictEqual({ boxed: [], more: 0, moved: [], noted: [] });
+    expect(await edit('Monstera fixture zap.')).toStrictEqual({ boxed: [], more: 0, noted: [] });
   });
 });

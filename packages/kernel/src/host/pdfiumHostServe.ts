@@ -8,7 +8,6 @@ import {
   pageRuns,
   renderPageBitmap,
   renderPageBitmapWithoutText,
-  runFonts,
   textRuns,
   unpackedIfAsked,
 } from '../pdfium.js';
@@ -96,12 +95,6 @@ const handlers = createPdfiumHandlers({
     onImage(image, async (session) => {
       const { kept, truncated } = boundedToAnswer(await pageObjects(session, page));
       return { objects: kept, truncated };
-    }),
-  // REBUILT HERE, in the contained process, from the runs' own programs (ADR-0175): the document's program never leaves.
-  runFonts: (image, page, indices, unpack) =>
-    onImage(image, async (session) => {
-      await unpackedIfAsked(session, page, unpack);
-      return runFonts(session, page, indices);
     }),
   pageRuns: (image, page) => onImage(image, (session) => pageRuns(session, page)),
 });

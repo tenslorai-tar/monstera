@@ -65,7 +65,6 @@ const BLOCK = {
   })),
   style: RUN,
   shape: { align: 'left' as const, firstIndent: 0 },
-  push: { below: [], room: 0 },
 };
 
 const OUTLINE = '[data-text-edit-layer="0"] [data-text-block="0"]';
@@ -228,6 +227,8 @@ test('THE HAND WALK: select the box, a caret where pressed, typing, Bold on and 
   // A WORD CHOSEN BY A DOUBLE PRESS, then Bold on and off: the button changes IN PLACE and the word with it.
   const tea = await characterAt(page, (await page.locator(SURFACE).evaluate((editor) => editor.textContent)).indexOf('Tea') + 1);
   await page.mouse.dblclick(tea.x, tea.y);
+  // BY THE PLATFORM'S RULE, exactly: a pattern accepting either form would pass a Windows build that dropped the space
+  // and a Linux one that added it, so it could not tell the two legs' rules apart.
   expect(await selectionState(page)).toMatchObject({ kind: 'range', text: wordByDoublePress('Tea', ' ') });
   const panel = page.locator('[data-text-properties]');
   const bold = panel.getByRole('button', { name: 'Bold' });

@@ -1479,7 +1479,7 @@ export const handlers: ContractHandlers = {
   'document.openButtonFile': () => Promise.resolve(ok({ kind: 'absent' })),
   'document.textBlocks': () =>
     Promise.resolve(ok({ version: asDocVersion(1), blocks: [], next: null, truncated: false, rotated: 0, angled: { turned: 0, vertical: 0, slanted: 0, mirrored: 0 }, unaddressable: 0, rewrite: 'objects' as const })),
-  'document.runFonts': () => Promise.resolve(ok({ version: asDocVersion(1), fonts: [], runs: [] })),
+  'document.blockFaces': () => Promise.resolve(ok({ version: asDocVersion(1), fonts: [], runs: [] })),
   'document.pageObjects': () =>
     Promise.resolve(ok({ version: asDocVersion(1), objects: [], next: null, truncated: false })),
   'document.renderPage': ({ width, height }) =>
@@ -1713,7 +1713,7 @@ export const handlers: ContractHandlers = {
   'document.openButtonFile': () => Promise.resolve(ok({ kind: 'absent' })),
   'document.textBlocks': () =>
     Promise.resolve(ok({ version: asDocVersion(1), blocks: [], next: null, truncated: false, rotated: 0, angled: { turned: 0, vertical: 0, slanted: 0, mirrored: 0 }, unaddressable: 0, rewrite: 'objects' as const })),
-  'document.runFonts': () => Promise.resolve(ok({ version: asDocVersion(1), fonts: [], runs: [] })),
+  'document.blockFaces': () => Promise.resolve(ok({ version: asDocVersion(1), fonts: [], runs: [] })),
   'document.pageObjects': () =>
     Promise.resolve(ok({ version: asDocVersion(1), objects: [], next: null, truncated: false })),
   'document.renderPage': ({ width, height }) =>
@@ -2028,7 +2028,7 @@ export const shim: ContractClient = {
   'document.openButtonFile': () => Promise.resolve(ok({ kind: 'absent' })),
   'document.textBlocks': () =>
     Promise.resolve(ok({ version: asDocVersion(1), blocks: [], next: null, truncated: false, rotated: 0, angled: { turned: 0, vertical: 0, slanted: 0, mirrored: 0 }, unaddressable: 0, rewrite: 'objects' as const })),
-  'document.runFonts': () => Promise.resolve(ok({ version: asDocVersion(1), fonts: [], runs: [] })),
+  'document.blockFaces': () => Promise.resolve(ok({ version: asDocVersion(1), fonts: [], runs: [] })),
   'document.pageObjects': () =>
     Promise.resolve(ok({ version: asDocVersion(1), objects: [], next: null, truncated: false })),
   'document.renderPage': ({ width, height }) =>
@@ -3533,11 +3533,10 @@ export const execution: CommandExecution<'pdfium'> = {
   // THE IMAGE ARRIVES AS THE REQUEST'S session FIELD SINCE ADR-0069: the
   // execution takes one named request, and this writer's session HOLDS the
   // bytes, beside the key that opens them since ADR-0171's addendum. AND IT ANSWERS
-  // WHAT IT DREW AS BOXES BESIDE THE IMAGE since ADR-0174, the blocks it moved since ADR-0249, and what its checks noted
-  // since ADR-0270, none here.
-  apply: ({ session }) => Promise.resolve({ image: new Uint8Array(session.bytes), boxed: [], more: 0, moved: [], noted: [] }),
+  // WHAT IT DREW AS BOXES BESIDE THE IMAGE since ADR-0174, and what its checks noted since ADR-0270, none here.
+  apply: ({ session }) => Promise.resolve({ image: new Uint8Array(session.bytes), boxed: [], more: 0, noted: [] }),
   capture: (_image, _command) => Promise.resolve({ captured: false, reason: 'none' }),
-  invert: (image, _kind, _inverse) => Promise.resolve({ image: new Uint8Array(image.bytes), boxed: [], more: 0, moved: [], noted: [] }),
+  invert: (image, _kind, _inverse) => Promise.resolve({ image: new Uint8Array(image.bytes), boxed: [], more: 0, noted: [] }),
 };
 `,
   },

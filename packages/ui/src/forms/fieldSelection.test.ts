@@ -1,7 +1,7 @@
 import { asDocVersion } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
-import { type FieldSelection, carry, fieldKey, liveKeys, modeOf, select } from './fieldSelection.js';
+import { type FieldSelection, carry, fieldKey, keysByPage, liveKeys, modeOf, select } from './fieldSelection.js';
 
 const V1 = asDocVersion(1);
 const V2 = asDocVersion(2);
@@ -60,5 +60,15 @@ describe('field selection', () => {
     expect(modeOf({ ctrlKey: true, metaKey: false, shiftKey: false })).toBe('toggle');
     expect(modeOf({ ctrlKey: false, metaKey: true, shiftKey: false })).toBe('toggle');
     expect(modeOf({ ctrlKey: true, metaKey: false, shiftKey: true })).toBe('range');
+  });
+
+  it('reads the keys back by page, the inverse of fieldKey, with a page holding none absent', () => {
+    // PAGES 1 AND 10: a split on a prefix rather than on the separator would give page 1 page 10's fields too.
+    const byPage = keysByPage([fieldKey(1, 0), fieldKey(10, 4), fieldKey(1, 7), fieldKey(0, 12)]);
+    expect([...(byPage.get(1) ?? [])]).toStrictEqual([0, 7]);
+    expect([...(byPage.get(10) ?? [])]).toStrictEqual([4]);
+    expect([...(byPage.get(0) ?? [])]).toStrictEqual([12]);
+    expect(byPage.has(2)).toBe(false);
+    expect(keysByPage([]).size).toBe(0);
   });
 });

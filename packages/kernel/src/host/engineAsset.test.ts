@@ -170,6 +170,9 @@ async function joined(): Promise<{
       textFaces: () => {
         throw new Error('no case here reads the fonts’ faces');
       },
+      blockFaces: () => {
+        throw new Error('no case here reads a block’s faces');
+      },
       wordBoxes: () => {
         throw new Error('unused');
       },

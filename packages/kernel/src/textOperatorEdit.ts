@@ -1,4 +1,4 @@
-import { type CommandOfKind, blocksOfEdit } from '@monstera/contract/host';
+import { type CommandOfKind, type FormPath, blocksOfEdit } from '@monstera/contract/host';
 
 import type { CaptureResult } from './commandLog.js';
 import type { DrawnBoxes, Invert, MupdfSession } from './engineSeam.js';
@@ -158,8 +158,8 @@ export async function applyEditTextOperators(
     // EVERY CHARACTER DRAWN AS THE BOX, uncapped: the host names the first ones and counts the rest at the pipe
     // (`cappedBoxes`), as the PDFium writer's apply does (ADR-0177 Decision 7).
     const boxed = (faces?.boxed ?? []).map((character) => ({ character, page: command.page }));
-    // AND THE BLOCKS IT MOVED DOWN (ADR-0249), whose markup `main` moves with them; and what its checks noted.
-    return { boxed, more: 0, moved: edit.moved, noted };
+    // AND WHAT ITS CHECKS NOTED.
+    return { boxed, more: 0, noted };
   });
 }
 
@@ -194,19 +194,20 @@ function needsAFace(session: MupdfSession, command: CommandOfKind<'editTextOpera
  * Decision 2) and the form — or, for a form with no `/Resources` of its own, the stream it draws with, as a reader
  * resolves it.
  */
-interface EditTarget {
+export interface EditTarget {
   readonly content: Uint8Array;
   readonly holder: PDFObject;
   write(edited: Uint8Array): void;
 }
 
 /**
- * The {@link EditTarget} `command` names. `own` makes a form placement this placement's own first (`ownPlacement`), which
- * only the apply does.
+ * The {@link EditTarget} `command` names: a page, and a form placement on it where it names one. `own` makes a form
+ * placement this placement's own first (`ownPlacement`), which only the apply does; every read takes it as it is, so a
+ * read and the write it precedes see the same content.
  *
  * @throws where the command names a form the page no longer draws there: the document moved since the read
  */
-function targetOf(document: PDFDocument, command: CommandOfKind<'editTextOperators'>, own: boolean): EditTarget {
+export function targetOf(document: PDFDocument, command: { readonly page: number; readonly form?: FormPath | undefined }, own: boolean): EditTarget {
   const leaf = document.findPage(command.page);
   if (command.form === undefined) {
     return {

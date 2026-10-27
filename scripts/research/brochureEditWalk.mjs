@@ -58,7 +58,7 @@ async function openAt(x, y) {
     const area = await blocks.nth(at).boundingBox();
     if (area === null || point.x < area.x || point.x > area.x + area.width || point.y < area.y || point.y > area.y + area.height) continue;
     // IN TWO STEPS (ADR-0271 section 3): the box selected, then the caret put in its words.
-    await text.openAt(blocks.nth(at), 'middle');
+    await text.openBlock(blocks.nth(at), 'middle');
     return;
   }
   throw new Error(`no block of words holds the point (${String(x)}, ${String(y)}) on the page`);

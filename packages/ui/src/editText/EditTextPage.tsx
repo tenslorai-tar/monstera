@@ -2,8 +2,11 @@ import type { DocVersion } from '@monstera/shared';
 import { type ReactElement, useCallback, useEffect, useState } from 'react';
 
 import type { OverlayPage } from '../annotations/annotationSpace.js';
+import { useSettledRead } from '../useSettledPages.js';
+import type { PatchArea } from './AreaPatch.js';
 import type { PageBlocks, TextEditing } from './editing.js';
 import { EditTextLayer } from './EditTextLayer.js';
+import type { ShownPage } from './pdfjsFaces.js';
 
 /** A read of a page's blocks, and the version it was read at; `blocks` undefined for a refused read. */
 interface BlocksAnswer {
@@ -29,8 +32,17 @@ export function EditTextPage({
   paperAt,
   pictureNoted,
   drawn,
+  shown,
+  paused,
+  patch,
 }: {
   readonly page: number;
+  /** Draws one area of the page at the newest version, so a written editor need not wait for the page (`AreaPatch`). */
+  readonly patch?: PatchArea;
+  /** Whether no scroll is moving, before which the page's blocks are not read (`useSettledRead`). */
+  readonly paused: boolean;
+  /** The text PDF.js shows on the page and the face it loaded for each piece (`pdfjsFaces.ts`), at the version it shows. */
+  readonly shown?: () => Promise<ShownPage | undefined>;
   /** The version the page on screen is drawn from, `undefined` before it is drawn. */
   readonly drawn: DocVersion | undefined;
   readonly geometry: OverlayPage;
@@ -48,7 +60,9 @@ export function EditTextPage({
   const answer = kept ?? (answers.current?.version === version ? answers.current : undefined);
   // ONE FUNCTION PER PAGE AND EDITING, so the layer's read of the page's objects runs once per write.
   const pageObjects = useCallback(() => editing.objects(page), [editing, page]);
+  const reads = useSettledRead(paused, version);
   useEffect(() => {
+    if (!reads) return;
     let current = true;
     void read(page).then((blocks) => {
       if (!current) return;
@@ -60,7 +74,7 @@ export function EditTextPage({
     return () => {
       current = false;
     };
-  }, [page, read, version]);
+  }, [page, read, reads, version]);
 
   return (
     <EditTextLayer
@@ -83,7 +97,10 @@ export function EditTextPage({
       page={page}
       paperAt={paperAt}
       pictureNoted={pictureNoted}
-      runFonts={(block, read) => editing.runFonts(page, block, read)}
+      blockFaces={(block, read) => editing.blockFaces(page, block, read)}
+      {...(drawn === undefined ? {} : { drawn })}
+      {...(patch === undefined ? {} : { patch })}
+      {...(shown === undefined ? {} : { shown })}
       spell={editing.spell}
       // AN ANSWER WITH NO BLOCKS is a refused read, as against no answer yet.
       unreadable={answer !== undefined && answer.blocks === undefined}

@@ -3,7 +3,7 @@ import {
   type ContractClient,
   type DispatchableCommand,
   type LibraryEntry,
-  MAX_FONT_RUNS,
+  MAX_BLOCK_FACE_RUNS,
   channels,
   createClient,
 } from '@monstera/contract';
@@ -87,8 +87,8 @@ import {
   type BlocksRead,
   type TextBlock,
   commitTextBlock,
-  NO_RUN_FONTS,
-  readRunFonts,
+  NO_BLOCK_FACES,
+  readBlockFaces,
   editTextCommand,
   readPageContentBoxes,
   importFormDataFdfCommand,
@@ -2141,7 +2141,6 @@ describe('delete pages — the mutation-dialog gate', () => {
     ],
     style: PLAIN,
     shape: { align: 'left', firstIndent: 0 },
-    push: { below: [], room: 0 },
   };
   /** The read BLOCK came from, at version 7, by `rewrite`'s writer: the page holds BLOCK alone. */
   const readOf = (rewrite: 'objects' | 'operators', unpacked = false) =>
@@ -2194,36 +2193,28 @@ describe('delete pages — the mutation-dialog gate', () => {
     expect(applied).toHaveLength(1);
   });
 
-  it('THE TEXT BELOW A BLOCK rides in its edit as pushed blocks, words as read, never written (ADR-0249)', async () => {
-    // THE UI HALF OF THE WIRED PAIR for the push. Its kernel half is `proof:textpush`, which writes this shape through the
-    // real PDFium writer and reads the moved small print back with MuPDF. The block below is the read's own; a commit that
-    // forgot `push.below` sends the edited block alone, which is the control below.
+  it('A BLOCK THAT GROWS is sent ALONE: the block below it on the page is in no edit, so nothing else moves (ADR-0271 section 11.1)', async () => {
+    // THE CONTROL IS THE READ: a block that still names the one below it with room, as `main` answered every read from
+    // 2026-10-16 to 2026-10-26, so a commit that still put the text below into the edit sends two blocks here.
     const below: TextBlock = {
       box: { x0: 72, y0: 640, x1: 300, y1: 651 },
       lines: [{ runs: [{ index: 12, text: 'Small print', style: PLAIN }], box: { x0: 72, y0: 640, x1: 150, y1: 651 }, soft: false, baseline: 642 }],
       style: PLAIN,
       shape: { align: 'left', firstIndent: 0 },
-      push: { below: [], room: 0 },
     };
-    const pushing: TextBlock = { ...BLOCK, push: { below: [1], room: 300 } };
+    const growing = { ...BLOCK, push: { below: [1], room: 300 } } as TextBlock;
     const sent: unknown[] = [];
     const client = createClient(channels, (_id, params) => {
       sent.push((params as { command: unknown }).command);
       return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
     });
     const deps = { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, signatures };
-    const read = { version: asDocVersion(7), rewrite: 'objects' as const, blocks: [pushing, below] };
-    await commitTextBlock(deps, DOC, 3, pushing, 'The quick brown dog jumps over and over again', read);
-    expect(sent[0]).toMatchObject({
-      runs: [4, 9, 2, 12],
-      blockStarts: [0, 2],
-      text: 'The quick brown dog jumps over and over againSmall print',
-      pushes: [{ block: 1, by: 0, room: 300 }],
-    });
-    // CONTROL: WITH NO ROOM nothing could move, so the block is sent alone and the writer is handed nothing to push.
-    await commitTextBlock(deps, DOC, 3, { ...pushing, push: { below: [1], room: 0 } }, 'The quick brown dog jumps', read);
-    expect(sent[1]).toMatchObject({ runs: [4, 9, 2], blockStarts: [0] });
-    expect(Object.hasOwn(sent[1] as object, 'pushes')).toBe(false);
+    const read = { version: asDocVersion(7), rewrite: 'operators' as const, blocks: [growing, below] };
+    await commitTextBlock(deps, DOC, 3, growing, 'The quick brown dog jumps over and over again and again', read);
+    expect(sent).toHaveLength(1);
+    // THE GROWN BLOCK'S RUNS AND WORDS, and no run of the block below.
+    expect(sent[0]).toMatchObject({ runs: [4, 9, 2], blockStarts: [0], text: 'The quick brown dog jumps over and over again and again' });
+    expect(Object.hasOwn(sent[0] as object, 'pushes')).toBe(false);
   });
 
   it('A BLOCK INSIDE A FORM is sent with its form, so the writer edits that form’s own stream (ADR-0269)', async () => {
@@ -7568,20 +7559,18 @@ describe('an edit main answers breaks-signatures for (ADR-0149)', () => {
 });
 
 /**
- * The editor's one read of a block's run fonts (ADR-0175 and its correction), through the real schemas: each run named
- * once, in reads of `MAX_FONT_RUNS`, and only an answer at the block's own version counts.
+ * The read on open (ADR-0271 section 5), through the real schemas: each run named once, in reads of `MAX_BLOCK_FACE_RUNS`, a
+ * block in a form asked about in its form, and only an answer at the block's own version counts.
  */
-describe('readRunFonts', () => {
+describe('readBlockFaces', () => {
   const STYLE = { size: 10, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false, italic: false, bold: false };
   const box = { x0: 0, y0: 0, x1: 10, y1: 10 };
-  /**
-   * A block of `count` runs, each its own object, with the FIRST RUN ALSO ON A LINE OF ITS OWN: a read that named runs
-   * by where they sit rather than once each would ask for it twice.
-   */
-  /** The read the blocks came from: version 4, a page PDFium writes, read as it is. */
-  const AT_FOUR: BlocksRead = { version: asDocVersion(4), rewrite: 'objects' };
+  const AT_FOUR: BlocksRead = { version: asDocVersion(4), rewrite: 'operators' };
+  const ARIMO = { family: 'Arimo', weight: 400, italic: false, styles: ['regular' as const, 'bold' as const] };
+  const font = (own: boolean) => ({ own, chosen: ARIMO, candidates: [ARIMO] });
 
-  function blockOf(count: number): TextBlock {
+  /** A block of `count` runs, its first also on a line of its own, so a read naming runs by line would ask twice. */
+  function blockOf(count: number, form?: TextBlock['form']): TextBlock {
     const runs = Array.from({ length: count }, (_, index) => ({ index, text: 'w', style: STYLE }));
     return {
       box,
@@ -7591,48 +7580,45 @@ describe('readRunFonts', () => {
       ],
       style: STYLE,
       shape: { align: 'left', firstIndent: 0 },
-      push: { below: [], room: 0 },
+      ...(form === undefined ? {} : { form }),
     };
   }
 
-  it('names each run ONCE and maps every place to its run, by its first object', async () => {
+  it('names each run ONCE, maps every place to its run, and asks about a block in a form in that form', async () => {
     const asked: unknown[] = [];
     const client = createClient(channels, (_id, params) => {
       asked.push(params);
-      return Promise.resolve(ok({ version: asDocVersion(4), fonts: [new Uint8Array([1, 2])], runs: [0, null, 0] }));
+      return Promise.resolve(ok({ version: asDocVersion(4), fonts: [font(false)], runs: [0, null, 0] }));
     });
-    const read = await readRunFonts(client, DOC, 3, blockOf(3), AT_FOUR);
+    const read = await readBlockFaces(client, DOC, 3, blockOf(3), AT_FOUR);
     expect(asked).toStrictEqual([{ docId: DOC, page: 3, indices: [0, 1, 2] }]);
-    expect(read.fonts.map((font) => Array.from(font))).toStrictEqual([[1, 2]]);
+    expect(read.fonts).toStrictEqual([font(false)]);
     expect([...read.runs]).toStrictEqual([[0, 0], [2, 0]]);
-    // A BLOCK FROM AN UNPACKED READ asks about the page as that read saw it (ADR-0232); the plain read above named none.
-    await readRunFonts(client, DOC, 3, blockOf(3), { ...AT_FOUR, unpacked: true });
-    expect(asked.at(-1)).toStrictEqual({ docId: DOC, page: 3, indices: [0, 1, 2], unpack: true });
+    // CONTROL: the page's own block above named no form, so the path here is the block's and not a constant.
+    await readBlockFaces(client, DOC, 3, blockOf(3, [{ name: 'Fm1', occurrence: 0 }]), AT_FOUR);
+    expect(asked.at(-1)).toStrictEqual({ docId: DOC, page: 3, indices: [0, 1, 2], form: [{ name: 'Fm1', occurrence: 0 }] });
   });
 
-  it('a block past one read asks in reads of MAX_FONT_RUNS, and the second read’s places follow the first’s fonts', async () => {
+  it('a block past one read asks in reads of MAX_BLOCK_FACE_RUNS, and the second read’s places follow the first’s fonts', async () => {
     const asked: number[][] = [];
     const client = createClient(channels, (_id, params) => {
       const { indices } = params as { indices: number[] };
       asked.push(indices);
-      // EACH READ answers one font of its own, every run in it: the second's place 0 is the block's font 1.
-      return Promise.resolve(
-        ok({ version: asDocVersion(4), fonts: [new Uint8Array([asked.length])], runs: indices.map(() => 0) }),
-      );
+      return Promise.resolve(ok({ version: asDocVersion(4), fonts: [font(asked.length === 1)], runs: indices.map(() => 0) }));
     });
-    const read = await readRunFonts(client, DOC, 0, blockOf(MAX_FONT_RUNS + 2), AT_FOUR);
-    expect(asked.map((indices) => indices.length)).toStrictEqual([MAX_FONT_RUNS, 2]);
-    expect(read.fonts.map((font) => Array.from(font))).toStrictEqual([[1], [2]]);
-    expect([read.runs.get(MAX_FONT_RUNS - 1), read.runs.get(MAX_FONT_RUNS), read.runs.get(MAX_FONT_RUNS + 1)]).toStrictEqual([0, 1, 1]);
+    const read = await readBlockFaces(client, DOC, 0, blockOf(MAX_BLOCK_FACE_RUNS + 2), AT_FOUR);
+    expect(asked.map((indices) => indices.length)).toStrictEqual([MAX_BLOCK_FACE_RUNS, 2]);
+    expect(read.fonts.map((each) => each.own)).toStrictEqual([true, false]);
+    expect([read.runs.get(MAX_BLOCK_FACE_RUNS - 1), read.runs.get(MAX_BLOCK_FACE_RUNS), read.runs.get(MAX_BLOCK_FACE_RUNS + 1)]).toStrictEqual([0, 1, 1]);
   });
 
-  it('an answer at ANOTHER version, or a refusal, is no fonts', async () => {
-    const moved = clientAnswering('document.runFonts', { version: asDocVersion(5), fonts: [new Uint8Array([1])], runs: [0] });
-    expect(await readRunFonts(moved, DOC, 0, blockOf(1), AT_FOUR)).toBe(NO_RUN_FONTS);
-    expect(await readRunFonts(clientFailing('document-poisoned'), DOC, 0, blockOf(1), AT_FOUR)).toBe(NO_RUN_FONTS);
+  it('an answer at ANOTHER version, or a refusal, is no faces', async () => {
+    const moved = clientAnswering('document.blockFaces', { version: asDocVersion(5), fonts: [font(true)], runs: [0] });
+    expect(await readBlockFaces(moved, DOC, 0, blockOf(1), AT_FOUR)).toBe(NO_BLOCK_FACES);
+    expect(await readBlockFaces(clientFailing('document-poisoned'), DOC, 0, blockOf(1), AT_FOUR)).toBe(NO_BLOCK_FACES);
     // CONTROL: the same answer at the block's own version is read.
-    const same = clientAnswering('document.runFonts', { version: asDocVersion(4), fonts: [new Uint8Array([1])], runs: [0] });
-    expect((await readRunFonts(same, DOC, 0, blockOf(1), AT_FOUR)).runs.get(0)).toBe(0);
+    const same = clientAnswering('document.blockFaces', { version: asDocVersion(4), fonts: [font(true)], runs: [0] });
+    expect((await readBlockFaces(same, DOC, 0, blockOf(1), AT_FOUR)).runs.get(0)).toBe(0);
   });
 });
 

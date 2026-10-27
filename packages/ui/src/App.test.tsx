@@ -13,6 +13,7 @@ import type { ReactElement, ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from './App.js';
+import { idsOf, SURFACE_PLACEMENTS } from './commandAnswers.js';
 import type { DropOpener, EventSubscriber } from './bridge.js';
 import { CONVERT_SCAN_TARGETS } from './commands/convertScan.js';
 import { reportProblem } from './commands/documentCommands.js';
@@ -2759,8 +2760,11 @@ describe('App', () => {
         else host.IntersectionObserver = original;
       }
 
-      // VACUITY GUARD: once is only a claim when more than one page asked.
-      expect(blockReads.length).toBeGreaterThan(1);
+      // VACUITY GUARD: once is only a claim when more than one page asked. WAITED FOR, because a page reads once the
+      // visible set has held still for `SETTLE_MS` (`useSettledPages`), and the intersections fired above moved it.
+      await vi.waitFor(() => {
+        expect(blockReads.length).toBeGreaterThan(1);
+      });
       expect(vi.mocked(reportProblem)).toHaveBeenCalledTimes(1);
       expect(vi.mocked(reportProblem).mock.calls[0]?.[1]).toStrictEqual({ code: 'engine-unavailable' });
       expect(await screen.findByText(/cannot edit text in place/u)).toBeDefined();
@@ -2773,10 +2777,9 @@ describe('App', () => {
         await Promise.resolve();
       });
       await pressCommand('Edit text');
-      await act(async () => {
-        await Promise.resolve();
+      await vi.waitFor(() => {
+        expect(blockReads.length).toBeGreaterThan(before);
       });
-      expect(blockReads.length).toBeGreaterThan(before);
     });
 
     it('EDIT OBJECT, chosen from its menu’s face, outlines the page’s objects, and a press then Delete removes the one pressed (ADR-0264)', async () => {
@@ -3244,6 +3247,53 @@ describe('App', () => {
       ],
     }));
     await expect(`${JSON.stringify(list, null, 2)}\n`).toMatchFileSnapshot('../../testing/fixtures/stateful-commands.json');
+  });
+
+  it('every command a surface draws is one whose answers that surface subscribes to (ADR-0272)', () => {
+    // A command a surface draws outside its subscription draws the state from before when only its answer moves, which
+    // is the defect ADR-0258's correction exists for, arriving one surface at a time.
+    let commands: CommandRegistry | undefined;
+    const { client } = recordingClient({ kind: 'cancelled' });
+    render(<App client={client} settings={freshSettings()} onRegistries={(registries) => (commands = registries.commands)} />);
+    if (commands === undefined) throw new Error('the shell reported no registries');
+    // EVERY COMMAND SHOWN, so a command a `when` hides in this context is held too: hidden now is drawn later.
+    const everything = new CommandRegistry(commands.all().map((command) => ({ ...command, when: () => true })));
+    const context = { docId: DOC, version: asDocVersion(1), hasSelection: false, dirty: false, page: 0, pageCount: 1, openDocuments: [], selectedPages: [] };
+    /** The ids of every command a model's output names, wherever in its shape it sits. */
+    const drawn = (model: unknown): string[] => {
+      const found: string[] = [];
+      const walk = (value: unknown): void => {
+        if (Array.isArray(value)) {
+          for (const each of value) walk(each);
+        } else if (value instanceof Map) {
+          for (const each of value.values()) walk(each);
+        } else if (typeof value === 'object' && value !== null) {
+          for (const [key, each] of Object.entries(value) as [string, unknown][]) {
+            if (key === 'command' && typeof each === 'object' && each !== null && 'id' in each && typeof each.id === 'string') found.push(each.id);
+            else walk(each);
+          }
+        }
+      };
+      walk(model);
+      return found;
+    };
+    const menus = ['page', 'annotation', 'selection', 'tab', 'object', 'field'] as const;
+    const surfaces = {
+      ribbon: [projections.ribbonModel(everything, context), projections.railModel(everything, context)],
+      properties: [projections.propertiesModel(everything, context)],
+      quickToolbar: [projections.quickToolbarModel(everything, context)],
+      contextMenu: menus.map((menu) => projections.contextMenuModel(everything, context, menu)),
+      startScreen: [projections.startScreenModel(everything, context)],
+      statusBar: [projections.statusBarModel(everything, context)],
+      menuBar: [projections.menuBarModel(everything, context), projections.menuBarCommandsModel(everything, context)],
+    } satisfies Record<keyof typeof SURFACE_PLACEMENTS, readonly unknown[]>;
+    for (const [surface, models] of Object.entries(surfaces) as [keyof typeof SURFACE_PLACEMENTS, readonly unknown[]][]) {
+      const ids = drawn(models);
+      // CONTROL: the walk finds what the model draws, so an empty model cannot pass as one inside its subscription.
+      expect(ids.length, surface).toBeGreaterThan(0);
+      const subscribed = new Set(idsOf(everything, SURFACE_PLACEMENTS[surface]));
+      expect(ids.filter((id) => !subscribed.has(id)), `${surface} draws commands it does not subscribe to`).toStrictEqual([]);
+    }
   });
 
   it('the manual test checklist is generated from the registry — docs/manual-test-checklist.md is never edited by hand', async () => {

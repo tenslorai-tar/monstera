@@ -1,5 +1,5 @@
 import { useLingui } from '@lingui/react';
-import { type ReactElement, useSyncExternalStore } from 'react';
+import { type ReactElement, useMemo, useSyncExternalStore } from 'react';
 
 import { FORMAT_ENTRIES } from './commands/textFormatCommands.js';
 import { type DocumentFont, type EditorFonts, type FontList, RESOLVED_BUILT_IN, SUBSET_TAG } from './FontPicker.js';
@@ -14,6 +14,7 @@ import { Button } from './primitives/Button.js';
 import { IconButton } from './primitives/IconButton.js';
 import { ICONS } from './primitives/icons.js';
 import {
+  type EditorFaces,
   KEEPS_EDITOR,
   finishOpenEditor,
   formatOpenEditor,
@@ -50,18 +51,22 @@ const EDITOR_ROWS: ReadonlySet<TextRow> = new Set(['style', 'rise', 'highlight',
 /** The editor's paragraph verbs beyond alignment, by the table's ids: lists and indents. */
 const PARAGRAPH_EXTRAS = new Set(['bullets', 'numbering', 'indent-more', 'indent-less'].map((name) => `text.format.${name}`));
 
+/** *As on the page*: every selected letter back in the face the page has it in. */
+function asOnPage(): void {
+  formatOpenEditor({ kind: 'set', change: { family: null } });
+  refocusOpenEditor();
+}
+
 /**
- * Edit text's font groups (the owner's decision of 2026-10-26): *Closest matches* is empty until the block's read on open
- * answers the chain's candidates (ADR-0271 Part 2b), and is not drawn while it is; *As on the page* puts every selected
- * letter back in the face the page has it in. One object, so the picker's groups are not worked out again each render.
+ * Edit text's font groups (the owner's decision of 2026-10-26): *Closest matches* is the chain's faces for the words at
+ * the selection, from the block's read on open (ADR-0271 section 5), Monstera's choice marked, and is not drawn until the
+ * read answers; the style toggles offer the styles the family at the selection has, where the read names it. Pure, for
+ * its tests.
  */
-const EDITOR_FONTS: EditorFonts = {
-  closest: [],
-  onAsOnPage: () => {
-    formatOpenEditor({ kind: 'set', change: { family: null } });
-    refocusOpenEditor();
-  },
-};
+export function editorFontsOf(faces: EditorFaces | undefined, family: string | undefined): EditorFonts {
+  const styles = faces?.closest.find((face) => face.family.toLowerCase() === family?.toLowerCase())?.styles;
+  return { closest: faces?.closest.map((face) => face.family) ?? [], chosen: faces?.chosen, styles, onAsOnPage: asOnPage };
+}
 
 /** A colour as `#rrggbb`. */
 function hexOf(colour: { readonly r: number; readonly g: number; readonly b: number } | undefined): string | undefined {
@@ -86,7 +91,9 @@ export function TextFormatPanel({ fonts, documentFonts }: TextFormatPanelProps):
   const { _ } = useLingui();
   // THE OPEN EDITOR'S SNAPSHOT, one per change of the selection or the formatting (`openEditorSnapshot`): the render reads
   // only what this hook answers, so a compiled panel shows the words as they are now (ADR-0258).
-  const { state, paragraph, fonts: editorFonts } = useSyncExternalStore(onEditorChange, openEditorSnapshot);
+  const { state, paragraph, fonts: editorFonts, faces } = useSyncExternalStore(onEditorChange, openEditorSnapshot);
+  // ONE OBJECT PER ANSWER AND FAMILY, so the picker's groups are not worked out again each render.
+  const editor = useMemo(() => editorFontsOf(faces, state?.family), [faces, state?.family]);
   // THE SIZE THE SPACING IS A FRACTION OF: the words' at the selection.
   const wordSize = state?.size;
   // THE PICKER'S FIRST GROUP IS THE WHOLE DOCUMENT'S (B2.8): the open editor's page first, which the editor already holds
@@ -119,7 +126,7 @@ export function TextFormatPanel({ fonts, documentFonts }: TextFormatPanelProps):
       </header>
 
       <TextSection
-        font={{ list: fonts, builtIn: RESOLVED_BUILT_IN, inDocument, unset: TEXT_FORMAT_FAMILY_RUN, editor: EDITOR_FONTS }}
+        font={{ list: fonts, builtIn: RESOLVED_BUILT_IN, inDocument, unset: TEXT_FORMAT_FAMILY_RUN, editor }}
         lineSpacingBounds={{ min: 0.5, max: 5, step: 0.1 }}
         live
         look={{

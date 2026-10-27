@@ -127,7 +127,7 @@ export class OperatorFaceSet {
       embedding: face.embedding,
       italic: face.italic,
       shaping,
-    }), face);
+    }), face, weight);
     const glyphs = shaping.shape(text, false);
     if (added.font.room < glyphs.length) return null;
     return { font: added.page, codes: glyphs.map((glyph) => this.#code(added, glyph.glyph, glyph.text)) };
@@ -162,7 +162,7 @@ export class OperatorFaceSet {
         embedding: candidate.embedding,
         italic: false,
         shaping,
-      }), candidate);
+      }), candidate, candidate.weight);
       return { font: added.page, codes: [this.#code(added, glyph, character)] };
     }
     return null;
@@ -177,7 +177,13 @@ export class OperatorFaceSet {
     return assigned.code;
   }
 
-  #add(key: string, source: () => ConstructorParameters<typeof CidFont<MupdfFontRef>>[1], face: CatalogueFace): Added {
+  /**
+   * The font for `key`, made once per edit. `weight` is the weight it is SET at, which for a variable face is the
+   * instance its name says (`-wght700`), not the face's default: the record is the page's font as a read of the written
+   * page will find it, and a bold word read back as the family's 400 was a second opinion of the writer's own choice
+   * (the stage audit of dabf6041..f1c1dc16, ZZZZZZZZ-7).
+   */
+  #add(key: string, source: () => ConstructorParameters<typeof CidFont<MupdfFontRef>>[1], face: CatalogueFace, weight: number): Added {
     const known = this.#added.get(key);
     if (known !== undefined) return known;
     const font = new CidFont(mupdfCidSink(this.document), source());
@@ -195,7 +201,7 @@ export class OperatorFaceSet {
       width: (code) => widths.get(code) ?? null,
       draws: (code) => text.has(code),
       face: face.family,
-      weight: face.weight,
+      weight,
     };
     const added = { resource, font, page, text, widths };
     this.#added.set(key, added);

@@ -65,9 +65,8 @@ export async function modulesLoadedByPath(desktopDist) {
   // `fontCatalogueWorker.js` is the thread every host reads its fonts in (`fontCatalogueApart.ts`), and
   // `faceProgramWorker.js` the one an edit makes a face's program in (`faceProgramApart.ts`, ADR-0239): a package that
   // lacked either would refuse every word an edit sets in a face it chose. `composeWorker.js` is where a Markdown or CSV
-  // import is composed (`composeApart.ts`): without it every one fails. `runFontWorker.js` rebuilds a run's own font for
-  // the editor (`runFontApart.ts`): without it no block opens in its document's font. `apartEntry.js` is where each of
-  // those four threads starts (`apart.ts`), so without it all four are refused.
+  // import is composed (`composeApart.ts`): without it every one fails. `apartEntry.js` is where each of those three
+  // threads starts (`apart.ts`), so without it all three are refused.
   return [
     ...hosts,
     'preload.cjs',
@@ -76,7 +75,6 @@ export async function modulesLoadedByPath(desktopDist) {
     'fontCatalogueWorker.js',
     'faceProgramWorker.js',
     'composeWorker.js',
-    'runFontWorker.js',
     'apartEntry.js',
   ];
 }

@@ -6,6 +6,7 @@ import { Button } from '../primitives/Button.js';
 import { CopyrightLine } from './CopyrightLine.js';
 import type { CommandContext, CommandRegistry } from '../registries/commands.js';
 import { useRunCommand } from '../registries/useRunCommand.js';
+import { SURFACE_PLACEMENTS, useLiveContext } from '../commandAnswers.js';
 import { shortcutMapOf, startScreenModel } from './projections.js';
 
 /** The footer names F1, which opens the Help centre (ADR-0112); the hint shows only while the shortcut map binds it. */
@@ -44,7 +45,7 @@ const HELP_CHORD = 'f1';
  */
 export function StartFooter({
   registry,
-  context,
+  context: asked,
   version,
   onPublisher,
 }: {
@@ -54,6 +55,8 @@ export function StartFooter({
   /** Opens the copyright holder's site, by its place name (`CopyrightLine`). */
   readonly onPublisher: () => void;
 }): ReactElement {
+  // THE ANSWERS OF WHAT THE START SCREEN PLACES (ADR-0272).
+  const context = useLiveContext(registry, asked, SURFACE_PLACEMENTS.startScreen);
   const { _ } = useLingui();
   const { footer } = startScreenModel(registry, context);
   // A PRESS RUNS AGAINST THE CONTEXT AT THE PRESS (`useRunCommand`), so a button's handler keeps its identity.

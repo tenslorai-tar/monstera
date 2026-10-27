@@ -80,7 +80,7 @@ async function pressDrawn(dx, dy) {
 }
 
 const steps = textSteps(walk);
-const { editor, frame, panel, ensureEditText, pressAway, savedCopy, selectBox, openAt, openWords, openByDoubleClick, caretAgainst } = steps;
+const { editor, frame, panel, ensureEditText, openAt, openBlock, selectBox, openWords, openByDoubleClick, caretAgainst, pressAway, savedCopy } = steps;
 /** What the editor said while each font choice landed, newest last (W2). */
 /** @type {{ family: string, samples: import('./textWalkSteps.mjs').EditorSample[] }[]} */
 const fontChoiceSamples = [];
@@ -89,63 +89,28 @@ const chooseFont = async (family) => {
   fontChoiceSamples.push({ family, samples: await steps.chooseFont(family) });
 };
 
-await step('0. ADR-0271 opening: a press selects the box with no caret; a second press puts the caret exactly there; Esc writes nothing; a double press does both; Enter goes to the end', async () => {
+// THE JOINT (ADR-0271 section 5): steps 1 to 3 and 6 are the editor, its one command, the real writer in its real host,
+// the file, and a reopen, each read back from a saved copy. JOINED is a word no test file contains, so finding it in a
+// file can only be this edit, and its absence after the Undo can only be the Undo.
+const JOINED = 'jointwalk';
+/** The first page's words as PDF.js reads them from a saved copy of the document on show. */
+const firstPageSaved = async (/** @type {string} */ name) => (await savedWords(await savedCopy(name)))[0] ?? '';
+/** @type {string | undefined} */
+let unedited;
+
+await step('1. Edit text: a click between two letters, typing, Backspace twice, Shift+Ctrl+Left, Ctrl+B lights Bold', async () => {
   await open(document);
+  unedited = await firstPageSaved('01-before.pdf');
+  // CONTROL: the word is not in the document before the walk types it.
+  expect(unedited.includes(JOINED), 'the document already holds the joint word').toBe(false);
   await section('Edit');
   await ensureEditText();
   const block = page.locator('[data-text-block]').nth(1);
   const box = await block.boundingBox();
   if (box === null) throw new Error('no second block on the first page');
-  const writes = await writesDone(page);
-  // THE FIRST PRESS, mid-line: the frame up and focused, the words not.
-  const at = { x: box.width * 0.37, y: Math.min(8, box.height / 2) };
-  await selectBox(block, at);
-  const boxed = { wordsFocused: await editor().evaluate((element) => element === element.ownerDocument.activeElement) };
-  // ESC DESELECTS, and nothing is written.
-  await page.keyboard.press('Escape');
-  await expect(frame()).toHaveCount(0);
-  // THE SECOND PRESS, at the same point after a pause: the caret at the boundary the browser names under the point.
-  await openAt(block, at);
-  const point = { x: box.x + at.x, y: box.y + at.y };
-  const second = await caretAgainst(point);
-  await page.keyboard.press('Escape');
-  await expect(frame()).toHaveCount(0);
-  // ONE DOUBLE PRESS on a block not selected: the box and the caret at once. A double press puts the caret at the
-  // point's boundary as the second press does — a word selected instead would be the opened editor's own double press.
-  await openByDoubleClick(block, at);
-  const double = await caretAgainst(point);
-  await page.keyboard.press('Escape');
-  await expect(frame()).toHaveCount(0);
-  // ENTER ON THE BOX: the caret at the words' end.
-  await openWords(block);
-  const atEnd = await editor().evaluate((element) => {
-    const selection = element.ownerDocument.getSelection();
-    if (selection === null || selection.rangeCount === 0) return null;
-    const range = selection.getRangeAt(0).cloneRange();
-    range.setEnd(element, element.childNodes.length);
-    return range.toString().replace(/\s/gu, '') === '';
-  });
-  await page.keyboard.press('Escape');
-  await expect(frame()).toHaveCount(0);
-  await page.waitForTimeout(1500);
-  const written = (await writesDone(page)) - writes;
-  expect({ boxed, second: second?.atNamedBoundary, secondCollapsed: second?.collapsed, double: double?.atNamedBoundary, atEnd, written }, JSON.stringify({ second, double })).toStrictEqual({
-    boxed: { wordsFocused: false },
-    second: true,
-    secondCollapsed: true,
-    double: true,
-    atEnd: true,
-    written: 0,
-  });
-  return { caretFromPressPx: second === null ? null : Math.round(Math.abs(second.caretX - point.x) * 10) / 10, doubleFromPressPx: double === null ? null : Math.round(Math.abs(double.caretX - point.x) * 10) / 10 };
-});
-
-await step('1. Edit text: a click between two letters, typing, Backspace twice, Shift+Ctrl+Left, Ctrl+B lights Bold', async () => {
-  await ensureEditText();
-  const block = page.locator('[data-text-block]').nth(1);
-  // BETWEEN TWO LETTERS in the middle of the paragraph, not at its end: the box selected, then the caret put there.
-  await openAt(block);
-  await page.keyboard.type(' walked');
+  // BETWEEN TWO LETTERS in the middle of the paragraph, not at its end.
+  await openAt(box.x + box.width / 2, box.y + Math.min(8, box.height / 2));
+  await page.keyboard.type(` ${JOINED}ed`);
   await page.keyboard.press('Backspace');
   await page.keyboard.press('Backspace');
   await page.keyboard.press('Control+Shift+ArrowLeft');
@@ -175,12 +140,65 @@ await step('3. a click away writes it; one Ctrl+Z undoes steps 1 and 2 together,
   // waits for the first to LAND, as a hand does; sent together they left a later Add text editor open for good. Three
   // 6 s sleeps stood for these three waits (GGGGGGGG-3).
   await writesLanded(page, writing);
+  // WRITTEN, read from the file the writer made.
+  expect(await firstPageSaved('03-written.pdf'), 'the written file does not carry the edit').toContain(JOINED);
   const undoing = await writesDone(page);
   await page.keyboard.press('Control+Z');
   await writesLanded(page, undoing);
+  // ONE UNDO PUTS THE PAGE BACK WHOLE: the words, the format and the font of steps 1 and 2 together, read as the same
+  // words the page had before step 1.
+  expect(await firstPageSaved('03-undone.pdf'), 'one Undo did not put the page back').toBe(unedited);
   const redoing = await writesDone(page);
   await page.keyboard.press('Control+Y');
   await writesLanded(page, redoing);
+  expect(await firstPageSaved('03-redone.pdf'), 'Redo did not bring the edit back').toContain(JOINED);
+});
+
+await step('3b. ADR-0271 opening: a press selects the box with no caret; Esc writes nothing; a second press puts the caret exactly there; a double press does both; Enter goes to the end', async () => {
+  await writesIdle(page);
+  await ensureEditText();
+  const block = page.locator('[data-text-block]').nth(1);
+  const box = await block.boundingBox();
+  if (box === null) throw new Error('no second block on the first page');
+  const writes = await writesDone(page);
+  // THE FIRST PRESS, mid-line: the frame up and focused, the words not.
+  const at = { x: box.width * 0.37, y: Math.min(8, box.height / 2) };
+  const point = await selectBox(block, at);
+  const wordsFocused = await editor().evaluate((element) => element === element.ownerDocument.activeElement);
+  await page.keyboard.press('Escape');
+  await expect(frame()).toHaveCount(0);
+  // THE SECOND PRESS at the same point, after a pause: the caret at the boundary the browser names under the point.
+  await openBlock(block, at);
+  const second = await caretAgainst(point);
+  await page.keyboard.press('Escape');
+  await expect(frame()).toHaveCount(0);
+  // ONE DOUBLE PRESS on a block not selected: the box and the caret at once.
+  await openByDoubleClick(block, at);
+  const double = await caretAgainst(point);
+  await page.keyboard.press('Escape');
+  await expect(frame()).toHaveCount(0);
+  // ENTER ON THE BOX: the caret at the words' end.
+  await openWords(block);
+  const atEnd = await editor().evaluate((element) => {
+    const selection = element.ownerDocument.getSelection();
+    if (selection === null || selection.rangeCount === 0) return null;
+    const range = selection.getRangeAt(0).cloneRange();
+    range.setEnd(element, element.childNodes.length);
+    return range.toString().replace(/\s/gu, '') === '';
+  });
+  await page.keyboard.press('Escape');
+  await expect(frame()).toHaveCount(0);
+  await page.waitForTimeout(1500);
+  const written = (await writesDone(page)) - writes;
+  expect({ wordsFocused, second: second?.atNamedBoundary, secondCollapsed: second?.collapsed, double: double?.atNamedBoundary, atEnd, written }, JSON.stringify({ second, double })).toStrictEqual({
+    wordsFocused: false,
+    second: true,
+    secondCollapsed: true,
+    double: true,
+    atEnd: true,
+    written: 0,
+  });
+  return { caretFromPressPx: second === null ? null : Math.round(Math.abs(second.caretX - point.x) * 10) / 10, doubleFromPressPx: double === null ? null : Math.round(Math.abs(double.caretX - point.x) * 10) / 10 };
 });
 
 await step('4. Add text: two lines typed on a blank area, ended with Escape, and the words kept', async () => {
@@ -284,7 +302,10 @@ await step('6. saved, closed and reopened: the words are there, editable, findab
   await command('Find');
   await page.keyboard.type('line two');
   await page.keyboard.press('Enter');
+  // THE JOINT'S LAST LEG: the saved file, read by a second reader, carries the Edit text edit as well as the Add text.
+  expect(words[0] ?? '', 'the saved file does not carry the Edit text edit').toContain(JOINED);
   return {
+    editedSaved: (words[0] ?? '').includes(JOINED),
     addedTextSaved: words.some((text) => text.includes('Added by the walk')),
     secondLineSaved: words.some((text) => text.includes('line two')),
     fontsNamed: fonts,
@@ -294,7 +315,7 @@ await step('6. saved, closed and reopened: the words are there, editable, findab
 await step('7. the font picker: the document’s fonts, Recent and this computer’s by name alone (N12); "cal" finds Calibri and Cambria', async () => {
   await section('Edit');
   await ensureEditText();
-  await openAt(page.locator('[data-text-block]').first(), 'middle');
+  await openBlock(page.locator('[data-text-block]').first());
   await panel().getByRole('button', { name: /^Font:/u }).click();
   const groups = await panel().getByRole('listbox').getByRole('group').evaluateAll((each) => each.map((node) => node.getAttribute('aria-labelledby')));
   // JUST FONTS (N12): every option reads as its name and nothing else, on this computer's real list. Step 19 reads back
@@ -358,9 +379,8 @@ async function recogniseThenEdit(path, savedName) {
   await answer.getByRole('button', { name: 'OK', exact: true }).click({ timeout: 120_000 });
   await answer.waitFor({ state: 'hidden', timeout: 10_000 });
   await expect(page.locator('[data-text-block]').first()).toBeVisible({ timeout: 120_000 });
-  await openAt(page.locator('[data-text-block]').first(), 'middle');
-  // AN EDITOR TOOK THE PRESS, or the keys below go nowhere and nothing is said either.
-  await expect(editor()).toBeFocused();
+  // AN EDITOR TOOK THE PRESSES, or the keys below go nowhere and nothing is said either.
+  await openBlock(page.locator('[data-text-block]').first());
   await page.keyboard.press('End');
   await page.keyboard.type(' (walked)');
   const said = await pressAway(10, 10);
@@ -418,8 +438,7 @@ await step('10. ADR-0228: strikethrough, a highlight, character spacing, Ctrl+J 
   await open(formatted);
   await section('Edit');
   await ensureEditText();
-  await openAt(page.locator('[data-text-block]').nth(1), 'middle');
-  await expect(editor()).toBeFocused();
+  await openBlock(page.locator('[data-text-block]').nth(1));
   await page.keyboard.press('Control+Shift+ArrowRight');
   await panel().getByRole('button', { name: 'Strikethrough' }).click();
   await panel().getByRole('group', { name: 'Highlight' }).getByRole('button', { name: 'Yellow highlight' }).click();
@@ -448,8 +467,7 @@ await step('11. K8/W9: Tab in Edit text types a tab, it is in the SAVED file, an
   // THE MARKS BEFORE, from a copy saved before the tab is typed, so the count after is this tab's and no other's.
   const before = await savedCopy('k8-before.pdf');
   const marksBefore = tabMarks(await savedContent(before));
-  await openAt(page.locator('[data-text-block]').nth(2), 'middle');
-  await expect(editor()).toBeFocused();
+  await openBlock(page.locator('[data-text-block]').nth(2));
   await page.keyboard.press('Home');
   await page.keyboard.press('Tab');
   await expect(editor()).toBeFocused();
@@ -477,8 +495,7 @@ await step('12. B2.8: In this document lists the fonts of every page, not only t
   // THE TOOL ARMED AGAIN: the Escape that ends step 11's reopened block can also leave Edit text (2026-10-13 screenshot of
   // this step: no block layer drawn), and this step must not depend on how step 11 ended.
   await ensureEditText();
-  await openAt(page.locator('[data-text-block]').nth(2), 'middle');
-  await expect(editor()).toBeFocused();
+  await openBlock(page.locator('[data-text-block]').nth(2));
   await expect(panel()).toBeVisible();
   await panel().getByRole('button', { name: /^Font:/u }).click();
   const group = panel().getByRole('listbox').getByRole('group', { name: 'In this document' });
@@ -558,8 +575,7 @@ async function savedBorderStyles(path) {
 await step('15. N10: no Format group in the ribbon while a block is open; Ctrl+B and Times New Roman from the Properties panel format the words', async () => {
   await section('Edit');
   await ensureEditText();
-  await openAt(page.locator('[data-text-block]').first(), 'middle');
-  await expect(editor()).toBeVisible();
+  await openBlock(page.locator('[data-text-block]').first());
   // THE OWNER'S DECISION: the ribbon carries none of the formatting commands nor the Font and Size boxes.
   const ribbon = page.locator('[data-pane="ribbon"]');
   await expect(ribbon.locator('[data-command]').first()).toBeVisible();
@@ -775,16 +791,14 @@ await step('L2: an underlined word keeps its one underline when its block is edi
   await open(forL2);
   await section('Edit');
   await ensureEditText();
-  await openAt(page.locator('[data-text-block]').nth(1), 'middle');
-  await expect(editor()).toBeFocused();
+  await openBlock(page.locator('[data-text-block]').nth(1));
   await page.keyboard.press('Control+Home');
   await page.keyboard.press('Control+Shift+ArrowRight');
   await page.keyboard.press('Control+U');
   expect(await pressAway(10, 10), 'the editor said something at the press away').toStrictEqual([]);
   await expect(editor()).toHaveCount(0);
   // OPENED AGAIN: the word is read back underlined, so the editor draws it so (and a second Ctrl+U would take it off).
-  await openAt(page.locator('[data-text-block]').nth(1), 'middle');
-  await expect(editor()).toBeFocused();
+  await openBlock(page.locator('[data-text-block]').nth(1));
   const drawnUnderlined = await editor()
     .locator('.m-kit__run')
     .evaluateAll((runs) => runs.some((run) => (run.getAttribute('style') ?? '').includes('underline')));
@@ -824,8 +838,7 @@ await step('L6: a page with more runs than one answer carries SAYS SO in Edit te
   await section('Edit');
   await ensureEditText();
   await expect(page.getByText('This page has more text than can be outlined at once')).toBeVisible({ timeout: 60_000 });
-  await openAt(page.locator('[data-text-block]').first(), 'middle');
-  await expect(editor()).toBeFocused();
+  await openBlock(page.locator('[data-text-block]').first());
   await page.keyboard.press('Control+Home');
   await page.keyboard.type('Edited ');
   expect(await pressAway(10, 10), 'the editor said something at the press away').toStrictEqual([]);
@@ -855,11 +868,12 @@ await step('N14: a word processor’s subsets keep their own font, bold and supe
   const block = page.locator('[data-text-block]').first();
   const box = await block.boundingBox();
   if (box === null) throw new Error('no block on the producer page');
-  await openAt(block, { x: box.width - 4, y: box.height / 2 });
-  // EVERY RUN IN ITS OWN FONT, never refused and never left in its kind of face: the family the read loaded the page
-  // font's face under (`runFaces.ts`) stands first in the run's `font-family`.
+  await openAt(box.x + box.width - 4, box.y + box.height / 2);
+  // EVERY RUN IN A FACE OF ITS OWN, never refused and never left in its kind of face: the face PDF.js loaded for its font,
+  // or the chain's, named first in its inline family, where a run left in its kind starts with the kind's own variable
+  // (`runFaces.ts`' `faceCssOf`, ADR-0271 section 3).
   const runs = editor().locator('.m-kit__run');
-  await expect.poll(async () => runs.evaluateAll((spans) => spans.every((span) => (span.getAttribute('style') ?? '').includes('font-family: "m-kit-'))), { timeout: 15_000 }).toBe(true);
+  await expect.poll(async () => runs.evaluateAll((spans) => spans.every((span) => !(span.getAttribute('style') ?? '').includes('font-family: var(--m-face-'))), { timeout: 15_000 }).toBe(true);
   // IN THE PAGE, where the window's own computed style is the browser's answer.
   const drawn = await runs.evaluateAll((spans) =>
     spans.map((span) => {
@@ -951,18 +965,18 @@ async function editorState() {
       Reflect.get(globalThis, 'document')
     );
     const words = dom.querySelector('[data-kit-surface]');
-    const holder = dom.querySelector('[data-kit-frame]');
+    const frame = dom.querySelector('[data-kit-frame]');
     const focused = dom.activeElement;
     return {
-      open: holder !== null,
-      busy: holder?.getAttribute('aria-busy') ?? null,
+      open: words !== null,
+      busy: frame?.getAttribute('aria-busy') ?? null,
       focus: focused === null ? null : `${focused.tagName.toLowerCase()}${focused.getAttribute('aria-label') === null ? '' : `[${focused.getAttribute('aria-label')}]`}`,
       listOpen: dom.querySelector('[data-text-properties] [role="listbox"]') !== null,
       // WHAT THE EDITOR HOLDS AND SAYS, so a box that would not end is read with its words.
       words: (words?.textContent ?? '').slice(0, 120),
-      said: [...dom.querySelectorAll('.m-text-editor-problem')].map((problem) => (problem.textContent ?? '').slice(0, 160)),
+      said: [...dom.querySelectorAll('.m-kit-problem')].map((problem) => (problem.textContent ?? '').slice(0, 160)),
       // THE CHARACTERS A "Can’t show" NAMES, as code points: a space or a mark reads as nothing on screen.
-      named: [...dom.querySelectorAll('.m-text-editor-problem')].map((problem) =>
+      named: [...dom.querySelectorAll('.m-kit-problem')].map((problem) =>
         Array.from((problem.textContent ?? '').split('Can’t show')[1] ?? '').map((character) => character.codePointAt(0)?.toString(16)),
       ),
     };

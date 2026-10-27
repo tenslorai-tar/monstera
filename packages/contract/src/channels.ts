@@ -94,8 +94,10 @@ import {
   MAX_LIBRARY_ENTRIES,
   MAX_LIBRARY_PICTURE_BYTES,
   MAX_BLOCK_FONTS,
-  MAX_FONT_RUNS,
-  MAX_RUN_FONT_BYTES,
+  FACE_STYLES,
+  MAX_BLOCK_FACE_RUNS,
+  MAX_FACE_CANDIDATES,
+  MAX_FACE_FAMILY,
   keepableSignatureSchema,
   libraryEntrySchema,
   libraryIdSchema,
@@ -914,8 +916,8 @@ export const pdfBoxSchema = z
  * The page's own font program never travels — a renderer that loaded it would
  * be a second parser of the document's bytes — so what crosses here is its KIND
  * and the size it is drawn at. `colour` is the fill its glyphs are painted in.
- * A run whose embedded program the host can check and rebuild has that rebuilt
- * font on its own read, `document.runFonts` (ADR-0175), never in this answer.
+ * The editor draws a run in the face PDF.js already loaded for its font, or the
+ * face the writer sets new words in (`document.blockFaces`, ADR-0271).
  */
 export const textBlockStyleSchema = z
   .object({
@@ -935,7 +937,7 @@ export const textBlockStyleSchema = z
     /**
      * The name of the font the run is drawn in, as the page states it (a subset's tag included), where the page names
      * one: what the font picker lists *In this document* and what added text near it is set in (the owner's D2 and B4.3).
-     * A name, never the font's program, which crosses only by `document.runFonts`.
+     * A name, never the font's program, which never crosses.
      */
     font: z.string().min(1).max(MAX_FONT_FAMILY_NAME).optional(),
     /**
@@ -1274,6 +1276,17 @@ export const AI_SETUP_AT_START_SETTING_ID = 'ai.setup-at-start';
  * and the next reader deserves to know it is the base schema that carries it —
  * not a modifier they might remove as noise.
  */
+/**
+ * A face `document.blockFaces` names: a family, the weight and slant the writer sets it at, and every style the family
+ * has, which is what the editor's style choice offers.
+ */
+const faceChoiceSchema = z.object({
+  family: z.string().min(1).max(MAX_FACE_FAMILY),
+  weight: z.number().min(1).max(1000),
+  italic: z.boolean(),
+  styles: z.array(z.enum(FACE_STYLES)).max(FACE_STYLES.length).readonly(),
+});
+
 const linkBoundsSchema = z.object({
   x0: z.number(),
   y0: z.number(),
@@ -5848,24 +5861,10 @@ export const channels = {
                 })
                 .strict(),
               /**
-               * What the block pushes when it grows
-               * ([ADR-0249](../../../docs/DECISIONS/0249-a-paragraph-that-grows-pushes-the-text-below-it-down.md) Decision 2),
-               * `main`'s one answer (`pushesOf`): `below`, the blocks in its column under it, by their place among THIS
-               * PAGE'S blocks across every part; `room`, how far down in points they may go before the footer or the bottom
-               * margin. The editor draws the push from these and puts those blocks into the edit; the writer measures the
-               * growth. REQUIRED, `historyDropped`'s reason: an editor that never read it would cover the text below again.
-               */
-              push: z
-                .object({
-                  below: z.array(z.number().int().nonnegative()).max(MAX_EDIT_RUNS).readonly(),
-                  room: z.number().nonnegative().max(2 * MAX_PAGE_COORDINATE),
-                })
-                .strict(),
-              /**
                * The form whose own content draws this block
                * ([ADR-0269](../../../docs/DECISIONS/0269-text-inside-a-form-is-edited-in-the-forms-own-content.md)),
                * absent for the page's own content. Its runs' indices are that placement's, read as a page of its own,
-               * and an edit of it is sent with this path. It pushes nothing and is pushed by nothing (Decision 6).
+               * and an edit of it is sent with this path.
                */
               form: formPathSchema.exactOptional(),
             })
@@ -5919,7 +5918,7 @@ export const channels = {
       /**
        * The page was read with its forms' content moved onto it, in the engine's memory only
        * ([ADR-0232](../../../docs/DECISIONS/0232-packed-text-is-unpacked-by-the-edit-that-changes-it.md)): the blocks name
-       * that page's objects, so an edit of them is sent with `unpack` and a run-font read with it. Absent for a page read as
+       * that page's objects, so an edit of them is sent with `unpack`. Absent for a page read as
        * it is, which is every page with no text packed inside a form.
        */
       unpacked: z.literal(true).exactOptional(),
@@ -6075,35 +6074,30 @@ export const channels = {
     ['document-not-open', 'document-poisoned', 'engine-unavailable', 'raster-too-large'],
   ),
 
-  /**
-   * The fonts the editor draws a block's runs in, rebuilt by the PDFium host from the runs' own programs
-   * ([ADR-0175](../../../docs/DECISIONS/0175-the-typing-box-draws-a-run-in-its-own-font-rebuilt-in-the-host.md)): the
-   * third sanctioned byte crossing, beside `document.readRange` and this one's neighbour `document.renderPage`.
-   *
-   * Never the document's program. ONE READ PER BLOCK, each font once however many runs share it: every read writes the
-   * document's image for the host and opens it there, so a read per run cost a block's run count in whole-image writes.
-   * A run with no font — not embedded, not an sfnt, or glyphs that do not read as the page's — is `null` and the editor
-   * draws it in its kind of face. Read when the editor opens over a block, never in `document.textBlocks`, whose parts
-   * outline every page.
-   */
-  'document.runFonts': channel(
-    'The fonts a block’s runs are drawn in, rebuilt by the editing engine from the runs’ own programs, each once.',
+  'document.blockFaces': channel(
+    'What the writer does with a new word in each font of a block’s runs: the read on open.',
     z.object({
       docId: docIdSchema,
       page: z.number().int().nonnegative(),
       /** The runs' first objects, as `document.textBlocks` named them. */
-      indices: z.array(z.number().int().min(0).max(MAX_OBJECT_INDEX)).min(1).max(MAX_FONT_RUNS).readonly(),
-      /** The read that named them was `unpacked` (ADR-0232), so the indices name that page's objects. */
-      unpack: z.literal(true).exactOptional(),
+      indices: z.array(z.number().int().min(0).max(MAX_OBJECT_INDEX)).min(1).max(MAX_BLOCK_FACE_RUNS).readonly(),
+      /** The form placement the block is in, as `document.textBlocks` named it (ADR-0269); absent for the page's own. */
+      form: formPathSchema.exactOptional(),
     }),
     z
       .object({
         version: docVersionSchema,
-        /** The rebuilt fonts, each bounded in the predicate where the payload sweep can name it. */
+        /**
+         * For each distinct font of the runs asked about: whether it may carry a new word (an ordinary program, not drawn
+         * letters), the face the writer sets one in where it cannot, and the chain's nearest faces, the chosen one first.
+         * The face and the faces are `null` and empty where the engine has no faces to offer.
+         */
         fonts: z
           .array(
-            z.instanceof(Uint8Array).refine((bytes) => bytes.length > 0 && bytes.length <= MAX_RUN_FONT_BYTES, {
-              message: `a run font empty or larger than ${String(MAX_RUN_FONT_BYTES)} bytes`,
+            z.object({
+              own: z.boolean(),
+              chosen: faceChoiceSchema.nullable(),
+              candidates: z.array(faceChoiceSchema).max(MAX_FACE_CANDIDATES).readonly(),
             }),
           )
           .max(MAX_BLOCK_FONTS)
@@ -6111,7 +6105,7 @@ export const channels = {
         /** For each run asked about, in the order asked, its font's place in `fonts`, or `null` for none. */
         runs: z
           .array(z.number().int().min(0).max(MAX_BLOCK_FONTS - 1).nullable())
-          .max(MAX_FONT_RUNS)
+          .max(MAX_BLOCK_FACE_RUNS)
           .readonly(),
       })
       .refine((answer) => answer.runs.every((at) => at === null || at < answer.fonts.length), {

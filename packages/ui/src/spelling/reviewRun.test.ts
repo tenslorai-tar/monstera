@@ -227,7 +227,7 @@ function harness(script: Script): {
             line === 0 && script.blockAt !== undefined
               ? { x0: script.blockAt.x - 1, y0: script.blockAt.y - 1, x1: script.blockAt.x + 1, y1: script.blockAt.y + 1 }
               : { x0: 10, y0: HEIGHT - y1, x1: 10 + text.length * 6, y1: HEIGHT - y0 };
-          return [{ box, lines: [{ runs: [{ index: line, text, style: PLAIN }], box, soft: false, baseline: box.y0 }], style: PLAIN, shape: { align: 'left' as const, firstIndent: 0 }, push: { below: [], room: 0 } }];
+          return [{ box, lines: [{ runs: [{ index: line, text, style: PLAIN }], box, soft: false, baseline: box.y0 }], style: PLAIN, shape: { align: 'left' as const, firstIndent: 0 } }];
         });
         return Promise.resolve(ok({ version: version(), blocks, next: null, truncated: false, rotated: 0, angled: { turned: 0, vertical: 0, slanted: 0, mirrored: 0 }, unaddressable: 0, rewrite: 'operators' }));
       }

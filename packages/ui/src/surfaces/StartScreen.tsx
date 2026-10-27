@@ -17,6 +17,7 @@ import { Icon } from '../primitives/Icon.js';
 import type { IconName } from '../primitives/icons.js';
 import type { CommandContext, CommandRegistry } from '../registries/commands.js';
 import { useRunCommand } from '../registries/useRunCommand.js';
+import { SURFACE_PLACEMENTS, useLiveContext } from '../commandAnswers.js';
 import { startScreenModel } from './projections.js';
 
 /**
@@ -76,7 +77,9 @@ export interface StartScreenProps {
   readonly problems: readonly OpenProblemReport[] | undefined;
 }
 
-export function StartScreen({ registry, context, problems }: StartScreenProps): ReactElement {
+export function StartScreen({ registry, context: asked, problems }: StartScreenProps): ReactElement {
+  // THE ANSWERS OF WHAT THE START SCREEN PLACES (ADR-0272).
+  const context = useLiveContext(registry, asked, SURFACE_PLACEMENTS.startScreen);
   const { _ } = useLingui();
   const { primary, shortcut } = startScreenModel(registry, context);
   // A PRESS RUNS AGAINST THE CONTEXT AT THE PRESS (`useRunCommand`), so a button's handler keeps its identity.

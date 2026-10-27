@@ -325,7 +325,7 @@ describe('applyEditTextOperators', () => {
       await withChromium(async (session) => {
         const runs = headingRuns(await withDocument(session, (document) => joinedContent(pageContentStreams(document.findPage(0)))));
         const drawn = await applyEditTextOperators(session, command(runs.runs[0]?.index ?? 0, 'Monstera fixture 中าำาำ.'), runs);
-        expect(drawn).toStrictEqual({ boxed: [], more: 0, moved: [], noted: [] });
+        expect(drawn).toStrictEqual({ boxed: [], more: 0, noted: [] });
         expect(await pageWords(session)).toContain('Monsterafixture中าำาำ.');
         const written = await withDocument(session, (document) => {
           const fonts = document.findPage(0).get('Resources').get('Font');
@@ -373,7 +373,6 @@ describe('applyEditTextOperators', () => {
         expect(await applyEditTextOperators(session, command(runs.runs[0]?.index ?? 0, 'Monstera fixture zap.'), runs)).toStrictEqual({
           boxed: [],
           more: 0,
-          moved: [],
           // AND NOTHING NOTED: both read-backs agree with the write (ADR-0270).
           noted: [],
         });
@@ -403,7 +402,7 @@ describe('applyEditTextOperators', () => {
           ...command(index, words),
           ...blockEditOf([{ lines: [[index]], soft: [false], text: words }], [{ left: 100, baseline: 400, measure: 200, size: 14, text: 'A new box' }]),
         };
-        expect(await applyEditTextOperators(session, added, runs)).toStrictEqual({ boxed: [], more: 0, moved: [], noted: [] });
+        expect(await applyEditTextOperators(session, added, runs)).toStrictEqual({ boxed: [], more: 0, noted: [] });
         expect(await pageWords(session)).toContain('Anewbox');
         const { fonts, content: written } = await after(session);
         expect(fonts.filter((name) => name.startsWith('MonsteraF'))).toHaveLength(1);
@@ -442,7 +441,7 @@ describe('applyEditTextOperators', () => {
         const unassigned = String.fromCodePoint(0xf0000);
         const drawn = await applyEditTextOperators(session, command(runs.runs[0]?.index ?? 0, `Monstera fixture ${unassigned}.`), runs);
         // THE PERSON IS TOLD (ADR-0177 Decision 7): the character and its page, answered by the apply.
-        expect(drawn).toStrictEqual({ boxed: [{ character: unassigned, page: 0 }], more: 0, moved: [], noted: [] });
+        expect(drawn).toStrictEqual({ boxed: [{ character: unassigned, page: 0 }], more: 0, noted: [] });
         // THE REAL CHARACTER in MuPDF's reading: the box font's ToUnicode maps its code to U+F0000, not to the box.
         expect(await pageWords(session)).toContain(`Monsterafixture${unassigned}.`);
         expect(await pageWords(session)).not.toContain(String.fromCodePoint(0x25a1));
