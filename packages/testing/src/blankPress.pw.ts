@@ -25,23 +25,36 @@ const LINES = [
 const ALL = [HEADING, ...LINES];
 const PAGE_HEIGHT = 792;
 
-async function open(page: Page): Promise<void> {
+/** A page of short list lines with clear space between them, the owner's second page for the gesture. */
+const ITEMS = ['• Seed trays', '• Twine', '• Two watering cans for the shed', '• Labels', '• Gloves, small'].map((text, index) => ({
+  text,
+  box: { x0: 90, y0: 100 + index * 26, x1: 90 + Math.round(text.length * 5.4), y1: 114 + index * 26 },
+}));
+
+interface Line {
+  readonly text: string;
+  readonly box: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
+}
+
+async function open(page: Page, lines: readonly Line[] = ALL): Promise<void> {
   const document = await PDFDocument.create();
   const sheet = document.addPage([612, PAGE_HEIGHT]);
   const font = await document.embedFont(StandardFonts.TimesRoman);
-  sheet.drawText(HEADING.text, { x: 72, y: PAGE_HEIGHT - 74, size: 16, font });
-  for (const line of LINES) sheet.drawText(line.text, { x: line.box.x0, y: PAGE_HEIGHT - line.box.y0 - 10.5, size: 11, font });
+  for (const line of lines) {
+    const size = line.box.y1 - line.box.y0 > 15 ? 16 : 11;
+    sheet.drawText(line.text.replace('•', '-'), { x: line.box.x0, y: PAGE_HEIGHT - line.box.y1 + 3.5, size, font });
+  }
   const bytes = await document.save();
   const docId = asDocId('00000000-0000-4000-8000-0000000000e5');
   await page.setViewportSize({ width: 1280, height: 800 });
   await bridge(page, {
     opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'club.pdf' }],
     documentBytes: new Map([[docId, bytes]]),
-    pageLinesPlaced: [ALL],
+    pageLinesPlaced: [lines],
   });
   await page.goto('/');
   await page.getByRole('button', { name: 'Open PDF…' }).click();
-  await expect(page.locator('[data-text-layer="0"] [data-text-line]')).toHaveCount(ALL.length);
+  await expect(page.locator('[data-text-layer="0"] [data-text-line]')).toHaveCount(lines.length);
   await pageShown(page);
 }
 
@@ -143,4 +156,69 @@ test('CONTROL: a drag across words selects exactly them', async ({ page }) => {
   const selected = await press(page, start, end);
   expect(selected.startsWith('returning')).toBe(true);
   expect(selected).not.toContain('Members');
+});
+
+/**
+ * THE OWNER'S GESTURE (the local agent's measurement on Windows, 2026-10-27): a press between two lines, a little above
+ * a short line and right of where it ends, so in no line's band; then one pixel at a time down into that line's band,
+ * still right of its end; release. It selected from the page's first character to that line's end, because the
+ * platform parks a press outside every band at the page's start and the line-end follower extended that caret.
+ */
+async function gesture(page: Page, line: Line, down: number): Promise<string> {
+  const layer = await page.locator('[data-text-layer="0"]').boundingBox();
+  if (layer === null) throw new Error('no text layer');
+  const scale = layer.width / 612;
+  const x = layer.x + (line.box.x1 + 14) * scale;
+  const top = layer.y + line.box.y0 * scale;
+  const from = { x, y: top - 1.5 };
+  const bands = await page.evaluate(
+    ([px, py]) => {
+      const target = document.elementFromPoint(px ?? 0, py ?? 0);
+      const inBand = [...document.querySelectorAll('[data-text-layer="0"] [data-text-line]')].some((element) => {
+        const box = element.getBoundingClientRect();
+        return (py ?? 0) >= box.top && (py ?? 0) <= box.bottom;
+      });
+      return { onLayer: target?.closest('[data-text-layer]') !== null, inBand };
+    },
+    [from.x, from.y],
+  );
+  expect(bands, `the press above "${line.text}" is on the layer and in no line's band`).toEqual({ onLayer: true, inBand: false });
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  for (let step = 1; step <= down; step += 1) await page.mouse.move(from.x + step * 0.4, from.y + step);
+  const inside = await page.evaluate(
+    ([px, py]) =>
+      [...document.querySelectorAll('[data-text-layer="0"] [data-text-line]')].some((element) => {
+        const box = element.getBoundingClientRect();
+        return (py ?? 0) >= box.top && (py ?? 0) <= box.bottom && (px ?? 0) > box.right;
+      }),
+    [from.x + down * 0.4, from.y + down],
+  );
+  await page.mouse.up();
+  expect(inside, 'the release is in the line’s band, right of its end').toBe(true);
+  return page.evaluate(() => document.getSelection()?.toString() ?? '');
+}
+
+for (const [name, lines, index] of [
+  ['the heading, on an ordinary page', ALL, 0],
+  ['the paragraph’s first line, from the gap under the heading', ALL, 1],
+  ['a short list line', ITEMS, 1],
+  ['the list’s last line', ITEMS, 4],
+] as const) {
+  test(`THE OWNER'S GESTURE above ${name}, right of its end, drifting 2 and 3 px into its band, selects nothing`, async ({ page }) => {
+    await open(page, lines);
+    const line = lines[index];
+    if (line === undefined) throw new Error('no line');
+    for (const down of [2, 3]) expect(await gesture(page, line, down), `a ${String(down)} px drift`).toBe('');
+  });
+}
+
+test('CONTROL for the gesture: a drag from a line’s middle past its end still reaches its last letter', async ({ page }) => {
+  await open(page, ITEMS);
+  const line = ITEMS[2];
+  if (line === undefined) throw new Error('no line');
+  const middle = (line.box.y0 + line.box.y1) / 2;
+  const selected = await press(page, await at(page, line.box.x0 + 30, middle), await at(page, line.box.x1 + 20, middle));
+  expect(selected.length).toBeGreaterThan(10);
+  expect(selected.endsWith('shed')).toBe(true);
 });
