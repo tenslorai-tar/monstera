@@ -257,11 +257,17 @@ function caretPoint(page: Page): Promise<{ x: number; y: number } | undefined> {
   });
 }
 
-/** A press as a hand makes it: down, a pixel's drift, up. */
+/**
+ * A press as a hand makes it: down, a pixel's drift, up. THE DRIFT IS STRAIGHT DOWN, so it exercises the drag path and
+ * crosses no letter: a pixel to the right from a fifth into a letter under 3.33 px wide passes its midpoint, which the
+ * browser takes for a drag that selects it (measured 2026-10-27 with the anchor hold and without it alike). The editor's
+ * fitted letters made the `t` of "the size" 2.56 px on ubuntu-latest and 3.02 on windows-latest, against 3.66 here, so
+ * the case failed there and passed here for a reason that was the font's and not the editor's.
+ */
 async function press(page: Page, x: number, y: number): Promise<void> {
   await page.mouse.move(x, y);
   await page.mouse.down();
-  await page.mouse.move(x + 1, y + 1);
+  await page.mouse.move(x, y + 1);
   await page.mouse.up();
 }
 
