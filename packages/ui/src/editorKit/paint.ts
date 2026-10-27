@@ -48,6 +48,8 @@ export function paintRun(span: HTMLElement, style: RunStyle, look: Look): void {
   span.style.backgroundColor = style.highlight === null ? '' : rgb(style.highlight);
   // THE WIRE'S FRACTION OF THE SIZE IS CSS'S `em`, so what is drawn while typing is spaced as the writer spaces it.
   span.style.letterSpacing = style.spacing === 0 ? '' : `${String(style.spacing)}em`;
+  // THE RUN'S OWN SPACING, which a fit to the page's width (`fitDrawnLines`) adds to rather than replaces.
+  span.dataset['kitSpacing'] = span.style.letterSpacing;
   // RAISED AS CHOSEN, else at the page's own lift; with no height of its own, so a raised run does not heighten its line.
   span.style.verticalAlign = style.rise === 'superscript' ? 'super' : style.rise === 'subscript' ? 'sub' : style.lift === 0 ? '' : `${String(style.lift * look.zoom)}px`;
   span.style.lineHeight = risen || style.lift !== 0 ? '0' : '';
@@ -121,6 +123,60 @@ export function restyleParagraph(element: HTMLElement, paragraph: Paragraph, loo
   for (const span of element.querySelectorAll<HTMLElement>('span[data-kit-run]')) {
     const run = paragraph.runs[Number(span.dataset['kitRun'])];
     if (run !== undefined) paintRun(span, run.style, look);
+  }
+}
+
+/**
+ * Fits each line of a paragraph laid out as the page drew it to the width the page draws that line at, by its letter
+ * spacing: the caret and the selection land on the page's letters only where the editor's own letters lie under them.
+ *
+ * ## Why the width has to be imposed rather than trusted
+ *
+ * The letters are laid out in the CSS face a style is drawn in, and that face is the page's own only where the page's font
+ * could be given to the browser. A font the page draws from shapes of its own (Type 3, as a web browser prints) has no
+ * such face, so a stand-in lays its letters out at other widths: wider, and the line ran past the visible one, so a press
+ * at the visible end landed a word or two short and the last words lay outside the editor; narrower, and the line ended
+ * early. Spreading the difference over the line's letters puts its two ends where the page's are, for every font kind,
+ * and costs nothing where the face is the page's own, whose difference is nothing.
+ *
+ * `widths` is the paragraph's lines' drawn widths in points, in order; a line with no width given is left as laid out.
+ * Measured from the first letter to the last that is not a space, since a soft wrap's space is not drawn on the page.
+ */
+export function fitDrawnLines(element: HTMLElement, widths: readonly number[], zoom: number): void {
+  const owner = element.ownerDocument;
+  const lines: HTMLElement[][] = [[]];
+  for (const child of Array.from(element.children)) {
+    if (child instanceof HTMLElement && child.dataset['kitWrap'] !== undefined) lines.push([]);
+    else if (child instanceof HTMLElement && child.dataset['kitRun'] !== undefined) lines.at(-1)?.push(child);
+  }
+  for (const [at, spans] of lines.entries()) {
+    const target = widths[at];
+    if (target === undefined || spans.length === 0) continue;
+    for (const span of spans) span.style.letterSpacing = span.dataset['kitSpacing'] ?? '';
+    const texts = spans.map((span) => span.firstChild).filter((node): node is Text => node instanceof Text && node.data !== '');
+    const first = texts[0];
+    // THE LAST LETTER THAT IS NOT A SPACE, and its text node.
+    let last: { readonly node: Text; readonly end: number } | undefined;
+    for (const node of [...texts].reverse()) {
+      const end = node.data.trimEnd().length;
+      if (end > 0) {
+        last = { node, end };
+        break;
+      }
+    }
+    if (first === undefined || last === undefined) continue;
+    const range = owner.createRange();
+    range.setStart(first, 0);
+    range.setEnd(last.node, last.end);
+    const natural = range.getBoundingClientRect().width;
+    // NO LAYOUT, NOTHING TO FIT: a document with no layout engine measures every range as nothing.
+    if (!(natural > 0)) continue;
+    const letters = range.toString().length;
+    const extra = (target * zoom - natural) / letters;
+    for (const span of spans) {
+      const own = span.dataset['kitSpacing'] ?? '';
+      span.style.letterSpacing = own === '' ? `${String(extra)}px` : `calc(${own} + ${String(extra)}px)`;
+    }
   }
 }
 

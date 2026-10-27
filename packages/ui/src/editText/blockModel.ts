@@ -81,6 +81,8 @@ export interface OpenedBlock {
    * nobody changed is laid out at these breaks, so its lines are where the page drew them.
    */
   readonly wraps: readonly (readonly number[])[];
+  /** The width the page draws each line of each paragraph at, in points: what its laid-out letters are fitted to. */
+  readonly widths: readonly (readonly number[])[];
 }
 
 /** A block's lines, grouped into paragraphs: a line ending soft carries on in the next. */
@@ -111,6 +113,7 @@ export function modelOfBlock(block: TextBlock): OpenedBlock {
         )
       : [];
   const wraps: number[][] = [];
+  const widths: number[][] = [];
   const grouped = linesByParagraph(block);
   const [firstLine, secondLine] = block.lines;
   const pitch = firstLine !== undefined && secondLine !== undefined && firstLine.baseline > secondLine.baseline ? firstLine.baseline - secondLine.baseline : undefined;
@@ -135,6 +138,7 @@ export function modelOfBlock(block: TextBlock): OpenedBlock {
       breaks.push(length);
     }
     wraps.push(breaks);
+    widths.push(lines.map((line) => line.box.x1 - line.box.x0));
     const edge = edges[place];
     // THE SPACE THE PAGE LEAVES ABOVE THE PARAGRAPH beyond the block's even pitch: its first baseline less where the lines
     // above, set at the pitch, would put it. Measured 2026-10-24 on a contract clause of three numbered paragraphs, whose
@@ -155,7 +159,7 @@ export function modelOfBlock(block: TextBlock): OpenedBlock {
     return { ...setting, base: setting, runs: runs.length === 0 ? [{ text: '', style: blockStyle, base: blockStyle }] : runs };
   });
   const model: Model = { paragraphs };
-  return { model, wraps };
+  return { model, wraps, widths };
 }
 
 /** Whether `opened`'s words are the kernel's join of the block's: the check {@link modelOfBlock} exists to pass. */
