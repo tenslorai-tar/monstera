@@ -68,6 +68,10 @@ export function editTextOpening(page) {
    * @param {{ x: number, y: number } | 'middle'} [at]
    */
   async function pointOf(block, at) {
+    // IN VIEW FIRST, as a locator's own `click()` brings it: a press is made at window coordinates, and a block scrolled
+    // under the ribbon was pressed THROUGH the ribbon — the text walk's steps 7 and 15 on the sample's first block, which
+    // passed while the walks clicked the locator (2026-10-27).
+    await block.scrollIntoViewIfNeeded();
     const box = await block.boundingBox();
     if (box === null) throw new Error('the block has no outline on screen');
     if (at === 'middle') return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
