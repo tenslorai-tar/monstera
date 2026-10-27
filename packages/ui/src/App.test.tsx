@@ -14,6 +14,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from './App.js';
 import { idsOf, SURFACE_PLACEMENTS } from './commandAnswers.js';
+import { formatOpenEditor } from './editorKit/openEditor.js';
+import { FALLBACK_FACE_SETTING } from './settings/editing.js';
 import type { DropOpener, EventSubscriber } from './bridge.js';
 import { CONVERT_SCAN_TARGETS } from './commands/convertScan.js';
 import { reportProblem } from './commands/documentCommands.js';
@@ -2988,6 +2990,47 @@ describe('App', () => {
       });
       expect(blockReads.length).toBe(before);
     });
+
+    it.each(['serif', 'mono'] as const)(
+      'EDIT TEXT: the fallback face the person set (%s) is the one the open editor draws a family it cannot show behind',
+      async (kind) => {
+        // THE PATH NO OTHER CASE CROSSES: Settings → `App`'s `editing` → the page → the layer → the editor's face stack.
+        // `runFaces.test.tsx` holds what the stack does with the kind; this holds that the kind is the person's.
+        const style = { size: 11, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false, italic: false, bold: false };
+        const box = { x0: 72, y0: 686, x1: 300, y1: 700 };
+        const { client } = answeringClient({
+          ...OPEN_DOCUMENT_ANSWERS,
+          'document.textBlocks': {
+            version: asDocVersion(1),
+            next: null,
+            blocks: [{ box, lines: [{ runs: [{ index: 1, text: 'Garden club', style }], box, soft: false, baseline: 689 }], style, shape: { align: 'left', firstIndent: 0 } }],
+            truncated: false,
+            rotated: 0,
+            angled: { turned: 0, vertical: 0, slanted: 0, mirrored: 0 },
+            unaddressable: 0,
+            rewrite: 'objects',
+          },
+          'document.blockFaces': { version: asDocVersion(1), fonts: [], runs: [null] },
+        });
+        render(<App client={client} settings={freshSettings({ [FALLBACK_FACE_SETTING.id]: kind })} />);
+        await withDocumentOpen();
+        await pressCommand('Edit text', 'Edit');
+        // THE PAGE READS ONCE THE VISIBLE SET HOLDS STILL (`useSettledPages`), so the outline is waited for.
+        const outline = await vi.waitFor(() => {
+          const found = firstPageSlot().querySelector<HTMLElement>('[data-text-block="0"]');
+          if (found === null) throw new Error('no outline yet');
+          return found;
+        });
+        fireEvent.click(outline, { detail: 1 });
+        // A FAMILY THE BLOCK DOES NOT CARRY, set on the selected box through the open editor's one format channel.
+        act(() => {
+          formatOpenEditor({ kind: 'set', change: { family: 'A Family Nowhere' } });
+        });
+        const stacks = [...firstPageSlot().querySelectorAll<HTMLElement>('[data-kit-surface] span')].map((span) => span.style.fontFamily);
+        expect(stacks.length).toBeGreaterThan(0);
+        for (const stack of stacks) expect(stack).toMatch(new RegExp(`var\\(--m-face-${kind}\\)$`, 'u'));
+      },
+    );
 
     it('EDIT TEXT: a page with no text offers to recognise it, and the button runs the registry’s own recognise command (ADR-0181)', async () => {
       // THE WIRED PAIR'S MISSING HALF: `editText/EditTextLayer.test.tsx` proves the button calls `onRecognise`, and the kernel proof

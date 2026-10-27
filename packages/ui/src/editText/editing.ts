@@ -55,8 +55,12 @@ export interface TextEditing {
    * read, for the note that a written block now runs over one (B1.6); `undefined` where the read was refused.
    */
   readonly objects: (page: number) => Promise<{ readonly version: DocVersion; readonly boxes: readonly TextBlock['box'][] } | undefined>;
-  /** The kind of face a letter is drawn in where nothing closer is known (`editing.fallback-face`); sans where absent. */
-  readonly fallbackFace?: FaceKind;
+  /**
+   * The kind of face a letter is drawn in where nothing closer is known (`editing.fallback-face`). REQUIRED, and given no
+   * default on the way down, so a composition that forgets the person's setting is a compile error rather than an editor
+   * quietly drawing sans.
+   */
+  readonly fallbackFace: FaceKind;
 }
 
 /** A box in the overlay's CSS pixels, and the turn the page is drawn at. */
