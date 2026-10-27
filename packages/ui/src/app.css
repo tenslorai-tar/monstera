@@ -6655,8 +6655,6 @@ optgroup {
   overflow: hidden;
   white-space: pre-wrap;
   overflow-wrap: break-word;
-  /* EACH PARAGRAPH RUNS THE WAY ITS OWN LETTERS SAY (ADR-0181): Hebrew and Arabic are typed right to left. */
-  unicode-bidi: plaintext;
   /* NO PAPER OF ITS OWN: the page shows through a paragraph still as drawn, and each changed one's paper is a cover. */
   background: transparent;
   caret-color: var(--accent-on-paper, var(--accent));
@@ -6683,6 +6681,13 @@ optgroup {
 /* A PARAGRAPH AS THE PAGE DREW IT (`paint.ts`): laid out at the page's breaks and nowhere else, and not painted, so the
    page's own drawing of those words shows until the person changes them. Every descendant, because each run carries its
    own colour, decoration and highlight inline. */
+/* EACH PARAGRAPH RUNS THE WAY ITS OWN LETTERS SAY (ADR-0181): Hebrew and Arabic are typed right to left. ON THE
+   PARAGRAPH, not the surface: each paragraph is a block of its own and so a bidi paragraph of its own, and
+   `unicode-bidi` is not inherited, so declared on the surface it reached no paragraph (`editTextBidi.pw.ts`). */
+.m-kit__paragraph {
+  unicode-bidi: plaintext;
+}
+
 .m-kit__paragraph--as-drawn {
   white-space: pre;
   overflow-wrap: normal;
