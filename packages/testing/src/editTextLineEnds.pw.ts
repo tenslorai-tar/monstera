@@ -56,12 +56,13 @@ async function open(page: Page, mono: boolean): Promise<void> {
 async function caret(page: Page): Promise<{ before: number; x: number }> {
   return page.locator(SURFACE).evaluate((root) => {
     const selection = root.ownerDocument.getSelection();
-    if (selection === null || selection.focusNode === null) return { before: -1, x: Number.NaN };
+    const focus = selection?.focusNode ?? null;
+    if (selection === null || focus === null) return { before: -1, x: Number.NaN };
     const range = root.ownerDocument.createRange();
     range.setStart(root, 0);
-    range.setEnd(selection.focusNode, selection.focusOffset);
+    range.setEnd(focus, selection.focusOffset);
     const here = root.ownerDocument.createRange();
-    here.setStart(selection.focusNode, selection.focusOffset);
+    here.setStart(focus, selection.focusOffset);
     return { before: range.toString().length, x: here.getBoundingClientRect().x };
   });
 }
