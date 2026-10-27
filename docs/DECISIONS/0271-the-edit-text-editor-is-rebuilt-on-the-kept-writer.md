@@ -426,3 +426,19 @@ version; if that draw fails, or no newer view arrives, the editor stays over the
 before. The alternative is to let go after a bound (for example one second) whatever is drawn, which shows the old
 words for a moment where the draw failed. My recommendation is to keep the wait as the failure path: a failed area draw
 is rare, and showing old words is the defect ADR-0261 fixed.
+
+**Answered by the owner, 2026-10-27.**
+
+1. *"Never let a split land within a line of the text below, so nothing moves and nothing joins."* **Option (c) above
+   was wrong in its means, and the decision is taken in its ends.** Its second clause, the half left where it was with
+   no gap added, cannot work: the kernel groups a piece into the block above it when the gap is smaller than a line's
+   height and the two are set alike (`groupIntoBlocks`, `textLines.ts`), so the two halves would be read back as one
+   block and the split would undo itself. That is why a split moves its second half down a line. **As decided:** the
+   second half still moves down by the block's line pitch, and the split is **offered only where the moved half then
+   stands at least that line clear of every block below it in its column**, or overlapping it in height. Where there
+   is no such room the menu does not offer the split (hidden, as every block operation that does not apply is). The
+   text below never moves, and a split can no longer join its half to it. What it costs: a block with text close under
+   it cannot be split from the menu; the person can still move the block or break its lines with Enter.
+2. *"Keep waiting for the page, in that failure case only."* As built: the editor lets go when its area is drawn at the
+   new version, and only where that draw fails, or there is nothing to draw it with, does it stay until the page's own
+   redraw at the new version. Section 3's *the full page is never waited for* holds everywhere else.
