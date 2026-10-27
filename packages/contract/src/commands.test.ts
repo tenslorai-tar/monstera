@@ -523,4 +523,11 @@ describe('a page’s blocks by stream (ADR-0269)', () => {
     expect(formPathSchema.safeParse(Array.from({ length: MAX_FORM_DEPTH + 1 }, () => fm1[0])).success).toBe(false);
     expect(formPathSchema.safeParse([{ name: 'F\u0000m', occurrence: 0 }]).success).toBe(false);
   });
+
+  it('takes a resource name as long as ISO 32000-2 allows, 127, and refuses one past it', () => {
+    // The bound was 64, below the format's own limit, so a valid file's longer name left its form's text unoffered.
+    expect(formPathSchema.safeParse([{ name: 'F'.repeat(127), occurrence: 0 }]).success).toBe(true);
+    // CONTROL: past the format's limit no valid file names a resource, and the schema still has a bound.
+    expect(formPathSchema.safeParse([{ name: 'F'.repeat(128), occurrence: 0 }]).success).toBe(false);
+  });
 });
