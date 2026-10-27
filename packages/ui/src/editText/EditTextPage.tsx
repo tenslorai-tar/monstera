@@ -3,6 +3,7 @@ import { type ReactElement, useCallback, useEffect, useState } from 'react';
 
 import type { OverlayPage } from '../annotations/annotationSpace.js';
 import { useSettledRead } from '../useSettledPages.js';
+import type { PatchArea } from './AreaPatch.js';
 import type { PageBlocks, TextEditing } from './editing.js';
 import { EditTextLayer } from './EditTextLayer.js';
 import type { ShownPage } from './pdfjsFaces.js';
@@ -33,8 +34,11 @@ export function EditTextPage({
   drawn,
   shown,
   paused,
+  patch,
 }: {
   readonly page: number;
+  /** Draws one area of the page at the newest version, so a written editor need not wait for the page (`AreaPatch`). */
+  readonly patch?: PatchArea;
   /** Whether no scroll is moving, before which the page's blocks are not read (`useSettledRead`). */
   readonly paused: boolean;
   /** The text PDF.js shows on the page and the face it loaded for each piece (`pdfjsFaces.ts`), at the version it shows. */
@@ -94,6 +98,8 @@ export function EditTextPage({
       paperAt={paperAt}
       pictureNoted={pictureNoted}
       blockFaces={(block, read) => editing.blockFaces(page, block, read)}
+      {...(drawn === undefined ? {} : { drawn })}
+      {...(patch === undefined ? {} : { patch })}
       {...(shown === undefined ? {} : { shown })}
       spell={editing.spell}
       // AN ANSWER WITH NO BLOCKS is a refused read, as against no answer yet.

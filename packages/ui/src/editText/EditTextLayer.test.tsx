@@ -11,6 +11,7 @@ import { formatOpenEditor } from '../editorKit/openEditor.js';
 import { activateCatalogue, i18n } from '../i18n.js';
 import { EN } from '../messages/en.js';
 import type { TextBlock } from '../textBlock.js';
+import type { PatchArea } from './AreaPatch.js';
 import type { PageBlocks } from './editing.js';
 import { EditTextLayer, stackingOf } from './EditTextLayer.js';
 
@@ -207,6 +208,59 @@ describe('Edit text on the editor kit (ADR-0271)', () => {
     // CONTROL: the same layer over a page WITH blocks makes no offer.
     const { view: withBlocks } = layer();
     expect(withBlocks.container.querySelector('.m-text-edit__promote')).toBeNull();
+  });
+
+  it('a written editor lets go when its AREA is drawn at the new version, and the area goes once the page is drawn there', async () => {
+    const drawnAt: { finish?: () => void } = {};
+    const patch = vi.fn<PatchArea>(
+      (_after, area) =>
+        new Promise((resolve) => {
+          drawnAt.finish = () => {
+            resolve({ version: asDocVersion(4), at: area });
+          };
+        }),
+    );
+    const props = (drawn: number) => (
+      <I18nProvider i18n={i18n}>
+        <EditTextLayer
+          blocks={BLOCKS}
+          drawn={asDocVersion(drawn)}
+          geometry={{ ...GEOMETRY, crop: [...GEOMETRY.crop] }}
+          onCommit={() => Promise.resolve('written')}
+          onLeave={vi.fn()}
+          page={0}
+          paperAt={() => undefined}
+          patch={patch}
+          blockFaces={() => Promise.resolve(NO_BLOCK_FACES)}
+        />
+      </I18nProvider>
+    );
+    const view = render(props(3));
+    const frame = () => view.container.querySelector<HTMLElement>('[data-kit-frame]');
+    fireEvent.click(must(view.container.querySelector<HTMLElement>('[data-text-block="0"]'), 'outline'), { detail: 1 });
+    act(() => {
+      typeAt(must(view.container.querySelector<HTMLElement>('[data-kit-surface]'), 'surface'), '!', { paragraph: 0, offset: 11 });
+    });
+    await act(async () => {
+      fireEvent.keyDown(must(view.container.querySelector<HTMLElement>('[data-kit-surface]'), 'surface'), { key: 'Escape' });
+      await Promise.resolve();
+    });
+    // ASKED FOR THE AREA OVER THE READ IT WAS MADE AT, holding the block as placed (72, 92 to 300, 106 at zoom 1).
+    expect(patch).toHaveBeenCalledTimes(1);
+    const [after, area] = patch.mock.calls[0] ?? [];
+    expect(after).toBe(BLOCKS.version);
+    expect(area !== undefined && area.left <= 72 && area.top <= 92 && area.left + area.width >= 300 && area.top + area.height >= 106).toBe(true);
+    // CONTROL: until it is drawn, the written editor stays over the words.
+    expect(frame()).not.toBeNull();
+    await act(async () => {
+      drawnAt.finish?.();
+      await Promise.resolve();
+    });
+    // THE DECISION: the editor let go, and the patch shows in the same render.
+    expect(frame()).toBeNull();
+    expect(view.container.querySelector('[data-kit-patch="drawn"]')).not.toBeNull();
+    view.rerender(props(4));
+    expect(view.container.querySelector('[data-kit-patch]')).toBeNull();
   });
 
   it('Escape with no block open leaves the mode', () => {

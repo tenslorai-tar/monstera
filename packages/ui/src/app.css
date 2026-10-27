@@ -6544,6 +6544,13 @@ optgroup {
   overflow-anchor: none;
 }
 
+/* THE EDITED AREA AT THE NEW VERSION (`AreaPatch`), over the page's old pixels and under every outline: first in the
+   layer, and never a target, so a press goes to the outline or the page under it. */
+.m-kit-patch {
+  position: absolute;
+  pointer-events: none;
+}
+
 .m-text-block {
   position: absolute;
   padding: 0;

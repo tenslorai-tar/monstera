@@ -22,6 +22,7 @@ import { type OverlayPage, overlayTransform } from './annotations/annotationSpac
 import type { AnnotationSelection, LinkSelection } from './annotations/selectTool.js';
 import { SelectionLayer } from './SelectionLayer.js';
 import type { TextEditing } from './editText/editing.js';
+import type { PatchArea } from './editText/AreaPatch.js';
 import { EditTextPage } from './editText/EditTextPage.js';
 import { shownTextOf } from './editText/pdfjsFaces.js';
 import { type ObjectEditing, ObjectEditPage } from './ObjectEditLayer.js';
@@ -1871,6 +1872,20 @@ function PageSlot({
   );
   const paperAt = useCallback((x: number, y: number): string | undefined => paperIn(own.current, x, y), []);
   const pictureOf = useCallback((box: { x0: number; y0: number; x1: number; y1: number }) => pictureIn(own.current, box), []);
+  // ONE AREA OF THE NEWEST VIEW, drawn alone for a written edit (`AreaPatch`): the overlay's CSS pixels times the
+  // device's are the region's, since the region is drawn at the shown zoom, from the view's page the slot draws.
+  const patchArea = useCallback<PatchArea>(
+    async (after, area, target, signal) => {
+      if (view === undefined || view.version <= after) return undefined;
+      const pixels = devicePixels();
+      const x = Math.floor(area.left * pixels);
+      const y = Math.floor(area.top * pixels);
+      const region = { x, y, width: Math.ceil((area.left + area.width) * pixels) - x, height: Math.ceil((area.top + area.height) * pixels) - y };
+      await renderRegion(view.document, pdfjsPageOf(source), target, pixels * zoom, rotation, region, signal);
+      return { version: view.version, at: { left: x / pixels, top: y / pixels, width: region.width / pixels, height: region.height / pixels } };
+    },
+    [rotation, source, view, zoom],
+  );
   // THE VIEW THE PIXELS ON SCREEN CAME FROM, set when a draw has presented: the drawing overlay holds a
   // released shape until this moves past the view it was released over (`AnnotationOverlay.drawnWith`).
   const [drawnWith, setDrawnWith] = useState<DocumentView | undefined>(undefined);
@@ -2378,6 +2393,7 @@ function PageSlot({
         <EditTextPage
           paperAt={paperAt}
           paused={paused}
+          patch={patchArea}
           // THE VERSION THE PAGE SHOWS, set with its pixels: a written editor stays until this is the newer one (ADR-0261).
           drawn={drawnWith?.version}
           editing={editing}

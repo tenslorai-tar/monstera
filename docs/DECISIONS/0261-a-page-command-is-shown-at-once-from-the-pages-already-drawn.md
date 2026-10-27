@@ -103,3 +103,14 @@ A rendered case per category (rotate, move, delete, undo and redo of each, field
 control: with the plan or the hold switched off the case is red. A failure case: the shown result goes back.
 `markLatencyWalk.mjs`: the visible result within 100 ms, the final within 200 ms or replaced invisibly; `blinkWalk.mjs`:
 0 bad frames.
+
+## Note, 2026-10-27 — Decision 7's wait is now for the edited area, not the page (ADR-0271)
+
+[ADR-0271](0271-the-edit-text-editor-is-rebuilt-on-the-kept-writer.md) section 3 (Finishing) decides that after an edit
+only the block's area is repainted and the full page is never waited for. Decision 7 stands as written for what it
+holds: the written editor still stays over its words, taking no pointer, until something shows them. What it waits for
+changed: the edited area is drawn alone at the new version from the newest view (`AreaPatch.tsx`, through PDF.js's
+region draw), and the editor lets go in the same render that shows it. The page's own redraw catches up behind it and
+the area is let go once the page is drawn at its version. Where the area cannot be drawn, Decision 7's wait for the page
+is what still closes the editor. Rendered case: `editTextAreaPatch.pw.ts`, with the page's redraw held 4 s, the editor
+let go 110 to 136 ms after Escape (this cloud machine, 2026-10-27), and red with the patch removed.

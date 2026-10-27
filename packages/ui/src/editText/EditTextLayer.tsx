@@ -24,9 +24,10 @@ import {
 import { paperAround } from '../paperAround.js';
 import type { TextBlock } from '../textBlock.js';
 import { neighbourOf, wordsOfBlock } from '../textBlockOps.js';
+import { AreaPatch, type CssArea, type PatchArea } from './AreaPatch.js';
 import { modelOfBlock } from './blockModel.js';
 import { BlockEditor, type Opening } from './BlockEditor.js';
-import { type FreshBox, type PageBlocks, boxStyle, fontsOfPage, freshBox, insertOf, newlyCovered, overlaps, pastItsPage, place } from './editing.js';
+import { type FreshBox, type PageBlocks, type Placed, boxStyle, fontsOfPage, freshBox, insertOf, newlyCovered, overlaps, pastItsPage, place } from './editing.js';
 import { type ShownPage, runFamiliesOf } from './pdfjsFaces.js';
 import { type FaceKind, type FaceRead, type RunFaces, useRunFaces } from './runFaces.js';
 
@@ -84,10 +85,47 @@ export interface EditTextLayerProps {
   readonly paperAt: (x: number, y: number) => string | undefined;
   /** The kind of face a letter is drawn in where nothing closer is known (`editing.fallback-face`). */
   readonly fallbackFace?: FaceKind;
+  /** Draws one area of the page at the newest version (`AreaPatch`); absent where nothing can, and the page's redraw is waited for. */
+  readonly patch?: PatchArea;
+  /** The version the page on screen is drawn from, which a patch is kept until. */
+  readonly drawn?: DocVersion;
 }
+
+/** The margin drawn around an edited area, in CSS pixels: a letter's antialiased edge reaches past its box. */
+const PATCH_MARGIN = 4;
 
 /** No family known for any font: a join carries none. */
 const NO_FAMILIES = (): Promise<(font: string) => string | undefined> => Promise.resolve(() => undefined);
+
+/**
+ * The area a written edit changed, in the layer's CSS pixels with {@link PATCH_MARGIN} around it: the block as it was
+ * read, turned as the page is, and the editor's frame as it last stood, which is larger where the words grew.
+ */
+function editedArea(root: HTMLElement | null, placed: Placed): CssArea {
+  const turn = (placed.rotation * Math.PI) / 180;
+  const [cos, sin] = [Math.cos(turn), Math.sin(turn)];
+  // CSS TURNS ABOUT THE PLACED CORNER, clockwise with y down: (x, y) lands at (x cos - y sin, x sin + y cos) from it.
+  const corners = [
+    [0, 0],
+    [placed.width, 0],
+    [0, placed.height],
+    [placed.width, placed.height],
+  ].map(([x = 0, y = 0]) => ({ x: placed.left + x * cos - y * sin, y: placed.top + x * sin + y * cos }));
+  const frame = root?.querySelector('[data-kit-frame]');
+  if (root !== null && frame !== null && frame !== undefined) {
+    const own = root.getBoundingClientRect();
+    const box = frame.getBoundingClientRect();
+    corners.push({ x: box.left - own.left, y: box.top - own.top }, { x: box.right - own.left, y: box.bottom - own.top });
+  }
+  const left = Math.min(...corners.map((corner) => corner.x)) - PATCH_MARGIN;
+  const top = Math.min(...corners.map((corner) => corner.y)) - PATCH_MARGIN;
+  return {
+    left,
+    top,
+    width: Math.max(...corners.map((corner) => corner.x)) + PATCH_MARGIN - left,
+    height: Math.max(...corners.map((corner) => corner.y)) + PATCH_MARGIN - top,
+  };
+}
 
 /** A box's area in PDF points squared: the order outlines are stacked in. */
 function area(box: TextBlock['box']): number {
@@ -137,13 +175,23 @@ export function EditTextLayer({
   onHolding,
   paperAt,
   fallbackFace = 'sans',
+  patch,
+  drawn,
 }: EditTextLayerProps): ReactElement {
   const { _ } = useLingui();
+  const root = useRef<HTMLDivElement>(null);
   /** The open block: its place in the answer, the version that answer was read at, and how it was opened. */
   const [opened, setOpened] = useState<{ readonly at: number; readonly version: DocVersion; readonly opening: Opening; readonly parting?: boolean } | undefined>();
+  /** A written edit's area, the version of the read it was made over, and the version it was drawn at once it is. */
+  const [patching, setPatching] = useState<{ readonly after: DocVersion; readonly area: CssArea; readonly version?: DocVersion } | undefined>();
+  const onPatched = useCallback((version: DocVersion): void => {
+    setPatching((current) => (current === undefined ? undefined : { ...current, version }));
+  }, []);
+  // A WRITTEN EDITOR LETS GO when its area is drawn at the new version: the patch shows the words from here.
+  const patched = opened?.parting === true && patching?.version !== undefined && patching.after === opened.version;
   // A NEW READ CLOSES THE EDITOR, DERIVED rather than reset in an effect: an open block's indices describe the version it
   // was read at, and an editor over a newer answer would write words over objects the page no longer has.
-  const chosen = opened !== undefined && opened.version === blocks?.version ? opened.at : undefined;
+  const chosen = opened !== undefined && opened.version === blocks?.version && !patched ? opened.at : undefined;
   const [committing, setCommitting] = useState<number | undefined>();
   // HOLDING FROM THE MOMENT THE WRITE IS SENT: the version moves at the answer, and the page must already keep the read.
   const holding = chosen !== undefined && (opened?.parting === true || committing === chosen) ? opened?.version : undefined;
@@ -294,8 +342,13 @@ export function EditTextLayer({
         const holder = anchor instanceof Element ? anchor : (anchor?.parentElement ?? null);
         if ((holder?.closest('[data-kit-surface]') ?? null) === null) selection.removeAllRanges();
       }}
+      ref={root}
       role="group"
     >
+      {/* UNTIL THE PAGE ITSELF IS DRAWN AT THE PATCH'S VERSION, after which the page shows the same pixels. */}
+      {patch === undefined || patching === undefined || (patching.version !== undefined && drawn !== undefined && drawn >= patching.version) ? null : (
+        <AreaPatch after={patching.after} area={patching.area} key={`patch-${String(patching.after)}`} onDrawn={onPatched} patch={patch} />
+      )}
       {blocks?.blocks.map((block, at) => {
         const placed = place(block.box, geometry);
         if (at === open && openedModel !== undefined) {
@@ -329,7 +382,12 @@ export function EditTextLayer({
                 setCommitting(at);
                 const outcome = await onCommit(block, text, blocks, formatting);
                 if (outcome !== 'written') setCommitting((current) => (current === at ? undefined : current));
-                if (outcome === 'written') setWritten({ box: block.box, version: blocks.version });
+                if (outcome === 'written') {
+                  setWritten({ box: block.box, version: blocks.version });
+                  // THE AREA THE WRITE CHANGED, measured while the editor still shows it: the block as read and the frame
+                  // as it grew, since growth overlaps what is below and the page there changed too.
+                  setPatching({ after: blocks.version, area: editedArea(root.current, placed) });
+                }
                 else if (outcome !== 'unchanged') setNext(undefined);
                 return outcome;
               }}
