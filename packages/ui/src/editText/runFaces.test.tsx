@@ -91,6 +91,14 @@ describe('the faces an open block is drawn in', () => {
     expect(faceCssOf(runFacesOf(BLOCK, NONE), BLOCK, 'sans', new Set(['carlito', 'arimo']))(styleOfRun(1))).toBe('var(--m-face-sans)');
   });
 
+  it('draws a family the block does not carry behind the person’s fallback kind (`editing.fallback-face`), and a page run behind its own', () => {
+    const chosen: RunStyle = { ...styleOfRun(0), face: 'A Family Nowhere' };
+    expect(faceCssOf(runFacesOf(BLOCK, NONE), BLOCK, 'serif')(chosen)).toBe('var(--m-face-serif)');
+    expect(faceCssOf(runFacesOf(BLOCK, NONE), BLOCK, 'mono')(chosen)).toBe('var(--m-face-mono)');
+    // CONTROL: a run the page says is sans stays sans whatever the setting says, so the cases above are the setting's.
+    expect(faceCssOf(runFacesOf(BLOCK, NONE), BLOCK, 'serif')(styleOfRun(1))).toBe('var(--m-face-sans)');
+  });
+
   it('offers the read’s faces to the picker by the face key, Monstera’s choice named', () => {
     const faces = editorFacesOf(runFacesOf(BLOCK, READ));
     expect(faces(styleOfRun(0).face)).toStrictEqual({
