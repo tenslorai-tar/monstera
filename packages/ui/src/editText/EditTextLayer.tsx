@@ -382,7 +382,15 @@ export function EditTextLayer({
               }}
               onCommit={async (text, formatting) => {
                 setCommitting(at);
-                const outcome = await onCommit(block, text, blocks, formatting);
+                let outcome: BlockCommit;
+                try {
+                  outcome = await onCommit(block, text, blocks, formatting);
+                } catch (error: unknown) {
+                  // A WRITE THAT THREW holds nothing, as a refused one does not: the editor's own catch says it beside the
+                  // words, and the page must not go on keeping the read for a write that will never land.
+                  setCommitting((current) => (current === at ? undefined : current));
+                  throw error;
+                }
                 if (outcome !== 'written') setCommitting((current) => (current === at ? undefined : current));
                 if (outcome === 'written') {
                   setWritten({ box: block.box, version: blocks.version });
