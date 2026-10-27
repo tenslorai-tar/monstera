@@ -681,15 +681,17 @@ describe('PageList', () => {
         await pause(20);
       });
     }
-    const passed = textAsked.filter((asked) => asked.page === 1 || asked.page === 2);
+    /** The page a recorded read asked for, from the params it was sent with. */
+    const pageAsked = (asked: unknown): unknown => (typeof asked === 'object' && asked !== null && 'page' in asked ? asked.page : undefined);
+    const passed = textAsked.filter((asked) => pageAsked(asked) === 1 || pageAsked(asked) === 2);
     expect(passed).toStrictEqual([]);
     // THE STOP: after the pause, the page the scroll stopped on is read, and the passed ones still are not.
     await act(async () => {
       await pause(SETTLE_MS + 50);
     });
     await settle();
-    expect(textAsked.map((asked) => asked.page)).toContain(3);
-    expect(textAsked.filter((asked) => asked.page === 1 || asked.page === 2)).toStrictEqual([]);
+    expect(textAsked.map(pageAsked)).toContain(3);
+    expect(textAsked.filter((asked) => pageAsked(asked) === 1 || pageAsked(asked) === 2)).toStrictEqual([]);
   });
 
   it('renders one selectable element per line, carrying the channel’s text', async () => {
