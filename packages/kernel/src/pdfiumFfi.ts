@@ -871,9 +871,10 @@ export function pageRuns(session: PdfiumSession, page: number): Promise<PageRuns
   return promised(() =>
     onPage(session, page, (handle) => {
       const bindings = api();
-      const runs = joinedWalk(bindings, handle, walkRuns(bindings, handle)).map(({ index, members, text, left, right, bottom, top }) => {
+      const runs = joinedWalk(bindings, handle, walkRuns(bindings, handle)).map(({ index, members, text, left, right, bottom, top, style }) => {
         const fixed = members.every((member) => objectIsMono(bindings, bindings.getObject(handle, member)));
-        return { index, members, text, left, right, bottom, top, ...(fixed ? { fixedPitch: true as const } : {}) };
+        // ITALIC BY THE STYLE THE EDITOR SHOWS (`styleOf`), so the writer judges a mark's italic by the same answer.
+        return { index, members, text, left, right, bottom, top, ...(fixed ? { fixedPitch: true as const } : {}), ...(style.italic ? { italic: true as const } : {}) };
       });
       return { textObjects: textObjectsOn(bindings, handle), runs };
     }),

@@ -167,6 +167,10 @@ export async function applyEditTextOperators(
       // NOTHING TO WRITE, split by the PDFium writer's rule (ADR-0260): the words the page shows and nothing else is the
       // answer the editor closes on; anything else was a change none of which could be written, and the editor keeps it.
       if (refusal.reason === 'unchanged') {
+        // A MARK'S BOLD IS JUDGED BY THE WEIGHT THE LETTERS LOOK, which only the faces measure (`isBold`): without them a
+        // drawn bold word stated 400 read as already not bold, and Bold taken off it was answered *unchanged* and ignored
+        // (the owner's test of milestone 1). So *unchanged* without the faces is no verdict where a mark names Bold.
+        if (askFaces && blocksOfEdit(command).some((block) => (block.marks ?? []).some((mark) => mark.set.bold !== undefined))) return undefined;
         const shown = new Map(read.runs.map((run) => [run.index, run.text] as const));
         if ((command.inserts ?? []).length === 0 && sentAsShown(blocksOfEdit(command), (run) => shown.get(run))) {
           throw new BlockUnchangedError();

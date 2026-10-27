@@ -39,6 +39,7 @@ export const pageRunsSchema = z
             bottom: z.number(),
             top: z.number(),
             fixedPitch: z.literal(true).optional(),
+            italic: z.literal(true).optional(),
           })
           .strict()
           // A RUN IS NAMED BY ITS FIRST OBJECT, which is how the editor's wire names it.

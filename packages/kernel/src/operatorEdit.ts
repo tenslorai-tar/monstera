@@ -90,6 +90,11 @@ export interface PageRun {
   readonly top: number;
   /** Present where every object of it is set in a fixed-pitch face, by the read's one rule (`isMono`, `pdfiumFfi.ts`). */
   readonly fixedPitch?: true | undefined;
+  /**
+   * Present where it is set italic by the read's one rule (`faceOf`, the style the editor shows): what a mark's *italic*
+   * is compared with, so taking Italic off an italic word is a change and the word is set upright.
+   */
+  readonly italic?: true | undefined;
 }
 
 /**
@@ -1261,7 +1266,8 @@ function write(
       // WHAT A PAGE'S OPERATORS DO NOT SAY — its slant, its colour — a mark that names is a change.
       return (
         (set.bold !== undefined && set.bold !== (faces?.isBold(font) ?? statedBold(font))) ||
-        set.italic === true ||
+        // ITALIC EITHER WAY, against the slant the editor showed: off an italic word was read as no change, and ignored.
+        (set.italic !== undefined && set.italic !== (run.run.italic === true)) ||
         (set.size !== undefined && Math.abs(set.size - sizePt) > 0.05) ||
         set.colour !== undefined ||
         (set.family !== undefined && !(font.face ?? '').toLowerCase().includes(set.family.toLowerCase())) ||

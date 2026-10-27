@@ -205,6 +205,33 @@ describe('a word typed beside drawn letters takes the weight they LOOK (ADR-0176
     expect(names.some((name) => name.endsWith('Tinos-Bold')), JSON.stringify(names)).toBe(false);
   });
 
+  it('Bold turned OFF on the DRAWN word itself: it is written in the regular face and reads back regular (the owner’s M1 test)', async () => {
+    const off = [{ from: 0, to: SHOWN.length, set: { bold: false } }];
+    const command: CommandOfKind<'editTextOperators'> = {
+      kind: 'editTextOperators',
+      page: 0,
+      ...blockEditOf([{ lines: [[0]], soft: [false], text: SHOWN, marks: off }]),
+      fit: 'reflow',
+      version: asDocVersion(1),
+    };
+    const session = await mupdfWriter.open(await drawnPage('Bold', 400));
+    try {
+      await applyEditTextOperators(session, command, READ);
+      const read = await readTextFaces(session, 0);
+      // EVERY FONT THE PAGE STILL SHOWS TEXT IN, with the weight the read reports for it: the editor's Bold reads this.
+      const shown = [...new Set(read.ranges.map((range) => range.font))].map((at) => read.fonts[at]);
+      expect(shown.length, JSON.stringify(read)).toBeGreaterThan(0);
+      expect(
+        shown.every((font) => font !== undefined && (font.weight ?? 400) < 600),
+        JSON.stringify(shown),
+      ).toBe(true);
+      // AND WRITTEN IN THE REGULAR FACE, not left in the drawn bold letters.
+      expect(shown.some((font) => font?.face?.endsWith('Tinos-Regular') === true || font?.face === 'Tinos'), JSON.stringify(shown)).toBe(true);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
   it('CONTROL: Bold turned ON beside regular letters: it is written bold, so the person’s choice is what is set', async () => {
     const names = await written(await drawnPage('Regular', 700), typed([{ from: SHOWN.length + 1, to: SHOWN.length + 4, set: { bold: true } }]));
     expect(names.some((name) => name.endsWith('Tinos-Bold')), JSON.stringify(names)).toBe(true);
