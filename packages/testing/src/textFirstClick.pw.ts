@@ -332,8 +332,7 @@ for (const fixture of CASES) {
         await press(page, point.x, point.y);
         await settled(page, fixture.answered);
         const caret = await caretPoint(page);
-        const facts = JSON.stringify({ at, point, caret, words });
-        expect(caret, facts).toBeDefined();
+        const facts = JSON.stringify({ at, point, caret, words });        expect(caret, facts).toBeDefined();
         expect(Math.abs((caret?.x ?? Number.NaN) - point.x), facts).toBeLessThanOrEqual(point.width / 2);
         expect(Math.abs((caret?.y ?? Number.NaN) - point.y), facts).toBeLessThanOrEqual(point.height / 2);
         await page.keyboard.type('Q');
@@ -369,13 +368,17 @@ for (const fixture of [
     await expect(page.locator(SURFACE)).toHaveCount(0);
     await expect(outline).toBeVisible();
 
+    // A FRESH READ, in a page of its own at the same size: the read on open is asked once per block and read
+    // (ADR-0274), so in the page above the faces would already be there and the letters could not be typed before them.
+    const fresh = await page.context().newPage();
+    await open(fresh, '100pct', LATE_FONTS);
     // THE BOX AND THE CARET IN ONE BREATH, and the letters with them: the faces are read from the first press.
-    await press(page, point.x, point.y);
-    await press(page, point.x, point.y);
-    await page.keyboard.type('XYZ');
+    await press(fresh, point.x, point.y);
+    await press(fresh, point.x, point.y);
+    await fresh.keyboard.type('XYZ');
     // THE KEYS WERE TYPED BEFORE THE FONTS ARRIVED, or this case separates nothing.
-    expect(await page.locator(`${SURFACE} ${CHAIN_FACE}`).count(), 'the chain’s face had not arrived when the keys were typed').toBe(0);
-    await settled(page, true);
-    await expect.poll(() => editorText(page), { message: JSON.stringify({ at, point, words }) }).toBe(`${words.slice(0, at)}XYZ${words.slice(at)}`);
+    expect(await fresh.locator(`${SURFACE} ${CHAIN_FACE}`).count(), 'the chain’s face had not arrived when the keys were typed').toBe(0);
+    await settled(fresh, true);
+    await expect.poll(() => editorText(fresh), { message: JSON.stringify({ at, point, words }) }).toBe(`${words.slice(0, at)}XYZ${words.slice(at)}`);
   });
 }

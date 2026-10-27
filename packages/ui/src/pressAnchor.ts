@@ -50,20 +50,49 @@
 export function holdAnchorAtPress(root: HTMLElement, caretOf: (event: PointerEvent) => { readonly node: Node; readonly offset: number } | null): () => void {
   const owner = root.ownerDocument;
   let press: { readonly node: Node; readonly offset: number } | undefined;
+  /**
+   * Whether the pointer has moved with the button held since the press. ONLY A DRAG is repaired: the collapse above
+   * happens on drag events, and a caret a surface places itself during a press (the editor's double press puts it at the
+   * point) is not the platform's to undo. Re-anchored on any change, that caret became a range from the press, measured
+   * 2026-10-27 in the editor: two presses that open a block left *[4]* selected instead of a caret before it.
+   */
+  let dragging = false;
+  const moved = (event: PointerEvent): void => {
+    if (press !== undefined && (event.buttons & 1) !== 0) dragging = true;
+  };
+
+  /**
+   * Whether two points are ONE PLACE in the text: nothing lies between them either way. The end of one text node and the
+   * start of the next are one place given two ways, and the browser's caret and its hit test answer it differently
+   * (measured 2026-10-27: a press before *[4]* put the caret at the end of the node before it, offset 41, where the hit
+   * test named offset 0 of *[4]*); compared by node, the two read as a drag and made an empty range in place of the caret.
+   */
+  const samePlace = (a: { readonly node: Node; readonly offset: number }, b: { readonly node: Node; readonly offset: number }): boolean => {
+    const between = (from: typeof a, to: typeof b): string => {
+      const range = owner.createRange();
+      range.setStart(from.node, from.offset);
+      range.setEnd(to.node, to.offset);
+      return range.toString();
+    };
+    return between(a, b) === '' && between(b, a) === '';
+  };
 
   const reanchor = (): void => {
+    if (!dragging) return;
     // A LINE REPLACED UNDER THE DRAG takes its press with it: a detached node is no anchor.
     if (press?.node.isConnected !== true) return;
     const selection = owner.getSelection();
     const focus = selection?.focusNode ?? null;
-    if (selection === null || focus === null) return;
-    if (selection.anchorNode === press.node && selection.anchorOffset === press.offset) return;
+    const anchor = selection?.anchorNode ?? null;
+    if (selection === null || focus === null || anchor === null) return;
+    if (samePlace({ node: anchor, offset: selection.anchorOffset }, press)) return;
     // A CARET AT THE PRESS is no selection to make: the pointer is back where it began.
-    if (focus === press.node && selection.focusOffset === press.offset) return;
+    if (samePlace({ node: focus, offset: selection.focusOffset }, press)) return;
     selection.setBaseAndExtent(press.node, press.offset, focus, selection.focusOffset);
   };
   const release = (): void => {
     press = undefined;
+    dragging = false;
     owner.removeEventListener('selectionchange', reanchor);
   };
   const pressed = (event: PointerEvent): void => {
@@ -80,11 +109,14 @@ export function holdAnchorAtPress(root: HTMLElement, caretOf: (event: PointerEve
 
   root.addEventListener('pointerdown', pressed);
   root.addEventListener('mousedown', counted);
-  // ON THE DOCUMENT, so a release anywhere ends the press: a drag routinely ends off the page.
+  // ON THE DOCUMENT, so a release anywhere ends the press and a drag past the root still counts: a drag routinely ends
+  // off the page.
+  owner.addEventListener('pointermove', moved, true);
   owner.addEventListener('mouseup', release, true);
   owner.addEventListener('pointercancel', release, true);
   return (): void => {
     release();
+    owner.removeEventListener('pointermove', moved, true);
     root.removeEventListener('pointerdown', pressed);
     root.removeEventListener('mousedown', counted);
     owner.removeEventListener('mouseup', release, true);
