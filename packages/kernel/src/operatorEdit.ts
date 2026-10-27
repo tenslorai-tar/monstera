@@ -579,6 +579,11 @@ function movesBlock(place: Omit<BlockPlace, 'block'> | undefined): boolean {
   );
 }
 
+/** Whether a block's place places it at all: moved, scaled, turned, given a measure or a step in the drawing order. */
+function placesAtAll(place: EditedBlock['place']): boolean {
+  return place !== undefined && (movesBlock(place) || place.width !== undefined || place.arrange !== undefined);
+}
+
 /** The seed a box of added text starts from, which its words replace: the PDFium writer's own one character. */
 const SEED_TEXT = '.';
 
@@ -1122,8 +1127,11 @@ function write(
     // WHERE A LINE SET AFRESH STARTS: the origin of the line that keeps the paragraph's left edge, since the shape's edge
     // is where ink begins and an operator is placed by its origin.
     const blockLeft = Math.min(...lines.map((line) => line[0]?.origin.x ?? 0));
-    // A MEASURE THE PERSON GAVE is the measure, from the block's own left edge (the PDFium writer's rule).
-    const blockRight = blockPlace?.width !== undefined ? blockLeft + blockPlace.width : inkRight;
+    // A MEASURE THE PERSON GAVE is the measure, from the block's own left edge (the PDFium writer's rule). A BLOCK OF ONE
+    // LINE wraps where the editor laid it out to, its column's edge or the page's margin (`oneLineReach`, `reach`), never
+    // at its own old end: a tight box wrapped on its first added letter (the owner's test of milestone 1).
+    const reach = lines.length === 1 && blockPlace?.reach !== undefined ? Math.max(inkRight, blockPlace.reach) : inkRight;
+    const blockRight = blockPlace?.width !== undefined ? blockLeft + blockPlace.width : reach;
     const restOrigin = Math.min(...(lines.length > 1 ? lines.slice(1) : lines).map((line) => line[0]?.origin.x ?? 0));
     // EACH OLD PARAGRAPH'S OWN EDGES (ADR-0179's correction of 2026-10-24), the editor's own reading of the same lines
     // (`paragraphEdges`), so a bulleted item and the plain paragraph after it in one block are each set from their own left.
@@ -1552,7 +1560,8 @@ function write(
     ]);
     const marked = { marks: (block.marks ?? []).map(({ from, to }) => ({ from, to })), changes, forced };
     // A WHOLE-BLOCK COLOUR is planned as no change to the words, so the plan says whether they are the read's.
-    const colour = block.place === undefined && fit === 'reflow' && (block.paragraphs?.length ?? 0) === 0 ? wholeColour(block) : undefined;
+    // A PLACE THAT ONLY SAYS HOW FAR A ONE-LINE BLOCK MAY REACH moves nothing, so it is no place here.
+    const colour = !placesAtAll(block.place) && fit === 'reflow' && (block.paragraphs?.length ?? 0) === 0 ? wholeColour(block) : undefined;
     let formatting = colour === undefined ? marked : { marks: [], changes: (): boolean => false, forced };
     const oldGap = (line: number): number => (baselines[line - 1] ?? 0) - (baselines[line] ?? 0);
     /**

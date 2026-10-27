@@ -6715,6 +6715,12 @@ export const operatorPlaceSchema = blockPlaceSchema
       .object({ to: z.enum(['forward', 'backward']), past: arrangeNeighbourSchema })
       .strict()
       .optional(),
+    /**
+     * For a block of ONE line, the page x its words may grow to before they wrap (`oneLineReach`, the rule the editor
+     * lays the line out by), so the line breaks written are the ones the person saw. Absent, a block wraps at its own
+     * right edge. Not a measure: nothing is moved, and a block of several lines ignores it.
+     */
+    reach: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE).optional(),
   })
   .strict();
 

@@ -93,6 +93,11 @@ export interface BlockEditorProps {
   readonly stuckRef: React.RefObject<boolean>;
   /** The names of the fonts the page's text is drawn in, for the font picker. */
   readonly pageFonts: readonly string[];
+  /**
+   * For a block of one line, the page x its words may grow to before they wrap (`oneLineReach`): the line is laid out to
+   * it here and the writer is sent it, so both break the line in one place. Absent for a block of several lines.
+   */
+  readonly reach?: number | undefined;
 }
 
 /** The handles a block is placed by, and what each says it does. */
@@ -260,6 +265,7 @@ export function BlockEditor({
   finishingRef,
   stuckRef,
   pageFonts,
+  reach,
 }: BlockEditorProps): ReactElement {
   const { _ } = useLingui();
   const frame = useRef<HTMLDivElement>(null);
@@ -270,6 +276,8 @@ export function BlockEditor({
   );
   const [mode, setMode] = useState<'box' | 'text'>(opening.at === 'box' ? 'box' : 'text');
   const [placement, setPlacement] = useState<Placement>(NOT_PLACED);
+  /** The block's words as it opened, which a finish compares with to know its words changed. */
+  const [openedText] = useState(() => editOf(opened.model).text);
   const moved = placeOf(placement, block.box) !== undefined;
   const [problem, setProblem] = useState<Exclude<BlockCommit, 'written' | 'unchanged'> | undefined>(undefined);
   const [notice, setNotice] = useState<MessageKey | undefined>(undefined);
@@ -354,9 +362,12 @@ export function BlockEditor({
       settle(() => {
         const { text, formatting } = override ?? editOf(store.get().model);
         const place = placeOf(placement, block.box);
-        return onCommit(text, place === undefined ? formatting : { ...formatting, place });
+        // A BLOCK OF ONE LINE IS SENT ITS REACH, the right edge its words were laid out to here, where its words changed
+        // and the person gave it no measure (which is then the measure): words as they were need no line broken.
+        const reached = reach === undefined || place?.width !== undefined || text === openedText || text === '' ? place : { ...place, reach };
+        return onCommit(text, reached === undefined ? formatting : { ...formatting, place: reached });
       }),
-    [block.box, onCommit, placement, settle, store],
+    [block.box, onCommit, openedText, placement, reach, settle, store],
   );
   const finish = useCallback((): Promise<void> => finishWith(), [finishWith]);
   useEffect(() => {
@@ -705,6 +716,8 @@ export function BlockEditor({
   };
 
   const wraps = !block.lines.some((line) => line.soft) && placement.width === undefined;
+  // A BLOCK OF ONE LINE grows right as it is typed in and wraps only at its reach, where the writer will (`oneLineReach`).
+  const reachWidth = reach === undefined || placement.width !== undefined || moved ? undefined : (reach - block.box.x0) * geometry.zoom;
   return (
     // THE FRAME GROWS WITH ITS WORDS: at least the block's height, as tall as the words, so its outline shows where they
     // now reach and what they overlap (growth by overlap, ADR-0271 section 3).
@@ -747,7 +760,7 @@ export function BlockEditor({
           under={under}
         >
           <EditorSurface
-            className={`m-kit-surface${wraps ? ' m-kit-surface--lines' : ''}${moved ? ' m-kit-surface--placed' : ''}`}
+            className={`m-kit-surface${wraps ? ' m-kit-surface--lines' : ''}${reachWidth === undefined ? '' : ' m-kit-surface--reach'}${moved ? ' m-kit-surface--placed' : ''}`}
             drawn={drawn}
             editable={!busy}
             label={_(TEXT_EDIT_EDITOR_LABEL)}
@@ -758,6 +771,7 @@ export function BlockEditor({
             store={store}
             style={{
               marginTop: shift,
+              ...(reachWidth === undefined ? {} : { maxInlineSize: reachWidth }),
               ...(moved ? paper : {}),
               tabSize: `${String(TAB_STOP * geometry.zoom)}px`,
             }}

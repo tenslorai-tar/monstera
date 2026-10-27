@@ -203,9 +203,10 @@ describe('Escape inside an input method’s composition (CR-COR-07)', () => {
     await escape(surface(), { isComposing: true });
     expect(onCommit).not.toHaveBeenCalled();
     expect(frame()).not.toBeNull();
-    // CONTROL: the same key with the composition closed finishes, so the case above is the composition's.
+    // CONTROL: the same key with the composition closed finishes, so the case above is the composition's. THE BLOCK IS ONE
+    // LINE, so its changed words carry the reach it was laid out to (`oneLineReach`: alone on the page, the margin mirrored).
     await escape(surface());
-    expect(sent()).toStrictEqual([{ text: 'Garden club news', formatting: {} }]);
+    expect(sent()).toStrictEqual([{ text: 'Garden club news', formatting: { place: { reach: 540 } } }]);
   });
 });
 

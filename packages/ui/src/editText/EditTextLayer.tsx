@@ -1,6 +1,6 @@
 import { useLingui } from '@lingui/react';
 import type { BlockFormatting, EditedBlock, FormPath, PageInsert, WindowEditAction } from '@monstera/contract';
-import { type DocVersion, NEW_TEXT_MARGIN } from '@monstera/shared';
+import { type DocVersion, NEW_TEXT_MARGIN, oneLineReach } from '@monstera/shared';
 import { type ReactElement, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { OverlayPage } from '../annotations/annotationSpace.js';
@@ -430,6 +430,16 @@ export function EditTextLayer({
               parting={chosen === at && opened?.parting === true}
               past={pastItsPage(pageBox(block), geometry.crop)}
               placed={placed}
+              // A BLOCK OF ONE LINE, upright, grows to its column's edge or the page's margin before it wraps.
+              reach={
+                block.lines.length === 1 && block.frame === undefined
+                  ? oneLineReach(
+                      block.box,
+                      blocks.blocks.filter((other) => other !== block && other.frame === undefined).map((other) => other.box),
+                      { x0: geometry.crop[0], y0: geometry.crop[1], x1: geometry.crop[2], y1: geometry.crop[3] },
+                    )
+                  : undefined
+              }
               restructure={
                 onRestructure === undefined
                   ? undefined

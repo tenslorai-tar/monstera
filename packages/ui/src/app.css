@@ -6684,6 +6684,12 @@ optgroup {
   overflow-wrap: normal;
 }
 
+/* A BLOCK OF ONE LINE grows right as it is typed in, to its reach (`oneLineReach`, set inline as the most it may take),
+   and wraps there, where the writer wraps it: the two break the line in one place. */
+.m-kit-surface--reach {
+  white-space: pre-wrap;
+}
+
 /* A PARAGRAPH AS THE PAGE DREW IT (`paint.ts`): laid out at the page's breaks and nowhere else, and not painted, so the
    page's own drawing of those words shows until the person changes them. Every descendant, because each run carries its
    own colour, decoration and highlight inline. */

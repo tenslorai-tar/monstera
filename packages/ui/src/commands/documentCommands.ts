@@ -4862,6 +4862,16 @@ export type BlocksRead = Pick<ChannelResult<'document.textBlocks'>, 'version' | 
 /** {@link BlocksRead} with the page's blocks. */
 export type PageBlocksRead = BlocksRead & { readonly blocks: readonly TextBlock[] };
 
+/** `blocks` with no `reach` on any place: what only the operator writer reads (`OperatorPlace.reach`). */
+function withoutReach(blocks: Parameters<typeof blockEditOf>[0]): Parameters<typeof blockEditOf>[0] {
+  return blocks.map((block) => {
+    if (block.place?.reach === undefined) return block;
+    const { reach: _reach, ...place } = block.place;
+    const { place: _place, ...rest } = block;
+    return Object.keys(place).length === 0 ? rest : { ...rest, place };
+  });
+}
+
 /** The command each writer the page names is rewritten by, with the same block wire (ADR-0176 Decision 1). */
 const BLOCK_EDIT_KIND = { objects: 'editTextBlock', operators: 'editTextOperators' } as const satisfies Record<
   BlocksRead['rewrite'],
@@ -5046,7 +5056,8 @@ async function sendBlockEdit(
       ? {
           kind: BLOCK_EDIT_KIND.objects,
           page,
-          ...blockEditOf(blocks, inserts),
+          // NO REACH FOR PDFium's WRITER, whose place has none: the operator writer's alone wraps a one-line block there.
+          ...blockEditOf(withoutReach(blocks), inserts),
           fit: 'reflow',
           version: read.version,
           // THE INDICES NAME THE PAGE AS THE READ SAW IT: unpacked, so the writer unpacks it first (ADR-0232).
