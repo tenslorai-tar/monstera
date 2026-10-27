@@ -348,6 +348,8 @@ export interface DrawnObject {
 export interface MarkedDecoration extends PageDecoration {
   readonly start: number;
   readonly end: number;
+  /** Its path's points in page space, so a block set in a frame of its own reads the rule in that frame, not its box's. */
+  readonly points: readonly (readonly [number, number])[];
 }
 
 /** One segment of a path as written: its operator, its numbers in the path's own space, and where the instruction is. */
@@ -649,6 +651,7 @@ function scan(
             bottom: Math.min(...ys),
             top: Math.max(...ys),
             colour: fillOf(content, only.settings),
+            points: only.points,
           });
         }
         break;
