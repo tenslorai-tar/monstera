@@ -601,7 +601,8 @@ for (const look of LOOKS) {
   test(`${look.name}: Edit text with a block open, and its font list, match their baselines`, async ({ page }) => {
     await openForEditing(page, look);
     await parkPointer(page);
-    // THE FRAME, ITS HANDLES AND THE WORDS, the page's raster hidden so the picture is the editor's own.
+    // THE FRAME AND ITS HANDLES, the page's raster hidden so the picture is the editor's own. The words are not in it: a
+    // paragraph nobody changed is laid out and not painted (`paint.ts`), so on screen the page's own drawing shows them.
     await expect(page.locator('[data-text-edit-layer="0"]')).toHaveScreenshot(`${look.name}-edit-text-open.png`, { stylePath: RASTER_HIDDEN });
     const panel = page.locator('[data-text-properties]');
     await panel.getByRole('button', { name: /^Font:/u }).click();
