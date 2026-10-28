@@ -180,6 +180,13 @@ function selectedLines(range: Range, layer: Element): { left: number; top: numbe
 }
 
 /**
+ * How far a press may move, across and down, in CSS pixels, and still be a click: Windows' drag rectangle, whose default
+ * is 4 pixels each way (`SM_CXDRAG` and `SM_CYDRAG`, Microsoft's `GetSystemMetrics` documentation), the distance a
+ * platform drag must go before it begins.
+ */
+const CLICK_WOBBLE_PX = 4;
+
+/**
  * Keeps a drag's selection on the page's text anchored where the press put it (`holdAnchorAtPress`, the mechanism and
  * its repair), and answers a press on blank space itself.
  *
@@ -196,12 +203,24 @@ export function holdPressedAnchor(root: HTMLElement): () => void {
    * pressed, and its anchor — beside a line, that line's nearest end from the press; on blank space, the caret on the
    * line the pointer first reaches (`undefined` until then).
    */
-  let blank: { readonly x: number; readonly y: number; anchor: { readonly node: Text; readonly offset: number } | undefined } | undefined;
+  let blank:
+    | { readonly x: number; readonly y: number; anchor: { readonly node: Text; readonly offset: number } | undefined; dragging: boolean }
+    | undefined;
 
   const blankMoved = (event: PointerEvent): void => {
     if (blank === undefined || (event.buttons & 1) === 0) return;
     const selection = owner.getSelection();
     if (selection === null) return;
+    // A CLICK'S WOBBLE IS NO DRAG: until the pointer leaves the platform's drag rectangle about the press, the press is a
+    // click, and a click on blank space selects nothing. A hand's 1 to 2 px drift from a gap between lines reached the next
+    // line's letters and selected one character (measured on the owner's page on Windows, 2026-10-28, `selectProbe`).
+    if (!blank.dragging) {
+      if (Math.abs(event.clientX - blank.x) < CLICK_WOBBLE_PX && Math.abs(event.clientY - blank.y) < CLICK_WOBBLE_PX) {
+        selection.removeAllRanges();
+        return;
+      }
+      blank.dragging = true;
+    }
     const line = event.target instanceof Element ? event.target.closest('[data-text-line]') : null;
     const exact = line !== null && typeof owner.caretPositionFromPoint === 'function' ? owner.caretPositionFromPoint(event.clientX, event.clientY) : null;
     const onLetters = exact !== null && exact.offsetNode.nodeType === Node.TEXT_NODE && root.contains(exact.offsetNode) ? { node: exact.offsetNode as Text, offset: exact.offset } : null;
@@ -248,7 +267,7 @@ export function holdPressedAnchor(root: HTMLElement): () => void {
     const holder = root.parentElement?.closest<HTMLElement>('[tabindex]');
     if (holder !== null && holder !== undefined) holder.focus({ preventScroll: true });
     else if (owner.activeElement instanceof HTMLElement) owner.activeElement.blur();
-    blank = { x: event.clientX, y: event.clientY, anchor: beside };
+    blank = { x: event.clientX, y: event.clientY, anchor: beside, dragging: false };
     owner.addEventListener('pointermove', blankMoved, true);
     owner.addEventListener('pointerup', blankReleased, true);
     owner.addEventListener('pointercancel', blankReleased, true);

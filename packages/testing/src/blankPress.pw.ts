@@ -113,6 +113,43 @@ for (const [name, side, index] of [
   });
 }
 
+test('a click on blank space just above a line, whose wobble ends on its letters 3 px across and 3 down, selects nothing', async ({ page }) => {
+  await open(page, ITEMS);
+  // THE LINE'S BOX ON SCREEN, the start of the search for blank space above it.
+  const box = await page.locator('[data-text-layer="0"] [data-text-line]').nth(2).boundingBox();
+  if (box === null) throw new Error('no line on screen');
+  // SEVERAL POINTS ACROSS, so the wobble crosses a letter's edge at some of them: a drift inside one letter selected
+  // nothing even before, and separates nothing.
+  const selections: string[] = [];
+  for (let across = 20; across <= 40; across += 2) {
+    const x = box.x + across;
+    // THE FIRST BLANK POINT ABOVE THE LINE, half-pixel by half-pixel up from its box: the line's letters stand above
+    // the box the page reads for it, so a point just over the box is still on them.
+    const y = await page.evaluate(
+      ([px, top]) => {
+        for (let up = 0.5; up <= 12; up += 0.5) {
+          const py = (top ?? 0) - up;
+          const target = document.elementFromPoint(px ?? 0, py);
+          const banded = [...document.querySelectorAll('[data-text-layer="0"] [data-text-line]')].some((element) => {
+            const rect = element.getBoundingClientRect();
+            return py >= rect.top && py <= rect.bottom;
+          });
+          if (target?.closest('[data-text-layer]') !== null && target?.closest('[data-text-line]') === null && !banded) return py;
+        }
+        return null;
+      },
+      [x, box.y],
+    );
+    if (y === null) throw new Error(`no blank point above the line at ${String(across)}`);
+    // THE WOBBLE, inside the platform's 4 px drag rectangle, ending on the line's letters.
+    const to = { x: x + 3, y: y + 3 };
+    const ends = await page.evaluate(([px, py]) => document.elementFromPoint(px ?? 0, py ?? 0)?.closest('[data-text-line]') !== null, [to.x, to.y]);
+    expect(ends, `the wobble from (${String(across)}) ends on the line`).toBe(true);
+    selections.push(await press(page, { x, y }, to));
+  }
+  expect(selections).toStrictEqual(selections.map(() => ''));
+});
+
 test('THE MECHANISM: a bare press on blank space leaves no anchor at the page’s first letter', async ({ page }) => {
   await open(page);
   // BLANK POINTS ON THE PAGE, each on the text layer and on no line: below the text, between the heading and the
