@@ -172,6 +172,18 @@
       "flavour": "test",
       "commit": "47dbe0ffe6c0d1afee46f5a618760b814ea20529",
       "date": "2026-10-27"
+    },
+    {
+      "version": "1.1.2610.0",
+      "flavour": "test",
+      "commit": "d468a57504e8a33df882b41bfd9f6eac2a74fd54",
+      "date": "2026-10-28"
+    },
+    {
+      "version": "1.1.2610.0",
+      "flavour": "store",
+      "commit": "d468a57504e8a33df882b41bfd9f6eac2a74fd54",
+      "date": "2026-10-28"
     }
   ]
 }
