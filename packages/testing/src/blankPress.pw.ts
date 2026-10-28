@@ -213,6 +213,35 @@ for (const [name, lines, index] of [
   });
 }
 
+/**
+ * TWO COLUMNS, the right one's line set at the height of a gap between the left one's lines (the owner's page, the local
+ * agent's measurement on Windows, 2026-10-28: a click in a gap lay 141 px left of a line in another column, inside that
+ * line's band, and selected 1,252 characters from the top of the page). A press there is BESIDE that line, not on any
+ * letters, and the browser parks its caret at the page's first letter for it as for a blank press.
+ */
+const COLUMNS = [
+  ...['Plots are kept tidy by the members who hold them,', 'and the tools are shared from the shed by all,', 'each one returned clean to its own hook again.'].map(
+    (text, index) => ({ text, box: { x0: 72, y0: 120 + index * 26, x1: 72 + Math.round(text.length * 4.9), y1: 133 + index * 26 } }),
+  ),
+  { text: 'A note set in the margin', box: { x0: 430, y0: 136, x1: 430 + Math.round(24 * 4.9), y1: 149 } },
+];
+
+test('a click in a gap of one column, inside the band of a line in another, selects nothing', async ({ page }) => {
+  await open(page, COLUMNS);
+  const point = await at(page, 160, 139.5);
+  const beside = await page.evaluate(
+    ([, py]) =>
+      [...document.querySelectorAll('[data-text-layer="0"] [data-text-line]')].filter((element) => {
+        const box = element.getBoundingClientRect();
+        return (py ?? 0) >= box.top && (py ?? 0) <= box.bottom;
+      }).length,
+    [point.x, point.y],
+  );
+  // THE PREMISE: the click is in exactly one line's band (the margin note's), on none of its letters.
+  expect(beside, 'lines whose band holds the click').toBe(1);
+  expect(await press(page, point, { x: point.x + 2, y: point.y + 1 })).toBe('');
+});
+
 test('CONTROL for the gesture: a drag from a line’s middle past its end still reaches its last letter', async ({ page }) => {
   await open(page, ITEMS);
   const line = ITEMS[2];

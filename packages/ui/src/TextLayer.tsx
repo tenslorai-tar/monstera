@@ -192,8 +192,9 @@ function selectedLines(range: Range, layer: Element): { left: number; top: numbe
 export function holdPressedAnchor(root: HTMLElement): () => void {
   const owner = root.ownerDocument;
   /**
-   * A press that began on blank space, whose selection this owns until the button is let go: where it was pressed, and
-   * its anchor once the pointer has reached a line's letters (`undefined` until then).
+   * A press that began off every line's letters, whose selection this owns until the button is let go: where it was
+   * pressed, and its anchor — beside a line, that line's nearest end from the press; on blank space, the caret on the
+   * line the pointer first reaches (`undefined` until then).
    */
   let blank: { readonly x: number; readonly y: number; anchor: { readonly node: Text; readonly offset: number } | undefined } | undefined;
 
@@ -241,28 +242,30 @@ export function holdPressedAnchor(root: HTMLElement): () => void {
    * can differ.
    * The focus goes where the press would have taken it: the nearest focusable ancestor, else nowhere.
    */
-  const pressedOnBlank = (event: PointerEvent): boolean => {
+  const pressedOnBlank = (event: PointerEvent, beside?: { readonly node: Text; readonly offset: number }): boolean => {
     event.preventDefault();
     owner.getSelection()?.removeAllRanges();
     const holder = root.parentElement?.closest<HTMLElement>('[tabindex]');
     if (holder !== null && holder !== undefined) holder.focus({ preventScroll: true });
     else if (owner.activeElement instanceof HTMLElement) owner.activeElement.blur();
-    blank = { x: event.clientX, y: event.clientY, anchor: undefined };
+    blank = { x: event.clientX, y: event.clientY, anchor: beside };
     owner.addEventListener('pointermove', blankMoved, true);
     owner.addEventListener('pointerup', blankReleased, true);
     owner.addEventListener('pointercancel', blankReleased, true);
     return true;
   };
 
-  // ON A LINE, the caret at the exact point (absent in happy-dom, where the press is the platform's alone); beside one,
-  // its nearest end; on blank space, nothing held, the press this layer's own.
+  // ON A LINE, the caret at the exact point (absent in happy-dom, where the press is the platform's alone). OFF EVERY
+  // LINE'S LETTERS the press is this layer's own: on blank space with no anchor until the drag reaches letters, and
+  // BESIDE a line with that line's nearest end as its anchor from the press. A press beside a line is on the layer, not
+  // on a line, so the browser parks its caret at the page's first letter for it exactly as for a blank press; left to
+  // the browser, the line-end follower extended that caret to the line's end — a press in a gap of one column that lay in
+  // the band of a line in another selected 1,252 characters from the top of the owner's page (2026-10-28).
   const unhold = holdAnchorAtPress(root, (event) => {
     const place = pressPlace(root, event);
-    if (place === 'blank') {
-      pressedOnBlank(event);
-      return null;
-    }
-    return place === 'line' ? exactCaretOf(event) : place;
+    if (place === 'line') return exactCaretOf(event);
+    pressedOnBlank(event, place === 'blank' ? undefined : place);
+    return null;
   });
   return (): void => {
     unhold();
