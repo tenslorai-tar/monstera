@@ -584,18 +584,17 @@ async function openForEditing(page: Page, look: Look): Promise<void> {
     documentBytes: new Map([[EDITED, bytes]]),
     textRewrite: 'operators',
     textBlocks: [{ box, lines: [{ runs: [{ index: 3, text: words, style: EDIT_RUN }], box, soft: false, baseline: 690 }], style: EDIT_RUN, shape: { align: 'left', firstIndent: 0 } }],
-    // FACES EVERY MACHINE THAT DRAWS THIS PICTURE HOLDS: Windows' own core faces and the two Monstera bundles. The list
-    // draws each option in its own face, so where a machine's copy of a face differs, its row's line differs and every
-    // row below it moves: with the shim's default list, CI's Windows image drew the Calibri and Cambria rows unlike this
-    // one and moved every row below them by a pixel or two (843 to 1,009 pixels per look, run 40631560195, 2026-10-28;
-    // the diff images mark only those rows and the ones under them).
+    // ONLY WINDOWS' OWN CORE FACES, which every machine that draws this picture holds. The list draws each option in its
+    // own face, so a face one machine holds and another does not is drawn in another face, on a line of another height,
+    // and every row below it moves. Under the shim a BUNDLED family is drawn from the machine too, by its name: Carlito
+    // is installed in this machine's Windows Fonts and not on CI's image, and its row stood 2 px taller there, moving
+    // every row below (843 to 1,009 pixels per look on runs 40631560195 and that of 92fd2a22, 2026-10-28; the rows'
+    // ink measured in both pictures, Arial's row identical and Carlito's the first to differ).
     fontFamilies: [
       { name: 'Arial', origin: 'installed', embedding: 'subset' },
-      { name: 'Carlito', origin: 'bundled', embedding: 'subset', looksLike: 'Calibri' },
       { name: 'Courier New', origin: 'installed', embedding: 'subset' },
       { name: 'Segoe UI', origin: 'installed', embedding: 'subset' },
       { name: 'Times New Roman', origin: 'installed', embedding: 'subset' },
-      { name: 'Tinos', origin: 'bundled', embedding: 'subset', looksLike: 'Times New Roman' },
     ],
   });
   await page.goto('/');
