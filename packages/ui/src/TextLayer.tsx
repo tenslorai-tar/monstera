@@ -298,7 +298,15 @@ export function holdPressedAnchor(root: HTMLElement): () => void {
  * blank is one the second never extends.
  */
 function pressPlace(root: Element, event: PointerEvent): 'line' | 'blank' | { readonly node: Text; readonly offset: number } {
-  if (event.target instanceof Element && event.target.closest('[data-text-line]') !== null) return 'line';
+  // ON A LINE means inside the box the engine read for it, not merely on its element: the line's letters are laid out in
+  // a substitute face whose line box stands above that box, so a press on blank paper just over a line hits its element,
+  // and as a press on the line it went to the browser, which took a click's 1 to 2 px wobble for a drag and selected a
+  // letter (the owner's page on Windows, 2026-10-28).
+  const line = event.target instanceof Element ? event.target.closest('[data-text-line]') : null;
+  if (line !== null) {
+    const box = line.getBoundingClientRect();
+    if (event.clientY >= box.top && event.clientY <= box.bottom) return 'line';
+  }
   return caretBesideLine(root, event.clientX, event.clientY) ?? 'blank';
 }
 

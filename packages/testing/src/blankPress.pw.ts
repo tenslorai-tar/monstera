@@ -113,7 +113,7 @@ for (const [name, side, index] of [
   });
 }
 
-test('a click on blank space just above a line, whose wobble ends on its letters 3 px across and 3 down, selects nothing', async ({ page }) => {
+test('a click on blank paper just above a line’s box, whose wobble ends inside it 3 px across and 3 down, selects nothing', async ({ page }) => {
   await open(page, ITEMS);
   // THE LINE'S BOX ON SCREEN, the start of the search for blank space above it.
   const box = await page.locator('[data-text-layer="0"] [data-text-line]').nth(2).boundingBox();
@@ -123,29 +123,23 @@ test('a click on blank space just above a line, whose wobble ends on its letters
   const selections: string[] = [];
   for (let across = 20; across <= 40; across += 2) {
     const x = box.x + across;
-    // THE FIRST BLANK POINT ABOVE THE LINE, half-pixel by half-pixel up from its box: the line's letters stand above
-    // the box the page reads for it, so a point just over the box is still on them.
-    const y = await page.evaluate(
-      ([px, top]) => {
-        for (let up = 0.5; up <= 12; up += 0.5) {
-          const py = (top ?? 0) - up;
-          const target = document.elementFromPoint(px ?? 0, py);
-          const banded = [...document.querySelectorAll('[data-text-layer="0"] [data-text-line]')].some((element) => {
-            const rect = element.getBoundingClientRect();
-            return py >= rect.top && py <= rect.bottom;
-          });
-          if (target?.closest('[data-text-layer]') !== null && target?.closest('[data-text-line]') === null && !banded) return py;
-        }
-        return null;
-      },
-      [x, box.y],
+    // JUST ABOVE THE LINE'S BOX, in no line's band: blank paper. The line's letters are laid out in a substitute face
+    // whose line box stands above the box the page reads, so the point is ON the line's element all the same — the
+    // owner's page, where such a click went to the browser as a press on the line.
+    const from = { x, y: box.y - 1.5 };
+    const premise = await page.evaluate(
+      ([px, py]) => ({
+        banded: [...document.querySelectorAll('[data-text-layer="0"] [data-text-line]')].some((element) => {
+          const rect = element.getBoundingClientRect();
+          return (py ?? 0) >= rect.top && (py ?? 0) <= rect.bottom;
+        }),
+        onLetters: document.elementFromPoint(px ?? 0, py ?? 0)?.closest('[data-text-line]') !== null,
+      }),
+      [from.x, from.y],
     );
-    if (y === null) throw new Error(`no blank point above the line at ${String(across)}`);
-    // THE WOBBLE, inside the platform's 4 px drag rectangle, ending on the line's letters.
-    const to = { x: x + 3, y: y + 3 };
-    const ends = await page.evaluate(([px, py]) => document.elementFromPoint(px ?? 0, py ?? 0)?.closest('[data-text-line]') !== null, [to.x, to.y]);
-    expect(ends, `the wobble from (${String(across)}) ends on the line`).toBe(true);
-    selections.push(await press(page, { x, y }, to));
+    expect(premise, `(${String(across)}) is in no band, on the line's letters`).toEqual({ banded: false, onLetters: true });
+    // THE WOBBLE, inside the platform's 4 px drag rectangle, into the line's box.
+    selections.push(await press(page, from, { x: x + 3, y: box.y + 1.5 }));
   }
   expect(selections).toStrictEqual(selections.map(() => ''));
 });
