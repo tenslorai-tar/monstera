@@ -6883,17 +6883,14 @@ export function blockEditAgrees(edit: OperatorBlockEdit): boolean {
     );
   }
   // PLACES ASCEND BY BLOCK, name a block of the edit, and each says something: a place that names nothing is a block the
-  // writer would re-lay out for no change. An arrange says where in the drawing order (ADR-0264 Decision 5).
+  // writer would re-lay out for no change. WHAT IT SAYS IS READ FROM ITS OWN FIELDS, every one but the block it names, so
+  // a field a place schema gains counts here without a second list to keep: a hand-kept list of the fields refused every
+  // place that carried only a `reach`, which the editor sends with each changed one-line block.
   const placesAgree = places.every(
     (place, at) =>
       place.block < blockStarts.length &&
       (at === 0 || place.block > (places[at - 1]?.block ?? -1)) &&
-      ('about' in place ||
-        place.move !== undefined ||
-        place.scale !== undefined ||
-        place.rotate !== undefined ||
-        place.width !== undefined ||
-        place.arrange !== undefined),
+      Object.entries(place).some(([field, value]) => field !== 'block' && value !== undefined),
   );
   // A BLOCK'S WORDS, to bound its marks and its paragraphs by.
   const wordsOf = (block: number): string => text.slice(textStarts[block] ?? 0, textStarts[block + 1] ?? text.length);

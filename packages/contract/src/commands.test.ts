@@ -456,6 +456,21 @@ describe('which page is read again unpacked (ADR-0232)', () => {
     expect(arrangeNeighbourOf(page, { text: false, indices: [1], box: box(10, 10, 30, 20) }, 'forward')).toStrictEqual({ kind: 'text', object: 1 });
   });
 
+  it('a place that says only how far a one-line block may REACH is accepted; a place that says nothing is not', () => {
+    const wire = (place: Record<string, unknown>) => ({
+      kind: 'editTextOperators',
+      page: 0,
+      ...blockEditOf([{ lines: [[2]], soft: [false], text: 'One upright line, edited.', place }]),
+      fit: 'reflow',
+      version: 1,
+    });
+    // THE EDITOR'S OWN WIRE for a changed one-line block (`sendBlockEdit`): a place carrying a reach and nothing else.
+    expect(editTextOperatorsSchema.safeParse(wire({ reach: 540 })).success).toBe(true);
+    expect(commandSchema.safeParse(wire({ reach: 540 })).success).toBe(true);
+    // CONTROL: the rule still bites. A place naming no field but its block re-lays a block out for no change.
+    expect(editTextOperatorsSchema.safeParse(wire({})).success).toBe(false);
+  });
+
   it('a block ARRANGED is the operator writer’s alone: PDFium’s block edit refuses it at the boundary (ADR-0264)', () => {
     const arranged = {
       page: 0,
