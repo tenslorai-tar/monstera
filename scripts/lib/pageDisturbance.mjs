@@ -21,11 +21,58 @@ export const EDGE = 1.5;
  * @typedef {{ width: number, height: number, rgb: Uint8Array, toDevice: (x: number, y: number) => [number, number] }} Render
  */
 
+/** @type {WeakMap<object, WeakMap<Uint8Array, Map<string, unknown>>>} */
+const READS = new WeakMap();
+
+/**
+ * What `make` answers for `key` of the document `bytes` as `engine` reads it, made once for those exact bytes and that
+ * engine and answered again after: the one store of a page's reads (B3a), so a check that asks of the same document
+ * many times — the corpus proof judges every try of a page against the one `before` — reads it once.
+ *
+ * KEYED BY THE ARRAY ITSELF, not its contents: a document's bytes are never changed in place by these tools, a read of
+ * them is the same every time, and an answer held is shared, so its reader must not change it either. Held while the
+ * bytes are: the store lets go of a document's reads with the document.
+ *
+ * @template T @param {object} engine the engine module that reads @param {Uint8Array} bytes @param {string} key
+ * @param {() => T} make @returns {T}
+ */
+export function readOnce(engine, bytes, key, make) {
+  let documents = READS.get(engine);
+  if (documents === undefined) {
+    documents = new WeakMap();
+    READS.set(engine, documents);
+  }
+  let reads = documents.get(bytes);
+  if (reads === undefined) {
+    reads = new Map();
+    documents.set(bytes, reads);
+  }
+  if (!reads.has(key)) reads.set(key, make());
+  return /** @type {T} */ (reads.get(key));
+}
+
 /**
  * MuPDF's drawing of page `index` of `bytes`, and the map from PDF space to its pixels.
  * @param {any} kernel @param {Uint8Array} bytes @param {number} index @returns {Render}
  */
 export function render(kernel, bytes, index) {
+  return drawing(kernel, bytes, index).render;
+}
+
+/**
+ * {@link render}'s drawing as the store holds it, with the device pixel its box starts at.
+ * @param {any} kernel @param {Uint8Array} bytes @param {number} index
+ * @returns {{ render: Render, origin: readonly [number, number] }}
+ */
+function drawing(kernel, bytes, index) {
+  return readOnce(kernel.mupdf, bytes, `render:${String(index)}`, () => drawn(kernel, bytes, index));
+}
+
+/**
+ * {@link render}'s drawing, made.
+ * @param {any} kernel @param {Uint8Array} bytes @param {number} index @returns {{ render: Render, origin: readonly [number, number] }}
+ */
+function drawn(kernel, bytes, index) {
   const { mupdf } = kernel;
   const document = mupdf.PDFDocument.openDocument(bytes, 'application/pdf');
   try {
@@ -44,7 +91,7 @@ export function render(kernel, bytes, index) {
       ],
     };
     pixmap.destroy();
-    return out;
+    return { render: out, origin: /** @type {const} */ ([x0, y0]) };
   } finally {
     document.destroy();
   }
@@ -60,16 +107,22 @@ export function render(kernel, bytes, index) {
  * @param {any} kernel @param {Uint8Array} bytes @param {number} index @returns {Render}
  */
 export function renderWithoutText(kernel, bytes, index) {
+  return readOnce(kernel.mupdf, bytes, `without-text:${String(index)}`, () => drawnWithoutText(kernel, bytes, index));
+}
+
+/** {@link renderWithoutText}'s drawing, made. @param {any} kernel @param {Uint8Array} bytes @param {number} index @returns {Render} */
+function drawnWithoutText(kernel, bytes, index) {
   const { mupdf } = kernel;
+  // THE SAME BOX the full drawing takes, read from it rather than worked out again: that drawing's own, as the store
+  // holds it, so the page is not drawn whole a second time only to learn its size.
+  const full = drawing(kernel, bytes, index);
+  const [x0, y0] = full.origin;
+  const { width, height } = full.render;
   const document = mupdf.PDFDocument.openDocument(bytes, 'application/pdf');
   try {
     const page = document.loadPage(index);
     const transform = page.getTransform();
     const matrix = mupdf.Matrix.scale(SCALE, SCALE);
-    // THE SAME BOX the full drawing takes, read from it rather than worked out again.
-    const reference = page.toPixmap(matrix, mupdf.ColorSpace.DeviceRGB, false, false);
-    const [x0, y0, width, height] = [reference.getX(), reference.getY(), reference.getWidth(), reference.getHeight()];
-    reference.destroy();
     const pixmap = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, [x0, y0, x0 + width, y0 + height], false);
     pixmap.clear(255);
     const draw = new mupdf.DrawDevice(mupdf.Matrix.identity, pixmap);
@@ -108,11 +161,21 @@ export function renderWithoutText(kernel, bytes, index) {
 
 /**
  * Every character MuPDF reads on page `index` of `bytes`: what it is, its origin and its box, in PDF space, and the name
- * MuPDF gives its font — `Type3 (n 0 R)` for a drawn one.
+ * MuPDF gives its font — `Type3 (n 0 R)` for a drawn one. Read once for those bytes ({@link readOnce}), and frozen, since
+ * every caller after the first is handed the same list.
+ * @param {any} kernel @param {Uint8Array} bytes @param {number} index
+ * @returns {readonly { character: string, x: number, y: number, box: Box, font: string }[]}
+ */
+export function charactersOf(kernel, bytes, index) {
+  return readOnce(kernel.mupdf, bytes, `characters:${String(index)}`, () => Object.freeze(read(kernel, bytes, index)));
+}
+
+/**
+ * {@link charactersOf}'s reading, made.
  * @param {any} kernel @param {Uint8Array} bytes @param {number} index
  * @returns {{ character: string, x: number, y: number, box: Box, font: string }[]}
  */
-export function charactersOf(kernel, bytes, index) {
+function read(kernel, bytes, index) {
   const { mupdf } = kernel;
   const document = mupdf.PDFDocument.openDocument(bytes, 'application/pdf');
   try {

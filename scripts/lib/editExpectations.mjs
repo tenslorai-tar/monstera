@@ -31,7 +31,7 @@
 
 import { PDFDict, PDFDocument, PDFName, PDFRawStream, PDFRef } from '@cantoo/pdf-lib';
 
-import { charactersOf, compare, inkOf, render, renderWithoutText, SCALE } from './pageDisturbance.mjs';
+import { charactersOf, compare, inkOf, readOnce, render, renderWithoutText, SCALE } from './pageDisturbance.mjs';
 
 /**
  * How far outside its characters' boxes a block's own pixels may lie, in points. MEASURED 2026-10-26 by
@@ -220,10 +220,16 @@ function readings(pieces, direction) {
 /**
  * PDFium's reading of a page, its forms promoted into it in memory so a form's words and drawings are read as the
  * page's: objects read before the promotion saw a form as one object, so a drawing removed inside one went unseen as an
- * object (measured 2026-10-26, the pull quote's rule).
+ * object (measured 2026-10-26, the pull quote's rule). Read once for those bytes (`readOnce`).
  * @param {any} pdfium @param {Uint8Array} bytes @param {number} page
+ * @returns {Promise<{ runs: { text: string, left: number, right: number, bottom: number, top: number }[], objects: any[] }>}
  */
-async function pdfiumReading(pdfium, bytes, page) {
+function pdfiumReading(pdfium, bytes, page) {
+  return readOnce(pdfium, bytes, `reading:${String(page)}`, () => readByPdfium(pdfium, bytes, page));
+}
+
+/** {@link pdfiumReading}, read. @param {any} pdfium @param {Uint8Array} bytes @param {number} page */
+async function readByPdfium(pdfium, bytes, page) {
   const session = await pdfium.pdfiumWriter.open(bytes);
   try {
     await pdfium.promoteFormObjects(session, page);
@@ -252,7 +258,12 @@ function textInk(kernel, bytes, page) {
  * audit of 2026-10-26). A name an ordinary font on the page also has cannot say which drew a character, so it throws.
  * @param {Uint8Array} bytes @param {number} index @returns {Promise<Set<string>>}
  */
-export async function drawnFontNames(bytes, index) {
+export function drawnFontNames(bytes, index) {
+  return readOnce(PDFDocument, bytes, `drawn-fonts:${String(index)}`, () => namesOfDrawnFonts(bytes, index));
+}
+
+/** {@link drawnFontNames}, read. @param {Uint8Array} bytes @param {number} index @returns {Promise<Set<string>>} */
+async function namesOfDrawnFonts(bytes, index) {
   const doc = await PDFDocument.load(bytes, { updateMetadata: false });
   const context = doc.context;
   /** @param {unknown} value */
@@ -293,6 +304,11 @@ export async function drawnFontNames(bytes, index) {
 
 /** MuPDF's links on a page, by their box and target. @param {any} kernel @param {Uint8Array} bytes @param {number} page */
 function linksOf(kernel, bytes, page) {
+  return readOnce(kernel.mupdf, bytes, `links:${String(page)}`, () => linksRead(kernel, bytes, page));
+}
+
+/** {@link linksOf}, read. @param {any} kernel @param {Uint8Array} bytes @param {number} page @returns {string[]} */
+function linksRead(kernel, bytes, page) {
   const document = kernel.mupdf.PDFDocument.openDocument(bytes, 'application/pdf');
   try {
     return /** @type {any[]} */ (document.loadPage(page).getLinks()).map((link) => `${link.getBounds().map((/** @type {number} */ n) => Math.round(n * 2)).join(',')} ${String(link.getURI())}`);
