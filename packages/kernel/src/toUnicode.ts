@@ -184,11 +184,17 @@ export function lettersOf(text: string): string {
 export const JOINED_LETTERS = { first: 0xfb00, last: 0xfb06 } as const;
 
 /**
- * The codes that draw `characters`, or `null` where some part has none: the CMap read backwards. A character's own code
- * is taken where it has one, as always; only where it has none is a code naming that character and the ones after it
- * looked for, the shortest first — a glyph PDFium reads as `=` and a mark, one code for two characters, or a joined-letter
- * glyph named by its presentation form, found by its letters ({@link lettersOf}). So text a single-character code already
- * sets is set exactly as before, and a ligature is never chosen over its letters. Where two codes name the same text the
+ * The codes that draw `characters`, or `null` where some part has none: the CMap read backwards.
+ *
+ * A JOINED-LETTER GLYPH IS TAKEN OVER ITS LETTERS, the longest first, as a typesetter takes it: a code whose text is two
+ * or more letters and nothing else, its presentation form spelt as them ({@link lettersOf}). A font's subset holds the
+ * glyphs its producer drew, so one holding `ffl` drew `ffl` with it wherever the letters met; set from its letters, an
+ * untouched word set again came back as `f` and a joined `fl` (measured 2026-10-29 on the catalogue's browser print,
+ * cloud run 25 item 25b), the same words in other glyphs.
+ *
+ * ANY OTHER TEXT takes a character's own code where it has one; only where it has none is a code naming that character
+ * and the ones after it looked for, the shortest first — a glyph PDFium reads as `=` and a mark, one code for two
+ * characters — so text a single-character code sets is set exactly as before. Where two codes name the same text the
  * lowest is taken, so the answer is the same on every run; a code's letters are a name only where no code says them.
  */
 export function codesFor(map: ToUnicode, characters: string): number[] | null {
@@ -207,19 +213,24 @@ export function codesFor(map: ToUnicode, characters: string): number[] | null {
     longest = Math.max(longest, Array.from(letters).length);
   }
   const points = Array.from(characters);
+  /** The code of `text` where it is a joined-letter glyph's: two or more letters and nothing else. */
+  const joined = (text: string): number | undefined => (Array.from(text).length >= 2 && /^\p{L}+$/u.test(text) ? backwards.get(text) : undefined);
   // FROM THE END BACK: `rest[at]` is the codes that draw the characters from `at` on, or `null` where none do — each point
-  // taking the SHORTEST text that leaves the rest drawable, so a letter's own code wins wherever the letters after it can
-  // still be drawn, and a two-character code is used only where it must be.
+  // taking the LONGEST joined-letter glyph that leaves the rest drawable, and else the SHORTEST text that does, so a
+  // letter's own code wins over any other code naming two characters.
   const rest: (readonly number[] | null)[] = new Array<readonly number[] | null>(points.length + 1).fill(null);
   rest[points.length] = [];
   for (let at = points.length - 1; at >= 0; at -= 1) {
-    for (let length = 1; length <= Math.min(longest, points.length - at); length += 1) {
+    const reach = Math.min(longest, points.length - at);
+    for (let length = reach; length >= 2 && rest[at] === null; length -= 1) {
+      const code = joined(points.slice(at, at + length).join(''));
+      const after = rest[at + length];
+      if (code !== undefined && after !== null && after !== undefined) rest[at] = [code, ...after];
+    }
+    for (let length = 1; length <= reach && rest[at] === null; length += 1) {
       const code = backwards.get(points.slice(at, at + length).join(''));
       const after = rest[at + length];
-      if (code !== undefined && after !== null && after !== undefined) {
-        rest[at] = [code, ...after];
-        break;
-      }
+      if (code !== undefined && after !== null && after !== undefined) rest[at] = [code, ...after];
     }
   }
   return rest[0] === null || rest[0] === undefined ? null : [...rest[0]];

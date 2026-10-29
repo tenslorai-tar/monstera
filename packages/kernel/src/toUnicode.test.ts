@@ -67,22 +67,32 @@ describe('codesFor', () => {
     expect(codesFor(map, 'a=ܼ')).toStrictEqual([0x01, 0x02]);
   });
 
-  it('CONTROL: letters with codes of their own are set with them, never a ligature naming the two', () => {
-    const map: ToUnicode = { text: new Map([[0x10, 'f'], [0x11, 'i'], [0x20, 'fi']]), bytes: 1 };
-    expect(codesFor(map, 'fi')).toStrictEqual([0x10, 0x11]);
-    // AND WHERE ONE LETTER HAS NONE, the ligature is what draws it.
-    const noI: ToUnicode = { text: new Map([[0x10, 'f'], [0x20, 'fi']]), bytes: 1 };
-    expect(codesFor(noI, 'fi')).toStrictEqual([0x20]);
+  it('CONTROL: characters with codes of their own are set with them, never a code naming them and a mark together', () => {
+    const map: ToUnicode = { text: new Map([[0x01, '='], [0x02, 'ܼ'], [0x03, '=ܼ']]), bytes: 1 };
+    expect(codesFor(map, '=ܼ')).toStrictEqual([0x01, 0x02]);
+  });
+
+  it('takes a joined-letter glyph over its letters, the longest first, as the producer drew the word (25b)', () => {
+    // A SUBSET HOLDING `ffl`, `fl`, `f` and `l`: the print joined the three wherever they met. This case said the
+    // opposite until cloud run 25 — letters first, `fi` as two codes — which set an untouched `affluent` again as `f`
+    // and a joined `fl`.
+    const map: ToUnicode = { text: new Map([[0x10, 'f'], [0x11, 'l'], [0x20, 'fl'], [0x30, 'ffl'], [0x12, 'u']]), bytes: 1 };
+    expect(codesFor(map, 'fflu')).toStrictEqual([0x30, 0x12]);
+    expect(codesFor(map, 'flu')).toStrictEqual([0x20, 0x12]);
+    // AND WHERE THE LONGEST LEAVES THE REST UNDRAWABLE, the next: `ffl` then `x` has no code, so nothing draws it.
+    expect(codesFor(map, 'fflx')).toBeNull();
+    // A LETTER ALONE is still its own code.
+    expect(codesFor(map, 'f')).toStrictEqual([0x10]);
   });
 
   it('finds a joined-letter glyph named by its presentation form by its letters, as a print names one (25b)', () => {
     // `fi` AS U+FB01, `ft` as its two letters, and no `f` alone: a browser's print of `fifty` in a drawn font.
     const print: ToUnicode = { text: new Map([[0x43, FI], [0x5b, 'ft'], [0x8b, 'y']]), bytes: 1 };
     expect(codesFor(print, 'fifty')).toStrictEqual([0x43, 0x5b, 0x8b]);
-    // CONTROL: the letters' own codes still win over the joined glyph wherever they draw it.
+    // AND OVER THE LETTERS' OWN CODES, as a code naming the letters is.
     const both: ToUnicode = { text: new Map([[0x10, 'f'], [0x11, 'i'], [0x43, FI]]), bytes: 1 };
-    expect(codesFor(both, 'fi')).toStrictEqual([0x10, 0x11]);
-    // AND A CODE THAT SAYS THE LETTERS ITSELF wins over one whose letters are only its form's.
+    expect(codesFor(both, 'fi')).toStrictEqual([0x43]);
+    // A CODE THAT SAYS THE LETTERS ITSELF wins over one whose letters are only its form's.
     const named: ToUnicode = { text: new Map([[0x43, FI], [0x50, 'fi']]), bytes: 1 };
     expect(codesFor(named, 'fi')).toStrictEqual([0x50]);
   });
