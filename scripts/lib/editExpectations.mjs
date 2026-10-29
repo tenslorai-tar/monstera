@@ -484,8 +484,28 @@ export async function expectEdit({ kernel, pdfium }, { before, after, page, bloc
   if (wordsExtra.length > 0 || wordsLost.length > 0) {
     failures.push(`WORDS RUN TOGETHER OR SPLIT (MuPDF): read “${wordsExtra.slice(0, 4).join('”, “')}” where “${wordsLost.slice(0, 4).join('”, “')}” were expected`);
   }
+  // A NEW WORD IN A DRAWN FONT is one more word of its spelling drawn so than before, where the edit added one of that
+  // spelling. Which of two words spelt alike is the new one is not the font rule's to say: matched in reading order,
+  // `with` typed at a paragraph's end beside an old `with` re-set in its own drawn font took the old one for the new
+  // and reported it (measured 2026-10-29 on a Chromium print of Carlito, cloud run 25). Each page's own names, since
+  // MuPDF may name a drawn font by its object number, which a save can change.
   const drawnFonts = await drawnFontNames(after, page);
-  const drawn = newWords.flat().filter((each) => drawnFonts.has(each.font));
+  const drawnBeforeFonts = await drawnFontNames(before, page);
+  /** How many of `words` there are of each spelling. @param {Char[][]} words */
+  const spellings = (words) => {
+    /** @type {Map<string, number>} */
+    const counts = new Map();
+    for (const word of words) counts.set(textOfWord(word), (counts.get(textOfWord(word)) ?? 0) + 1);
+    return counts;
+  };
+  const inADrawnFont = (/** @type {Set<string>} */ names) => (/** @type {Char[]} */ word) => word.some((each) => names.has(each.font));
+  const wasDrawn = spellings(wordsBefore.filter(inADrawnFont(drawnBeforeFonts)));
+  const isDrawn = spellings(wordsAfter.filter(inADrawnFont(drawnFonts)));
+  const added = spellings(newWords);
+  const drawn = [...isDrawn].flatMap(([text, count]) => {
+    const over = Math.min(count - (wasDrawn.get(text) ?? 0), added.get(text) ?? 0);
+    return over <= 0 ? [] : wordsAfter.filter((word) => textOfWord(word) === text && word.some((each) => drawnFonts.has(each.font))).slice(-over).flat();
+  });
   if (drawn.length > 0) {
     failures.push(`A DRAWN FONT FOR NEW WORDS: ${String(drawn.length)} written character(s) are in a Type 3 font (${[...new Set(drawn.map((each) => each.font))].join(', ')}), the first “${drawn.slice(0, 12).map((each) => each.character).join('')}”`);
   }

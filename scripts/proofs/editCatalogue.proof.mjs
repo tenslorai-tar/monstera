@@ -88,6 +88,7 @@ const CASES = [
   'TWO TYPED SPACES are written and read back as two spaces and nothing else, on the TrueType subset page with no space glyph and on the drawn (Type 3) page',
   'A LIST ITEM’S MARKER keeps its place and its gap to the item’s first letter when an item of each list grows to wrap, the bullet a character, its own object or a drawn shape; CONTROLS: the drawn bullets left out of the grouping, and a bullet moved 2 pt, each fail',
   'JOINED LETTERS (cloud run 25): the browser print’s page is written by the editor’s path and every expectation holds, its untouched joined glyphs kept in their drawn font; CONTROL: a word of joined letters written invisible is unseen, every letter of it',
+  'A WORD TYPED AFTER ONE OF ITS SPELLING, in an ordinary font beside the old one in its drawn font, is no drawn new word; CONTROL: typed in a drawn font, it is one',
 ];
 
 // ------------------------------------------------------------------------------------------------- the file's shape
@@ -280,8 +281,8 @@ const CLAIMS = {
 async function run(pdfium, kernel, kit) {
   /** @type {string[]} */
   const failures = [];
-  const roster = createRoster(failures, { cases: 24 });
-  if (CASES.length !== 24) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 24`);
+  const roster = createRoster(failures, { cases: 25 });
+  if (CASES.length !== 25) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 25`);
   const check = (/** @type {string} */ name, /** @type {boolean} */ held, /** @type {string} */ detail) => {
     const mark = roster.mark();
     if (!held) failures.push(`${name}\n      ${detail}`);
@@ -610,6 +611,29 @@ async function run(pdfium, kernel, kit) {
     const inked = await inkedCharacters(engines, hidden.bytes, hidden.page, block.box);
     if (inked.unseen !== 'affluent') wrongJoined.push(`CONTROL: “affluent” drawn invisible was judged unseen as “${inked.unseen}”`);
     check(CASES[23] ?? '', wrongJoined.length === 0, wrongJoined.join('\n      '));
+  }
+  // A WORD TYPED AFTER AN OLD WORD OF ITS SPELLING (cloud run 25): on the drawn page, `letter` typed later in the block
+  // than the `letter` it already holds. Matched in reading order, the old one was taken for the new and reported as a
+  // new word in a drawn font. THE CONTROL is the same edit with the typed word in a drawn font, which must be reported.
+  {
+    /** @type {string[]} */
+    const wrongSpelt = [];
+    const shape = SHAPES.find((each) => each.id === '04-all-fonts-drawn-type3');
+    if (shape === undefined) throw new Error('the drawn page is missing');
+    const lines = ['This page was printed from a computer, which drew', [{ text: 'every letter as a little ' }, { text: 'letter', normal: true }, { text: ' of itself.' }]];
+    const base = await shape.build({});
+    const block = base.blocks.find((/** @type {any} */ each) => each.id === 'body');
+    if (block === undefined) throw new Error('the drawn page has no block “body”');
+    const judged = async (/** @type {any} */ variant) => {
+      const edited = await shape.build({ edit: { block: 'body', lines }, ...variant });
+      const expected = edited.blocks.find((/** @type {any} */ each) => each.id === 'body')?.text ?? '';
+      return (await expectEdit(engines, { before: base.bytes, after: edited.bytes, page: base.page, block, expected })).filter((each) => each.startsWith('A DRAWN FONT'));
+    };
+    const ordinary = await judged({});
+    if (ordinary.length > 0) wrongSpelt.push(`typed in an ordinary font: ${ordinary.join(' | ')}`);
+    const drawnToo = await judged({ drawn: { block: 'body', word: 'letter' } });
+    if (drawnToo.length === 0) wrongSpelt.push('CONTROL: typed in a drawn font, it was not reported');
+    check(CASES[24] ?? '', wrongSpelt.length === 0, wrongSpelt.join('\n      '));
   }
 
   process.stdout.write(
