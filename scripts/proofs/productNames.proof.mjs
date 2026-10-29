@@ -1,7 +1,8 @@
 // @ts-check
 /**
  * Proves `productNames.mjs` can see, separate and refuse: a name and a two-word name across a line break are found, an
- * identifier the format defines is not, neighbours joined with no space make no name, and its denylist has not shrunk.
+ * identifier the format defines is not, neighbours joined with no space make no name, a commit of pictures alone is not
+ * a blind read while an unreadable file still is, and its denylist has not shrunk.
  *
  * NO NAME IS SPELT HERE either. The one real name a case needs is cut at run time from an identifier the owner's rule
  * keeps (a CMap's name), so this file holds only what the format itself writes.
@@ -11,11 +12,11 @@
 import { createHash } from 'node:crypto';
 
 import { createRoster } from '../lib/passRoster.mjs';
-import { DENIED, namedLines } from '../lib/productNames.mjs';
+import { DENIED, kindOf, namedLines, whatWasRead } from '../lib/productNames.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 7 });
+const roster = createRoster(failures, { cases: 9 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -60,6 +61,20 @@ const maker = CMAP.split('-')[0] ?? '';
 {
   const found = namedLines('Monstera, the PDF editor, edits PDFs.\nAnother widely used PDF editor does too.\n');
   check('ordinary prose about PDF editors names nothing', found.length === 0, `found on ${JSON.stringify(found)}`);
+}
+{
+  // A COMMIT OF PICTURES ALONE stages nothing the scan reads, as one of no files does: it was refused as a blind read,
+  // because "nothing to read" was decided from the list before the binaries in it were skipped (2026-10-29, three
+  // baselines committed alone). A real PNG's first bytes, a NUL among them, decide the kind as the scan decides it.
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d]);
+  const kinds = [kindOf(png), kindOf(png)];
+  check('a commit staging only pictures stages nothing the scan reads, and is not refused as blind', whatWasRead('staged', kinds) === 'nothing-staged', `${JSON.stringify(kinds)} judged ${whatWasRead('staged', kinds)}`);
+}
+{
+  // THE REFUSALS IT KEEPS: a staged file whose bytes could not be had, and a tree that read no text, are blind reads.
+  const unread = whatWasRead('staged', [kindOf(null), 'binary']);
+  const tree = whatWasRead('tree', ['binary']);
+  check('CONTROL: a staged file that could not be read, or a tree with no text read, is still refused as blind', unread === 'blind' && tree === 'blind', `staged ${unread}, tree ${tree}`);
 }
 // THE DENYLIST'S SIZE, from an independent claim: a list that shrank would agree with any count derived from it.
 check('the denylist holds the twenty-five spellings it was built with', DENIED.size === 25, `${String(DENIED.size)} held`);

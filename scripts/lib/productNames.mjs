@@ -136,6 +136,31 @@ export function scannedFiles(source) {
   return files.filter((file) => !EXEMPT.some((exempt) => exempt.test(file)));
 }
 
+/** @typedef {'text' | 'binary' | 'missing'} FileKind */
+
+/**
+ * What a file is to the scan: text it reads; BINARY (a NUL in its first bytes), which is never edited and is not read, so
+ * the owner's binary fixtures stay; or MISSING, bytes the scan was owed and could not get.
+ * @param {Buffer | null} bytes @returns {FileKind}
+ */
+export function kindOf(bytes) {
+  if (bytes === null) return 'missing';
+  return bytes.subarray(0, 8000).includes(0) ? 'binary' : 'text';
+}
+
+/**
+ * Whether a scan that read no text looked at all, decided from what each file WAS rather than from how many were
+ * listed: a commit staging only binary files (pictures) stages nothing the scan reads, exactly as one staging none, while
+ * the tree, which always holds text, or a file whose bytes could not be had, is a blind read.
+ * @param {'tree' | 'staged'} source @param {readonly FileKind[]} kinds
+ * @returns {'read' | 'nothing-staged' | 'blind'}
+ */
+export function whatWasRead(source, kinds) {
+  if (kinds.includes('text')) return 'read';
+  if (source === 'staged' && !kinds.includes('missing')) return 'nothing-staged';
+  return 'blind';
+}
+
 /**
  * A tracked file's bytes from the working copy, or `null` where the index knows it and the disk does not (deleted, not
  * yet committed as such).
@@ -165,25 +190,28 @@ export function scan({ source = 'tree' } = {}) {
   }
   const root = repoRoot();
   const files = scannedFiles(source);
-  // A COMMIT THAT STAGES NOTHING SCANNABLE has nothing to bring a name in: said so, and not a blind result.
-  if (source === 'staged' && files.length === 0) {
-    process.stdout.write('  ok  this commit stages no file the product-name scan reads\n');
-    return 0;
-  }
   const staged = source === 'staged' ? readStagedBlobs(files) : undefined;
-  let read = 0;
+  /** @type {FileKind[]} */
+  const kinds = [];
   let offending = 0;
   for (const file of files) {
     const bytes = staged === undefined ? readTracked(`${root}/${file}`) : (staged.get(file) ?? null);
-    // A BINARY FILE (a NUL in its first bytes) is never edited, and is not read: the owner's binary fixtures stay.
-    if (bytes === null || bytes.subarray(0, 8000).includes(0)) continue;
-    read += 1;
+    const kind = kindOf(bytes);
+    kinds.push(kind);
+    if (kind !== 'text' || bytes === null) continue;
     for (const line of namedLines(bytes.toString('utf8'))) {
       offending += 1;
       process.stdout.write(`  FAIL  ${file}:${String(line)} names another PDF product or its maker\n`);
     }
   }
-  if (read === 0) {
+  const read = kinds.filter((kind) => kind === 'text').length;
+  const looked = whatWasRead(source, kinds);
+  // A COMMIT THAT STAGES NOTHING SCANNABLE has nothing to bring a name in: said so, and not a blind result.
+  if (looked === 'nothing-staged') {
+    process.stdout.write('  ok  this commit stages no file the product-name scan reads\n');
+    return 0;
+  }
+  if (looked === 'blind') {
     process.stdout.write('  FAIL  the product-name scan read no file, so it refuses to report a result.\n');
     return 1;
   }
