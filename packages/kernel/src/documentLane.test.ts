@@ -50,6 +50,42 @@ describe('DocumentLane (ADR-0274)', () => {
     expect(log.filter((line) => line.startsWith('start'))).toStrictEqual(['start read A', 'start save', 'start read B', 'start read C']);
   });
 
+  /**
+   * A READ ALREADY RUNNING FINISHES BEFORE A SAVE, by design (M2c, cloud run 25): no native call has a safe point to stop
+   * at. What must hold is that nothing asked during it is lost, run twice or run out of order: the edit before the save is
+   * in what it saves, each of two saves runs once, and a read that fails takes nothing with it.
+   */
+  it('loses no save asked for while a read runs, runs each save once, and keeps the edit before it first, the read failing or not', async () => {
+    for (const fails of [false, true]) {
+      const lane = new DocumentLane();
+      const log: string[] = [];
+      let release = (): void => undefined;
+      const reading = lane.enter('read', async () => {
+        log.push('start read');
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        if (fails) throw new Error('the read failed');
+        return 'read';
+      });
+      const writes = ['edit', 'save', 'save again'].map((name) =>
+        lane.enter('write', () => {
+          log.push(name);
+          return Promise.resolve(name);
+        }),
+      );
+      await settle();
+      // NOTHING RUNS BESIDE THE READ.
+      expect(log).toStrictEqual(['start read']);
+      release();
+      if (fails) await expect(reading).rejects.toThrow('the read failed');
+      else expect(await reading).toBe('read');
+      expect(await Promise.all(writes)).toStrictEqual(['edit', 'save', 'save again']);
+      expect(log).toStrictEqual(['start read', 'edit', 'save', 'save again']);
+      await lane.drained();
+    }
+  });
+
   it('CONTROL: every entry queued as a write keeps first come first served, which is the order the reads above cost', async () => {
     const lane = new DocumentLane();
     const log: string[] = [];
