@@ -52,3 +52,10 @@ about the document's own contents.
 - The panel's open-tab setting joins the settings registry beside its open/width settings.
 - D11's row already says *panel tab*; this is the law catching up with the owner's design
   rather than a new decision.
+
+## Correction, 2026-10-30 — Decision 4 is superseded
+
+*One conversation per document* is superseded by
+[ADR-0277](0277-the-assistants-limits-are-said-and-an-answer-is-never-cut-in-silence.md) Decision 6, the owner's decision of
+2026-10-30: a new conversation keeps the old one, and a file holds up to twenty saved conversations. The panel still shows one
+conversation at a time, the newest.
