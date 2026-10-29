@@ -118,17 +118,26 @@ export async function applyEditTextOperators(
   // 7.5 seconds were the dry run's layout of a page whose own Helvetica carried the edit.
   // A FORM KEEPS THE DRY RUN: making its placement its own copies it (`ownPlacement`) before anything is checked, and a
   // second attempt would copy it again.
+  // A MARK'S BOLD IS JUDGED BY THE WEIGHT THE LETTERS LOOK, which only the faces measure (`isBold`): without them a drawn
+  // bold word stated 400 reads as already not bold, so Bold taken off it is no change and is dropped (the owner's test of
+  // milestone 1). Decided here, before any write, rather than from the refusal a faceless write ends in: that refusal is
+  // `unchanged` only when nothing else changed, and a form never writes twice.
+  const weighed = bound && namesBold(command);
   if (command.form === undefined) {
+    if (weighed) return mustWrite(await attempt(await faceSetLoaded(), false));
     const once = await attempt(null, bound);
     if (once !== undefined) return once;
     const written = await attempt(await faceSetLoaded(), false);
     if (written === undefined) throw new Error('an edit given its faces asked for faces again');
     return written;
   }
-  const needed = bound && (await needsAFace(session, command, read, standard));
-  const written = await attempt(needed ? await faceSetLoaded() : null, false);
-  if (written === undefined) throw new Error('an edit that may not ask for faces asked for them');
-  return written;
+  const needed = weighed || (bound && (await needsAFace(session, command, read, standard)));
+  return mustWrite(await attempt(needed ? await faceSetLoaded() : null, false));
+
+  function mustWrite(written: OperatorWrite | undefined): OperatorWrite {
+    if (written === undefined) throw new Error('an edit that may not ask for faces asked for them');
+    return written;
+  }
 
   /**
    * The edit written with `faceSet`, or `undefined` where `askFaces` and a word needs a face the page's fonts lack: then
@@ -167,10 +176,6 @@ export async function applyEditTextOperators(
       // NOTHING TO WRITE, split by the PDFium writer's rule (ADR-0260): the words the page shows and nothing else is the
       // answer the editor closes on; anything else was a change none of which could be written, and the editor keeps it.
       if (refusal.reason === 'unchanged') {
-        // A MARK'S BOLD IS JUDGED BY THE WEIGHT THE LETTERS LOOK, which only the faces measure (`isBold`): without them a
-        // drawn bold word stated 400 read as already not bold, and Bold taken off it was answered *unchanged* and ignored
-        // (the owner's test of milestone 1). So *unchanged* without the faces is no verdict where a mark names Bold.
-        if (askFaces && blocksOfEdit(command).some((block) => (block.marks ?? []).some((mark) => mark.set.bold !== undefined))) return undefined;
         const shown = new Map(read.runs.map((run) => [run.index, run.text] as const));
         if ((command.inserts ?? []).length === 0 && sentAsShown(blocksOfEdit(command), (run) => shown.get(run))) {
           throw new BlockUnchangedError();
@@ -209,6 +214,11 @@ export async function applyEditTextOperators(
     // AND WHAT ITS CHECKS NOTED.
     return { boxed, more: 0, noted, reach: edit.baselines.map(({ first, last }) => ({ first, last })) };
   }
+}
+
+/** Whether a mark of this edit sets Bold, either way: the one question whose answer needs the faces' looked weight. */
+function namesBold(command: CommandOfKind<'editTextOperators'>): boolean {
+  return blocksOfEdit(command).some((block) => (block.marks ?? []).some((mark) => mark.set.bold !== undefined));
 }
 
 /**

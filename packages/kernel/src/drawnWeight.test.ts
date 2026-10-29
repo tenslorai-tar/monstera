@@ -103,7 +103,7 @@ function procedureOf(face: ShapingFace, character: string): string {
  * A page showing `minimum` in a Type 3 font whose glyphs are Tinos `style`'s own outlines and whose descriptor states
  * `stated`: letters that LOOK one weight and SAY another.
  */
-async function drawnPage(style: 'Regular' | 'Bold', stated: number): Promise<Uint8Array> {
+async function drawnPage(style: 'Regular' | 'Bold', stated: number, inForm = false): Promise<Uint8Array> {
   const face = new ShapingFace(new Uint8Array(readFileSync(join(FONTS, `Tinos-${style}.ttf`))), 0, {});
   const document = await LibDocument.create();
   const page = document.addPage([612, 792]);
@@ -138,9 +138,19 @@ async function drawnPage(style: 'Regular' | 'Bold', stated: number): Promise<Uin
       ),
     }),
   );
-  page.node.setFontDictionary(PDFName.of('F1'), font);
   const codes = Array.from(SHOWN, (character) => (97 + LETTERS.indexOf(character)).toString(16)).join('');
-  page.node.set(PDFName.of('Contents'), context.register(context.flateStream(`BT /F1 24 Tf 72 700 Td <${codes}> Tj ET`)));
+  const shows = `BT /F1 24 Tf 72 700 Td <${codes}> Tj ET`;
+  if (inForm) {
+    // THE SAME WORD DRAWN BY A FORM (ADR-0269), so the edit takes the form's own path through the writer.
+    const form = context.register(
+      context.flateStream(shows, { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 612, 792], Resources: { Font: { F1: font } } }),
+    );
+    page.node.setXObject(PDFName.of('Fm1'), form);
+    page.node.set(PDFName.of('Contents'), context.register(context.flateStream('q /Fm1 Do Q')));
+  } else {
+    page.node.setFontDictionary(PDFName.of('F1'), font);
+    page.node.set(PDFName.of('Contents'), context.register(context.flateStream(shows)));
+  }
   return document.save();
 }
 
@@ -227,6 +237,48 @@ describe('a word typed beside drawn letters takes the weight they LOOK (ADR-0176
       ).toBe(true);
       // AND WRITTEN IN THE REGULAR FACE, not left in the drawn bold letters.
       expect(shown.some((font) => font?.face?.endsWith('Tinos-Regular') === true || font?.face === 'Tinos'), JSON.stringify(shown)).toBe(true);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('Bold turned OFF on the drawn word INSIDE A FORM: it is written and reads back regular, as on the page', async () => {
+    const command: CommandOfKind<'editTextOperators'> = {
+      kind: 'editTextOperators',
+      page: 0,
+      ...blockEditOf([{ lines: [[0]], soft: [false], text: SHOWN, marks: [{ from: 0, to: SHOWN.length, set: { bold: false } }] }]),
+      fit: 'reflow',
+      version: asDocVersion(1),
+      form: [{ name: 'Fm1', occurrence: 0 }],
+    };
+    const session = await mupdfWriter.open(await drawnPage('Bold', 400, true));
+    try {
+      // THE OLD CODE THREW HERE: the form's one faceless write judged Bold by the stated 400 and answered *unchanged*.
+      await applyEditTextOperators(session, command, READ);
+      // THE FONTS THE PAGE'S FORMS NOW NAME, by their names: the page-faces read does not look inside a form.
+      const names = await withDocument(session, (document) => {
+        const found: string[] = [];
+        document
+          .findPage(0)
+          .get('Resources')
+          .get('XObject')
+          .forEach((form: PDFObject) => {
+            form
+              .resolve()
+              .get('Resources')
+              .get('Font')
+              .forEach((value: PDFObject, key: string | number) => {
+                if (String(key) === 'F1') return;
+                const font = value.resolve();
+                const descendant = font.get('DescendantFonts');
+                const named = (descendant.isNull() ? font : descendant.get(0).resolve()).get('BaseFont');
+                found.push(named.isNull() ? '' : named.asName());
+              });
+          });
+        return found;
+      });
+      expect(names.some((name) => name.endsWith('Tinos-Regular')), JSON.stringify(names)).toBe(true);
+      expect(names.some((name) => name.endsWith('Tinos-Bold')), JSON.stringify(names)).toBe(false);
     } finally {
       await mupdfWriter.close(session);
     }
