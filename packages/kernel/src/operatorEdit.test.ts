@@ -1522,6 +1522,28 @@ describe('a block set at an angle is written in its own frame (ADR-0273)', () =>
     expect(m[5]).toBeCloseTo(500 + 10 * turn[1], 3);
   });
 
+  /**
+   * A TURNED LINE GROWS ALONG ITSELF TO ITS REACH (M2c, cloud run 25): the reach the editor sends a one-line block is in
+   * the block's frame, where the writer lays it out, as the runs' boxes are. Running up the page, the line's origin
+   * (100, 500) is (500, -100) in the frame and its words end at 608 there.
+   */
+  it('a turned block of one line grows along itself to the reach given in its frame, rather than wrapping at its end', () => {
+    const up = [0, 1, -1, 0] as const;
+    const { content, runs } = page(up);
+    const [first] = runs.runs;
+    const written = (place?: { reach: number }) => {
+      const result = editOperators(content, fonts, runs, [
+        { lines: [[first?.index ?? -1]], soft: [false], text: 'turned at an angle and more', ...(place === undefined ? {} : { place }) },
+      ]);
+      if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+      return result.value.drawn;
+    };
+    expect(written({ reach: 808 })).toStrictEqual(['turned at an angle and more']);
+    // CONTROL: with no reach the line wraps at its own end, which is what the saved turned line did: the old line kept,
+    // and the added words set on a line of their own.
+    expect(written()).toStrictEqual(['and more']);
+  });
+
   it('CONTROL: the same block upright is written upright where it stood, so the cases above are the frame’s', () => {
     const answer = editSecond([1, 0, 0, 1]);
     if (answer.refused !== undefined) throw new Error(`refused: ${JSON.stringify(answer.refused)}`);

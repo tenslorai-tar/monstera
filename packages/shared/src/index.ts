@@ -61,7 +61,7 @@ export {
 // the kernel would be re-stated in the shim and the two would agree until one
 // of them changed — which is exactly what happened to the matching rule above.
 export { type TextToken, type WordCount, countWords, tokensOf, wordsOf } from './wordCount.js';
-export { LINE_GAP, oneLineReach } from './oneLineReach.js';
+export { LINE_GAP, oneLineReach, pageAlongFrame } from './oneLineReach.js';
 export { EDGE_HANDLE_WIDTH, MINIMUM_WINDOW, PAGE_AREA_MIN_WIDTH, minimumWindowFor } from './windowSize.js';
 // A DOCUMENT'S PASSWORD AS MAIN HOLDS IT, here because a kernel type carries it and the holder is in `apps/desktop`
 // (ADR-0171's addendum).

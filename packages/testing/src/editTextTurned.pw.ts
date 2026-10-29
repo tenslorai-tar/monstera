@@ -23,7 +23,7 @@ const UP = [0, 1, -1, 0] as const;
 /** The line's box IN ITS FRAME: from 300 to 450 along it, its baseline at -300 (page x 300), its ink 12 above that. */
 const BOX = { x0: 300, y0: -303, x1: 450, y1: -291 };
 
-async function open(page: Page, sent: { channel: string; params: unknown }[], framed: boolean): Promise<void> {
+async function open(page: Page, sent: { channel: string; params: unknown }[], framed: boolean, operators = false): Promise<void> {
   const document = await PDFDocument.create();
   const font = await document.embedFont(StandardFonts.Helvetica);
   document.addPage([612, 792]).drawText(WORDS, { x: 300, y: 300, size: 12, font, rotate: degrees(90) });
@@ -35,6 +35,7 @@ async function open(page: Page, sent: { channel: string; params: unknown }[], fr
     {
       opens: [{ kind: 'opened' as const, docId: ID, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'Turned.pdf' }],
       documentBytes: new Map([[ID, bytes]]),
+      ...(operators ? { textRewrite: 'operators' as const } : {}),
       textBlocks: [
         {
           box: BOX,
@@ -85,6 +86,35 @@ test('text running up the page is outlined along its line, opens, takes typing a
       }),
     )
     .toStrictEqual([expect.stringContaining(`${WORDS} too`)]);
+});
+
+/**
+ * A TURNED BLOCK OF ONE LINE GROWS ALONG ITS LINE as it is typed in (M2c's leftover, cloud run 25), as an upright one
+ * grows right: its reach is worked out in its frame, where the page seen along its line runs 0 to 792 and the margin
+ * mirrored is 792 less 300. The saved line wrapped at its own end, because the reach was worked out for upright blocks
+ * only and none reached the writer.
+ */
+test('a turned block of one line grows along its line as words are typed past its end, and sends its reach in its frame', async ({ page }) => {
+  const sent: { channel: string; params: unknown }[] = [];
+  // THE OPERATOR WRITER'S ROUTE, the one Edit text writes every page by (ADR-0266), whose command carries the reach.
+  await open(page, sent, true, true);
+  await openWords(page, page.locator('[data-text-edit-layer="0"] [data-text-block="0"]'));
+  const before = await page.locator(FRAME).boundingBox();
+  if (before === null) throw new Error('the editor has no frame');
+  await page.keyboard.press('End');
+  await page.keyboard.type(' and more', { delay: 20 });
+  await expect(page.locator(SURFACE)).toContainText(`${WORDS} and more`);
+  const after = await page.locator(FRAME).boundingBox();
+  if (after === null) throw new Error('the editor has no frame');
+  // STILL ONE LINE ACROSS in the editor, the words laid out along it up the screen.
+  expect(after.width).toBeLessThan(before.width * 1.5);
+  await page.locator('[data-text-edit-layer="0"]').click({ position: { x: 40, y: 40 } });
+  // THE ONE WRITE carries the reach, in the frame: the page along the line runs 0 to 792, and the margin mirrored is
+  // 792 less 300. CONTROL, the reach worked out for upright blocks only: none was sent, so the writer wrapped the saved
+  // line at the block's own end, though the editor showed one line.
+  await expect
+    .poll(() => sent.flatMap(({ channel, params }) => (channel === 'document.execute' ? [JSON.stringify((params as { command?: unknown }).command)] : [])))
+    .toStrictEqual([expect.stringContaining(`"reach":${String(792 - 300)}`)]);
 });
 
 test('CONTROL: the same block read with no frame is outlined along the page’s x, so the tall outline is the frame’s', async ({ page }) => {
