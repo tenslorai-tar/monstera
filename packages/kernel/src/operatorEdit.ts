@@ -503,6 +503,31 @@ function pieceTexts(pieces: readonly FacePiece[], word: string): string[] {
   return texts.map((text) => text ?? word.slice(known));
 }
 
+/**
+ * `piece` with each JOINED-LETTER glyph its own piece — a code whose `ToUnicode` names a presentation form rather than
+ * the letters (`lettersOf`) — and the codes between them kept together: what is marked `/ActualText` with its letters
+ * is that glyph alone, as a browser's print marks it. A span over the whole word reads differently: MuPDF split `fifty`
+ * written so into `fi` and `fty` (measured 2026-10-29 on a Chromium 151 print of Carlito, cloud run 25 item 25b).
+ */
+function joinedApart(piece: FacePiece): FacePiece[] {
+  const map = piece.font.toUnicode;
+  if (map === null) return [piece];
+  const pieces: FacePiece[] = [];
+  let plain: number[] = [];
+  for (const code of piece.codes) {
+    const said = map.text.get(code) ?? '';
+    if (lettersOf(said) === said) {
+      plain.push(code);
+      continue;
+    }
+    if (plain.length > 0) pieces.push({ ...piece, codes: plain });
+    plain = [];
+    pieces.push({ ...piece, codes: [code] });
+  }
+  if (plain.length > 0) pieces.push({ ...piece, codes: plain });
+  return pieces;
+}
+
 /** What a piece's codes read as through its font's own `ToUnicode`, or `null` where the font names none. */
 function readsAs(piece: FacePiece): string | null {
   const map = piece.font.toUnicode;
@@ -1420,8 +1445,8 @@ function write(
           cursor += widthOfPieces(source, own, unit) + spacedBy(token, spacing) + stretch;
           continue;
         }
-        const pieces = own;
-        faces?.drawn(pieces);
+        faces?.drawn(own);
+        const pieces = own.flatMap(joinedApart);
         const widths = pieceWidths(source, pieces, unit);
         const width = widthOfPieces(source, pieces, unit);
         // EACH PIECE'S TEXT, the word's characters its codes show, so the segments still spell the word.

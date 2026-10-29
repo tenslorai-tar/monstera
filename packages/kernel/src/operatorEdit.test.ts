@@ -728,9 +728,10 @@ describe('editOperators on a drawn font with joined letters', () => {
     // READ BACK AS `a fit bat`, the marked sequence as its letters.
     expect(checkOperatorEdit(content, result.value, fonts)).toStrictEqual({ ok: true, value: undefined });
     const [object = ''] = inserted(result.value);
-    // THE JOINED GLYPH, code 01, still shown in its own font, and marked as the letters it stands for.
+    // THE JOINED GLYPH, code 01, still shown in its own font, and it alone marked as the letters it stands for, as the
+    // print marked it: a span over the whole word, MuPDF read as two words.
     expect(object).toContain('/F3 10 Tf\n');
-    expect(object).toContain('/Span <</ActualText <FEFF006600690074>>> BDC 1 0 0 1 82 100 Tm <0102> Tj EMC');
+    expect(object).toContain('/Span <</ActualText <FEFF00660069>>> BDC 1 0 0 1 82 100 Tm <01> Tj EMC\n1 0 0 1 87 100 Tm <0220> Tj');
     // CONTROL: the recoloured word is in red, so the line was set again rather than left as it was.
     expect(object).toContain('1 0 0 rg');
   });
