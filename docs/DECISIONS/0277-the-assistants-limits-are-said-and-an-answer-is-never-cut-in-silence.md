@@ -82,3 +82,29 @@ said in none:
   decision exists to end.
 - **Leaving Copy and the history unbounded.** Every channel and the history file are bounded by the contract (invariant
   L11, `payloadBounds.test.ts`); an answer bound kept by `main` keeps that true without a cut.
+
+## Correction, 2026-10-30 — a resent answer does not fill a conversation, and the dates
+
+**Decision 2 named a third way a conversation is full, and it was wrong.** *A turn that would be resent past
+`MAX_CHAT_TEXT`* applies the question's bound to every message an `ai.ask` carries. Decision 3 lets an answer run to
+`MAX_ANSWER_TEXT`, 65,536 characters, so any answer longer than 16,384 would have made its conversation full after one
+question. That is not what the owner decided: 16,384 is the bound on what a person TYPES, for the reasons Decision 1
+gives (a long passage belongs to the page or a selection, and what is sent is paid for on the person's own key).
+
+So, decided by the owner on 2026-10-30:
+
+- **`ai.ask` bounds each message by who wrote it**: a person's message at `MAX_CHAT_TEXT`, an assistant's earlier answer
+  at `MAX_ANSWER_TEXT`. The bound is the message's own, carried by its role, so a long answer is resent whole.
+- **A conversation is full by two routes only**: the count (the next question would be past `MAX_CHAT_TURNS` messages)
+  and the provider's own refusal of the conversation as too long for its model (Decision 5). `conversationRoom` takes
+  those two and nothing else.
+- **The payload bound that results**: at most `MAX_CHAT_TURNS` (64) messages, a person's at most 16,384 characters and an
+  assistant's at most 65,536. With turns alternating that is about 32 × 16,384 + 32 × 65,536, some 2.6 million
+  characters, and never more than 64 × 65,536 (4,194,304) whatever the order. Checked against invariant L11: the bound
+  is a constant of the contract, the same for a one-page document and a thousand-page one, so no payload grows with the
+  document; `payloadBounds.test.ts` already exercises `ai.ask` by schema, and only its prose naming the bound changes.
+  A conversation that long is far past most models' context windows, which is what the provider's too-long refusal
+  answers, and why that route matters more than the count.
+
+**Dates.** The Date line above says 2026-10-29, the day of Decisions 1 to 5. Decision 6, and with it Decision 7, was
+decided on 2026-10-30, as the *Decided by* line records; the Date line is left as written.
