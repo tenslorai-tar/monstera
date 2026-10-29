@@ -1,6 +1,6 @@
 import { joinAfterLine } from '@monstera/shared';
 
-import { breakOpportunities, graphemeBoundaries } from './lineBreaks.js';
+import { breakOpportunities } from './lineBreaks.js';
 
 /**
  * A block edited as paragraphs of styled words
@@ -441,50 +441,6 @@ function widthOf(parts: readonly Part[], measure: Measure): number {
   return parts.reduce((sum, part) => sum + measure(part.run, part.mark, part.text), 0);
 }
 
-/**
- * The chunk that cannot fit a whole line, as the head that fits and the rest: broken between grapheme clusters, never
- * inside one, and never leaving the head empty.
- */
-function breakWide(chunk: Chunk, limit: number, measure: Measure): { head: Chunk; rest: Chunk | undefined } {
-  const units: { run: number; mark: number; text: string; at: number }[] = [];
-  let offset = 0;
-  for (const part of chunk.core) {
-    const boundaries = [0, ...graphemeBoundaries(part.text), part.text.length];
-    for (let at = 0; at < boundaries.length - 1; at += 1) {
-      const text = part.text.slice(boundaries[at] ?? 0, boundaries[at + 1] ?? part.text.length);
-      units.push({ run: part.run, mark: part.mark, text, at: offset + (boundaries[at] ?? 0) });
-    }
-    offset += part.text.length;
-  }
-  let width = 0;
-  let take = 0;
-  for (const unit of units) {
-    const next = width + measure(unit.run, unit.mark, unit.text);
-    if (take > 0 && next > limit + WITHIN) break;
-    width = next;
-    take += 1;
-  }
-  const headUnits = units.slice(0, take);
-  const restUnits = units.slice(take);
-  const join = (taken: typeof units): Part[] => {
-    const parts: Part[] = [];
-    for (const unit of taken) {
-      const last = parts.at(-1);
-      if (last?.run === unit.run && last.mark === unit.mark) {
-        parts[parts.length - 1] = { run: unit.run, mark: unit.mark, text: last.text + unit.text };
-      } else parts.push({ run: unit.run, mark: unit.mark, text: unit.text });
-    }
-    return parts;
-  };
-  const headLength = headUnits.reduce((sum, unit) => sum + unit.text.length, 0);
-  // NOTHING LEFT: the head is the whole word, and keeps the white space that followed it.
-  if (restUnits.length === 0) return { head: { start: chunk.start, core: join(headUnits), trail: chunk.trail }, rest: undefined };
-  return {
-    head: { start: chunk.start, core: join(headUnits), trail: undefined },
-    rest: { start: chunk.start + headLength, core: join(restUnits), trail: chunk.trail },
-  };
-}
-
 /** The pieces of a line's parts: consecutive parts of one run and one mark are one. */
 function piecesOf(parts: readonly Part[], measure: Measure): Piece[] {
   const pieces: { run: number; mark: number; text: string }[] = [];
@@ -511,9 +467,9 @@ export interface LayOutFrom {
  * Fills lines of a paragraph, greedily, from `from`.
  *
  * A line takes the next word while its width, the spaces between its words and that word's own width, are within the
- * limit; the white space after a line's last word is not kept and not counted. A word wider than a whole line is broken
- * between grapheme clusters, the last resort. Stops when `stopAt` says the line that would start next begins where an
- * old line did.
+ * limit; the white space after a line's last word is not kept and not counted. A word wider than a whole line is set
+ * whole on a line of its own, never broken (ADR-0275). Stops when `stopAt` says the line that would start next begins
+ * where an old line did.
  *
  * @returns the lines, and where the layout stopped (`undefined` when it ran to the end of the paragraph)
  */
@@ -556,13 +512,12 @@ export function layOutParagraph(
       }
       const word = widthOf(chunk.core, measure);
       if (parts.length === 0) {
+        // A WORD WIDER THAN THE WHOLE LINE is set whole on a line of its own, past the limit: a word is never broken
+        // between its letters (ADR-0275). `planBlock` widens a block's limits to its widest word, so there this only
+        // keeps the rule for a caller that has not.
         if (word > limit + WITHIN) {
-          const { head, rest } = breakWide(chunk, limit, measure);
-          chunks.splice(at, 1, ...(rest === undefined ? [head] : [head, rest]));
-          const split = chunks[at];
-          if (split === undefined) break;
-          parts.push(...split.core);
-          width = widthOf(split.core, measure);
+          parts.push(...chunk.core);
+          width = word;
           at += 1;
           break;
         }
@@ -693,19 +648,36 @@ export function planBlock(
   const claimed = new Set<number>();
   /** The old paragraph the paragraph before was set in, which a paragraph made only of typed words takes too. */
   let shapedBefore = 0;
-  for (const [place, paragraph] of paragraphsOf(attribution, formatting).entries()) {
-    const { start, end } = paragraph;
-    const opens = rows.length > 0;
+  const paragraphs = paragraphsOf(attribution, formatting).map((paragraph, place) => {
     // THE OLD PARAGRAPH THIS ONE IS, by its first unit that was not typed: the words were written over it or in front of
     // it, and its lines are the ones to keep or set again.
     let anchor = -1;
-    for (let unit = start; unit < end && anchor < 0; unit += 1) anchor = from[unit] ?? -1;
+    for (let unit = paragraph.start; unit < paragraph.end && anchor < 0; unit += 1) anchor = from[unit] ?? -1;
     const heldAt = anchor < 0 ? -1 : old.paragraphs.findIndex((candidate) => anchor >= candidate.start && anchor <= candidate.end);
     // THE EDGES IT IS SET IN are that old paragraph's — the half of one Enter split included, as the editor's own paragraph
     // after a split keeps the one it was split from — or, for words all typed, the paragraph's before it.
     const shapedBy = heldAt >= 0 ? heldAt : shapedBefore;
     shapedBefore = shapedBy;
-    const limitsHere = typeof limits === 'function' ? limits(place, shapedBy) : limits;
+    return { paragraph, heldAt, shapedBy, limits: typeof limits === 'function' ? limits(place, shapedBy) : limits };
+  });
+  // A WORD WIDER THAN ITS LINE WIDENS THE WHOLE BLOCK BY WHAT IT OVERFLOWS (ADR-0275): a word is never broken, and the
+  // editor's surface is at least as wide as its longest word with that word's paragraph's indent, so where one paragraph's
+  // word does not fit, every paragraph gains the same width, and every line wraps where the person sees it. A paragraph's
+  // first word is held to its first line's limit, and any word to the limit of every other line.
+  const overflow = Math.max(
+    0,
+    ...paragraphs.flatMap(({ paragraph, limits: given }) => {
+      const [first] = paragraph.chunks;
+      return [
+        first === undefined ? 0 : widthOf(first.core, measure) - given.first,
+        ...paragraph.chunks.map((chunk) => widthOf(chunk.core, measure) - given.rest),
+      ];
+    }),
+  );
+  for (const [place, { paragraph, heldAt, shapedBy, limits: given }] of paragraphs.entries()) {
+    const { start, end } = paragraph;
+    const opens = rows.length > 0;
+    const limitsHere = overflow === 0 ? given : { first: given.first + overflow, rest: given.rest + overflow };
     if (paragraph.chunks.length === 0) {
       rows.push({ kind: 'blank', opens, paragraph: place });
       continue;

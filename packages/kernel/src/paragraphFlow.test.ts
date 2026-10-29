@@ -256,9 +256,14 @@ describe('layOutParagraph', () => {
     expect(laid('aaaaaa bbbbbb', 72)).toStrictEqual(['aaaaaa bbbbb'.slice(0, 6), 'bbbbbb']);
   });
 
-  it('breaks a word wider than a whole line between graphemes, the last resort, and never leaves a line empty', () => {
-    expect(laid('abcdefghijklmnopqrstuvwxy')).toStrictEqual(['abcdefghijkl', 'mnopqrstuvwx', 'y']);
-    expect(laid('abc', 1)).toStrictEqual(['a', 'b', 'c']);
+  // ADR-0275, which replaces ADR-0179's last resort: that case broke this same word into "abcdefghijkl", "mnopqrstuvwx" and
+  // "y", and "abc" at a limit of 1 into one letter a line, which is how a reference marker's typed words were chopped two
+  // letters to a line.
+  it('sets a word wider than a whole line whole, on a line of its own, and never breaks it', () => {
+    expect(laid('abcdefghijklmnopqrstuvwxy')).toStrictEqual(['abcdefghijklmnopqrstuvwxy']);
+    expect(laid('abc', 1)).toStrictEqual(['abc']);
+    // BETWEEN WORDS THAT FIT: the line before it ends, and the next word starts the line after it.
+    expect(laid('aa abcdefghijklmnopq bb')).toStrictEqual(['aa', 'abcdefghijklmnopq', 'bb']);
   });
 
   it('measures a bold run at its own width: a bold word that is wider wraps where a regular one would fit', () => {
@@ -341,6 +346,17 @@ describe('planBlock: a paragraph reflows from its first changed line and stops w
     expect(first?.kind === 'new' ? first.pieces.map((piece) => piece.text).join('') : '').toBe('aaa bbb dd');
     // AND IN THE RUNS THAT WROTE THEM: the first words in line 1's run, "dd" in the run of the line it came from.
     expect(first?.kind === 'new' ? first.pieces.map((piece) => piece.run) : []).toStrictEqual([1, 3]);
+  });
+
+  // ADR-0275 Decision 2: the block's widest word is the least every line may fill, as the editor's surface is at least as
+  // wide as its longest word. This file's measure is six points a character, so the sixteen-letter word is 96 points.
+  it('widens every line of a block to its widest word, so the lines wrap where the editor shows them', () => {
+    const lines = block([['aaa bbb ccc']], []);
+    const plan = planBlock(lines, 'aaa bbb ccc ddd abcdefghijklmnop', measure, LIMITS);
+    expect(said(plan.rows)).toStrictEqual(['new 1:aaa bbb ccc ddd', 'new 1:abcdefghijklmnop']);
+    // CONTROL: with no word wider than the measure, the same words wrap at 72 points, as they always have.
+    const narrow = planBlock(lines, 'aaa bbb ccc ddd abcdefghijkl', measure, LIMITS);
+    expect(said(narrow.rows)).toStrictEqual(['old 0', 'new 1:ddd', 'new 1:abcdefghijkl']);
   });
 
   it('answers no rows for a paragraph that was deleted, and keeps the others’ lines', () => {

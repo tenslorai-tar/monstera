@@ -891,8 +891,8 @@ describe('editOperators on paragraphs (ADR-0179)', () => {
       if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
       expect(checkOperatorEdit(content, result.value, fonts).ok).toBe(true);
       const written = latin1(result.value.content);
-      // THE ADDED WORDS' FIRST LETTER: in a cell one letter wide each letter is a line of its own.
-      return { object: written.indexOf('<62> Tj'), clipEnds: written.indexOf('Q\n') };
+      // THE FIRST ADDED WORD: in a cell one letter wide each word is a line of its own, whole (ADR-0275).
+      return { object: written.indexOf('<626262>'), clipEnds: written.indexOf('Q\n') };
     };
     // THE CELL'S CLIP, its bottom at 50: the wrapped lines fall below it, so the object goes past its `Q`.
     const hidden = placedAt('0 50 200 30');
