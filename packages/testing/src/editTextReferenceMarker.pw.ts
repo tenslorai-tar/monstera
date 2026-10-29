@@ -23,7 +23,7 @@ const PARAGRAPH_TEXT = 'A paragraph that cites its sources, set across the colum
 const WRAPPED = ['A narrow paragraph whose words', 'wrap within its own measure.'];
 
 /** The page with the marker and the paragraph above it, Edit text on, and the words of block `which` open (0: the marker). */
-async function openMarker(page: Page, which = 0): Promise<void> {
+async function openMarker(page: Page, which = 0, beforeOpen?: () => Promise<void>): Promise<void> {
   const pdf = await PDFDocument.create();
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const sheet = pdf.addPage([612, PAGE_HEIGHT]);
@@ -65,6 +65,7 @@ async function openMarker(page: Page, which = 0): Promise<void> {
   await page.getByRole('button', { name: /^Open PDF/u }).first().click();
   await expect(page.locator('canvas[data-page-canvas="0"]')).toBeVisible({ timeout: 20_000 });
   await runCommand(page, 'Edit text on the page');
+  await beforeOpen?.();
   await openWords(page, page.locator(`[data-text-edit-layer="0"] [data-text-block="${String(which)}"]`));
   await expect(page.locator(FRAME)).toHaveAttribute('data-kit-mode', 'text');
 }
@@ -118,4 +119,21 @@ test('a word typed wider than a paragraph is set whole on one line, never broken
   const frame = await page.locator(FRAME).boundingBox();
   if (frame === null) throw new Error('no frame');
   expect(frame.x + frame.width).toBeGreaterThanOrEqual(lines.right - 0.5);
+});
+
+test("the link's hover does not cover the words being edited over it, and is shown over the same link before they open", async ({ page }) => {
+  const hover = page.locator('[data-link-hover]');
+  const marker = page.locator('[data-text-edit-layer="0"] [data-text-block="0"]');
+  // THE CONTROL, with no editor open: the pointer over the marker is over its link, and the hover says where it goes.
+  await openMarker(page, 0, async () => {
+    const box = await marker.boundingBox();
+    if (box === null) throw new Error('no marker');
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await expect(hover).toHaveText('Open https://example.org/13 · Ctrl+click to follow');
+  });
+  const surface = await page.locator(SURFACE).boundingBox();
+  if (surface === null) throw new Error('no surface');
+  await page.mouse.move(surface.x + surface.width / 2, surface.y + surface.height / 2 + 1);
+  await page.mouse.move(surface.x + surface.width / 2, surface.y + surface.height / 2);
+  await expect(hover).toHaveCount(0);
 });
