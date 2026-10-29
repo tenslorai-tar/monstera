@@ -134,6 +134,8 @@
     "check:emittedtemplates": "node scripts/lib/emittedTemplates.mjs",
     "check:productnames": "node scripts/lib/productNames.mjs",
     "proof:productnames": "node scripts/proofs/productNames.proof.mjs",
+    "check:machinenames": "node scripts/lib/machineNames.mjs",
+    "proof:machinenames": "node scripts/proofs/machineNames.proof.mjs",
     "proof:tokencontrast": "node scripts/proofs/tokenContrast.proof.mjs",
     "check:tokencontrast": "node scripts/lib/tokenContrast.mjs",
     "proof:bordertokens": "node scripts/proofs/borderTokens.proof.mjs",

@@ -31,7 +31,7 @@ import type { Brand } from '@monstera/shared';
  * does not fold two UNC forms to each other. One file, measured on Windows 11:
  *
  * - `C:\…\f.txt`
- * - `\\EMEM-PC\C$\…\f.txt`
+ * - `\\HOST\C$\…\f.txt`
  * - `\\localhost\C$\…\f.txt`
  *
  * gave **three** distinct `realpath.native` values and **one** `dev:ino`. In an

@@ -340,12 +340,12 @@ correct the rows if they move.
 
 `\\localhost\` is a special case Windows treats differently from an ordinary
 share, so the same file was measured again through the machine's own name —
-`\\EMEM-PC\C$\…`, a normal redirector path:
+`\\HOST\C$\…`, a normal redirector path:
 
 | Form | `realpath.native` | `dev:ino` |
 |---|---|---|
 | `C:\…\f.txt` | `C:\…\f.txt` | `1182584447:3377699720809809` |
-| `\\EMEM-PC\C$\…\f.txt` | `\\EMEM-PC\C$\…\f.txt` | *identical* |
+| `\\HOST\C$\…\f.txt` | `\\HOST\C$\…\f.txt` | *identical* |
 | `\\localhost\C$\…\f.txt` | `\\localhost\C$\…\f.txt` | *identical* |
 
 **Three distinct `realpath.native` values for one file — the two UNC forms do not

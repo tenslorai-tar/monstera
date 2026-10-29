@@ -7,6 +7,7 @@ your head. It is not the law.
 |---|---|---|
 | `BUILD-PROMPT.md` | **Immutable founding record.** Never edited after its first commit — with one exception, by the owner's decision of 2026-10-25: two benchmark lines that named another product were reworded to *professional standards* (`docs/ARCHITECTURE.md`'s amendment log). The rule is otherwise unchanged. | nobody |
 | `docs/ARCHITECTURE.md` | **Living law.** Wins wherever it diverges from the founding record. | B4 amendment, in its own commit, naming the founding clause it supersedes |
+| ADRs and `docs/JOURNAL.md` | **Append-only records.** A correction is appended, dated; the text is never edited — with one exception, by the owner's decision of 2026-10-29: the owner's own user and computer names were replaced by placeholders in five files (`docs/ARCHITECTURE.md`'s amendment log); history was not rewritten. `machineNames.mjs` refuses them at pre-commit. | an appended, dated correction |
 | `CLAUDE.md` (this file) | Derived digest. | updated in the same commit as any amendment affecting it |
 
 Three documents, one truth — not three truths. If this file and

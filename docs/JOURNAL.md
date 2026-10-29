@@ -52873,7 +52873,7 @@ One file, on Node v24.12.0 / libuv 1.51.0 / Windows 11:
 | Form | `realpath.native` | `dev:ino` |
 |---|---|---|
 | `C:\…\f.txt` | itself | one value |
-| `\\EMEM-PC\C$\…` | itself | *same* |
+| `\\HOST\C$\…` | itself | *same* |
 | `\\localhost\C$\…` | itself | *same* |
 | `Y:\…` via `subst` | folded to target | *same* |
 | hard link | itself | *same* |

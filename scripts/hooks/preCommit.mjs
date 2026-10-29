@@ -19,6 +19,7 @@
 
 import { explainAuditBudget, pendingAuditScope } from '../lib/auditWatermark.mjs';
 import { scan as scanEmittedTemplates } from '../lib/emittedTemplates.mjs';
+import { scan as scanMachineNames } from '../lib/machineNames.mjs';
 import { scan as scanProductNames } from '../lib/productNames.mjs';
 import {
   report as reportTypeOnlyExports,
@@ -185,6 +186,17 @@ async function main() {
         `Use generic words: "another PDF editor", "widely used PDF editors", "professional standards".\n` +
         `A name the PDF format itself defines (a CMap, a registry, a filter, a media type) belongs in\n` +
         `productNames.mjs' IDENTIFIERS, in its own commit, saying which.\n\n`,
+    );
+    return 1;
+  }
+
+  // NO COMMIT CARRIES THIS MACHINE'S OWN NAMES (the owner's decision of 2026-10-29): read from the operating system
+  // now, so only the committer's own machine can be checked, and only here — Guards' machine is not theirs.
+  if (scanMachineNames({ source: 'staged' }) !== 0) {
+    process.stderr.write(
+      `\nCommit blocked — a staged file holds this machine's user name or computer name (reported above).\n\n` +
+        `Replace it with a placeholder that keeps the evidence's meaning: \\\\HOST\\C$\\…,\n` +
+        `C:\\Users\\<user>\\…, HOST\\<user>.\n\n`,
     );
     return 1;
   }

@@ -509,6 +509,11 @@ jobs:
       - name: No emitted-source template carries a backtick
         run: node scripts/ci/annotate.mjs scripts/lib/emittedTemplates.mjs
 
+      # The owner's decision of 2026-10-29: no commit carries the committer's own machine names. The scan itself runs at
+      # pre-commit, where the machine is the committer's; here the names would be this runner's, so only the proof runs.
+      - name: Prove the machine-name scan sees, separates and refuses without printing the name
+        run: node scripts/ci/annotate.mjs scripts/proofs/machineNames.proof.mjs
+
       # The owner's rule of 2026-10-25: no tracked file names another PDF product or its maker. The proof first, for
       # the reason above; the scan reads every tracked text file and carries its own control.
       - name: Prove the product-name scan sees, masks and separates
