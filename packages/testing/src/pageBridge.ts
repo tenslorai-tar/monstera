@@ -107,10 +107,22 @@ export async function bridge(
           range?.deleteContents();
           if (text !== '') range?.insertNode(document.createTextNode(text));
         };
-        if (verb === 'copy') await navigator.clipboard.writeText(selected());
+        // A COPY OR CUT IS FIRST AN EVENT, as main's `webContents.copy()` and `cut()` run the editing command, which fires
+        // `copy` or `cut` where the selection starts: a listener that cancels it and sets its own text is what goes on the
+        // clipboard (the editor's words, a page selection's lines read with their spaces), and only an unanswered one
+        // copies the platform's text of the selection.
+        const answered = (kind: 'copy' | 'cut'): string | undefined => {
+          const start = selection !== null && selection.rangeCount > 0 ? selection.getRangeAt(0).startContainer : null;
+          const target = field ?? (start instanceof Element ? start : (start?.parentElement ?? null)) ?? focused ?? document.body;
+          const event = new ClipboardEvent(kind, { clipboardData: new DataTransfer(), bubbles: true, cancelable: true, composed: true });
+          target.dispatchEvent(event);
+          return event.defaultPrevented ? (event.clipboardData?.getData('text/plain') ?? '') : undefined;
+        };
+        if (verb === 'copy') await navigator.clipboard.writeText(answered('copy') ?? selected());
         if (verb === 'cut') {
-          await navigator.clipboard.writeText(selected());
-          replace('');
+          const text = answered('cut');
+          await navigator.clipboard.writeText(text ?? selected());
+          if (text === undefined) replace('');
         }
         if (verb === 'paste') replace(await navigator.clipboard.readText());
         if (verb === 'selectAll') {
