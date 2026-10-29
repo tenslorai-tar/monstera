@@ -329,7 +329,7 @@ import { type ByteVerdict, rasterWithinLimit } from './rasterWithinLimit.js';
 import { readSpellingDictionary } from './spellingDictionaries.js';
 import { sentFromStaged } from './stagedUpload.js';
 import type { ShellDependencies, ShellWindow } from './main.js';
-import { openWebPage } from './webPages.js';
+import { openWebPage, webAddresses } from './webPages.js';
 import { createCloseGate } from './windowClose.js';
 import { removeWorkingFile } from './workingFile.js';
 import { heldRead } from './heldRead.js';
@@ -2229,7 +2229,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
               }),
               appInfo.installChannel === 'store' && openStore !== undefined
                 ? () => openStore('review')
-                : () => openWebPage('store-listing', openInBrowser),
+                : () => openWebPage('store-listing', openInBrowser, webAddresses(appInfo.version)),
             ),
       // CLOUD STORAGE (ADR-0091), over the same secret store and the same browser opener as
       // DocuSign's sign-in. A working copy is written by the save pipeline's streamed write, checked
@@ -2364,8 +2364,9 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         return true;
       },
       // THE ADDRESS IS RESOLVED HERE, from the place the renderer named (ADR-0095), and handed to
-      // the one route by which this application opens a URL outside itself.
-      openWebPage: (page) => openWebPage(page, openInBrowser),
+      // the one route by which this application opens a URL outside itself — for the RUNNING version, whose tag About's
+      // source and notices open (ADR-0276).
+      openWebPage: (page) => openWebPage(page, openInBrowser, webAddresses(appInfo.version)),
       openStore: async (page) => (openStore === undefined ? false : openStore(page)),
       openLink: async (address) => (openLink === undefined ? false : openLink(address)),
       // A FORM SENT WHERE A BUTTON NAMES (ADR-0259 Decision 6), through the one guard a URL a document chose is reached by.

@@ -11,6 +11,7 @@ import {
   type ContractHandlers,
   displayLocationSchema,
   preloadChannels,
+  releaseTag,
 } from './channels.js';
 import { MAX_BLOCK_FONTS, MAX_FACE_CANDIDATES, placeImageSchema } from './commands.js';
 import type { Incident } from './incident.js';
@@ -872,6 +873,17 @@ describe('a declared failure carries its detail exactly when its code declares o
       true,
       false,
     ]);
+  });
+});
+
+describe('a package version’s tag (ADR-0276)', () => {
+  it('is v and the four-part version the pack step admits', () => {
+    expect(releaseTag('1.1.2610.0')).toBe('v1.1.2610.0');
+    expect(releaseTag('0.1.0.0')).toBe('v0.1.0.0');
+  });
+
+  it('CONTROL: no other version names a tag — a fourth part the Store reserves, three parts, leading zeros, text', () => {
+    for (const version of ['1.1.2610.3', '1.1.2610', '01.1.2610.0', '0.0.0', '1.1.2610.0-dev', '']) expect(releaseTag(version)).toBeNull();
   });
 });
 

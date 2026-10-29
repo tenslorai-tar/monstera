@@ -35,9 +35,15 @@
  * only resolves. So before packing, the staged `Monstera.exe` is started and must reach a window whose renderer mounts
  * (`startCheck.mjs`); a stage the start changed is refused too, since whatever it wrote would be packed.
  *
+ * ## The source ships with it
+ *
+ * The version's tag (the contract's `releaseTag`, which About opens) is refused before staging when it names another
+ * commit, made at the packed commit once the package is read back, and pushed; a push that fails fails the pack
+ * ([ADR-0276](../../docs/DECISIONS/0276-every-packaged-version-is-tagged-and-about-links-its-tag.md)).
+ *
  * Usage: node scripts/release/packageMsix.mjs --flavour test|store --version A.B.C.0 --out <folder> [--replace-older]
  */
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   copyFileSync,
@@ -270,6 +276,31 @@ export function refuseVersion(version, flavour, packed) {
  */
 export function refuseHistory(packed) {
   packed.forEach((entry, index) => refuseVersion(entry.version, entry.flavour, packed.slice(0, index)));
+}
+
+/**
+ * Refuses a version whose tag already names another commit ([ADR-0276](../../docs/DECISIONS/0276-every-packaged-version-is-tagged-and-about-links-its-tag.md)).
+ * Both flavours of one version share its tag, and About opens it as the build's source, so packing the second flavour
+ * from a different commit would leave one name for two sources. A tag at this commit, the first flavour's, is the tag
+ * this pack would make.
+ *
+ * @param {string} tag the version's, from the contract's `releaseTag`
+ * @param {string | null} tagged the commit the tag names now, or `null` when there is no such tag
+ * @param {string} commit the commit being packed
+ */
+export function refuseTag(tag, tagged, commit) {
+  if (tagged !== null && tagged !== commit) {
+    throw new Error(`${tag} already names ${tagged}, and this is ${commit}: one version's two flavours are packed from one commit.`);
+  }
+}
+
+/** The commit `tag` names in this checkout, or `null` when there is no such tag. @param {string} tag */
+function taggedCommit(tag) {
+  const asked = spawnSync('git', ['rev-parse', '--verify', '--quiet', `refs/tags/${tag}^{commit}`], { cwd: REPO_ROOT, encoding: 'utf8' });
+  // EXIT 1, SILENT, IS GIT'S ANSWER FOR NO SUCH REF under --verify --quiet; anything else is a failure, not an absence.
+  if (asked.status === 0) return asked.stdout.trim();
+  if (asked.status === 1 && asked.stderr.trim() === '') return null;
+  throw new Error(`git could not say whether ${tag} exists: ${asked.stderr.trim() || `exit ${String(asked.status)}`}`);
 }
 
 /**
@@ -657,6 +688,14 @@ async function main() {
   execFileSync('npm run build', { cwd: REPO_ROOT, stdio: 'inherit', shell: 'cmd.exe', env: heap });
   refuseStaleBuild(REPO_ROOT, SHELL_LAUNCH, 7);
 
+  // THE VERSION'S TAG (ADR-0276), named by the contract's one rule, which About opens too — read from the build just
+  // made, since the contract is compiled code. Refused here, before an hour of staging, when it names another commit.
+  /** @type {{ releaseTag: (version: string) => string | null }} */
+  const contract = await import('../../packages/contract/dist/index.js');
+  const tag = contract.releaseTag(version);
+  if (tag === null) throw new Error(`${version} names no tag, so About could not open this build's source.`);
+  refuseTag(tag, taggedCommit(tag), commit);
+
   const work = join(REPO_ROOT, 'release', 'msix', flavour);
   const stage = join(work, 'layout');
   rmSync(work, { recursive: true, force: true });
@@ -824,6 +863,19 @@ async function main() {
 
   record.packed.push({ version, flavour, commit, date: new Date().toISOString().slice(0, 10) });
   writeFileSync(versionsPath, `${JSON.stringify(record, null, 2)}\n`);
+
+  // THE SOURCE IS PUBLISHED WITH THE PACKAGE (ADR-0276): the tag at the packed commit, made once for both flavours, and
+  // pushed — About opens it, so a package whose tag is not on GitHub links to nothing.
+  step('tag');
+  if (taggedCommit(tag) === null) {
+    execFileSync('git', ['tag', '-a', tag, commit, '-m', `Monstera PDF Editor ${version}: the source this version was packed from`], { cwd: REPO_ROOT, stdio: 'inherit' });
+  }
+  refuseTag(tag, taggedCommit(tag), commit);
+  const pushed = spawnSync('git', ['push', 'origin', `refs/tags/${tag}`], { cwd: REPO_ROOT, encoding: 'utf8' });
+  if (pushed.status !== 0) {
+    throw new Error(`The package is built and ${tag} is not on GitHub, so About links to nothing. Finish it: git push origin refs/tags/${tag}\n${pushed.stderr.trim()}`);
+  }
+  step(`  ${tag} names ${commit} and is on GitHub`);
 
   const size = statSync(file).size;
   const megabytes = (size / 1024 / 1024).toFixed(1);

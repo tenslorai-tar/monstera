@@ -43,6 +43,7 @@ import {
   packageFamilyName,
   packageIdentity,
   refuseHistory,
+  refuseTag,
   refuseVersion,
   unresolvedImports,
 } from '../release/packageMsix.mjs';
@@ -70,7 +71,7 @@ const RUNTIME_CASES = [
 ];
 
 /** Cases decidable without one. These run on every machine. */
-const PURE_CASES = 17;
+const PURE_CASES = 18;
 
 const roster = createRoster(failures, { cases: RUNTIME_PRESENT ? PURE_CASES + RUNTIME_CASES.length : PURE_CASES });
 
@@ -180,6 +181,19 @@ try {
     'a packed history naming a version twice is refused, which the next version alone would not reveal; the real record is not',
     repeated !== null && repeated.includes('0.1.18.0') && nextPassedAnyway && ownAccepted && own.length > 1,
     `repeated: ${String(repeated)}; next passed anyway: ${nextPassedAnyway}; own accepted: ${ownAccepted} (${own.length} entries)`,
+  );
+
+  // ONE TAG, ONE SOURCE (ADR-0276): the second flavour from the first flavour's commit, or a version never tagged, packs;
+  // the second flavour from another commit would give one tag two meanings, and is refused naming both.
+  const first = 'a'.repeat(40);
+  const other = 'b'.repeat(40);
+  const sameCommit = thrown(() => refuseTag('v1.1.2611.0', first, first));
+  const untagged = thrown(() => refuseTag('v1.1.2611.0', null, first));
+  const moved = thrown(() => refuseTag('v1.1.2611.0', first, other));
+  check(
+    'a version whose tag names another commit is refused, naming both; one at this commit, or no tag yet, packs',
+    sameCommit === null && untagged === null && moved !== null && moved.includes(first) && moved.includes(other),
+    `same commit: ${String(sameCommit)}; untagged: ${String(untagged)}; moved: ${String(moved)}`,
   );
 
   const specifiers = bareSpecifiers(
