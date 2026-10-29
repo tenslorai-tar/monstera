@@ -892,6 +892,185 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-29 — Stage audit of `f1c1dc16..f32c8c39` — findings AAAAAAAAA-1 to AAAAAAAAA-33
+
+Cloud run 23's last stretch and the release: Milestones 2b and 2c of the Edit text rebuild (ADR-0271's split answer,
+ADR-0272's subscriptions, ADR-0273's turned text, ADR-0274's lane), the select-text press fixes, the font list's fixes,
+the visual baselines for M2c's screens, and the record of MSIX 1.1.2610.0. `npm run audit:scope` at `f32c8c39`: 85
+commits, 180 files, within one batch; 21 proofs added, 46 modified, none removed; 7 source files added, 83 changed, 1
+removed (`useCommandContext.ts`, replaced by `commandAnswers.ts` under ADR-0272). Run before the cloud runs 24 and 25
+merge, so their ranges start here.
+
+**Method.** Three read-only reviewers, for the writer side, the editor side, and the tooling and documents, were given
+the range and CLAUDE.md's checklist, not this author's view. Every finding marked *executed* was re-run here before it
+was fixed or recorded. **Stated limitation, not a pass:** no Playwright, visual or research walk was run; the select-text
+findings (-7, -8) and the moved block's reach (-6) are read, not reproduced; the writer proofs other than
+`proof:edittext` were read against CI's log at `f32c8c39` rather than run here.
+
+### Fixed
+
+**AAAAAAAAA-1 — Bold taken off a drawn word inside a form was still refused.** `508bc84e` loaded the faces (the looked
+weight) only after a faceless write answered *unchanged*, and a form writes once, so a form never retried. Executed: a
+drawn bold word stated 400, drawn by a form, threw `BlockUnchangedError`. Fixed at the decision rather than the refusal:
+`namesBold` asks before any write whether a mark sets Bold, and such an edit is written with the faces on both paths
+(`3b002f44`, red before). The reviewer's second shape, Bold off while the words also change, passes on the old code on
+the drawn fixture, so that case separates nothing and was not kept.
+**AAAAAAAAA-2** — `documentLane.test`'s drain case awaited every entry before the drain, so a `drained()` that settled at
+once passed. Executed. A case now asks while an entry is held (`2b419e36`, red under that mutation).
+**AAAAAAAAA-3** — the corpus gate's case tried three of its eight clauses, and CI has no corpus, so deleting the refused,
+unseen, logged, failed-page or unopened clause left the proof green; the function's comment still said *"Not gated"*,
+false since `744b9727`. Every clause now has a count of its own and the comment says how it is gated (`2b419e36`;
+executed, the unseen clause deleted turns it red).
+**AAAAAAAAA-4** — figures a commit made false without opening them (B6): the bundled font set is 22 files and
+15,286,016 bytes from two sources, not twenty-one and 9,965,868 from one (`ci.yml`, `fonts.mjs`, `composeHostServe.ts`);
+`pageFonts.ts`' *"five of eleven seconds"*, where `ffb388f1` measured 5.1 of 14.7; the lane's 3.8 s without its date
+(`65097b0f`, `2b419e36`).
+**AAAAAAAAA-5** — FEATURES' right-to-left row was titled *"text the editor will not edit named by kind"* above a body
+saying ADR-0273 edits it: one clause of a compound claim gone false (`65097b0f`).
+
+### Recorded, not fixed here — live, for the next update
+
+**AAAAAAAAA-6** — a moved or scaled one-line block with words added: `BlockEditor` drops the reach from the layout when
+the block is moved (`:720`) but still sends `place.reach` with the commit (`:367`), so the editor shows one line and the
+writer wraps at a reach measured from the old position. Two conditions for one rule, in one file. No case.
+**AAAAAAAAA-7** — a click's wobble selects a letter in the editor. The click rectangle (`CLICK_WOBBLE_PX`) lives in
+`TextLayer` alone, though `pressAnchor.ts` is *"the one repair both surfaces take"*; `7e784d57` changed
+`textFirstClick`'s drift to straight down to avoid it and said so, and `5f8a765c` then fixed the same gesture on the page
+layer only. In the editor the next key replaces the letter.
+**AAAAAAAAA-8** — `TextLayer`'s `blankMoved` decides *reached a line* by the line's element, while `b10d0bdc` made
+`pressPlace` require the box the engine read: a drag from blank paper over a line's overflow selects on that line. B3a.
+
+### Recorded, not fixed here — dormant, test gaps and second opinions
+
+**AAAAAAAAA-9** — the lane's queue cap (`MAX_QUEUED`, 64) counts reads, so a burst of reads can make a save throw
+`DocumentBusyError`; ADR-0274 promises a save never waits behind a read. Nothing measured reaches 64.
+**AAAAAAAAA-10** — main's new `within` filter (`contractHandlers.ts`) is crossed by no test (the pair's second blind
+spot), and it is `<=` where `editing.ts`' `overlaps` is `<`: two opinions of *boxes meet* (safe direction today).
+**AAAAAAAAA-11** — the editText, editObject, pdfiumReadBack, textSpaces and editCatalogue proofs group with
+`groupIntoBlocks(runs.filter(isUpright))` and no bullet markers, where the editor's read is `groupInFrames` with them:
+the corpus walk is blind to turned text and hard-codes `angle: 0`. `1051d2b3` renamed the filter in place; the coverage
+moved and nothing said so (item 2a).
+**AAAAAAAAA-12** — `catalogueWrite.mjs` calls itself the one spelling of the editor's read, but `composition.ts`'
+`blocksOf` spells it again (Type 3 face names, `asItIs`, style projection, `withRises`): the proofs share one spelling and
+the application has another.
+**AAAAAAAAA-13** — `textFrameOf`'s `null` means both *upright* and *singular*; executed by the reviewer, a singular skewed
+matrix with a positive diagonal reads as upright.
+**AAAAAAAAA-14** — the unread-asset scan's `withoutComments` takes `/*` inside a string for a comment: executed, three
+sources shrink by up to nine tenths. Loud in ordinary files; in the catalogue and settings files both sides of the
+parse-count guard are stripped alike, so a hidden key would go unjudged. A second opinion about tokenising (B3a).
+**AAAAAAAAA-15** — `editExpectations.mjs`' `standsIn` now counts a character overlapping the block by more than 0.5 pt as
+the block's own, so a moved neighbour that overlaps goes unreported; no control moves one, and `listMarkerFailures`
+skips an item whose first word is no longer read. The thresholds carry no reading.
+**AAAAAAAAA-16** — ZZZZZZZZ-24 moved into `catalogueWrite.mjs` and is now on a CI path (the angled catalogue case).
+**AAAAAAAAA-17** — the corpus walk judges expectations only for one-block, one-entry, non-form edits, and with no
+`--corpus` it returns true silently where its siblings print UNVERIFIABLE.
+**AAAAAAAAA-18 — ZZZZZZZZ-19 is worse.** The ADR index rows of 0181 (Decision 7 superseded by ADR-0273), 0258 (replaced
+by ADR-0272), 0142 (`MAX_EDIT_TEXT` now 524,288) and 0271 (the owner's answers) do not carry this range's changes, and
+ADR-0009 and ADR-0142 carry no note naming the ADR that amends them.
+**AAAAAAAAA-19** — the font list's visual case can no longer draw the Closest matches group or *"Monstera's choice"*,
+the two things `8465b297` and `e5d495f2` changed, since the shim answers no block faces; and the open editor's picture
+was rewritten to show no words rather than made to hold them.
+**AAAAAAAAA-20** — the text walk accepts *"Monstera's choice"* on any option, where the owner kept it on the closest match
+only.
+**AAAAAAAAA-21** — ADR-0272: `commandAnswers.test`'s *"the shell does not render"* cannot fail (its shell subscribes to
+nothing), App's saving on a Bold press is asserted, not measured; the `{ ids }` form has no caller; a store a predicate
+reads is kept subscribed by a comment alone.
+**AAAAAAAAA-22** — `pressAnchor.ts`' `samePlace` holds two places equal when the text between is empty both ways, which a
+paragraph boundary in the editor also is.
+**AAAAAAAAA-23** — `followPastLineEnds`' gate (`adcfb4bd`) is red under no case on Linux; its evidence is a Windows probe
+outside the repository, as the commit says.
+**AAAAAAAAA-24** — `textBlockOps.ts`' `landsNearBelow` paraphrases the kernel's grouping threshold rather than taking it.
+**AAAAAAAAA-25** — with Add text armed, a block's outline button is still focusable and Enter opens it; the rule is made
+in CSS for the pointer only.
+**AAAAAAAAA-26** — `MAX_FORM_NAME` (127) is cited as the format's limit on a valid name. ISO 32000's 127 is, as recalled,
+an implementation limit, not validity; not checked against the standard's text. If advisory, a valid file is refused.
+**AAAAAAAAA-27** — `pdfiumFfi.ts`' `NO_GLYPH_HEIGHT` rests on an unmeasured *"flattest real glyphs"* (4a);
+`markSetBlob`'s result is not compared with 1; `type3Edit.proof`'s `forwarded()` is a third copy of what the host
+forwards; `ffb388f1`'s second cause (the dry run removed) has no case counting the passes.
+**AAAAAAAAA-28** — `ci.yml`'s *"a 10-second timeout at ftp.gnu.org reddened one run"* names no run or date; the font
+download path now runs in CI only on a cache miss, unstated (2a). The cache itself is sound: keyed on the file that
+holds every pin, and a restored folder is verified against them.
+**AAAAAAAAA-29** — ZZZZZZZZ-25 is worse: `startupWalk` and `markLatencyWalk` now time `openWords`, whose Playwright
+polls retry at 100 to 1000 ms, so the times are quantised by the poll.
+**AAAAAAAAA-30** — ADR-0274's table names no instrument or build sha; ADR-0272's as-built note landed in its feature
+commit (ZZZZZZZZ-20's shape).
+**AAAAAAAAA-31** — `76c9d0d9` shipped a `place.reach` the contract refused for every changed one-line edit until
+`839930f8` the same night, unseen by its stubbed rendered test (the pair's second blind spot). Both precede the release.
+**AAAAAAAAA-32** — the escape guard denied a reviewer's reflex `node -e 0`, and the same `node -e 0` typed by this author
+while preparing this entry's commit; nothing ran either time (ZZZZZZZZ-30's shape, twice in one audit).
+**AAAAAAAAA-33** — `textFirstClick.pw.ts` joins two statements on one line.
+
+**The last audit's open findings:** -10, -11, -22, -24 and -27 still open; -19 and -25 worse (-18, -29); -24 moved
+(-16); -21 no longer applies (the phrase is gone from ARCHITECTURE.md). -13's turned page is now reachable by ADR-0273
+and still untried; -15, -26 and -28 were not re-checked.
+
+### 1. Root cause or workaround?
+
+The lane, the two-spaces fix (both the string read and the copy moved to bytes) and the letter height read are root
+fixes. `508bc84e` fixed the instance it was shown (-1) and is now decided by one named question. `7e784d57` changed a
+test's input to avoid a behaviour and said so (-7); the select-text fixes came in five rounds and fixed the class on one
+surface. `standsIn` is a loosened check with a measured reason and no control (-15). The font cache answers an external
+cause and keeps the verification.
+
+### 2. Easy shape only?
+
+Yes: a pure Bold-off on the page, never in a form (-1); turned text in no corpus walk (-11); a block typed in but never
+moved (-6); a wobble on the page layer only (-7); a singular skewed matrix (-13).
+
+### 2a.
+
+The proofs' grouping stayed upright-only while the editor's moved to frames (-11), and the font download is now
+exercised only on a cache miss (-28), neither stated. `d468a575` narrowed what the font list's picture can see (-19).
+
+### 3. Would CI have caught it?
+
+Read from runs: CI and Guards passed at `f32c8c39`, and run 40650391165's lines show *"16 Edit text cases passed"* and
+*"23 edit catalogue cases passed"* on Linux. All nine modified proofs run on both legs. The merges `4db930a4` and
+`cea3c7bb` have no runs at their own shas; their evidence is the branch tips they name. -1 and -2 passed CI because no
+case reached them; -6 to -8 need a case CI does not have; the corpus walk and every research walk run nowhere in CI.
+
+### 4. Non-vacuous?
+
+The reviewers' mutations each turned their case red: the paper's gradient, the nearby style (both cases), the page's
+menu, the signed document, the App fallback face, the every-command case (`'ribbon'` removed, 141 ids), the font picker's
+best match, and `answerOf` without `checked`. Not separated until this audit: the lane's drain (-2) and five gate clauses
+(-3). Still not: the shell-render line (-21), the follower gate (-23) and the dry run's removal (-27).
+
+### 4a.
+
+`NO_GLYPH_HEIGHT`'s real-glyph side was never resolution-tested (-27); the walks' timings are quantised by Playwright's
+poll (-29); ADR-0272's hand-walk probe resolves one frame, and the ADR says so.
+
+### 4b.
+
+The unread-asset scan carries its positive control and passed 21 of 21, and is blind where a string holds `/*` (-14);
+main's `within` filter has no control (-10). The every-command case's walker asserts it found commands.
+
+### 4c.
+
+The proofs' case counts are literals (editText 16, editCatalogue 23, unreadAssets 21). `SURFACE_PLACEMENTS`'
+subscriptions are derived from the registry, and the every-command case anchors them from the projections' side.
+
+### 5. Executed or asserted?
+
+Executed here: -1 (red, then fixed), -2 and -3 under their mutations, `proof:edittext` after a build (16 passed), 922
+kernel cases the writer change reaches, the font pins summed. By the reviewers: -13, -14, and the mutations under item 4.
+Asserted only: -6, -7, -8, -9, -10, -26, and App's render saving under ADR-0272.
+
+### 6. Architecture before the feature?
+
+Each amendment preceded its code, in its own commit: `cfec56d3` (ADR-0272) before `4f00d7f8`, `21238aa1` before
+`3348f12a`, `37f1dd23` (ADR-0273) before `613e7e99` and `1051d2b3`, `ba864f5b` (ADR-0274) before `e18c5c84`. ADR-0272's
+as-built note is the exception (-30).
+
+### 7. Documents?
+
+-4, -5 fixed; -18, -19, -28 and -30 recorded. `packaged-versions.json` reuses no version within a flavour: 1.1.2608.0 and
+1.1.2609.0 are test only, 1.1.2610.0 once in each, all three from ancestors of `f32c8c39`. No ADR number collides across
+main and the work branches. CLAUDE.md is unchanged in the range, and nothing in it was found false.
+
+---
+
 ## 2026-10-27 — Stage audit of `dabf6041..f1c1dc16` — findings ZZZZZZZZ-1 to ZZZZZZZZ-30
 
 Cloud run 23 (ADR-0271), Milestones 1 and 2 of the Edit text rebuild, before the "M2 complete:" commit: the editor kit,
