@@ -17,7 +17,7 @@ import {
 
 import type { PageFont } from './pageFonts.js';
 import type { PageBox, PageCoverCell } from './paperColour.js';
-import { type BlockPlan, type FlowLine, type Measure, NO_MARK, type Row, largestFit, planBlock } from './paragraphFlow.js';
+import { type BlockPlan, type FlowLine, type Measure, NO_MARK, type Row, attribute, largestFit, planBlock, saidUnits } from './paragraphFlow.js';
 import { DECORATION_KEY, DECORATION_KINDS, DECORATION_TAG, type DecorationKind, decorationBand, decorationsOf } from './markDecorations.js';
 import { JUSTIFY_CAP, RISE_SCALE, SUBSCRIPT_DROP, SUPERSCRIPT_RISE, spaceable, spacedBy } from './markFigures.js';
 import { carried, holds, neighbourSpan } from './contentCarry.js';
@@ -419,8 +419,6 @@ interface Carries {
   readonly through: readonly [number, number, number] | undefined;
   readonly behind: readonly [number, number, number] | undefined;
 }
-
-const CARRIES_NOTHING: Carries = { under: undefined, through: undefined, behind: undefined };
 
 /**
  * A run's look under `set`, a mark over it or none: the mark's underline, line through and highlight where it names them,
@@ -973,23 +971,27 @@ function write(
     ...boxes,
   ];
   /**
-   * The words the edit's runs already said, by the font that drew them, compared whole (ADR-0176's corrections of
-   * 2026-10-25): only these may be set in a font of drawn letters, so a line set again keeps its old words' glyphs
-   * wherever the layout puts them, and a new word — typed, replaced, corrected or translated — goes to an ordinary face.
-   * Read from EVERY block the edit names, a join's emptied block among them, and never across fonts: a word another
-   * font drew is new to this one. A run the loop below cannot place is skipped here, since that loop refuses it by name.
+   * ONLY A WORD THE PAGE ALREADY SAID may be set in a font of drawn letters (ADR-0176's corrections of 2026-10-25), so a
+   * line set again keeps its old words' glyphs wherever the layout puts them, and a new word — typed, replaced, corrected
+   * or translated — goes to an ordinary face. Within a block that is decided by WHERE each word of the new text came
+   * from, the plan's own attribution (`attribute`, below), never by its spelling: `with` typed into a paragraph that says
+   * `with` is a typed word (measured on Chromium prints of two faces, 2026-10-29, cloud run 25 item 25c).
+   *
+   * A JOIN's words come from a block the edit empties, which the block they join has no attribution for: these are
+   * those blocks' words, by the font that drew them, compared whole and never across fonts, since a word another font
+   * drew is new to this one. A run the loop below cannot place is skipped here, since that loop refuses it by name.
    */
-  const saidIn = new Map<PageFont, Set<string>>();
-  for (const block of blocks) {
+  const joinedIn = new Map<PageFont, Set<string>>();
+  for (const block of blocks.filter((each) => each.text === '')) {
     for (const index of block.lines.flat()) {
       const run = runs.get(index);
       const at = run?.members[0] === undefined ? undefined : opAt.get(run.members[0]);
       const op = at === undefined ? undefined : ops[at];
       const font = op === undefined ? undefined : (syntheticFonts.get(op) ?? (op.state.font === null ? undefined : fonts.get(op.state.font)));
       if (run === undefined || font === undefined) continue;
-      const said = saidIn.get(font) ?? new Set<string>();
+      const said = joinedIn.get(font) ?? new Set<string>();
       for (const word of tokens(run.text)) said.add(word);
-      saidIn.set(font, said);
+      joinedIn.set(font, said);
     }
   }
 
@@ -1095,6 +1097,18 @@ function write(
       runs: line.map((run) => ({ id: run.run.index, text: run.run.text })),
       soft: soft[at] === true,
     }));
+    /**
+     * WHERE EACH UNIT OF THE NEW WORDS CAME FROM, by the plan's own attribution taken to whole words (`saidUnits`; B3a:
+     * the plan calls the same function on the same lines and words), and whether the `length` units from `at` are words
+     * the page already said there: each is an old unit, in order and unbroken.
+     */
+    const from = saidUnits(attribute(flow, block.text));
+    const saidAt = (at: number, length: number): boolean => {
+      const first = from[at] ?? -1;
+      if (first < 0) return false;
+      for (let unit = 1; unit < length; unit += 1) if (from[at + unit] !== first + unit) return false;
+      return true;
+    };
     const extents = lines.map((line) => ({
       x0: Math.min(...line.map((run) => run.run.left)),
       x1: Math.max(...line.map((run) => run.run.right)),
@@ -1181,11 +1195,12 @@ function write(
      * caller records: the plan measures a word and the layout writes it, and both must hear the same answer.
      */
     const answers = new Map<string, readonly FacePiece[] | null>();
-    const piecesOf = (source: ShowOperator, token: string, restyle?: Restyle): readonly FacePiece[] | null => {
-      const key = `${String(indexOf.get(source))}|${JSON.stringify(restyle ?? null)}|${token}`;
-      if (answers.has(key)) return answers.get(key) ?? null;
+    /** @param said whether the page already said this word here (`saidAt`): only then may a drawn font set it. */
+    const piecesOf = (source: ShowOperator, token: string, restyle: Restyle | undefined, said: boolean): readonly FacePiece[] | null => {
       const font = fontOf(source);
-      const drawn = token === ' ' || (saidIn.get(font)?.has(token) ?? false);
+      const drawn = token === ' ' || said || (joinedIn.get(font)?.has(token) ?? false);
+      const key = `${String(indexOf.get(source))}|${JSON.stringify(restyle ?? null)}|${String(drawn)}|${token}`;
+      if (answers.has(key)) return answers.get(key) ?? null;
       // A RESTYLED WORD is not looked for in the run's own font: only white space is, which has no style to be wrong in.
       const found = restyle !== undefined && token !== ' ' ? null : carrier(font, token, drawn);
       // A WORD NO ONE PAGE FONT CARRIES, set across them in the longest stretches each carries (ADR-0176's correction of
@@ -1222,7 +1237,7 @@ function write(
      * which a text page reads as one space (measured 2026-10-27, the catalogue's TrueType subset page).
      */
     const gapGlyphOf = (source: ShowOperator, restyle: Restyle | undefined, gap: '\t' | ' '): FacePiece | undefined => {
-      const own = piecesOf(source, TAB_GAP, restyle);
+      const own = piecesOf(source, TAB_GAP, restyle, true);
       if (own !== null && own.length === 1) return own[0];
       const key = `${String(indexOf.get(source))}|${JSON.stringify(restyle ?? null)}|gap`;
       if (answers.has(key)) {
@@ -1305,35 +1320,43 @@ function write(
       pieces.length === 0
         ? (SPACE_EM * source.state.size + source.state.charSpacing + source.state.wordSpacing) * source.state.scale * unit
         : pieceWidths(source, pieces, unit).reduce((total, each) => total + each, 0);
-    /** How wide `text` is when it is set in the state of run `id`: the plan's one question. */
-    const measure: Measure = (id, mark, text) => {
+    /** How wide `text` is when it is set in the state of run `id`, from `at` in the new words: the plan's one question. */
+    const measure: Measure = (id, mark, text, at) => {
       const run = byId.get(id) ?? firstRun;
       const source = sourceOf(run);
       const marked = mark === NO_MARK ? undefined : markStyle(run, mark);
       const unit = placed(run.first).unit * (marked?.factor ?? 1) * shrink;
-      return (
-        tokens(text).reduce((sum, token) => {
-          // A TAB IS AT MOST A WHOLE STOP, the PDFium writer's rule: where it ends depends on where it starts.
-          if (token === '\t') return sum + TAB_STOP;
-          const pieces = piecesOf(source, token, restyleOf(marked));
-          return pieces === null ? sum : sum + widthOfPieces(source, pieces, unit);
-        }, 0) + spacedBy(text.replace(/\t/gu, ''), (marked?.spacing ?? 0) * shrink)
-      );
+      let offset = at;
+      let sum = 0;
+      for (const token of tokens(text)) {
+        const here = offset;
+        offset += token.length;
+        // A TAB IS AT MOST A WHOLE STOP, the PDFium writer's rule: where it ends depends on where it starts.
+        if (token === '\t') {
+          sum += TAB_STOP;
+          continue;
+        }
+        const pieces = piecesOf(source, token, restyleOf(marked), saidAt(here, token.length));
+        if (pieces !== null) sum += widthOfPieces(source, pieces, unit);
+      }
+      return sum + spacedBy(text.replace(/\t/gu, ''), (marked?.spacing ?? 0) * shrink);
     };
 
     /**
      * Lays out `words` set in `source`'s state from `x` on `line`, answering where it ended. `marked` is the mark that
      * styles them, where one does: its face, its size and rise, its colour, its drawings and its spacing. `perSpace` is
-     * what a justified line adds after each space (ADR-0228 Decision 1).
+     * what a justified line adds after each space (ADR-0228 Decision 1). `startsAt` is where `words` start in the new words, as
+     * the plan measured them (`saidAt`), or `'said'` for an old line's own words set again, every one of them the page's.
      */
     const layOut = (
       source: ShowOperator,
       words: string,
       x: number,
       line: VisualLine,
-      marked?: ReturnType<typeof markStyle>,
-      perSpace = 0,
-      carries: Carries = CARRIES_NOTHING,
+      marked: ReturnType<typeof markStyle> | undefined,
+      perSpace: number,
+      carries: Carries,
+      startsAt: number | 'said',
     ): number => {
       const unit = placed(indexOf.get(source) ?? -1).unit * (marked?.factor ?? 1) * shrink;
       // NO SPACING NOR STRETCH IN A JOINED RIGHT-TO-LEFT SCRIPT, the measure's own rule (`spacedBy`).
@@ -1352,7 +1375,10 @@ function write(
             };
       let cursor = x;
       const typed = tokens(words);
+      let offset = startsAt === 'said' ? 0 : startsAt;
       for (const [index, token] of typed.entries()) {
+        const said = startsAt === 'said' || saidAt(offset, token.length);
+        offset += token.length;
         // A SPACE IN A RUN OF TWO OR MORE goes into a segment of the run's spaces alone, marked as exactly them (ADR-0228's
         // correction of 2026-10-16): joined to the words, a text page reads the run as one space.
         const inRun = token === ' ' && (typed[index - 1] === ' ' || typed[index + 1] === ' ');
@@ -1368,7 +1394,7 @@ function write(
           cursor = nextTabStop(cursor, blockLeft);
           continue;
         }
-        const own = piecesOf(source, token, restyleOf(marked));
+        const own = piecesOf(source, token, restyleOf(marked), said);
         if (own === null) continue;
         if (inRun && own.length === 0) {
           // A SPACE OF A RUN THAT NO FONT HERE DRAWS stands on a face's space (`gapGlyphOf`), so the run's mark holds
@@ -1664,7 +1690,7 @@ function write(
           if (previousEnd !== null) cursor += (run.origin.x - previousEnd) * shrink;
           // A TRAILING SPACE OF A RUN WITH A RUN AFTER IT is the gap that run keeps.
           const words = index === line.length - 1 ? run.run.text : run.run.text.replace(/ +$/u, '');
-          cursor = layOut(sourceOf(run), words, cursor, placedLine, undefined, 0, carriesOf(run));
+          cursor = layOut(sourceOf(run), words, cursor, placedLine, undefined, 0, carriesOf(run), 'said');
           previousEnd = run.right;
         }
         laid.push(text);
@@ -1741,6 +1767,7 @@ function write(
           piece.mark === NO_MARK ? undefined : markStyle(run, piece.mark),
           perSpace,
           carriesOf(run),
+          piece.at,
         );
       }
       laid.push(row.pieces.map((piece) => piece.text).join(''));

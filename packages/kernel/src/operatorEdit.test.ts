@@ -179,6 +179,29 @@ describe('editOperators on the Chromium print', () => {
     });
   });
 
+  /**
+   * A WORD TYPED IS NEW HOWEVER IT IS SPELT (cloud run 25, item 25c): which words the run already said is a question of
+   * WHERE each word of the new text came from, which the plan's attribution answers, never of whether its spelling occurs
+   * among the run's words. Measured on Chromium prints of two faces, 2026-10-29: `with` typed into a paragraph that said
+   * `with` was set in the paragraph's drawn letters.
+   */
+  it('sets a TYPED word in an ordinary face though the line already says a word spelt the same, and keeps that one drawn', async () => {
+    await chromium((content, fonts) => {
+      const page = runsOf(content, fonts);
+      const heading = page.runs[0];
+      // `Monstera` REPLACED BY `heading`, a word the line says at its end.
+      const result = editOperators(content, fonts, page, [{ lines: [[heading?.index ?? -1]], soft: [false], text: 'heading fixture heading.' }]);
+      if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+      expect(result.value.drawn).toStrictEqual(['heading fixture heading.']);
+      const [object = ''] = inserted(result.value);
+      // THE TYPED `heading` in the ordinary sibling, and the line's own words after it in their drawn letters. CONTROL, the
+      // spelling key: the typed word was found among the run's words and drawn in F4, and F5 did not appear.
+      // The font each shown stretch is drawn in, in order (the state before them names the run's own font first).
+      const shown = [...object.matchAll(/\/(F\d) 28 Tf\n1 0 0 -1 [\d.]+ 97 Tm <[0-9A-F]+> Tj/gu)].map((match) => match[1]);
+      expect(shown).toStrictEqual(['F5', 'F4']);
+    });
+  });
+
   it('CONTROL: words another font drew, joined into a Type 3 line, go to an ordinary face though its subset holds the letters', async () => {
     await chromium((content, fonts) => {
       const page = runsOf(content, fonts);

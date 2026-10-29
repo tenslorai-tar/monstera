@@ -285,12 +285,77 @@ export function attribute(lines: readonly FlowLine[], text: string): Attribution
   return { old, text: next, owner, from, texts, changed: next !== old.text };
 }
 
+/**
+ * For each unit of the new words, the unit of the old words it IS, or -1 where it is new: {@link attribute}'s `from`,
+ * with every whole word inside a typed stretch that is an old word of the stretch it replaced given back to that word.
+ *
+ * `attribute` keeps a common prefix and suffix of characters and calls the rest typed, which is what says whose run each
+ * unit is. Which words the page already said is a finer question, and that answer is too coarse for it two ways: a tab
+ * typed before the first word and a word changed at the end make every word between them typed, though nobody touched
+ * them; and the prefix or suffix can end inside a word, so `one two three` made `one two two three` gives the old
+ * `three`'s `t` to the typed `two`. So the question is asked of WHOLE words: a word is said as it stands where every unit
+ * of it is an old unit, in order and unbroken; the words that are not, and the old words between the said ones either
+ * side of them, are matched whole, in order, by the longest common subsequence {@link matchParagraphs} already takes.
+ * A word typed between two old ones is then new however it is spelt, and an old word moved past others is not given
+ * back. White space between words keeps what `attribute` said of it.
+ */
+export function saidUnits(attribution: Attribution): number[] {
+  const { old, text, from } = attribution;
+  const said = [...from];
+  const words = wordsIn(text, 0, text.length);
+  const intact = (word: Word): boolean => {
+    const first = from[word.at] ?? -1;
+    if (first < 0) return false;
+    for (let unit = 1; unit < word.text.length; unit += 1) if (from[word.at + unit] !== first + unit) return false;
+    return true;
+  };
+  let at = 0;
+  while (at < words.length) {
+    const word = words[at];
+    if (word === undefined || intact(word)) {
+      at += 1;
+      continue;
+    }
+    const start = at;
+    for (let each = words[at]; each !== undefined && !intact(each); each = words[at]) at += 1;
+    const group = words.slice(start, at);
+    for (const each of group) for (let unit = 0; unit < each.text.length; unit += 1) said[each.at + unit] = -1;
+    // THE OLD WORDS THE GROUP STANDS FOR: between the said words either side of it.
+    const previous = words[start - 1];
+    const next = words[at];
+    const lo = previous === undefined ? 0 : (from[previous.at + previous.text.length - 1] ?? -1) + 1;
+    const hi = next === undefined ? old.text.length : (from[next.at] ?? old.text.length);
+    if (hi <= lo) continue;
+    const before = wordsIn(old.text, lo, hi);
+    for (const [i, j] of matchParagraphs(before.map((each) => each.text), group.map((each) => each.text))) {
+      const was = before[i];
+      const now = group[j];
+      if (was === undefined || now === undefined) continue;
+      for (let unit = 0; unit < now.text.length; unit += 1) said[now.at + unit] = was.at + unit;
+    }
+  }
+  return said;
+}
+
+/** A word of a text, whole, and where it starts. */
+interface Word {
+  readonly text: string;
+  readonly at: number;
+}
+
+/** The words of `text` from `lo` to `hi`, each with where it starts: what is not white space, whole. */
+function wordsIn(text: string, lo: number, hi: number): Word[] {
+  return [...text.slice(lo, hi).matchAll(/\S+/gu)].map((match) => ({ text: match[0], at: lo + match.index }));
+}
+
 /** A stretch of one paragraph's characters set by one run. */
 export interface Part {
   readonly run: number;
   /** The mark whose style these words take ({@link NO_MARK} for the run's own), ADR-0180. */
   readonly mark: number;
   readonly text: string;
+  /** Where its first unit is in the new words: what tells a word the person typed from one the page already said. */
+  readonly at: number;
 }
 
 /** A word no mark names: set in the style of the run that wrote it. */
@@ -326,15 +391,15 @@ export interface FlowParagraph {
   readonly chunks: readonly Chunk[];
 }
 
-/** Runs of consecutive units with one owner and one mark, as parts. */
-function partsOf(text: string, owners: readonly number[], marks: readonly number[]): Part[] {
+/** Runs of consecutive units with one owner and one mark, as parts; `base` is where `text` starts in the new words. */
+function partsOf(text: string, owners: readonly number[], marks: readonly number[], base: number): Part[] {
   const parts: Part[] = [];
   for (const [at, owner] of owners.entries()) {
     const unit = text[at] ?? '';
     const mark = marks[at] ?? NO_MARK;
     const last = parts.at(-1);
-    if (last?.run === owner && last.mark === mark) parts[parts.length - 1] = { run: owner, mark, text: last.text + unit };
-    else parts.push({ run: owner, mark, text: unit });
+    if (last?.run === owner && last.mark === mark) parts[parts.length - 1] = { ...last, text: last.text + unit };
+    else parts.push({ run: owner, mark, text: unit, at: base + at });
   }
   return parts;
 }
@@ -404,10 +469,11 @@ function chunksOf(text: string, owner: readonly number[], styles: readonly numbe
     const spaces = /\s+$/u.exec(piece)?.[0].length ?? 0;
     const coreEnd = to - spaces;
     const marks = styles.slice(start, end);
-    const core = partsOf(paragraph.slice(from, coreEnd), effective.slice(from, coreEnd), marks.slice(from, coreEnd));
+    const core = partsOf(paragraph.slice(from, coreEnd), effective.slice(from, coreEnd), marks.slice(from, coreEnd), start + from);
     // THE WHOLE WHITE SPACE, in the style of its first run: a space in one run and a tab typed after it in another were
     // two parts, and only the first was kept, so the tab was dropped from the words.
-    const trailParts = spaces === 0 ? [] : partsOf(paragraph.slice(coreEnd, to), effective.slice(coreEnd, to), marks.slice(coreEnd, to));
+    const trailParts =
+      spaces === 0 ? [] : partsOf(paragraph.slice(coreEnd, to), effective.slice(coreEnd, to), marks.slice(coreEnd, to), start + coreEnd);
     const firstTrail = trailParts[0];
     const trail = firstTrail === undefined ? undefined : { ...firstTrail, text: trailParts.map((part) => part.text).join('') };
     chunks.push({ start: start + from, core, trail });
@@ -415,8 +481,12 @@ function chunksOf(text: string, owner: readonly number[], styles: readonly numbe
   return chunks;
 }
 
-/** How wide `text` is when it is set in the style of `run`, with the style `mark` makes of it ({@link NO_MARK}: none). */
-export type Measure = (run: number, mark: number, text: string) => number;
+/**
+ * How wide `text` is when it is set in the style of `run`, with the style `mark` makes of it ({@link NO_MARK}: none). `at`
+ * is where `text` starts in the new words, so a writer can tell a word the person typed from one the page already said,
+ * which may be set in different fonts (operator writer, the owner's font rule).
+ */
+export type Measure = (run: number, mark: number, text: string, at: number) => number;
 
 /** One piece of a line: consecutive words of one run and one mark, which are one object. */
 export interface Piece {
@@ -424,6 +494,8 @@ export interface Piece {
   readonly mark: number;
   readonly text: string;
   readonly width: number;
+  /** Where its first unit is in the new words. */
+  readonly at: number;
 }
 
 /** One line of a paragraph the layout produced. */
@@ -438,19 +510,19 @@ export interface FlowLineOut {
 const WITHIN = 1e-6;
 
 function widthOf(parts: readonly Part[], measure: Measure): number {
-  return parts.reduce((sum, part) => sum + measure(part.run, part.mark, part.text), 0);
+  return parts.reduce((sum, part) => sum + measure(part.run, part.mark, part.text, part.at), 0);
 }
 
-/** The pieces of a line's parts: consecutive parts of one run and one mark are one. */
+/** The pieces of a line's parts: consecutive parts of one run and one mark are one, and begin where the first does. */
 function piecesOf(parts: readonly Part[], measure: Measure): Piece[] {
-  const pieces: { run: number; mark: number; text: string }[] = [];
+  const pieces: { run: number; mark: number; text: string; at: number }[] = [];
   for (const part of parts) {
     const last = pieces.at(-1);
     if (last?.run === part.run && last.mark === part.mark) {
-      pieces[pieces.length - 1] = { run: part.run, mark: part.mark, text: last.text + part.text };
-    } else pieces.push({ run: part.run, mark: part.mark, text: part.text });
+      pieces[pieces.length - 1] = { ...last, text: last.text + part.text };
+    } else pieces.push({ run: part.run, mark: part.mark, text: part.text, at: part.at });
   }
-  return pieces.map((piece) => ({ ...piece, width: measure(piece.run, piece.mark, piece.text) }));
+  return pieces.map((piece) => ({ ...piece, width: measure(piece.run, piece.mark, piece.text, piece.at) }));
 }
 
 /** Where a paragraph's layout begins, and when it may stop. */
@@ -496,7 +568,7 @@ export function layOutParagraph(
     const start = carried?.start ?? chunks[at]?.start ?? paragraph.start;
     if (carried !== undefined) {
       parts.push(carried.part);
-      width += measure(carried.part.run, carried.part.mark, carried.part.text);
+      width += measure(carried.part.run, carried.part.mark, carried.part.text, carried.part.at);
       carried = undefined;
     }
     for (; at < chunks.length; at += 1) {
@@ -507,7 +579,7 @@ export function layOutParagraph(
       // so it is set as the line's start; the next word then joins it as any word joins the one before.
       if (parts.length === 0 && chunk.core.length === 0 && chunk.trail !== undefined) {
         parts.push(chunk.trail);
-        width += measure(chunk.trail.run, chunk.trail.mark, chunk.trail.text);
+        width += measure(chunk.trail.run, chunk.trail.mark, chunk.trail.text, chunk.trail.at);
         continue;
       }
       const word = widthOf(chunk.core, measure);
@@ -526,7 +598,7 @@ export function layOutParagraph(
         const ended = chunks[at - 1];
         if (trail !== undefined && tab >= 0 && ended !== undefined) {
           const coreLength = ended.core.reduce((total, part) => total + part.text.length, 0);
-          carried = { part: { ...trail, text: trail.text.slice(tab) }, start: ended.start + coreLength + tab };
+          carried = { part: { ...trail, text: trail.text.slice(tab), at: trail.at + tab }, start: ended.start + coreLength + tab };
         }
         break;
       } else if (trail !== undefined) {
@@ -536,7 +608,7 @@ export function layOutParagraph(
       parts.push(...chunk.core);
       width += word;
       trail = chunk.trail;
-      trailWidth = trail === undefined ? 0 : measure(trail.run, trail.mark, trail.text);
+      trailWidth = trail === undefined ? 0 : measure(trail.run, trail.mark, trail.text, trail.at);
     }
     lines.push({ start, pieces: piecesOf(parts, measure), width });
     number += 1;

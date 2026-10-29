@@ -10,6 +10,7 @@ import {
   oldWordsOf,
   paragraphsOf,
   planBlock,
+  saidUnits,
 } from './paragraphFlow.js';
 
 /** Six points a character in every run but 7, the bold one, which sets eight. */
@@ -151,9 +152,33 @@ describe('the chunks a line is filled with (ADR-0179 Decision 4)', () => {
     const lines = block([['foo', 'bar baz']], []);
     const [paragraph] = paragraphsOf(attribute(lines, 'foobar baz'));
     expect(paragraph?.chunks[0]?.core).toStrictEqual([
-      { run: 1, mark: NO_MARK, text: 'foo' },
-      { run: 2, mark: NO_MARK, text: 'bar' },
+      { run: 1, mark: NO_MARK, text: 'foo', at: 0 },
+      { run: 2, mark: NO_MARK, text: 'bar', at: 3 },
     ]);
+  });
+});
+
+describe('saidUnits: which units of the new words the page already said', () => {
+  const said = (old: string, text: string): string => {
+    const units = saidUnits(attribute(block([[old]], []), text));
+    // EACH UNIT AS THE OLD CHARACTER IT IS, or `_` where it is new.
+    return Array.from(text, (_, at) => ((units[at] ?? -1) < 0 ? '_' : old[units[at] ?? 0])).join('');
+  };
+
+  it('gives back the words between a tab typed before them and a word changed after them, which nobody touched', () => {
+    // CONTROL, the attribution alone: a common prefix and suffix only, so every word between the two changes is typed.
+    const from = attribute(block([['aaa bbb ccc ddd']], []), '\taaa bbb ccc xdd').from;
+    expect(from.slice(1, 12).every((unit) => unit < 0)).toBe(true);
+    // THE SPACES between them stay as `attribute` said: typed, which a space is drawn as in any font.
+    expect(said('aaa bbb ccc ddd', '\taaa bbb ccc xdd')).toBe('_aaa_bbb_ccc____');
+  });
+
+  it('calls a word typed between two old ones new, however it is spelt, and keeps the old word the attribution cut', () => {
+    // CONTROL, the attribution alone: its prefix ends inside `three`, whose `t` it gives to the typed `two`.
+    const from = attribute(block([['one two three']], []), 'one two two three').from;
+    expect([from[8], from[12]]).toStrictEqual([8, -1]);
+    expect(said('one two three', 'one two two three')).toBe('one two ____three');
+    expect(said('one two three', 'two one two three')).toBe('____one two three');
   });
 });
 
