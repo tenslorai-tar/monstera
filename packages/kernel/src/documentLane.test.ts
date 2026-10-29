@@ -79,4 +79,23 @@ describe('DocumentLane (ADR-0274)', () => {
     // AN IDLE LANE IS DRAINED AT ONCE.
     await expect(lane.drained()).resolves.toBeUndefined();
   });
+
+  it('is not drained while an accepted entry is still running, and is the moment that entry ends', async () => {
+    const lane = new DocumentLane();
+    const log: string[] = [];
+    const held = entry(log, 'save');
+    const saved = lane.enter('write', held.work);
+    let drained = false;
+    const draining = lane.drained().then(() => {
+      drained = true;
+    });
+    await settle();
+    // THE DECISION ITSELF, asked while the entry runs: a drain that settled at once would already say true here.
+    expect(log).toStrictEqual(['start save']);
+    expect(drained).toBe(false);
+    held.release();
+    await saved;
+    await draining;
+    expect(drained).toBe(true);
+  });
 });

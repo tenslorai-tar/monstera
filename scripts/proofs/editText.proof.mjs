@@ -120,7 +120,7 @@ const CASES = [
   'text inside a form: the brochure’s pull quote and a scaled form’s lines are offered as blocks (ADR-0269), so the gate above covers them',
   'a form drawn in two places: every edit of one placement is made and leaves the other as it was — the form is copied first',
   'a paragraph that grows over bulleted lists OVERLAPS them: every drawn bullet and every item stays where it was (ADR-0271 section 11.1)',
-  'THE CORPUS GATE: a clean count holds, and an edit disturbed, one failing an expectation, or a run that made none each fail it',
+  'THE CORPUS GATE: a clean count holds, and each defect it counts fails it alone (disturbed, failing, refused, unseen, logged, no edit made, a failed page, an unopened document)',
   'THE WRITER’S REACH: a paragraph grown onto a near twin of its new line disturbs nothing within the extent the writer reports; CONTROL: judged without it, the same edit is disturbed',
 ];
 
@@ -1002,15 +1002,22 @@ async function run(pdfium, kernel) {
   // gate's own case is what runs on every runner.
   {
     const clean = { tries: 4, refused: 0, disturbed: 0, unseen: 0, logged: 0, failing: 0 };
+    // EVERY CLAUSE OF THE VERDICT ALONE, so deleting any one of them turns this case red.
     const verdicts = {
       clean: corpusVerdict(clean, 0, 0),
       disturbed: corpusVerdict({ ...clean, disturbed: 1 }, 0, 0),
       failing: corpusVerdict({ ...clean, failing: 1 }, 0, 0),
+      refused: corpusVerdict({ ...clean, refused: 1 }, 0, 0),
+      unseen: corpusVerdict({ ...clean, unseen: 1 }, 0, 0),
+      logged: corpusVerdict({ ...clean, logged: 1 }, 0, 0),
       empty: corpusVerdict({ ...clean, tries: 0 }, 0, 0),
+      pagesFailed: corpusVerdict(clean, 1, 0),
+      notOpened: corpusVerdict(clean, 0, 1),
     };
+    const { clean: none, ...each } = verdicts;
     check(
       CASES[14] ?? '',
-      verdicts.clean.length === 0 && verdicts.disturbed.length === 1 && verdicts.failing.length === 1 && verdicts.empty.length === 1,
+      none.length === 0 && Object.values(each).every((verdict) => verdict.length === 1),
       JSON.stringify(verdicts),
     );
   }
@@ -1049,7 +1056,8 @@ async function walkPageRouted(pdfium, kernel, bytes, old) {
 /**
  * The owner's corpus, every page of every document, each page in a process of its own and edited as a document of its
  * own (`onePage`); reported per document number, with the form placements not offered, and a table at the
- * end. Not gated: CI has no corpus, and the owner reads the counts.
+ * end. GATED where it runs (`corpusVerdict`): any edit judged failing, refused, unseen or logged, a failed page or an
+ * unopened document fails the proof. It runs only with `--corpus`, which CI never passes, since CI has no corpus.
  */
 function corpus() {
   if (CORPUS === null) return true;

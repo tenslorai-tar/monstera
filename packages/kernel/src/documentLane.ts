@@ -3,9 +3,9 @@
  * one entry runs at a time, and when it ends the lane takes the oldest queued WRITE before the oldest queued READ.
  *
  * A write is a command, undo, redo, save, close, an unlock, a session's rebuild; a read is a query. Nothing interleaves,
- * which is §7's safety rule; what moved is only which queued entry runs next. Measured on the owner's laptop, first come
- * first served had a finish wait behind the read on open, the check after a save and the font list's read: 3.8 s against
- * M1's 1.50 s. A running read is never interrupted, since no native call has a safe point to stop at, so a write waits
+ * which is §7's safety rule; what moved is only which queued entry runs next. Measured 2026-10-27 on the owner's laptop
+ * (ADR-0274's table), first come first served had a finish wait behind the read on open, the check after a save and the
+ * font list's read: 3.8 s against M1's 1.50 s. A running read is never interrupted, since no native call has a safe point to stop at, so a write waits
  * for at most the one read already running.
  */
 
