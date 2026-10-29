@@ -175,16 +175,6 @@ function selectedLook(page: Page): Promise<{ weight: number; family: string }> {
   });
 }
 
-/**
- * THE WORD A DOUBLE PRESS CHOOSES, by the platform's own rule: on Windows Chromium selects the word AND the space after
- * it, as Windows editors do; elsewhere the word alone. Measured 2026-10-27 in plain Chromium 151.0.7922.34 on Windows,
- * with no application code: a double press on "Tea" in "Tea and" selected "Tea " in a contenteditable and in a paragraph
- * alike, while this case's Linux leg read "Tea" (CI run 40407996478).
- */
-function wordByDoublePress(word: string, spaceAfter: string): string {
-  return process.platform === 'win32' ? `${word}${spaceAfter}` : word;
-}
-
 /** The block edits the page sent main, each as the JSON it crossed in: the words are in it, in the wire form's own fields. */
 function edits(sent: readonly { channel: string; params: unknown }[]): string[] {
   return sent.flatMap(({ channel, params }) => {
@@ -227,9 +217,10 @@ test('THE HAND WALK: select the box, a caret where pressed, typing, Bold on and 
   // A WORD CHOSEN BY A DOUBLE PRESS, then Bold on and off: the button changes IN PLACE and the word with it.
   const tea = await characterAt(page, (await page.locator(SURFACE).evaluate((editor) => editor.textContent)).indexOf('Tea') + 1);
   await page.mouse.dblclick(tea.x, tea.y);
-  // BY THE PLATFORM'S RULE, exactly: a pattern accepting either form would pass a Windows build that dropped the space
-  // and a Linux one that added it, so it could not tell the two legs' rules apart.
-  expect(await selectionState(page)).toMatchObject({ kind: 'range', text: wordByDoublePress('Tea', ' ') });
+  // THE WORD ALONE, on every platform: the editor selects a double press's word by its own rule (`wordAt`), not
+  // Chromium's, which on Windows takes the space after it too (measured 2026-10-27 in plain Chromium 151.0.7922.34: "Tea "
+  // there, "Tea" on Linux, CI run 40407996478), so a word typed over it ran into the next.
+  expect(await selectionState(page)).toMatchObject({ kind: 'range', text: 'Tea' });
   const panel = page.locator('[data-text-properties]');
   const bold = panel.getByRole('button', { name: 'Bold' });
   await expect(bold).toHaveAttribute('aria-pressed', 'false');

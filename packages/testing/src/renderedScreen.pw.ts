@@ -19,7 +19,7 @@ import {
   contrast,
   textContrastFloor,
 } from '@monstera/shared';
-import { type Page, expect, test } from '@playwright/test';
+import { type Locator, type Page, expect, test } from '@playwright/test';
 
 // ONE BRIDGE for both Playwright runs — §10.7's baselines drive the renderer the same way (B3a),
 // and `LOOKS` is theirs too: §10.4's gate and §10.7's baselines check the same three themes, and
@@ -1116,6 +1116,31 @@ test('a drag PAST A SHORT LINE and on into the side panel holds its selection ra
   ).toStrictEqual([]);
 });
 
+/**
+ * A hand's drag over whole lines: from just inside the first line's first letter to 12 px past the last line's last,
+ * where the line-end follower takes the selection to that line's end. Measured by each line's WORDS through a range, not
+ * by the element's own box, which is scaled with the text fitted into it and so ends where the words do on no platform in
+ * particular: a drag to that box's edge selected *Quarterly totals* on CI's Linux runner and more of the line here.
+ */
+async function dragLines(page: Page, first: Locator, last: Locator): Promise<void> {
+  const inkOf = (line: Locator) =>
+    line.evaluate((element) => {
+      const range = element.ownerDocument.createRange();
+      range.selectNodeContents(element);
+      const box = range.getBoundingClientRect();
+      return { left: box.left, right: box.right, middle: box.top + box.height / 2 };
+    });
+  const from = await inkOf(first);
+  const to = await inkOf(last);
+  await page.mouse.move(from.left + 1, from.middle);
+  await page.mouse.down();
+  await page.mouse.move(to.right + 12, to.middle, { steps: 8 });
+  await page.mouse.up();
+}
+
+/** Both lines of the selected-text cases' page, as a selection over the two reads: a space where the first one ends. */
+const BOTH_LINES = 'Quarterly totals for the north Nothing further is owed';
+
 test('SELECTED TEXT opens the selected-text menu above the page’s, in the owner’s order (§7)', async ({ page }) => {
   // A real mouse drag over the text layer, in the production build: the selection is the browser's,
   // `readTextSelection` reads it through the layer's own transform, and the menu's groups are
@@ -1136,10 +1161,7 @@ test('SELECTED TEXT opens the selected-text menu above the page’s, in the owne
   await pageShown(page);
   const box = await line.boundingBox();
   if (box === null) throw new Error('the first line has no box');
-  await page.mouse.move(box.x + 2, box.y + box.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(box.x + box.width - 2, box.y + box.height / 2, { steps: 8 });
-  await page.mouse.up();
+  await dragLines(page, line, page.locator('[data-text-layer="0"] [data-text-line="1"]'));
   expect(await page.evaluate(() => document.getSelection()?.toString().trim() ?? '')).not.toBe('');
 
   await line.click({ button: 'right', position: { x: box.width / 2, y: box.height / 2 } });
@@ -1173,12 +1195,14 @@ test('SELECTED TEXT opens the selected-text menu above the page’s, in the owne
 
   // COPY BY POINTER puts the selected text on the clipboard. A sentinel goes there first, so a
   // Copy that copied nothing leaves it standing rather than passing on an empty clipboard — which
-  // is what the menu did while pressing an item cleared the selection it was about to copy.
-  const selected = await page.evaluate(() => document.getSelection()?.toString() ?? '');
+  // is what the menu did while pressing an item cleared the selection it was about to copy. The text expected is the
+  // line's own words, written here, and not the platform's text of the selection: a copy carries the selection as
+  // `readTextSelection` reads it (`copySelectedText`), trimmed and with a space at each line end, and an expectation
+  // read off `Selection.toString()` would hold the copy to the rule it replaced.
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
   await page.evaluate(() => navigator.clipboard.writeText('sentinel'));
   await page.getByRole('menuitem', { name: 'Copy' }).click();
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(selected);
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(BOTH_LINES);
 });
 
 test('right-click › ASK AI quotes the selected words in the assistant’s box, the cursor after them, and sends nothing', async ({ page }) => {
@@ -1199,17 +1223,15 @@ test('right-click › ASK AI quotes the selected words in the assistant’s box,
   await pageShown(page);
   const box = await line.boundingBox();
   if (box === null) throw new Error('the first line has no box');
-  await page.mouse.move(box.x + 2, box.y + box.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(box.x + box.width - 2, box.y + box.height / 2, { steps: 8 });
-  await page.mouse.up();
-  const selected = (await page.evaluate(() => document.getSelection()?.toString() ?? '')).trim();
-  expect(selected).not.toBe('');
+  await dragLines(page, line, page.locator('[data-text-layer="0"] [data-text-line="1"]'));
+  expect(await page.evaluate(() => document.getSelection()?.toString().trim() ?? '')).not.toBe('');
 
   await line.click({ button: 'right', position: { x: box.width / 2, y: box.height / 2 } });
   await page.getByRole('menu').getByRole('menuitem', { name: 'Ask AI' }).click();
   const draft = page.getByLabel('Ask about this document');
-  await expect(draft).toHaveValue(`“${selected}” `);
+  // THE LINE'S OWN WORDS, written here, as the copy's case above takes them: the quote is the selection as
+  // `readTextSelection` reads it, never the platform's text of it.
+  await expect(draft).toHaveValue(`“${BOTH_LINES}” `);
   await expect(draft).toBeFocused();
   const caret = await draft.evaluate((element: HTMLTextAreaElement) => [element.selectionStart, element.selectionEnd, element.value.length]);
   expect(caret[0]).toBe(caret[2]);

@@ -1,7 +1,7 @@
 import { type LineMatch, findInLines, toPdf, viewportPoint } from '@monstera/shared';
 import { type ReactElement, useEffect, useLayoutEffect, useRef } from 'react';
 
-import { exactCaretOf, holdAnchorAtPress } from './pressAnchor.js';
+import { exactCaretOf, holdAnchorAtPress, withinClickWobble } from './pressAnchor.js';
 import type { OverlayPage } from './annotations/annotationSpace.js';
 import { engineBoxOnScreen, overlayTransform } from './annotations/annotationSpace.js';
 import { type HighlightPainter, type SearchHighlight, sharedPainter } from './searchHighlight.js';
@@ -54,7 +54,7 @@ export interface TextLayerProps {
 export interface TextSelection {
   /** The page, zero-based. */
   readonly page: number;
-  /** The selected text, as the browser copies it, trimmed. Never empty. */
+  /** The selected text, each line's end read as the space between two words ({@link selectedText}), trimmed. Never empty. */
   readonly text: string;
   /** Where the run starts and ends, in PDF user space — what the markup tools send. */
   readonly from: { readonly x: number; readonly y: number };
@@ -135,7 +135,7 @@ export function readTextSelection(selection: Selection | null = globalThis.docum
   const clipped = range.cloneRange();
   if (startLayer === null) clipped.setStart(layer, 0);
   if (endLayer === null) clipped.setEnd(layer, layer.childNodes.length);
-  const text = clipped.toString().trim();
+  const text = selectedText(clipped, layer);
   if (text === '') return undefined;
 
   const rects = [...clipped.getClientRects()].filter((rect) => rect.width > 0 && rect.height > 0);
@@ -149,6 +149,65 @@ export function readTextSelection(selection: Selection | null = globalThis.docum
     from: entry.toPdf(first.left - origin.left, (first.top + first.bottom) / 2 - origin.top),
     to: entry.toPdf(last.right - origin.left, (last.top + last.bottom) / 2 - origin.top),
     boxes: linesOf(selectedLines(clipped, layer).map((rect) => ({ left: rect.left - origin.left, top: rect.top - origin.top, right: rect.right - origin.left, bottom: rect.bottom - origin.top }))),
+  };
+}
+
+/**
+ * The characters after which a line joins the next with no space ({@link selectedText}): the hyphen-minus, the soft hyphen
+ * and the hyphen. Built from code points, so no invisible character sits in the source.
+ */
+const LINE_END_HYPHENS = new Set([0x2d, 0xad, 0x2010].map((code) => String.fromCodePoint(code)));
+
+/**
+ * The words a range selects in one layer: the selected part of each line it crosses, in reading order, with a space where
+ * one line ends and the next begins. The one reading of a selection's text (B3a): `readTextSelection` answers it, and the
+ * copy ({@link copySelectedText}), *Search for this* and the assistant's items all take it from there.
+ *
+ * Each line is its own element holding its words and nothing after them, so the platform's own text of the range runs
+ * the last word of one line into the first of the next: `Range.toString()`, `Selection.toString()` and a plain Ctrl+C
+ * all read *provided thatall fees* for a sentence wrapped after *that* (measured in Chromium 151, 2026-10-29).
+ *
+ * A SPACE and not a line break: a line ends where the page's layout wrapped, not where the words do, and a line break
+ * is what the find field, an `<input>`, strips from a value it is given, which would join the two words again there.
+ * No space is added where the line already ends in one or the next begins with one. A line that ends in a HYPHEN
+ * joins the next line's first word with nothing: the text layer holds each line's characters and no mark telling a
+ * hyphen that breaks a word from one that is part of it, so the hyphen is kept, never dropped — *well-known* reads
+ * whole, and a word broken in two reads *pay-able* rather than losing a character the page shows.
+ */
+function selectedText(range: Range, layer: Element): string {
+  let text = '';
+  for (const line of layer.querySelectorAll('[data-text-line]')) {
+    if (!range.intersectsNode(line)) continue;
+    const part = range.cloneRange();
+    if (!line.contains(range.startContainer)) part.setStart(line, 0);
+    if (!line.contains(range.endContainer)) part.setEnd(line, line.childNodes.length);
+    const words = part.toString();
+    if (words === '') continue;
+    const joined = text === '' || /\s$/u.test(text) || LINE_END_HYPHENS.has(text.at(-1) ?? '') || /^\s/u.test(words);
+    text += joined ? words : ` ${words}`;
+  }
+  return text.trim();
+}
+
+/**
+ * Puts a page selection's text on the clipboard as {@link selectedText} reads it, for every copy of it: Ctrl+C, the Edit
+ * menu's Copy and the selection menu's, which all reach the page as one `copy` event. Left alone, the platform copies
+ * the lines run together. A copy of anything that is not a page's selected text (the editor's words, a field's) is not
+ * this listener's, and neither is one a listener nearer the selection already answered.
+ *
+ * @returns the cleanup that removes the listener
+ */
+export function copySelectedText(owner: Document): () => void {
+  const onCopy = (event: ClipboardEvent): void => {
+    if (event.defaultPrevented || event.clipboardData === null) return;
+    const selection = readTextSelection(owner.getSelection());
+    if (selection === undefined) return;
+    event.preventDefault();
+    event.clipboardData.setData('text/plain', selection.text);
+  };
+  owner.addEventListener('copy', onCopy);
+  return (): void => {
+    owner.removeEventListener('copy', onCopy);
   };
 }
 
@@ -180,13 +239,6 @@ function selectedLines(range: Range, layer: Element): { left: number; top: numbe
 }
 
 /**
- * How far a press may move, across and down, in CSS pixels, and still be a click: Windows' drag rectangle, whose default
- * is 4 pixels each way (`SM_CXDRAG` and `SM_CYDRAG`, Microsoft's `GetSystemMetrics` documentation), the distance a
- * platform drag must go before it begins.
- */
-const CLICK_WOBBLE_PX = 4;
-
-/**
  * Keeps a drag's selection on the page's text anchored where the press put it (`holdAnchorAtPress`, the mechanism and
  * its repair), and answers a press on blank space itself.
  *
@@ -215,7 +267,7 @@ export function holdPressedAnchor(root: HTMLElement): () => void {
     // click, and a click on blank space selects nothing. A hand's 1 to 2 px drift from a gap between lines reached the next
     // line's letters and selected one character (measured on the owner's page on Windows, 2026-10-28, `selectProbe`).
     if (!blank.dragging) {
-      if (Math.abs(event.clientX - blank.x) < CLICK_WOBBLE_PX && Math.abs(event.clientY - blank.y) < CLICK_WOBBLE_PX) {
+      if (withinClickWobble(blank, { x: event.clientX, y: event.clientY })) {
         selection.removeAllRanges();
         return;
       }
@@ -562,6 +614,13 @@ export function TextLayer({
   useEffect(() => {
     const root = container.current;
     return root === null ? undefined : followPastLineEnds(root);
+  }, [hasLines]);
+  // A COPY OF THE SELECTION carries its text as `readTextSelection` reads it (`copySelectedText`). On the document, since
+  // a selection begun beside the layer sends its `copy` to an element outside it; a second mounted layer's listener
+  // finds the copy already answered.
+  useEffect(() => {
+    const root = container.current;
+    return root === null ? undefined : copySelectedText(root.ownerDocument);
   }, [hasLines]);
 
   // FITTED AFTER LAYOUT AND BEFORE PAINT, so no frame shows the unfitted text under a drag. Again
