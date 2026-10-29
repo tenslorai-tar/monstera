@@ -507,8 +507,7 @@ which is the only part compiled here.
 The **name and the brand assets** in [`assets/brand/`](assets/brand/) are owned
 by Tenslor Inc. and are not covered by the code licence. A fork must use its
 own, so users can tell whose build they are running. What you may do with them
-without asking is in [`TRADEMARKS.md`](TRADEMARKS.md) (a draft, for legal review
-before launch).
+without asking is in [`TRADEMARKS.md`](TRADEMARKS.md).
 
 ---
 

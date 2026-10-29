@@ -250,17 +250,20 @@ Do not open a public issue. See [`SECURITY.md`](SECURITY.md).
 
 ## Contribution terms
 
-> **DRAFT** — the agreement below is for review by Tenslor Inc.'s counsel before
-> launch, and outside code contributions are accepted once it is adopted.
-
-Code contributions are **assigned to Tenslor Inc.** under the
+Outside code contributions are accepted. Code contributions are **assigned to Tenslor Inc.** under the
 [Contributor Assignment Agreement](CONTRIBUTOR-AGREEMENT.md). In short: you
 assign the copyright in your contribution, you receive a licence back to use it
 yourself however you like, you are credited by name, and Tenslor Inc. may license
 it under any terms — always also keeping it available under the licence the
 project uses on the day you contribute, **AGPL-3.0-or-later** today. Read the
 agreement itself; this summary is not a substitute. A pull request is merged
-only once its author has signed. [How to sign: to be confirmed by Tenslor Inc.]
+only once its author has signed. To sign, include this line in your pull request,
+followed by your full legal name:
+
+> I have read and agree to the Monstera PDF Editor Contributor Assignment Agreement
+
+If your contribution contains work you did not write, or your employer may own
+rights in it, the agreement's *Work You do not own* section says what to do.
 
 ## Name and logos
 
