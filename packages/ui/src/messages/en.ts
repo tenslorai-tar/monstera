@@ -4257,7 +4257,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // than the build does, the line says less: *image* stamps, since no built-in stamp exists; no language count
   // for OCR, since the models are not packaged yet; and no *fidelity reports*, since only PDF/A reports one.
   [FEATURE_ANNOTATE_SUMMARY]: 'Highlight, ink, shapes, notes and image stamps — saved as real PDF annotations.',
-  [FEATURE_FORMS_SUMMARY]: 'Fill any AcroForm, draw new fields, and export data as JSON, XFDF or FDF.',
+  [FEATURE_FORMS_SUMMARY]: 'Fill any PDF form, draw new fields, and export data as JSON, XFDF or FDF.',
   [FEATURE_OCR_SUMMARY]: 'On-device text recognition makes scanned pages searchable and selectable.',
   [FEATURE_SPLIT_MERGE_SUMMARY]: 'Reorder, extract, merge, and split by ranges or one file per page.',
   [FEATURE_ENCRYPT_SIGN_SUMMARY]: 'AES-256 passwords, true redaction and PKCS#7 digital signatures.',

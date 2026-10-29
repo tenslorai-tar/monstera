@@ -194,4 +194,13 @@ describe('the English catalogue', () => {
     expect(values.filter((text) => /\btool ?bars?\b/iu.test(text))).toStrictEqual([]);
     expect(values.filter((text) => text.includes('Float bar')).length).toBeGreaterThanOrEqual(5);
   });
+
+  // THE STANDARD'S TERM IS NOT A PERSON'S (the owner, 2026-10-25): *AcroForm* names the PDF standard's form structure, and
+  // what a person fills is a PDF form. The help articles keep the word among their keywords, which are searched and never
+  // shown, so someone who types it still finds them.
+  it('calls a form a PDF form, and nowhere an AcroForm', () => {
+    const values = Object.values(EN);
+    expect(values.filter((text) => /acroform/iu.test(text))).toStrictEqual([]);
+    expect(values.filter((text) => text.includes('PDF form')).length).toBeGreaterThanOrEqual(1);
+  });
 });
