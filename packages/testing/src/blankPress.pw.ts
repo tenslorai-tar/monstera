@@ -144,6 +144,43 @@ test('a click on blank paper just above a line’s box, whose wobble ends inside
   expect(selections).toStrictEqual(selections.map(() => ''));
 });
 
+test('a DRAG along blank paper just above a line’s box, never entering it, selects nothing', async ({ page }) => {
+  await open(page, ITEMS);
+  const box = await page.locator('[data-text-layer="0"] [data-text-line]').nth(2).boundingBox();
+  if (box === null) throw new Error('no line on screen');
+  // THE SAME POINT AS THE CLICK'S ABOVE, in no band and on the line's letters; then 40 px across at that height, well
+  // past the click's wobble. A press there was blank by the box the engine read, and the drag's moves were judged by the
+  // line's element instead, so it started a selection on the line under the paper (the demo contract's first paragraph,
+  // 2 px above it, in the development app on Windows, 2026-10-29).
+  const from = { x: box.x + 20, y: box.y - 1.5 };
+  const to = { x: from.x + 40, y: from.y };
+  const premise = await page.evaluate(
+    ([fx, tx, py]) =>
+      [fx, tx].map((px) => ({
+        banded: [...document.querySelectorAll('[data-text-layer="0"] [data-text-line]')].some((element) => {
+          const rect = element.getBoundingClientRect();
+          return (py ?? 0) >= rect.top && (py ?? 0) <= rect.bottom;
+        }),
+        onLetters: document.elementFromPoint(px ?? 0, py ?? 0)?.closest('[data-text-line]') !== null,
+      })),
+    [from.x, to.x, from.y],
+  );
+  expect(premise, 'both ends are in no band, on the line’s letters').toEqual([
+    { banded: false, onLetters: true },
+    { banded: false, onLetters: true },
+  ]);
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(to.x, to.y, { steps: 10 });
+  const held = await page.evaluate(() => document.getSelection()?.toString() ?? '');
+  await page.mouse.up();
+  expect(held, 'the selection while the button is held').toBe('');
+  // AND ON INTO THE LINE'S BOX, the same drag selects what it crossed there: the rule moved the line's top, it did not
+  // stop a drag reaching a line.
+  const inside = await press(page, from, { x: to.x, y: box.y + box.height / 2 });
+  expect(inside.length).toBeGreaterThan(0);
+});
+
 test('THE MECHANISM: a bare press on blank space leaves no anchor at the page’s first letter', async ({ page }) => {
   await open(page);
   // BLANK POINTS ON THE PAGE, each on the text layer and on no line: below the text, between the heading and the
