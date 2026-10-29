@@ -201,3 +201,10 @@ caret where the click fell, now on the second click of two (ADR-0271 section 3);
 host rebuilds (ADR-0175): unchanged words in the face the page already loaded, changed and new words in the face the
 writer will write, and only the paragraphs that changed are drawn, the page's own pixels showing for the rest.
 Decisions 1 to 6, 8 and 9, and the corrections above, are the wire's and the writers', and are unchanged.
+
+## Correction, 2026-10-29 — a word wider than the measure is no longer broken
+
+[ADR-0275](0275-a-word-is-never-broken-and-a-word-wider-than-its-block-widens-it.md) supersedes this record's rule,
+stated in its Proofs, that *a word wider than the measure is broken last, by grapheme*: in a reference marker's block,
+about 17 pt wide, it chopped typed words two letters to a line. A word is now never broken, and a word wider than the
+measure widens it for the whole block, in the editor and the writer alike. Everything else here is unchanged.
