@@ -209,8 +209,11 @@ async function run(pdfium, kernel) {
   // line at a smaller size on the row it stood on; the same words reflowed wrap and leave only a part of them there. The
   // row is the vertical extent of the heading as PDFium read it before the edit, and what stands on it is read from the
   // saved bytes by PDFium, not by the writer.
-  // THE PRINT'S OWN LETTERS ONLY, so no face is needed and the case asks about the layout alone.
-  const LONGER = 'Monstera fixture heading. Monstera';
+  // WORDS THE PAGE'S OWN FONTS CARRY, so no face is needed and the case asks about the layout alone: the words typed are
+  // set in the heading's ordinary sibling, whose body line holds every letter of them. They were `Monstera`, typed after
+  // the heading's own `Monstera`, until cloud run 25: a typed word is never set in a drawn font however it is spelt (25c),
+  // and the sibling has no `M`.
+  const LONGER = 'Monstera fixture heading. the regular face';
   /** @param {Uint8Array | null} saved */
   const rowAfter = async (saved) => {
     if (saved === null || first === undefined) return null;

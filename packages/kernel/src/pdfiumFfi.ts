@@ -43,7 +43,7 @@ import { inDrawingOrder, visualUnits } from './visualPieces.js';
 import type { BoxedInEdit, ByteImage, EngineWriter, ImageSession, PdfiumSession } from './engineSeam.js';
 import type { CatalogueFace, FaceSource } from './fontCatalogue.js';
 import type { PageRuns } from './operatorEdit.js';
-import { FIT_STEPS, type FlowLine, MIN_FIT, type Measure, NO_MARK, planBlock } from './paragraphFlow.js';
+import { FIT_STEPS, type FlowLine, MIN_FIT, NO_MARK, planBlock } from './paragraphFlow.js';
 import {
   JUSTIFY_CAP,
   RISE_SCALE,
@@ -3770,6 +3770,12 @@ function layOutBlocks(
  * box fonts the write will use, and the same choice of which face each space is in); in one without, the whole text is measured in the standard twin the write will use, and a character it refuses is the
  * refusal the write would give.
  */
+/**
+ * How wide `text` is in run `id`'s style with mark `mark`: the plan's {@link Measure} without where the text stands in the
+ * new words, which this writer does not ask, since the run's own font sets every word it carries, typed or said.
+ */
+type BlockWidth = (id: number, mark: number, text: string) => number;
+
 function blockMeasure(
   bindings: Bound,
   document: unknown,
@@ -3787,7 +3793,7 @@ function blockMeasure(
   ) => { readonly restyle: Restyle | undefined; readonly factor: number; readonly spacing: number },
   /** The spacing a run was set with (`keptSpacing`), which its words keep where no mark sets theirs. */
   kept: (run: HeldRun) => { readonly character: number; readonly word: number } = () => ({ character: 0, word: 0 }),
-): Measure {
+): BlockWidth {
   const inkRight = (source: unknown, text: string, font?: unknown): number | undefined => {
     const probe = makeTextLike(bindings, document, source, 0, font);
     try {
@@ -3912,7 +3918,7 @@ function blockMeasure(
     if (widths.some((width) => width === null)) throw new TextNotWritableError(pen.uncarriedIn(run.object, text));
     return widths.reduce<number>((sum, width) => sum + (width ?? 0), 0);
   };
-  const measure: Measure = (id, mark, text) => {
+  const measure: BlockWidth = (id, mark, text) => {
     // A TAB IS AT MOST A WHOLE STOP WIDE, and where it ends depends on where it starts, which a width cannot know: the
     // plan takes the widest, so a line it fits is never wider when drawn (ADR-0228 Decision 2).
     if (text.includes('\t')) {

@@ -22,6 +22,27 @@ describe('one pass over a content per edit', () => {
   });
 });
 
+describe('the /ActualText an operator is shown in', () => {
+  const encode = (text: string): Uint8Array => new TextEncoder().encode(text);
+
+  it('reads it as a literal and as UTF-16 hex, the outermost of nested sequences, once per sequence', () => {
+    const ops = showOperators(
+      encode(
+        [
+          'BT /F1 10 Tf <03> Tj',
+          '/Span <</ActualText (fi)>> BDC <01> Tj EMC',
+          '/Span <</ActualText <FEFF0066006C>>> BDC /Span <</ActualText (x)>> BDC <02> Tj EMC <04> Tj EMC',
+          '/Span <</Lang (en)>> BDC <05> Tj EMC ET',
+        ].join('\n'),
+      ),
+    );
+    expect(ops.map((op) => op.actualText?.text)).toStrictEqual([undefined, 'fi', 'fl', 'fl', undefined]);
+    // ONE SEQUENCE, so its two operators name the same start.
+    expect(ops[2]?.actualText?.start).toBe(ops[3]?.actualText?.start);
+    expect(ops[1]?.actualText?.start).not.toBe(ops[2]?.actualText?.start);
+  });
+});
+
 describe('showOperators', () => {
   it('numbers only the operators that show a code: an empty string and a TJ of spacing alone make no object', () => {
     const operators = showOperators(

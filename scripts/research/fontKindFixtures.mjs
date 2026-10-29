@@ -813,6 +813,123 @@ export function drawnFontOf(doc, sfnt, used, stated) {
 }
 
 /**
+ * The letters a browser's print joins into one glyph, longest first as a shaper takes them, each with the text its
+ * ToUnicode names it by: a presentation form (U+FB00 to U+FB04), or — for `ft`, which Unicode has no form for — the two
+ * letters. Measured 2026-10-29 on a Chromium 151 print of Carlito: `fi` named U+FB01 and marked `/ActualText (fi)`,
+ * `ft` named `ft` and not marked.
+ * @type {readonly (readonly [string, string])[]}
+ */
+const PRINT_JOINS = [
+  ['ffi', String.fromCodePoint(0xfb03)],
+  ['ffl', String.fromCodePoint(0xfb04)],
+  ['ff', String.fromCodePoint(0xfb00)],
+  ['fi', String.fromCodePoint(0xfb01)],
+  ['fl', String.fromCodePoint(0xfb02)],
+  ['ft', 'ft'],
+];
+
+/**
+ * A drawn (Type 3) font IN A BROWSER PRINT'S OWN FORM, and the second one it puts some letters in: glyph space of 1/2048
+ * with its y turned over (`FontMatrix [1/2048 0 0 -1/2048 0 0]`, each glyph drawn downwards to match), the letters of
+ * {@link PRINT_JOINS} joined into one glyph each, every glyph shown by a `Tj` of its own with a `Td` to the next, and a
+ * joined glyph named by its presentation form marked `/ActualText` with its letters — what a Chromium print of a variable
+ * or synthetic face writes (`chromiumType3Fixture.mjs`; Chromium 151, 2026-10-29). `apart` are letters set in the
+ * second font when they stand alone, as the print sets a glyph its first font has no room for; a join holding one stays in
+ * the first, as the print's `fl` did beside its `l` set apart.
+ *
+ * A joined glyph is its letters' outlines side by side: the shape a person sees is not what is tested, its naming is.
+ *
+ * @param {import('@cantoo/pdf-lib').PDFDocument} doc @param {Buffer} sfnt @param {string} used every text it will show
+ * @param {string} apart
+ * @returns {{ main: { font: import('@cantoo/pdf-lib').PDFRef, width: (text: string) => number, show: (text: string) => string },
+ *   second: { font: import('@cantoo/pdf-lib').PDFRef, width: (text: string) => number, show: (text: string) => string },
+ *   ops: (text: string, size: number, mainName: string, secondName: string) => string }}
+ */
+export function printedFontOf(doc, sfnt, used, apart) {
+  const context = doc.context;
+  const tt = trueTypeOf(sfnt);
+  /** `text` as the print's glyphs: joined letters as one, longest first. @param {string} text */
+  const unitsOf = (text) => {
+    /** @type {string[]} */
+    const units = [];
+    for (let at = 0; at < text.length; ) {
+      const join = PRINT_JOINS.find(([letters]) => text.startsWith(letters, at));
+      const unit = join?.[0] ?? /** @type {string} */ (text[at]);
+      units.push(unit);
+      at += unit.length;
+    }
+    return units;
+  };
+  const widthOf = (/** @type {string} */ unit) => [...unit].reduce((total, c) => total + tt.width(tt.glyphOf(c.charCodeAt(0))), 0);
+  const named = (/** @type {string} */ unit) => PRINT_JOINS.find(([letters]) => letters === unit)?.[1] ?? unit;
+  const head = /** @type {Buffer} */ (tt.tables.get('head'));
+  const [xMin, yMin, xMax, yMax] = [36, 38, 40, 42].map((at) => Math.round((head.readInt16BE(at) * 2048) / tt.unitsPerEm));
+  /** One Type 3 font of `units`, codes from 1 in the order given. @param {string[]} units */
+  const fontOf = (units) => {
+    const codes = new Map(units.map((unit, k) => [unit, k + 1]));
+    /** @type {Record<string, import('@cantoo/pdf-lib').PDFRef>} */
+    const procs = {};
+    for (const [unit, code] of codes) {
+      let pen = 0;
+      const parts = [];
+      for (const c of unit) {
+        const glyph = tt.glyphOf(c.charCodeAt(0));
+        // DRAWN DOWNWARDS in 1/2048 units: the outline's thousandths scaled up, and its y turned to meet the matrix's.
+        const outline = outlineOf(tt, glyph);
+        if (outline !== '') parts.push(`q 2.048 0 0 -2.048 ${String(Math.round(pen * 2.048 * 100) / 100)} 0 cm ${outline} Q`);
+        pen += tt.width(glyph);
+      }
+      const advance = Math.round(widthOf(unit) * 2.048 * 100) / 100;
+      // THE FONT'S OWN BOX for every glyph, turned over as its glyphs are, as `drawnFontOf` gives one: a box reaching past
+      // it is ink PDFium reads past the line's end, which widened the block the editor offers.
+      procs[`g${String(code)}`] = context.register(context.flateStream(`${String(advance)} 0 ${String(xMin)} ${String(-(yMax ?? 0))} ${String(xMax)} ${String(-(yMin ?? 0))} d1 ${parts.join(' ')}`.trim()));
+    }
+    const font = context.register(
+      context.obj({
+        Type: 'Font',
+        Subtype: 'Type3',
+        Name: 'MonsteraPrinted',
+        FontBBox: [xMin, -(yMax ?? 0), xMax, -(yMin ?? 0)],
+        FontMatrix: [1 / 2048, 0, 0, -1 / 2048, 0, 0],
+        CharProcs: procs,
+        Encoding: { Type: 'Encoding', Differences: [1, ...[...codes.values()].map((code) => `g${String(code)}`)] },
+        FirstChar: 1,
+        LastChar: codes.size,
+        Widths: [...codes.keys()].map((unit) => Math.round(widthOf(unit) * 2.048 * 100) / 100),
+        Resources: {},
+        ToUnicode: context.register(context.flateStream(toUnicode(new Map([...codes.entries()].map(([unit, code]) => [code, named(unit)])), 1))),
+      }),
+    );
+    const hex = (/** @type {string[]} */ shown) => PDFHexString.of(shown.map((unit) => (codes.get(unit) ?? 0).toString(16).padStart(2, '0')).join('')).toString();
+    return { font, codes, hex };
+  };
+  const all = [...new Set(unitsOf(used))];
+  const main = fontOf(all.filter((unit) => !apart.includes(unit)));
+  const second = fontOf(all.filter((unit) => apart.includes(unit)));
+  const width = (/** @type {string} */ text) => unitsOf(text).reduce((total, unit) => total + widthOf(unit), 0);
+  return {
+    main: { font: main.font, width, show: (text) => main.hex(unitsOf(text)) },
+    second: { font: second.font, width, show: (text) => second.hex(unitsOf(text)) },
+    ops: (text, size, mainName, secondName) => {
+      let current = mainName;
+      const out = [];
+      for (const unit of unitsOf(text)) {
+        const name = apart.includes(unit) ? secondName : mainName;
+        if (name !== current) out.push(`/${name} ${String(size)} Tf`);
+        current = name;
+        const shown = `${(name === mainName ? main : second).hex([unit])} Tj`;
+        const form = named(unit);
+        // A JOINED GLYPH NAMED BY ITS FORM says its letters, as the print marks it.
+        out.push(form === unit ? shown : `/Span <</ActualText (${unit})>> BDC ${shown} EMC`);
+        out.push(`${String(Math.round(widthOf(unit) * size) / 1000)} 0 Td`);
+      }
+      if (current !== mainName) out.push(`/${mainName} ${String(size)} Tf`);
+      return out.join(' ');
+    },
+  };
+}
+
+/**
  * A bare CFF program with every glyph not kept reduced to `endchar`, and the bytes saved left as zeros after the last
  * charstring, so no offset in the font moves — a subset the way `trueTypeSubset` makes one, every glyph id kept.
  *

@@ -31,7 +31,7 @@
 
 import { PDFDict, PDFDocument, PDFName, PDFRawStream, PDFRef } from '@cantoo/pdf-lib';
 
-import { charactersOf, compare, inkOf, render, renderWithoutText, SCALE } from './pageDisturbance.mjs';
+import { charactersOf, compare, inkOf, readOnce, render, renderWithoutText, SCALE } from './pageDisturbance.mjs';
 
 /**
  * How far outside its characters' boxes a block's own pixels may lie, in points. MEASURED 2026-10-26 by
@@ -220,10 +220,16 @@ function readings(pieces, direction) {
 /**
  * PDFium's reading of a page, its forms promoted into it in memory so a form's words and drawings are read as the
  * page's: objects read before the promotion saw a form as one object, so a drawing removed inside one went unseen as an
- * object (measured 2026-10-26, the pull quote's rule).
+ * object (measured 2026-10-26, the pull quote's rule). Read once for those bytes (`readOnce`).
  * @param {any} pdfium @param {Uint8Array} bytes @param {number} page
+ * @returns {Promise<{ runs: { text: string, left: number, right: number, bottom: number, top: number }[], objects: any[] }>}
  */
-async function pdfiumReading(pdfium, bytes, page) {
+function pdfiumReading(pdfium, bytes, page) {
+  return readOnce(pdfium, bytes, `reading:${String(page)}`, () => readByPdfium(pdfium, bytes, page));
+}
+
+/** {@link pdfiumReading}, read. @param {any} pdfium @param {Uint8Array} bytes @param {number} page */
+async function readByPdfium(pdfium, bytes, page) {
   const session = await pdfium.pdfiumWriter.open(bytes);
   try {
     await pdfium.promoteFormObjects(session, page);
@@ -252,7 +258,12 @@ function textInk(kernel, bytes, page) {
  * audit of 2026-10-26). A name an ordinary font on the page also has cannot say which drew a character, so it throws.
  * @param {Uint8Array} bytes @param {number} index @returns {Promise<Set<string>>}
  */
-async function drawnFontNames(bytes, index) {
+export function drawnFontNames(bytes, index) {
+  return readOnce(PDFDocument, bytes, `drawn-fonts:${String(index)}`, () => namesOfDrawnFonts(bytes, index));
+}
+
+/** {@link drawnFontNames}, read. @param {Uint8Array} bytes @param {number} index @returns {Promise<Set<string>>} */
+async function namesOfDrawnFonts(bytes, index) {
   const doc = await PDFDocument.load(bytes, { updateMetadata: false });
   const context = doc.context;
   /** @param {unknown} value */
@@ -293,6 +304,11 @@ async function drawnFontNames(bytes, index) {
 
 /** MuPDF's links on a page, by their box and target. @param {any} kernel @param {Uint8Array} bytes @param {number} page */
 function linksOf(kernel, bytes, page) {
+  return readOnce(kernel.mupdf, bytes, `links:${String(page)}`, () => linksRead(kernel, bytes, page));
+}
+
+/** {@link linksOf}, read. @param {any} kernel @param {Uint8Array} bytes @param {number} page @returns {string[]} */
+function linksRead(kernel, bytes, page) {
   const document = kernel.mupdf.PDFDocument.openDocument(bytes, 'application/pdf');
   try {
     return /** @type {any[]} */ (document.loadPage(page).getLinks()).map((link) => `${link.getBounds().map((/** @type {number} */ n) => Math.round(n * 2)).join(',')} ${String(link.getURI())}`);
@@ -484,8 +500,28 @@ export async function expectEdit({ kernel, pdfium }, { before, after, page, bloc
   if (wordsExtra.length > 0 || wordsLost.length > 0) {
     failures.push(`WORDS RUN TOGETHER OR SPLIT (MuPDF): read “${wordsExtra.slice(0, 4).join('”, “')}” where “${wordsLost.slice(0, 4).join('”, “')}” were expected`);
   }
+  // A NEW WORD IN A DRAWN FONT is one more word of its spelling drawn so than before, where the edit added one of that
+  // spelling. Which of two words spelt alike is the new one is not the font rule's to say: matched in reading order,
+  // `with` typed at a paragraph's end beside an old `with` re-set in its own drawn font took the old one for the new
+  // and reported it (measured 2026-10-29 on a Chromium print of Carlito, cloud run 25). Each page's own names, since
+  // MuPDF may name a drawn font by its object number, which a save can change.
   const drawnFonts = await drawnFontNames(after, page);
-  const drawn = newWords.flat().filter((each) => drawnFonts.has(each.font));
+  const drawnBeforeFonts = await drawnFontNames(before, page);
+  /** How many of `words` there are of each spelling. @param {Char[][]} words */
+  const spellings = (words) => {
+    /** @type {Map<string, number>} */
+    const counts = new Map();
+    for (const word of words) counts.set(textOfWord(word), (counts.get(textOfWord(word)) ?? 0) + 1);
+    return counts;
+  };
+  const inADrawnFont = (/** @type {Set<string>} */ names) => (/** @type {Char[]} */ word) => word.some((each) => names.has(each.font));
+  const wasDrawn = spellings(wordsBefore.filter(inADrawnFont(drawnBeforeFonts)));
+  const isDrawn = spellings(wordsAfter.filter(inADrawnFont(drawnFonts)));
+  const added = spellings(newWords);
+  const drawn = [...isDrawn].flatMap(([text, count]) => {
+    const over = Math.min(count - (wasDrawn.get(text) ?? 0), added.get(text) ?? 0);
+    return over <= 0 ? [] : wordsAfter.filter((word) => textOfWord(word) === text && word.some((each) => drawnFonts.has(each.font))).slice(-over).flat();
+  });
   if (drawn.length > 0) {
     failures.push(`A DRAWN FONT FOR NEW WORDS: ${String(drawn.length)} written character(s) are in a Type 3 font (${[...new Set(drawn.map((each) => each.font))].join(', ')}), the first “${drawn.slice(0, 12).map((each) => each.character).join('')}”`);
   }
@@ -575,10 +611,12 @@ export async function expectEdit({ kernel, pdfium }, { before, after, page, bloc
  * @param {Char[]} chars @param {{ withText: Uint8Array, without: Uint8Array }} ink MuPDF's two drawings, RGB
  */
 function undrawn(drawn, chars, { withText, without }) {
-  return chars.filter((each) => {
-    const w = (each.box.right - each.box.left) / 4;
-    const h = (each.box.top - each.box.bottom) / 4;
-    const corners = [drawn.toDevice(each.box.left + w, each.box.bottom + h), drawn.toDevice(each.box.right - w, each.box.top - h)];
+  const boxes = glyphBoxes(chars);
+  return chars.filter((each, index) => {
+    const box = boxes[index] ?? each.box;
+    const w = (box.right - box.left) / 4;
+    const h = (box.top - box.bottom) / 4;
+    const corners = [drawn.toDevice(box.left + w, box.bottom + h), drawn.toDevice(box.right - w, box.top - h)];
     const x0 = Math.max(0, Math.floor(Math.min(...corners.map(([x]) => x))));
     const x1 = Math.min(drawn.width - 1, Math.ceil(Math.max(...corners.map(([x]) => x))));
     const y0 = Math.max(0, Math.floor(Math.min(...corners.map(([, y]) => y))));
@@ -592,6 +630,41 @@ function undrawn(drawn, chars, { withText, without }) {
     return true;
   });
 }
+
+/**
+ * The box each character's ink is judged in: its own, except for a LATER LETTER OF A JOINED GLYPH, which is judged in the
+ * box of the glyph it shares. MuPDF reads a glyph marked `/ActualText (fl)` as two characters, the first given the
+ * glyph's whole box and the second a box of no width at that box's right edge (measured 2026-10-29 on a Chromium 151
+ * print of Carlito: `f` 156.93 to 163.27, `l` 163.27 to 163.27), and the middle half of nothing finds no ink — every
+ * joined letter after the first read as unseen, on the page as printed. Such a letter is one of no width that starts
+ * where the character before it ends, on its baseline; a character of no width anywhere else keeps its own box, so an
+ * invisible one is still judged unseen.
+ * @param {Char[]} chars in reading order @returns {Box[]}
+ */
+function glyphBoxes(chars) {
+  /** @type {Box[]} */
+  const boxes = [];
+  for (const [at, each] of chars.entries()) {
+    const before = boxes[at - 1];
+    const previous = chars[at - 1];
+    const shares =
+      before !== undefined &&
+      previous !== undefined &&
+      each.box.right - each.box.left < SHARED_GLYPH &&
+      Math.abs(each.box.left - previous.box.right) < SHARED_GLYPH &&
+      Math.abs(each.box.bottom - previous.box.bottom) < SHARED_GLYPH;
+    boxes.push(shares ? before : each.box);
+  }
+  return boxes;
+}
+
+/**
+ * How near two of MuPDF's box edges are to be one edge, and how narrow a box is to have no width, in points: the boxes of
+ * one glyph are computed in floating point from the same numbers, so they agree to far less than this. What makes a
+ * letter one of a joined glyph is having no width; a mark of no advance drawn over the letter before it is judged in that
+ * letter's box too, which is where its ink is.
+ */
+const SHARED_GLYPH = 0.01;
 
 /**
  * A block's words as each engine reads them where the block is, in the engine's order and in line order, spaces

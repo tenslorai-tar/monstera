@@ -289,7 +289,7 @@ describe('applyEditTextOperators', () => {
     });
   });
 
-  it('keeps ONE word wider than the block, broken at its edge, rather than refusing the edit (Q7’s sideways shape)', async () => {
+  it('keeps ONE word wider than the block, whole and unbroken, rather than refusing the edit (Q7’s sideways shape)', async () => {
     await withChromium(async (session, content) => {
       const runs = headingRuns(content);
       // THE SHAPE THE CASE ABOVE STOPPED REACHING (VVVVVVV-14): no space anywhere to wrap at, in the print's own letters.
@@ -298,10 +298,11 @@ describe('applyEditTextOperators', () => {
       const unclipped = await withDocument(session, (document) =>
         document.loadPage(0).toStructuredText('clip=no').asText(),
       );
-      // EVERY LETTER WRITTEN, in order, whatever lines it was broken onto (ADR-0179).
+      // EVERY LETTER WRITTEN, in order.
       expect(unclipped.replace(/\s/gu, '')).toContain(`Monstera${word}.`);
-      // AND BROKEN: the word is on more than one line, so it did not run past the block sideways.
-      expect(unclipped.split('\n').filter((line) => line.includes('reading')).length).toBeGreaterThan(1);
+      // AND WHOLE, on one line (ADR-0275, which replaced ADR-0179's break by grapheme): a word is never broken, and one
+      // wider than the block widens it, past the page where it must be, which the editor says (Q7).
+      expect(unclipped.split('\n').filter((line) => line.includes('reading')).length).toBe(1);
     });
   });
 

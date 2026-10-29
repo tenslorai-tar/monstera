@@ -15,6 +15,8 @@
  * Never less than the block's own right edge. Boxes are the page's own, `x0 <= x1` and `y0 <= y1`.
  */
 
+import { type TextFrame, intoTextFrame } from './textFrame.js';
+
 interface Box {
   readonly x0: number;
   readonly y0: number;
@@ -36,4 +38,28 @@ export function oneLineReach(box: Box, others: readonly Box[], page: Box): numbe
   if (edge <= box.x1 + SAME_EDGE) edge = Math.max(box.x1, ...others.map((other) => other.x1));
   if (edge <= box.x1 + SAME_EDGE) edge = page.x1 - (box.x0 - page.x0);
   return Math.max(box.x1, Math.min(edge, next - LINE_GAP));
+}
+
+/**
+ * The page as {@link oneLineReach} takes it for a block set in `frame` (ADR-0273): along the block's own line, at its
+ * middle `y` in the frame's coordinates, from where that line enters the page to where it leaves it. A turned block's
+ * boxes, and the boxes of the blocks set in its frame, are in the frame's coordinates, so its reach is worked out there,
+ * where the writer lays it out; the page is the one thing in page space, and seen through the frame it is a turned
+ * rectangle whose width depends on the line. Where the line misses the page, the block's own span.
+ */
+export function pageAlongFrame(page: Box, frame: TextFrame, box: Box): Box {
+  const y = (box.y0 + box.y1) / 2;
+  const corners = [
+    [page.x0, page.y0],
+    [page.x1, page.y0],
+    [page.x1, page.y1],
+    [page.x0, page.y1],
+  ].map(([x, yy]) => intoTextFrame(frame, x ?? 0, yy ?? 0));
+  const crossings: number[] = [];
+  for (const [at, from] of corners.entries()) {
+    const to = corners[(at + 1) % corners.length];
+    if (to === undefined || (from.y < y) === (to.y < y)) continue;
+    crossings.push(from.x + ((y - from.y) / (to.y - from.y)) * (to.x - from.x));
+  }
+  return crossings.length < 2 ? box : { x0: Math.min(...crossings), y0: box.y0, x1: Math.max(...crossings), y1: box.y1 };
 }

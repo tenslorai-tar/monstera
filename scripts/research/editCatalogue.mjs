@@ -40,7 +40,7 @@ import { fileURLToPath } from 'node:url';
 import { PDFDocument, PDFName, PDFString, StandardFonts } from '@cantoo/pdf-lib';
 
 import { isMain } from '../lib/isMain.mjs';
-import { cidFontOf, drawnFontOf, fontOfKind, urwDirectory } from './fontKindFixtures.mjs';
+import { cidFontOf, drawnFontOf, fontOfKind, printedFontOf, urwDirectory } from './fontKindFixtures.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const require = createRequire(join(ROOT, 'package.json'));
@@ -54,7 +54,10 @@ function mupdfFonts() {
 /**
  * @typedef {{ left: number, bottom: number, right: number, top: number }} Box
  * @typedef {{ ref: import('@cantoo/pdf-lib').PDFRef, show: (text: string) => string, width: (text: string) => number,
- *   ascent: number, descent: number, kind: string, rtl?: boolean, visual?: (text: string) => string }} Face
+ *   ascent: number, descent: number, kind: string, rtl?: boolean, visual?: (text: string) => string,
+ *   ops?: (text: string, size: number, nameOf: (face: Face) => string) => string }} Face
+ *   `ops`, where a face has it, is how it shows `text` whole — every operator, a font of its own included — in place of
+ *   one `Tj` of `show`: a browser's print shows each glyph alone (`printedFontOf`).
  * @typedef {{ text: string, face?: Face, normal?: boolean | 'bold', size?: number, rise?: number, colour?: [number, number, number], render?: number }} Segment
  * @typedef {string | Segment[]} Line
  * @typedef {{ edit?: { block: string, lines: Line[] }, move?: { block: string, dx: number, dy: number },
@@ -250,13 +253,22 @@ class Sheet {
       // A RIGHT-TO-LEFT LINE IS WRITTEN IN DRAWING ORDER, as producers write it: its segments, and each one's letters,
       // last first.
       const ordered = face.rtl ? [...segments].reverse() : segments;
+      // A LINE OF A PRINT'S GLYPHS moves by `Td` from the line matrix, which a plain `Tj` leaves where it was: each plain
+      // segment there is followed by a move of its own width, so the next glyph starts where it ends.
+      const printed = ordered.some((segment) => (segment.face ?? face).ops !== undefined);
       const shows = ordered.map((segment) => {
         const used = segment.face ?? face;
         const text = used.visual === undefined ? segment.text : used.visual(segment.text);
         const colour = segment.colour ?? spec.colour ?? [0, 0, 0];
+        const shown =
+          used.ops !== undefined
+            ? used.ops(text, segment.size ?? size, (other) => this.font(other))
+            : printed
+              ? `${used.show(text)} Tj ${f(widthOf(segment))} 0 Td`
+              : `${used.show(text)} Tj`;
         return (
           `/${this.font(used)} ${f(segment.size ?? size)} Tf ${f(segment.rise ?? 0)} Ts ${segment.render ?? render} Tr ` +
-          `${colour.map((c) => f(c)).join(' ')} rg ${used.show(text)} Tj`
+          `${colour.map((c) => f(c)).join(' ')} rg ${shown}`
         );
       });
       written.push(`${f(tw)} Tw ${shows.join(' ')}`);
@@ -1301,6 +1313,39 @@ export const SHAPES = [
       });
       // THE CONTROL'S DAMAGE: one link gone.
       return { Annots: sheet.variant.omit === 'link' ? links.slice(1) : links };
+    }),
+  },
+  {
+    id: '35-browser-print-joined-letters',
+    title: 'A page printed from a web browser, its letters drawn and joined as the print joins them',
+    tests:
+      'a paragraph in a drawn (Type 3) font in a browser print’s own form — glyph space of 1/2048 turned over, one glyph to a ' +
+      'show and a move after each — whose joined letters (ff, fi, fl, ffi, ffl) are one glyph named by its presentation form ' +
+      'and marked /ActualText with its letters, ft one glyph named as its two letters, and a lone l in a second drawn font',
+    // THE NEW WORD IN AN ORDINARY FONT, BEFORE the line's joined glyphs, so the words after it are set again: they keep
+    // their drawn glyphs, joined as they were. A word replaced after them leaves them as operators the page already had,
+    // which separates nothing about how a line is set again.
+    edit: { block: 'printed', lines: [[{ text: 'The fifty ' }, { text: 'firm', normal: true }, { text: ' office lifts rose after' }], 'a fluffy affluent shift of waffles.'], word: 'firm' },
+    neighbour: 'plain',
+    must: [...AGREED.must, 'keep every joined glyph of an untouched word in its drawn font, read by both engines as its letters'],
+    mustNot: [...AGREED.mustNot, 'set an untouched word holding joined letters in another font, or let it read as a presentation form'],
+    build: onePage(async (sheet, faces, doc) => {
+      const lines = ['The fifty soft office lifts rose after', 'a fluffy affluent shift of waffles.'];
+      const printed = printedFontOf(doc, readFileSync(join(PDFJS_FONTS, 'LiberationSans-Regular.ttf')), `${lines.join('')}went`, 'l');
+      /** @type {Face} */
+      const second = { ref: printed.second.font, show: printed.second.show, width: printed.second.width, ascent: 760, descent: -220, kind: 'Type 3, a browser print’s second drawn font' };
+      /** @type {Face} */
+      const main = {
+        ref: printed.main.font,
+        show: printed.main.show,
+        width: printed.main.width,
+        ascent: 760,
+        descent: -220,
+        kind: 'Type 3, drawn and joined as a browser prints',
+        ops: (text, size, nameOf) => printed.ops(text, size, nameOf(main), nameOf(second)),
+      };
+      sheet.paragraph({ id: 'printed', role: 'a paragraph in a print’s drawn and joined letters', face: main, size: 14, x: 72, y: 700, lines });
+      sheet.paragraph({ id: 'plain', role: 'an ordinary paragraph below', face: await faces.helvetica(), size: 12, x: 72, y: 640, lines: ['An ordinary line below it.'] });
     }),
   },
 ];

@@ -17,7 +17,7 @@ import {
 
 import type { PageFont } from './pageFonts.js';
 import type { PageBox, PageCoverCell } from './paperColour.js';
-import { type BlockPlan, type FlowLine, type Measure, NO_MARK, type Row, largestFit, planBlock } from './paragraphFlow.js';
+import { type BlockPlan, type FlowLine, type Measure, NO_MARK, type Row, attribute, largestFit, planBlock, saidUnits } from './paragraphFlow.js';
 import { DECORATION_KEY, DECORATION_KINDS, DECORATION_TAG, type DecorationKind, decorationBand, decorationsOf } from './markDecorations.js';
 import { JUSTIFY_CAP, RISE_SCALE, SUBSCRIPT_DROP, SUPERSCRIPT_RISE, spaceable, spacedBy } from './markFigures.js';
 import { carried, holds, neighbourSpan } from './contentCarry.js';
@@ -34,7 +34,7 @@ import {
   textObjectCount,
   textObjectEnds,
 } from './textOperators.js';
-import { codesFor } from './toUnicode.js';
+import { codesFor, lettersOf } from './toUnicode.js';
 
 /**
  * A block edit written into a page's own content stream, changing only the instructions it edits
@@ -420,8 +420,6 @@ interface Carries {
   readonly behind: readonly [number, number, number] | undefined;
 }
 
-const CARRIES_NOTHING: Carries = { under: undefined, through: undefined, behind: undefined };
-
 /**
  * A run's look under `set`, a mark over it or none: the mark's underline, line through and highlight where it names them,
  * else what the run's words carry (`Carries`). A highlight set to `null` is one taken off.
@@ -492,16 +490,48 @@ function asAnotherReaderMay(text: string, line: VisualLine): string {
 }
 
 /**
- * The characters each piece of `word` shows, through its font's own `ToUnicode`. A piece whose font names none, which
- * no font the caller adds is, is given the rest of the word, so the pieces still spell it.
+ * The characters each piece of `word` shows, through its font's own `ToUnicode`, a joined-letter glyph as its letters
+ * (`lettersOf`). A piece whose font names none, which no font the caller adds is, is given the rest of the word, so the
+ * pieces still spell it.
  */
 function pieceTexts(pieces: readonly FacePiece[], word: string): string[] {
   const texts = pieces.map((piece) => {
-    const map = piece.font.toUnicode;
-    return map === null ? null : piece.codes.map((code) => map.text.get(code) ?? '').join('');
+    const reads = readsAs(piece);
+    return reads === null ? null : lettersOf(reads);
   });
   const known = texts.reduce<number>((total, text) => total + (text?.length ?? 0), 0);
   return texts.map((text) => text ?? word.slice(known));
+}
+
+/**
+ * `piece` with each JOINED-LETTER glyph its own piece — a code whose `ToUnicode` names a presentation form rather than
+ * the letters (`lettersOf`) — and the codes between them kept together: what is marked `/ActualText` with its letters
+ * is that glyph alone, as a browser's print marks it. A span over the whole word reads differently: MuPDF split `fifty`
+ * written so into `fi` and `fty` (measured 2026-10-29 on a Chromium 151 print of Carlito, cloud run 25 item 25b).
+ */
+function joinedApart(piece: FacePiece): FacePiece[] {
+  const map = piece.font.toUnicode;
+  if (map === null) return [piece];
+  const pieces: FacePiece[] = [];
+  let plain: number[] = [];
+  for (const code of piece.codes) {
+    const said = map.text.get(code) ?? '';
+    if (lettersOf(said) === said) {
+      plain.push(code);
+      continue;
+    }
+    if (plain.length > 0) pieces.push({ ...piece, codes: plain });
+    plain = [];
+    pieces.push({ ...piece, codes: [code] });
+  }
+  if (plain.length > 0) pieces.push({ ...piece, codes: plain });
+  return pieces;
+}
+
+/** What a piece's codes read as through its font's own `ToUnicode`, or `null` where the font names none. */
+function readsAs(piece: FacePiece): string | null {
+  const map = piece.font.toUnicode;
+  return map === null ? null : piece.codes.map((code) => map.text.get(code) ?? '').join('');
 }
 
 /** Each typed line split into words and the spaces and tabs between them, one space or tab a token. */
@@ -973,23 +1003,27 @@ function write(
     ...boxes,
   ];
   /**
-   * The words the edit's runs already said, by the font that drew them, compared whole (ADR-0176's corrections of
-   * 2026-10-25): only these may be set in a font of drawn letters, so a line set again keeps its old words' glyphs
-   * wherever the layout puts them, and a new word — typed, replaced, corrected or translated — goes to an ordinary face.
-   * Read from EVERY block the edit names, a join's emptied block among them, and never across fonts: a word another
-   * font drew is new to this one. A run the loop below cannot place is skipped here, since that loop refuses it by name.
+   * ONLY A WORD THE PAGE ALREADY SAID may be set in a font of drawn letters (ADR-0176's corrections of 2026-10-25), so a
+   * line set again keeps its old words' glyphs wherever the layout puts them, and a new word — typed, replaced, corrected
+   * or translated — goes to an ordinary face. Within a block that is decided by WHERE each word of the new text came
+   * from, the plan's own attribution (`attribute`, below), never by its spelling: `with` typed into a paragraph that says
+   * `with` is a typed word (measured on Chromium prints of two faces, 2026-10-29, cloud run 25 item 25c).
+   *
+   * A JOIN's words come from a block the edit empties, which the block they join has no attribution for: these are
+   * those blocks' words, by the font that drew them, compared whole and never across fonts, since a word another font
+   * drew is new to this one. A run the loop below cannot place is skipped here, since that loop refuses it by name.
    */
-  const saidIn = new Map<PageFont, Set<string>>();
-  for (const block of blocks) {
+  const joinedIn = new Map<PageFont, Set<string>>();
+  for (const block of blocks.filter((each) => each.text === '')) {
     for (const index of block.lines.flat()) {
       const run = runs.get(index);
       const at = run?.members[0] === undefined ? undefined : opAt.get(run.members[0]);
       const op = at === undefined ? undefined : ops[at];
       const font = op === undefined ? undefined : (syntheticFonts.get(op) ?? (op.state.font === null ? undefined : fonts.get(op.state.font)));
       if (run === undefined || font === undefined) continue;
-      const said = saidIn.get(font) ?? new Set<string>();
+      const said = joinedIn.get(font) ?? new Set<string>();
       for (const word of tokens(run.text)) said.add(word);
-      saidIn.set(font, said);
+      joinedIn.set(font, said);
     }
   }
 
@@ -1095,6 +1129,18 @@ function write(
       runs: line.map((run) => ({ id: run.run.index, text: run.run.text })),
       soft: soft[at] === true,
     }));
+    /**
+     * WHERE EACH UNIT OF THE NEW WORDS CAME FROM, by the plan's own attribution taken to whole words (`saidUnits`; B3a:
+     * the plan calls the same function on the same lines and words), and whether the `length` units from `at` are words
+     * the page already said there: each is an old unit, in order and unbroken.
+     */
+    const from = saidUnits(attribute(flow, block.text));
+    const saidAt = (at: number, length: number): boolean => {
+      const first = from[at] ?? -1;
+      if (first < 0) return false;
+      for (let unit = 1; unit < length; unit += 1) if (from[at + unit] !== first + unit) return false;
+      return true;
+    };
     const extents = lines.map((line) => ({
       x0: Math.min(...line.map((run) => run.run.left)),
       x1: Math.max(...line.map((run) => run.run.right)),
@@ -1181,11 +1227,12 @@ function write(
      * caller records: the plan measures a word and the layout writes it, and both must hear the same answer.
      */
     const answers = new Map<string, readonly FacePiece[] | null>();
-    const piecesOf = (source: ShowOperator, token: string, restyle?: Restyle): readonly FacePiece[] | null => {
-      const key = `${String(indexOf.get(source))}|${JSON.stringify(restyle ?? null)}|${token}`;
-      if (answers.has(key)) return answers.get(key) ?? null;
+    /** @param said whether the page already said this word here (`saidAt`): only then may a drawn font set it. */
+    const piecesOf = (source: ShowOperator, token: string, restyle: Restyle | undefined, said: boolean): readonly FacePiece[] | null => {
       const font = fontOf(source);
-      const drawn = token === ' ' || (saidIn.get(font)?.has(token) ?? false);
+      const drawn = token === ' ' || said || (joinedIn.get(font)?.has(token) ?? false);
+      const key = `${String(indexOf.get(source))}|${JSON.stringify(restyle ?? null)}|${String(drawn)}|${token}`;
+      if (answers.has(key)) return answers.get(key) ?? null;
       // A RESTYLED WORD is not looked for in the run's own font: only white space is, which has no style to be wrong in.
       const found = restyle !== undefined && token !== ' ' ? null : carrier(font, token, drawn);
       // A WORD NO ONE PAGE FONT CARRIES, set across them in the longest stretches each carries (ADR-0176's correction of
@@ -1222,7 +1269,7 @@ function write(
      * which a text page reads as one space (measured 2026-10-27, the catalogue's TrueType subset page).
      */
     const gapGlyphOf = (source: ShowOperator, restyle: Restyle | undefined, gap: '\t' | ' '): FacePiece | undefined => {
-      const own = piecesOf(source, TAB_GAP, restyle);
+      const own = piecesOf(source, TAB_GAP, restyle, true);
       if (own !== null && own.length === 1) return own[0];
       const key = `${String(indexOf.get(source))}|${JSON.stringify(restyle ?? null)}|gap`;
       if (answers.has(key)) {
@@ -1305,35 +1352,43 @@ function write(
       pieces.length === 0
         ? (SPACE_EM * source.state.size + source.state.charSpacing + source.state.wordSpacing) * source.state.scale * unit
         : pieceWidths(source, pieces, unit).reduce((total, each) => total + each, 0);
-    /** How wide `text` is when it is set in the state of run `id`: the plan's one question. */
-    const measure: Measure = (id, mark, text) => {
+    /** How wide `text` is when it is set in the state of run `id`, from `at` in the new words: the plan's one question. */
+    const measure: Measure = (id, mark, text, at) => {
       const run = byId.get(id) ?? firstRun;
       const source = sourceOf(run);
       const marked = mark === NO_MARK ? undefined : markStyle(run, mark);
       const unit = placed(run.first).unit * (marked?.factor ?? 1) * shrink;
-      return (
-        tokens(text).reduce((sum, token) => {
-          // A TAB IS AT MOST A WHOLE STOP, the PDFium writer's rule: where it ends depends on where it starts.
-          if (token === '\t') return sum + TAB_STOP;
-          const pieces = piecesOf(source, token, restyleOf(marked));
-          return pieces === null ? sum : sum + widthOfPieces(source, pieces, unit);
-        }, 0) + spacedBy(text.replace(/\t/gu, ''), (marked?.spacing ?? 0) * shrink)
-      );
+      let offset = at;
+      let sum = 0;
+      for (const token of tokens(text)) {
+        const here = offset;
+        offset += token.length;
+        // A TAB IS AT MOST A WHOLE STOP, the PDFium writer's rule: where it ends depends on where it starts.
+        if (token === '\t') {
+          sum += TAB_STOP;
+          continue;
+        }
+        const pieces = piecesOf(source, token, restyleOf(marked), saidAt(here, token.length));
+        if (pieces !== null) sum += widthOfPieces(source, pieces, unit);
+      }
+      return sum + spacedBy(text.replace(/\t/gu, ''), (marked?.spacing ?? 0) * shrink);
     };
 
     /**
      * Lays out `words` set in `source`'s state from `x` on `line`, answering where it ended. `marked` is the mark that
      * styles them, where one does: its face, its size and rise, its colour, its drawings and its spacing. `perSpace` is
-     * what a justified line adds after each space (ADR-0228 Decision 1).
+     * what a justified line adds after each space (ADR-0228 Decision 1). `startsAt` is where `words` start in the new words, as
+     * the plan measured them (`saidAt`), or `'said'` for an old line's own words set again, every one of them the page's.
      */
     const layOut = (
       source: ShowOperator,
       words: string,
       x: number,
       line: VisualLine,
-      marked?: ReturnType<typeof markStyle>,
-      perSpace = 0,
-      carries: Carries = CARRIES_NOTHING,
+      marked: ReturnType<typeof markStyle> | undefined,
+      perSpace: number,
+      carries: Carries,
+      startsAt: number | 'said',
     ): number => {
       const unit = placed(indexOf.get(source) ?? -1).unit * (marked?.factor ?? 1) * shrink;
       // NO SPACING NOR STRETCH IN A JOINED RIGHT-TO-LEFT SCRIPT, the measure's own rule (`spacedBy`).
@@ -1352,7 +1407,10 @@ function write(
             };
       let cursor = x;
       const typed = tokens(words);
+      let offset = startsAt === 'said' ? 0 : startsAt;
       for (const [index, token] of typed.entries()) {
+        const said = startsAt === 'said' || saidAt(offset, token.length);
+        offset += token.length;
         // A SPACE IN A RUN OF TWO OR MORE goes into a segment of the run's spaces alone, marked as exactly them (ADR-0228's
         // correction of 2026-10-16): joined to the words, a text page reads the run as one space.
         const inRun = token === ' ' && (typed[index - 1] === ' ' || typed[index + 1] === ' ');
@@ -1368,7 +1426,7 @@ function write(
           cursor = nextTabStop(cursor, blockLeft);
           continue;
         }
-        const own = piecesOf(source, token, restyleOf(marked));
+        const own = piecesOf(source, token, restyleOf(marked), said);
         if (own === null) continue;
         if (inRun && own.length === 0) {
           // A SPACE OF A RUN THAT NO FONT HERE DRAWS stands on a face's space (`gapGlyphOf`), so the run's mark holds
@@ -1387,8 +1445,8 @@ function write(
           cursor += widthOfPieces(source, own, unit) + spacedBy(token, spacing) + stretch;
           continue;
         }
-        const pieces = own;
-        faces?.drawn(pieces);
+        faces?.drawn(own);
+        const pieces = own.flatMap(joinedApart);
         const widths = pieceWidths(source, pieces, unit);
         const width = widthOfPieces(source, pieces, unit);
         // EACH PIECE'S TEXT, the word's characters its codes show, so the segments still spell the word.
@@ -1397,6 +1455,15 @@ function write(
         for (const [k, piece] of pieces.entries()) {
           const text = texts[k] ?? '';
           const last = line.segments.at(-1);
+          // A JOINED-LETTER GLYPH SAYS ITS LETTERS: where the codes read otherwise than the letters they were chosen for
+          // (`lettersOf`), the piece is a segment of its own marked with them, as the print marked it, so both engines
+          // read the word as it was.
+          const reads = readsAs(piece);
+          if (!inRun && reads !== null && reads !== text) {
+            line.segments.push({ source, font: piece.font, codes: [...piece.codes], text, x: at, style, actual: text });
+            at += (widths[k] ?? 0) + spacing * piece.codes.length;
+            continue;
+          }
           // ONE SEGMENT for words that follow on in one font and state: a glyph's advance places the next exactly there.
           // A RUN'S SPACE JOINS ONLY ITS RUN, and words join only words.
           const joins = inRun ? last?.actual !== undefined && last.actual !== '\t' : last?.actual === undefined;
@@ -1485,11 +1552,19 @@ function write(
         looks.set(run.run.index, look);
         return look;
       };
+      /** The marked sequences already said: one `/ActualText` stands for all its operators, so it is said once. */
+      const saidSequences = new Set<number>();
       for (const { op, at, font, run } of carried) {
         const style = lookOf(run);
         const origin = placed(at);
         const shown = op.elements.map((element) => (typeof element === 'number' ? num(element) : hexOfBytes(element)));
         const codes = codesOf(font, op.codes);
+        // AN OPERATOR SHOWN UNDER AN `/ActualText` is carried under it, as the page marked it (a joined-letter glyph, its
+        // letters): its first operator says the text, and any other of the same sequence says nothing, so the words read
+        // as they did. Carried bare, `fi` read as U+FB01 (cloud run 25, item 25b).
+        const marked = op.actualText;
+        const actual = marked === undefined ? undefined : saidSequences.has(marked.start) ? '' : marked.text;
+        if (marked !== undefined) saidSequences.add(marked.start);
         visual.push({
           baseline: origin.y + dy,
           // THE OPERATOR'S OWN INK IS ITS RUN'S, which is what a turn's centre is worked out from.
@@ -1500,10 +1575,12 @@ function write(
               font,
               codes,
               // THE WORDS AS THE STRUCTURAL READ-BACK READS THEM: a font with no ToUnicode shows one unknown character.
-              text: font.toUnicode === null ? '\u0000' : codes.map((code) => font.toUnicode?.text.get(code) ?? '\u0000').join(''),
+              text:
+                actual ?? (font.toUnicode === null ? '\u0000' : codes.map((code) => font.toUnicode?.text.get(code) ?? '\u0000').join('')),
               x: origin.x,
               style,
               verbatim: op.operator === 'TJ' ? `[${shown.join(' ')}] TJ` : `${shown.join(' ')} Tj`,
+              ...(actual === undefined ? {} : { actual }),
             },
           ],
         });
@@ -1664,7 +1741,7 @@ function write(
           if (previousEnd !== null) cursor += (run.origin.x - previousEnd) * shrink;
           // A TRAILING SPACE OF A RUN WITH A RUN AFTER IT is the gap that run keeps.
           const words = index === line.length - 1 ? run.run.text : run.run.text.replace(/ +$/u, '');
-          cursor = layOut(sourceOf(run), words, cursor, placedLine, undefined, 0, carriesOf(run));
+          cursor = layOut(sourceOf(run), words, cursor, placedLine, undefined, 0, carriesOf(run), 'said');
           previousEnd = run.right;
         }
         laid.push(text);
@@ -1741,6 +1818,7 @@ function write(
           piece.mark === NO_MARK ? undefined : markStyle(run, piece.mark),
           perSpace,
           carriesOf(run),
+          piece.at,
         );
       }
       laid.push(row.pieces.map((piece) => piece.text).join(''));
@@ -2221,9 +2299,16 @@ export function checkOperatorEdit(
   // object's words stand in for another's.
   if (insertedSpans.length !== edit.drawn.length) return err('the inserted text does not read as the words drawn');
   for (const [at, span] of insertedSpans.entries()) {
+    // A MARKED SEQUENCE READS AS ITS `/ActualText`, once, as both engines read it: a joined-letter glyph as its letters.
+    let sequence: number | undefined;
     const shown = now
       .filter((op) => op.start >= span.start && op.end <= span.end)
-      .map(reads)
+      .map((op) => {
+        if (op.actualText === undefined) return reads(op);
+        if (op.actualText.start === sequence) return '';
+        sequence = op.actualText.start;
+        return op.actualText.text;
+      })
       .join('');
     if (shown !== edit.drawn[at]) return err('the inserted text does not read as the words drawn');
   }

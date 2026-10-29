@@ -179,6 +179,29 @@ describe('editOperators on the Chromium print', () => {
     });
   });
 
+  /**
+   * A WORD TYPED IS NEW HOWEVER IT IS SPELT (cloud run 25, item 25c): which words the run already said is a question of
+   * WHERE each word of the new text came from, which the plan's attribution answers, never of whether its spelling occurs
+   * among the run's words. Measured on Chromium prints of two faces, 2026-10-29: `with` typed into a paragraph that said
+   * `with` was set in the paragraph's drawn letters.
+   */
+  it('sets a TYPED word in an ordinary face though the line already says a word spelt the same, and keeps that one drawn', async () => {
+    await chromium((content, fonts) => {
+      const page = runsOf(content, fonts);
+      const heading = page.runs[0];
+      // `Monstera` REPLACED BY `heading`, a word the line says at its end.
+      const result = editOperators(content, fonts, page, [{ lines: [[heading?.index ?? -1]], soft: [false], text: 'heading fixture heading.' }]);
+      if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+      expect(result.value.drawn).toStrictEqual(['heading fixture heading.']);
+      const [object = ''] = inserted(result.value);
+      // THE TYPED `heading` in the ordinary sibling, and the line's own words after it in their drawn letters. CONTROL, the
+      // spelling key: the typed word was found among the run's words and drawn in F4, and F5 did not appear.
+      // The font each shown stretch is drawn in, in order (the state before them names the run's own font first).
+      const shown = [...object.matchAll(/\/(F\d) 28 Tf\n1 0 0 -1 [\d.]+ 97 Tm <[0-9A-F]+> Tj/gu)].map((match) => match[1]);
+      expect(shown).toStrictEqual(['F5', 'F4']);
+    });
+  });
+
   it('CONTROL: words another font drew, joined into a Type 3 line, go to an ordinary face though its subset holds the letters', async () => {
     await chromium((content, fonts) => {
       const page = runsOf(content, fonts);
@@ -666,6 +689,68 @@ const inked = (index: number, text: string, left: number, right: number): PageRu
   top: 0,
 });
 
+/**
+ * JOINED LETTERS IN A DRAWN FONT (cloud run 25, item 25b), as a browser's print writes them: the subset holds `fi` only as
+ * one glyph, its ToUnicode names it by its presentation form U+FB01, and the content marks it `/ActualText (fi)`, which
+ * is how both engines read the word as `fit`. A line set again for a word's colour had no code for `fi` and moved the
+ * untouched `fit` out of its font, or refused it where no other font had the letters.
+ */
+describe('editOperators on a drawn font with joined letters', () => {
+  const ligatures: PageFont = (() => {
+    const text = new Map<number, string>([
+      [1, String.fromCodePoint(0xfb01)],
+      [2, 't'],
+      [3, 'a'],
+      [4, 'b'],
+      [32, ' '],
+    ]);
+    return {
+      resource: 'F3',
+      subtype: 'Type3',
+      toUnicode: { text, bytes: 1 },
+      codeBytes: 1,
+      width: (code) => (text.has(code) ? 0.5 : null),
+      draws: (code) => text.has(code),
+      face: 'Drawn',
+      weight: 400,
+    };
+  })();
+  const fonts = new Map([['F3', ligatures]]);
+  // `a `, then `fi` marked as what it says, then `t bat`: three show operators of one text object, one run.
+  const content = bytes('BT /F3 10 Tf 1 0 0 1 72 100 Tm <0320> Tj /Span <</ActualText (fi)>> BDC <01> Tj EMC <0220040302> Tj ET');
+  const page: PageRuns = { textObjects: [0, 1, 2], runs: [{ index: 0, members: [0, 1, 2], text: 'a fit bat', left: 72, right: 112, bottom: 0, top: 0 }] };
+
+  it('keeps an untouched word’s joined glyph in its own font, read as its letters, when another word is recoloured', () => {
+    const result = editOperators(content, fonts, page, [
+      { lines: [[0]], soft: [false], text: 'a fit bat', marks: [{ from: 6, to: 9, set: { colour: { r: 255, g: 0, b: 0 } } }] },
+    ]);
+    if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+    // READ BACK AS `a fit bat`, the marked sequence as its letters.
+    expect(checkOperatorEdit(content, result.value, fonts)).toStrictEqual({ ok: true, value: undefined });
+    const [object = ''] = inserted(result.value);
+    // THE JOINED GLYPH, code 01, still shown in its own font, and it alone marked as the letters it stands for, as the
+    // print marked it: a span over the whole word, MuPDF read as two words.
+    expect(object).toContain('/F3 10 Tf\n');
+    expect(object).toContain('/Span <</ActualText <FEFF00660069>>> BDC 1 0 0 1 82 100 Tm <01> Tj EMC\n1 0 0 1 87 100 Tm <0220> Tj');
+    // CONTROL: the recoloured word is in red, so the line was set again rather than left as it was.
+    expect(object).toContain('1 0 0 rg');
+  });
+
+  it('keeps the joined glyph’s mark when the whole block is recoloured and its operators are carried as they were', () => {
+    const result = editOperators(content, fonts, page, [
+      { lines: [[0]], soft: [false], text: 'a fit bat', marks: [{ from: 0, to: 9, set: { colour: { r: 255, g: 0, b: 0 } } }] },
+    ]);
+    if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+    expect(checkOperatorEdit(content, result.value, fonts)).toStrictEqual({ ok: true, value: undefined });
+    const [object = ''] = inserted(result.value);
+    // CARRIED, its own bytes: the three operators as the page showed them, in red.
+    expect(object).toContain('1 0 0 rg');
+    expect(object).toContain('<0220040302> Tj');
+    // AND THE MARK AROUND THE JOINED GLYPH, as the page had it. CONTROL, the replay before: `<01> Tj` bare, read as U+FB01.
+    expect(object).toMatch(/\/Span <<\/ActualText <FEFF00660069>>> BDC [\d. -]+Tm <01> Tj EMC/u);
+  });
+});
+
 describe('editOperators on paragraphs (ADR-0179)', () => {
   const regular = font('F1', 'abcdefghijklmnopqrstuvwxyz');
   const strong = font('F2', 'abcdefghijklmnopqrstuvwxyz');
@@ -891,8 +976,8 @@ describe('editOperators on paragraphs (ADR-0179)', () => {
       if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
       expect(checkOperatorEdit(content, result.value, fonts).ok).toBe(true);
       const written = latin1(result.value.content);
-      // THE ADDED WORDS' FIRST LETTER: in a cell one letter wide each letter is a line of its own.
-      return { object: written.indexOf('<62> Tj'), clipEnds: written.indexOf('Q\n') };
+      // THE FIRST ADDED WORD: in a cell one letter wide each word is a line of its own, whole (ADR-0275).
+      return { object: written.indexOf('<626262>'), clipEnds: written.indexOf('Q\n') };
     };
     // THE CELL'S CLIP, its bottom at 50: the wrapped lines fall below it, so the object goes past its `Q`.
     const hidden = placedAt('0 50 200 30');
@@ -1435,6 +1520,28 @@ describe('a block set at an angle is written in its own frame (ADR-0273)', () =>
     // TEN POINTS ALONG THE TURNED LINE: (10 cos 30, 10 sin 30) from where it began, not ten along the page's x.
     expect(m[4]).toBeCloseTo(100 + 10 * turn[0], 3);
     expect(m[5]).toBeCloseTo(500 + 10 * turn[1], 3);
+  });
+
+  /**
+   * A TURNED LINE GROWS ALONG ITSELF TO ITS REACH (M2c, cloud run 25): the reach the editor sends a one-line block is in
+   * the block's frame, where the writer lays it out, as the runs' boxes are. Running up the page, the line's origin
+   * (100, 500) is (500, -100) in the frame and its words end at 608 there.
+   */
+  it('a turned block of one line grows along itself to the reach given in its frame, rather than wrapping at its end', () => {
+    const up = [0, 1, -1, 0] as const;
+    const { content, runs } = page(up);
+    const [first] = runs.runs;
+    const written = (place?: { reach: number }) => {
+      const result = editOperators(content, fonts, runs, [
+        { lines: [[first?.index ?? -1]], soft: [false], text: 'turned at an angle and more', ...(place === undefined ? {} : { place }) },
+      ]);
+      if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+      return result.value.drawn;
+    };
+    expect(written({ reach: 808 })).toStrictEqual(['turned at an angle and more']);
+    // CONTROL: with no reach the line wraps at its own end, which is what the saved turned line did: the old line kept,
+    // and the added words set on a line of their own.
+    expect(written()).toStrictEqual(['and more']);
   });
 
   it('CONTROL: the same block upright is written upright where it stood, so the cases above are the frame’s', () => {

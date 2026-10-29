@@ -6660,7 +6660,10 @@ optgroup {
   border: 0;
   overflow: hidden;
   white-space: pre-wrap;
-  overflow-wrap: break-word;
+  /* A WORD IS NEVER BROKEN (ADR-0275): a word wider than the block widens it, to at least its own width, as the writer
+     widens the block's measure to it, so the two still break every line in one place. */
+  overflow-wrap: normal;
+  min-inline-size: min-content;
   /* NO PAPER OF ITS OWN: the page shows through a paragraph still as drawn, and each changed one's paper is a cover. */
   background: transparent;
   caret-color: var(--accent-on-paper, var(--accent));

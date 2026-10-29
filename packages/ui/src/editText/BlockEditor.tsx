@@ -762,7 +762,10 @@ export function BlockEditor({
   const reachWidth = reach === undefined || placement.width !== undefined || moved ? undefined : (reach - block.box.x0) * geometry.zoom;
   return (
     // THE FRAME GROWS WITH ITS WORDS: at least the block's height, as tall as the words, so its outline shows where they
-    // now reach and what they overlap (growth by overlap, ADR-0271 section 3).
+    // now reach and what they overlap (growth by overlap, ADR-0271 section 3). AND AS WIDE: at least the width its words
+    // cannot be narrower than (`min-content`), which is a line a one-line block grows right as it is typed (`reach`) and a
+    // word wider than the block (ADR-0275); measured by the layout rather than after it, so the frame's own width, which
+    // the surface's is relative to, cannot feed back into it.
     <div
       aria-busy={busy}
       className={`m-kit-frame${mode === 'box' ? ' m-kit-frame--box' : ''}`}
@@ -770,7 +773,7 @@ export function BlockEditor({
       data-kit-mode={mode}
       onKeyDown={onBoxKey}
       ref={frame}
-      style={{ ...boxStyle(placed), height: 'auto', minHeight: placed.height }}
+      style={{ ...boxStyle(placed), height: 'auto', minHeight: placed.height, minWidth: 'min-content' }}
       tabIndex={-1}
     >
       {(moved ? [{ top: 0, height: undefined }] : covers).map((cover, at) => (

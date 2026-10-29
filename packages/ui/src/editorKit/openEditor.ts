@@ -148,10 +148,26 @@ export function keepsEditor(node: EventTarget | null): boolean {
 /** Whether a focus going to `node` leaves the open editor altogether: not into its frame, and not into what keeps it. */
 export function leavesEditor(node: EventTarget | null): boolean {
   if (keepsEditor(node)) return false;
-  const surface = open?.root();
-  if (surface === undefined || surface === null) return false;
-  const frame = surface.closest('[data-kit-frame]') ?? surface;
+  const frame = openFrame();
+  if (frame === undefined) return false;
   return !(node instanceof Node && frame.contains(node));
+}
+
+/**
+ * Whether `node` is inside the open editor's frame: what lies under the pointer there is the editor's words, whatever
+ * the page has beneath them. A layer that hit-tests the page by geometry (a link's box) asks this, because it hears the
+ * pointer before the editor on top of it does.
+ */
+export function withinOpenEditor(node: EventTarget | null): boolean {
+  const frame = openFrame();
+  return frame !== undefined && node instanceof Node && frame.contains(node);
+}
+
+/** The open editor's frame, or its surface where it has none, or `undefined` while no editor is open. */
+function openFrame(): Element | undefined {
+  const surface = open?.root();
+  if (surface === undefined || surface === null) return undefined;
+  return surface.closest('[data-kit-frame]') ?? surface;
 }
 
 /** Finishes the open editor, for a surface that keeps it and is left. */

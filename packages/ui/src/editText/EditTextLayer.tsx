@@ -1,6 +1,6 @@
 import { useLingui } from '@lingui/react';
 import type { BlockFormatting, EditedBlock, FormPath, PageInsert, WindowEditAction } from '@monstera/contract';
-import { type DocVersion, NEW_TEXT_MARGIN, oneLineReach } from '@monstera/shared';
+import { type DocVersion, NEW_TEXT_MARGIN, oneLineReach, pageAlongFrame, sameTextFrame } from '@monstera/shared';
 import { type ReactElement, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { OverlayPage } from '../annotations/annotationSpace.js';
@@ -430,13 +430,17 @@ export function EditTextLayer({
               parting={chosen === at && opened?.parting === true}
               past={pastItsPage(pageBox(block), geometry.crop)}
               placed={placed}
-              // A BLOCK OF ONE LINE, upright, grows to its column's edge or the page's margin before it wraps.
+              // A BLOCK OF ONE LINE grows to its column's edge or the page's margin before it wraps. A TURNED ONE grows the
+              // same way in its own frame (ADR-0273), where its box and the boxes of the blocks set in its frame are, and
+              // where the writer lays it out: the page seen along its line (`pageAlongFrame`).
               reach={
-                block.lines.length === 1 && block.frame === undefined
+                block.lines.length === 1
                   ? oneLineReach(
                       block.box,
-                      blocks.blocks.filter((other) => other !== block && other.frame === undefined).map((other) => other.box),
-                      { x0: geometry.crop[0], y0: geometry.crop[1], x1: geometry.crop[2], y1: geometry.crop[3] },
+                      blocks.blocks.filter((other) => other !== block && sameTextFrame(other.frame ?? null, block.frame ?? null)).map((other) => other.box),
+                      block.frame === undefined
+                        ? { x0: geometry.crop[0], y0: geometry.crop[1], x1: geometry.crop[2], y1: geometry.crop[3] }
+                        : pageAlongFrame({ x0: geometry.crop[0], y0: geometry.crop[1], x1: geometry.crop[2], y1: geometry.crop[3] }, block.frame, block.box),
                     )
                   : undefined
               }

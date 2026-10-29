@@ -5,6 +5,7 @@ import type React from 'react';
 import { LINK_OUTLINE_DEFAULT_COLOUR } from '@monstera/contract';
 
 import { type OverlayPage, engineBoxOnScreen } from './annotations/annotationSpace.js';
+import { withinOpenEditor } from './editorKit/openEditor.js';
 import { LINK_ON_PAGE_TO_ADDRESS, LINK_ON_PAGE_TO_ADDRESS_CTRL, LINK_ON_PAGE_TO_PAGE, LINK_ON_PAGE_TO_PAGE_CTRL } from './messages/en.js';
 import { pdfjsPageOf } from './pageNumbering.js';
 import type { PageLinkOnPage } from './usePageLinks.js';
@@ -152,6 +153,9 @@ export function useLinkPointer(
   const boxes = links.map((link) => engineBoxOnScreen(link.bounds, geometry));
   /** The link under a pointer event, by its place on the page, or `undefined`. */
   const under = (event: React.PointerEvent<HTMLDivElement> | React.MouseEvent<HTMLDivElement>): number | undefined => {
+    // OVER AN OPEN EDITOR the pointer is on the words being edited, not on the link beneath them: no hover over them, and
+    // no Ctrl+click taken from them.
+    if (withinOpenEditor(event.target)) return undefined;
     const slot = event.currentTarget.getBoundingClientRect();
     const x = event.clientX - slot.left;
     const y = event.clientY - slot.top;

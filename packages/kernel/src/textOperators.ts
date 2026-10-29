@@ -22,6 +22,7 @@
  */
 
 import { DECORATION_KEY, DECORATION_TAG, type DecorationKind, type PageDecoration, type Rgb, decorationKindOf } from './markDecorations.js';
+import { pdfTextString } from './pdfTextString.js';
 
 /** A 2D affine matrix `[a b c d e f]`, as a content stream writes one. */
 export type Matrix = readonly [number, number, number, number, number, number];
@@ -158,6 +159,10 @@ function tokenise(bytes: Uint8Array): Token[] {
           if (depth === 0) break;
         } else if (bytes[at] === 0x28) {
           at = literalString(bytes, at).end;
+        } else if (bytes[at] === 0x3c) {
+          // A HEX STRING is skipped whole as a literal one is: its closing `>` beside the dictionary's own `>>` is not
+          // the first half of that `>>`, which `/ActualText <FEFF…>>>` would otherwise end one byte early.
+          at = hexString(bytes, at).end;
         } else {
           at += 1;
         }
@@ -265,6 +270,12 @@ export interface ShowOperator {
    * placed: a Chromium print sets its colour and `gs` outside the `BT`, so the instructions inside it are not enough.
    */
   readonly settings: readonly { readonly start: number; readonly end: number }[];
+  /**
+   * The `/ActualText` of the marked-content sequence it is shown in, where one says it inline (the outermost, which is
+   * what a reader reads the whole sequence as), with where that sequence's `BDC` starts, so the operators of one
+   * sequence are known to share it. A browser's print marks a joined-letter glyph so (`lettersOf`, `toUnicode.ts`).
+   */
+  readonly actualText?: { readonly text: string; readonly start: number };
 }
 
 /**
@@ -596,6 +607,8 @@ function scanContent(
   const containers: { start: number; end: number }[] = [];
   const openQ: number[] = [];
   const openMarked: number[] = [];
+  /** Each open marked-content sequence's inline `/ActualText` and where its `BDC` starts, or `null` for one with none. */
+  const openActual: ({ readonly text: string; readonly start: number } | null)[] = [];
   const depths: { op: string; start: number; end: number; q: number; m: number; qAfter: number; mAfter: number }[] = [];
   const states: StateAt[] = [];
   let probe = 0;
@@ -649,9 +662,12 @@ function scanContent(
         openMarked.push(start);
         const kind = op === 'BDC' ? decorationNamed(content, operands) : undefined;
         openDecorations.push(kind === undefined ? null : { kind, start, paths: [], other: 0 });
+        const actual = op === 'BDC' ? actualTextNamed(content, operands) : undefined;
+        openActual.push(actual === undefined ? null : { text: actual, start });
         break;
       }
       case 'EMC': {
+        openActual.pop();
         const opened = openMarked.pop();
         if (opened !== undefined) containers.push({ start: opened, end: token.end });
         // A DECORATION IS ITS WHOLE SEQUENCE: one painted path and nothing else, or it is a drawing left as it is.
@@ -795,6 +811,7 @@ function scanContent(
       nextLine(0, -state.leading);
     }
     if (SHOWS.has(op)) {
+      const actualIn = openActual.find((open) => open !== null) ?? undefined;
       const operand = operands.at(-1);
       const elements: (Uint8Array | number)[] =
         operand?.kind === 'array'
@@ -822,6 +839,7 @@ function scanContent(
         positionedAt,
         textObject,
         settings: settings.map(({ start: from, end: to }) => ({ start: from, end: to })),
+        ...(actualIn === undefined ? {} : { actualText: actualIn }),
       });
       if (codes.length > 0) numbered += 1;
       const open = holder();
@@ -856,6 +874,21 @@ function decorationNamed(content: Uint8Array, operands: readonly Token[]): Decor
     if (token.kind === 'name' && token.value === DECORATION_KEY && value?.kind === 'string') {
       return decorationKindOf(new TextDecoder('latin1').decode(value.bytes));
     }
+  }
+  return undefined;
+}
+
+/**
+ * The `/ActualText` a `BDC`'s properties say inline, decoded by the PDF's own rule (`pdfTextString`), or `undefined`.
+ * A property list named from the resources is not read, as {@link decorationNamed} does not read one.
+ */
+function actualTextNamed(content: Uint8Array, operands: readonly Token[]): string | undefined {
+  const properties = operands[1];
+  if (properties?.kind !== 'other' || content[properties.start] !== 0x3c || content[properties.start + 1] !== 0x3c) return undefined;
+  const inside = [...tokenise(content.subarray(properties.start + 2, Math.max(properties.start + 2, properties.end - 2)))];
+  for (const [at, token] of inside.entries()) {
+    const value = inside[at + 1];
+    if (token.kind === 'name' && token.value === 'ActualText' && value?.kind === 'string') return pdfTextString(value.bytes);
   }
   return undefined;
 }

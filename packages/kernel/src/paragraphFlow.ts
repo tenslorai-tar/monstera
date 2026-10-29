@@ -1,6 +1,6 @@
 import { joinAfterLine } from '@monstera/shared';
 
-import { breakOpportunities, graphemeBoundaries } from './lineBreaks.js';
+import { breakOpportunities } from './lineBreaks.js';
 
 /**
  * A block edited as paragraphs of styled words
@@ -285,12 +285,77 @@ export function attribute(lines: readonly FlowLine[], text: string): Attribution
   return { old, text: next, owner, from, texts, changed: next !== old.text };
 }
 
+/**
+ * For each unit of the new words, the unit of the old words it IS, or -1 where it is new: {@link attribute}'s `from`,
+ * with every whole word inside a typed stretch that is an old word of the stretch it replaced given back to that word.
+ *
+ * `attribute` keeps a common prefix and suffix of characters and calls the rest typed, which is what says whose run each
+ * unit is. Which words the page already said is a finer question, and that answer is too coarse for it two ways: a tab
+ * typed before the first word and a word changed at the end make every word between them typed, though nobody touched
+ * them; and the prefix or suffix can end inside a word, so `one two three` made `one two two three` gives the old
+ * `three`'s `t` to the typed `two`. So the question is asked of WHOLE words: a word is said as it stands where every unit
+ * of it is an old unit, in order and unbroken; the words that are not, and the old words between the said ones either
+ * side of them, are matched whole, in order, by the longest common subsequence {@link matchParagraphs} already takes.
+ * A word typed between two old ones is then new however it is spelt, and an old word moved past others is not given
+ * back. White space between words keeps what `attribute` said of it.
+ */
+export function saidUnits(attribution: Attribution): number[] {
+  const { old, text, from } = attribution;
+  const said = [...from];
+  const words = wordsIn(text, 0, text.length);
+  const intact = (word: Word): boolean => {
+    const first = from[word.at] ?? -1;
+    if (first < 0) return false;
+    for (let unit = 1; unit < word.text.length; unit += 1) if (from[word.at + unit] !== first + unit) return false;
+    return true;
+  };
+  let at = 0;
+  while (at < words.length) {
+    const word = words[at];
+    if (word === undefined || intact(word)) {
+      at += 1;
+      continue;
+    }
+    const start = at;
+    for (let each = words[at]; each !== undefined && !intact(each); each = words[at]) at += 1;
+    const group = words.slice(start, at);
+    for (const each of group) for (let unit = 0; unit < each.text.length; unit += 1) said[each.at + unit] = -1;
+    // THE OLD WORDS THE GROUP STANDS FOR: between the said words either side of it.
+    const previous = words[start - 1];
+    const next = words[at];
+    const lo = previous === undefined ? 0 : (from[previous.at + previous.text.length - 1] ?? -1) + 1;
+    const hi = next === undefined ? old.text.length : (from[next.at] ?? old.text.length);
+    if (hi <= lo) continue;
+    const before = wordsIn(old.text, lo, hi);
+    for (const [i, j] of matchParagraphs(before.map((each) => each.text), group.map((each) => each.text))) {
+      const was = before[i];
+      const now = group[j];
+      if (was === undefined || now === undefined) continue;
+      for (let unit = 0; unit < now.text.length; unit += 1) said[now.at + unit] = was.at + unit;
+    }
+  }
+  return said;
+}
+
+/** A word of a text, whole, and where it starts. */
+interface Word {
+  readonly text: string;
+  readonly at: number;
+}
+
+/** The words of `text` from `lo` to `hi`, each with where it starts: what is not white space, whole. */
+function wordsIn(text: string, lo: number, hi: number): Word[] {
+  return [...text.slice(lo, hi).matchAll(/\S+/gu)].map((match) => ({ text: match[0], at: lo + match.index }));
+}
+
 /** A stretch of one paragraph's characters set by one run. */
 export interface Part {
   readonly run: number;
   /** The mark whose style these words take ({@link NO_MARK} for the run's own), ADR-0180. */
   readonly mark: number;
   readonly text: string;
+  /** Where its first unit is in the new words: what tells a word the person typed from one the page already said. */
+  readonly at: number;
 }
 
 /** A word no mark names: set in the style of the run that wrote it. */
@@ -326,15 +391,15 @@ export interface FlowParagraph {
   readonly chunks: readonly Chunk[];
 }
 
-/** Runs of consecutive units with one owner and one mark, as parts. */
-function partsOf(text: string, owners: readonly number[], marks: readonly number[]): Part[] {
+/** Runs of consecutive units with one owner and one mark, as parts; `base` is where `text` starts in the new words. */
+function partsOf(text: string, owners: readonly number[], marks: readonly number[], base: number): Part[] {
   const parts: Part[] = [];
   for (const [at, owner] of owners.entries()) {
     const unit = text[at] ?? '';
     const mark = marks[at] ?? NO_MARK;
     const last = parts.at(-1);
-    if (last?.run === owner && last.mark === mark) parts[parts.length - 1] = { run: owner, mark, text: last.text + unit };
-    else parts.push({ run: owner, mark, text: unit });
+    if (last?.run === owner && last.mark === mark) parts[parts.length - 1] = { ...last, text: last.text + unit };
+    else parts.push({ run: owner, mark, text: unit, at: base + at });
   }
   return parts;
 }
@@ -404,10 +469,11 @@ function chunksOf(text: string, owner: readonly number[], styles: readonly numbe
     const spaces = /\s+$/u.exec(piece)?.[0].length ?? 0;
     const coreEnd = to - spaces;
     const marks = styles.slice(start, end);
-    const core = partsOf(paragraph.slice(from, coreEnd), effective.slice(from, coreEnd), marks.slice(from, coreEnd));
+    const core = partsOf(paragraph.slice(from, coreEnd), effective.slice(from, coreEnd), marks.slice(from, coreEnd), start + from);
     // THE WHOLE WHITE SPACE, in the style of its first run: a space in one run and a tab typed after it in another were
     // two parts, and only the first was kept, so the tab was dropped from the words.
-    const trailParts = spaces === 0 ? [] : partsOf(paragraph.slice(coreEnd, to), effective.slice(coreEnd, to), marks.slice(coreEnd, to));
+    const trailParts =
+      spaces === 0 ? [] : partsOf(paragraph.slice(coreEnd, to), effective.slice(coreEnd, to), marks.slice(coreEnd, to), start + coreEnd);
     const firstTrail = trailParts[0];
     const trail = firstTrail === undefined ? undefined : { ...firstTrail, text: trailParts.map((part) => part.text).join('') };
     chunks.push({ start: start + from, core, trail });
@@ -415,8 +481,12 @@ function chunksOf(text: string, owner: readonly number[], styles: readonly numbe
   return chunks;
 }
 
-/** How wide `text` is when it is set in the style of `run`, with the style `mark` makes of it ({@link NO_MARK}: none). */
-export type Measure = (run: number, mark: number, text: string) => number;
+/**
+ * How wide `text` is when it is set in the style of `run`, with the style `mark` makes of it ({@link NO_MARK}: none). `at`
+ * is where `text` starts in the new words, so a writer can tell a word the person typed from one the page already said,
+ * which may be set in different fonts (operator writer, the owner's font rule).
+ */
+export type Measure = (run: number, mark: number, text: string, at: number) => number;
 
 /** One piece of a line: consecutive words of one run and one mark, which are one object. */
 export interface Piece {
@@ -424,6 +494,8 @@ export interface Piece {
   readonly mark: number;
   readonly text: string;
   readonly width: number;
+  /** Where its first unit is in the new words. */
+  readonly at: number;
 }
 
 /** One line of a paragraph the layout produced. */
@@ -438,63 +510,19 @@ export interface FlowLineOut {
 const WITHIN = 1e-6;
 
 function widthOf(parts: readonly Part[], measure: Measure): number {
-  return parts.reduce((sum, part) => sum + measure(part.run, part.mark, part.text), 0);
+  return parts.reduce((sum, part) => sum + measure(part.run, part.mark, part.text, part.at), 0);
 }
 
-/**
- * The chunk that cannot fit a whole line, as the head that fits and the rest: broken between grapheme clusters, never
- * inside one, and never leaving the head empty.
- */
-function breakWide(chunk: Chunk, limit: number, measure: Measure): { head: Chunk; rest: Chunk | undefined } {
-  const units: { run: number; mark: number; text: string; at: number }[] = [];
-  let offset = 0;
-  for (const part of chunk.core) {
-    const boundaries = [0, ...graphemeBoundaries(part.text), part.text.length];
-    for (let at = 0; at < boundaries.length - 1; at += 1) {
-      const text = part.text.slice(boundaries[at] ?? 0, boundaries[at + 1] ?? part.text.length);
-      units.push({ run: part.run, mark: part.mark, text, at: offset + (boundaries[at] ?? 0) });
-    }
-    offset += part.text.length;
-  }
-  let width = 0;
-  let take = 0;
-  for (const unit of units) {
-    const next = width + measure(unit.run, unit.mark, unit.text);
-    if (take > 0 && next > limit + WITHIN) break;
-    width = next;
-    take += 1;
-  }
-  const headUnits = units.slice(0, take);
-  const restUnits = units.slice(take);
-  const join = (taken: typeof units): Part[] => {
-    const parts: Part[] = [];
-    for (const unit of taken) {
-      const last = parts.at(-1);
-      if (last?.run === unit.run && last.mark === unit.mark) {
-        parts[parts.length - 1] = { run: unit.run, mark: unit.mark, text: last.text + unit.text };
-      } else parts.push({ run: unit.run, mark: unit.mark, text: unit.text });
-    }
-    return parts;
-  };
-  const headLength = headUnits.reduce((sum, unit) => sum + unit.text.length, 0);
-  // NOTHING LEFT: the head is the whole word, and keeps the white space that followed it.
-  if (restUnits.length === 0) return { head: { start: chunk.start, core: join(headUnits), trail: chunk.trail }, rest: undefined };
-  return {
-    head: { start: chunk.start, core: join(headUnits), trail: undefined },
-    rest: { start: chunk.start + headLength, core: join(restUnits), trail: chunk.trail },
-  };
-}
-
-/** The pieces of a line's parts: consecutive parts of one run and one mark are one. */
+/** The pieces of a line's parts: consecutive parts of one run and one mark are one, and begin where the first does. */
 function piecesOf(parts: readonly Part[], measure: Measure): Piece[] {
-  const pieces: { run: number; mark: number; text: string }[] = [];
+  const pieces: { run: number; mark: number; text: string; at: number }[] = [];
   for (const part of parts) {
     const last = pieces.at(-1);
     if (last?.run === part.run && last.mark === part.mark) {
-      pieces[pieces.length - 1] = { run: part.run, mark: part.mark, text: last.text + part.text };
-    } else pieces.push({ run: part.run, mark: part.mark, text: part.text });
+      pieces[pieces.length - 1] = { ...last, text: last.text + part.text };
+    } else pieces.push({ run: part.run, mark: part.mark, text: part.text, at: part.at });
   }
-  return pieces.map((piece) => ({ ...piece, width: measure(piece.run, piece.mark, piece.text) }));
+  return pieces.map((piece) => ({ ...piece, width: measure(piece.run, piece.mark, piece.text, piece.at) }));
 }
 
 /** Where a paragraph's layout begins, and when it may stop. */
@@ -511,9 +539,9 @@ export interface LayOutFrom {
  * Fills lines of a paragraph, greedily, from `from`.
  *
  * A line takes the next word while its width, the spaces between its words and that word's own width, are within the
- * limit; the white space after a line's last word is not kept and not counted. A word wider than a whole line is broken
- * between grapheme clusters, the last resort. Stops when `stopAt` says the line that would start next begins where an
- * old line did.
+ * limit; the white space after a line's last word is not kept and not counted. A word wider than a whole line is set
+ * whole on a line of its own, never broken (ADR-0275). Stops when `stopAt` says the line that would start next begins
+ * where an old line did.
  *
  * @returns the lines, and where the layout stopped (`undefined` when it ran to the end of the paragraph)
  */
@@ -540,7 +568,7 @@ export function layOutParagraph(
     const start = carried?.start ?? chunks[at]?.start ?? paragraph.start;
     if (carried !== undefined) {
       parts.push(carried.part);
-      width += measure(carried.part.run, carried.part.mark, carried.part.text);
+      width += measure(carried.part.run, carried.part.mark, carried.part.text, carried.part.at);
       carried = undefined;
     }
     for (; at < chunks.length; at += 1) {
@@ -551,18 +579,17 @@ export function layOutParagraph(
       // so it is set as the line's start; the next word then joins it as any word joins the one before.
       if (parts.length === 0 && chunk.core.length === 0 && chunk.trail !== undefined) {
         parts.push(chunk.trail);
-        width += measure(chunk.trail.run, chunk.trail.mark, chunk.trail.text);
+        width += measure(chunk.trail.run, chunk.trail.mark, chunk.trail.text, chunk.trail.at);
         continue;
       }
       const word = widthOf(chunk.core, measure);
       if (parts.length === 0) {
+        // A WORD WIDER THAN THE WHOLE LINE is set whole on a line of its own, past the limit: a word is never broken
+        // between its letters (ADR-0275). `planBlock` widens a block's limits to its widest word, so there this only
+        // keeps the rule for a caller that has not.
         if (word > limit + WITHIN) {
-          const { head, rest } = breakWide(chunk, limit, measure);
-          chunks.splice(at, 1, ...(rest === undefined ? [head] : [head, rest]));
-          const split = chunks[at];
-          if (split === undefined) break;
-          parts.push(...split.core);
-          width = widthOf(split.core, measure);
+          parts.push(...chunk.core);
+          width = word;
           at += 1;
           break;
         }
@@ -571,7 +598,7 @@ export function layOutParagraph(
         const ended = chunks[at - 1];
         if (trail !== undefined && tab >= 0 && ended !== undefined) {
           const coreLength = ended.core.reduce((total, part) => total + part.text.length, 0);
-          carried = { part: { ...trail, text: trail.text.slice(tab) }, start: ended.start + coreLength + tab };
+          carried = { part: { ...trail, text: trail.text.slice(tab), at: trail.at + tab }, start: ended.start + coreLength + tab };
         }
         break;
       } else if (trail !== undefined) {
@@ -581,7 +608,7 @@ export function layOutParagraph(
       parts.push(...chunk.core);
       width += word;
       trail = chunk.trail;
-      trailWidth = trail === undefined ? 0 : measure(trail.run, trail.mark, trail.text);
+      trailWidth = trail === undefined ? 0 : measure(trail.run, trail.mark, trail.text, trail.at);
     }
     lines.push({ start, pieces: piecesOf(parts, measure), width });
     number += 1;
@@ -687,107 +714,125 @@ export function planBlock(
 ): BlockPlan {
   const attribution = attribute(lines, text);
   const { old, from } = attribution;
-  const rows: Row[] = [];
   const styles = styleOfUnits(attribution, formatting);
-  /** The old paragraphs a new one already stands for: a split gives the second half to nobody, it is set afresh. */
-  const claimed = new Set<number>();
   /** The old paragraph the paragraph before was set in, which a paragraph made only of typed words takes too. */
   let shapedBefore = 0;
-  for (const [place, paragraph] of paragraphsOf(attribution, formatting).entries()) {
-    const { start, end } = paragraph;
-    const opens = rows.length > 0;
+  const paragraphs = paragraphsOf(attribution, formatting).map((paragraph, place) => {
     // THE OLD PARAGRAPH THIS ONE IS, by its first unit that was not typed: the words were written over it or in front of
     // it, and its lines are the ones to keep or set again.
     let anchor = -1;
-    for (let unit = start; unit < end && anchor < 0; unit += 1) anchor = from[unit] ?? -1;
+    for (let unit = paragraph.start; unit < paragraph.end && anchor < 0; unit += 1) anchor = from[unit] ?? -1;
     const heldAt = anchor < 0 ? -1 : old.paragraphs.findIndex((candidate) => anchor >= candidate.start && anchor <= candidate.end);
     // THE EDGES IT IS SET IN are that old paragraph's — the half of one Enter split included, as the editor's own paragraph
     // after a split keeps the one it was split from — or, for words all typed, the paragraph's before it.
     const shapedBy = heldAt >= 0 ? heldAt : shapedBefore;
     shapedBefore = shapedBy;
-    const limitsHere = typeof limits === 'function' ? limits(place, shapedBy) : limits;
-    if (paragraph.chunks.length === 0) {
-      rows.push({ kind: 'blank', opens, paragraph: place });
-      continue;
-    }
-    // A PARAGRAPH THE PERSON FORMATTED OR RE-SET is laid out again whole, where an unformatted one keeps what it can.
-    const formatted = formatting?.forced?.has(place) === true || styles.slice(start, end).some((style) => style !== NO_MARK);
-    const held = heldAt < 0 || claimed.has(heldAt) ? undefined : old.paragraphs[heldAt];
-    if (heldAt >= 0 && held !== undefined) claimed.add(heldAt);
-    // WHERE THE PARAGRAPH FIRST DIFFERS FROM THE OLD ONE, in new units: the first unit that is not the next old one, or
-    // the end where the old paragraph goes on past it.
-    let change = start;
-    if (held !== undefined && !formatted) {
-      while (change < end && from[change] === held.start + (change - start)) change += 1;
-    }
-    const identical = held !== undefined && !formatted && change === end && held.start + (end - start) === held.end;
-    if (identical) {
-      for (let line = held.firstLine; line <= held.lastLine; line += 1) rows.push({ kind: 'old', line });
-      continue;
-    }
+    return { paragraph, heldAt, shapedBy, limits: typeof limits === 'function' ? limits(place, shapedBy) : limits };
+  });
+  // A WORD WIDER THAN ITS LINE WIDENS THE WHOLE BLOCK BY WHAT IT OVERFLOWS (ADR-0275): a word is never broken, and the
+  // editor's surface is at least as wide as its longest word with that word's paragraph's indent, so where one word laid
+  // out does not fit, every paragraph is laid out again with that much more width, and every line wraps where the person
+  // sees it. ONLY WORDS LAID OUT ARE MEASURED: a writer's measure of a word its fonts cannot set names its letters for a
+  // face, so measuring the words of lines kept as they were refused a move of a block whose font has no ToUnicode
+  // (measured 2026-10-29, `proof:editobject`'s font-kind fixtures, when every word was measured ahead of the plan).
+  const first = planWith(0);
+  return { attribution, rows: (first.overflow > 0 ? planWith(first.overflow) : first).rows };
 
-    // THE OLD LINE THE CHANGE IS IN, and one above it when the change is at its first unit, since the line above may
-    // now take a word.
-    let relaidFrom = -1;
-    let begin = 0;
-    let lineNumber = 0;
-    if (held !== undefined) {
-      const reach = change === start ? held.start : (from[change - 1] ?? held.start) + 1;
-      let line = Math.max(held.firstLine, lineAt(old, Math.min(reach, held.end)));
-      if (reach <= (old.lineStarts[line] ?? 0) && line > held.firstLine) line -= 1;
-      // A LINE ENDS WHERE A CHUNK STARTS, or the layout would begin in the middle of a word: back up to one that does.
-      const starts = new Set(paragraph.chunks.map((chunk) => chunk.start));
-      while (line > held.firstLine && !starts.has(start + (old.lineStarts[line] ?? 0) - held.start)) line -= 1;
-      relaidFrom = line;
-      begin = Math.max(
-        0,
-        paragraph.chunks.findIndex((chunk) => chunk.start === start + (old.lineStarts[line] ?? 0) - held.start),
-      );
-      lineNumber = line - held.firstLine;
-      for (let above = held.firstLine; above < line; above += 1) rows.push({ kind: 'old', line: above });
-    }
+  /** The rows with every limit `extra` wider, and the most a laid-out line overflows its own limit by. */
+  function planWith(extra: number): { readonly rows: Row[]; readonly overflow: number } {
+    const rows: Row[] = [];
+    /** The old paragraphs a new one already stands for: a split gives the second half to nobody, it is set afresh. */
+    const claimed = new Set<number>();
+    let overflow = 0;
+    for (const [place, { paragraph, heldAt, shapedBy, limits: given }] of paragraphs.entries()) {
+      const { start, end } = paragraph;
+      const opens = rows.length > 0;
+      const limitsHere = extra === 0 ? given : { first: given.first + extra, rest: given.rest + extra };
+      if (paragraph.chunks.length === 0) {
+        rows.push({ kind: 'blank', opens, paragraph: place });
+        continue;
+      }
+      // A PARAGRAPH THE PERSON FORMATTED OR RE-SET is laid out again whole, where an unformatted one keeps what it can.
+      const formatted = formatting?.forced?.has(place) === true || styles.slice(start, end).some((style) => style !== NO_MARK);
+      const held = heldAt < 0 || claimed.has(heldAt) ? undefined : old.paragraphs[heldAt];
+      if (heldAt >= 0 && held !== undefined) claimed.add(heldAt);
+      // WHERE THE PARAGRAPH FIRST DIFFERS FROM THE OLD ONE, in new units: the first unit that is not the next old one, or
+      // the end where the old paragraph goes on past it.
+      let change = start;
+      if (held !== undefined && !formatted) {
+        while (change < end && from[change] === held.start + (change - start)) change += 1;
+      }
+      const identical = held !== undefined && !formatted && change === end && held.start + (end - start) === held.end;
+      if (identical) {
+        for (let line = held.firstLine; line <= held.lastLine; line += 1) rows.push({ kind: 'old', line });
+        continue;
+      }
 
-    // A LINE THAT STARTS ON AN OLD LINE'S FIRST UNIT, with the rest of the paragraph exactly as it was, ends the layout.
-    const resumes = (offset: number): boolean => {
-      if (held === undefined || formatted) return false;
-      const origin = from[offset] ?? -1;
-      if (origin < 0 || !old.lineStarts.includes(origin) || origin <= (old.lineStarts[relaidFrom] ?? 0)) return false;
-      for (let unit = offset; unit < end; unit += 1) {
-        if (from[unit] !== origin + (unit - offset)) return false;
+      // THE OLD LINE THE CHANGE IS IN, and one above it when the change is at its first unit, since the line above may
+      // now take a word.
+      let relaidFrom = -1;
+      let begin = 0;
+      let lineNumber = 0;
+      if (held !== undefined) {
+        const reach = change === start ? held.start : (from[change - 1] ?? held.start) + 1;
+        let line = Math.max(held.firstLine, lineAt(old, Math.min(reach, held.end)));
+        if (reach <= (old.lineStarts[line] ?? 0) && line > held.firstLine) line -= 1;
+        // A LINE ENDS WHERE A CHUNK STARTS, or the layout would begin in the middle of a word: back up to one that does.
+        const starts = new Set(paragraph.chunks.map((chunk) => chunk.start));
+        while (line > held.firstLine && !starts.has(start + (old.lineStarts[line] ?? 0) - held.start)) line -= 1;
+        relaidFrom = line;
+        begin = Math.max(
+          0,
+          paragraph.chunks.findIndex((chunk) => chunk.start === start + (old.lineStarts[line] ?? 0) - held.start),
+        );
+        lineNumber = line - held.firstLine;
+        for (let above = held.firstLine; above < line; above += 1) rows.push({ kind: 'old', line: above });
       }
-      return origin + (end - offset) === held.end;
-    };
-    const { lines: laid, stoppedAt } = layOutParagraph(paragraph, measure, limitsHere, {
-      chunk: begin,
-      line: lineNumber,
-      stopAt: resumes,
-    });
-    let rejoin = held === undefined ? -1 : held.lastLine + 1;
-    if (stoppedAt !== undefined) rejoin = lineAt(old, from[stoppedAt] ?? 0);
-    for (const [at, line] of laid.entries()) {
-      const stands = relaidFrom < 0 ? -1 : relaidFrom + at < rejoin ? relaidFrom + at : -1;
-      // A FORMATTED OR RE-SET PARAGRAPH IS NEVER KEPT by saying the same words: where its lines stand is what changed.
-      if (stands >= 0 && !formatted && sameLine(lines[stands], line)) rows.push({ kind: 'old', line: stands });
-      else {
-        rows.push({
-          kind: 'new',
-          pieces: line.pieces,
-          width: line.width,
-          first: lineNumber + at === 0,
-          // THE PARAGRAPH'S LAST LINE, unless the layout stopped where the old lines resume, which then end it.
-          last: at === laid.length - 1 && stoppedAt === undefined,
-          opens: at === 0 && relaidFrom < 0 && opens,
-          replaces: stands,
-          paragraph: place,
-          shapedBy,
-        });
+
+      // A LINE THAT STARTS ON AN OLD LINE'S FIRST UNIT, with the rest of the paragraph exactly as it was, ends the layout.
+      const resumes = (offset: number): boolean => {
+        if (held === undefined || formatted) return false;
+        const origin = from[offset] ?? -1;
+        if (origin < 0 || !old.lineStarts.includes(origin) || origin <= (old.lineStarts[relaidFrom] ?? 0)) return false;
+        for (let unit = offset; unit < end; unit += 1) {
+          if (from[unit] !== origin + (unit - offset)) return false;
+        }
+        return origin + (end - offset) === held.end;
+      };
+      const { lines: laid, stoppedAt } = layOutParagraph(paragraph, measure, limitsHere, {
+        chunk: begin,
+        line: lineNumber,
+        stopAt: resumes,
+      });
+      let rejoin = held === undefined ? -1 : held.lastLine + 1;
+      if (stoppedAt !== undefined) rejoin = lineAt(old, from[stoppedAt] ?? 0);
+      for (const [at, line] of laid.entries()) {
+        // A LINE PAST ITS LIMIT is a word wider than it, set whole on a line of its own (`layOutParagraph`).
+        overflow = Math.max(overflow, line.width - (lineNumber + at === 0 ? limitsHere.first : limitsHere.rest));
+        const stands = relaidFrom < 0 ? -1 : relaidFrom + at < rejoin ? relaidFrom + at : -1;
+        // A FORMATTED OR RE-SET PARAGRAPH IS NEVER KEPT by saying the same words: where its lines stand is what changed.
+        if (stands >= 0 && !formatted && sameLine(lines[stands], line)) rows.push({ kind: 'old', line: stands });
+        else {
+          rows.push({
+            kind: 'new',
+            pieces: line.pieces,
+            width: line.width,
+            first: lineNumber + at === 0,
+            // THE PARAGRAPH'S LAST LINE, unless the layout stopped where the old lines resume, which then end it.
+            last: at === laid.length - 1 && stoppedAt === undefined,
+            opens: at === 0 && relaidFrom < 0 && opens,
+            replaces: stands,
+            paragraph: place,
+            shapedBy,
+          });
+        }
+      }
+      if (stoppedAt !== undefined && held !== undefined) {
+        for (let line = rejoin; line <= held.lastLine; line += 1) rows.push({ kind: 'old', line });
       }
     }
-    if (stoppedAt !== undefined && held !== undefined) {
-      for (let line = rejoin; line <= held.lastLine; line += 1) rows.push({ kind: 'old', line });
-    }
+    return { rows, overflow: overflow > WITHIN ? overflow : 0 };
   }
-  return { attribution, rows };
 }
 
 /** Whether a new line says what an old one did, run for run. */

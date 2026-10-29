@@ -10,6 +10,7 @@ import {
   oldWordsOf,
   paragraphsOf,
   planBlock,
+  saidUnits,
 } from './paragraphFlow.js';
 
 /** Six points a character in every run but 7, the bold one, which sets eight. */
@@ -151,9 +152,33 @@ describe('the chunks a line is filled with (ADR-0179 Decision 4)', () => {
     const lines = block([['foo', 'bar baz']], []);
     const [paragraph] = paragraphsOf(attribute(lines, 'foobar baz'));
     expect(paragraph?.chunks[0]?.core).toStrictEqual([
-      { run: 1, mark: NO_MARK, text: 'foo' },
-      { run: 2, mark: NO_MARK, text: 'bar' },
+      { run: 1, mark: NO_MARK, text: 'foo', at: 0 },
+      { run: 2, mark: NO_MARK, text: 'bar', at: 3 },
     ]);
+  });
+});
+
+describe('saidUnits: which units of the new words the page already said', () => {
+  const said = (old: string, text: string): string => {
+    const units = saidUnits(attribute(block([[old]], []), text));
+    // EACH UNIT AS THE OLD CHARACTER IT IS, or `_` where it is new.
+    return Array.from(text, (_, at) => ((units[at] ?? -1) < 0 ? '_' : old[units[at] ?? 0])).join('');
+  };
+
+  it('gives back the words between a tab typed before them and a word changed after them, which nobody touched', () => {
+    // CONTROL, the attribution alone: a common prefix and suffix only, so every word between the two changes is typed.
+    const from = attribute(block([['aaa bbb ccc ddd']], []), '\taaa bbb ccc xdd').from;
+    expect(from.slice(1, 12).every((unit) => unit < 0)).toBe(true);
+    // THE SPACES between them stay as `attribute` said: typed, which a space is drawn as in any font.
+    expect(said('aaa bbb ccc ddd', '\taaa bbb ccc xdd')).toBe('_aaa_bbb_ccc____');
+  });
+
+  it('calls a word typed between two old ones new, however it is spelt, and keeps the old word the attribution cut', () => {
+    // CONTROL, the attribution alone: its prefix ends inside `three`, whose `t` it gives to the typed `two`.
+    const from = attribute(block([['one two three']], []), 'one two two three').from;
+    expect([from[8], from[12]]).toStrictEqual([8, -1]);
+    expect(said('one two three', 'one two two three')).toBe('one two ____three');
+    expect(said('one two three', 'two one two three')).toBe('____one two three');
   });
 });
 
@@ -256,9 +281,14 @@ describe('layOutParagraph', () => {
     expect(laid('aaaaaa bbbbbb', 72)).toStrictEqual(['aaaaaa bbbbb'.slice(0, 6), 'bbbbbb']);
   });
 
-  it('breaks a word wider than a whole line between graphemes, the last resort, and never leaves a line empty', () => {
-    expect(laid('abcdefghijklmnopqrstuvwxy')).toStrictEqual(['abcdefghijkl', 'mnopqrstuvwx', 'y']);
-    expect(laid('abc', 1)).toStrictEqual(['a', 'b', 'c']);
+  // ADR-0275, which replaces ADR-0179's last resort: that case broke this same word into "abcdefghijkl", "mnopqrstuvwx" and
+  // "y", and "abc" at a limit of 1 into one letter a line, which is how a reference marker's typed words were chopped two
+  // letters to a line.
+  it('sets a word wider than a whole line whole, on a line of its own, and never breaks it', () => {
+    expect(laid('abcdefghijklmnopqrstuvwxy')).toStrictEqual(['abcdefghijklmnopqrstuvwxy']);
+    expect(laid('abc', 1)).toStrictEqual(['abc']);
+    // BETWEEN WORDS THAT FIT: the line before it ends, and the next word starts the line after it.
+    expect(laid('aa abcdefghijklmnopq bb')).toStrictEqual(['aa', 'abcdefghijklmnopq', 'bb']);
   });
 
   it('measures a bold run at its own width: a bold word that is wider wraps where a regular one would fit', () => {
@@ -341,6 +371,37 @@ describe('planBlock: a paragraph reflows from its first changed line and stops w
     expect(first?.kind === 'new' ? first.pieces.map((piece) => piece.text).join('') : '').toBe('aaa bbb dd');
     // AND IN THE RUNS THAT WROTE THEM: the first words in line 1's run, "dd" in the run of the line it came from.
     expect(first?.kind === 'new' ? first.pieces.map((piece) => piece.run) : []).toStrictEqual([1, 3]);
+  });
+
+  // ADR-0275 Decision 2: the block's widest word is the least every line may fill, as the editor's surface is at least as
+  // wide as its longest word. This file's measure is six points a character, so the sixteen-letter word is 96 points.
+  it('widens every line of a block to its widest word, so the lines wrap where the editor shows them', () => {
+    const lines = block([['aaa bbb ccc']], []);
+    const plan = planBlock(lines, 'aaa bbb ccc ddd abcdefghijklmnop', measure, LIMITS);
+    expect(said(plan.rows)).toStrictEqual(['new 1:aaa bbb ccc ddd', 'new 1:abcdefghijklmnop']);
+    // CONTROL: with no word wider than the measure, the same words wrap at 72 points, as they always have.
+    const narrow = planBlock(lines, 'aaa bbb ccc ddd abcdefghijkl', measure, LIMITS);
+    expect(said(narrow.rows)).toStrictEqual(['old 0', 'new 1:ddd', 'new 1:abcdefghijkl']);
+  });
+
+  /**
+   * A WRITER'S MEASURE NAMES WHAT IT CANNOT SET: the operator writer's records the letters no font of the page carries,
+   * for a face, so a word measured is a word that may refuse the edit. Measuring every word ahead of the plan refused a
+   * move of a block in a font with no ToUnicode, whose lines are only carried (cloud run 25, `proof:editobject`).
+   */
+  it('measures only the words it lays out: none of a paragraph kept as it was', () => {
+    const lines = block([['kept paragraph here'], ['first line of the next'], ['and its second line']], [false, true]);
+    const asked: string[] = [];
+    const recording: Measure = (run, mark, text, at) => {
+      asked.push(text);
+      return measure(run, mark, text, at);
+    };
+    planBlock(lines, 'kept paragraph here\nfirst line of the next\nand its second line abcdefghijklmnop', recording, LIMITS);
+    const measured = asked.join(' ');
+    // THE LAID-OUT LINE'S WORDS, the widening's own included: the plan ran, and asked.
+    expect(measured).toContain('abcdefghijklmnop');
+    // CONTROL: nothing of the paragraph left as it was, whose lines are kept without a layout.
+    for (const word of ['kept', 'paragraph', 'here']) expect(measured).not.toContain(word);
   });
 
   it('answers no rows for a paragraph that was deleted, and keeps the others’ lines', () => {

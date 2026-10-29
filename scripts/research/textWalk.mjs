@@ -1016,6 +1016,43 @@ async function addThenEscape(words, family) {
   return { before, ended, after: ended ? undefined : await editorState(), ms: Date.now() - started };
 }
 
+await step('25a: a reference marker under a link, opened, End, words typed past its edge: the box grows, the press away writes them, and the saved file reads them whole', async () => {
+  // A MARKER ABOUT 17 PT WIDE under a link, beside a paragraph, as the owner's corpus page had it (cloud run 25, 25a):
+  // built here, in Helvetica at 6 pt, the link an annotation over it.
+  const built = await PDFDocument.create();
+  const sheet = built.addPage([612, 792]);
+  const helvetica = await built.embedFont(StandardFonts.Helvetica);
+  sheet.drawText('A paragraph that cites its sources, set at ten points, beside its markers.', { x: 72, y: 700, size: 10, font: helvetica });
+  sheet.drawText('[13] [1]', { x: 300, y: 670, size: 6, font: helvetica });
+  const width = helvetica.widthOfTextAtSize('[13] [1]', 6);
+  const link = built.context.register(
+    built.context.obj({ Type: 'Annot', Subtype: 'Link', Rect: [300, 668, 300 + width, 676], Border: [0, 0, 0], A: { S: 'URI', URI: PDFString.of('https://example.org/13') } }),
+  );
+  sheet.node.set(PDFName.of('Annots'), built.context.obj([link]));
+  const markers = join(output, 'reference-marker.pdf');
+  await writeFile(markers, await built.save());
+  await section('Edit');
+  await open(markers);
+  await section('Edit');
+  await ensureEditText();
+  const outline = page.getByRole('button', { name: 'Edit “[13] [1]”' });
+  const before = await outline.boundingBox();
+  if (before === null) throw new Error('no outline over the marker');
+  // TWO PRESSES, as a hand opens it: the box, then the caret in its words.
+  await openBlock(outline, 'middle');
+  await page.keyboard.press('End');
+  await page.keyboard.type(' with added words', { delay: 60 });
+  // THE BOX GROWS WITH THE WORDS (ADR-0275): its outline reaches past the marker's old edge.
+  const grown = await frame().boundingBox();
+  expect(grown?.width ?? 0, 'the open box’s width after typing').toBeGreaterThan(before.width * 2);
+  expect(await pressAway(20, 20), 'the editor said something at the press away').toStrictEqual([]);
+  await expect(editor()).toHaveCount(0);
+  // READ BACK by PDF.js from the saved file: every word, whole and in order.
+  const words = (await savedWords(await savedCopy('reference-marker-saved.pdf')))[0] ?? '';
+  expect(words.replace(/\s+/gu, ' ')).toContain('[13] [1] with added words');
+  return { before: before.width, grown: grown?.width };
+});
+
 await step('20. W2: Add text with a font chosen in the Properties panel still ends with Escape; a box with no font first is the control', async () => {
   // THE CONTROL FIRST, AT THE SAME POINT OF THE WALK: if this box will not end either, the font is not the cause, and the
   // readings say what is (a write that never answered reads `busy: "true"`). Measured 2026-10-12: Ctrl+Z and Ctrl+Y sent
