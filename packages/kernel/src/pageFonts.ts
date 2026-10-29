@@ -258,8 +258,9 @@ export function pageFonts(leaf: PDFObject, standard: StandardFontTables): Readon
   if (!dictionary.isDictionary()) return fonts;
   // EACH FONT OBJECT READ ONCE, whatever number of names the page gives it: a page pdf-lib wrote names its font afresh
   // for every line drawn, and the text walk's dense page (L6) named one Helvetica 39,201 times, each read again — its
-  // encoding, widths and ToUnicode — which was five of a heading edit's eleven seconds here (measured 2026-10-27, the
-  // operator writer on that page in Node). A name is still its own entry, read from the same object.
+  // encoding, widths and ToUnicode — which was 5.1 of a heading edit's 14.7 seconds (measured 2026-10-27, the operator
+  // writer's write alone on that page in Node on Linux, commit ffb388f1). A name is still its own entry, read from the
+  // same object.
   const once = new Map<number, PageFont>();
   dictionary.forEach((value, key) => {
     if (typeof key !== 'string') return;

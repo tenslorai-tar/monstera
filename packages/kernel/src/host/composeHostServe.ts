@@ -44,7 +44,7 @@ const installedPath = process.argv[5] === undefined || process.argv[5].length ==
 
 /**
  * The catalogue the composers set text from, READ ON FIRST USE and kept: an Optimize or an image import never needs
- * it, and twenty-one faces read once are cheaper than a read per import. A folder that holds no face is a host started
+ * it, and the bundled faces read once are cheaper than a read per import. A folder that holds no face is a host started
  * without its fonts — a fault, reported as one, never an answer about the person's file.
  */
 let catalogue: FaceSource | null = null;

@@ -15,7 +15,8 @@
  * handed) and a digest that differs. The folder is checked as a
  * WHOLE tree (`pinnedTree.mjs`): a font that is in it is a font the resolver embeds, so a file the table does not name
  * is removed and the run fails, the same rule that keeps an extra DLL out of PDFium's folder. Nothing here is
- * committed: the set is 9,965,868 bytes and the commit hook refuses files over 5 MB for the same reason.
+ * committed: the set is 15,286,016 bytes in 22 files (the pins below, summed 2026-10-29) and the commit hook refuses
+ * files over 5 MB for the same reason.
  *
  * ## The licence texts are committed, and checked offline on every run
  *

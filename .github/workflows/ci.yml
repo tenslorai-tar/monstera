@@ -342,7 +342,8 @@ jobs:
         run: >
           node scripts/ci/annotate.mjs scripts/provision/pdfium.proof.mjs --require-pdfium
 
-      # The bundled open fonts (ADR-0172): twenty-one files, 9,965,868 bytes, from one pinned google/fonts commit,
+      # The bundled open fonts (ADR-0172): twenty-two files, 15,286,016 bytes (summed from the pins in
+      # scripts/provision/fonts.mjs, 2026-10-29), from one pinned google/fonts commit and GNU Unifont's release folder,
       # each verified by SHA-256 and the folder checked as a whole tree, since a font in it is one the resolver
       # embeds. Both legs: the composers and the editor's proofs read these faces.
       # THE FONTS ARE CACHED, keyed on the provisioner that holds their pins, so a run downloads them only when a pin
