@@ -1,7 +1,7 @@
 import { type LineMatch, findInLines, toPdf, viewportPoint } from '@monstera/shared';
 import { type ReactElement, useEffect, useLayoutEffect, useRef } from 'react';
 
-import { exactCaretOf, holdAnchorAtPress } from './pressAnchor.js';
+import { exactCaretOf, holdAnchorAtPress, withinClickWobble } from './pressAnchor.js';
 import type { OverlayPage } from './annotations/annotationSpace.js';
 import { engineBoxOnScreen, overlayTransform } from './annotations/annotationSpace.js';
 import { type HighlightPainter, type SearchHighlight, sharedPainter } from './searchHighlight.js';
@@ -239,13 +239,6 @@ function selectedLines(range: Range, layer: Element): { left: number; top: numbe
 }
 
 /**
- * How far a press may move, across and down, in CSS pixels, and still be a click: Windows' drag rectangle, whose default
- * is 4 pixels each way (`SM_CXDRAG` and `SM_CYDRAG`, Microsoft's `GetSystemMetrics` documentation), the distance a
- * platform drag must go before it begins.
- */
-const CLICK_WOBBLE_PX = 4;
-
-/**
  * Keeps a drag's selection on the page's text anchored where the press put it (`holdAnchorAtPress`, the mechanism and
  * its repair), and answers a press on blank space itself.
  *
@@ -274,7 +267,7 @@ export function holdPressedAnchor(root: HTMLElement): () => void {
     // click, and a click on blank space selects nothing. A hand's 1 to 2 px drift from a gap between lines reached the next
     // line's letters and selected one character (measured on the owner's page on Windows, 2026-10-28, `selectProbe`).
     if (!blank.dragging) {
-      if (Math.abs(event.clientX - blank.x) < CLICK_WOBBLE_PX && Math.abs(event.clientY - blank.y) < CLICK_WOBBLE_PX) {
+      if (withinClickWobble(blank, { x: event.clientX, y: event.clientY })) {
         selection.removeAllRanges();
         return;
       }

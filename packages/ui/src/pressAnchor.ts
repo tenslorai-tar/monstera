@@ -44,21 +44,43 @@
  * set, so neither is held; `PointerEvent.detail` is 0, so the click count is read from `mousedown`, which follows. A
  * touch selects by a long press, through none of this path.
  *
+ * ## A click's wobble is no drag
+ *
+ * Chromium selects as soon as a held pointer crosses a character's midpoint, however little it moved: a hand's click that
+ * drifts a pixel or two sideways across a narrow letter's middle selected that letter, so the click chose a letter where
+ * the person meant a caret (the owner's decision, 2026-10-27; *t* is 2.56 px wide on Linux CI and 3.02 on Windows CI,
+ * measured by cloud run 21 at 7e784d57). Until the pointer leaves {@link CLICK_WOBBLE_PX} about the press, the press is
+ * a click, and anything the browser selected meanwhile is put back to the press's caret.
+ *
  * @param caretOf the press's own caret, or `null` for a press this surface does not hold
  * @returns the cleanup that removes every listener this added
  */
 export function holdAnchorAtPress(root: HTMLElement, caretOf: (event: PointerEvent) => { readonly node: Node; readonly offset: number } | null): () => void {
   const owner = root.ownerDocument;
   let press: { readonly node: Node; readonly offset: number } | undefined;
+  /** Where the press went down, on the window. */
+  let pressedAt: { readonly x: number; readonly y: number } | undefined;
   /**
-   * Whether the pointer has moved with the button held since the press. ONLY A DRAG is repaired: the collapse above
-   * happens on drag events, and a caret a surface places itself during a press (the editor's double press puts it at the
-   * point) is not the platform's to undo. Re-anchored on any change, that caret became a range from the press, measured
-   * 2026-10-27 in the editor: two presses that open a block left *[4]* selected instead of a caret before it.
+   * Whether the pointer has left the click's wobble with the button held since the press. ONLY A DRAG is repaired: the
+   * collapse above happens on drag events, and a caret a surface places itself during a press (the editor's double press
+   * puts it at the point) is not the platform's to undo. Re-anchored on any change, that caret became a range from the
+   * press, measured 2026-10-27 in the editor: two presses that open a block left *[4]* selected instead of a caret before
+   * it.
    */
   let dragging = false;
+  /** Whether the pointer has moved with the button held but stayed inside the wobble: a click, whose range is undone. */
+  let wobbling = false;
   const moved = (event: PointerEvent): void => {
-    if (press !== undefined && (event.buttons & 1) !== 0) dragging = true;
+    if (press === undefined || pressedAt === undefined || (event.buttons & 1) === 0 || dragging) return;
+    if (withinClickWobble(pressedAt, { x: event.clientX, y: event.clientY })) wobbling = true;
+    else dragging = true;
+  };
+  /** Puts a range the browser made during a click's wobble back to the press's caret. */
+  const unwobble = (): void => {
+    if (!wobbling || dragging || press?.node.isConnected !== true) return;
+    const selection = owner.getSelection();
+    if (selection === null || selection.isCollapsed) return;
+    selection.collapse(press.node, press.offset);
   };
 
   /**
@@ -78,7 +100,10 @@ export function holdAnchorAtPress(root: HTMLElement, caretOf: (event: PointerEve
   };
 
   const reanchor = (): void => {
-    if (!dragging) return;
+    if (!dragging) {
+      unwobble();
+      return;
+    }
     // A LINE REPLACED UNDER THE DRAG takes its press with it: a detached node is no anchor.
     if (press?.node.isConnected !== true) return;
     const selection = owner.getSelection();
@@ -92,8 +117,16 @@ export function holdAnchorAtPress(root: HTMLElement, caretOf: (event: PointerEve
   };
   const release = (): void => {
     press = undefined;
+    pressedAt = undefined;
     dragging = false;
+    wobbling = false;
     owner.removeEventListener('selectionchange', reanchor);
+  };
+  // A CLICK LET GO is undone at once as well: `selectionchange` is a queued task, so the range the last wobble made may
+  // not have been reported before the button comes up.
+  const letGo = (): void => {
+    unwobble();
+    release();
   };
   const pressed = (event: PointerEvent): void => {
     release();
@@ -101,6 +134,7 @@ export function holdAnchorAtPress(root: HTMLElement, caretOf: (event: PointerEve
     const caret = caretOf(event);
     if (caret?.node.nodeType !== Node.TEXT_NODE || !root.contains(caret.node)) return;
     press = caret;
+    pressedAt = { x: event.clientX, y: event.clientY };
     owner.addEventListener('selectionchange', reanchor);
   };
   const counted = (event: MouseEvent): void => {
@@ -112,16 +146,29 @@ export function holdAnchorAtPress(root: HTMLElement, caretOf: (event: PointerEve
   // ON THE DOCUMENT, so a release anywhere ends the press and a drag past the root still counts: a drag routinely ends
   // off the page.
   owner.addEventListener('pointermove', moved, true);
-  owner.addEventListener('mouseup', release, true);
+  owner.addEventListener('mouseup', letGo, true);
   owner.addEventListener('pointercancel', release, true);
   return (): void => {
     release();
     owner.removeEventListener('pointermove', moved, true);
     root.removeEventListener('pointerdown', pressed);
     root.removeEventListener('mousedown', counted);
-    owner.removeEventListener('mouseup', release, true);
+    owner.removeEventListener('mouseup', letGo, true);
     owner.removeEventListener('pointercancel', release, true);
   };
+}
+
+/**
+ * How far a press may move, across and down, in CSS pixels, and still be a click: Windows' drag rectangle, whose default
+ * is 4 pixels each way (`SM_CXDRAG` and `SM_CYDRAG`, Microsoft's `GetSystemMetrics` documentation), the distance a
+ * platform drag must go before it begins. The one threshold for every press on text: on a line's letters
+ * ({@link holdAnchorAtPress}), in the editor's words, and on the page's blank space (`holdPressedAnchor`).
+ */
+export const CLICK_WOBBLE_PX = 4;
+
+/** Whether a held pointer at `to` is still inside the click's wobble about the press at `from`. */
+export function withinClickWobble(from: { readonly x: number; readonly y: number }, to: { readonly x: number; readonly y: number }): boolean {
+  return Math.abs(to.x - from.x) < CLICK_WOBBLE_PX && Math.abs(to.y - from.y) < CLICK_WOBBLE_PX;
 }
 
 /** The caret at a press's exact point, the browser's own hit test; `null` in an engine without it (happy-dom). */
