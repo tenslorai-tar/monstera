@@ -53,7 +53,10 @@ afterEach(() => {
 });
 
 /** The layer over BLOCK with its box selected by a first press, every commit kept with its formatting. */
-function opened(commit: () => Promise<BlockCommit> = () => Promise.resolve('written')) {
+function opened(
+  commit: () => Promise<BlockCommit> = () => Promise.resolve('written'),
+  faces: () => Promise<typeof NO_BLOCK_FACES> = () => Promise.resolve(NO_BLOCK_FACES),
+) {
   const onCommit = vi.fn((_block: TextBlock, _text: string, _read: unknown, _formatting?: BlockFormatting) => commit());
   const onHolding = vi.fn();
   const view = render(
@@ -66,7 +69,7 @@ function opened(commit: () => Promise<BlockCommit> = () => Promise.resolve('writ
         onLeave={vi.fn()}
         page={0}
         paperAt={() => undefined}
-        blockFaces={() => Promise.resolve(NO_BLOCK_FACES)}
+        blockFaces={faces}
       />
     </I18nProvider>,
   );
@@ -279,5 +282,78 @@ describe('a write that rejects frees the editor (CR-COR-13)', () => {
       reject(new Error('the host went away'));
     });
     expect(onHolding).toHaveBeenLastCalledWith(undefined);
+  });
+});
+
+/*
+ * LETTERS TYPED WHILE THE PRESS THAT PUT THE CARET WAITS FOR THE FACES (C1b). The box selects its whole block, and the
+ * press that turns it into a caret reached the store only through the browser's queued `selectionchange`; every way the
+ * held press could fail to be placed again then typed the letters over the whole block. Measured on CI's Windows runner
+ * at 53cbe658 (`textFirstClick.pw.ts`): a three-line heading became `XYZ`. Here the faces are held back by hand, the
+ * letters arrive before any `selectionchange`, and happy-dom has no `caretPositionFromPoint`.
+ */
+describe('letters typed while a press waits for the faces (C1b)', () => {
+  /** The layer with its box selected, the read on open held until `answer` is called. */
+  function heldFaces() {
+    let answer: (() => void) | undefined;
+    const made = opened(
+      undefined,
+      () =>
+        new Promise((resolve) => {
+          answer = () => {
+            resolve(NO_BLOCK_FACES);
+          };
+        }),
+    );
+    const settle = async () => {
+      await act(async () => {
+        answer?.();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    };
+    /** The press that turns the box into a caret, then letters typed before the browser said where its caret is. */
+    const pressAndType = (letters: string) => {
+      act(() => {
+        fireEvent.mouseDown(made.surface(), { detail: 1, clientX: 40, clientY: 7 });
+      });
+      act(() => {
+        for (const letter of letters) {
+          made.surface().dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: letter, bubbles: true, cancelable: true }));
+        }
+      });
+    };
+    return { ...made, settle, pressAndType };
+  }
+
+  it('go in at a caret, never over the whole block the box had selected, where the browser names no character there', async () => {
+    const made = heldFaces();
+    expect(made.frame()?.dataset['kitMode']).toBe('box');
+    made.pressAndType('XYZ');
+    await made.settle();
+    // EVERY WORD KEPT, and the letters in: the block's end is where a caret goes that the press could not name.
+    expect(made.surface().textContent).toBe('Garden clubXYZ');
+  });
+
+  it('go in at the press though the frame changed width as the faces arrived, a word’s width being the faces’', async () => {
+    const made = heldFaces();
+    const owner = made.surface().ownerDocument;
+    const walker = owner.createTreeWalker(made.surface(), NodeFilter.SHOW_TEXT);
+    const text = must(walker.nextNode(), 'the words’ text');
+    // THE BROWSER'S CHARACTER UNDER THE PRESS: after `Gard` in the stand-in faces, after `Garden` once the file's faces are
+    // drawn, which is the layout a held press is placed again in.
+    let offset = 4;
+    Object.assign(owner, { caretPositionFromPoint: () => ({ offsetNode: text, offset }) });
+    // THE FRAME IS AS WIDE AS ITS WIDEST WORD (ADR-0275), and the faces arriving change that width.
+    let width = 228;
+    must(made.frame(), 'frame').getBoundingClientRect = () => DOMRect.fromRect({ x: 72, y: 92, width, height: 14 });
+    try {
+      made.pressAndType('XYZ');
+      width = 231;
+      offset = 6;
+      await made.settle();
+      expect(made.surface().textContent).toBe('GardenXYZ club');
+    } finally {
+      Reflect.deleteProperty(owner, 'caretPositionFromPoint');
+    }
   });
 });

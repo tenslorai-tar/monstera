@@ -198,6 +198,12 @@ const NO_SCROLL: FocusOptions = { preventScroll: true };
 /** How long letters typed after the press that put the caret wait for the file's faces, at most (C1b). */
 const HOLD_KEYS_MS = 1500;
 
+/** The scale a block's frame is shown at: the page's zoom and the block's own placement. */
+interface Shown {
+  readonly zoom: number;
+  readonly placement: Placement;
+}
+
 /** Puts the model's caret at the character under a point of the window, where the browser can say which that is. */
 function caretAtPoint(store: EditorStore, words: HTMLElement, x: number, y: number): void {
   const owner = words.ownerDocument;
@@ -494,15 +500,24 @@ export function BlockEditor({
    * letters typed in the press's breath landed one or two characters away. Any other key or press, or
    * {@link HOLD_KEYS_MS}, settles at once with the layout as it is.
    */
-  const held = useRef<{ readonly x: number; readonly y: number; readonly width: number; readonly letters: string[] } | undefined>(undefined);
+  const held = useRef<{ readonly x: number; readonly y: number; readonly shown: Shown; readonly letters: string[] } | undefined>(undefined);
+  // THE SCALE THE FRAME IS SHOWN AT, which a held press is placed again only under. Never the frame's measured width: the
+  // frame is at least as wide as its widest word (ADR-0275), so the faces a press waits for change that width themselves
+  // (0.31 px on `textFirstClick.pw.ts`' heading in Chromium 151, measured 2026-10-29), and the press was then not placed.
+  const shown = useRef<Shown>({ zoom: geometry.zoom, placement });
+  useLayoutEffect(() => {
+    shown.current = { zoom: geometry.zoom, placement };
+  }, [geometry.zoom, placement]);
   const settlePress = useCallback((): void => {
     const press = held.current;
     const words = surface.current;
     const corner = frame.current?.getBoundingClientRect();
     held.current = undefined;
     if (press === undefined || words === null || corner === undefined) return;
-    // A FRAME OF ANOTHER SIZE (a zoom, a block scaled) is not the one pressed: the caret stays where it is.
-    if (Math.abs(corner.width - press.width) <= 0.5) caretAtPoint(store, words, corner.left + press.x, corner.top + press.y);
+    // A FRAME SHOWN AT ANOTHER SCALE (a zoom, a block scaled) is not the one pressed: the caret stays where it is.
+    if (press.shown.zoom === shown.current.zoom && press.shown.placement === shown.current.placement) {
+      caretAtPoint(store, words, corner.left + press.x, corner.top + press.y);
+    }
     if (press.letters.length === 0) return;
     const { model, selection, pending } = store.get();
     store.change(insertText(model, selection, press.letters.join(''), pending), 'typing', press.letters.join(''));
@@ -510,7 +525,7 @@ export function BlockEditor({
   const holdPress = (x: number, y: number): void => {
     const corner = frame.current?.getBoundingClientRect();
     if (faces.settled || corner === undefined) return;
-    held.current = { x: x - corner.left, y: y - corner.top, width: corner.width, letters: [] };
+    held.current = { x: x - corner.left, y: y - corner.top, shown: shown.current, letters: [] };
   };
   // THE FACES DRAWN: the layout will not change for them again, so the held press is placed in it.
   useLayoutEffect(() => {
@@ -553,11 +568,16 @@ export function BlockEditor({
         }
         return;
       }
+      // THE BOX'S SELECTION ENDS HERE, in the model, at once: it is the whole block, and letters typed before the
+      // browser's queued `selectionchange` brings the press's caret would replace every word of it (CI's Windows runner
+      // at 53cbe658, `textFirstClick.pw.ts`: a three-line heading became `XYZ`). A caret at the press where the browser
+      // names a character there, else at the block's end, as Enter on the box puts it.
+      store.select(caret(wholeBlock(store.get().model).focus));
       if (event.detail >= 2) {
         event.preventDefault();
         words.focus(NO_SCROLL);
-        caretAtPoint(store, words, event.clientX, event.clientY);
       }
+      caretAtPoint(store, words, event.clientX, event.clientY);
       holdPress(event.clientX, event.clientY);
       setMode('text');
     };
