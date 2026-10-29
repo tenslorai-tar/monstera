@@ -2,7 +2,7 @@ import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { expect, test } from '@playwright/test';
 
-import { FRAME, SURFACE } from './editTextSteps.js';
+import { FRAME, SURFACE, openWords } from './editTextSteps.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
 import { runCommand } from './palette.js';
 
@@ -73,4 +73,62 @@ test('a double press on a block opens its words with the caret where it fell', a
   expect(words.replace('X', '')).toBe('The first paragraph');
   expect(words.indexOf('X')).toBeGreaterThan(words.indexOf('first'));
   expect(words.indexOf('X')).toBeLessThan(words.indexOf(' paragraph'));
+});
+
+/**
+ * A DOUBLE PRESS IN THE WORDS SELECTS THE WORD BY THE MODEL'S RULE (`wordAt`), so a word typed over it keeps the space
+ * after it (cloud run 24, the launch recording of 1.1.2610.0: "Northwind Studio" became "EvergreenStudio"). Chromium's own
+ * double press takes the trailing space on Windows and the word alone on Linux, so a case that read only the result
+ * would pass on Linux with the defect present. This one also asserts the editor took the press: the second press's
+ * `mousedown` is cancelled, which the browser's own handling never does. Pressed on the word's LAST letter, right of its
+ * middle, where the caret the browser names is the place after the word.
+ */
+test('a double press on a word in the words selects the word alone, and a word typed over it keeps the space after it', async ({ page }) => {
+  const pdf = await PDFDocument.create();
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  pdf.addPage([612, 792]).drawText('Northwind Studio', { x: 100, y: 690, size: 12, font });
+  const bytes = await pdf.save();
+  const BOX = { x0: 100, y0: 686, x1: 100 + font.widthOfTextAtSize('Northwind Studio', 12), y1: 700 };
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await bridgeUnder(page, LOOKS[0], {
+    opens: [{ kind: 'opened' as const, docId: ID, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'One.pdf' }],
+    documentBytes: new Map([[ID, bytes]]),
+    textBlocks: [{ box: BOX, lines: [{ runs: [{ index: 3, text: 'Northwind Studio', style: RUN }], box: BOX, soft: false, baseline: 690 }], style: RUN, shape: { align: 'left' as const, firstIndent: 0 } }],
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: /^Open PDF/u }).first().click();
+  await expect(page.locator('canvas[data-page-canvas="0"]')).toBeVisible({ timeout: 20_000 });
+  await runCommand(page, 'Edit text on the page');
+  await openWords(page, page.locator('[data-text-edit-layer="0"] [data-text-block="0"]'));
+  await expect(page.locator(FRAME)).toHaveAttribute('data-kit-mode', 'text');
+  // THE LAST LETTER OF "Northwind", right of its middle, in the editor's own layout.
+  const at = await page.locator(SURFACE).evaluate((surface) => {
+    const walker = document.createTreeWalker(surface, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+      const index = (node.textContent ?? '').indexOf('Northwind');
+      if (index === -1) continue;
+      const range = document.createRange();
+      range.setStart(node, index + 8);
+      range.setEnd(node, index + 9);
+      const box = range.getBoundingClientRect();
+      return { x: box.left + box.width * 0.75, y: box.top + box.height / 2 };
+    }
+    throw new Error('no "Northwind" in the words');
+  });
+  await page.evaluate(() => {
+    const seen: boolean[] = [];
+    (window as unknown as { cancelled: boolean[] }).cancelled = seen;
+    window.addEventListener('mousedown', (event) => {
+      if (event.detail === 2) seen.push(event.defaultPrevented);
+    });
+  });
+  await page.mouse.click(at.x, at.y, { clickCount: 2 });
+  // THE DECISION: the editor took the second press.
+  expect(await page.evaluate(() => (window as unknown as { cancelled: boolean[] }).cancelled)).toStrictEqual([true]);
+  expect(await page.evaluate(() => document.getSelection()?.toString())).toBe('Northwind');
+  await page.keyboard.type('Evergreen', { delay: 30 });
+  await expect(page.locator(SURFACE)).toHaveText('Evergreen Studio');
+  // A TRIPLE PRESS IS STILL THE BROWSER'S, and selects the paragraph.
+  await page.mouse.click(at.x, at.y, { clickCount: 3 });
+  expect((await page.evaluate(() => document.getSelection()?.toString()))?.trim()).toBe('Evergreen Studio');
 });

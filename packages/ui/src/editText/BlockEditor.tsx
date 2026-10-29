@@ -12,7 +12,7 @@ import { positionOf, readSelection, writeSelection } from '../editorKit/dom.js';
 import { type EditorOps, EditorMenu, type EditorSpelling } from '../editorKit/EditorMenu.js';
 import { EditorSurface } from '../editorKit/EditorSurface.js';
 import { formatOpenEditor, keepsEditor, openEditorState, registerEditor, steppedSize } from '../editorKit/openEditor.js';
-import { caret, insertText, isCollapsed, ordered, replaceRange, selectedText, styleAt, wholeBlock, wordAt } from '../editorKit/model.js';
+import { type Position, caret, insertText, isCollapsed, ordered, replaceRange, selectedText, styleAt, wholeBlock, wordAt } from '../editorKit/model.js';
 import { AS_DRAWN_CLASS, type Look } from '../editorKit/paint.js';
 import { type EditorStore, createEditorStore } from '../editorKit/store.js';
 import {
@@ -213,6 +213,41 @@ function caretAtPoint(store: EditorStore, words: HTMLElement, x: number, y: numb
   // above's end).
   owner.getSelection()?.setBaseAndExtent(at.offsetNode, at.offset, at.offsetNode, at.offset);
   store.select(caret(position));
+}
+
+/**
+ * The model's position of the CHARACTER under a point of the window, where the browser can say: what the word under a
+ * point is asked of ({@link wordAtPoint}, and the menu's word). The browser names the caret nearest the point, which past
+ * a letter's middle is the place AFTER it, and at a word's last letter that place begins the space beyond: so where the
+ * point lies over the character before the caret, that character is the one meant.
+ */
+function characterAtPoint(words: HTMLElement, x: number, y: number): Position | undefined {
+  const owner = words.ownerDocument;
+  const at = (owner as Partial<Document>).caretPositionFromPoint?.call(owner, x, y);
+  if (at === null || at === undefined) return undefined;
+  let offset = at.offset;
+  if (at.offsetNode.nodeType === Node.TEXT_NODE && offset > 0) {
+    const before = owner.createRange();
+    before.setStart(at.offsetNode, offset - 1);
+    before.setEnd(at.offsetNode, offset);
+    const box = before.getBoundingClientRect();
+    if (x >= box.left && x <= box.right) offset -= 1;
+  }
+  return positionOf(words, at.offsetNode, offset);
+}
+
+/**
+ * Selects the word under a point by the model's own rule ({@link wordAt}), the one the menu offers replacements for: what
+ * a double press in the words selects. Chromium's own double press takes the space after the word with it on Windows,
+ * so a word typed over it ran into the next ("Northwind Studio" became "EvergreenStudio", the launch recording of
+ * 1.1.2610.0); on Linux it takes the word alone, so the platform's answer differs by platform and the model's does not.
+ */
+function wordAtPoint(store: EditorStore, words: HTMLElement, x: number, y: number): void {
+  const position = characterAtPoint(words, x, y);
+  if (position === undefined) return;
+  const span = wordAt(store.get().model, position);
+  store.select(span);
+  writeSelection(words, span);
 }
 
 /** Whether a different choice of words can pass a refusal: only characters the page's font cannot show. */
@@ -510,6 +545,12 @@ export function BlockEditor({
       if (mode !== 'box') {
         // A LATER PRESS is the person's own: a held one is placed first, then let go.
         settlePress();
+        // A DOUBLE PRESS IN THE WORDS selects the word under it by the model's rule (`wordAtPoint`), never the browser's.
+        // A triple press is the browser's, and selects the paragraph.
+        if (event.detail === 2) {
+          event.preventDefault();
+          wordAtPoint(store, words, event.clientX, event.clientY);
+        }
         return;
       }
       if (event.detail >= 2) {
@@ -618,9 +659,10 @@ export function BlockEditor({
   const under = (x: number, y: number) => {
     const words = surface.current;
     const owner = words?.ownerDocument;
-    const at = owner === undefined ? undefined : (owner as Partial<Document>).caretPositionFromPoint?.call(owner, x, y);
+    const hitTests = owner !== undefined && typeof (owner as Partial<Document>).caretPositionFromPoint === 'function';
     const live = words === null ? undefined : readSelection(words);
-    const position = words === null || at === null || at === undefined ? live?.focus : positionOf(words, at.offsetNode, at.offset);
+    // THE CHARACTER UNDER THE POINT, as a double press reads it (`characterAtPoint`): one question, one answer.
+    const position = words === null || !hitTests ? live?.focus : characterAtPoint(words, x, y);
     const selected = live !== undefined && !isCollapsed(live);
     if (position === undefined) return { word: undefined, paragraph: undefined, selected };
     const { model } = store.get();
