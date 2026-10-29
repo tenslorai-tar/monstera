@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { type ToUnicode, codesFor, readToUnicode } from './toUnicode.js';
+import { JOINED_LETTERS, type ToUnicode, codesFor, lettersOf, readToUnicode } from './toUnicode.js';
+
+/** `fi` joined, U+FB01, by its code point so the source shows what it is. */
+const FI = String.fromCodePoint(0xfb01);
 
 const bytes = (text: string): Uint8Array => new TextEncoder().encode(text);
 
@@ -70,5 +73,26 @@ describe('codesFor', () => {
     // AND WHERE ONE LETTER HAS NONE, the ligature is what draws it.
     const noI: ToUnicode = { text: new Map([[0x10, 'f'], [0x20, 'fi']]), bytes: 1 };
     expect(codesFor(noI, 'fi')).toStrictEqual([0x20]);
+  });
+
+  it('finds a joined-letter glyph named by its presentation form by its letters, as a print names one (25b)', () => {
+    // `fi` AS U+FB01, `ft` as its two letters, and no `f` alone: a browser's print of `fifty` in a drawn font.
+    const print: ToUnicode = { text: new Map([[0x43, FI], [0x5b, 'ft'], [0x8b, 'y']]), bytes: 1 };
+    expect(codesFor(print, 'fifty')).toStrictEqual([0x43, 0x5b, 0x8b]);
+    // CONTROL: the letters' own codes still win over the joined glyph wherever they draw it.
+    const both: ToUnicode = { text: new Map([[0x10, 'f'], [0x11, 'i'], [0x43, FI]]), bytes: 1 };
+    expect(codesFor(both, 'fi')).toStrictEqual([0x10, 0x11]);
+    // AND A CODE THAT SAYS THE LETTERS ITSELF wins over one whose letters are only its form's.
+    const named: ToUnicode = { text: new Map([[0x43, FI], [0x50, 'fi']]), bytes: 1 };
+    expect(codesFor(named, 'fi')).toStrictEqual([0x50]);
+  });
+
+  it('CONTROL: only joined letters are spelt as their letters, never another compatibility form', () => {
+    const forms = String.fromCodePoint(...Array.from({ length: 7 }, (_, at) => JOINED_LETTERS.first + at));
+    expect(lettersOf(forms)).toBe('fffiflffifflstst');
+    // A SUPERSCRIPT TWO is a different glyph from `2`, which NFKC would make it, and a full-width A from A.
+    const superscript: ToUnicode = { text: new Map([[0x01, String.fromCodePoint(0xb2)], [0x02, String.fromCodePoint(0xff21)]]), bytes: 1 };
+    expect(codesFor(superscript, '2')).toBeNull();
+    expect(codesFor(superscript, 'A')).toBeNull();
   });
 });

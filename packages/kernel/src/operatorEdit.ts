@@ -34,7 +34,7 @@ import {
   textObjectCount,
   textObjectEnds,
 } from './textOperators.js';
-import { codesFor } from './toUnicode.js';
+import { codesFor, lettersOf } from './toUnicode.js';
 
 /**
  * A block edit written into a page's own content stream, changing only the instructions it edits
@@ -490,16 +490,23 @@ function asAnotherReaderMay(text: string, line: VisualLine): string {
 }
 
 /**
- * The characters each piece of `word` shows, through its font's own `ToUnicode`. A piece whose font names none, which
- * no font the caller adds is, is given the rest of the word, so the pieces still spell it.
+ * The characters each piece of `word` shows, through its font's own `ToUnicode`, a joined-letter glyph as its letters
+ * (`lettersOf`). A piece whose font names none, which no font the caller adds is, is given the rest of the word, so the
+ * pieces still spell it.
  */
 function pieceTexts(pieces: readonly FacePiece[], word: string): string[] {
   const texts = pieces.map((piece) => {
-    const map = piece.font.toUnicode;
-    return map === null ? null : piece.codes.map((code) => map.text.get(code) ?? '').join('');
+    const reads = readsAs(piece);
+    return reads === null ? null : lettersOf(reads);
   });
   const known = texts.reduce<number>((total, text) => total + (text?.length ?? 0), 0);
   return texts.map((text) => text ?? word.slice(known));
+}
+
+/** What a piece's codes read as through its font's own `ToUnicode`, or `null` where the font names none. */
+function readsAs(piece: FacePiece): string | null {
+  const map = piece.font.toUnicode;
+  return map === null ? null : piece.codes.map((code) => map.text.get(code) ?? '').join('');
 }
 
 /** Each typed line split into words and the spaces and tabs between them, one space or tab a token. */
@@ -1423,6 +1430,15 @@ function write(
         for (const [k, piece] of pieces.entries()) {
           const text = texts[k] ?? '';
           const last = line.segments.at(-1);
+          // A JOINED-LETTER GLYPH SAYS ITS LETTERS: where the codes read otherwise than the letters they were chosen for
+          // (`lettersOf`), the piece is a segment of its own marked with them, as the print marked it, so both engines
+          // read the word as it was.
+          const reads = readsAs(piece);
+          if (!inRun && reads !== null && reads !== text) {
+            line.segments.push({ source, font: piece.font, codes: [...piece.codes], text, x: at, style, actual: text });
+            at += (widths[k] ?? 0) + spacing * piece.codes.length;
+            continue;
+          }
           // ONE SEGMENT for words that follow on in one font and state: a glyph's advance places the next exactly there.
           // A RUN'S SPACE JOINS ONLY ITS RUN, and words join only words.
           const joins = inRun ? last?.actual !== undefined && last.actual !== '\t' : last?.actual === undefined;
@@ -1511,11 +1527,19 @@ function write(
         looks.set(run.run.index, look);
         return look;
       };
+      /** The marked sequences already said: one `/ActualText` stands for all its operators, so it is said once. */
+      const saidSequences = new Set<number>();
       for (const { op, at, font, run } of carried) {
         const style = lookOf(run);
         const origin = placed(at);
         const shown = op.elements.map((element) => (typeof element === 'number' ? num(element) : hexOfBytes(element)));
         const codes = codesOf(font, op.codes);
+        // AN OPERATOR SHOWN UNDER AN `/ActualText` is carried under it, as the page marked it (a joined-letter glyph, its
+        // letters): its first operator says the text, and any other of the same sequence says nothing, so the words read
+        // as they did. Carried bare, `fi` read as U+FB01 (cloud run 25, item 25b).
+        const marked = op.actualText;
+        const actual = marked === undefined ? undefined : saidSequences.has(marked.start) ? '' : marked.text;
+        if (marked !== undefined) saidSequences.add(marked.start);
         visual.push({
           baseline: origin.y + dy,
           // THE OPERATOR'S OWN INK IS ITS RUN'S, which is what a turn's centre is worked out from.
@@ -1526,10 +1550,12 @@ function write(
               font,
               codes,
               // THE WORDS AS THE STRUCTURAL READ-BACK READS THEM: a font with no ToUnicode shows one unknown character.
-              text: font.toUnicode === null ? '\u0000' : codes.map((code) => font.toUnicode?.text.get(code) ?? '\u0000').join(''),
+              text:
+                actual ?? (font.toUnicode === null ? '\u0000' : codes.map((code) => font.toUnicode?.text.get(code) ?? '\u0000').join('')),
               x: origin.x,
               style,
               verbatim: op.operator === 'TJ' ? `[${shown.join(' ')}] TJ` : `${shown.join(' ')} Tj`,
+              ...(actual === undefined ? {} : { actual }),
             },
           ],
         });
@@ -2248,9 +2274,16 @@ export function checkOperatorEdit(
   // object's words stand in for another's.
   if (insertedSpans.length !== edit.drawn.length) return err('the inserted text does not read as the words drawn');
   for (const [at, span] of insertedSpans.entries()) {
+    // A MARKED SEQUENCE READS AS ITS `/ActualText`, once, as both engines read it: a joined-letter glyph as its letters.
+    let sequence: number | undefined;
     const shown = now
       .filter((op) => op.start >= span.start && op.end <= span.end)
-      .map(reads)
+      .map((op) => {
+        if (op.actualText === undefined) return reads(op);
+        if (op.actualText.start === sequence) return '';
+        sequence = op.actualText.start;
+        return op.actualText.text;
+      })
       .join('');
     if (shown !== edit.drawn[at]) return err('the inserted text does not read as the words drawn');
   }

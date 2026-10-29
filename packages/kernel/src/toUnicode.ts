@@ -167,19 +167,44 @@ export function readToUnicode(cmap: Uint8Array): Result<ToUnicode, string> {
 }
 
 /**
+ * `text` with each JOINED-LETTER presentation form (U+FB00 to U+FB06: ff, fi, fl, ffi, ffl, long s t, st) spelt as the
+ * letters it joins, and everything else as it is. A browser's print names a ligature glyph of a drawn font by its
+ * presentation form in the ToUnicode and marks it `/ActualText` with its letters, which is what both engines read the
+ * word as (measured 2026-10-29, Chromium 151 printing Carlito, cloud run 25 item 25b). Only these forms: NFKC would also
+ * make `²` a `2` and a full-width letter a narrow one, which are different glyphs, not joined letters.
+ */
+export function lettersOf(text: string): string {
+  return Array.from(text, (character) => {
+    const point = character.codePointAt(0) ?? 0;
+    return point >= JOINED_LETTERS.first && point <= JOINED_LETTERS.last ? character.normalize('NFKC') : character;
+  }).join('');
+}
+
+/** The code points of the joined-letter presentation forms (Unicode's Alphabetic Presentation Forms, Latin ligatures). */
+export const JOINED_LETTERS = { first: 0xfb00, last: 0xfb06 } as const;
+
+/**
  * The codes that draw `characters`, or `null` where some part has none: the CMap read backwards. A character's own code
  * is taken where it has one, as always; only where it has none is a code naming that character and the ones after it
- * looked for, the shortest first — a glyph PDFium reads as `=` and a mark, one code for two characters. So text a
- * single-character code already sets is set exactly as before, and a ligature is never chosen over its letters. Where two
- * codes name the same text the lowest is taken, so the answer is the same on every run.
+ * looked for, the shortest first — a glyph PDFium reads as `=` and a mark, one code for two characters, or a joined-letter
+ * glyph named by its presentation form, found by its letters ({@link lettersOf}). So text a single-character code already
+ * sets is set exactly as before, and a ligature is never chosen over its letters. Where two codes name the same text the
+ * lowest is taken, so the answer is the same on every run; a code's letters are a name only where no code says them.
  */
 export function codesFor(map: ToUnicode, characters: string): number[] | null {
   const backwards = new Map<string, number>();
   let longest = 1;
-  for (const [code, value] of [...map.text].sort(([left], [right]) => left - right)) {
+  const sorted = [...map.text].sort(([left], [right]) => left - right);
+  for (const [code, value] of sorted) {
     if (value === '' || backwards.has(value)) continue;
     backwards.set(value, code);
     longest = Math.max(longest, Array.from(value).length);
+  }
+  for (const [code, value] of sorted) {
+    const letters = lettersOf(value);
+    if (letters === value || backwards.has(letters)) continue;
+    backwards.set(letters, code);
+    longest = Math.max(longest, Array.from(letters).length);
   }
   const points = Array.from(characters);
   // FROM THE END BACK: `rest[at]` is the codes that draw the characters from `at` on, or `null` where none do — each point

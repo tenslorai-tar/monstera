@@ -689,6 +689,67 @@ const inked = (index: number, text: string, left: number, right: number): PageRu
   top: 0,
 });
 
+/**
+ * JOINED LETTERS IN A DRAWN FONT (cloud run 25, item 25b), as a browser's print writes them: the subset holds `fi` only as
+ * one glyph, its ToUnicode names it by its presentation form U+FB01, and the content marks it `/ActualText (fi)`, which
+ * is how both engines read the word as `fit`. A line set again for a word's colour had no code for `fi` and moved the
+ * untouched `fit` out of its font, or refused it where no other font had the letters.
+ */
+describe('editOperators on a drawn font with joined letters', () => {
+  const ligatures: PageFont = (() => {
+    const text = new Map<number, string>([
+      [1, String.fromCodePoint(0xfb01)],
+      [2, 't'],
+      [3, 'a'],
+      [4, 'b'],
+      [32, ' '],
+    ]);
+    return {
+      resource: 'F3',
+      subtype: 'Type3',
+      toUnicode: { text, bytes: 1 },
+      codeBytes: 1,
+      width: (code) => (text.has(code) ? 0.5 : null),
+      draws: (code) => text.has(code),
+      face: 'Drawn',
+      weight: 400,
+    };
+  })();
+  const fonts = new Map([['F3', ligatures]]);
+  // `a `, then `fi` marked as what it says, then `t bat`: three show operators of one text object, one run.
+  const content = bytes('BT /F3 10 Tf 1 0 0 1 72 100 Tm <0320> Tj /Span <</ActualText (fi)>> BDC <01> Tj EMC <0220040302> Tj ET');
+  const page: PageRuns = { textObjects: [0, 1, 2], runs: [{ index: 0, members: [0, 1, 2], text: 'a fit bat', left: 72, right: 112, bottom: 0, top: 0 }] };
+
+  it('keeps an untouched word’s joined glyph in its own font, read as its letters, when another word is recoloured', () => {
+    const result = editOperators(content, fonts, page, [
+      { lines: [[0]], soft: [false], text: 'a fit bat', marks: [{ from: 6, to: 9, set: { colour: { r: 255, g: 0, b: 0 } } }] },
+    ]);
+    if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+    // READ BACK AS `a fit bat`, the marked sequence as its letters.
+    expect(checkOperatorEdit(content, result.value, fonts)).toStrictEqual({ ok: true, value: undefined });
+    const [object = ''] = inserted(result.value);
+    // THE JOINED GLYPH, code 01, still shown in its own font, and marked as the letters it stands for.
+    expect(object).toContain('/F3 10 Tf\n');
+    expect(object).toContain('/Span <</ActualText <FEFF006600690074>>> BDC 1 0 0 1 82 100 Tm <0102> Tj EMC');
+    // CONTROL: the recoloured word is in red, so the line was set again rather than left as it was.
+    expect(object).toContain('1 0 0 rg');
+  });
+
+  it('keeps the joined glyph’s mark when the whole block is recoloured and its operators are carried as they were', () => {
+    const result = editOperators(content, fonts, page, [
+      { lines: [[0]], soft: [false], text: 'a fit bat', marks: [{ from: 0, to: 9, set: { colour: { r: 255, g: 0, b: 0 } } }] },
+    ]);
+    if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+    expect(checkOperatorEdit(content, result.value, fonts)).toStrictEqual({ ok: true, value: undefined });
+    const [object = ''] = inserted(result.value);
+    // CARRIED, its own bytes: the three operators as the page showed them, in red.
+    expect(object).toContain('1 0 0 rg');
+    expect(object).toContain('<0220040302> Tj');
+    // AND THE MARK AROUND THE JOINED GLYPH, as the page had it. CONTROL, the replay before: `<01> Tj` bare, read as U+FB01.
+    expect(object).toMatch(/\/Span <<\/ActualText <FEFF00660069>>> BDC [\d. -]+Tm <01> Tj EMC/u);
+  });
+});
+
 describe('editOperators on paragraphs (ADR-0179)', () => {
   const regular = font('F1', 'abcdefghijklmnopqrstuvwxyz');
   const strong = font('F2', 'abcdefghijklmnopqrstuvwxyz');
