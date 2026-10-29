@@ -384,6 +384,26 @@ describe('planBlock: a paragraph reflows from its first changed line and stops w
     expect(said(narrow.rows)).toStrictEqual(['old 0', 'new 1:ddd', 'new 1:abcdefghijkl']);
   });
 
+  /**
+   * A WRITER'S MEASURE NAMES WHAT IT CANNOT SET: the operator writer's records the letters no font of the page carries,
+   * for a face, so a word measured is a word that may refuse the edit. Measuring every word ahead of the plan refused a
+   * move of a block in a font with no ToUnicode, whose lines are only carried (cloud run 25, `proof:editobject`).
+   */
+  it('measures only the words it lays out: none of a paragraph kept as it was', () => {
+    const lines = block([['kept paragraph here'], ['first line of the next'], ['and its second line']], [false, true]);
+    const asked: string[] = [];
+    const recording: Measure = (run, mark, text, at) => {
+      asked.push(text);
+      return measure(run, mark, text, at);
+    };
+    planBlock(lines, 'kept paragraph here\nfirst line of the next\nand its second line abcdefghijklmnop', recording, LIMITS);
+    const measured = asked.join(' ');
+    // THE LAID-OUT LINE'S WORDS, the widening's own included: the plan ran, and asked.
+    expect(measured).toContain('abcdefghijklmnop');
+    // CONTROL: nothing of the paragraph left as it was, whose lines are kept without a layout.
+    for (const word of ['kept', 'paragraph', 'here']) expect(measured).not.toContain(word);
+  });
+
   it('answers no rows for a paragraph that was deleted, and keeps the others’ lines', () => {
     const lines = block([['aaa'], ['bbb'], ['ccc']], [false, false]);
     expect(said(planBlock(lines, 'aaa\nccc', measure, LIMITS).rows)).toStrictEqual(['old 0', 'old 2']);
