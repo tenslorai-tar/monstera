@@ -252,7 +252,7 @@ function textInk(kernel, bytes, page) {
  * audit of 2026-10-26). A name an ordinary font on the page also has cannot say which drew a character, so it throws.
  * @param {Uint8Array} bytes @param {number} index @returns {Promise<Set<string>>}
  */
-async function drawnFontNames(bytes, index) {
+export async function drawnFontNames(bytes, index) {
   const doc = await PDFDocument.load(bytes, { updateMetadata: false });
   const context = doc.context;
   /** @param {unknown} value */
@@ -575,10 +575,12 @@ export async function expectEdit({ kernel, pdfium }, { before, after, page, bloc
  * @param {Char[]} chars @param {{ withText: Uint8Array, without: Uint8Array }} ink MuPDF's two drawings, RGB
  */
 function undrawn(drawn, chars, { withText, without }) {
-  return chars.filter((each) => {
-    const w = (each.box.right - each.box.left) / 4;
-    const h = (each.box.top - each.box.bottom) / 4;
-    const corners = [drawn.toDevice(each.box.left + w, each.box.bottom + h), drawn.toDevice(each.box.right - w, each.box.top - h)];
+  const boxes = glyphBoxes(chars);
+  return chars.filter((each, index) => {
+    const box = boxes[index] ?? each.box;
+    const w = (box.right - box.left) / 4;
+    const h = (box.top - box.bottom) / 4;
+    const corners = [drawn.toDevice(box.left + w, box.bottom + h), drawn.toDevice(box.right - w, box.top - h)];
     const x0 = Math.max(0, Math.floor(Math.min(...corners.map(([x]) => x))));
     const x1 = Math.min(drawn.width - 1, Math.ceil(Math.max(...corners.map(([x]) => x))));
     const y0 = Math.max(0, Math.floor(Math.min(...corners.map(([, y]) => y))));
@@ -592,6 +594,41 @@ function undrawn(drawn, chars, { withText, without }) {
     return true;
   });
 }
+
+/**
+ * The box each character's ink is judged in: its own, except for a LATER LETTER OF A JOINED GLYPH, which is judged in the
+ * box of the glyph it shares. MuPDF reads a glyph marked `/ActualText (fl)` as two characters, the first given the
+ * glyph's whole box and the second a box of no width at that box's right edge (measured 2026-10-29 on a Chromium 151
+ * print of Carlito: `f` 156.93 to 163.27, `l` 163.27 to 163.27), and the middle half of nothing finds no ink — every
+ * joined letter after the first read as unseen, on the page as printed. Such a letter is one of no width that starts
+ * where the character before it ends, on its baseline; a character of no width anywhere else keeps its own box, so an
+ * invisible one is still judged unseen.
+ * @param {Char[]} chars in reading order @returns {Box[]}
+ */
+function glyphBoxes(chars) {
+  /** @type {Box[]} */
+  const boxes = [];
+  for (const [at, each] of chars.entries()) {
+    const before = boxes[at - 1];
+    const previous = chars[at - 1];
+    const shares =
+      before !== undefined &&
+      previous !== undefined &&
+      each.box.right - each.box.left < SHARED_GLYPH &&
+      Math.abs(each.box.left - previous.box.right) < SHARED_GLYPH &&
+      Math.abs(each.box.bottom - previous.box.bottom) < SHARED_GLYPH;
+    boxes.push(shares ? before : each.box);
+  }
+  return boxes;
+}
+
+/**
+ * How near two of MuPDF's box edges are to be one edge, and how narrow a box is to have no width, in points: the boxes of
+ * one glyph are computed in floating point from the same numbers, so they agree to far less than this. What makes a
+ * letter one of a joined glyph is having no width; a mark of no advance drawn over the letter before it is judged in that
+ * letter's box too, which is where its ink is.
+ */
+const SHARED_GLYPH = 0.01;
 
 /**
  * A block's words as each engine reads them where the block is, in the engine's order and in line order, spaces

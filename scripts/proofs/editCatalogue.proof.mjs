@@ -34,6 +34,13 @@
  *   PDFium's read, the grouping in frames, the operator writer. Each must hold every expectation, and each must be left
  *   unsent when grouped upright only, which is what the editor did before.
  *
+ * ## Joined letters in a browser print (cloud run 25)
+ *
+ * - The browser print's page edited through the same path, a word replaced before the line's joined glyphs so they are
+ *   set again: every expectation holds, and each untouched word is drawn in the same glyphs as before, joined where the
+ *   print joined it, in its drawn font. CONTROL: a word of joined letters drawn invisible is judged unseen, every letter,
+ *   though a joined glyph's later letters are judged in the glyph's box (`glyphBoxes`).
+ *
  * Usage: node scripts/proofs/editCatalogue.proof.mjs [--require-engines] [--shape <id>]
  */
 import { existsSync } from 'node:fs';
@@ -41,7 +48,7 @@ import { existsSync } from 'node:fs';
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRawStream, StandardFonts, decodePDFRawStream } from '@cantoo/pdf-lib';
 
 import { EDIT_CATALOGUE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
-import { MARGIN, expectEdit, inkedCharacters, listMarkerFailures, readBlock } from '../lib/editExpectations.mjs';
+import { MARGIN, drawnFontNames, expectEdit, inkedCharacters, listMarkerFailures, readBlock } from '../lib/editExpectations.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { readForEdit, writeBlockText, writeCatalogueShape } from '../lib/catalogueWrite.mjs';
 import { bindNativeEngine } from '../lib/nativeEngine.mjs';
@@ -57,7 +64,7 @@ const REQUIRED = process.argv.includes('--require-engines');
 const ONLY = process.argv.includes('--shape') ? process.argv[process.argv.indexOf('--shape') + 1] : undefined;
 
 const CASES = [
-  'THE CATALOGUE: 34 shapes, each built by its generator',
+  'THE CATALOGUE: 35 shapes, each built by its generator',
   'READ BACK: every block of every page reads, by MuPDF and by PDFium, as the manifest’s words where it says',
   'DRAWN: every character of a visible block draws, and none of an invisible one (the unseen check’s two controls)',
   'THE SHAPE: what each file claims to test is in the file, read back with pdf-lib',
@@ -80,6 +87,7 @@ const CASES = [
   'TEXT SET AT AN ANGLE (ADR-0273): the turned page, the turned page under a crop box and the skewed page are each offered by the editor’s grouping and written, every expectation held; CONTROL: grouped upright only, none is sent',
   'TWO TYPED SPACES are written and read back as two spaces and nothing else, on the TrueType subset page with no space glyph and on the drawn (Type 3) page',
   'A LIST ITEM’S MARKER keeps its place and its gap to the item’s first letter when an item of each list grows to wrap, the bullet a character, its own object or a drawn shape; CONTROLS: the drawn bullets left out of the grouping, and a bullet moved 2 pt, each fail',
+  'JOINED LETTERS (cloud run 25): the browser print’s page is written by the editor’s path and every expectation holds, its untouched joined glyphs kept in their drawn font; CONTROL: a word of joined letters written invisible is unseen, every letter of it',
 ];
 
 // ------------------------------------------------------------------------------------------------- the file's shape
@@ -94,7 +102,7 @@ async function structureOf(bytes, index) {
   const context = doc.context;
   /** @param {unknown} value */
   const resolved = (value) => (value === undefined ? undefined : context.lookup(/** @type {any} */ (value)));
-  /** @type {{ subtype: string, base: string, file: string, toUnicode: boolean, encoding: string, weight: number | null }[]} */
+  /** @type {{ subtype: string, base: string, file: string, toUnicode: boolean, encoding: string, weight: number | null, matrix: number[] | null }[]} */
   const fonts = [];
   /** @type {string[]} */
   const contents = [];
@@ -128,6 +136,10 @@ async function structureOf(bytes, index) {
           toUnicode: font.has(PDFName.of('ToUnicode')),
           encoding: name('Encoding'),
           weight: descriptor instanceof PDFDict && descriptor.get(PDFName.of('FontWeight')) instanceof PDFNumber ? /** @type {PDFNumber} */ (descriptor.get(PDFName.of('FontWeight'))).asNumber() : null,
+          matrix: (() => {
+            const matrix = resolved(font.get(PDFName.of('FontMatrix')));
+            return matrix instanceof PDFArray ? matrix.asArray().map((each) => (each instanceof PDFNumber ? each.asNumber() : Number.NaN)) : null;
+          })(),
         });
       }
     }
@@ -254,6 +266,12 @@ const CLAIMS = {
   '32-table-form-13-clips': (s) => [['one form holding thirteen cell clips', s.forms === 1 && count(s.content.slice(s.pageContent.length), / re W n/gu) === 13]],
   '33-drawn-weight-stated-regular': (s) => [['a drawn font stating weight 400', s.fonts.some((each) => each.subtype === 'Type3' && each.weight === 400)]],
   '34-two-hundred-links': (s) => [['210 link annotations', s.links === 210]],
+  '35-browser-print-joined-letters': (s) => [
+    ['two drawn (Type 3) fonts with a ToUnicode, and an ordinary one', s.fonts.filter((each) => each.subtype === 'Type3' && each.toUnicode).length === 2 && s.fonts.some((each) => each.subtype !== 'Type3')],
+    ['glyph space of 1/2048 turned over', s.fonts.some((each) => each.matrix?.join(' ') === `${String(1 / 2048)} 0 0 ${String(-1 / 2048)} 0 0`)],
+    ['each joined glyph marked /ActualText with its letters: fi, ff, ffi, fl, ffl', ['fi', 'ff', 'ffi', 'fl', 'ffl'].every((letters) => s.content.includes(`/Span <</ActualText (${letters})>> BDC`))],
+    ['one glyph to a show, each followed by a move', count(s.pageContent, / Tj [\d.]+ 0 Td/gu) > 40],
+  ],
 };
 
 // ----------------------------------------------------------------------------------------------------------- the run
@@ -262,8 +280,8 @@ const CLAIMS = {
 async function run(pdfium, kernel, kit) {
   /** @type {string[]} */
   const failures = [];
-  const roster = createRoster(failures, { cases: 23 });
-  if (CASES.length !== 23) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 23`);
+  const roster = createRoster(failures, { cases: 24 });
+  if (CASES.length !== 24) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 24`);
   const check = (/** @type {string} */ name, /** @type {boolean} */ held, /** @type {string} */ detail) => {
     const mark = roster.mark();
     if (!held) failures.push(`${name}\n      ${detail}`);
@@ -421,7 +439,7 @@ async function run(pdfium, kernel, kit) {
     process.stdout.write(`  ${shape.id}: ${String(Date.now() - started)} ms\n`);
   }
 
-  check(CASES[0] ?? '', shapes.length === (ONLY === undefined ? 34 : 1) && (wrong[0]?.length ?? 1) === 0, (wrong[0] ?? []).join('\n      '));
+  check(CASES[0] ?? '', shapes.length === (ONLY === undefined ? 35 : 1) && (wrong[0]?.length ?? 1) === 0, (wrong[0] ?? []).join('\n      '));
   for (const at of [1, 2, 3, 4]) check(CASES[at] ?? '', (wrong[at]?.length ?? 1) === 0, (wrong[at] ?? []).join('\n      '));
   process.stdout.write(`\n  ANTI-ALIASING SPREAD: ${spread.toFixed(2)} pt at ${spreadAt}; MARGIN is ${String(MARGIN)} pt\n`);
   // EQUAL AT THE INSTRUMENT'S STEP, one device pixel: a bound of "at most half a point wider" could not fail while MARGIN
@@ -545,6 +563,53 @@ async function run(pdfium, kernel, kit) {
     const nudged = listMarkerFailures(charactersOf(kernel, base.bytes, base.page), charactersOf(kernel, moved.bytes, base.page), list);
     if (!nudged.some((each) => each.startsWith('A LIST MARKER MOVED'))) wrongLists.push(`CONTROL: a bullet moved 2 pt was not named: ${nudged.join(' | ') || 'no failure'}`);
     check(CASES[22] ?? '', wrongLists.length === 0, wrongLists.join('\n      '));
+  }
+  // JOINED LETTERS IN A BROWSER PRINT'S DRAWN FONT (cloud run 25, items 25b and 25d): the page written through the
+  // editor's own path, which sets the edited line again with its untouched joined glyphs in their own font, marked as
+  // their letters. THE CONTROL is the unseen check on the same page with a word of joined letters drawn invisible: a
+  // later letter of a joined glyph is judged in that glyph's box, and must still be unseen when the glyph is.
+  {
+    /** @type {string[]} */
+    const wrongJoined = [];
+    const shape = SHAPES.find((each) => each.id === '35-browser-print-joined-letters');
+    if (shape === undefined) throw new Error('the browser print with joined letters is missing');
+    const { verdict, after } = await writeCatalogueShape(kit, shape);
+    if (verdict !== 'held') wrongJoined.push(`written: ${verdict}`);
+    if (after !== null) {
+      const drawn = await drawnFontNames(after, 0);
+      /**
+       * The untouched words of the edited block's lines as MuPDF reads them, in order, split at its spaces, the edit's new
+       * word left out: each as its text and the letters a joined glyph carries — the ones MuPDF gives no width, after the
+       * glyph's first letter takes its whole box — as `office:ff-i-` style marks, `-` where a letter is joined to the one
+       * before it.
+       * @param {Uint8Array} bytes
+       */
+      const wordsOf = (bytes) => {
+        /** @type {any[][]} */
+        const words = [[]];
+        for (const each of charactersOf(kernel, bytes, 0).filter((char) => char.box.top > 660)) {
+          if (each.character.trim() === '') words.push([]);
+          else words.at(-1)?.push(each);
+        }
+        return words.filter((word) => word.length > 0 && word.map((each) => each.character).join('') !== shape.edit.word);
+      };
+      const joins = (/** @type {any[]} */ word) => word.map((each) => `${String(each.character)}${each.box.right - each.box.left < 0.01 ? '-' : ''}`).join('');
+      const before = (await shape.build({})).bytes;
+      const wasJoined = new Set(wordsOf(before).map(joins));
+      const untouched = wordsOf(after);
+      // CONTROL: the page holds joined glyphs to keep, or nothing below could fail.
+      if (![...wasJoined].some((word) => word.includes('-'))) wrongJoined.push('no word of the page was read as a joined glyph before the edit');
+      const rejoined = untouched.filter((word) => !wasJoined.has(joins(word)));
+      if (rejoined.length > 0) wrongJoined.push(`an untouched word is drawn in other glyphs than before: ${rejoined.map(joins).join(', ')}`);
+      const moved = untouched.flat().filter((each) => !drawn.has(each.font));
+      if (moved.length > 0) wrongJoined.push(`an untouched letter left its drawn font: ${moved.map((each) => `${each.character} in ${each.font}`).join(', ')}`);
+    }
+    const hidden = await shape.build({ invisible: { block: 'printed', word: 'affluent' } });
+    const block = hidden.blocks.find((/** @type {any} */ each) => each.id === 'printed');
+    if (block === undefined) throw new Error('the browser print has no block “printed”');
+    const inked = await inkedCharacters(engines, hidden.bytes, hidden.page, block.box);
+    if (inked.unseen !== 'affluent') wrongJoined.push(`CONTROL: “affluent” drawn invisible was judged unseen as “${inked.unseen}”`);
+    check(CASES[23] ?? '', wrongJoined.length === 0, wrongJoined.join('\n      '));
   }
 
   process.stdout.write(
