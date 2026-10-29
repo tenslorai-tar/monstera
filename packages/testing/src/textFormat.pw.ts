@@ -343,11 +343,10 @@ test.describe('Formatting in the Properties panel (K11)', () => {
     const sent: { channel: string; params: unknown }[] = [];
     await openBlock(page, sent);
     await page.locator('[data-kit-surface]').getByText('A paragraph of words').dblclick({ position: { x: 40, y: 6 } });
-    // WHAT A DOUBLE-CLICK CHOOSES IS THE PLATFORM'S: Chromium on Windows takes the word AND the space after it (its
-    // `SelectTrailingWhitespaceEnabled` editing behaviour), and on Linux the word alone — CI run 38207412421 sent 2 to 12
-    // on windows where ubuntu sent 2 to 11. Read here, so the case asserts what the person chose is what is formatted.
-    const chosen = await page.evaluate(() => document.getSelection()?.toString() ?? '');
-    expect(['paragraph', 'paragraph ']).toContain(chosen);
+    // THE WORD ALONE, on every platform: the editor selects a double-click's word by its own rule (`wordAt`), where
+    // Chromium on Windows takes the space after it too (its `SelectTrailingWhitespaceEnabled` editing behaviour; CI run
+    // 38207412421 sent 2 to 12 on windows where ubuntu sent 2 to 11).
+    expect(await page.evaluate(() => document.getSelection()?.toString() ?? '')).toBe('paragraph');
     const size = page.locator('[data-text-properties]').getByRole('spinbutton', { name: 'Size in points' });
     // TWO KEYSTROKES, TWO FORMATS: the first wraps the word in a span of its own, which a live range does not survive.
     // AND THE FIELD IS FILLED AT ONCE after the double-click, before the browser's queued `selectionchange` has run: the
@@ -356,9 +355,9 @@ test.describe('Formatting in the Properties panel (K11)', () => {
     await size.pressSequentially('18');
     await size.press('Enter');
     await page.locator('[data-text-edit-layer="0"]').click({ position: { x: 40, y: 600 } });
-    // `paragraph` IS CHARACTERS 2 TO 11 (12 with the space the platform chose), and is the one mark: the words around it
-    // were never formatted, and the paragraph's length (20) is what the defect this guards would send.
-    await expect.poll(() => marksSent(sent)).toStrictEqual([{ block: 0, from: 2, to: 2 + chosen.length, set: { size: 18 } }]);
+    // `paragraph` IS CHARACTERS 2 TO 11, and is the one mark: the words around it were never formatted, and the
+    // paragraph's length (20) is what the defect this guards would send.
+    await expect.poll(() => marksSent(sent)).toStrictEqual([{ block: 0, from: 2, to: 11, set: { size: 18 } }]);
   });
 
   // THE RACE, MADE DETERMINISTIC: the word is chosen and the focus moved to the size field in ONE task, so the browser's
