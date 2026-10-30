@@ -5459,7 +5459,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [HISTORY_BACK]: 'Back to the conversation',
   [HISTORY_BACK_TO_LIST]: 'Back to History',
   [HISTORY_BOUNDS]:
-    'Each file keeps up to {perFile} conversations, and conversations are kept for up to {files} files. When a new file would be one too many, the file saved longest ago is removed with its conversations.',
+    'Each file keeps up to {perFile, plural, one {# conversation} other {# conversations}}, and conversations are kept for up to {files, plural, one {# file} other {# files}}. When a new file would be one too many, the file saved longest ago is removed with its conversations.',
   [HISTORY_UNNAMED]: 'Earlier conversation',
   [HISTORY_MESSAGES]: '{count, plural, one {# message} other {# messages}}',
   [HISTORY_SHOWN]: 'This is a saved conversation, shown to read. It does not open the file.',
@@ -5491,9 +5491,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'This conversation is now too long for the model to read, so the provider refused the last question. Start a new conversation to ask it again.',
   [ASSISTANT_START_NEW]: 'Start a new conversation',
   [ASSISTANT_FILE_FULL_NEW]:
-    'This file already keeps {limit} saved conversations, the most one file keeps, so a new one was not started. Remove one in the History, then start a new conversation.',
+    'This file already keeps {limit, plural, one {# saved conversation} other {# saved conversations}}, the most one file keeps, so a new one was not started. Remove one in the History, then start a new conversation.',
   [ASSISTANT_FILE_FULL_UNSAVED]:
-    'This file already keeps {limit} saved conversations, the most one file keeps, so this one is not being saved. Remove one in the History and it will be saved.',
+    'This file already keeps {limit, plural, one {# saved conversation} other {# saved conversations}}, the most one file keeps, so this one is not being saved. Remove one in the History and it will be saved.',
   [ASSISTANT_ANSWER_CUT]:
     'The answer was stopped at its length limit of {limit, plural, other {# characters}}. What is above is all of it up to there. Ask for the rest in a new question.',
   [ASSISTANT_SEARCHES_THE_WEB]:
