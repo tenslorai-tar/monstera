@@ -224,7 +224,7 @@ function childrenOf(node: forge.asn1.Asn1 | undefined): forge.asn1.Asn1[] {
  * The half of node-forge's DER validator this module calls.
  *
  * `@types/node-forge` declares neither `asn1.validate` nor `pkcs7.asn1`; both exist
- * at runtime in node-forge 1.4.0 (`lib/asn1.js`, `lib/pkcs7asn1.js`). A typed
+ * at runtime in node-forge 1.4.2 (`lib/asn1.js`, `lib/pkcs7asn1.js`, read 2026-10-30). A typed
  * adapter over those two members rather than an `any`.
  */
 interface ForgeValidation {

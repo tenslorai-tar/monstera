@@ -17,7 +17,7 @@ import { acceptTimestampReply, timestampQuery, type TimestampQuery } from './tim
  * ## THE TOKEN IS BUILT BY HAND, and the reason is a limit of the library
  *
  * node-forge's signer writes three attribute types and not a signing-certificate
- * one (node-forge 1.4.0, `lib/pkcs7.js`, `_attributeToAsn1`), and check 7 needs
+ * one (node-forge 1.4.2, `lib/pkcs7.js`, `_attributeToAsn1`, read 2026-10-30), and check 7 needs
  * that attribute SIGNED. So the SignedData here is assembled node by node and
  * signed with the key directly — which is also what lets every negative case
  * change exactly one thing.

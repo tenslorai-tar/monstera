@@ -42,3 +42,55 @@ describe('pkcs7Asn1 — /Contents read to the element’s own length', () => {
     expect(() => forge.asn1.fromDer(stripped)).toThrow(/Too few bytes/);
   });
 });
+
+/**
+ * A document's `/Contents` decides how deep the reader decodes.
+ *
+ * `fromDer` decodes a BIT STRING's content as ASN.1 by default, and up to
+ * node-forge 1.4.0 it did so for every BIT STRING nested inside another, past
+ * its own `maxDepth`, keeping a copy of each level's content (CVE-2026-119191,
+ * fixed in 1.4.1). `pkcs7Asn1` reads the signing document's bytes in the
+ * contained host, so a crafted signature was a crafted input to that loop.
+ * Measured 2026-10-30 with `pkcs7Asn1`'s options on 4,000 nested BIT STRINGs, a
+ * 19,890-byte `/Contents`: 7.1 s and 1,256 MiB of heap on 1.4.0, 1 ms and
+ * 7 MiB on 1.4.2.
+ *
+ * The case asserts the decode that was not made — how many levels came back
+ * decoded — rather than a time, which a fast runner would pass on 1.4.0.
+ */
+describe('pkcs7Asn1 — nested BIT STRINGs in /Contents are decoded one level, not all of them', () => {
+  const LEVELS = 300;
+
+  /** `SEQUENCE { BIT STRING { BIT STRING { … SEQUENCE {} } } }`, `LEVELS` deep. */
+  function nested(): Uint8Array {
+    const length = (n: number): number[] => (n < 0x80 ? [n] : [0x82, n >> 8, n & 0xff]);
+    let inner = [0x30, 0x00];
+    for (let level = 0; level < LEVELS; level += 1) {
+      const body = [0x00, ...inner];
+      inner = [0x03, ...length(body.length), ...body];
+    }
+    return Uint8Array.from([0x30, ...length(inner.length), ...inner]);
+  }
+
+  /** How many BIT STRINGs, one inside the next, came back with their content decoded. */
+  function decodedBitStrings(node: forge.asn1.Asn1): number {
+    let count = 0;
+    let at: forge.asn1.Asn1 | undefined = Array.isArray(node.value) ? node.value[0] : undefined;
+    while (at?.type === forge.asn1.Type.BITSTRING && Array.isArray(at.value)) {
+      count += 1;
+      at = at.value[0];
+    }
+    return count;
+  }
+
+  it('reads the element whole and decodes only the outermost BIT STRING', () => {
+    const contents = nested();
+    const read = pkcs7Asn1(contents);
+
+    const der = forge.asn1.toDer(read).getBytes();
+    expect(der.length).toBe(contents.length);
+    // At least one level decoded, so the walk can see a decoded BIT STRING and a
+    // zero below is not a blind count; at most one, which 1.4.0 fails at 300.
+    expect(decodedBitStrings(read)).toBe(1);
+  });
+});

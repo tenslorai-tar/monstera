@@ -70,3 +70,9 @@ signature with Node's `crypto.verify` (`signedDataCheck.ts`). Forge's verificati
 `publicKey.verify`, its chain check `verifyCertificateChain`, and the CA store `createCaStore` that check takes. No
 shipped file names any of them, and `docs/security/engine-advisories.json`'s `forge-rsa-verify` verdict fails the build
 the day one does.
+
+## Note, 2026-10-30 — the fixed release is taken
+
+node-forge is 1.4.2 (ADR-0004's addition of this date), whose 1.4.1 fixes the flaw above. Everything in the note above
+still holds and the watch stays. `signedDigest.ts`' transcription case is green on it, so the signature this build writes
+did not change.
