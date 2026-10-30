@@ -145,8 +145,8 @@ the rights under Section 2.
 
 (c) The grant of rights under Section 2 does not violate any grant of rights which You have made to
 third parties, including Your employer. If You are an employee, You have had Your employer approve
-this Agreement or sign the Entity version of this document. If You are less than eighteen years
-old, please have Your parents or guardian sign the Agreement.
+this Agreement. If You are less than eighteen years old, please have Your parents or guardian sign
+the Agreement.
 
 (d) You have followed the instructions in *Work You do not own* above, if You do not own the Copyright
 in the entire work of authorship Submitted.
@@ -206,15 +206,7 @@ Address: ________________________
 
 Date: ________________________
 
-**Us — Tenslor Inc.**
-
-Signature: ________________________
-
-Name: ________________________
-
-Title: ________________________
-
-Address: ________________________
+Tenslor Inc. accepts this Agreement by merging Your pull request.
 
 ---
 
@@ -224,5 +216,7 @@ Address: ________________________
 Unported licence. What changed: the project and party name are filled in, the template's blanks
 are filled in (the submission and non-owner instructions, which are the *Signing* and *Work You do
 not own* sections, the media licence and the governing law), Options One to Four of Section 2.3 are
-removed, Section 2.7 (Attribution) is added, and a date line is added to the signature block. Every
-other operative text is the template's own.</sub>
+removed, Section 2.7 (Attribution) is added, a date line is added to the signature block, Section
+3(c) no longer offers an Entity version for an employer to sign, and Our signature block is
+replaced by Our acceptance on merging Your pull request. Every other operative text is the
+template's own.</sub>
