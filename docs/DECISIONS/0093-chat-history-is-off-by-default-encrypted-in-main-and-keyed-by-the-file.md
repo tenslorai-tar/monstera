@@ -71,3 +71,12 @@ One saved conversation per file is superseded by
 2026-10-30): a file keeps up to twenty, a new conversation keeps the old one, and an entry saved in this decision's shape
 loads as the file's first conversation, unchanged. A saved turn's text is bounded at `MAX_ANSWER_TEXT`, not the question's
 bound (ADR-0277 Decision 4). The setting, the cipher, the key, the 200-file bound and *Clear chat history* stand.
+
+## Correction, 2026-10-30 — saving an empty conversation no longer deletes anything
+
+Decision 4's `ai.history.save` *replaces* a file's saved turns, and until ADR-0277 the store read an empty list as
+*remove this file's entry* (`chatHistory.ts` at 0a44647d: "an empty list removes it"). It no longer does: an empty save of
+a conversation already kept leaves it as it was, and an empty new one stores nothing
+([ADR-0277](0277-the-assistants-limits-are-said-and-an-answer-is-never-cut-in-silence.md) Decision 6;
+`chatHistory.test.ts`, *an EMPTY save removes NOTHING*). Removing a conversation is the History's and Settings' *Clear
+chat history*, never a side effect of a panel that was emptied.
