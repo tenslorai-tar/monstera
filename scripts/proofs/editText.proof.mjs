@@ -649,14 +649,16 @@ async function formPlacementsOf(pdfium, kernel, bytes, index) {
 }
 
 /**
- * How many of page `index`'s form placements that show text are NOT offered — deeper or named longer than the contract's
- * bounds (ADR-0269), counted from the placements and the paths offered.
+ * Whether page `index`'s walk over its forms left any unread, 1 or 0 — deeper, more or named past the contract's bounds
+ * (ADR-0269 and its correction of 2026-10-30). A count of placements left out is not knowable: the walk is bounded as it
+ * goes and does not visit what it leaves, so the column counts PAGES, from the reasons the walk itself gives.
  * @param {any} kernel @param {Uint8Array} bytes @param {number} index @returns {number}
  */
 function formsNotOffered(kernel, bytes, index) {
   const document = kernel.mupdf.PDFDocument.openDocument(bytes, 'application/pdf');
   try {
-    return kernel.textPlacements(document.findPage(index)).length - kernel.formPagesDocument(document, index).paths.length;
+    const { left } = kernel.formPagesDocument(document, index);
+    return left.deeper || left.more || left.unnamed ? 1 : 0;
   } finally {
     document.destroy();
   }
@@ -1070,7 +1072,7 @@ function corpus() {
   let notOpened = 0;
   /** @type {string[]} */
   const table = [
-    '| document | pages | blocks offered | form blocks offered | edits | refused | disturbed | logged | form placements not offered |',
+    '| document | pages | blocks offered | form blocks offered | edits | refused | disturbed | logged | pages with forms not offered |',
     '|---|---|---|---|---|---|---|---|---|',
   ];
   for (const [at, file] of files.entries()) {

@@ -12,6 +12,7 @@ import {
   RECENT_CHECK_CAP_MS,
   RECENT_PREVIEWS_SETTING_ID,
   SHOWN_SCHEME_MAX,
+  NO_FORMS_LEFT,
   blockEditOf,
   channels,
   type ButtonStep,
@@ -2558,7 +2559,7 @@ describe('ai.translatePage (ADR-0097)', () => {
     const commands = {
       textBlocks: (docId: DocId) =>
         docId === DOC
-          ? Promise.resolve({ version: asDocVersion(7), blocks, truncated: false, unaddressable: 0, rewrite })
+          ? Promise.resolve({ version: asDocVersion(7), blocks, truncated: false, formsLeft: NO_FORMS_LEFT, unaddressable: 0, rewrite })
           : Promise.reject(new DocumentNotOpenError(docId, 'read its text blocks')),
     } as unknown as DocumentCommands;
     const handlers = createContractHandlers({
@@ -3233,6 +3234,7 @@ describe('a dense page’s blocks and objects answer in parts the contract accep
         version: asDocVersion(7),
         blocks,
         truncated: false,
+        formsLeft: NO_FORMS_LEFT,
         unaddressable: 2,
         rewrite: 'operators',
       }),
@@ -3271,7 +3273,7 @@ describe('a dense page’s blocks and objects answer in parts the contract accep
     const cut = harness(OPENED, () => Promise.resolve(null), undefined, {
       commands: {
         textBlocks: () =>
-          Promise.resolve({ version: asDocVersion(7), blocks, truncated: true, unaddressable: 2, rewrite: 'operators' }),
+          Promise.resolve({ version: asDocVersion(7), blocks, truncated: true, formsLeft: NO_FORMS_LEFT, unaddressable: 2, rewrite: 'operators' }),
       } as unknown as DocumentCommands,
     });
     const first = await cut.handlers['document.textBlocks']({ docId: A_DOC, page: 0, from: 0 });
@@ -3292,7 +3294,7 @@ describe('a dense page’s blocks and objects answer in parts the contract accep
     const unpacked = harness(OPENED, () => Promise.resolve(null), undefined, {
       commands: {
         textBlocks: () =>
-          Promise.resolve({ version: asDocVersion(7), blocks, truncated: false, unaddressable: 2, rewrite: 'objects', unpacked: true }),
+          Promise.resolve({ version: asDocVersion(7), blocks, truncated: false, formsLeft: NO_FORMS_LEFT, unaddressable: 2, rewrite: 'objects', unpacked: true }),
       } as unknown as DocumentCommands,
     });
     const first = await unpacked.handlers['document.textBlocks']({ docId: A_DOC, page: 0, from: 0 });
@@ -3311,7 +3313,7 @@ describe('a dense page’s blocks and objects answer in parts the contract accep
       commands: {
         textBlocks: (_docId: DocId, _page: number, asItIs: boolean) => {
           asked.push(asItIs);
-          return Promise.resolve({ version: asDocVersion(7), blocks: [], truncated: false, unaddressable: 0, rewrite: 'objects' });
+          return Promise.resolve({ version: asDocVersion(7), blocks: [], truncated: false, formsLeft: NO_FORMS_LEFT, unaddressable: 0, rewrite: 'objects' });
         },
       } as unknown as DocumentCommands,
     });
@@ -3327,7 +3329,7 @@ describe('a dense page’s blocks and objects answer in parts the contract accep
   });
 
   it('CONTROL: the same page answered WHOLE is refused by the contract — the fixture is at the breaking size', () => {
-    const whole = { version: asDocVersion(7), next: null, truncated: false };
+    const whole = { version: asDocVersion(7), next: null, truncated: false, formsLeft: NO_FORMS_LEFT };
     // EVERY OTHER FIELD PRESENT, so the size is the only thing it can be refused for.
     const answer = { ...whole, blocks, unaddressable: 2, rewrite: 'objects' as const };
     expect(channels['document.textBlocks'].result.safeParse(answer).success).toBe(false);

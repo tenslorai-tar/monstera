@@ -4832,6 +4832,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
             version,
             blocks: items,
             truncated: last.truncated,
+            formsLeft: last.formsLeft,
             unaddressable: last.unaddressable,
             // EVERY PART CARRIES THE PAGE'S WRITER; the last one's is the page's, read at the same version.
             rewrite: last.rewrite,

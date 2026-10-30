@@ -156,3 +156,8 @@ at the worst encoding; a name the walk reads is Latin-1 and never escaped, so it
 Measured on the fixture of eight levels placed twenty-five times (cloud run 27, 2026-10-30): 64 of 200 placements were
 offered; all 200 are now (`formText.test.ts`, red on the old bounds). Not a seam change: the route is a registration into
 ADR-0125's, and the answer's field is a channel's own.
+
+**The note.** `document.textBlocks` carries the walk's reasons (`formsLeft`), and Edit text says each in its own sentence:
+text placed too many layers deep, and drawings repeated more often than can be outlined at once. Neither is the sentence
+for a cut read, which said *more text* for a form that was only too deep. A name a path cannot carry stays with that
+sentence, being neither reason.

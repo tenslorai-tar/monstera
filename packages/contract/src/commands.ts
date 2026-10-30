@@ -7196,6 +7196,9 @@ export type FormPath = z.infer<typeof formPathSchema>;
 export const formsLeftOutSchema = z.object({ deeper: z.boolean(), more: z.boolean(), unnamed: z.boolean() }).strict().readonly();
 export type FormsLeftOut = z.infer<typeof formsLeftOutSchema>;
 
+/** A walk that left nothing unread, or a read that walks no form. */
+export const NO_FORMS_LEFT: FormsLeftOut = { deeper: false, more: false, unnamed: false };
+
 /** Whether two paths name one placement: the same names and occurrences, step for step. The ONE comparison of them. */
 export function sameFormPath(a: FormPath, b: FormPath): boolean {
   const key = (path: FormPath): string => JSON.stringify(path.map((step) => [step.name, step.occurrence]));

@@ -34,6 +34,7 @@ const BLOCKS: PageBlocks = {
   version: asDocVersion(3),
   blocks: [BLOCK],
   truncated: false,
+  formsLeft: { deeper: false, more: false, unnamed: false },
   unaddressable: 0,
   rewrite: 'objects',
 };

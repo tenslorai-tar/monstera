@@ -798,6 +798,7 @@ describe('PageList', () => {
           version: VERSION,
           blocks: [],
           truncated: false,
+          formsLeft: { deeper: false, more: false, unnamed: false },
           unaddressable: 1,
           rewrite: 'objects',
         }),

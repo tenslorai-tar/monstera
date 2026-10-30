@@ -1478,7 +1478,7 @@ export const handlers: ContractHandlers = {
   'document.submitButtonForm': () => Promise.resolve(ok({ kind: 'sent' })),
   'document.openButtonFile': () => Promise.resolve(ok({ kind: 'absent' })),
   'document.textBlocks': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), blocks: [], next: null, truncated: false, unaddressable: 0, rewrite: 'objects' as const })),
+    Promise.resolve(ok({ version: asDocVersion(1), blocks: [], next: null, truncated: false, formsLeft: { deeper: false, more: false, unnamed: false }, unaddressable: 0, rewrite: 'objects' as const })),
   'document.blockFaces': () => Promise.resolve(ok({ version: asDocVersion(1), fonts: [], runs: [] })),
   'document.pageObjects': () =>
     Promise.resolve(ok({ version: asDocVersion(1), objects: [], next: null, truncated: false })),
@@ -1712,7 +1712,7 @@ export const handlers: ContractHandlers = {
   'document.submitButtonForm': () => Promise.resolve(ok({ kind: 'sent' })),
   'document.openButtonFile': () => Promise.resolve(ok({ kind: 'absent' })),
   'document.textBlocks': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), blocks: [], next: null, truncated: false, unaddressable: 0, rewrite: 'objects' as const })),
+    Promise.resolve(ok({ version: asDocVersion(1), blocks: [], next: null, truncated: false, formsLeft: { deeper: false, more: false, unnamed: false }, unaddressable: 0, rewrite: 'objects' as const })),
   'document.blockFaces': () => Promise.resolve(ok({ version: asDocVersion(1), fonts: [], runs: [] })),
   'document.pageObjects': () =>
     Promise.resolve(ok({ version: asDocVersion(1), objects: [], next: null, truncated: false })),
@@ -2027,7 +2027,7 @@ export const shim: ContractClient = {
   'document.submitButtonForm': () => Promise.resolve(ok({ kind: 'sent' })),
   'document.openButtonFile': () => Promise.resolve(ok({ kind: 'absent' })),
   'document.textBlocks': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), blocks: [], next: null, truncated: false, unaddressable: 0, rewrite: 'objects' as const })),
+    Promise.resolve(ok({ version: asDocVersion(1), blocks: [], next: null, truncated: false, formsLeft: { deeper: false, more: false, unnamed: false }, unaddressable: 0, rewrite: 'objects' as const })),
   'document.blockFaces': () => Promise.resolve(ok({ version: asDocVersion(1), fonts: [], runs: [] })),
   'document.pageObjects': () =>
     Promise.resolve(ok({ version: asDocVersion(1), objects: [], next: null, truncated: false })),

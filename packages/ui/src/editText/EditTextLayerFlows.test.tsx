@@ -40,6 +40,7 @@ const read = (version: number, blocks: readonly TextBlock[]): PageBlocks => ({
   version: asDocVersion(version),
   blocks: [...blocks],
   truncated: false,
+  formsLeft: { deeper: false, more: false, unnamed: false },
   unaddressable: 0,
   rewrite: 'objects',
 });

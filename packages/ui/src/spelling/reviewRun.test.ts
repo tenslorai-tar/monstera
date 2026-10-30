@@ -1,4 +1,4 @@
-import { blocksOfEdit, channels, createClient } from '@monstera/contract';
+import { NO_FORMS_LEFT, blocksOfEdit, channels, createClient } from '@monstera/contract';
 import { asDocId, asDocVersion, err, ok, tokensOf } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -229,7 +229,7 @@ function harness(script: Script): {
               : { x0: 10, y0: HEIGHT - y1, x1: 10 + text.length * 6, y1: HEIGHT - y0 };
           return [{ box, lines: [{ runs: [{ index: line, text, style: PLAIN }], box, soft: false, baseline: box.y0 }], style: PLAIN, shape: { align: 'left' as const, firstIndent: 0 } }];
         });
-        return Promise.resolve(ok({ version: version(), blocks, next: null, truncated: false, unaddressable: 0, rewrite: 'operators' }));
+        return Promise.resolve(ok({ version: version(), blocks, next: null, truncated: false, formsLeft: NO_FORMS_LEFT, unaddressable: 0, rewrite: 'operators' }));
       }
       case 'document.execute': {
         const command = params['command'] as Record<string, unknown>;

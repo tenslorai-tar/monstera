@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
-import { blocksOfEdit, channels, createClient } from '@monstera/contract';
+import { NO_FORMS_LEFT, blocksOfEdit, channels, createClient } from '@monstera/contract';
 import { asDocId, asDocVersion, ok, tokensOf } from '@monstera/shared';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
@@ -69,7 +69,7 @@ function drawn(lines: readonly string[]): { readonly sent: unknown[]; readonly s
           const at = { x0: 0, y0: 700 - (line * 20 + 12), x1: 500, y1: 700 - line * 20 };
           return { box: at, lines: [{ runs: [{ index: line, text, style: plain }], box: at, soft: false, baseline: at.y0 }], style: plain, shape: { align: 'left' as const, firstIndent: 0 } };
         });
-        return Promise.resolve(ok({ version: asDocVersion(1), blocks, next: null, truncated: false, unaddressable: 0, rewrite: 'operators' }));
+        return Promise.resolve(ok({ version: asDocVersion(1), blocks, next: null, truncated: false, formsLeft: NO_FORMS_LEFT, unaddressable: 0, rewrite: 'operators' }));
       }
       case 'document.execute':
         sent.push(params['command']);

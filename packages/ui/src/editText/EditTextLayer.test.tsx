@@ -9,7 +9,7 @@ import { NO_BLOCK_FACES } from '../commands/documentCommands.js';
 import { pointOf } from '../editorKit/dom.js';
 import { formatOpenEditor } from '../editorKit/openEditor.js';
 import { activateCatalogue, i18n } from '../i18n.js';
-import { EN, TEXT_EDIT_HELD } from '../messages/en.js';
+import { EN, TEXT_EDIT_FORMS_DEEPER, TEXT_EDIT_FORMS_MORE, TEXT_EDIT_HELD, TEXT_EDIT_TRUNCATED } from '../messages/en.js';
 import type { TextBlock } from '../textBlock.js';
 import type { PatchArea } from './AreaPatch.js';
 import type { PageBlocks } from './editing.js';
@@ -38,6 +38,7 @@ const BLOCKS: PageBlocks = {
   version: asDocVersion(3),
   blocks: [BLOCK, OTHER],
   truncated: false,
+  formsLeft: { deeper: false, more: false, unnamed: false },
   unaddressable: 0,
   rewrite: 'objects',
 };
@@ -273,6 +274,44 @@ describe('Edit text on the editor kit (ADR-0271)', () => {
     // CONTROL: the same layer over a page WITH blocks makes no offer.
     const { view: withBlocks } = layer();
     expect(withBlocks.container.querySelector('.m-text-edit__promote')).toBeNull();
+  });
+
+  // TEXT IN FORMS PAST THE WALK'S BOUNDS is said by its reason (ADR-0269's correction of 2026-10-30): too deep, and too
+  // many, each its own sentence, and neither is the page-cut sentence. CONTROL: a page with nothing left says neither.
+  it('says text in forms too deep and text in forms too many in a sentence each', () => {
+    const notesFor = (formsLeft: PageBlocks['formsLeft']): string => {
+      const view = render(
+        <I18nProvider i18n={i18n}>
+          <EditTextLayer
+            blocks={{ ...BLOCKS, formsLeft }}
+            geometry={{ ...GEOMETRY, crop: [...GEOMETRY.crop] }}
+            onCommit={() => Promise.resolve('unchanged')}
+            onLeave={() => undefined}
+            page={0}
+            paperAt={() => undefined}
+            blockFaces={() => Promise.resolve(NO_BLOCK_FACES)}
+          />
+        </I18nProvider>,
+      );
+      const text = view.container.textContent;
+      cleanup();
+      return text;
+    };
+    const [deeper, more, cut] = [EN[TEXT_EDIT_FORMS_DEEPER], EN[TEXT_EDIT_FORMS_MORE], EN[TEXT_EDIT_TRUNCATED]];
+    const tooDeep = notesFor({ deeper: true, more: false, unnamed: false });
+    expect(tooDeep).toContain(deeper);
+    expect(tooDeep).not.toContain(more);
+    expect(tooDeep).not.toContain(cut);
+    const tooMany = notesFor({ deeper: false, more: true, unnamed: false });
+    expect(tooMany).toContain(more);
+    expect(tooMany).not.toContain(deeper);
+    expect(tooMany).not.toContain(cut);
+    const both = notesFor({ deeper: true, more: true, unnamed: false });
+    expect(both).toContain(deeper);
+    expect(both).toContain(more);
+    const none = notesFor({ deeper: false, more: false, unnamed: false });
+    expect(none).not.toContain(deeper);
+    expect(none).not.toContain(more);
   });
 
   it('a written editor lets go when its AREA is drawn at the new version, and the area goes once the page is drawn there', async () => {

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
-import { type ContractClient, MAX_QUERY_LENGTH, blocksOfEdit, channels, createClient } from '@monstera/contract';
+import { type ContractClient, MAX_QUERY_LENGTH, NO_FORMS_LEFT, blocksOfEdit, channels, createClient } from '@monstera/contract';
 import { type DocVersion, asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { act, fireEvent, render } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
@@ -24,7 +24,7 @@ const WIDGET_BLOCK = {
   style: PLAIN,
   shape: { align: 'left' as const, firstIndent: 0 },
 };
-const BLOCKS_PART = { next: null, truncated: false, unaddressable: 0, rewrite: 'operators' as const };
+const BLOCKS_PART = { next: null, truncated: false, formsLeft: NO_FORMS_LEFT, unaddressable: 0, rewrite: 'operators' as const };
 
 /**
  * Match navigation.
