@@ -491,8 +491,9 @@ const handlers: ContractHandlers = {
     );
   },
   'ai.checkKey': () => Promise.resolve(ok({ accepted: false as const, problem: 'unauthorised' as const })),
-  'ai.history.load': () => Promise.resolve(ok({ turns: [] })),
-  'ai.history.save': () => Promise.resolve(ok({ saved: false })),
+  'ai.history.load': () => Promise.resolve(ok({ turns: [], conversation: null })),
+  'ai.history.save': () => Promise.resolve(ok({ saved: false, conversation: null })),
+  'ai.history.count': () => Promise.resolve(ok({ count: 0 })),
   'ai.history.clear': () => Promise.resolve(ok({ cleared: 0 })),
   'ai.history.list': () => Promise.resolve(ok({ conversations: [] })),
   'ai.history.read': () => Promise.resolve(ok({ conversation: null })),

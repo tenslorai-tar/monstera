@@ -9,6 +9,8 @@ import {
   MAX_ANSWER_TEXT,
   MAX_CHAT_TEXT,
   MAX_CHAT_TURNS,
+  MAX_FILE_CONVERSATIONS,
+  CHAT_HISTORY_SETTING_ID,
   IncidentLog,
   channels,
   createClient,
@@ -80,6 +82,8 @@ function recording(
    * no params, so only this sees a request `ai.ask`'s schema refuses.
    */
   boundary = false,
+  /** How many saved conversations `main` says the document's file keeps (ADR-0277 Decision 6). */
+  historyCount = 0,
 ): {
   readonly client: ContractClient;
   readonly sent: { id: string; params: unknown }[];
@@ -94,6 +98,7 @@ function recording(
   const client = createClient(channels, (id, params) => {
     sent.push({ id, params });
     if (id === 'ai.ask' && boundary) return throughBoundary(params);
+    if (id === 'ai.history.count') return Promise.resolve(ok({ count: historyCount }));
     if (id === 'ai.models') {
       return Promise.resolve({
         ok: true,
@@ -196,6 +201,7 @@ async function drawn(options: {
   readonly attaching?: Parameters<typeof recording>[6];
   readonly refusal?: Parameters<typeof recording>[7];
   readonly boundary?: boolean;
+  readonly historyCount?: number;
 } = {}) {
   const wire = events();
   const settings = options.settings ?? new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
@@ -209,6 +215,7 @@ async function drawn(options: {
     options.attaching,
     options.refusal,
     options.boundary ?? false,
+    options.historyCount ?? 0,
   );
   // EVERY TOAST THE PANEL RAISES, in order: a copy's confirmation goes through the window's toast.
   const toasts: unknown[][] = [];
@@ -462,8 +469,8 @@ describe('the assistant tab', () => {
     const KEY_A = 'a'.repeat(64);
     const KEY_B = 'b'.repeat(64);
     const ENTRIES = [
-      { key: KEY_A, name: 'contract.pdf', savedAt: '2026-10-07T09:30:00.000Z', turns: 2, preview: 'Who signs?' },
-      { key: KEY_B, name: null, savedAt: null, turns: 1, preview: 'An older question' },
+      { key: KEY_A, file: 'f'.repeat(64), name: 'contract.pdf', savedAt: '2026-10-07T09:30:00.000Z', turns: 2, preview: 'Who signs?' },
+      { key: KEY_B, file: 'e'.repeat(64), name: null, savedAt: null, turns: 1, preview: 'An older question' },
     ];
 
     /** The panel over a store the case holds: what is listed, what reads, what is removed. */
@@ -544,6 +551,26 @@ describe('the assistant tab', () => {
       expect(list?.textContent).toContain('1 message');
       // CONTROL: the live conversation's composer is not drawn while the History has the panel.
       expect(document.querySelector('.m-assistant__composer')).toBeNull();
+    });
+
+    it('lists one file’s conversations TOGETHER, in main’s order, each its own Open and Delete, and SAYS the bounds (ADR-0277)', async () => {
+      const LEASE = 'd'.repeat(64);
+      stored([
+        { key: '1'.repeat(64), file: LEASE, name: 'lease.pdf', savedAt: '2026-10-30T09:00:00.000Z', turns: 1, preview: 'Rent?' },
+        { key: '2'.repeat(64), file: LEASE, name: 'lease.pdf', savedAt: '2026-10-29T09:00:00.000Z', turns: 2, preview: 'Who signs?' },
+      ]);
+      await settle();
+      fireEvent.click(screen.getByRole('button', { name: 'History' }));
+      await settle();
+      const items = [...document.querySelectorAll('.m-assistant-history__item')].map((item) => item.textContent);
+      expect(items).toHaveLength(2);
+      expect(items[0]).toContain('Rent?');
+      expect(items[1]).toContain('Who signs?');
+      expect(screen.getAllByRole('button', { name: 'Open lease.pdf' })).toHaveLength(2);
+      expect(screen.getAllByRole('button', { name: 'Delete lease.pdf' })).toHaveLength(2);
+      expect(document.querySelector('[data-assistant-history-bounds]')?.textContent).toBe(
+        'Each file keeps up to 20 conversations, and conversations are kept for up to 200 files. When a new file would be one too many, the file saved longest ago is removed with its conversations.',
+      );
     });
 
     it('Open shows the conversation READ-ONLY by its key, and Back to History returns to the list', async () => {
@@ -1975,6 +2002,72 @@ describe('a full conversation is said, with a new one a press away (ADR-0277 Dec
     expect(store.getState().conversation).toStrictEqual([]);
     expect(screen.queryByText(FULL_PROVIDER)).toBeNull();
     expect(screen.getByRole('button', { name: 'Send' }).hasAttribute('disabled')).toBe(false);
+  });
+});
+
+describe('a new conversation keeps the old one, and a file at twenty is said (ADR-0277 Decision 6)', () => {
+  const DOC = asDocId('00000000-0000-4000-8000-0000000000cb');
+  const FILE_FULL_NEW =
+    'This file already keeps 20 saved conversations, the most one file keeps, so a new one was not started. Remove one in the History, then start a new conversation.';
+  const historyOn = (): SettingsStore => {
+    const settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
+    settings.set(CHAT_HISTORY_SETTING_ID, true);
+    return settings;
+  };
+  const press = async (): Promise<void> => {
+    fireEvent.click(screen.getByRole('button', { name: 'New chat' }));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  };
+  const holding = () => {
+    const store = createDocumentStore(DOC, asDocVersion(1));
+    store.getState().converse([
+      { role: 'user', text: 'Who signs?' },
+      { role: 'assistant', text: 'Both parties.' },
+    ]);
+    return store;
+  };
+
+  it(`with history ON and the file at ${String(MAX_FILE_CONVERSATIONS)}, New chat begins NOTHING and says to remove one`, async () => {
+    const store = holding();
+    const { sent } = await drawn({ focused: { docId: DOC, store, page: 0 }, settings: historyOn(), historyCount: MAX_FILE_CONVERSATIONS });
+    await press();
+    expect(sent.filter((entry) => entry.id === 'ai.history.count')).toHaveLength(1);
+    expect(screen.getByText(FILE_FULL_NEW).closest('[aria-live="polite"]')).not.toBeNull();
+    // THE CONVERSATION IS UNTOUCHED, and no new one began.
+    expect(store.getState().conversation.map((turn) => turn.text)).toStrictEqual(['Who signs?', 'Both parties.']);
+    expect(store.getState().conversationSerial).toBe(0);
+  });
+
+  it('CONTROL: one short of the bound, New chat begins a NEW conversation, which the history saves beside the old', async () => {
+    const store = holding();
+    await drawn({ focused: { docId: DOC, store, page: 0 }, settings: historyOn(), historyCount: MAX_FILE_CONVERSATIONS - 1 });
+    await press();
+    expect(store.getState().conversation).toStrictEqual([]);
+    // A NEW SERIAL, which is what makes the history sync save a new conversation rather than empty the old one.
+    expect(store.getState().conversationSerial).toBe(1);
+    expect(screen.queryByText(FILE_FULL_NEW)).toBeNull();
+  });
+
+  it('with history OFF, New chat asks main nothing and begins a new conversation', async () => {
+    const store = holding();
+    const { sent } = await drawn({ focused: { docId: DOC, store, page: 0 }, historyCount: MAX_FILE_CONVERSATIONS });
+    await press();
+    expect(sent.some((entry) => entry.id === 'ai.history.count')).toBe(false);
+    expect(store.getState().conversationSerial).toBe(1);
+  });
+
+  it('a conversation the file has no room to save is SAID, not left unsaved in silence', async () => {
+    const store = holding();
+    store.getState().historyRefusedAs('file-full');
+    await drawn({ focused: { docId: DOC, store, page: 0 }, settings: historyOn() });
+    expect(
+      screen.getByText(
+        'This file already keeps 20 saved conversations, the most one file keeps, so this one is not being saved. Remove one in the History and it will be saved.',
+      ),
+    ).not.toBeNull();
   });
 });
 

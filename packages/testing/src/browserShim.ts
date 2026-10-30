@@ -2810,8 +2810,9 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     // REFUSED, because the shim has no provider to ask and a key it cannot check is not one it may keep.
     'ai.checkKey': () => Promise.resolve(ok({ accepted: false as const, problem: 'unreachable' as const })),
     // NOTHING SAVED, the setting's default: the shim keeps no conversation between pages — unless a case seeds one.
-    'ai.history.load': () => Promise.resolve(ok(options.aiHistory ?? { turns: [] })),
-    'ai.history.save': () => Promise.resolve(ok({ saved: false })),
+    'ai.history.load': () => Promise.resolve(ok(options.aiHistory ?? { turns: [], conversation: null })),
+    'ai.history.save': () => Promise.resolve(ok({ saved: false, conversation: null })),
+    'ai.history.count': () => Promise.resolve(ok({ count: 0 })),
     'ai.history.clear': () => Promise.resolve(ok({ cleared: 0 })),
     // NOTHING KEPT, as the shim's load: the History lists none, and nothing named reads or removes.
     'ai.history.list': () => Promise.resolve(ok({ conversations: [] })),

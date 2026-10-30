@@ -159,6 +159,8 @@ export {
   type SavedConversation,
   MAX_HISTORY_PREVIEW,
   MAX_SAVED_CONVERSATIONS,
+  MAX_FILE_CONVERSATIONS,
+  historyKeySchema,
   savedConversationSchema,
   savedTurnSchema,
   savedTurnsSchema,

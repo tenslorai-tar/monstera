@@ -2386,6 +2386,8 @@ export const ASSISTANT_YOU = messageKey('assistant.you');
 export const ASSISTANT_HISTORY = messageKey('assistant.history');
 export const HISTORY_BACK = messageKey('assistant.history.back');
 export const HISTORY_BACK_TO_LIST = messageKey('assistant.history.back-to-list');
+/** What the store keeps and what goes past it (ADR-0277 Decision 6, ADR-0093 Decision 5), said above the list. */
+export const HISTORY_BOUNDS = messageKey('assistant.history.bounds');
 export const HISTORY_UNNAMED = messageKey('assistant.history.unnamed');
 export const HISTORY_MESSAGES = messageKey('assistant.history.messages');
 export const HISTORY_SHOWN = messageKey('assistant.history.shown');
@@ -2420,6 +2422,10 @@ export const ASSISTANT_FULL_COUNT = messageKey('assistant.full-count');
 export const ASSISTANT_FULL_PROVIDER = messageKey('assistant.full-provider');
 /** The one press from a full conversation to a new one (ADR-0277 Decision 2). */
 export const ASSISTANT_START_NEW = messageKey('assistant.start-new');
+/** A new conversation not begun, because its file keeps the most saved conversations one file keeps (ADR-0277). */
+export const ASSISTANT_FILE_FULL_NEW = messageKey('assistant.file-full-new');
+/** This conversation not being saved, for the same reason (ADR-0277). */
+export const ASSISTANT_FILE_FULL_UNSAVED = messageKey('assistant.file-full-unsaved');
 /** A *Document only* ask to a model that searches the web for every answer, refused before sending (ADR-0108). */
 export const ASSISTANT_SEARCHES_THE_WEB = messageKey('assistant.searches-the-web');
 /** The *Document only / Document + web* switch, the Sources menu, and why a choice is disabled (ADR-0108). */
@@ -5452,6 +5458,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_HISTORY]: 'History',
   [HISTORY_BACK]: 'Back to the conversation',
   [HISTORY_BACK_TO_LIST]: 'Back to History',
+  [HISTORY_BOUNDS]:
+    'Each file keeps up to {perFile} conversations, and conversations are kept for up to {files} files. When a new file would be one too many, the file saved longest ago is removed with its conversations.',
   [HISTORY_UNNAMED]: 'Earlier conversation',
   [HISTORY_MESSAGES]: '{count, plural, one {# message} other {# messages}}',
   [HISTORY_SHOWN]: 'This is a saved conversation, shown to read. It does not open the file.',
@@ -5482,6 +5490,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_FULL_PROVIDER]:
     'This conversation is now too long for the model to read, so the provider refused the last question. Start a new conversation to ask it again.',
   [ASSISTANT_START_NEW]: 'Start a new conversation',
+  [ASSISTANT_FILE_FULL_NEW]:
+    'This file already keeps {limit} saved conversations, the most one file keeps, so a new one was not started. Remove one in the History, then start a new conversation.',
+  [ASSISTANT_FILE_FULL_UNSAVED]:
+    'This file already keeps {limit} saved conversations, the most one file keeps, so this one is not being saved. Remove one in the History and it will be saved.',
   [ASSISTANT_ANSWER_CUT]:
     'The answer was stopped at its length limit of {limit, plural, other {# characters}}. What is above is all of it up to there. Ask for the rest in a new question.',
   [ASSISTANT_SEARCHES_THE_WEB]:

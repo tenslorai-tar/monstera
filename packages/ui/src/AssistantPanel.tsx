@@ -15,6 +15,8 @@ import {
   MAX_ASK_DOCUMENTS,
   MAX_ANSWER_TEXT,
   MAX_CHAT_TEXT,
+  MAX_FILE_CONVERSATIONS,
+  CHAT_HISTORY_SETTING_ID,
   askShareOf,
   conversationRoom,
   type DispatchableCommand,
@@ -103,6 +105,8 @@ import {
   ASSISTANT_FULL_COUNT,
   ASSISTANT_FULL_PROVIDER,
   ASSISTANT_START_NEW,
+  ASSISTANT_FILE_FULL_NEW,
+  ASSISTANT_FILE_FULL_UNSAVED,
   ASSISTANT_NO_KEY,
   ASSISTANT_SEARCHES_THE_WEB,
   ASSISTANT_WEB_ALWAYS,
@@ -815,16 +819,39 @@ export function AssistantPanel({
   const question = draft.trim();
   const room = conversationRoom(editing === null ? turns : turns.slice(0, editing), question);
 
+  // A FILE AT ITS TWENTY, for the document whose New chat was refused (ADR-0277 Decision 6): held with that document's id,
+  // as an edit is, so another tab does not say it.
+  const [fileFullIn, setFileFullIn] = useState<DocId | null>(null);
+  const historyRefused = useSyncExternalStore(focused.store.subscribe, () => focused.store.getState().historyRefused);
+
   /**
-   * *New chat*, and *Start a new conversation* where one is full: the conversation is emptied and the panel starts
-   * afresh, *Document only* (ADR-0108), whatever the last one used.
+   * *New chat*, and *Start a new conversation* where one is full: a new conversation begins, *Document only*
+   * (ADR-0108), and the one before is kept where history keeps it (ADR-0277 Decision 6). With history on, a file that
+   * already keeps `MAX_FILE_CONVERSATIONS` is asked about FIRST: nothing begins, and the panel says to remove one in the
+   * History, so no conversation is lost or trimmed in silence.
    */
   const startNew = useCallback(() => {
-    writeTurns([]);
-    setEditing(null);
-    setProblem(null);
-    setWebChosen(null);
-  }, [setEditing, writeTurns]);
+    const store = focused.store;
+    const docId = focused.docId;
+    const begin = (): void => {
+      store.getState().startConversation();
+      setEditing(null);
+      setProblem(null);
+      setWebChosen(null);
+      setFileFullIn(null);
+    };
+    if (settings.get(CHAT_HISTORY_SETTING_ID) !== true || store.getState().conversation.length === 0) {
+      begin();
+      return;
+    }
+    void client['ai.history.count']({ docId }).then((answer) => {
+      if (answer.ok && answer.value.count >= MAX_FILE_CONVERSATIONS) {
+        setFileFullIn(docId);
+        return;
+      }
+      begin();
+    });
+  }, [client, focused, setEditing, settings]);
 
   /**
    * The paperclip: `main` runs the picker and answers handles. Files already attached stay; past eight, the rest are
@@ -1120,6 +1147,19 @@ export function AssistantPanel({
       {problem !== null && (
         <p className="m-assistant__problem">{i18n._(PROBLEMS[problem], { limit: MAX_ANSWER_TEXT })}</p>
       )}
+      {/* A FILE AT ITS TWENTY SAVED CONVERSATIONS (ADR-0277 Decision 6), said where it stops something: a new conversation
+          not begun, or this one not being saved. Removing one in the History is the way on either way. */}
+      <div aria-live="polite" data-assistant-file-full-region="">
+        {fileFullIn === focused.docId ? (
+          <p className="m-assistant__problem" data-assistant-file-full="new">
+            {i18n._(ASSISTANT_FILE_FULL_NEW, { limit: MAX_FILE_CONVERSATIONS })}
+          </p>
+        ) : historyRefused === 'file-full' ? (
+          <p className="m-assistant__problem" data-assistant-file-full="unsaved">
+            {i18n._(ASSISTANT_FILE_FULL_UNSAVED, { limit: MAX_FILE_CONVERSATIONS })}
+          </p>
+        ) : null}
+      </div>
 
       <ol aria-label={i18n._(ASSISTANT_CONVERSATION_LABEL)} className="m-assistant__turns">
         {turns.map((turn, at) => (

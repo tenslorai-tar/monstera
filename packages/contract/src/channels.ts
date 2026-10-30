@@ -638,6 +638,14 @@ export type SavedTurn = z.infer<typeof savedTurnSchema>;
  */
 export const MAX_SAVED_CONVERSATIONS = 200;
 
+/**
+ * How many conversations one file keeps (ADR-0277 Decision 6). Twenty, because a conversation is full at
+ * `MAX_CHAT_TURNS` messages, so twenty are some 640 messages about one file, while the store stays bounded:
+ * {@link MAX_SAVED_CONVERSATIONS} files of this many conversations of `MAX_CHAT_TURNS` turns of `MAX_ANSWER_TEXT`. A file
+ * at this many is never trimmed: a new conversation there is refused (`file-full`) and the person is asked to remove one.
+ */
+export const MAX_FILE_CONVERSATIONS = 20;
+
 /** How long the first question quoted beside a saved conversation may be (ADR-0192): a preview, not a transcript. */
 export const MAX_HISTORY_PREVIEW = 160;
 
@@ -646,10 +654,18 @@ export const MAX_HISTORY_PREVIEW = 160;
  * naming no path), the file's name where the entry recorded one, when it was saved where it recorded that, how many turns it
  * has, and its first question.
  */
+/**
+ * A saved conversation's key, and a file's: sixty-four hex characters, the length of the SHA-256 that keys a file
+ * (ADR-0093) and of the random id a conversation is given (ADR-0277). Opaque to the renderer, and naming no path.
+ */
+export const historyKeySchema = z.string().length(64).regex(/^[0-9a-f]+$/u);
+
 export const savedConversationSchema = z
   .object({
-    // A SHA-256 in hex, so sixty-four characters exactly: the bound is the digest's own length.
-    key: z.string().length(64).regex(/^[0-9a-f]+$/u),
+    /** The conversation's own key, which `ai.history.read` and `ai.history.remove` name. */
+    key: historyKeySchema,
+    /** The file's key, shared by that file's conversations, so the History can show them together (ADR-0277). */
+    file: historyKeySchema,
     name: z.string().max(MAX_DOCUMENT_NAME_LENGTH).nullable(),
     /** An ISO 8601 instant, or `null` for an entry saved before entries recorded one. */
     savedAt: z.string().max(40).nullable(),
@@ -6537,38 +6553,54 @@ export const channels = {
   ),
 
   /**
-   * A document's saved conversation (ADR-0093), by `DocId`: `main` finds the file's entry by a digest
-   * of its path, which never crosses. Empty when nothing is saved, when saving is off, or when this
-   * machine cannot decrypt what was.
+   * A document's newest saved conversation (ADR-0093, ADR-0277), by `DocId`: `main` finds the file's entries by a digest
+   * of its path, which never crosses. `conversation` is the key the next save continues it under; `null`, with no turns,
+   * when nothing is saved, when saving is off, or when this machine cannot decrypt what was.
    */
   'ai.history.load': channel(
-    'The saved assistant conversation for an open document, if chat history is on.',
+    'The newest saved assistant conversation for an open document, if chat history is on.',
     z.object({ docId: docIdSchema }).strict(),
-    z.object({ turns: savedTurnsSchema }),
+    z.object({ turns: savedTurnsSchema, conversation: historyKeySchema.nullable() }),
     ['document-not-open'],
   ),
 
   /**
-   * Replaces a document's saved conversation; an empty list removes it (ADR-0093). `saved: false`
-   * when chat history is off — `main` reads the setting itself, so a renderer that asked anyway
-   * stores nothing.
+   * Saves a document's conversation (ADR-0277 Decision 6): `conversation` names the saved one it continues, which is
+   * replaced, or is `null` for a NEW one, which is added beside the file's others and whose key is answered. Nothing is
+   * removed by a save: an empty new conversation stores nothing, and an empty one that was saved keeps what it held, for
+   * removing is the History's. `saved: false` when chat history is off, since `main` reads the setting itself; `file-full`
+   * for a new conversation when the file already keeps `MAX_FILE_CONVERSATIONS`, which is never made room for in silence.
    */
   'ai.history.save': channel(
     'Saves an open document’s assistant conversation, when chat history is on.',
-    z.object({ docId: docIdSchema, turns: savedTurnsSchema }).strict(),
-    z.object({ saved: z.boolean() }),
-    ['document-not-open', 'secret-storage-unavailable'],
+    z.object({ docId: docIdSchema, conversation: historyKeySchema.nullable(), turns: savedTurnsSchema }).strict(),
+    z.object({ saved: z.boolean(), conversation: historyKeySchema.nullable() }),
+    ['document-not-open', 'secret-storage-unavailable', 'file-full'],
   ),
 
   /**
-   * Every saved conversation, newest saved first (ADR-0192) — what the Assistant's History lists. It does not wait on
-   * *Save chat history*: what was saved while it was on stays readable while it is off. Empty where nothing is saved or
-   * this machine cannot decrypt what was.
+   * How many conversations an open document's file keeps (ADR-0277 Decision 6), so starting a new one can say, before
+   * anything is lost, that the file is at `MAX_FILE_CONVERSATIONS`. Not behind the setting, as the History is not.
+   */
+  'ai.history.count': channel(
+    'How many saved assistant conversations an open document’s file keeps.',
+    z.object({ docId: docIdSchema }).strict(),
+    z.object({ count: z.number().int().nonnegative().max(MAX_FILE_CONVERSATIONS) }),
+    ['document-not-open'],
+  ),
+
+  /**
+   * Every saved conversation (ADR-0192, ADR-0277): the files newest saved first, and each file's conversations newest
+   * saved first beside one another — what the Assistant's History lists. It does not wait on *Save chat history*: what
+   * was saved while it was on stays readable while it is off. Empty where nothing is saved or this machine cannot
+   * decrypt what was.
    */
   'ai.history.list': channel(
-    'Every saved assistant conversation, newest first, with the file name where one was recorded.',
+    'Every saved assistant conversation, each file’s together and newest first, with the file name where one was recorded.',
     z.object({}).strict(),
-    z.object({ conversations: z.array(savedConversationSchema).max(MAX_SAVED_CONVERSATIONS) }),
+    z.object({
+      conversations: z.array(savedConversationSchema).max(MAX_SAVED_CONVERSATIONS * MAX_FILE_CONVERSATIONS),
+    }),
   ),
 
   /**

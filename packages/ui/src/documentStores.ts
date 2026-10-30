@@ -213,13 +213,25 @@ export interface DocumentState {
   /**
    * This document's assistant conversation
    * ([ADR-0083](../../../docs/DECISIONS/0083-the-contextual-panel-holds-tabs-and-the-assistant-is-one.md)
-   * Decision 4: one conversation per document, dropped with it).
+   * Decision 4: one conversation per document, dropped with it; superseded by ADR-0277 Decision 6, where a new
+   * conversation keeps the old one in the history, so this is the conversation shown, the newest).
    *
    * Here for {@link history}'s reason: a conversation that outlived its document would answer
    * questions about a file that is closed, and switching tabs would carry one document's
    * answers into another's panel.
    */
   readonly conversation: readonly ConversationTurn[];
+  /**
+   * Which conversation {@link conversation} is: moved by {@link startConversation} and nothing else, so the history sync
+   * can tell a NEW conversation (saved as a new one, the old one kept, ADR-0277 Decision 6) from the same one edited —
+   * which an emptied list of turns alone cannot say.
+   */
+  readonly conversationSerial: number;
+  /**
+   * Why this conversation is NOT being saved though chat history is on, or `null`: `file-full` when its file already keeps
+   * `MAX_FILE_CONVERSATIONS` (ADR-0277 Decision 6), so the panel says so rather than leaving it unsaved in silence.
+   */
+  readonly historyRefused: 'file-full' | null;
   /**
    * Which documents this conversation asks about when two are side by side — *Left · Right ·
    * Both* (ADR-0089 Decision 5). The conversation's, so it lives and dies with the turns;
@@ -344,6 +356,12 @@ export interface DocumentActions {
   /** Replaces this document's conversation — the panel holds the turns it is assembling. */
   readonly converse: (turns: readonly ConversationTurn[]) => void;
 
+  /** Starts a new, empty conversation; the one before is kept where history keeps it (ADR-0277 Decision 6). */
+  readonly startConversation: () => void;
+
+  /** Records why this conversation is not being saved, or `null` once it is — the history sync is its one writer. */
+  readonly historyRefusedAs: (why: 'file-full' | null) => void;
+
   /** Records the Left · Right · Both choice for this conversation. */
   readonly choseSides: (sides: AskSides) => void;
 
@@ -404,6 +422,8 @@ export function createDocumentStore(
     // count, and zero is a number the navigation commands would clamp against.
     pageCount: undefined,
     conversation: [],
+    conversationSerial: 0,
+    historyRefused: null,
     sides: undefined,
     selectedPages: [],
     spelling: undefined,
@@ -494,6 +514,12 @@ export function createDocumentStore(
     },
     converse: (turns) => {
       set({ conversation: turns });
+    },
+    startConversation: () => {
+      set((state) => ({ conversation: [], conversationSerial: state.conversationSerial + 1, historyRefused: null }));
+    },
+    historyRefusedAs: (why) => {
+      set({ historyRefused: why });
     },
     reviewSpelling: (review) => {
       set({ spelling: review });

@@ -244,11 +244,12 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'ai.translateText': 'one selected text bounded at half the copy bound in, one translation bounded at the copy bound out; no document contributes',
   'ai.checkKey': 'a provider and a key bounded by MAX_SECRET_SETTING in; accepted or one declared problem out',
   // CHAT HISTORY (ADR-0093): a conversation, never a document — MAX_CHAT_TURNS of MAX_ANSWER_TEXT each (ADR-0277).
-  'ai.history.load': 'one DocId in; at most MAX_CHAT_TURNS bounded turns out, whatever the document’s size',
-  'ai.history.save': 'one DocId and at most MAX_CHAT_TURNS bounded turns in; a boolean out',
+  'ai.history.load': 'one DocId in; at most MAX_CHAT_TURNS bounded turns and one digest out, whatever the document’s size',
+  'ai.history.save': 'one DocId, one digest and at most MAX_CHAT_TURNS bounded turns in; a boolean and a digest out',
+  'ai.history.count': 'one DocId in; a count bounded by MAX_FILE_CONVERSATIONS out',
   'ai.history.clear': 'carries nothing and answers a count',
   // THE HISTORY (ADR-0192): the store's own bound, MAX_SAVED_CONVERSATIONS, and a conversation never a document.
-  'ai.history.list': 'carries nothing; at most MAX_SAVED_CONVERSATIONS entries out, each a digest, a name, a date, a count and a bounded preview',
+  'ai.history.list': 'carries nothing; at most MAX_SAVED_CONVERSATIONS × MAX_FILE_CONVERSATIONS entries out, each two digests, a name, a date, a count and a bounded preview',
   'ai.history.read': 'one digest in; at most MAX_CHAT_TURNS bounded turns out',
   'ai.history.remove': 'one digest in; a boolean out',
   // CLOUD STORAGE (ADR-0091): no document's bytes cross in either direction — a working copy is

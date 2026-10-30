@@ -19,6 +19,13 @@ import type { ConversationTurn, DocumentStore } from './documentStores.js';
  * conversation has been still for {@link SETTLE_MS}, so one answer is one write — and a conversation
  * saved mid-answer would restore half of one.
  *
+ * ## A new conversation is saved as a NEW one
+ *
+ * A file keeps several conversations (ADR-0277 Decision 6). Each save names the saved conversation it continues, by the
+ * key `main` gave it, so *New chat* (the store's `startConversation`, which moves its serial) begins one beside the old
+ * rather than replacing it, and an emptied conversation never deletes one. A file already at its bound refuses a new
+ * one, and that refusal is recorded on the store for the panel to say.
+ *
  * ## What is saved is what the contract allows, the NEWEST of it
  *
  * The last {@link MAX_CHAT_TURNS} turns, each WHOLE: a saved turn is bounded at `MAX_ANSWER_TEXT`, the bound `main`
@@ -62,11 +69,23 @@ export function syncConversation(
   // THE LOADED TURNS are not saved back: nothing changed, and the first save would otherwise be a
   // rewrite of what was just read.
   let loaded: readonly ConversationTurn[] | undefined;
+  // WHICH SAVED CONVERSATION this one is (ADR-0277 Decision 6): its key once `main` has one, for the conversation the
+  // store's serial names. A new serial is a new conversation, saved as a new one, so the old one is kept, never replaced.
+  let saving: { readonly serial: number; readonly conversation: string | null } = {
+    serial: store.getState().conversationSerial,
+    conversation: null,
+  };
+  // A NEW CONVERSATION'S FIRST SAVE IS WAITED FOR: its key arrives with the answer, and a second save sent before it would
+  // add the same conversation twice. Every other save goes AT ONCE, in the same call, so the flush on close reaches `main`
+  // while it still holds the document.
+  let firstSave: Promise<void> | null = null;
+  let afterFirst = false;
 
   if (enabled()) {
+    const serial = saving.serial;
     void client['ai.history.load']({ docId }).then((answer) => {
       if (stopped || !answer.ok || answer.value.turns.length === 0) return;
-      if (store.getState().conversation.length > 0) return;
+      if (store.getState().conversation.length > 0 || store.getState().conversationSerial !== serial) return;
       const turns: ConversationTurn[] = answer.value.turns.map((turn) => ({
         role: turn.role,
         text: turn.text,
@@ -75,13 +94,42 @@ export function syncConversation(
         ...(turn.attached === undefined ? {} : { attached: turn.attached }),
       }));
       loaded = turns;
+      saving = { serial, conversation: answer.value.conversation };
       store.getState().converse(turns);
     });
   }
 
-  const save = (): void => {
+  const saveNow = async (): Promise<void> => {
     if (!enabled()) return;
-    void client['ai.history.save']({ docId, turns: savedTurns(store.getState().conversation) });
+    const state = store.getState();
+    if (state.conversationSerial !== saving.serial) saving = { serial: state.conversationSerial, conversation: null };
+    const asked = saving;
+    const answer = await client['ai.history.save']({ docId, conversation: asked.conversation, turns: savedTurns(state.conversation) });
+    // A CONVERSATION BEGUN SINCE is not this one: the key answered belongs to the conversation that was asked about.
+    if (store.getState().conversationSerial !== asked.serial) return;
+    if (answer.ok) {
+      saving = { serial: asked.serial, conversation: answer.value.conversation ?? asked.conversation };
+      if (answer.value.saved) store.getState().historyRefusedAs(null);
+    } else if (answer.error.code === 'file-full') {
+      // SAID, NOT DROPPED: the file keeps its twenty and this conversation is not saved until one is removed.
+      store.getState().historyRefusedAs('file-full');
+    }
+  };
+  const save = (): void => {
+    if (firstSave !== null && store.getState().conversationSerial === saving.serial && saving.conversation === null) {
+      afterFirst = true;
+      return;
+    }
+    const keyless = saving.conversation === null || store.getState().conversationSerial !== saving.serial;
+    const sent = saveNow();
+    if (!keyless) return;
+    firstSave = sent.finally(() => {
+      firstSave = null;
+      if (afterFirst) {
+        afterFirst = false;
+        save();
+      }
+    });
   };
 
   const unsubscribe = store.subscribe((state, previous) => {
