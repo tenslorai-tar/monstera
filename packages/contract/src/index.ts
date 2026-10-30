@@ -146,6 +146,8 @@ export {
   MAX_CHAT_TEXT,
   MAX_CHAT_TURNS,
   MAX_ANSWER_TEXT,
+  type ConversationRoom,
+  conversationRoom,
   MAX_MODEL_ID,
   MAX_TRANSLATE_TEXT,
   MAX_TRANSLATED_TEXT,

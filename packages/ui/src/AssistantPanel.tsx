@@ -14,7 +14,9 @@ import {
   MAX_ASK_ATTACHMENTS,
   MAX_ASK_DOCUMENTS,
   MAX_ANSWER_TEXT,
+  MAX_CHAT_TEXT,
   askShareOf,
+  conversationRoom,
   type DispatchableCommand,
   type WebSearchAbsence,
   choiceReadsImages,
@@ -96,6 +98,8 @@ import {
   ASSISTANT_MODEL_NO_VISION,
   ASSISTANT_NO_COMMENTS,
   ASSISTANT_ANSWER_CUT,
+  ASSISTANT_QUESTION_COUNT,
+  ASSISTANT_QUESTION_OVER,
   ASSISTANT_NO_KEY,
   ASSISTANT_SEARCHES_THE_WEB,
   ASSISTANT_WEB_ALWAYS,
@@ -318,6 +322,9 @@ function newSubscription(): string {
   return `s${String(Date.now())}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+/** Where the composer starts counting a question's characters: nine tenths of the bound (ADR-0277 Decision 1). */
+const QUESTION_COUNT_FROM = Math.floor(MAX_CHAT_TEXT * 0.9);
+
 const PROBLEMS = {
   unauthorised: ASSISTANT_PROBLEM_UNAUTHORISED,
   unreachable: ASSISTANT_PROBLEM_UNREACHABLE,
@@ -432,6 +439,7 @@ export function AssistantPanel({
   const providerId = useId();
   const modelId = useId();
   const hintId = useId();
+  const overId = useId();
   const sidesName = useId();
   const chooseId = useId();
   // THE PROVIDER AND EACH PROVIDER'S MODEL ARE SETTINGS (ADR-0117): this picker writes them, `main` reads Anthropic's for
@@ -460,6 +468,9 @@ export function AssistantPanel({
     settings.set(AI_MODELS_SETTING.id, { ...chosenModels, [provider]: next });
   };
   const [draft, setDraft] = useState('');
+  // WHAT SEND WOULD ASK, measured as it would be sent (trimmed), by the rule `ask` takes (ADR-0277 Decision 1).
+  const question = draft.trim();
+  const room = conversationRoom(question);
   // THE FILES FOR THE NEXT QUESTION (ADR-0135): handles `main` minted, a name and a size each. They go with the next
   // ask that starts, and are cleared then, as the draft is.
   const [attached, setAttached] = useState(NOTHING_ATTACHED);
@@ -669,7 +680,11 @@ export function AssistantPanel({
       // command's request and Regenerate. A model can be chosen without a key, since the list answers without one,
       // so the model was never the gate: a request went to main, which refused it after the turn was written, and
       // the panel said the missing key twice and *no text was found* once (F-V1). The readiness line says it once.
-      if (text === '' || model === '' || !hasKey || live.current !== null) return false;
+      // NOTHING `main` WOULD REFUSE IS SENT (ADR-0277): a question past the bound was written into the conversation and
+      // then refused by `ai.ask`'s schema, so every later question resent it and was refused too. The box says why.
+      if (text === '' || model === '' || !hasKey || live.current !== null || conversationRoom(text).kind !== 'room') {
+        return false;
+      }
       const store = focused.store;
       const read = (): readonly ConversationTurn[] => store.getState().conversation;
       const write = (next: readonly ConversationTurn[]): void => {
@@ -798,7 +813,8 @@ export function AssistantPanel({
 
   const send = useCallback(() => {
     const asked = newRequest(scope);
-    if (asked === null) return;
+    // BEFORE AN EDIT IS APPLIED: a question that cannot go must not take the edited one and its answer with it.
+    if (asked === null || conversationRoom(draft.trim()).kind !== 'room') return;
     const wanted = attached.files.length === 0 ? asked : { ...asked, attachments: attached.files };
     // EDIT AND RESEND: the edited question and everything after it go before the new one is asked.
     // Only when the ask can begin, so a Send that cannot start leaves the conversation as it was.
@@ -1342,7 +1358,8 @@ export function AssistantPanel({
         )}
         <textarea
           ref={composer}
-          aria-describedby={hintId}
+          aria-describedby={room.kind === 'question-over' ? `${hintId} ${overId}` : hintId}
+          aria-invalid={room.kind === 'question-over'}
           aria-label={i18n._(ASSISTANT_COMPOSER_LABEL)}
           className="m-assistant__draft"
           data-assistant-draft=""
@@ -1362,6 +1379,21 @@ export function AssistantPanel({
           rows={2}
           value={draft}
         />
+        {/* HOW LONG THE QUESTION IS, from nine tenths of the bound: a count a person can act on before Send refuses. */}
+        {room.kind === 'room' && question.length >= QUESTION_COUNT_FROM && (
+          <p className="m-assistant__state" data-assistant-count="">
+            {i18n._(ASSISTANT_QUESTION_COUNT, { count: question.length, limit: MAX_CHAT_TEXT })}
+          </p>
+        )}
+        {/* OVER THE BOUND, said and announced (ADR-0277 Decision 1): the region is always mounted, so a screen reader hears
+            the sentence when it appears. Send is off while it shows, and the words stay in the box. */}
+        <div aria-live="polite" data-assistant-over-region="">
+          {room.kind === 'question-over' && (
+            <p className="m-assistant__problem" data-assistant-over="" id={overId}>
+              {i18n._(ASSISTANT_QUESTION_OVER, { over: room.over, limit: MAX_CHAT_TEXT })}
+            </p>
+          )}
+        </div>
         <div className="m-assistant__composer-foot">
           {/* THE PAPERCLIP (ADR-0135), first in the foot: any file, several at once, through main's picker. Disabled at
               eight, the most one question carries, so it is never a control that picks and keeps nothing. */}
@@ -1376,7 +1408,9 @@ export function AssistantPanel({
               CONTROL (§10.5): with no key, or no model to ask, Send is disabled and the lines above say which. */}
           {streaming === null ? (
             <IconButton
-              disabled={!hasKey || model === '' || waitingForSides || blindForPicture || searchesAnyway}
+              disabled={
+                !hasKey || model === '' || waitingForSides || blindForPicture || searchesAnyway || room.kind !== 'room'
+              }
               icon={ArrowUp}
               label={ASSISTANT_SEND}
               onClick={send}

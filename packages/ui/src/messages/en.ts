@@ -2407,6 +2407,10 @@ export const ASSISTANT_NO_KEY = messageKey('assistant.no-key');
 export const ASSISTANT_NO_COMMENTS = messageKey('assistant.no-comments');
 /** An answer `main` stopped at its length bound (ADR-0277 Decision 3), said where the answer ends. */
 export const ASSISTANT_ANSWER_CUT = messageKey('assistant.answer-cut');
+/** A question's length as it nears the bound (ADR-0277 Decision 1). */
+export const ASSISTANT_QUESTION_COUNT = messageKey('assistant.question-count');
+/** A question past the bound: how much, and where a long passage is better asked (ADR-0277 Decision 1). */
+export const ASSISTANT_QUESTION_OVER = messageKey('assistant.question-over');
 /** A *Document only* ask to a model that searches the web for every answer, refused before sending (ADR-0108). */
 export const ASSISTANT_SEARCHES_THE_WEB = messageKey('assistant.searches-the-web');
 /** The *Document only / Document + web* switch, the Sources menu, and why a choice is disabled (ADR-0108). */
@@ -5461,6 +5465,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_NOTICE]: 'AI can make mistakes. Double check replies.',
   [ASSISTANT_NO_KEY]: 'This provider has no key stored. Add it in Settings › AI; the key stays on this machine.',
   [ASSISTANT_NO_COMMENTS]: 'This document has no comments to ask about, so nothing was sent.',
+  [ASSISTANT_QUESTION_COUNT]: '{count, plural, other {#}} of {limit, plural, other {# characters}}',
+  [ASSISTANT_QUESTION_OVER]:
+    'This question is {over, plural, one {# character} other {# characters}} over the limit of {limit, plural, other {#}}, so it cannot be sent. If it holds a passage from the document, ask about the page in Context, or select the passage on the page and ask about the selected text.',
   [ASSISTANT_ANSWER_CUT]:
     'The answer was stopped at its length limit of {limit, plural, other {# characters}}. What is above is all of it up to there. Ask for the rest in a new question.',
   [ASSISTANT_SEARCHES_THE_WEB]:

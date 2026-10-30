@@ -527,6 +527,21 @@ export const MAX_CHAT_TURNS = 64;
  */
 export const MAX_ANSWER_TEXT = 4 * MAX_CHAT_TEXT;
 
+/** Whether a conversation can take a question, and if not, why — what {@link conversationRoom} answers. */
+export type ConversationRoom =
+  | { readonly kind: 'room' }
+  /** The question is longer than `MAX_CHAT_TEXT`, by `over` characters; the conversation itself can take one. */
+  | { readonly kind: 'question-over'; readonly over: number };
+
+/**
+ * Whether `question` can be asked (ADR-0277 Decisions 1 and 2): the ONE rule every route that asks takes (Send, a
+ * command's question, Regenerate), and the one `ai.ask`'s schema states for a person's message, so nothing is sent that
+ * `main` would refuse and no question is written into a conversation and stuck there.
+ */
+export function conversationRoom(question: string): ConversationRoom {
+  return question.length > MAX_CHAT_TEXT ? { kind: 'question-over', over: question.length - MAX_CHAT_TEXT } : { kind: 'room' };
+}
+
 /**
  * The most characters of selected text one translation takes, and of the answer. The answer stays within what can be
  * COPIED (`window.copyText`, bounded at {@link MAX_ANSWER_TEXT}), so a translation is never one that cannot be put on

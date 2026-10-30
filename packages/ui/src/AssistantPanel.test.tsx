@@ -8,10 +8,12 @@ import {
   MAX_ASK_DOCUMENTS,
   MAX_ANSWER_TEXT,
   MAX_CHAT_TEXT,
+  IncidentLog,
   channels,
   createClient,
+  wrapHandler,
 } from '@monstera/contract';
-import { asDocId, asDocVersion } from '@monstera/shared';
+import { asDocId, asDocVersion, ok } from '@monstera/shared';
 import { I18nProvider } from '@lingui/react';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { type ReactElement, type ReactNode, useState } from 'react';
@@ -72,13 +74,25 @@ function recording(
   } = {},
   /** A refusal `main` answers every ask with, by code, in place of starting it. */
   refusal?: 'no-comments',
+  /**
+   * Whether `ai.ask` goes through the contract's REAL boundary (`wrapHandler`), as in `main`: `createClient` validates
+   * no params, so only this sees a request `ai.ask`'s schema refuses.
+   */
+  boundary = false,
 ): {
   readonly client: ContractClient;
   readonly sent: { id: string; params: unknown }[];
 } {
   const sent: { id: string; params: unknown }[] = [];
+  const throughBoundary = wrapHandler(
+    channels,
+    'ai.ask',
+    () => Promise.resolve(ok({ started: true, sent: null })),
+    new IncidentLog(() => undefined),
+  );
   const client = createClient(channels, (id, params) => {
     sent.push({ id, params });
+    if (id === 'ai.ask' && boundary) return throughBoundary(params);
     if (id === 'ai.models') {
       return Promise.resolve({
         ok: true,
@@ -180,6 +194,7 @@ async function drawn(options: {
   readonly onGoToDocument?: AssistantPanelProps['onGoToDocument'];
   readonly attaching?: Parameters<typeof recording>[6];
   readonly refusal?: Parameters<typeof recording>[7];
+  readonly boundary?: boolean;
 } = {}) {
   const wire = events();
   const settings = options.settings ?? new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
@@ -192,6 +207,7 @@ async function drawn(options: {
     options.among,
     options.attaching,
     options.refusal,
+    options.boundary ?? false,
   );
   // EVERY TOAST THE PANEL RAISES, in order: a copy's confirmation goes through the window's toast.
   const toasts: unknown[][] = [];
@@ -1887,5 +1903,94 @@ describe('the provider and each provider’s model are SETTINGS (ADR-0117)', () 
       await Promise.resolve();
     });
     expect(sent.find((entry) => entry.id === 'ai.ask')?.params).toMatchObject({ model: 'retired-model' });
+  });
+});
+
+describe('a question over the limit is said, and never sent (ADR-0277 Decision 1)', () => {
+  const DOC = asDocId('00000000-0000-4000-8000-0000000000c9');
+  const send = async (): Promise<void> => {
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  };
+  const composer = (): HTMLTextAreaElement => screen.getByLabelText<HTMLTextAreaElement>('Ask about this document');
+  const over = (by: number): string =>
+    `This question is ${by === 1 ? '1 character' : `${new Intl.NumberFormat('en').format(by)} characters`} over the limit of ${new Intl.NumberFormat('en').format(MAX_CHAT_TEXT)}, so it cannot be sent. If it holds a passage from the document, ask about the page in Context, or select the passage on the page and ask about the selected text.`;
+
+  it('THROUGH THE REAL BOUNDARY: a question one past the bound sends nothing, sticks nothing, and the next question is taken', async () => {
+    const store = createDocumentStore(DOC, asDocVersion(1));
+    const { sent } = await drawn({ focused: { docId: DOC, store, page: 0 }, boundary: true });
+    const long = 'q'.repeat(MAX_CHAT_TEXT + 1);
+    type(long);
+    // ENTER, the route that needs no button: on the code before ADR-0277 this asked, `main`'s boundary refused the
+    // schema as `internal`, and the question stayed in the conversation to be resent with every later one.
+    fireEvent.keyDown(composer(), { key: 'Enter' });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(sent.filter((entry) => entry.id === 'ai.ask')).toStrictEqual([]);
+    expect(store.getState().conversation).toStrictEqual([]);
+    // THE WORDS ARE NEVER TAKEN AWAY.
+    expect(composer().value).toBe(long);
+
+    // AND THE CONVERSATION IS NOT STUCK: a question within the bound goes alone, and `main`'s boundary takes it.
+    type('What is on page 1?');
+    await send();
+    const asks = sent.filter((entry) => entry.id === 'ai.ask');
+    expect(asks.map((entry) => (entry.params as { messages: unknown }).messages)).toStrictEqual([
+      [{ role: 'user', text: 'What is on page 1?' }],
+    ]);
+    expect(composer().value).toBe('');
+    expect(screen.queryByText('The provider refused the request, so nothing more arrived. What is above is what it sent.')).toBeNull();
+  });
+
+  it('over the bound, the box SAYS how much, announced, and Send is off', async () => {
+    await drawn({});
+    type('q'.repeat(MAX_CHAT_TEXT + 1));
+    expect(screen.getByText(over(1)).closest('[aria-live="polite"]')).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Send' }).hasAttribute('disabled')).toBe(true);
+    expect(composer().getAttribute('aria-invalid')).toBe('true');
+    // CONTROL: back within the bound, the sentence goes and Send returns.
+    type('q'.repeat(MAX_CHAT_TEXT));
+    expect(screen.queryByText(over(1))).toBeNull();
+    expect(screen.getByRole('button', { name: 'Send' }).hasAttribute('disabled')).toBe(false);
+  });
+
+  it('CONTROL: a question of exactly the bound is sent, and the boundary takes it', async () => {
+    const store = createDocumentStore(DOC, asDocVersion(1));
+    const { sent } = await drawn({ focused: { docId: DOC, store, page: 0 }, boundary: true });
+    type('q'.repeat(MAX_CHAT_TEXT));
+    await send();
+    expect(sent.filter((entry) => entry.id === 'ai.ask')).toHaveLength(1);
+    expect(composer().value).toBe('');
+    expect(store.getState().conversation.map((turn) => turn.text.length)).toStrictEqual([MAX_CHAT_TEXT]);
+  });
+
+  it('COUNTS from nine tenths of the bound, and not before', async () => {
+    await drawn({});
+    const from = Math.floor(MAX_CHAT_TEXT * 0.9);
+    type('q'.repeat(from - 1));
+    expect(document.querySelector('[data-assistant-count]')).toBeNull();
+    type('q'.repeat(from));
+    expect(screen.getByText(`${new Intl.NumberFormat('en').format(from)} of ${new Intl.NumberFormat('en').format(MAX_CHAT_TEXT)} characters`)).not.toBeNull();
+  });
+
+  it('an edited question that grows past the bound keeps the question and the answer it would replace', async () => {
+    const store = createDocumentStore(DOC, asDocVersion(1));
+    const wire = await drawn({ focused: { docId: DOC, store, page: 0 } });
+    type('When is the review?');
+    await send();
+    const subscription = (wire.sent.find((entry) => entry.id === 'ai.ask')?.params as { subscription: string }).subscription;
+    wire.push('ai.delta', { subscription, text: 'On 17 March.' });
+    wire.push('ai.done', { subscription, stopped: false, web: NO_WEB });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit your question and ask again' }));
+    type('q'.repeat(MAX_CHAT_TEXT + 5));
+    fireEvent.keyDown(composer(), { key: 'Enter' });
+    await send();
+    expect(store.getState().conversation.map((turn) => turn.text)).toStrictEqual(['When is the review?', 'On 17 March.']);
+    expect(screen.getByText(over(5))).not.toBeNull();
   });
 });

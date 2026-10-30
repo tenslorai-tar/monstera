@@ -10,6 +10,7 @@ import {
   MAX_RANGE_BYTES,
   channelIds,
   channels,
+  conversationRoom,
   type ContractHandlers,
   displayLocationSchema,
   preloadChannels,
@@ -1041,6 +1042,24 @@ describe('document.exportExcel — which engine reads the tables (ADR-0086)', ()
   it('refuses a request that names no engine, or one this build does not have', () => {
     expect(params.safeParse({ ...edited, edits: [] }).success).toBe(false);
     expect(params.safeParse({ ...edited, engine: 'tesseract', edits: [] }).success).toBe(false);
+  });
+});
+
+describe('conversationRoom, the one rule for whether a question can be asked (ADR-0277)', () => {
+  it('a question within MAX_CHAT_TEXT has room; one past it is over by exactly how much', () => {
+    expect(conversationRoom('q'.repeat(MAX_CHAT_TEXT))).toStrictEqual({ kind: 'room' });
+    expect(conversationRoom('q'.repeat(MAX_CHAT_TEXT + 1))).toStrictEqual({ kind: 'question-over', over: 1 });
+    expect(conversationRoom('q'.repeat(MAX_CHAT_TEXT + 300))).toStrictEqual({ kind: 'question-over', over: 300 });
+  });
+
+  it('agrees with ai.ask’s schema on both sides of the bound, so nothing it lets through main refuses', () => {
+    for (const length of [MAX_CHAT_TEXT, MAX_CHAT_TEXT + 1]) {
+      const text = 'q'.repeat(length);
+      const schema = channels['ai.ask'].params.safeParse({
+        subscription: 's1-abc', provider: 'anthropic', model: 'm', messages: [{ role: 'user', text }], web: false,
+      }).success;
+      expect(conversationRoom(text).kind === 'room').toBe(schema);
+    }
   });
 });
 
