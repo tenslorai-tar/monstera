@@ -321,6 +321,9 @@ export function BlockEditor({
   const [openedText] = useState(() => editOf(opened.model).text);
   const moved = placeOf(placement, block.box) !== undefined;
   const [problem, setProblem] = useState<Exclude<BlockCommit, 'written' | 'unchanged'> | undefined>(undefined);
+  // WORDS A WRITE REFUSED, which no later change takes back (ADR-0278): the sentence goes when the person moves the caret
+  // or types, but the words are still in no document until a write lands or they are discarded, and both close the editor.
+  const [unwritten, setUnwritten] = useState(false);
   const [notice, setNotice] = useState<MessageKey | undefined>(undefined);
   const [sending, setSending] = useState(false);
   const busy = sending || parting;
@@ -396,6 +399,7 @@ export function BlockEditor({
       if (outcome !== 'written' && outcome !== 'unchanged') {
         // THE EDITOR STAYS on every refusal (ADR-0169 Decision 5), with the words and the sentence beside them.
         setProblem(outcome);
+        setUnwritten(true);
         return;
       }
       if (outcome === 'written') wrote.current = true;
@@ -426,20 +430,22 @@ export function BlockEditor({
       nudge: (step) => {
         if (placeable) setPlacement((now) => nudged(step, now, block.box, geometry.zoom));
       },
+      // A PRESS OR FOCUS AWAY writes, except over words a write refused: those are asked about by the route that leaves
+      // (ADR-0278), and a write sent under that question would race its answer. Escape is still the person's retry.
       finish: () => {
-        if (problem === undefined && !menuOpen.current) void finish();
+        if (!unwritten && !menuOpen.current) void finish();
       },
-      // HELD WHILE A REFUSAL STANDS, held or refused alike: the words are in no document (ADR-0278).
-      held: () => problem !== undefined,
+      // HELD FROM A REFUSAL ON, whatever was pressed or typed since: the words are in no document (ADR-0278).
+      held: () => unwritten,
       putBack: () => {
         onClose('put-back');
       },
     };
-  }, [block.box, finish, finishWith, geometry.zoom, onClose, placeable, problem]);
-  // THE STATUS BAR READS THE HELD STATE, so it is told when a refusal starts or is cleared.
+  }, [block.box, finish, finishWith, geometry.zoom, onClose, placeable, problem, unwritten]);
+  // THE STATUS BAR READS THE HELD STATE, so it is told when it starts.
   useEffect(() => {
     editorHeldChanged();
-  }, [problem]);
+  }, [unwritten]);
   useEffect(() => {
     finishingRef.current = finish;
     return () => {
@@ -447,11 +453,11 @@ export function BlockEditor({
     };
   }, [finish, finishingRef]);
   useEffect(() => {
-    stuckRef.current = problem !== undefined;
+    stuckRef.current = unwritten;
     return () => {
       stuckRef.current = false;
     };
-  }, [problem, stuckRef]);
+  }, [unwritten, stuckRef]);
   // ANY CHANGE AFTER A REFUSAL clears it: the person is changing what was refused.
   useEffect(
     () =>

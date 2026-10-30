@@ -210,6 +210,20 @@ for (const route of ROUTES) {
   });
 }
 
+test('words a write refused are still held after the caret moves or more is typed, and leaving still asks', async ({ page }) => {
+  await refusedEditor(page);
+  // THE SENTENCE GOES on any change after a refusal — a caret moved publishes a selection — which is what ended the hold
+  // when it was read from the sentence (the stage audit of f32c8c39..0d48e788): leaving then asked nothing.
+  await page.keyboard.press('ArrowLeft');
+  await expect(page.locator('.m-kit-problem')).toHaveCount(0);
+  await page.keyboard.type(' and more');
+  await expect(page.locator('.m-status-saved').first()).toHaveText('Unsaved changes');
+  await page.getByRole('button', { name: 'Edit text', exact: true }).first().click();
+  await answer(page, 'Keep editing');
+  await expect(page.locator(SURFACE)).toHaveCount(1);
+  await expect.poll(() => page.locator(SURFACE).evaluate((element) => (element as HTMLElement).innerText)).toContain('and more');
+});
+
 test('the status bar says Unsaved changes while refused words are held, and Saved again once they are discarded', async ({ page }) => {
   await refusedEditor(page);
   const bar = page.locator('.m-status-saved').first();
