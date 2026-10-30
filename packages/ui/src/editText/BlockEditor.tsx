@@ -11,7 +11,7 @@ import { facesGiven, subscribeFaces } from '../familyFaces.js';
 import { positionOf, readSelection, writeSelection } from '../editorKit/dom.js';
 import { type EditorOps, EditorMenu, type EditorSpelling } from '../editorKit/EditorMenu.js';
 import { EditorSurface } from '../editorKit/EditorSurface.js';
-import { formatOpenEditor, keepsEditor, openEditorState, registerEditor, steppedSize } from '../editorKit/openEditor.js';
+import { editorHeldChanged, formatOpenEditor, keepsEditor, openEditorState, registerEditor, steppedSize } from '../editorKit/openEditor.js';
 import { type Position, caret, insertText, isCollapsed, ordered, replaceRange, selectedText, styleAt, wholeBlock, wordAt } from '../editorKit/model.js';
 import { AS_DRAWN_CLASS, type Look } from '../editorKit/paint.js';
 import { type EditorStore, createEditorStore } from '../editorKit/store.js';
@@ -343,10 +343,12 @@ export function BlockEditor({
   );
 
   // THE EDITOR IS OPEN for the formatting commands to act on (ADR-0180), for its whole life.
-  const actions = useRef<{ remove: () => void; nudge: (step: Nudge) => void; finish: () => void }>({
+  const actions = useRef<{ remove: () => void; nudge: (step: Nudge) => void; finish: () => void; held: () => boolean; putBack: () => void }>({
     remove: () => undefined,
     nudge: () => undefined,
     finish: () => undefined,
+    held: () => false,
+    putBack: () => undefined,
   });
   const [fontsAtOpen] = useState(() => pageFonts);
   useEffect(
@@ -364,6 +366,10 @@ export function BlockEditor({
         },
         finish: () => {
           actions.current.finish();
+        },
+        held: () => actions.current.held(),
+        putBack: () => {
+          actions.current.putBack();
         },
         fonts: fontsAtOpen,
         faces: editorFacesOf(faces),
@@ -423,8 +429,17 @@ export function BlockEditor({
       finish: () => {
         if (problem === undefined && !menuOpen.current) void finish();
       },
+      // HELD WHILE A REFUSAL STANDS, held or refused alike: the words are in no document (ADR-0278).
+      held: () => problem !== undefined,
+      putBack: () => {
+        onClose('put-back');
+      },
     };
-  }, [block.box, finish, finishWith, geometry.zoom, placeable, problem]);
+  }, [block.box, finish, finishWith, geometry.zoom, onClose, placeable, problem]);
+  // THE STATUS BAR READS THE HELD STATE, so it is told when a refusal starts or is cleared.
+  useEffect(() => {
+    editorHeldChanged();
+  }, [problem]);
   useEffect(() => {
     finishingRef.current = finish;
     return () => {

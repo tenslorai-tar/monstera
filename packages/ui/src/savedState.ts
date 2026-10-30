@@ -88,14 +88,17 @@ export function windowTitle(
  * @param savedVersion the newest version it has watched reach the file
  * @param savedAt when that happened, or `undefined` before any save in this window
  * @param now the current time, passed in rather than read
+ * @param heldWords whether an Edit text editor holds words a write refused: the person's unsaved work, though no version
+ *   moved, so the bar never says Saved over them (ADR-0278 Decision 4)
  */
 export function savedState(
   version: number,
   savedVersion: number,
   savedAt: number | undefined,
   now: number,
+  heldWords: boolean,
 ): SavedState {
-  if (isDirty(version, savedVersion)) {
+  if (isDirty(version, savedVersion) || heldWords) {
     return { message: STATUS_UNSAVED, values: {}, dirty: true };
   }
 

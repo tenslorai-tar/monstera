@@ -35,6 +35,8 @@ function openOver() {
     root: () => null,
     block: { remove: () => undefined, nudge: () => undefined },
     finish: () => undefined,
+    held: () => false,
+    putBack: () => undefined,
     fonts: [],
   });
   return { store, unregister };

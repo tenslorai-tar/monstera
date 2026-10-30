@@ -135,7 +135,7 @@ import {
 } from './commands/documentCommands.js';
 import { inWriteOrder } from './commands/orderedClient.js';
 import { textFormatCommands } from './commands/textFormatCommands.js';
-import { editorIsOpen, onEditorChange } from './editorKit/openEditor.js';
+import { answerLeavingWith, editorHoldsWords, editorIsOpen, leaveOpenEditor, onEditorChange } from './editorKit/openEditor.js';
 import { proceeds, settlePendingRedactions } from './commands/pendingRedactions.js';
 import type { PendingRedactionOccasion } from './dialogs/pendingRedactions.js';
 import { confirmCopied, confirmDone } from './commands/confirmWritten.js';
@@ -840,7 +840,9 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       clearInterval(timer);
     };
   }, [every]);
-  const saved = savedState(open?.version ?? 0, open?.savedVersion ?? 0, savedAt, now);
+  // REFUSED WORDS HELD IN AN EDITOR are unsaved work no version records (ADR-0278 Decision 4).
+  const heldWords = useSyncExternalStore(onEditorChange, editorHoldsWords);
+  const saved = savedState(open?.version ?? 0, open?.savedVersion ?? 0, savedAt, now, heldWords);
   // THE DOT PER TAB, from the same rule the bar's words come from. It takes no clock — a dot is
   // not a duration — so this is rebuilt when a version moves and never on the tick above.
   const tabStrip = useMemo(
@@ -965,6 +967,8 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
   // way it captures the client — composition, not a global.
   const dialogs = useMemo(() => new DialogRegistry(APPLICATION_DIALOGS), []);
   const { open: openDialog, ask, close, resolve: resolveDialog, report: reportDialog } = useDialogHost(dialogs);
+  // THE LEAVING QUESTION IS ASKED THROUGH THIS HOST (ADR-0278), by every route that would end an editor.
+  useEffect(() => answerLeavingWith((id, props) => ask(id, props)), [ask]);
 
   /**
    * AN IDLE WINDOW WITH NO DOCUMENT GIVES ITS MEMORY BACK (ADR-0252): after a quiet minute with no document, no dialog,
@@ -1076,6 +1080,14 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
         unpark(docId);
         return;
       }
+      // THE DOCUMENT ON SHOW GOES BEHIND, and its editor with it, so refused words held there are asked about first
+      // (ADR-0278): a tab, an opened file and a close's own switch all come through here.
+      if (editorHoldsWords()) {
+        void leaveOpenEditor().then((go) => {
+          if (go) setArriving(docId);
+        });
+        return;
+      }
       setArriving(docId);
     },
     [activeId, unpark],
@@ -1107,8 +1119,18 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
    * it for the reason above. The start screen draws whenever nothing is active, so this is all it takes.
    */
   const showStart = useCallback((): void => {
-    setArriving(undefined);
-    setActiveId(undefined);
+    const show = (): void => {
+      setArriving(undefined);
+      setActiveId(undefined);
+    };
+    // THE START SCREEN TAKES THE DOCUMENT'S PLACE, and its editor's, so refused words are asked about first (ADR-0278).
+    if (editorHoldsWords()) {
+      void leaveOpenEditor().then((go) => {
+        if (go) show();
+      });
+      return;
+    }
+    show();
   }, []);
 
   /**
@@ -2191,6 +2213,9 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       if (closing) return false;
       setClosing(true);
       try {
+        // THE DOCUMENT ON SHOW CLOSING takes its editor, and refused words held there are not in the document, so its
+        // unsaved question cannot see them: they are asked about first (ADR-0278), and Keep editing is a Cancel.
+        if (activeId !== undefined && docIds.includes(activeId) && editorHoldsWords() && !(await leaveOpenEditor())) return false;
         for (const docId of docIds) {
           const tab = tabs.find((candidate) => candidate.docId === docId);
           if (tab === undefined) continue;
@@ -2234,7 +2259,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
         setClosing(false);
       }
     },
-    [activate, ask, client, closing, onSaved, releaseTabs, settleMarks, settleMarksOf, tabs, toast, warnSignatureBreak],
+    [activate, activeId, ask, client, closing, onSaved, releaseTabs, settleMarks, settleMarksOf, tabs, toast, warnSignatureBreak],
   );
 
   // THE WINDOW'S CLOSE, held by main until this answers (`windowClose.ts`): every open
@@ -2525,8 +2550,19 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
    */
   const setToolId = useCallback(
     (id: string | undefined): void => {
-      setToolSlot(id);
-      if (id !== undefined && settings.get(RIBBON_SECTION_SETTING.id) === 'organize') settings.set(RIBBON_SECTION_SETTING.id, 'home');
+      const arm = (): void => {
+        setToolSlot(id);
+        if (id !== undefined && settings.get(RIBBON_SECTION_SETTING.id) === 'organize') settings.set(RIBBON_SECTION_SETTING.id, 'home');
+      };
+      // A TOOL OUTSIDE EDIT TEXT ENDS ITS EDITOR, so refused words held there are asked about first (ADR-0278). Add text
+      // and Edit text keep the editor, and arm at once.
+      if (editorHoldsWords() && !isEditTextTool(id)) {
+        void leaveOpenEditor().then((go) => {
+          if (go) arm();
+        });
+        return;
+      }
+      arm();
     },
     [settings],
   );
@@ -2579,6 +2615,17 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
     let previous = settings.get(RIBBON_SECTION_SETTING.id);
     return settings.watch([RIBBON_SECTION_SETTING.id], () => {
       const next = settings.get(RIBBON_SECTION_SETTING.id);
+      // ORGANIZE'S GRID TAKES THE PANES, and the editor in them, so refused words held there are asked about first
+      // (ADR-0278): the section goes back at once, in this write, before anything draws the grid, and is chosen again on
+      // Discard. Asked here because every section projection writes this setting.
+      if (next === 'organize' && previous !== 'organize' && editorHoldsWords()) {
+        const back = previous;
+        settings.set(RIBBON_SECTION_SETTING.id, back);
+        void leaveOpenEditor().then((go) => {
+          if (go) settings.set(RIBBON_SECTION_SETTING.id, 'organize');
+        });
+        return;
+      }
       if (next === 'organize') chooseTool(undefined);
       else if (previous === 'forms' && next !== 'forms') {
         setToolSlot((current) => current !== undefined && isFormFieldTool(current) ? undefined : current);
@@ -2587,6 +2634,22 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       previous = next;
     });
   }, [chooseTool, settings]);
+  // SPLIT VIEW MOVES THE PANE into or out of its halves, which mounts its editor again, so refused words held there are
+  // asked about first (ADR-0278), the same way: put back in this write, chosen again on Discard.
+  useEffect(() => {
+    let previous = settings.get(SPLIT_VIEW_SETTING.id);
+    return settings.watch([SPLIT_VIEW_SETTING.id], () => {
+      const next = settings.get(SPLIT_VIEW_SETTING.id);
+      if (next !== previous && editorHoldsWords()) {
+        settings.set(SPLIT_VIEW_SETTING.id, previous);
+        void leaveOpenEditor().then((go) => {
+          if (go) settings.set(SPLIT_VIEW_SETTING.id, next);
+        });
+        return;
+      }
+      previous = next;
+    });
+  }, [settings]);
   // THE CONTROL THE HELP CENTRE'S *SHOW ME* ASKED THE RIBBON TO RING (ADR-0112), stamped so asking twice rings twice.
   const [showing, setShowing] = useState<{ readonly id: string; readonly stamp: number } | undefined>(undefined);
   /**

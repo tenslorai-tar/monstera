@@ -1,5 +1,6 @@
 import type { BlockMarkSet, FaceStyle, PARAGRAPH_ALIGNMENTS } from '@monstera/contract';
 
+import { WORDS_NOT_WRITTEN_DIALOG_ID, WORDS_NOT_WRITTEN_RESULT } from '../dialogs/wordsNotWritten.js';
 import { type FormatAction as KitAction, type StyleValue, format } from './format.js';
 import { type Alignment, type FormatState as KitState, type RunStyle, isCollapsed, styleAt } from './model.js';
 import type { EditorStore } from './store.js';
@@ -33,6 +34,10 @@ export interface OpenEditor {
   };
   /** Writes the words and closes the editor, as a press outside it does. */
   readonly finish: () => void;
+  /** Whether it holds words a write refused, which are in no document (ADR-0278). */
+  readonly held: () => boolean;
+  /** Puts the page's text back and closes, as Escape in a refused editor does. */
+  readonly putBack: () => void;
   /** The names of the fonts the page's text is drawn in: the picker's *In this document*. */
   readonly fonts: readonly string[];
   /** The chain's faces for the words in `face` (the kit's face key), from the block's read on open; absent while read. */
@@ -131,6 +136,61 @@ export function registerEditor(editor: OpenEditor): () => void {
 
 /** Whether an editor is open: what every formatting command's `when` asks. */
 export const editorIsOpen = (): boolean => open !== undefined;
+
+/** An editor whose refused words the person chose to discard: held no longer, while it closes. */
+const discarded = new WeakSet<OpenEditor>();
+
+/** Whether the open editor holds words a write refused: unsaved work the status bar says so of (ADR-0278 Decision 4). */
+export const editorHoldsWords = (): boolean => open !== undefined && !discarded.has(open) && open.held();
+
+/** How the leaving question is asked: the application's dialog host, bound once (ADR-0278). */
+type LeaveQuestion = (id: typeof WORDS_NOT_WRITTEN_DIALOG_ID, props: Record<string, never>) => Promise<unknown>;
+let question: LeaveQuestion | undefined;
+
+/** Binds the dialog host {@link leaveOpenEditor} asks through; the answer unbinds it. */
+export function answerLeavingWith(ask: LeaveQuestion): () => void {
+  question = ask;
+  return () => {
+    if (question === ask) question = undefined;
+  };
+}
+
+/** Told by the open editor when what {@link editorHoldsWords} answers changed, for its subscribers to read again. */
+export function editorHeldChanged(): void {
+  announce();
+}
+
+/**
+ * THE ONE RULE EVERY ROUTE THAT WOULD END AN EDITOR AWAITS FIRST (ADR-0278): the tool changing, the document switching or
+ * closing, the window closing, split view, a command that moves the version. `true` is *go on*.
+ *
+ * With no editor open, or one holding no refused words, it answers at once and asks nothing, so a route ends such an
+ * editor as it always has. With refused words it asks *Your words were not written*: Keep editing — the default, and what
+ * a dismissal answers — puts the focus back in the editor and answers *stay*; Discard puts the page's text back and
+ * answers *go on*. A route that does not await this is the silent loss the ADR records. With no dialog host bound it
+ * answers *stay*: a question nobody can ask is never a discard.
+ *
+ * A ROUTE WHOSE NEXT STEP IS TIMED tests {@link editorHoldsWords} first and awaits this only then: an `await` yields even
+ * on the answer that asks nothing, and a command that entered its document's lane one turn late was overtaken by a save
+ * copy sent after it (measured 2026-10-30, `orderedClient.test.ts` and `writeMarkers.test.ts`).
+ */
+export async function leaveOpenEditor(): Promise<boolean> {
+  const editor = open;
+  if (editor === undefined || !editorHoldsWords()) return true;
+  if (question === undefined) return false;
+  const answer = WORDS_NOT_WRITTEN_RESULT.safeParse(await question(WORDS_NOT_WRITTEN_DIALOG_ID, {}));
+  // THE EDITOR THAT WAS ASKED ABOUT: one closed while the question stood holds nothing more to keep.
+  if (open !== editor) return true;
+  if (answer.success && answer.data === 'discard') {
+    // HELD NO LONGER AT ONCE, so the route that goes on is not asked again before the editor has closed.
+    discarded.add(editor);
+    editor.putBack();
+    announce();
+    return true;
+  }
+  refocusOpenEditor();
+  return false;
+}
 
 /** Subscribes to the editor opening, closing and anything it shows changing. */
 export function onEditorChange(listener: () => void): () => void {

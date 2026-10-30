@@ -116,19 +116,19 @@ describe('StatusBar', () => {
     // one, which is the assertion reading its own input back (`saved` is the component's prop,
     // and the interesting question is which sentence the RULE produces).
     const at = 1_700_000_000_000;
-    const dirty = drawn({ saved: savedState(4, 3, at, at) });
+    const dirty = drawn({ saved: savedState(4, 3, at, at, false) });
     expect(dirty.container.querySelector('.m-status-saved')?.textContent).toBe('Unsaved changes');
     // AND THE STATE IS ON THE ELEMENT, not only in the words: the stylesheet colours the cell
     // from it, and a reader who cannot see the colour still has the sentence.
     expect(dirty.container.querySelector('.m-status-saved')?.getAttribute('data-dirty')).toBe('true');
 
-    const justSaved = drawn({ saved: savedState(4, 4, at, at + 1_000) });
+    const justSaved = drawn({ saved: savedState(4, 4, at, at + 1_000, false) });
     expect(justSaved.container.querySelector('.m-status-saved')?.textContent).toBe('Saved just now');
 
     // TWO MINUTES, the export's own figure. A bar that interpolated nothing renders the
     // placeholder, and one that passed the wrong argument renders "Saved NaN min ago" — both
     // of which the plain "is the cell there" assertion above would pass.
-    const older = drawn({ saved: savedState(4, 4, at, at + 125_000) });
+    const older = drawn({ saved: savedState(4, 4, at, at + 125_000, false) });
     expect(older.container.querySelector('.m-status-saved')?.textContent).toBe('Saved 2 min ago');
   });
 

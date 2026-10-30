@@ -4,6 +4,7 @@ import { APPLY_REDACTIONS_DIALOG } from '../dialogs/applyRedactions.js';
 import { BATES_NUMBER_DIALOG } from '../dialogs/batesNumber.js';
 import { CAMERA_CAPTURE_DIALOG } from '../dialogs/cameraCapture.js';
 import { CLOSE_UNSAVED_DIALOG } from '../dialogs/closeUnsaved.js';
+import { WORDS_NOT_WRITTEN_DIALOG } from '../dialogs/wordsNotWritten.js';
 import { CLOUD_OUTCOME_DIALOG } from '../dialogs/cloudOutcome.js';
 import { CLOUD_DIALOG } from '../dialogs/cloudStorage.js';
 import { CLOUD_VIEW_ONLY_DIALOG } from '../dialogs/cloudViewOnly.js';
@@ -142,6 +143,7 @@ export const APPLICATION_DIALOGS: readonly RegisteredDialog[] = [
   STRAIGHTEN_OUTCOME_DIALOG,
   SAVE_PROBLEM_DIALOG,
   CLOSE_UNSAVED_DIALOG,
+  WORDS_NOT_WRITTEN_DIALOG,
   COMMAND_PROBLEM_DIALOG,
   HISTORY_TRIMMED_DIALOG,
   PERMISSION_PASSWORD_REPLACED_DIALOG,

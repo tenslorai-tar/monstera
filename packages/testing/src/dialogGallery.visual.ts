@@ -142,6 +142,7 @@ const FROM_THE_GALLERY = [
   'dialog.translate-page',
   'dialog.unsealed-copies',
   'dialog.url-open-problem',
+  'dialog.words-not-written',
   'dialog.workbook-incomplete',
 ] as const;
 

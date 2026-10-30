@@ -457,6 +457,7 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'opened', props: { name: NAME } },
     { state: 'long', props: { name: LONG_NAME } },
   ],
+  'dialog.words-not-written': [{ state: 'opened', props: {} }],
   'dialog.command-problem': [
     { state: 'opened', props: { code: 'document-busy' } },
     // An internal failure adds the reference a person quotes when reporting it.

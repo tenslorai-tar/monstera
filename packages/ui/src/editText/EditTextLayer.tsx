@@ -6,6 +6,7 @@ import { type ReactElement, useCallback, useEffect, useMemo, useRef, useState } 
 import type { OverlayPage } from '../annotations/annotationSpace.js';
 import type { BlockCommit, BlockFaces, BlocksRead, PageBlocksRead } from '../commands/documentCommands.js';
 import type { EditorSpelling } from '../editorKit/EditorMenu.js';
+import { leaveOpenEditor } from '../editorKit/openEditor.js';
 import {
   TEXT_ADD_SURFACE,
   TEXT_EDIT_BLOCK_LABEL,
@@ -340,7 +341,13 @@ export function EditTextLayer({
     if (blocks === undefined) return;
     if (editing && open !== at) {
       // ANOTHER EDITOR IS OPEN: it finishes on the press that reached here, and this block opens in the read after it.
-      if (stuckRef.current) return;
+      // ONE HOLDING REFUSED WORDS is asked about first (ADR-0278): on Discard its text is put back and this block opens.
+      if (stuckRef.current) {
+        void leaveOpenEditor().then((go) => {
+          if (go) setOpen(at, how);
+        });
+        return;
+      }
       setNext({ box: pageBox(block), opening: how, version: blocks.version });
       void finishingRef.current?.();
       return;

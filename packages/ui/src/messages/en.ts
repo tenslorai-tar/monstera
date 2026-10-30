@@ -3420,6 +3420,10 @@ export const CLOSE_UNSAVED_TITLE = messageKey('dialog.close-unsaved.title');
 export const CLOSE_UNSAVED_QUESTION = messageKey('dialog.close-unsaved.question');
 export const CLOSE_UNSAVED_SAVE = messageKey('dialog.close-unsaved.save');
 export const CLOSE_UNSAVED_DISCARD = messageKey('dialog.close-unsaved.discard');
+export const WORDS_NOT_WRITTEN_TITLE = messageKey('dialog.words-not-written.title');
+export const WORDS_NOT_WRITTEN_QUESTION = messageKey('dialog.words-not-written.question');
+export const WORDS_NOT_WRITTEN_KEEP = messageKey('dialog.words-not-written.keep');
+export const WORDS_NOT_WRITTEN_DISCARD = messageKey('dialog.words-not-written.discard');
 export const SAVE_PROBLEM_TITLE = messageKey('dialog.save-problem.title');
 export const SAVE_WORK_INTACT = messageKey('dialog.save-problem.intact');
 export const SAVE_REFUSED_CONTESTED = messageKey('dialog.save-problem.contested');
@@ -7222,6 +7226,12 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [CLOSE_UNSAVED_QUESTION]: '“{name}” has changes that are not saved. Save them before closing?',
   [CLOSE_UNSAVED_SAVE]: 'Save',
   [CLOSE_UNSAVED_DISCARD]: 'Don’t save',
+  // THE OWNER'S WORDS (ADR-0278): the editor's words were refused, so they are not in the document, and leaving would
+  // lose them. The buttons name their actions.
+  [WORDS_NOT_WRITTEN_TITLE]: 'Your words were not written',
+  [WORDS_NOT_WRITTEN_QUESTION]: 'The words you typed are not in the document yet. Keep editing to change them, or discard them to put the page’s text back.',
+  [WORDS_NOT_WRITTEN_KEEP]: 'Keep editing',
+  [WORDS_NOT_WRITTEN_DISCARD]: 'Discard',
   // "Undo history" and not "history": the document's own history is what a
   // reader will assume, and this dialog is about neither the file nor its
   // contents.

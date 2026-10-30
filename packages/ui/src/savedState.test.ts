@@ -50,18 +50,30 @@ describe('savedState', () => {
     // The age is irrelevant when there are changes on top of it — a bar reading
     // "Saved just now" over unsaved work is the defect this whole cell exists against.
     // `savedAt` is recent here, so a function that checked the time first is red.
-    expect(savedState(5, 4, AT, AT + 1_000)).toStrictEqual({
+    expect(savedState(5, 4, AT, AT + 1_000, false)).toStrictEqual({
       message: STATUS_UNSAVED,
       values: {},
       dirty: true,
     });
   });
 
+  it('WORDS A WRITE REFUSED are unsaved though no version moved: never Saved over them (ADR-0278)', () => {
+    // Measured 2026-10-30: the bar said Saved while an editor held refused words, and leaving lost them. The versions
+    // agree and the save is recent, so only the held words can make this unsaved.
+    expect(savedState(4, 4, AT, AT + 1_000, true)).toStrictEqual({
+      message: STATUS_UNSAVED,
+      values: {},
+      dirty: true,
+    });
+    // CONTROL: the same document with no words held is saved, just now.
+    expect(savedState(4, 4, AT, AT + 1_000, false).message).toBe(STATUS_SAVED_JUST_NOW);
+  });
+
   it('a document that has never been saved IN THIS WINDOW says so without a time', () => {
     // It opened from its file and nothing has changed, so it IS saved — but this window
     // watched no save, and the file's own age is a claim a renderer holding no path cannot
     // make. "Saved" with no duration is the honest sentence, and the one the export allows.
-    expect(savedState(4, 4, undefined, AT)).toStrictEqual({
+    expect(savedState(4, 4, undefined, AT, false)).toStrictEqual({
       message: STATUS_SAVED,
       values: {},
       dirty: false,
@@ -72,7 +84,7 @@ describe('savedState', () => {
     // THE BOUNDARIES ARE THE CASE. A fixture at 30 seconds and one at 5 minutes are both
     // handled correctly by an off-by-one at 60 seconds, so each pair below straddles the
     // edge by a millisecond — which is the smallest amount that changes the answer (4a).
-    const words = (age: number): unknown => savedState(4, 4, AT, AT + age);
+    const words = (age: number): unknown => savedState(4, 4, AT, AT + age, false);
 
     expect(words(MINUTE - 1)).toStrictEqual({
       message: STATUS_SAVED_JUST_NOW,
@@ -111,7 +123,7 @@ describe('savedState', () => {
     // `savedAt` this window recorded. Without the clamp the arithmetic is fine and the
     // SENTENCE is "Saved -3 min ago", which makes a person doubt the save rather than the
     // clock. The floor is asserted rather than the subtraction.
-    expect(savedState(4, 4, AT, AT - 3 * MINUTE)).toStrictEqual({
+    expect(savedState(4, 4, AT, AT - 3 * MINUTE, false)).toStrictEqual({
       message: STATUS_SAVED_JUST_NOW,
       values: {},
       dirty: false,

@@ -45,6 +45,7 @@ import { BATES_NUMBER_DIALOG_ID } from '../dialogs/batesNumber.js';
 import { BATES_NUMBER_RESULT, BATES_NUMBER_SETTINGS, type BatesNumberAnswer } from '../dialogs/batesNumberResult.js';
 import { COMMAND_PROBLEM_DIALOG, COMMAND_PROBLEM_DIALOG_ID } from '../dialogs/commandProblem.js';
 import { fileTooLargeProblem } from '../dialogs/fileTooLarge.js';
+import { editorHoldsWords, leaveOpenEditor } from '../editorKit/openEditor.js';
 import type { CommandProblem } from '../dialogs/problemMessages.js';
 import { CROP_PAGES_DIALOG_ID } from '../dialogs/cropPages.js';
 import { PROTECT_DOCUMENT_DIALOG_ID } from '../dialogs/protectDocument.js';
@@ -873,6 +874,11 @@ export async function applyDocumentCommand(
     readonly settle?: (applied: Applied) => Promise<void>;
   } = {},
 ): Promise<boolean> {
+  // A COMMAND THAT MOVES THE VERSION reads the page again, which ends an editor, so refused words held in one are asked
+  // about first (ADR-0278). The editor's own write is never asked: a change to its words clears the refusal it held. ASKED
+  // ONLY WHERE WORDS ARE HELD, so nothing yields before the lane takes the command: a save copy sent straight after it
+  // would otherwise be sent first (`orderedClient.test.ts`).
+  if (editorHoldsWords() && !(await leaveOpenEditor())) return false;
   const lane = laneOf(deps.client, docId);
   // SHOWN AT ONCE (ADR-0261): a page command is planned here, at dispatch, before the lane, so the surfaces draw it in
   // the update it is sent in. The plan follows the command's answer: produced, or dropped on a refusal.
@@ -2805,6 +2811,8 @@ export function undoCommand(deps: DocumentCommandDeps): UiCommand {
     run: async (context): Promise<void> => {
       const docId = context.docId;
       if (docId === undefined) return;
+      // THE VERSION MOVES and the page is read again (ADR-0278): asked first where an editor holds refused words.
+      if (editorHoldsWords() && !(await leaveOpenEditor())) return;
       const step = planHistoryStep(deps, docId, 'undo');
       let answer = await countedAs('writes', () => deps.client['document.undo']({ docId }));
       // MEMORY RAN OUT, PROVEN (ADR-0253): the memory window, and *Try again* asks for the same undo again.
@@ -2859,6 +2867,8 @@ export function redoCommand(deps: DocumentCommandDeps): UiCommand {
     run: async (context): Promise<void> => {
       const docId = context.docId;
       if (docId === undefined) return;
+      // THE VERSION MOVES and the page is read again (ADR-0278): asked first where an editor holds refused words.
+      if (editorHoldsWords() && !(await leaveOpenEditor())) return;
       const step = planHistoryStep(deps, docId, 'redo');
       let answer = await countedAs('writes', () => deps.client['document.redo']({ docId }));
       // MEMORY RAN OUT, PROVEN (ADR-0253): the memory window, and *Try again* asks for the same redo again.
