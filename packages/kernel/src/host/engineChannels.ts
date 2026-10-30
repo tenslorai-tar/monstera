@@ -114,6 +114,7 @@ import {
   drawnBoxesShape,
   embeddableImageTypeSchema,
   formPathSchema,
+  formsLeftOutSchema,
   MAX_FORM_PLACEMENTS,
 } from '@monstera/contract/host';
 import { z } from 'zod';
@@ -2384,8 +2385,8 @@ export const engineChannels = {
       .object({
         bytes: z.number().int().nonnegative(),
         paths: z.array(formPathSchema).max(MAX_FORM_PLACEMENTS).readonly(),
-        /** Placements past the path's bounds, left out and said (ADR-0273 Decision 6). */
-        omitted: z.number().int().nonnegative(),
+        /** Why the walk left forms unread, each said (ADR-0273 Decision 6). */
+        left: formsLeftOutSchema,
       })
       .strict(),
     ['no-such-session', 'form-pages-failed'],

@@ -43,6 +43,7 @@ import {
   sameFormPath,
   storedSetting,
   type FormPath,
+  type FormsLeftOut,
   type TextRewrite,
 } from '@monstera/contract';
 import {
@@ -1280,11 +1281,11 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     docId: DocId,
     sessions: DocumentSessions,
     page: number,
-  ): Promise<{ readonly image: PdfiumReadImage; readonly paths: readonly FormPath[]; readonly omitted: number }> => {
+  ): Promise<{ readonly image: PdfiumReadImage; readonly paths: readonly FormPath[]; readonly left: FormsLeftOut }> => {
     const session = sessions.mupdf;
     if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
-    const { bytes, paths, omitted } = await engineHost.formPages(session, page);
-    return { image: { bytes, opensWith: undefined }, paths, omitted };
+    const { bytes, paths, left } = await engineHost.formPages(session, page);
+    return { image: { bytes, opensWith: undefined }, paths, left };
   };
   const pdfiumReadImage = (docId: DocId, sessions: DocumentSessions): WrittenImage => ({
     opensWith: engine.opensWith(docId),
@@ -1803,7 +1804,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         blocks: [...grouped, ...inForms],
         // A CUT READ IS SAID, the page's or any form's (ADR-0273 Decision 6), and so is a placement past the path's bounds,
         // which is offered nothing: the editor says some of the page's text is not outlined, never nothing.
-        truncated: found.truncated || placements.some((each) => each.truncated) || (placed?.omitted ?? 0) > 0,
+        truncated: found.truncated || placements.some((each) => each.truncated) || (placed !== null && (placed.left.deeper || placed.left.more || placed.left.unnamed)),
         // FORWARDED, NOT GROUPED. These characters formed no run at all — they
         // are what the engine could not place, so there is nothing here to
         // group and the count crosses as the count it is.

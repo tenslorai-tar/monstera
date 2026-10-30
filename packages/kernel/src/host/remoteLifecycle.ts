@@ -1,4 +1,4 @@
-import type { AnnotationDataFormat, ClientApi, EncodedFormDataFormat, FormPath, PageSet, WordMode } from '@monstera/contract';
+import type { AnnotationDataFormat, ClientApi, EncodedFormDataFormat, FormPath, FormsLeftOut, PageSet, WordMode } from '@monstera/contract';
 
 import type { ByteImage, LockedReason, MupdfSession } from '../engineSeam.js';
 import type { PageImageRequest } from '../pageImages.js';
@@ -339,7 +339,7 @@ export interface RemoteMupdfLifecycle {
    * (ADR-0269), {@link extract}'s route: built in the host, taken from its output directory by count. A page with none
    * answers no bytes and no path.
    */
-  readonly formPages: (session: MupdfSession, page: number) => Promise<{ readonly bytes: ByteImage; readonly paths: readonly FormPath[]; readonly omitted: number }>;
+  readonly formPages: (session: MupdfSession, page: number) => Promise<{ readonly bytes: ByteImage; readonly paths: readonly FormPath[]; readonly left: FormsLeftOut }>;
   /**
    * The PNG bytes of a region of one page.
    *
@@ -467,8 +467,8 @@ export function remoteMupdfLifecycle(
       const answer = await client['engine/form-pages']({ session: sessions.handleFor(session), page, into });
       if (!answer.ok) throw new EngineFormPagesFailed(answer.error.code);
       // NOTHING WRITTEN where the page draws no form showing text, so nothing to take.
-      if (answer.value.paths.length === 0) return { bytes: new Uint8Array(), paths: [], omitted: answer.value.omitted };
-      return { bytes: await takeAnnounced(areas, area, into, answer.value.bytes), paths: answer.value.paths, omitted: answer.value.omitted };
+      if (answer.value.paths.length === 0) return { bytes: new Uint8Array(), paths: [], left: answer.value.left };
+      return { bytes: await takeAnnounced(areas, area, into, answer.value.bytes), paths: answer.value.paths, left: answer.value.left };
     },
 
     snapshot: async (session, request) => {

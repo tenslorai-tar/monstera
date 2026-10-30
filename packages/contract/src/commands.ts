@@ -7185,6 +7185,15 @@ export const formPathSchema = z
   .readonly();
 export type FormPath = z.infer<typeof formPathSchema>;
 
+/**
+ * Why a page's walk over its forms left some unread, each a reason the editor states (ADR-0273 Decision 6): `deeper`, a
+ * form drawn further from the page than {@link MAX_FORM_DEPTH} steps; `more`, the walk reached its count with forms still
+ * to read; `unnamed`, a form drawn by a resource name a path cannot carry. Each means "may hold text": a form left unread
+ * is not opened to find out. Defined once, for the host's answer and the kernel's walk.
+ */
+export const formsLeftOutSchema = z.object({ deeper: z.boolean(), more: z.boolean(), unnamed: z.boolean() }).strict().readonly();
+export type FormsLeftOut = z.infer<typeof formsLeftOutSchema>;
+
 /** Whether two paths name one placement: the same names and occurrences, step for step. The ONE comparison of them. */
 export function sameFormPath(a: FormPath, b: FormPath): boolean {
   const key = (path: FormPath): string => JSON.stringify(path.map((step) => [step.name, step.occurrence]));

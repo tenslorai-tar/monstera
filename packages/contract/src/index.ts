@@ -473,6 +473,8 @@ export {
   editTextBlockSchema,
   editTextOperatorsSchema,
   formPathSchema,
+  formsLeftOutSchema,
+  type FormsLeftOut,
   sameFormPath,
   sameStream,
   oneCommand,
