@@ -158,6 +158,62 @@ describe('streamChat', () => {
     expect(await answerTo('openai', 400, credit)).toBe('rejected');
   });
 
+  /** A fetch that refuses with this status and JSON body. */
+  const refusing = (status: number, body: unknown): typeof fetch =>
+    () => Promise.resolve(new Response(JSON.stringify(body), { status }));
+
+  it('ANTHROPIC: its documented too-long refusal (a 400 saying "prompt is too long") is too-long (ADR-0277)', async () => {
+    const answer = await streamChat({
+      provider: 'anthropic', model: 'm', key: 'k', messages: ASK, web: false,
+      // THE DOCUMENTED PHRASE ONLY: the page quotes no more of the message than this, so the case asserts no more.
+      fetchImpl: refusing(400, { type: 'error', error: { type: 'invalid_request_error', message: 'prompt is too long' } }),
+    });
+    expect(answer.refusal).toBe('too-long');
+  });
+
+  it('CONTROL: Anthropic’s other 400s stay rejected, and out of credit stays out of credit', async () => {
+    const other = await streamChat({
+      provider: 'anthropic', model: 'm', key: 'k', messages: ASK, web: false,
+      fetchImpl: refusing(400, { type: 'error', error: { type: 'invalid_request_error', message: 'messages: field required' } }),
+    });
+    expect(other.refusal).toBe('rejected');
+    const credit = await streamChat({
+      provider: 'anthropic', model: 'm', key: 'k', messages: ASK, web: false,
+      fetchImpl: refusing(400, { type: 'error', error: { type: 'invalid_request_error', message: 'Your credit balance is too low' } }),
+    });
+    expect(credit.refusal).toBe('out-of-credit');
+    // NOT ON ANOTHER STATUS: the documented answer is a 400.
+    const elsewhere = await streamChat({
+      provider: 'anthropic', model: 'm', key: 'k', messages: ASK, web: false,
+      fetchImpl: refusing(413, { type: 'error', error: { type: 'request_too_large', message: 'prompt is too long' } }),
+    });
+    expect(elsewhere.refusal).toBe('rejected');
+  });
+
+  it('OPENROUTER: a refusal whose error type is context_length_exceeded is too-long (ADR-0277)', async () => {
+    const answer = await streamChat({
+      provider: 'openrouter', model: 'm', key: 'k', messages: ASK, web: false,
+      fetchImpl: refusing(400, { error: { code: 400, message: 'x', metadata: { error_type: 'context_length_exceeded' } } }),
+    });
+    expect(answer.refusal).toBe('too-long');
+  });
+
+  it('CONTROL: a provider whose answer is not established stays rejected, whatever its body says', async () => {
+    // OPENAI'S OWN CODE NAME, which its public API documents for no chat route: recognising it would be a guess.
+    for (const provider of ['openai', 'groq', 'deepseek', 'mistral'] as const) {
+      const answer = await streamChat({
+        provider, model: 'm', key: 'k', messages: ASK, web: false,
+        fetchImpl: refusing(400, { error: { code: 'context_length_exceeded', message: 'too long', metadata: { error_type: 'context_length_exceeded' } } }),
+      });
+      expect(answer.refusal).toBe('rejected');
+    }
+    const otherType = await streamChat({
+      provider: 'openrouter', model: 'm', key: 'k', messages: ASK, web: false,
+      fetchImpl: refusing(400, { error: { code: 400, message: 'x', metadata: { error_type: 'payload_too_large' } } }),
+    });
+    expect(otherType.refusal).toBe('rejected');
+  });
+
   it('KEEPS what streamed when the stream ends badly', async () => {
     const broken = ((url: string) => {
       void url;

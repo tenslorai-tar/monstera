@@ -52,6 +52,8 @@ const REFUSALS = {
   'searches-the-web': ASSISTANT_SEARCHES_THE_WEB,
   // An answer stopped at its bound (ADR-0277): half a translation is never written.
   'answer-cut': TOAST_TRANSLATE_TOO_LONG,
+  // A page longer than the model takes (ADR-0277): the same remedy, a smaller part of it.
+  'too-long': TOAST_TRANSLATE_TOO_LONG,
 } as const satisfies Record<Extract<ChannelResult<'ai.translatePage'>, { kind: 'refused' }>['problem'], MessageKey>;
 
 export interface TranslatePageDeps extends DocumentCommandDeps {

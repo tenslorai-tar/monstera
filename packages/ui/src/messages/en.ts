@@ -1210,7 +1210,10 @@ export const TOAST_NOTHING_TO_TRANSLATE = messageKey('toast.nothing-to-translate
 export const TOAST_NOTHING_MARKED = messageKey('toast.nothing-marked-for-redaction');
 export const TOAST_TRANSLATE_REJECTED = messageKey('toast.translate-rejected');
 export const TOAST_TRANSLATE_UNREADABLE = messageKey('toast.translate-unreadable');
-/** A translation longer than one answer may be (ADR-0277): stopped, so nothing is written from half of it. */
+/**
+ * A translation stopped at an answer's bound, or a page the provider refused as too long for its model (ADR-0277):
+ * nothing is written from half of one.
+ */
 export const TOAST_TRANSLATE_TOO_LONG = messageKey('toast.translate-too-long');
 export const TOAST_TRANSLATE_NO_MODEL = messageKey('toast.translate-no-model');
 export const TOAST_TRANSLATE_NOT_WRITABLE = messageKey('toast.translate-not-writable');
@@ -2411,6 +2414,12 @@ export const ASSISTANT_ANSWER_CUT = messageKey('assistant.answer-cut');
 export const ASSISTANT_QUESTION_COUNT = messageKey('assistant.question-count');
 /** A question past the bound: how much, and where a long passage is better asked (ADR-0277 Decision 1). */
 export const ASSISTANT_QUESTION_OVER = messageKey('assistant.question-over');
+/** A conversation at `MAX_CHAT_TURNS` messages (ADR-0277 Decision 2). */
+export const ASSISTANT_FULL_COUNT = messageKey('assistant.full-count');
+/** A conversation the provider refused as too long for its model (ADR-0277 Decisions 2 and 5). */
+export const ASSISTANT_FULL_PROVIDER = messageKey('assistant.full-provider');
+/** The one press from a full conversation to a new one (ADR-0277 Decision 2). */
+export const ASSISTANT_START_NEW = messageKey('assistant.start-new');
 /** A *Document only* ask to a model that searches the web for every answer, refused before sending (ADR-0108). */
 export const ASSISTANT_SEARCHES_THE_WEB = messageKey('assistant.searches-the-web');
 /** The *Document only / Document + web* switch, the Sources menu, and why a choice is disabled (ADR-0108). */
@@ -4099,7 +4108,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TOAST_TRANSLATE_UNREADABLE]:
     'The provider’s answer could not be matched to the page’s text, so nothing was changed. Try again.',
   [TOAST_TRANSLATE_TOO_LONG]:
-    'The translation was longer than one answer may be, so nothing was changed. Select a part of the page and translate that.',
+    'This page is too long to translate in one go, so nothing was changed. Select a part of the page and translate that.',
   [TOAST_TRANSLATE_NO_MODEL]: 'That provider offered no model to translate with. Nothing was changed.',
   [TOAST_TRANSLATE_NOT_WRITABLE]:
     'Some translated letters cannot be shown in this page’s fonts, so nothing was changed.',
@@ -5468,6 +5477,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_QUESTION_COUNT]: '{count, plural, other {#}} of {limit, plural, other {# characters}}',
   [ASSISTANT_QUESTION_OVER]:
     'This question is {over, plural, one {# character} other {# characters}} over the limit of {limit, plural, other {#}}, so it cannot be sent. If it holds a passage from the document, ask about the page in Context, or select the passage on the page and ask about the selected text.',
+  [ASSISTANT_FULL_COUNT]:
+    'This conversation is full: it holds as many messages as one conversation can. Start a new conversation to ask more.',
+  [ASSISTANT_FULL_PROVIDER]:
+    'This conversation is now too long for the model to read, so the provider refused the last question. Start a new conversation to ask it again.',
+  [ASSISTANT_START_NEW]: 'Start a new conversation',
   [ASSISTANT_ANSWER_CUT]:
     'The answer was stopped at its length limit of {limit, plural, other {# characters}}. What is above is all of it up to there. Ask for the rest in a new question.',
   [ASSISTANT_SEARCHES_THE_WEB]:

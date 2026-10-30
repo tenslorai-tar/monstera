@@ -530,15 +530,29 @@ export const MAX_ANSWER_TEXT = 4 * MAX_CHAT_TEXT;
 /** Whether a conversation can take a question, and if not, why — what {@link conversationRoom} answers. */
 export type ConversationRoom =
   | { readonly kind: 'room' }
+  /**
+   * The conversation can take no more questions: by `count`, the next would be past `MAX_CHAT_TURNS` messages; by
+   * `provider`, the provider refused it as longer than its model takes. A new conversation is the way on.
+   */
+  | { readonly kind: 'full'; readonly by: 'count' | 'provider' }
   /** The question is longer than `MAX_CHAT_TEXT`, by `over` characters; the conversation itself can take one. */
   | { readonly kind: 'question-over'; readonly over: number };
 
 /**
- * Whether `question` can be asked (ADR-0277 Decisions 1 and 2): the ONE rule every route that asks takes (Send, a
- * command's question, Regenerate), and the one `ai.ask`'s schema states for a person's message, so nothing is sent that
- * `main` would refuse and no question is written into a conversation and stuck there.
+ * Whether `question` can be asked of the conversation `turns` (ADR-0277 Decisions 1 and 2 and the correction of
+ * 2026-10-30): the ONE rule every route that asks takes (Send, a command's question, Regenerate), stating what
+ * `ai.ask`'s schema states for the count and a person's message, so nothing is sent that `main` would refuse and no
+ * question is written into a conversation and stuck there. A full conversation is said before a long question, since
+ * shortening the question would not help. An earlier answer's length is never a reason: it is resent at its own bound.
+ *
+ * @param turns what the ask would resend, oldest first; a turn the provider refused as too long marks it full.
  */
-export function conversationRoom(question: string): ConversationRoom {
+export function conversationRoom(
+  turns: readonly { readonly role: 'user' | 'assistant'; readonly refused?: 'too-long' }[],
+  question: string,
+): ConversationRoom {
+  if (turns.some((turn) => turn.refused === 'too-long')) return { kind: 'full', by: 'provider' };
+  if (turns.length + 1 > MAX_CHAT_TURNS) return { kind: 'full', by: 'count' };
   return question.length > MAX_CHAT_TEXT ? { kind: 'question-over', over: question.length - MAX_CHAT_TEXT } : { kind: 'room' };
 }
 

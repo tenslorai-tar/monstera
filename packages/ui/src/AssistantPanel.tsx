@@ -100,6 +100,9 @@ import {
   ASSISTANT_ANSWER_CUT,
   ASSISTANT_QUESTION_COUNT,
   ASSISTANT_QUESTION_OVER,
+  ASSISTANT_FULL_COUNT,
+  ASSISTANT_FULL_PROVIDER,
+  ASSISTANT_START_NEW,
   ASSISTANT_NO_KEY,
   ASSISTANT_SEARCHES_THE_WEB,
   ASSISTANT_WEB_ALWAYS,
@@ -468,9 +471,6 @@ export function AssistantPanel({
     settings.set(AI_MODELS_SETTING.id, { ...chosenModels, [provider]: next });
   };
   const [draft, setDraft] = useState('');
-  // WHAT SEND WOULD ASK, measured as it would be sent (trimmed), by the rule `ask` takes (ADR-0277 Decision 1).
-  const question = draft.trim();
-  const room = conversationRoom(question);
   // THE FILES FOR THE NEXT QUESTION (ADR-0135): handles `main` minted, a name and a size each. They go with the next
   // ask that starts, and are cleared then, as the draft is.
   const [attached, setAttached] = useState(NOTHING_ATTACHED);
@@ -605,7 +605,15 @@ export function AssistantPanel({
     const stopDone = subscribe('ai.done', (payload) => {
       const asking = live.current;
       if (asking?.subscription !== payload.subscription) return;
-      if (payload.refusal !== undefined) setProblem(payload.refusal);
+      // TOO LONG FOR THE MODEL is not a problem line but the conversation's state (ADR-0277 Decision 2): marked on the
+      // question that was refused, so `conversationRoom` reads the conversation as full for as long as it lasts.
+      if (payload.refusal === 'too-long') {
+        const asked = asking.read();
+        const at = asked.findLastIndex((each) => each.role === 'user');
+        asking.write(asked.map((each, index) => (index === at ? { ...each, refused: 'too-long' } : each)));
+      } else if (payload.refusal !== undefined) {
+        setProblem(payload.refusal);
+      }
       // WHAT THE WEB GAVE lands on the answer it belongs to — only for an ask made with the web on, so a *Document
       // only* answer never carries the *No web search was used* line (ADR-0108).
       const existing = asking.read();
@@ -682,10 +690,16 @@ export function AssistantPanel({
       // the panel said the missing key twice and *no text was found* once (F-V1). The readiness line says it once.
       // NOTHING `main` WOULD REFUSE IS SENT (ADR-0277): a question past the bound was written into the conversation and
       // then refused by `ai.ask`'s schema, so every later question resent it and was refused too. The box says why.
-      if (text === '' || model === '' || !hasKey || live.current !== null || conversationRoom(text).kind !== 'room') {
+      const store = focused.store;
+      if (
+        text === '' ||
+        model === '' ||
+        !hasKey ||
+        live.current !== null ||
+        conversationRoom(store.getState().conversation, text).kind !== 'room'
+      ) {
         return false;
       }
-      const store = focused.store;
       const read = (): readonly ConversationTurn[] => store.getState().conversation;
       const write = (next: readonly ConversationTurn[]): void => {
         store.getState().converse(next);
@@ -796,6 +810,22 @@ export function AssistantPanel({
     [focused.docId],
   );
 
+  // WHAT SEND WOULD ASK, measured as it would be sent (trimmed), against what it would resend — the turns before an
+  // edited question when editing — by the rule `ask` takes (ADR-0277 Decisions 1 and 2).
+  const question = draft.trim();
+  const room = conversationRoom(editing === null ? turns : turns.slice(0, editing), question);
+
+  /**
+   * *New chat*, and *Start a new conversation* where one is full: the conversation is emptied and the panel starts
+   * afresh, *Document only* (ADR-0108), whatever the last one used.
+   */
+  const startNew = useCallback(() => {
+    writeTurns([]);
+    setEditing(null);
+    setProblem(null);
+    setWebChosen(null);
+  }, [setEditing, writeTurns]);
+
   /**
    * The paperclip: `main` runs the picker and answers handles. Files already attached stay; past eight, the rest are
    * counted and said rather than kept, `main`'s rule applied to the whole row.
@@ -814,7 +844,8 @@ export function AssistantPanel({
   const send = useCallback(() => {
     const asked = newRequest(scope);
     // BEFORE AN EDIT IS APPLIED: a question that cannot go must not take the edited one and its answer with it.
-    if (asked === null || conversationRoom(draft.trim()).kind !== 'room') return;
+    const resent = editing === null ? turns : turns.slice(0, editing);
+    if (asked === null || conversationRoom(resent, draft.trim()).kind !== 'room') return;
     const wanted = attached.files.length === 0 ? asked : { ...asked, attachments: attached.files };
     // EDIT AND RESEND: the edited question and everything after it go before the new one is asked.
     // Only when the ask can begin, so a Send that cannot start leaves the conversation as it was.
@@ -1076,13 +1107,7 @@ export function AssistantPanel({
             disabled={streaming !== null}
             icon={Plus}
             label={ASSISTANT_NEW_CHAT}
-            onClick={() => {
-              writeTurns([]);
-              setEditing(null);
-              setProblem(null);
-              // A NEW CHAT STARTS *DOCUMENT ONLY* (ADR-0108), whatever the last one used.
-              setWebChosen(null);
-            }}
+            onClick={startNew}
             size="dense"
           />
         )}
@@ -1379,6 +1404,16 @@ export function AssistantPanel({
           rows={2}
           value={draft}
         />
+        {/* A FULL CONVERSATION, said in one sentence with the way on one press away (ADR-0277 Decision 2). The words in the
+            box stay, to be asked in the new conversation. In its own always-mounted live region, so it is announced. */}
+        <div aria-live="polite" data-assistant-full-region="">
+          {room.kind === 'full' && (
+            <div className="m-assistant__full" data-assistant-full={room.by}>
+              <p className="m-assistant__problem">{i18n._(room.by === 'count' ? ASSISTANT_FULL_COUNT : ASSISTANT_FULL_PROVIDER)}</p>
+              <Button disabled={streaming !== null} label={ASSISTANT_START_NEW} onClick={startNew} variant="primary" />
+            </div>
+          )}
+        </div>
         {/* HOW LONG THE QUESTION IS, from nine tenths of the bound: a count a person can act on before Send refuses. */}
         {room.kind === 'room' && question.length >= QUESTION_COUNT_FROM && (
           <p className="m-assistant__state" data-assistant-count="">

@@ -7,6 +7,7 @@ import {
   MAX_ANSWER_TEXT,
   MAX_BACKUP_COPIES,
   MAX_CHAT_TEXT,
+  MAX_CHAT_TURNS,
   MAX_RANGE_BYTES,
   channelIds,
   channels,
@@ -1046,19 +1047,50 @@ describe('document.exportExcel — which engine reads the tables (ADR-0086)', ()
 });
 
 describe('conversationRoom, the one rule for whether a question can be asked (ADR-0277)', () => {
+  /** A conversation of `count` turns, alternating from the person's, each within every bound. */
+  const conversation = (count: number): { role: 'user' | 'assistant'; text: string }[] =>
+    Array.from({ length: count }, (_, at) => ({ role: at % 2 === 0 ? 'user' : 'assistant', text: `t${String(at)}` }));
+  const asks = (turns: readonly { role: 'user' | 'assistant'; text: string }[], question: string): boolean =>
+    channels['ai.ask'].params.safeParse({
+      subscription: 's1-abc',
+      provider: 'anthropic',
+      model: 'm',
+      messages: [...turns, { role: 'user', text: question }],
+      web: false,
+    }).success;
+
   it('a question within MAX_CHAT_TEXT has room; one past it is over by exactly how much', () => {
-    expect(conversationRoom('q'.repeat(MAX_CHAT_TEXT))).toStrictEqual({ kind: 'room' });
-    expect(conversationRoom('q'.repeat(MAX_CHAT_TEXT + 1))).toStrictEqual({ kind: 'question-over', over: 1 });
-    expect(conversationRoom('q'.repeat(MAX_CHAT_TEXT + 300))).toStrictEqual({ kind: 'question-over', over: 300 });
+    expect(conversationRoom([], 'q'.repeat(MAX_CHAT_TEXT))).toStrictEqual({ kind: 'room' });
+    expect(conversationRoom([], 'q'.repeat(MAX_CHAT_TEXT + 1))).toStrictEqual({ kind: 'question-over', over: 1 });
+    expect(conversationRoom([], 'q'.repeat(MAX_CHAT_TEXT + 300))).toStrictEqual({ kind: 'question-over', over: 300 });
   });
 
-  it('agrees with ai.ask’s schema on both sides of the bound, so nothing it lets through main refuses', () => {
-    for (const length of [MAX_CHAT_TEXT, MAX_CHAT_TEXT + 1]) {
-      const text = 'q'.repeat(length);
-      const schema = channels['ai.ask'].params.safeParse({
-        subscription: 's1-abc', provider: 'anthropic', model: 'm', messages: [{ role: 'user', text }], web: false,
-      }).success;
-      expect(conversationRoom(text).kind === 'room').toBe(schema);
+  it('FULL BY THE COUNT when the next question would be past MAX_CHAT_TURNS messages, and not one before', () => {
+    expect(conversationRoom(conversation(MAX_CHAT_TURNS - 1), 'q')).toStrictEqual({ kind: 'room' });
+    expect(conversationRoom(conversation(MAX_CHAT_TURNS), 'q')).toStrictEqual({ kind: 'full', by: 'count' });
+  });
+
+  it('FULL BY THE PROVIDER once a question was refused as too long; full is said before a long question', () => {
+    const refused = [...conversation(4), { role: 'user' as const, text: 'q', refused: 'too-long' as const }];
+    expect(conversationRoom(refused, 'q')).toStrictEqual({ kind: 'full', by: 'provider' });
+    expect(conversationRoom(refused, 'q'.repeat(MAX_CHAT_TEXT + 1))).toStrictEqual({ kind: 'full', by: 'provider' });
+  });
+
+  it('CONTROL: an earlier answer longer than a question may be leaves room (the correction of 2026-10-30)', () => {
+    const long = [{ role: 'user' as const, text: 'q' }, { role: 'assistant' as const, text: 'a'.repeat(MAX_ANSWER_TEXT) }];
+    expect(conversationRoom(long, 'q')).toStrictEqual({ kind: 'room' });
+    expect(asks(long, 'q')).toBe(true);
+  });
+
+  it('agrees with ai.ask’s schema at every edge it states, so nothing it lets through main refuses', () => {
+    const edges: [readonly { role: 'user' | 'assistant'; text: string }[], string][] = [
+      [[], 'q'.repeat(MAX_CHAT_TEXT)],
+      [[], 'q'.repeat(MAX_CHAT_TEXT + 1)],
+      [conversation(MAX_CHAT_TURNS - 1), 'q'],
+      [conversation(MAX_CHAT_TURNS), 'q'],
+    ];
+    for (const [turns, question] of edges) {
+      expect(conversationRoom(turns, question).kind === 'room').toBe(asks(turns, question));
     }
   });
 });

@@ -8,6 +8,7 @@ import {
   MAX_ASK_DOCUMENTS,
   MAX_ANSWER_TEXT,
   MAX_CHAT_TEXT,
+  MAX_CHAT_TURNS,
   IncidentLog,
   channels,
   createClient,
@@ -1903,6 +1904,77 @@ describe('the provider and each provider’s model are SETTINGS (ADR-0117)', () 
       await Promise.resolve();
     });
     expect(sent.find((entry) => entry.id === 'ai.ask')?.params).toMatchObject({ model: 'retired-model' });
+  });
+});
+
+describe('a full conversation is said, with a new one a press away (ADR-0277 Decision 2)', () => {
+  const DOC = asDocId('00000000-0000-4000-8000-0000000000ca');
+  const FULL_COUNT = 'This conversation is full: it holds as many messages as one conversation can. Start a new conversation to ask more.';
+  const FULL_PROVIDER =
+    'This conversation is now too long for the model to read, so the provider refused the last question. Start a new conversation to ask it again.';
+  const settle = async (): Promise<void> => {
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  };
+  /** A conversation of `count` turns, alternating from the person's. */
+  const held = (count: number) =>
+    Array.from({ length: count }, (_, at) => ({ role: at % 2 === 0 ? ('user' as const) : ('assistant' as const), text: `t${String(at)}` }));
+
+  it('THROUGH THE REAL BOUNDARY: at MAX_CHAT_TURNS messages the next question is not sent, and the conversation says it is full', async () => {
+    const store = createDocumentStore(DOC, asDocVersion(1));
+    store.getState().converse(held(MAX_CHAT_TURNS));
+    const { sent } = await drawn({ focused: { docId: DOC, store, page: 0 }, boundary: true });
+    type('One more?');
+    // ENTER: on the code before ADR-0277 this sent a sixty-fifth message, `main`'s boundary refused it as `internal`,
+    // and the question stayed in the conversation.
+    fireEvent.keyDown(screen.getByLabelText('Ask about this document'), { key: 'Enter' });
+    await settle();
+    expect(sent.filter((entry) => entry.id === 'ai.ask')).toStrictEqual([]);
+    expect(store.getState().conversation).toHaveLength(MAX_CHAT_TURNS);
+    expect(screen.getByText(FULL_COUNT).closest('[aria-live="polite"]')).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Send' }).hasAttribute('disabled')).toBe(true);
+
+    // ONE PRESS: a new conversation, the question still in the box, and it goes.
+    fireEvent.click(screen.getByRole('button', { name: 'Start a new conversation' }));
+    expect(store.getState().conversation).toStrictEqual([]);
+    expect(screen.getByLabelText<HTMLTextAreaElement>('Ask about this document').value).toBe('One more?');
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await settle();
+    expect(sent.filter((entry) => entry.id === 'ai.ask').map((entry) => (entry.params as { messages: unknown }).messages)).toStrictEqual([
+      [{ role: 'user', text: 'One more?' }],
+    ]);
+  });
+
+  it('CONTROL: one message short of full, the question goes and nothing is said', async () => {
+    const store = createDocumentStore(DOC, asDocVersion(1));
+    store.getState().converse(held(MAX_CHAT_TURNS - 2));
+    const { sent } = await drawn({ focused: { docId: DOC, store, page: 0 }, boundary: true });
+    type('Last one?');
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await settle();
+    expect(sent.filter((entry) => entry.id === 'ai.ask')).toHaveLength(1);
+    expect(screen.queryByText(FULL_COUNT)).toBeNull();
+  });
+
+  it('THE PROVIDER’S too-long refusal makes the conversation full, said in one sentence, not as a refusal', async () => {
+    const store = createDocumentStore(DOC, asDocVersion(1));
+    const { sent, push } = await drawn({ focused: { docId: DOC, store, page: 0 } });
+    type('Summarise all of it.');
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await settle();
+    const subscription = (sent.find((entry) => entry.id === 'ai.ask')?.params as { subscription: string }).subscription;
+    push('ai.done', { subscription, stopped: false, refusal: 'too-long', web: NO_WEB });
+
+    expect(screen.getByText(FULL_PROVIDER)).not.toBeNull();
+    expect(screen.queryByText('The provider refused the request, so nothing more arrived. What is above is what it sent.')).toBeNull();
+    type('And then?');
+    expect(screen.getByRole('button', { name: 'Send' }).hasAttribute('disabled')).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Start a new conversation' }));
+    expect(store.getState().conversation).toStrictEqual([]);
+    expect(screen.queryByText(FULL_PROVIDER)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Send' }).hasAttribute('disabled')).toBe(false);
   });
 });
 

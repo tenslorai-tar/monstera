@@ -41,6 +41,11 @@ export interface ConversationTurn {
   readonly posted?: boolean;
   /** An answer already placed on the page as a sticky note — the button then says so. */
   readonly noted?: boolean;
+  /**
+   * An asked turn the provider refused as making the conversation too long for its model (ADR-0277 Decision 5), so
+   * `conversationRoom` reads the conversation as full. On the turn, so it holds while the conversation does.
+   */
+  readonly refused?: 'too-long';
   /** The second document's window, for a turn asked of both (ADR-0089). */
   readonly alongside?: AskSent;
   /**

@@ -34,6 +34,17 @@ export function isAnthropicOutOfCredit(status: number, message: string | null): 
 }
 
 /**
+ * Whether a refusal with this status and message is the conversation being longer than the model's context window
+ * (ADR-0277 Decision 5). Anthropic's *Context windows* page, section *Context window overflow behavior*, read
+ * 2026-10-29 at platform.claude.com/docs/en/build-with-claude/context-windows: *"If the input alone already exceeds the
+ * model's context window, the API returns a 400 `invalid_request_error` ("prompt is too long") on every model."* Like
+ * the credit refusal it shares its status and type with a malformed request, so the documented phrase is what is read.
+ */
+export function isAnthropicPromptTooLong(status: number, message: string | null): boolean {
+  return status === 400 && message !== null && /prompt is too long/iu.test(message);
+}
+
+/**
  * The API's error message from a response body, or `null` where the body carries none — read
  * defensively, because the body is the peer's and may be anything. Consumes the body, so a caller
  * reads it once and passes the text on. Unbounded: a caller that shows it bounds it.
