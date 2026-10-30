@@ -1789,16 +1789,16 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       // as it is (ADR-0264 Decision 5). A Type 3 font inside a form is not named by its descriptor: that read is the
       // page's (ADR-0256).
       const placed = asItIs ? null : await formPagesOf(docId, sessions, page);
-      const host = pdfiumHost;
-      const placements =
-        placed === null
-          ? []
-          : await Promise.all(
-              placed.paths.map(async (form, at) => {
-                const read = await host.textRuns(placed.image, at, false);
-                return { form, blocks: blocksOf(read.runs, read.markers), truncated: read.truncated };
-              }),
-            );
+      // ONE PLACEMENT AT A TIME, never all at once: a document's calls reach its host in a serial lane, and the host's
+      // in-flight limit (`ENGINE_HOST_MAX_IN_FLIGHT`, 32) is a backstop that assumes it. A page draws up to
+      // `MAX_FORM_PLACEMENTS` placements, so reading them together ended the PDFium host on any page with more than 32.
+      const placements: { form: FormPath; blocks: ReturnType<typeof blocksOf>; truncated: boolean }[] = [];
+      if (placed !== null) {
+        for (const [at, form] of placed.paths.entries()) {
+          const read = await pdfiumHost.textRuns(placed.image, at, false);
+          placements.push({ form, blocks: blocksOf(read.runs, read.markers), truncated: read.truncated });
+        }
+      }
       const inForms = placements.flatMap(({ form, blocks }) => blocks.map((block) => ({ ...block, form })));
       return {
         blocks: [...grouped, ...inForms],
