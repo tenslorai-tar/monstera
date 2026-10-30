@@ -1,4 +1,4 @@
-import { AI_PROVIDERS, type AiProviderId, MAX_WEB_SOURCES, webSearchOf } from '@monstera/contract';
+import { AI_PROVIDERS, type AiProviderId, MAX_ANSWER_TEXT, MAX_WEB_SOURCES, webSearchOf } from '@monstera/contract';
 import { serviceOrigin } from '@monstera/shared';
 
 import { anthropicErrorMessage, isAnthropicOutOfCredit } from './anthropicCredit.js';
@@ -75,7 +75,9 @@ export type ChatRefusal =
   // A *Document only* ask to a model that searches before every answer (ADR-0108), refused before anything is sent.
   | 'searches-the-web'
   // An Azure OpenAI address that is not one of Azure's own (`serviceOrigin`), refused before anything is sent.
-  | 'not-the-service';
+  | 'not-the-service'
+  // An answer that reached `MAX_ANSWER_TEXT` (ADR-0277): stopped there, every character before it kept.
+  | 'answer-cut';
 
 /**
  * Where an Azure OpenAI request goes: the resource's origin, `null` where no address is set, or `not-the-service`
@@ -622,21 +624,41 @@ export async function* dataEvents(stream: ReadableStream<Uint8Array>): AsyncGene
   const decoder = new TextDecoder();
   const reader = stream.getReader();
   let held = '';
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    // A CHUNK IS NOT A LINE. The decoder is given `stream: true` so a multi-byte character
-    // split across two chunks is not turned into two replacement characters.
-    held += decoder.decode(value, { stream: true });
-    const lines = held.split('\n');
-    held = lines.pop() ?? '';
-    for (const line of lines) {
-      const trimmed = line.trimEnd();
-      if (trimmed.startsWith('data:')) yield trimmed.slice('data:'.length).trim();
+  let ended = false;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      // A CHUNK IS NOT A LINE. The decoder is given `stream: true` so a multi-byte character
+      // split across two chunks is not turned into two replacement characters.
+      held += decoder.decode(value, { stream: true });
+      const lines = held.split('\n');
+      held = lines.pop() ?? '';
+      for (const line of lines) {
+        const trimmed = line.trimEnd();
+        if (trimmed.startsWith('data:')) yield trimmed.slice('data:'.length).trim();
+      }
     }
+    ended = true;
+  } finally {
+    // A CALLER THAT STOPS READING (an answer at its bound) leaves the generator at a `yield`, and only cancelling the
+    // body ends the request: a stream merely left locked keeps the connection, and the provider keeps writing to it.
+    if (!ended) await reader.cancel();
   }
   const last = held.trimEnd();
   if (last.startsWith('data:')) yield last.slice('data:'.length).trim();
+}
+
+/**
+ * As much of `piece` as fits after `held` characters within {@link MAX_ANSWER_TEXT}, never ending on half of a
+ * surrogate pair: a character the bound would split is left out whole rather than kept as a code unit no text holds.
+ */
+function withinAnswer(held: number, piece: string): string {
+  const room = MAX_ANSWER_TEXT - held;
+  if (piece.length <= room) return piece;
+  const kept = piece.slice(0, Math.max(0, room));
+  const end = kept.charCodeAt(kept.length - 1);
+  return end >= 0xd800 && end <= 0xdbff ? kept.slice(0, -1) : kept;
 }
 
 /**
@@ -711,6 +733,18 @@ export async function streamChat(request: ChatRequest): Promise<ChatAnswer> {
   // the citation splits fall mid-sentence and join with nothing, but a text block after a SEARCH starts a new thought
   // and joined with nothing reads "…this detail.Joseph B. Strauss…" — seen in the live run of 2026-09-26.
   let previousBlock: string | undefined;
+  /**
+   * Adds a piece of the answer, as much as `MAX_ANSWER_TEXT` leaves room for (ADR-0277 Decision 3); `false` once the
+   * answer has reached it, and the caller stops reading. The person is shown exactly what is kept.
+   */
+  const take = (piece: string): boolean => {
+    const kept = withinAnswer(text.length, piece);
+    if (kept !== '') {
+      text += kept;
+      onDelta?.(kept);
+    }
+    return kept.length === piece.length;
+  };
   try {
     for await (const data of dataEvents(response.body)) {
       const reading = readEvent(prepared.shape, data);
@@ -719,14 +753,12 @@ export async function streamChat(request: ChatRequest): Promise<ChatAnswer> {
       found.push(...reading.found);
       if (reading.block !== undefined) {
         if (reading.block === 'text' && previousBlock !== undefined && previousBlock !== 'text' && text !== '') {
-          text += '\n\n';
-          onDelta?.('\n\n');
+          if (!take('\n\n')) return { text, stopped: false, refusal: 'answer-cut', ...webPart() };
         }
         previousBlock = reading.block;
       }
       if (reading.text === '') continue;
-      text += reading.text;
-      onDelta?.(reading.text);
+      if (!take(reading.text)) return { text, stopped: false, refusal: 'answer-cut', ...webPart() };
     }
   } catch {
     // WHAT ARRIVED IS KEPT. A stream that ends badly has still shown the person words, and

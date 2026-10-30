@@ -55,6 +55,9 @@ export const AI_ANSWER_REFUSALS = [
   'searches-the-web',
   // An Azure OpenAI address that is not Azure's own: refused in `main` before anything is sent.
   'not-the-service',
+  // An answer that reached `MAX_ANSWER_TEXT` (ADR-0277 Decision 3): `main` stopped reading it there and kept every
+  // character before, so what the person has is the answer up to its bound, said rather than cut in silence.
+  'answer-cut',
 ] as const;
 
 /** The most web sources one answer carries (ADR-0108) — Anthropic's five searches, each with a handful of results. */

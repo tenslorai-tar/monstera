@@ -140,6 +140,16 @@ describe('keeping a conversation saved (ADR-0093)', () => {
     expect(saved.some((turn) => 'posted' in turn)).toBe(false);
   });
 
+  it('saves a 20,000-character answer WHOLE, and the schema main saves with accepts it (ADR-0277)', () => {
+    const long = Array.from({ length: 20_000 }, (_, at) => String.fromCharCode(97 + (at % 26))).join('');
+    const saved = savedTurns([
+      { role: 'user', text: 'Explain every clause.' },
+      { role: 'assistant', text: long },
+    ]);
+    expect(saved[1]?.text).toBe(long);
+    expect(channels['ai.history.save'].params.safeParse({ docId: DOC, turns: saved }).success).toBe(true);
+  });
+
   it('keeps an asked turn’s FILE NAMES and never its handles (ADR-0135), and the schema main saves with accepts it', () => {
     const turn: ConversationTurn = {
       role: 'user',

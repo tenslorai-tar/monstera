@@ -1210,6 +1210,8 @@ export const TOAST_NOTHING_TO_TRANSLATE = messageKey('toast.nothing-to-translate
 export const TOAST_NOTHING_MARKED = messageKey('toast.nothing-marked-for-redaction');
 export const TOAST_TRANSLATE_REJECTED = messageKey('toast.translate-rejected');
 export const TOAST_TRANSLATE_UNREADABLE = messageKey('toast.translate-unreadable');
+/** A translation longer than one answer may be (ADR-0277): stopped, so nothing is written from half of it. */
+export const TOAST_TRANSLATE_TOO_LONG = messageKey('toast.translate-too-long');
 export const TOAST_TRANSLATE_NO_MODEL = messageKey('toast.translate-no-model');
 export const TOAST_TRANSLATE_NOT_WRITABLE = messageKey('toast.translate-not-writable');
 // NAMED, one constant each, because the catalogue's reachability check reads exported names — an
@@ -2403,6 +2405,8 @@ export const ASSISTANT_NOTICE = messageKey('assistant.notice');
 export const ASSISTANT_NO_KEY = messageKey('assistant.no-key');
 /** An ask about the comments of a document that has none, refused by main before any provider is reached (F-V1). */
 export const ASSISTANT_NO_COMMENTS = messageKey('assistant.no-comments');
+/** An answer `main` stopped at its length bound (ADR-0277 Decision 3), said where the answer ends. */
+export const ASSISTANT_ANSWER_CUT = messageKey('assistant.answer-cut');
 /** A *Document only* ask to a model that searches the web for every answer, refused before sending (ADR-0108). */
 export const ASSISTANT_SEARCHES_THE_WEB = messageKey('assistant.searches-the-web');
 /** The *Document only / Document + web* switch, the Sources menu, and why a choice is disabled (ADR-0108). */
@@ -4090,6 +4094,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TOAST_TRANSLATE_REJECTED]: 'The provider refused to translate this page. Nothing was changed.',
   [TOAST_TRANSLATE_UNREADABLE]:
     'The provider’s answer could not be matched to the page’s text, so nothing was changed. Try again.',
+  [TOAST_TRANSLATE_TOO_LONG]:
+    'The translation was longer than one answer may be, so nothing was changed. Select a part of the page and translate that.',
   [TOAST_TRANSLATE_NO_MODEL]: 'That provider offered no model to translate with. Nothing was changed.',
   [TOAST_TRANSLATE_NOT_WRITABLE]:
     'Some translated letters cannot be shown in this page’s fonts, so nothing was changed.',
@@ -5455,6 +5461,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_NOTICE]: 'AI can make mistakes. Double check replies.',
   [ASSISTANT_NO_KEY]: 'This provider has no key stored. Add it in Settings › AI; the key stays on this machine.',
   [ASSISTANT_NO_COMMENTS]: 'This document has no comments to ask about, so nothing was sent.',
+  [ASSISTANT_ANSWER_CUT]:
+    'The answer was stopped at its length limit of {limit, plural, other {# characters}}. What is above is all of it up to there. Ask for the rest in a new question.',
   [ASSISTANT_SEARCHES_THE_WEB]:
     'This model searches the web for every answer, so nothing was sent. Choose another model, or turn on Document + web.',
   [ASSISTANT_WEB_LABEL]: 'Sources',

@@ -48,6 +48,16 @@ describe('chat history (ADR-0093)', () => {
     expect(onDisk).not.toContain('lease.pdf');
   });
 
+  it('saves a 20,000-character answer and reloads it WHOLE (ADR-0277)', () => {
+    const long = Array.from({ length: 20_000 }, (_, at) => String.fromCharCode(97 + (at % 26))).join('');
+    const turns: readonly SavedTurn[] = [{ role: 'user', text: 'Explain every clause.' }, { role: 'assistant', text: long }];
+    const history = createChatHistory(fresh(), REVERSING);
+    history.save('k1', turns, NAME, AT);
+    expect(history.load('k1')).toStrictEqual(turns);
+    // AND A SECOND STORE OVER THE SAME FILE, as the next start reads it.
+    expect(createChatHistory(directory, REVERSING).load('k1')).toStrictEqual(turns);
+  });
+
   it('an EMPTY list removes the conversation, and another file is untouched', () => {
     // TIMED, CALL BY CALL (CCCCCCCC-4, FFFFFFFF-9): this synchronous body twice ran past vitest's 5 s on the Windows
     // runner, which vitest measures as wall clock around the body, and the rename retry bounds only 0.6 s of it. So

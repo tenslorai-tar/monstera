@@ -13,7 +13,7 @@ import {
   MAX_ANNOTATION_TEXT,
   MAX_ASK_ATTACHMENTS,
   MAX_ASK_DOCUMENTS,
-  MAX_CHAT_TEXT,
+  MAX_ANSWER_TEXT,
   askShareOf,
   type DispatchableCommand,
   type WebSearchAbsence,
@@ -95,6 +95,7 @@ import {
   ASSISTANT_MODEL_NOT_OFFERED,
   ASSISTANT_MODEL_NO_VISION,
   ASSISTANT_NO_COMMENTS,
+  ASSISTANT_ANSWER_CUT,
   ASSISTANT_NO_KEY,
   ASSISTANT_SEARCHES_THE_WEB,
   ASSISTANT_WEB_ALWAYS,
@@ -328,6 +329,7 @@ const PROBLEMS = {
   'page-too-large': ASSISTANT_PROBLEM_PAGE_TOO_LARGE,
   'searches-the-web': ASSISTANT_SEARCHES_THE_WEB,
   'no-comments': ASSISTANT_NO_COMMENTS,
+  'answer-cut': ASSISTANT_ANSWER_CUT,
 } as const;
 
 /** Why *Document + web* is off, as the sentence beside the disabled choice (ADR-0108). */
@@ -1074,7 +1076,9 @@ export function AssistantPanel({
           {i18n._(READINESS[readiness])}
         </p>
       )}
-      {problem !== null && <p className="m-assistant__problem">{i18n._(PROBLEMS[problem])}</p>}
+      {problem !== null && (
+        <p className="m-assistant__problem">{i18n._(PROBLEMS[problem], { limit: MAX_ANSWER_TEXT })}</p>
+      )}
 
       <ol aria-label={i18n._(ASSISTANT_CONVERSATION_LABEL)} className="m-assistant__turns">
         {turns.map((turn, at) => (
@@ -1133,8 +1137,9 @@ export function AssistantPanel({
                   label={ASSISTANT_COPY}
                   onClick={() => {
                     // THROUGH MAIN: the renderer holds no clipboard permission (§2). *Copied* is every copy's one
-                    // confirmation (`confirmCopied`), shown only when main says the text went, never as a hope.
-                    void client['window.copyText']({ text: turn.text.slice(0, MAX_CHAT_TEXT) }).then((answer) => {
+                    // confirmation (`confirmCopied`), shown only when main says the text went, never as a hope. WHOLE:
+                    // the channel takes an answer's own bound, which `main` holds every answer to (ADR-0277).
+                    void client['window.copyText']({ text: turn.text }).then((answer) => {
                       if (answer.ok && answer.value.copied) confirmCopied({ toast });
                     });
                   }}

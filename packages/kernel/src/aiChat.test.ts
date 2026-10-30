@@ -1,3 +1,4 @@
+import { MAX_ANSWER_TEXT } from '@monstera/contract';
 import { describe, expect, it } from 'vitest';
 
 import { type ChatMessage, dataEvents, deltaOf, prepareChat, streamChat } from './aiChat.js';
@@ -201,6 +202,71 @@ describe('streamChat', () => {
     });
 
     expect(answer).toStrictEqual({ text: '', stopped: true, searched: false, sources: [] });
+  });
+
+  /** A stream of OpenAI-format deltas, one per pull, that records whether its reader cancelled it. */
+  function deltas(pieces: readonly string[]): { readonly fetchImpl: typeof fetch; readonly read: () => { pulls: number; cancelled: boolean } } {
+    let pulls = 0;
+    let cancelled = false;
+    const fetchImpl = (() => {
+      const stream = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          const piece = pieces[pulls];
+          pulls += 1;
+          if (piece === undefined) {
+            controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
+            controller.close();
+            return;
+          }
+          controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ choices: [{ delta: { content: piece } }] })}\n\n`));
+        },
+        cancel() {
+          cancelled = true;
+        },
+      });
+      return Promise.resolve(new Response(stream, { status: 200 }));
+    }) as unknown as typeof fetch;
+    return { fetchImpl, read: () => ({ pulls, cancelled }) };
+  }
+
+  it('STOPS an answer that reaches MAX_ANSWER_TEXT, keeps every character up to it, says so, and ends the request (ADR-0277)', async () => {
+    // SEVENTY PIECES OF A THOUSAND, each its own letter run, so a kept prefix that skipped or repeated a piece differs.
+    const pieces = Array.from({ length: 70 }, (_, at) => String.fromCharCode(97 + (at % 26)).repeat(1000));
+    const { fetchImpl, read } = deltas(pieces);
+    const seen: string[] = [];
+
+    const answer = await streamChat({
+      provider: 'openai', model: 'm', key: 'k', messages: ASK, web: false, onDelta: (delta) => seen.push(delta), fetchImpl,
+    });
+
+    expect(answer.text).toBe(pieces.join('').slice(0, MAX_ANSWER_TEXT));
+    expect(answer.refusal).toBe('answer-cut');
+    expect(answer.stopped).toBe(false);
+    // WHAT THE PERSON WAS SHOWN is exactly what was kept, never a character past the bound.
+    expect(seen.join('')).toBe(answer.text);
+    // THE REQUEST ENDED THERE: the body was cancelled and not read to its end.
+    expect(read().cancelled).toBe(true);
+    expect(read().pulls).toBeLessThan(pieces.length);
+  });
+
+  it('CONTROL: an answer of exactly MAX_ANSWER_TEXT that ends there is whole, not cut', async () => {
+    const pieces = Array.from({ length: MAX_ANSWER_TEXT / 1024 }, () => 'x'.repeat(1024));
+    const { fetchImpl, read } = deltas(pieces);
+
+    const answer = await streamChat({ provider: 'openai', model: 'm', key: 'k', messages: ASK, web: false, fetchImpl });
+
+    expect(answer).toStrictEqual({ text: 'x'.repeat(MAX_ANSWER_TEXT), stopped: false, searched: false, sources: [] });
+    expect(read().cancelled).toBe(false);
+  });
+
+  it('a character the bound would split in half is left out whole', async () => {
+    // A PAIR STRADDLING THE BOUND: its first half would be the 65,536th code unit.
+    const { fetchImpl } = deltas(['y'.repeat(MAX_ANSWER_TEXT - 1), '😀 more']);
+
+    const answer = await streamChat({ provider: 'openai', model: 'm', key: 'k', messages: ASK, web: false, fetchImpl });
+
+    expect(answer.text).toBe('y'.repeat(MAX_ANSWER_TEXT - 1));
+    expect(answer.refusal).toBe('answer-cut');
   });
 
   it('CONTROL: the same failure without an abort is unreachable, not stopped', async () => {

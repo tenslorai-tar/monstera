@@ -521,9 +521,16 @@ export const MAX_CHAT_TEXT = 16_384;
 export const MAX_CHAT_TURNS = 64;
 
 /**
- * The most characters of selected text one translation takes, and of the answer. The answer is held to the one bound
- * anything is COPIED at (`window.copyText`, the assistant's turn bound), so a translation is never one that cannot be
- * put on the clipboard; the question is half of it, since a translation may run longer than its source.
+ * The most characters one assistant answer holds (ADR-0277 Decision 3): four times a question's bound. `streamChat`
+ * stops an answer that reaches it and says so (`answer-cut`), so no answer is ever longer, and what carries one whole
+ * (Copy, a saved turn, an earlier answer resent in `ai.ask`) is bounded here without cutting anything.
+ */
+export const MAX_ANSWER_TEXT = 4 * MAX_CHAT_TEXT;
+
+/**
+ * The most characters of selected text one translation takes, and of the answer. The answer stays within what can be
+ * COPIED (`window.copyText`, bounded at {@link MAX_ANSWER_TEXT}), so a translation is never one that cannot be put on
+ * the clipboard; the question is half of it, since a translation may run longer than its source.
  */
 export const MAX_TRANSLATE_TEXT = MAX_CHAT_TEXT / 2;
 export const MAX_TRANSLATED_TEXT = MAX_CHAT_TEXT;
@@ -582,7 +589,8 @@ export const MAX_DOCUMENT_NAME_LENGTH = 255;
 export const savedTurnSchema = z
   .object({
     role: z.enum(['user', 'assistant']),
-    text: z.string().max(MAX_CHAT_TEXT),
+    // THE ANSWER'S BOUND, so an answer is saved whole (ADR-0277 Decision 4); a person's question is within it.
+    text: z.string().max(MAX_ANSWER_TEXT),
     sent: askSentSchema.optional(),
     /** The model an asked turn went to, as its picker named it — so a restored answer keeps its caption. */
     model: z.string().max(MAX_MODEL_ID).optional(),
@@ -6584,14 +6592,15 @@ export const channels = {
         subscription: subscriptionIdSchema,
         provider: z.enum(AI_PROVIDER_IDS),
         model: z.string().min(1).max(MAX_MODEL_ID),
+        // EACH MESSAGE AT ITS AUTHOR'S BOUND (ADR-0277's correction of 2026-10-30): a person's question at
+        // `MAX_CHAT_TEXT`, an earlier answer at `MAX_ANSWER_TEXT`, so a long answer is resent whole and never
+        // makes its conversation one that cannot be asked again.
         messages: z
           .array(
-            z
-              .object({
-                role: z.enum(['user', 'assistant']),
-                text: z.string().min(1).max(MAX_CHAT_TEXT),
-              })
-              .strict(),
+            z.discriminatedUnion('role', [
+              z.object({ role: z.literal('user'), text: z.string().min(1).max(MAX_CHAT_TEXT) }).strict(),
+              z.object({ role: z.literal('assistant'), text: z.string().min(1).max(MAX_ANSWER_TEXT) }).strict(),
+            ]),
           )
           .min(1)
           .max(MAX_CHAT_TURNS),
@@ -7123,12 +7132,12 @@ export const channels = {
    * THROUGH `main`, because the renderer may hold no permission but `media` (ARCHITECTURE §2), so its
    * own `navigator.clipboard.writeText` is refused by the window's deny-all policy — measured live,
    * `NotAllowedError: Write permission denied`, with the window focused. Writing only: the renderer
-   * cannot READ the clipboard through this or any channel. Bounded by the assistant's own turn bound,
-   * the longest text anything copies this way.
+   * cannot READ the clipboard through this or any channel. Bounded by an assistant answer's bound
+   * (ADR-0277), the longest text anything copies this way, so an answer is copied whole.
    */
   'window.copyText': channel(
     'Puts the given text on the clipboard.',
-    z.object({ text: z.string().min(1).max(MAX_CHAT_TEXT) }).strict(),
+    z.object({ text: z.string().min(1).max(MAX_ANSWER_TEXT) }).strict(),
     z.object({ copied: z.boolean() }),
   ),
 

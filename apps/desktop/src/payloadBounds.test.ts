@@ -234,7 +234,7 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // L11's requirement.
   'ai.models': 'names a provider from the registry and answers a bounded list of bounded model ids',
   'ai.models.held': 'carries nothing in; one bounded list per registered provider out, whatever the document',
-  'ai.ask': 'every field is bounded: the subscription id, the model id, and the conversation’s turns',
+  'ai.ask': 'every field is bounded: the subscription id, the model id, and the conversation’s turns: MAX_CHAT_TURNS, a question within MAX_CHAT_TEXT and an answer within MAX_ANSWER_TEXT',
   'ai.stop': 'one bounded subscription id',
   'ai.attach': 'at most eight files, each a handle, a bounded name and a size, and a count of the rest — never a byte of any file',
   'ai.openSource': 'a bounded answer id and a place below the sources’ bound',
@@ -243,7 +243,7 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'ai.translatePage': 'needs an engine session; a page of bounded blocks',
   'ai.translateText': 'one selected text bounded at half the copy bound in, one translation bounded at the copy bound out; no document contributes',
   'ai.checkKey': 'a provider and a key bounded by MAX_SECRET_SETTING in; accepted or one declared problem out',
-  // CHAT HISTORY (ADR-0093): a conversation, never a document — MAX_CHAT_TURNS of MAX_CHAT_TEXT each.
+  // CHAT HISTORY (ADR-0093): a conversation, never a document — MAX_CHAT_TURNS of MAX_ANSWER_TEXT each (ADR-0277).
   'ai.history.load': 'one DocId in; at most MAX_CHAT_TURNS bounded turns out, whatever the document’s size',
   'ai.history.save': 'one DocId and at most MAX_CHAT_TURNS bounded turns in; a boolean out',
   'ai.history.clear': 'carries nothing and answers a count',
@@ -272,7 +272,7 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'window.titleBarOverlay': 'answers a boolean; two colours and a height go in, and no document contributes',
   'window.close': 'carries nothing and answers a boolean',
   'window.edit': 'names one of four declared verbs and answers a boolean',
-  'window.copyText': 'text bounded by MAX_CHAT_TEXT in, a boolean out',
+  'window.copyText': 'text bounded by MAX_ANSWER_TEXT in, a boolean out',
   // ONE OF TWO DECLARED PLACES IN, A BOOLEAN OUT (ADR-0095). The parameter is a closed enum, so
   // neither side can carry anything a document contributes to — which is also why the renderer
   // cannot name an address.

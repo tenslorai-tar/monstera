@@ -1,4 +1,4 @@
-import { type ContractClient, MAX_CHAT_TEXT, MAX_CHAT_TURNS, MAX_MODEL_ID, type SavedTurn } from '@monstera/contract';
+import { type ContractClient, MAX_CHAT_TURNS, MAX_MODEL_ID, type SavedTurn } from '@monstera/contract';
 import type { DocId } from '@monstera/shared';
 
 import type { ConversationTurn, DocumentStore } from './documentStores.js';
@@ -21,7 +21,8 @@ import type { ConversationTurn, DocumentStore } from './documentStores.js';
  *
  * ## What is saved is what the contract allows, the NEWEST of it
  *
- * The last {@link MAX_CHAT_TURNS} turns, each within {@link MAX_CHAT_TEXT}; a reply target and a
+ * The last {@link MAX_CHAT_TURNS} turns, each WHOLE: a saved turn is bounded at `MAX_ANSWER_TEXT`, the bound `main`
+ * already holds every answer to, so nothing is cut on the way to the store (ADR-0277 Decision 4). A reply target and a
  * *posted* mark belong to one session's document version and are not saved (ADR-0093 Decision 5).
  */
 
@@ -31,7 +32,7 @@ export const SETTLE_MS = 800;
 export function savedTurns(turns: readonly ConversationTurn[]): SavedTurn[] {
   return turns.slice(-MAX_CHAT_TURNS).map((turn) => ({
     role: turn.role,
-    text: turn.text.slice(0, MAX_CHAT_TEXT),
+    text: turn.text,
     ...(turn.sent === undefined || turn.sent === null ? {} : { sent: turn.sent }),
     ...(turn.model === undefined ? {} : { model: turn.model.slice(0, MAX_MODEL_ID) }),
     ...(turn.attached === undefined ? {} : { attached: [...turn.attached] }),

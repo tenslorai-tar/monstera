@@ -6,6 +6,8 @@ import {
   type ContractClient,
   MAX_ASK_ATTACHMENTS,
   MAX_ASK_DOCUMENTS,
+  MAX_ANSWER_TEXT,
+  MAX_CHAT_TEXT,
   channels,
   createClient,
 } from '@monstera/contract';
@@ -1679,7 +1681,11 @@ describe('the chat extras (the owner’s design, 2026-09-15)', () => {
   const DOC = asDocId('00000000-0000-4000-8000-0000000000e5');
 
   /** A document conversation with one whole exchange in it, asked about the page. */
-  async function answered(extra: Partial<Parameters<typeof drawn>[0]> = {}) {
+  async function answered(
+    extra: Partial<Parameters<typeof drawn>[0]> = {},
+    /** The answer's text, pushed in pieces within `ai.delta`'s bound, and how it ended. */
+    reply: { readonly text?: string; readonly refusal?: 'answer-cut' } = {},
+  ) {
     const store = createDocumentStore(DOC, asDocVersion(1));
     const harness = await drawn({ focused: { docId: DOC, store, page: 2 }, ...extra });
     type('When is the review?');
@@ -1689,8 +1695,14 @@ describe('the chat extras (the owner’s design, 2026-09-15)', () => {
     });
     const subscription = (harness.sent.find((entry) => entry.id === 'ai.ask')?.params as { subscription: string })
       .subscription;
-    harness.push('ai.delta', { subscription, text: 'On 17 March.' });
-    harness.push('ai.done', { subscription, stopped: false, web: NO_WEB });
+    const text = reply.text ?? 'On 17 March.';
+    for (let at = 0; at < text.length; at += 8192) harness.push('ai.delta', { subscription, text: text.slice(at, at + 8192) });
+    harness.push('ai.done', {
+      subscription,
+      stopped: false,
+      ...(reply.refusal === undefined ? {} : { refusal: reply.refusal }),
+      web: NO_WEB,
+    });
     return { ...harness, store };
   }
 
@@ -1739,6 +1751,32 @@ describe('the chat extras (the owner’s design, 2026-09-15)', () => {
     ]);
     // EVERY COPY'S ONE CONFIRMATION, the window's toast.
     expect(toasts).toStrictEqual([['done', TOAST_COPIED]]);
+  });
+
+  it('COPY copies a 20,000-character answer WHOLE, within the channel’s own bound (ADR-0277)', async () => {
+    // LONGER THAN A QUESTION'S BOUND, which is where the copy used to cut it.
+    const long = Array.from({ length: 20_000 }, (_, at) => String.fromCharCode(97 + (at % 26))).join('');
+    expect(long.length).toBeGreaterThan(MAX_CHAT_TEXT);
+    const { sent } = await answered({}, { text: long });
+    fireEvent.click(screen.getByRole('button', { name: 'Copy this answer' }));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const copied = sent.filter((entry) => entry.id === 'window.copyText').map((entry) => entry.params);
+    expect(copied).toStrictEqual([{ text: long }]);
+    // AND MAIN'S BOUNDARY TAKES IT: `createClient` validates nothing, so the case asks the channel's own schema.
+    expect(channels['window.copyText'].params.safeParse(copied[0]).success).toBe(true);
+  });
+
+  it('an answer main stopped at its bound SAYS so, and keeps what arrived (ADR-0277)', async () => {
+    const { store } = await answered({}, { text: 'Up to the bound.', refusal: 'answer-cut' });
+    expect(
+      screen.getByText(
+        `The answer was stopped at its length limit of ${new Intl.NumberFormat('en').format(MAX_ANSWER_TEXT)} characters. What is above is all of it up to there. Ask for the rest in a new question.`,
+      ),
+    ).not.toBeNull();
+    expect(store.getState().conversation.at(-1)?.text).toBe('Up to the bound.');
   });
 
   it('CONTROL: a copy main says did not reach the clipboard says nothing', async () => {

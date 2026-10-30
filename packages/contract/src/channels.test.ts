@@ -4,7 +4,9 @@ import { describe, expect, it } from 'vitest';
 import { createClient, wrapHandlers } from './boundary.js';
 import {
   LAYERS_PART,
+  MAX_ANSWER_TEXT,
   MAX_BACKUP_COPIES,
+  MAX_CHAT_TEXT,
   MAX_RANGE_BYTES,
   channelIds,
   channels,
@@ -1039,5 +1041,26 @@ describe('document.exportExcel — which engine reads the tables (ADR-0086)', ()
   it('refuses a request that names no engine, or one this build does not have', () => {
     expect(params.safeParse({ ...edited, edits: [] }).success).toBe(false);
     expect(params.safeParse({ ...edited, engine: 'tesseract', edits: [] }).success).toBe(false);
+  });
+});
+
+describe('ai.ask bounds each message by who wrote it (ADR-0277, corrected 2026-10-30)', () => {
+  const ask = (messages: readonly { role: 'user' | 'assistant'; text: string }[]): boolean =>
+    channels['ai.ask'].params.safeParse({ subscription: 's1-abc', provider: 'anthropic', model: 'm', messages, web: false })
+      .success;
+
+  it('resends an earlier answer longer than a question may be, up to the answer bound', () => {
+    expect(ask([
+      { role: 'user', text: 'Explain every clause.' },
+      { role: 'assistant', text: 'a'.repeat(20_000) },
+      { role: 'user', text: 'And clause 4?' },
+    ])).toBe(true);
+    expect(ask([{ role: 'user', text: 'q' }, { role: 'assistant', text: 'a'.repeat(MAX_ANSWER_TEXT) }, { role: 'user', text: 'q' }])).toBe(true);
+  });
+
+  it('CONTROL: a person’s question past MAX_CHAT_TEXT, and an answer past MAX_ANSWER_TEXT, are refused', () => {
+    expect(ask([{ role: 'user', text: 'q'.repeat(MAX_CHAT_TEXT) }])).toBe(true);
+    expect(ask([{ role: 'user', text: 'q'.repeat(MAX_CHAT_TEXT + 1) }])).toBe(false);
+    expect(ask([{ role: 'user', text: 'q' }, { role: 'assistant', text: 'a'.repeat(MAX_ANSWER_TEXT + 1) }, { role: 'user', text: 'q' }])).toBe(false);
   });
 });
