@@ -35,7 +35,7 @@ import { TimestampRefusedError } from './signingRefusals.js';
  * ## Read with node-forge's VALIDATOR, because its reader refuses a token
  *
  * `forge.pkcs7.messageFromAsn1` throws *Only wrapped ContentType Data supported*
- * (node-forge 1.4.0, `lib/pkcs7.js`), and a token's content is a TSTInfo. The
+ * (node-forge 1.4.2, `lib/pkcs7.js`, read 2026-10-30), and a token's content is a TSTInfo. The
  * validator that reader runs, `forge.pkcs7.asn1.signedDataValidator`, has no such
  * restriction and captures the same fields — so this is the same library's
  * reading of the same structure, not a second parser.

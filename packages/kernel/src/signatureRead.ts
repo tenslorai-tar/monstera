@@ -266,8 +266,8 @@ function verify(
  * `asn1.fromDer` with the options object node-forge 1.x reads.
  *
  * `@types/node-forge` declares the second argument as a `strict` boolean; the
- * library's own reader takes `{ strict, parseAllBytes, decodeBitStrings }`
- * (node-forge 1.4.0, `lib/asn1.js`). A typed adapter over that one call rather
+ * library's own reader takes `{ strict, parseAllBytes, decodeBitStrings,
+ * maxDepth }` (node-forge 1.4.2, `lib/asn1.js`, read 2026-10-30). A typed adapter over that one call rather
  * than an `any` one.
  */
 interface ForgeDerReader {

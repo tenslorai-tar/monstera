@@ -291,3 +291,12 @@ its advisories name as patched, read from the registry (`npm view`) and GitHub's
 
 happy-dom 21's one breaking change turns its CSS-file and iframe loading off by default (its release notes, read
 2026-10-29), which is the class of its advisories; no test here loads either. None of these ships.
+
+## Addition — 2026-10-30 — node-forge takes its security release
+
+node-forge, which ships, moves **1.4.0 → 1.4.2**, still pinned exact, in the root and `packages/kernel` manifests (the
+table above keeps 1.4.0 as the record of its day). Read from the registry on 2026-10-30: 1.4.1 and 1.4.2 were both
+published 2026-10-27 and 1.4.2 is the latest. 1.4.1's changelog fixes the RSA PKCS#1 v1.5 verification flaw
+(GHSA-86w9-cpqp-85rv in GitHub's alerts, GHSA-2g46-22mc-6gwp in forge's changelog) and sixteen others; 1.4.2 repairs
+`pem.decode`'s `Buffer` input, which 1.4.1 broke. Licence and dependencies unchanged (its `LICENSE` is byte-identical,
+and it has none). What this build reaches of it is in `docs/security/engine-advisories.json`'s entry of the same date.
