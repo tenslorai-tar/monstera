@@ -1,5 +1,5 @@
 import { PDFDocument as PdfLibDocument, PDFName, type PDFRef, StandardFonts } from '@cantoo/pdf-lib';
-import { blockEditOf, type CommandOfKind, type FormPath, MAX_FORM_PLACEMENTS } from '@monstera/contract/host';
+import { blockEditOf, type CommandOfKind, type FormPath, MAX_FORM_DEPTH, MAX_FORM_PLACEMENTS } from '@monstera/contract/host';
 import { asDocVersion } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -10,6 +10,65 @@ import type { PageRuns } from './operatorEdit.js';
 import { pageContentStreams } from './pageContent.js';
 import { applyEditTextOperators } from './textOperatorEdit.js';
 import { joinedContent, showOperators, textObjectCount } from './textOperators.js';
+
+/**
+ * A page whose forms nest `levels` deep, form k showing one word and drawing form k+1 `draws` times, the page drawing
+ * the first `placed` times: `placed × (draws^levels - 1) / (draws - 1)` placements of text, from a file of a few KB.
+ * `draws` 2 and `levels` 16 is the 4.9 KB shape measured at 5.6 s and about 1 GB in the contained host (cloud run 27,
+ * 2026-10-30); `draws` 1 is a plain chain.
+ */
+async function formGraph(levels: number, draws: number, placed: number): Promise<Uint8Array> {
+  const document = await PdfLibDocument.create();
+  const page = document.addPage([612, 792]);
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  let next: PDFRef | undefined;
+  for (let level = levels; level >= 1; level -= 1) {
+    const inner = next === undefined ? '' : Array.from({ length: draws }, (_, at) => ` q 1 0 0 1 ${String(at)} -1 cm /G Do Q`).join('');
+    const resources = document.context.obj({ Font: { F1: font.ref }, ...(next === undefined ? {} : { XObject: { G: next } }) });
+    next = document.context.register(
+      document.context.stream(`BT /F1 3 Tf 0 0 Td (G${String(level)}) Tj ET${inner}`, { Type: 'XObject', Subtype: 'Form', BBox: [-50, -50, 50, 50], Resources: resources }),
+    );
+  }
+  if (next === undefined) throw new Error('a graph needs a level');
+  page.node.setXObject(PDFName.of('G'), next);
+  const content = Array.from({ length: placed }, (_, at) => `q 1 0 0 1 ${String(20 + at)} 400 cm /G Do Q`).join('\n');
+  page.node.addContentStream(document.context.register(document.context.stream(content)));
+  return document.save({ useObjectStreams: false });
+}
+
+/** A page drawing a form that draws itself, and a pair of forms that draw each other: paths without end. */
+async function selfDrawing(): Promise<Uint8Array> {
+  const document = await PdfLibDocument.create();
+  const page = document.addPage([612, 792]);
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  const [self, a, b] = [document.context.nextRef(), document.context.nextRef(), document.context.nextRef()];
+  const form = (word: string, name: string, drawn: PDFRef) =>
+    document.context.stream(`BT /F1 8 Tf 0 0 Td (${word}) Tj ET q 1 0 0 1 0 -9 cm /${name} Do Q`, {
+      Type: 'XObject',
+      Subtype: 'Form',
+      BBox: [0, -50, 100, 10],
+      Resources: document.context.obj({ Font: { F1: font.ref }, XObject: { [name]: drawn } }),
+    });
+  document.context.assign(self, form('self', 'S', self));
+  document.context.assign(a, form('A', 'B', b));
+  document.context.assign(b, form('B', 'A', a));
+  page.node.setXObject(PDFName.of('S'), self);
+  page.node.setXObject(PDFName.of('A'), a);
+  page.node.addContentStream(document.context.register(document.context.stream('q 1 0 0 1 100 700 cm /S Do Q q 1 0 0 1 100 600 cm /A Do Q')));
+  return document.save({ useObjectStreams: false });
+}
+
+/** {@link formPagesDocument} of page 1 of `bytes`, and how long it took. */
+async function formPagesOf(bytes: Uint8Array): Promise<{ readonly read: Awaited<ReturnType<typeof formPagesDocument>>; readonly ms: number }> {
+  const session = await mupdfWriter.open(bytes);
+  try {
+    const start = performance.now();
+    const read = await withDocument(session, (document) => formPagesDocument(document, 0));
+    return { read, ms: performance.now() - start };
+  } finally {
+    await mupdfWriter.close(session);
+  }
+}
 
 /**
  * Text inside a form XObject, edited in the form's own content (ADR-0269): a page whose only text is drawn by a form,
@@ -160,7 +219,7 @@ describe('text inside a form (ADR-0269)', () => {
     }
   });
 
-  it('counts the placements past the path’s bounds it leaves out, so the read says the page’s text is cut (ADR-0273 Decision 6)', async () => {
+  it('says why it left placements out, so the read says the page’s text is cut and for which reason (ADR-0273 Decision 6)', async () => {
     const pagesOf = async (count: number) => {
       const session = await mupdfWriter.open(await formPage(Array.from({ length: count }, (_, at) => `q 1 0 0 1 ${String(at)} 0 cm /Fm1 Do Q`)));
       try {
@@ -171,11 +230,67 @@ describe('text inside a form (ADR-0269)', () => {
     };
     const past = await pagesOf(MAX_FORM_PLACEMENTS + 2);
     expect(past.paths).toHaveLength(MAX_FORM_PLACEMENTS);
-    expect(past.omitted).toBe(2);
-    // CONTROL: at the bound nothing is left out, so a count of zero is not what every page answers.
+    expect(past.left).toStrictEqual({ deeper: false, more: true, unnamed: false });
+    // CONTROL: at the bound nothing is left out, so `more` is not what every page answers.
     const at = await pagesOf(MAX_FORM_PLACEMENTS);
     expect(at.paths).toHaveLength(MAX_FORM_PLACEMENTS);
-    expect(at.omitted).toBe(0);
+    expect(at.left).toStrictEqual({ deeper: false, more: false, unnamed: false });
+    // DEEPER is its own reason: a chain one level past the depth offers every level it may and says the one below.
+    const chain = await formPagesOf(await formGraph(MAX_FORM_DEPTH + 1, 1, 1));
+    expect(chain.read.paths.map((path) => path.length)).toStrictEqual(Array.from({ length: MAX_FORM_DEPTH }, (_, at) => at + 1));
+    expect(chain.read.left).toStrictEqual({ deeper: true, more: false, unnamed: false });
+    // CONTROL: a chain exactly at the depth leaves nothing, so `deeper` is the level past it and not depth itself.
+    expect((await formPagesOf(await formGraph(MAX_FORM_DEPTH, 1, 1))).read.left.deeper).toBe(false);
+  });
+
+  // THE WALK IS BOUNDED AS IT GOES. A form drawing the next twice, sixteen levels down, is 65,535 placements of text in
+  // 4.9 KB; the walk used to visit every one and only then keep the first it could offer — measured 2026-10-30 on Linux
+  // in this process (the kernel's walk on the native shim, peak RSS read from /proc/self/status' VmHWM after it):
+  // 6,242 ms and 104 → 554 MiB, offering 15. Bounded, by the same instrument: 11 ms and 105 → 105 MiB. So 1,000 ms is
+  // two orders of magnitude of room above the bounded walk and a sixth of the unbounded one. Breadth is the second
+  // shape: many draws a level within the depth, which no depth bound reaches.
+  it('reads a form drawn many times inside another no further than the placements it may offer, in bounded time', async () => {
+    // THE EXPECTATIONS FOLLOW THE BOUNDS: every placement, those within the depth, and which bound the walk meets first.
+    const levels = 16;
+    const deep = await formPagesOf(await formGraph(levels, 2, 1));
+    const every = 2 ** levels - 1;
+    const reachable = 2 ** Math.min(levels, MAX_FORM_DEPTH) - 1;
+    expect(deep.read.paths).toHaveLength(Math.min(MAX_FORM_PLACEMENTS, reachable));
+    expect(deep.read.left).toStrictEqual({ deeper: every > reachable && reachable <= MAX_FORM_PLACEMENTS, more: reachable > MAX_FORM_PLACEMENTS, unnamed: false });
+    expect(deep.ms).toBeLessThan(1_000);
+    // 32 A LEVEL, so the unbounded walk's own time decides this case as well: 1 + 32 + 1,024 + 32,768 placements within
+    // four levels. Measured 2026-10-30 at sixteen a level (4,369 placements): 417 ms unbounded, 12 ms bounded.
+    const wide = await formPagesOf(await formGraph(MAX_FORM_DEPTH, 32, 1));
+    expect(wide.read.paths).toHaveLength(MAX_FORM_PLACEMENTS);
+    expect(wide.read.left).toStrictEqual({ deeper: false, more: true, unnamed: false });
+    expect(wide.ms).toBeLessThan(1_000);
+  });
+
+  // THE OWNER'S BOUNDS OF 2026-10-30 (ADR-0269's correction of that date). Eight levels placed twenty-five times is 200
+  // placements of text, which the bounds of 4 and 64 offered 64 of (measured by cloud run 27): every one is offered now.
+  it('offers every placement of an 8-level form placed 25 times, 200 in all', async () => {
+    const { read } = await formPagesOf(await formGraph(8, 1, 25));
+    expect(read.paths).toHaveLength(200);
+    expect(Math.max(...read.paths.map((path) => path.length))).toBe(8);
+    expect(read.left).toStrictEqual({ deeper: false, more: false, unnamed: false });
+  });
+
+  // PAST BOTH BOUNDS a page still offers what fits, and says both reasons: the first placement's chain runs one level
+  // past the depth, and twenty placements of seventeen levels are more than the count.
+  it('offers what fits of a page past both bounds and says the rest is not offered, for each reason', async () => {
+    const { read } = await formPagesOf(await formGraph(MAX_FORM_DEPTH + 1, 1, 20));
+    expect(read.paths).toHaveLength(MAX_FORM_PLACEMENTS);
+    expect(read.paths.every((path) => path.length <= MAX_FORM_DEPTH)).toBe(true);
+    expect(read.left).toStrictEqual({ deeper: true, more: true, unnamed: false });
+  });
+
+  // A FORM ALREADY ENTERED ON ITS PATH is not entered again: its text is offered where it was first entered, so a form
+  // that draws itself, or two that draw each other, end the walk and say nothing is left out. CONTROL: the second form of
+  // the pair IS offered, below the first, so the guard stops at a form's second entry on one path and not its first.
+  it('ends at a form that draws itself, directly or through another, and leaves nothing it could offer', async () => {
+    const { read } = await formPagesOf(await selfDrawing());
+    expect(read.paths).toStrictEqual([[{ name: 'S', occurrence: 0 }], [{ name: 'A', occurrence: 0 }], [{ name: 'A', occurrence: 0 }, { name: 'B', occurrence: 0 }]]);
+    expect(read.left).toStrictEqual({ deeper: false, more: false, unnamed: false });
   });
 
   it('writes a word edited in a form into the form’s own stream, and leaves the page’s content as it was', async () => {

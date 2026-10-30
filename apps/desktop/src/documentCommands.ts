@@ -13,6 +13,7 @@ import {
   type FormDataFormat,
   type FormDataImportFormat,
   type FormPath,
+  type FormsLeftOut,
   MAX_FORM_DATA_BYTES,
   MAX_IMAGE_BYTES,
   MAX_PAGE_IMAGE_BYTES,
@@ -2152,8 +2153,10 @@ export interface DocumentTextBlocks {
   readonly version: DocVersion;
   /** Each with its frame where it is set at an angle, its boxes and baselines then in that frame (ADR-0273). */
   readonly blocks: readonly (RisenBlock<TextBlockStyle> & { readonly frame?: TextFrame })[];
-  /** Whether some of the page's text is not outlined: its read was cut, or a form placement was past the path's bounds. */
+  /** Whether some of the page's text is not outlined: its read was cut, or a form was drawn by a name no path carries. */
   readonly truncated: boolean;
+  /** Why the page's forms showing text were not all read, each said in its own words (ADR-0269's correction of 2026-10-30). */
+  readonly formsLeft: FormsLeftOut;
   /**
    * Characters on this page no command can name — text inside a Form XObject.
    *

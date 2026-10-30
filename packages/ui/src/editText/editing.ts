@@ -1,4 +1,4 @@
-import type { BlockFormatting, EditedBlock, FormPath, PageInsert, WindowEditAction } from '@monstera/contract';
+import type { BlockFormatting, EditedBlock, FormPath, FormsLeftOut, PageInsert, WindowEditAction } from '@monstera/contract';
 import { type DocVersion, fromTextFrame, newTextBox, pdfPoint, type TextFrame, toPdf, toViewport, viewportPoint } from '@monstera/shared';
 
 import { type OverlayPage, overlayTransform } from '../annotations/annotationSpace.js';
@@ -17,6 +17,8 @@ import type { FaceKind } from './runFaces.js';
 export interface PageBlocks extends BlocksRead {
   readonly blocks: readonly TextBlock[];
   readonly truncated: boolean;
+  /** Why the page's forms showing text were not all read: each reason is its own note. */
+  readonly formsLeft: FormsLeftOut;
   readonly unaddressable: number;
 }
 

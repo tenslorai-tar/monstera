@@ -126,3 +126,38 @@ their form alone with one rectangle (documents 3 and 6).
 
 Rejected: writing the added words in the holder past the frame, which takes them out of the form they were typed in and
 out of its reading order; and taking the frame away, which shows whatever else of the form it clipped.
+
+## Correction, 2026-10-30 — the walk is bounded as it goes, and a path may take 16 steps and a page 256 placements
+
+**Decided by:** the owner, 2026-10-30, in this order: the walk is bounded as it goes; the bounds are lifted to a depth of
+16 and 256 placements, the answer carried over the file-answer route; the note says which bound left text out.
+
+**The walk.** `formText.ts` used to visit every placement on a page, reading each form's stream again at each one, and
+only then keep the paths within the bounds. A form drawing the next twice, sixteen levels down, is 65,535 placements in
+4.9 KB: measured 2026-10-30 on Linux, the kernel's walk on the native shim, peak resident set from `/proc/self/status`
+after it, 6,242 ms and 104 to 554 MiB. The walk now enters no placement past the depth, stops at the count of
+placements showing text or at `MAX_FORM_VISITS` (the count times the depth) in all, and reads each form once: 11 ms and
+105 to 105 MiB on the same file. A form already entered on its own path is not entered again, as before, and that is not
+a placement left out. `engine/form-pages` answers why it left any out (`formsLeftOutSchema`: deeper, more, unnamed) in
+place of a count, which a walk that does not visit what it leaves cannot know. A page whose walk left forms unread counts
+as drawing every form once more when an edit asks whether a form is drawn elsewhere, so the edit copies it rather than
+change a placement nobody read.
+
+**The bounds.** `MAX_FORM_DEPTH` 4 to 16 and `MAX_FORM_PLACEMENTS` 64 to 256, still stated once in `commands.ts` and
+taken by the path's schema, the channel's answer and the walk. The name stays at ISO 32000-2's 127. Worst encodings, by
+`maxEncodedBytes` at 6 bytes a character (2026-10-30): one path 3,169 to 12,673 bytes; `engine/form-pages`' answer
+202,969 to 3,244,633 bytes, past the host frame's 262,144, so its answer travels as a file (`fileAnswered`, ADR-0125's
+route, as `engine/page-text`'s does), 39% of that route's 8,388,608-byte ceiling; `editTextOperators`, which carries one
+path, 8,298,436 to 8,307,940 bytes, under the same ceiling. `hostRoutes.test.ts` derives the first two from the schemas,
+and names this channel when it is framed. Invariant L11 is unaffected: every figure is per page and none grows with the
+document. A part of `document.textBlocks` (512 blocks, each able to carry a path) may carry up to 512 × 9,504 bytes more
+at the worst encoding; a name the walk reads is Latin-1 and never escaped, so its real worst is a third of that.
+
+Measured on the fixture of eight levels placed twenty-five times (cloud run 27, 2026-10-30): 64 of 200 placements were
+offered; all 200 are now (`formText.test.ts`, red on the old bounds). Not a seam change: the route is a registration into
+ADR-0125's, and the answer's field is a channel's own.
+
+**The note.** `document.textBlocks` carries the walk's reasons (`formsLeft`), and Edit text says each in its own sentence:
+text placed too many layers deep, and drawings repeated more often than can be outlined at once. Neither is the sentence
+for a cut read, which said *more text* for a form that was only too deep. A name a path cannot carry stays with that
+sentence, being neither reason.

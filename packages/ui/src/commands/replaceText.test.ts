@@ -1,4 +1,4 @@
-import { blocksOfEdit, channels, createClient } from '@monstera/contract';
+import { NO_FORMS_LEFT, blocksOfEdit, channels, createClient } from '@monstera/contract';
 import { type TextFrame, asDocId, asDocVersion, fromTextFrame, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -40,7 +40,7 @@ function harness(): { readonly deps: DocumentCommandDeps; readonly sent: Record<
     switch (id) {
       case 'document.textBlocks':
         return Promise.resolve(
-          ok({ version: asDocVersion(version), blocks: [UPRIGHT, TURNED_BLOCK], next: null, truncated: false, unaddressable: 0, rewrite: 'operators' }),
+          ok({ version: asDocVersion(version), blocks: [UPRIGHT, TURNED_BLOCK], next: null, truncated: false, formsLeft: NO_FORMS_LEFT, unaddressable: 0, rewrite: 'operators' }),
         );
       case 'document.execute': {
         sent.push(params['command'] as Record<string, unknown>);

@@ -54,6 +54,7 @@ import {
   blockEditAgrees,
   blockEditSchema,
   formPathSchema,
+  formsLeftOutSchema,
   annotationRectSchema,
   annotationColourSchema,
   pageMarksSchema,
@@ -5968,6 +5969,12 @@ export const channels = {
         .readonly(),
       /** Whether the engine's walk stopped at its bound, on the last part only. `document.annotations`' flag. */
       truncated: z.boolean(),
+      /**
+       * Why the page's forms showing text were not all read, each a reason the editor states in its own words (ADR-0269's
+       * correction of 2026-10-30): drawn deeper than a path may reach, or more than a page's walk reads. A name a path
+       * cannot carry is said by `truncated`. The page's, so every part carries the same; all false for a read as it is.
+       */
+      formsLeft: formsLeftOutSchema,
       /**
        * Characters on this page that no editing command can name.
        *

@@ -175,6 +175,7 @@ const handlers: ContractHandlers = {
         blocks: [],
         next: null,
         truncated: false,
+        formsLeft: { deeper: false, more: false, unnamed: false },
         unaddressable: 0,
         rewrite: 'objects' as const,
       }),

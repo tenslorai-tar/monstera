@@ -1,4 +1,4 @@
-import { type FormPath, MAX_FORM_PLACEMENTS, formPathSchema, sameFormPath } from '@monstera/contract/host';
+import { type FormPath, type FormsLeftOut, MAX_FORM_DEPTH, MAX_FORM_PLACEMENTS, formPathSchema, sameFormPath } from '@monstera/contract/host';
 
 import type { MupdfSession } from './engineSeam.js';
 import type { PDFDocument, PDFObject } from './mupdfRaw.js';
@@ -7,7 +7,7 @@ import { pageContentStreams, xobjectKinds } from './pageContent.js';
 import { freeName, resourceDictionaryOf } from './pageResources.js';
 import { savedBuffer } from './saveDepth.js';
 import { type PageBox, boxOfPoints, inverse, written as numberWritten } from './contentCarry.js';
-import { type ClipWindow, type Matrix, type Setting, drawnObjects, joinedContent, multiply, showOperators } from './textOperators.js';
+import { type ClipWindow, type DrawnObject, type Matrix, type Setting, drawnObjects, joinedContent, multiply, showOperators } from './textOperators.js';
 
 /**
  * Text inside a form XObject, edited in the form's own content as text on the page is
@@ -123,61 +123,138 @@ function objectNumber(object: PDFObject): number {
 }
 
 /**
- * Every placement of a form under `holder` (a page leaf or a form) whose content is `content`, depth first in content
- * order, each with its chain from the page. A form that draws itself, directly or not, is not entered twice.
+ * The most placements the walk visits on one page, text or not: as many as the steps of every path it may offer, so a
+ * page whose forms all show text is read to its last offerable placement, and a form graph that draws one form many
+ * times inside another costs no more than that. Derived from the two bounds, never a third figure.
  */
-function placementsUnder(
+export const MAX_FORM_VISITS = MAX_FORM_PLACEMENTS * MAX_FORM_DEPTH;
+
+/** A form's content as the walk reads it: once per form object per walk, however many times the form is drawn. */
+interface ReadForm {
+  readonly content: Uint8Array;
+  readonly drawn: readonly DrawnObject[];
+  readonly showsText: boolean;
+}
+
+/** One page's walk: what it found, in the order found, and why it stopped short. */
+interface Walk {
+  readonly placements: FormPlacement[];
+  readonly read: Map<number, ReadForm>;
+  visits: number;
+  texts: number;
+  deeper: boolean;
+  more: boolean;
+  unnamed: boolean;
+}
+
+/** `holder`'s content read for the walk, from the walk's own reading where the same form object was read before. */
+function readFor(walk: Walk, holder: PDFObject): ReadForm {
+  const id = objectNumber(holder);
+  const known = id === -1 ? undefined : walk.read.get(id);
+  if (known !== undefined) return known;
+  const content = bufferBytes(holder.readStream());
+  const read = { content, drawn: drawnObjects(content, xobjectKinds(holder)), showsText: showOperators(content).some((op) => op.object !== null) };
+  if (id !== -1) walk.read.set(id, read);
+  return read;
+}
+
+/**
+ * Every placement of a form under `holder` (a page leaf or a form) whose content is `content`, depth first in content
+ * order, each with its chain from the page, added to `walk` — and BOUNDED AS IT GOES: a placement past
+ * {@link MAX_FORM_DEPTH} is not entered, and the walk stops at {@link MAX_FORM_PLACEMENTS} placements showing text or
+ * {@link MAX_FORM_VISITS} in all, saying which in `walk`. So nothing is visited that the read will not keep, and a form
+ * drawn twice inside a form drawn twice, sixteen levels down, is read once and visited no more often than the bound.
+ *
+ * A form already entered on THIS path is not entered again: a form that draws itself, directly or through others,
+ * would otherwise be a path without end, and its text is already offered at the placement that entered it. That is not
+ * a placement left out, so it is not said. A form drawn twice on two DIFFERENT paths is two placements, and both count.
+ *
+ * @returns false once the walk has stopped, so every caller up the path stops with it
+ */
+function walkUnder(
+  walk: Walk,
   holder: PDFObject,
-  content: Uint8Array,
+  read: Pick<ReadForm, 'content' | 'drawn'>,
   chain: readonly Matrix[],
   states: readonly string[],
   path: FormPath | readonly [],
   entered: ReadonlySet<number>,
-): FormPlacement[] {
-  const found: FormPlacement[] = [];
+): boolean {
+  const { content, drawn: everything } = read;
   const seen = new Map<string, number>();
-  const everything = drawnObjects(content, xobjectKinds(holder));
   for (const drawn of everything) {
     if (drawn.kind !== 'form') continue;
     const operand = doOperand(content, drawn.start, drawn.end);
     if (operand === undefined) continue;
+    // COUNTED BEFORE ANY BOUND, so an occurrence names the same `Do` whatever the walk skips before it.
     const occurrence = seen.get(operand.name) ?? 0;
     seen.set(operand.name, occurrence + 1);
     const form = xobjectNamed(holder, operand.name);
     if (form === undefined) continue;
     const id = objectNumber(form);
     if (entered.has(id)) continue;
-    const own = bufferBytes(form.readStream());
+    const step = { name: operand.name, occurrence };
+    // ONE STEP JUDGED BY THE PATH'S OWN SCHEMA, so the name's bound is the contract's and not a copy here (B3a).
+    if (!formPathSchema.safeParse([step]).success) {
+      walk.unnamed = true;
+      continue;
+    }
+    // PAST THE DEPTH, not entered: said only where the form could hold text — it shows some, or draws a form.
+    if (path.length >= MAX_FORM_DEPTH) {
+      const unread = readFor(walk, form);
+      if (unread.showsText || unread.drawn.some((each) => each.kind === 'form')) walk.deeper = true;
+      continue;
+    }
+    if (walk.visits >= MAX_FORM_VISITS) {
+      walk.more = true;
+      return false;
+    }
+    const own = readFor(walk, form);
+    if (own.showsText && walk.texts >= MAX_FORM_PLACEMENTS) {
+      walk.more = true;
+      return false;
+    }
+    walk.visits += 1;
+    if (own.showsText) walk.texts += 1;
     const placement: FormPlacement = {
-      path: [...path, { name: operand.name, occurrence }],
+      path: [...path, step],
       chain: [...chain, drawn.ctm, formMatrix(form)],
       states: [...states, inherited(content, drawn.settings)],
       form,
       holder,
-      content: own,
+      content: own.content,
       operand: { start: operand.start, end: operand.end },
       frames: drawn.windows.filter((window) => everything.filter((other) => other.start >= window.start && other.start < window.end).length === 1),
     };
+    walk.placements.push(placement);
     // THE HOLDING FORM AS ITS REFERENCE, which its stream is read from and written to: resolved, it answers its
     // dictionary, and a stream's dictionary has no stream.
-    found.push(placement, ...placementsUnder(form, own, placement.chain, placement.states, placement.path, new Set([...entered, id])));
+    if (!walkUnder(walk, form, own, placement.chain, placement.states, placement.path, new Set([...entered, id]))) return false;
   }
-  return found;
+  return true;
 }
 
-/** Every placement of a form on the page, whether it shows text or not. */
-function placementsOn(leaf: PDFObject): FormPlacement[] {
-  return placementsUnder(leaf, joinedContent(pageContentStreams(leaf)), [], [], [], new Set());
+/** The page's walk: every placement of a form on it within the bounds, whether it shows text or not, and what it left. */
+function walkPage(leaf: PDFObject): Walk {
+  const walk: Walk = { placements: [], read: new Map(), visits: 0, texts: 0, deeper: false, more: false, unnamed: false };
+  const content = joinedContent(pageContentStreams(leaf));
+  walkUnder(walk, leaf, { content, drawn: drawnObjects(content, xobjectKinds(leaf)) }, [], [], [], new Set());
+  return walk;
+}
+
+/** Whether a placement's form shows text of its own. */
+function showsText(placement: FormPlacement): boolean {
+  return showOperators(placement.content).some((op) => op.object !== null);
 }
 
 /** Every placement on the page of a form whose own content shows text, in the order {@link formPagesDocument} pages them. */
 export function textPlacements(leaf: PDFObject): readonly FormPlacement[] {
-  return placementsOn(leaf).filter((placement) => showOperators(placement.content).some((op) => op.object !== null));
+  return walkPage(leaf).placements.filter(showsText);
 }
 
 /** The placement `path` names on the page now, or `undefined` where it names none. */
 export function placementAt(leaf: PDFObject, path: FormPath): FormPlacement | undefined {
-  return placementsOn(leaf).find((placement) => sameFormPath(placement.path, path));
+  return walkPage(leaf).placements.find((placement) => sameFormPath(placement.path, path));
 }
 
 /** A number as a content stream writes it: six places, no exponent, no negative zero. */
@@ -232,13 +309,12 @@ export function unwrappedForm(edited: Uint8Array, wrapped: ReturnType<typeof wra
  */
 export function formPagesDocument(document: PDFDocument, page: number): FormPages {
   const leaf = document.findPage(page);
-  // ONLY PATHS THE WIRE TAKES, and the first `MAX_FORM_PLACEMENTS` of them: a placement deeper, or named longer, than the
-  // contract's bounds is left unoffered rather than answered with a path the schema refuses, which would fail the read.
-  // COUNTED, so the page says some of its text is not outlined (ADR-0273 Decision 6) rather than nothing.
-  const every = textPlacements(leaf);
-  const placements = every.filter((placement) => formPathSchema.safeParse(placement.path).success).slice(0, MAX_FORM_PLACEMENTS);
-  const omitted = every.length - placements.length;
-  if (placements.length === 0) return { bytes: new Uint8Array(), paths: [], omitted };
+  // ONLY PATHS THE WIRE TAKES, because the walk enters nothing else, and WHY THE REST WAS LEFT, so the page says some of
+  // its text is not outlined and for which reason (ADR-0273 Decision 6) rather than nothing.
+  const walk = walkPage(leaf);
+  const placements = walk.placements.filter(showsText);
+  const left: FormsLeftOut = { deeper: walk.deeper, more: walk.more, unnamed: walk.unnamed };
+  if (placements.length === 0) return { bytes: new Uint8Array(), paths: [], left };
   const pages = newDocument();
   try {
     const box = leaf.getInheritable('MediaBox');
@@ -250,17 +326,17 @@ export function formPagesDocument(document: PDFDocument, page: number): FormPage
       const grafted = pages.graftObject(resources.isNull() ? placement.holder.getInheritable('Resources') : resources);
       pages.insertPage(-1, pages.addPage(mediabox, rotate, grafted, wrappedForm(placement).bytes));
     }
-    return { bytes: bufferBytes(savedBuffer(pages, '')), paths: placements.map((placement) => placement.path), omitted };
+    return { bytes: bufferBytes(savedBuffer(pages, '')), paths: placements.map((placement) => placement.path), left };
   } finally {
     pages.destroy();
   }
 }
 
-/** A page's form placements read as pages, and how many it holds that the path's bounds left out. */
+/** A page's form placements read as pages, and why the walk left any out. */
 export interface FormPages {
   readonly bytes: Uint8Array;
   readonly paths: readonly FormPath[];
-  readonly omitted: number;
+  readonly left: FormsLeftOut;
 }
 
 /** {@link formPagesDocument} of a session's document: what the MuPDF host answers `engine/form-pages` with. */
@@ -400,13 +476,21 @@ export function growFrames(document: PDFDocument, page: number, path: FormPath, 
   }
 }
 
-/** How many placements across the whole document draw `form`'s object: more than one means it is used elsewhere. */
+/**
+ * How many placements across the whole document draw `form`'s object: more than one means it is used elsewhere.
+ *
+ * A PAGE WHOSE WALK LEFT FORMS UNREAD counts as one use more: an unread form may draw this one, and an edit that took
+ * the form for this placement's alone would change a placement nobody looked at. Copying a form only this placement
+ * draws costs a copy; editing one drawn elsewhere changes text the person did not touch.
+ */
 function usesOf(document: PDFDocument, form: PDFObject): number {
   const id = objectNumber(form);
   if (id === -1) return 1;
   let uses = 0;
   for (let page = 0; page < document.countPages(); page += 1) {
-    for (const placement of placementsOn(document.findPage(page))) if (objectNumber(placement.form) === id) uses += 1;
+    const walk = walkPage(document.findPage(page));
+    for (const placement of walk.placements) if (objectNumber(placement.form) === id) uses += 1;
+    if (walk.deeper || walk.more || walk.unnamed) uses += 1;
   }
   return uses;
 }

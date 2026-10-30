@@ -11,6 +11,8 @@ import {
   TEXT_ADD_SURFACE,
   TEXT_EDIT_BLOCK_LABEL,
   TEXT_EDIT_COVERS,
+  TEXT_EDIT_FORMS_DEEPER,
+  TEXT_EDIT_FORMS_MORE,
   TEXT_EDIT_LAYER_LABEL,
   TEXT_EDIT_NONE,
   TEXT_EDIT_PAST_PAGE,
@@ -332,6 +334,9 @@ export function EditTextLayer({
       );
     }
     if (blocks.truncated) notes.push(<p key="truncated">{_(TEXT_EDIT_TRUNCATED)}</p>);
+    // TEXT IN FORMS PAST THE WALK'S BOUNDS, each reason in its own words (ADR-0269's correction of 2026-10-30).
+    if (blocks.formsLeft.deeper) notes.push(<p key="forms-deeper">{_(TEXT_EDIT_FORMS_DEEPER)}</p>);
+    if (blocks.formsLeft.more) notes.push(<p key="forms-more">{_(TEXT_EDIT_FORMS_MORE)}</p>);
     // A WRITE THAT GREW OVER SOMETHING is said, not undone (B1.6): nothing else moves, so the person is told.
     if (covers) notes.push(<p key="covers" role="status">{_(TEXT_EDIT_COVERS)}</p>);
   }

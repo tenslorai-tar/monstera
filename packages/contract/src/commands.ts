@@ -7145,14 +7145,16 @@ export const editTextBlockSchema = blockEditCommandObject('editTextBlock')
  * says per page which one the page needs (Decision 1), and the renderer picks the kind from it.
  */
 /**
- * THE THREE BOUNDS OF A FORM PLACEMENT'S PATH, set from the corpus with room, and kept small because every byte a path
- * may hold is paid at its worst encoding by `editTextOperators`' file ceiling and `engine/form-pages`' frame. Read
- * 2026-10-25 over the 13-document corpus and the brochure fixture (scratch `formDepth.mjs`): 9 placements of forms showing
- * text, the deepest 2 steps from the page, the longest resource name 7 characters, the busiest page 6. A placement past
- * any bound is not offered, which is what every placement was before ADR-0269.
+ * THE THREE BOUNDS OF A FORM PLACEMENT'S PATH, each stated here once: the path's schema, `engine/form-pages`' answer and
+ * the kernel's walk all take them. Every byte a path may hold is paid at its worst encoding by `editTextOperators`'
+ * file ceiling and by `engine/form-pages`' answer, which travels as a file for that reason (the owner's decision of
+ * 2026-10-30, ADR-0269's correction of that date, with the worst-case figures). The corpus read 2026-10-25 (13 documents
+ * and the brochure fixture, scratch `formDepth.mjs`) holds 9 placements, the deepest 2 steps from the page, the longest
+ * name 7 characters, the busiest page 6; the depth and count are set well past it, so a person's document is not why its
+ * text is not offered. A placement past any bound is not offered, and the editor says which bound (`formsLeftOutSchema`).
  */
 /** Steps a form placement's path may take from the page: a form inside a form inside … this many deep. */
-export const MAX_FORM_DEPTH = 4;
+export const MAX_FORM_DEPTH = 16;
 
 /**
  * Characters of one step's resource name: ISO 32000-2's own limit (127 bytes, so never more characters), so a name a
@@ -7161,7 +7163,7 @@ export const MAX_FORM_DEPTH = 4;
 export const MAX_FORM_NAME = 127;
 
 /** Placements of forms showing text read on one page; a page past this offers its first ones. */
-export const MAX_FORM_PLACEMENTS = 64;
+export const MAX_FORM_PLACEMENTS = 256;
 
 /**
  * Where a form is drawn on a page ([ADR-0269](../../../docs/DECISIONS/0269-text-inside-a-form-is-edited-in-the-forms-own-content.md)
@@ -7184,6 +7186,18 @@ export const formPathSchema = z
   .max(MAX_FORM_DEPTH)
   .readonly();
 export type FormPath = z.infer<typeof formPathSchema>;
+
+/**
+ * Why a page's walk over its forms left some unread, each a reason the editor states (ADR-0273 Decision 6): `deeper`, a
+ * form drawn further from the page than {@link MAX_FORM_DEPTH} steps; `more`, the walk reached its count with forms still
+ * to read; `unnamed`, a form drawn by a resource name a path cannot carry. Each means "may hold text": a form left unread
+ * is not opened to find out. Defined once, for the host's answer and the kernel's walk.
+ */
+export const formsLeftOutSchema = z.object({ deeper: z.boolean(), more: z.boolean(), unnamed: z.boolean() }).strict().readonly();
+export type FormsLeftOut = z.infer<typeof formsLeftOutSchema>;
+
+/** A walk that left nothing unread, or a read that walks no form. */
+export const NO_FORMS_LEFT: FormsLeftOut = { deeper: false, more: false, unnamed: false };
 
 /** Whether two paths name one placement: the same names and occurrences, step for step. The ONE comparison of them. */
 export function sameFormPath(a: FormPath, b: FormPath): boolean {

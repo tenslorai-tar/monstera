@@ -944,6 +944,10 @@ steps or named past 64 characters is not offered (the corpus's deepest is 2, its
 cell inside a form were measured once drawing nothing (document 6, 1 of 549 edits on documents 3 and 6, 2026-10-25),
 two causes fixed since, which one it met is open (YYYYYYYY-6).
 
+**Correction, 2026-10-30, at the run 28 merge:** the form limits above were current when written. Since cloud run 28
+(ADR-0269's correction of 2026-10-30) a placement deeper than 16 steps, past a page's 256th or named past 127
+characters is not offered, and the note says which of the first two it met.
+
 **Not reproduced, recorded**: `npm run build` exited 139 twice in its nested typecheck while the typecheck alone passed
 (about 3 GB of 12 GB free, the owner's app open); and the visual config's web server once ended 0xC0000005 starting the
 gallery, which builds on its own. No mechanism found for either.

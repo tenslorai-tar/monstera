@@ -2678,6 +2678,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
           version: asDocVersion(current),
           ...shimPart(blocks, from, TEXT_BLOCKS_PART, 'blocks'),
           truncated: false,
+          formsLeft: { deeper: false, more: false, unnamed: false },
           unaddressable: 0,
           rewrite: options.textRewrite ?? 'objects',
         }),

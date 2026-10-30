@@ -7,6 +7,7 @@ import type {
   FormFieldHandle,
   FormFieldRead,
   FormPath,
+  FormsLeftOut,
   Handlers,
   PageAdjustment,
   PageAdjustmentOutcome,
@@ -284,7 +285,7 @@ export type HostExtract = (session: MupdfSession, pages: PageSet) => Promise<Byt
 export type HostFormPages = (
   session: MupdfSession,
   page: number,
-) => Promise<{ readonly bytes: Uint8Array; readonly paths: readonly FormPath[]; readonly omitted: number }>;
+) => Promise<{ readonly bytes: Uint8Array; readonly paths: readonly FormPath[]; readonly left: FormsLeftOut }>;
 
 /**
  * A region of one page, as PNG bytes **and the frame they sit in**.
@@ -890,9 +891,9 @@ export function createEngineHandlers({
       try {
         // `engine/extract`'s route: a new document, built where MuPDF is, written into the granted output directory.
         const read = await formPages(held.session, page);
-        if (read.paths.length === 0) return { ok: true, value: { bytes: 0, paths: [], omitted: read.omitted } };
+        if (read.paths.length === 0) return { ok: true, value: { bytes: 0, paths: [], left: read.left } };
         const written = await files.writeOutput(held.outputDirectory, into, read.bytes);
-        return { ok: true, value: { bytes: written, paths: read.paths, omitted: read.omitted } };
+        return { ok: true, value: { bytes: written, paths: read.paths, left: read.left } };
       } catch (error) {
         return failed('form-pages-failed', error);
       }
