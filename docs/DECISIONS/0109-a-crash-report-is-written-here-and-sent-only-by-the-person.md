@@ -65,3 +65,9 @@ including file names. Dismissing it sends nothing. The application never address
   person to consent to a file on their own disk, and trains them to dismiss a dialog before anything is at stake.
 - **Composing an email ourselves** (`mailto:` with an attachment) — `mailto:` cannot carry an attachment, and a
   hand-built message is the application sending mail on the person's behalf.
+
+## Correction, 2026-10-29
+
+The header's *"The address is not live"* no longer holds: the owner made `report@monsterapdf.com` live for launch. A
+report a person shares now arrives. Nothing else here changes: the application still never sends to the address
+itself, a report still leaves only when the person shares it, and no test sends to it.

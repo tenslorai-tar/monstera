@@ -1,4 +1,4 @@
-import type { ChannelParams, StorePage } from '@monstera/contract';
+import { type ChannelParams, releaseTag, type StorePage } from '@monstera/contract';
 
 /**
  * Where this project's own pages are — the addresses behind `app.openWebPage`
@@ -63,21 +63,22 @@ export const STORE_URIS: Readonly<Record<StorePage, string>> = {
 /** Every page's address, keyed by the channel's own union so a page with no entry is a compile error. */
 export type WebAddresses = Readonly<Record<WebPage, string>>;
 
-/**
- * This project's source — the AGPL's offer of the corresponding source, which About links (BUILD-PROMPT's
- * *"'Source code' link in About"*). `package.json`'s `repository`, where the code is developed in public.
- *
- * **The repository, not this build's revision**: no commit or tag is baked into a build yet, so a link to
- * the exact tree would be a guess. The packaging row owns tagging a release and pointing this at it.
- */
-const SOURCE = 'https://github.com/tenslorai-tar/monstera';
+/** This project's repository, `package.json`'s `repository`, where the code is developed in public. */
+const REPOSITORY = 'https://github.com/tenslorai-tar/monstera';
 
 /**
- * The third-party notices — `NOTICE`, generated from the production dependency tree — as the repository
- * holds it. Online for the reason `SOURCE` is the repository: the installed layout carrying `NOTICE` is
- * the packaging row's (b), still owed, and a link to a file the build may not ship would be worse.
+ * About's *Source code* and third-party notices for the build that is running — the AGPL's offer of the
+ * CORRESPONDING source (BUILD-PROMPT's *"'Source code' link in About"*): the tree and `NOTICE` at the version's tag,
+ * which the pack step makes at the commit it packed ([ADR-0276](../../../docs/DECISIONS/0276-every-packaged-version-is-tagged-and-about-links-its-tag.md)).
+ * `main` moves on after a release, so a link to it shows code the running build never had. A development build has no
+ * tag, and opens the repository and `main`'s `NOTICE`.
  */
-const LICENCES = 'https://github.com/tenslorai-tar/monstera/blob/main/NOTICE';
+function sourcePages(version: string): { readonly source: string; readonly licences: string } {
+  const tag = releaseTag(version);
+  return tag === null
+    ? { source: REPOSITORY, licences: `${REPOSITORY}/blob/main/NOTICE` }
+    : { source: `${REPOSITORY}/tree/${tag}`, licences: `${REPOSITORY}/blob/${tag}/NOTICE` };
+}
 
 /**
  * The copyright holder's site, which "Tenslor Inc." in the © line opens — the owner's address, given in the review of
@@ -119,15 +120,20 @@ const AZURE_DI_ADDRESSES = {
     'https://learn.microsoft.com/en-us/azure/ai-services/document-intelligence/how-to-guides/create-document-intelligence-resource',
 } as const;
 
-const ADDRESSES: WebAddresses = {
-  donate: DONATE,
-  'store-listing': STORE_LISTING,
-  source: SOURCE,
-  licences: LICENCES,
-  publisher: PUBLISHER,
-  ...AI_KEY_ADDRESSES,
-  ...AZURE_DI_ADDRESSES,
-};
+/**
+ * Every page's address for the build running `version` (`app.getVersion()`): only About's two pages depend on it.
+ * @param version the running build's version
+ */
+export function webAddresses(version: string): WebAddresses {
+  return {
+    donate: DONATE,
+    'store-listing': STORE_LISTING,
+    ...sourcePages(version),
+    publisher: PUBLISHER,
+    ...AI_KEY_ADDRESSES,
+    ...AZURE_DI_ADDRESSES,
+  };
+}
 
 /**
  * Opens one of the pages above, answering whether this build had an address for it.
@@ -138,13 +144,16 @@ const ADDRESSES: WebAddresses = {
  * *that URL was refused* are two different facts and one of them is expected.
  *
  * **Every page has an address today**, since the Store assigned the product id on 2026-09-25. The empty
- * state stays because the table is where the next unassigned address goes; `addresses` is how a case
- * reaches it without this build having one, and the application never passes it.
+ * state stays because the table is where the next unassigned address goes.
+ *
+ * `addresses` has NO DEFAULT: the composition root passes {@link webAddresses} for the running version, and a default
+ * would let a caller open About's links for no version at all — `main`, the gap ADR-0276 closes — without anything
+ * reading wrong at the call site.
  */
 export async function openWebPage(
   page: WebPage,
   open: (url: string) => Promise<void>,
-  addresses: WebAddresses = ADDRESSES,
+  addresses: WebAddresses,
 ): Promise<boolean> {
   const address = addresses[page];
   if (address === '') return false;

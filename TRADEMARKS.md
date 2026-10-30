@@ -1,31 +1,3 @@
-# DRAFT — not legal advice; for review by Tenslor Inc.'s counsel before launch.
-
-> **Notes for the owner and counsel. Delete this box when the policy is adopted.**
->
-> - **Registration status is not recorded here.** Nothing in the repository says whether any
->   mark is registered, so this policy says "trademarks" and uses no ® symbol. Counsel should
->   confirm the status and whether to mark the name with ™ or ®.
-> - **"Monstera" on its own** is the word inside logo 1, and also the name of a plant genus.
->   The policy protects the full name "Monstera PDF Editor" and the logos, and asks only that
->   "Monstera" is not used in the name of *PDF or document software*. Counsel should say
->   whether that reach is right, and whether a clearance search has been done.
-> - **How this fits the code licence.** The code is AGPL-3.0-or-later ([`LICENSE`](LICENSE)).
->   AGPL section 7(e) allows *"Declining to grant rights under trademark law for use of some
->   trade names, trademarks, or service marks"*, and [`README.md`](README.md) and
->   [`assets/brand/README.md`](assets/brand/README.md) already say the brand assets are not
->   covered by the code licence. Counsel should also say whether the logo *image files* need
->   their own copyright statement, since they sit in an AGPL repository and `LICENSE` carries
->   no carve-out.
-> - **Written in our own words, not adapted from a template.** The owner asked for the Model
->   Trademark Guidelines to be adapted once their licence was confirmed on their own site. On
->   2026-09-27 that site failed its certificate check (`ERR_CERT_COMMON_NAME_INVALID`, for both
->   `modeltrademarkguidelines.org` and its `www.` name), so the licence could not be confirmed
->   there and none of its text is used. The sections below follow the parts such a policy
->   usually has.
-> - **The contact address** is left as a placeholder for the owner.
-
----
-
 # Monstera PDF Editor — Trademark Policy
 
 Monstera PDF Editor is free, open-source software. Its **code** is licensed under the GNU
@@ -136,7 +108,7 @@ an unmodified copy passed on as section 2 allows.
 
 ## 6. How to ask for permission, or report misuse
 
-Write to: **[contact address to be confirmed by Tenslor Inc.]**
+Write to: **[support@monsterapdf.com](mailto:support@monsterapdf.com)**
 
 Please tell us who you are, which Marks you want to use, how and where they will appear (a
 sketch or mock-up helps), and for how long. If you think someone is using the Marks in a way

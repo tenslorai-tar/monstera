@@ -210,6 +210,26 @@ describe('the Store application’s pages, through the assembled handlers', () =
   });
 });
 
+describe('About’s source link, through the assembled handlers (ADR-0276)', () => {
+  it('opens the RUNNING version’s tag, and a development build the repository', async () => {
+    // THE VERSION CROSSES THE ROOT: `webPages.test.ts` proves the address for a version, and only a case through the
+    // assembled handlers can see the root hand it the running version rather than none.
+    const opened: string[] = [];
+    const surfaces = {
+      ...harnessSurfaces('the composition test'),
+      openInBrowser: (url: string) => {
+        opened.push(url);
+        return Promise.resolve();
+      },
+    };
+    const packaged = createShellDependencies({ ...surfaces, appInfo: { ...appInfo, version: '1.1.2610.0', installChannel: 'store' } });
+    await packaged.handlers['app.openWebPage']({ page: 'source' });
+    const development = createShellDependencies({ ...surfaces, appInfo });
+    await development.handlers['app.openWebPage']({ page: 'source' });
+    expect(opened).toStrictEqual(['https://github.com/tenslorai-tar/monstera/tree/v1.1.2610.0', 'https://github.com/tenslorai-tar/monstera']);
+  });
+});
+
 describe('the command line’s documents, through the assembled handlers', () => {
   it('the first launch’s paths and a later launch’s reach the ONE queue the page asks, each opened once', async () => {
     // FILES THAT DO NOT EXIST, so the open route answers `absent` without an engine: what this case is about is that

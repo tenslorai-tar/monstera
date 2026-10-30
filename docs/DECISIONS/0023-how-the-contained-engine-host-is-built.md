@@ -3586,7 +3586,7 @@ package's identity (`Invoke-CommandInDesktopPackage`). The check refused, correc
 
 ```
 FAILURE package-data-unlocked the package's data root was not found:
-C:\Users\emiso\AppData\Roaming\Monstera PDF Editor is not under a LocalCache folder
+C:\Users\<user>\AppData\Roaming\Monstera PDF Editor is not under a LocalCache folder
 ```
 
 It failed closed, so no host was created. It would also have refused every host on

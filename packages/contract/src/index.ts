@@ -186,6 +186,7 @@ export {
   // registers the check's switch only while the address is live.
   compareReleaseVersions,
   releaseOf,
+  releaseTag,
   releaseVersionSchema,
   UPDATE_CHECK_SETTING_ID,
   UPDATE_MANIFEST,

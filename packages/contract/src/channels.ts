@@ -1165,6 +1165,16 @@ export function releaseOf(version: string): string {
 }
 
 /**
+ * The git tag holding the exact source a package version was built from
+ * ([ADR-0276](../../../docs/DECISIONS/0276-every-packaged-version-is-tagged-and-about-links-its-tag.md)): `v` and the
+ * four-part version, `A.B.C.0`, the only form the pack step admits. The pack writes this tag and About opens it, so the
+ * two cannot spell it differently (B3a). Any other version — a development build's — has no tag, and is `null`.
+ */
+export function releaseTag(version: string): string | null {
+  return /^(0|[1-9]\d{0,5})\.(0|[1-9]\d{0,5})\.(0|[1-9]\d{0,5})\.0$/u.test(version) ? `v${version}` : null;
+}
+
+/**
  * Orders two versions the schema above accepts: negative, zero or positive, part by part. **Numbers compare as
  * numbers** — `1.2.10` is above `1.2.9`, which a string comparison gets wrong. The one comparison the manifest's
  * own rule and main's check both take (B3a).

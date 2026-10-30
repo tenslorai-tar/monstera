@@ -5,7 +5,10 @@ import { fileURLToPath } from 'node:url';
 import { AI_KEY_PAGE_OF, AI_PROVIDER_IDS, AZURE_DI_PAGES, type AiKeyPage } from '@monstera/contract';
 import { describe, expect, it } from 'vitest';
 
-import { openWebPage, STORE_PRODUCT_ID, STORE_URIS } from './webPages.js';
+import { openWebPage, STORE_PRODUCT_ID, STORE_URIS, webAddresses } from './webPages.js';
+
+/** A development build's addresses: its version is no package version, so it has no tag. */
+const DEVELOPMENT = webAddresses('0.0.0');
 
 /**
  * The `main` half of *Donate*'s pair (ADR-0095): the place the renderer named becomes an address
@@ -31,7 +34,7 @@ describe('openWebPage', () => {
   it('opens the donation page at this project’s own site, and says it did', async () => {
     const { open, opened } = opener();
 
-    await expect(openWebPage('donate', open)).resolves.toBe(true);
+    await expect(openWebPage('donate', open, DEVELOPMENT)).resolves.toBe(true);
 
     // THE WHOLE ADDRESS, and it is asserted here rather than read from the module: a case comparing
     // the constant with itself would pass whatever the constant said, including an empty string.
@@ -41,16 +44,36 @@ describe('openWebPage', () => {
   it('opens the Store listing at the product id Partner Center assigned', async () => {
     const { open, opened } = opener();
 
-    await expect(openWebPage('store-listing', open)).resolves.toBe(true);
+    await expect(openWebPage('store-listing', open, DEVELOPMENT)).resolves.toBe(true);
 
     // THE WHOLE ADDRESS, for the donation case's reason. The id is the owner's, given 2026-09-25.
     expect(opened).toStrictEqual(['https://apps.microsoft.com/detail/9NHV3B1PV3XS']);
   });
 
-  it('opens About’s two pages: the source and the third-party notices, in this project’s repository', async () => {
+  it('a packaged build opens About’s two pages AT ITS OWN VERSION’S TAG, its corresponding source (ADR-0276)', async () => {
     const { open, opened } = opener();
-    await openWebPage('source', open);
-    await openWebPage('licences', open);
+    const packaged = webAddresses('1.1.2610.0');
+    await openWebPage('source', open, packaged);
+    await openWebPage('licences', open, packaged);
+    // THE WHOLE ADDRESSES, for the donation case's reason: the tag the pack step writes, `v` and the four parts.
+    expect(opened).toStrictEqual([
+      'https://github.com/tenslorai-tar/monstera/tree/v1.1.2610.0',
+      'https://github.com/tenslorai-tar/monstera/blob/v1.1.2610.0/NOTICE',
+    ]);
+  });
+
+  it('CONTROL: a version the pack step never admits has no tag, and opens the repository and main', () => {
+    // A FOURTH PART THAT IS NOT 0, AND THREE PARTS: neither is a package version, so neither names a tag that exists.
+    for (const version of ['1.1.2610.3', '1.1.2610', '0.0.0']) {
+      expect(webAddresses(version).source).toBe('https://github.com/tenslorai-tar/monstera');
+      expect(webAddresses(version).licences).toBe('https://github.com/tenslorai-tar/monstera/blob/main/NOTICE');
+    }
+  });
+
+  it('a development build opens About’s two pages in this project’s repository', async () => {
+    const { open, opened } = opener();
+    await openWebPage('source', open, DEVELOPMENT);
+    await openWebPage('licences', open, DEVELOPMENT);
     // THE WHOLE ADDRESSES, for the donation case's reason — and the repository is `package.json`'s.
     expect(opened).toStrictEqual([
       'https://github.com/tenslorai-tar/monstera',
@@ -91,7 +114,7 @@ describe('openWebPage', () => {
 
   it('opens the two Azure Document Intelligence pages, each at its own HTTPS address', async () => {
     const { open, opened } = opener();
-    for (const page of AZURE_DI_PAGES) await expect(openWebPage(page, open)).resolves.toBe(true);
+    for (const page of AZURE_DI_PAGES) await expect(openWebPage(page, open, DEVELOPMENT)).resolves.toBe(true);
     expect(opened).toStrictEqual([
       'https://portal.azure.com/#create/Microsoft.CognitiveServicesFormRecognizer',
       'https://learn.microsoft.com/en-us/azure/ai-services/document-intelligence/how-to-guides/create-document-intelligence-resource',
@@ -101,7 +124,7 @@ describe('openWebPage', () => {
 
   it('opens each AI provider’s key page, and every provider has one at its own address (ADR-0184)', async () => {
     const { open, opened } = opener();
-    for (const provider of AI_PROVIDER_IDS) await expect(openWebPage(AI_KEY_PAGE_OF[provider], open)).resolves.toBe(true);
+    for (const provider of AI_PROVIDER_IDS) await expect(openWebPage(AI_KEY_PAGE_OF[provider], open, DEVELOPMENT)).resolves.toBe(true);
     expect(opened).toHaveLength(AI_PROVIDER_IDS.length);
     // THE WHOLE ADDRESSES FOR TWO, asserted here and not read from the module, and each different from the next so a
     // page that opened its neighbour's address is seen.
@@ -116,18 +139,20 @@ describe('openWebPage', () => {
     // is what says the table cannot hand it something it must refuse. It reads the addresses through
     // the same function the application does, so an address added without a scheme fails here.
     const { open, opened } = opener();
-    await openWebPage('donate', open);
-    await openWebPage('store-listing', open);
-    await openWebPage('source', open);
-    await openWebPage('licences', open);
-    await openWebPage('publisher', open);
-    expect(opened).toHaveLength(5);
+    for (const addresses of [DEVELOPMENT, webAddresses('1.1.2610.0')]) {
+      await openWebPage('donate', open, addresses);
+      await openWebPage('store-listing', open, addresses);
+      await openWebPage('source', open, addresses);
+      await openWebPage('licences', open, addresses);
+      await openWebPage('publisher', open, addresses);
+    }
+    expect(opened).toHaveLength(10);
     for (const url of opened) expect(new URL(url).protocol).toBe('https:');
   });
 
   it('"Tenslor Inc." in the © line opens EXACTLY https://tenslor.com, the owner’s address (R5)', async () => {
     const { open, opened } = opener();
-    await expect(openWebPage('publisher', open)).resolves.toBe(true);
+    await expect(openWebPage('publisher', open, DEVELOPMENT)).resolves.toBe(true);
     // THE WHOLE ADDRESS, for the donation case's reason.
     expect(opened).toStrictEqual(['https://tenslor.com']);
   });

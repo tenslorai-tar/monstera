@@ -163,7 +163,7 @@ async function notedSheet() {
   first.drawText('sheet one', { x: 72, y: 700, size: 14, font });
   document.addPage([612, 792]).drawText('sheet two', { x: 72, y: 700, size: 14, font });
   const appearance = document.context.register(document.context.stream('', { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 20, 20] }));
-  const note = document.context.obj({ Type: 'Annot', Subtype: 'Text', Rect: [300, 600, 320, 620], F: 28, Contents: PDFString.of('sheet'), T: PDFString.of('Emem') });
+  const note = document.context.obj({ Type: 'Annot', Subtype: 'Text', Rect: [300, 600, 320, 620], F: 28, Contents: PDFString.of('sheet'), T: PDFString.of('Reviewer') });
   note.set(PDFName.of('AP'), document.context.obj({ N: appearance }));
   const noteRef = document.context.register(note);
   const popupRef = document.context.register(document.context.obj({ Type: 'Annot', Subtype: 'Popup', Rect: [320, 500, 520, 600], Parent: noteRef }));

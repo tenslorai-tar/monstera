@@ -310,7 +310,7 @@ guards is removed.
 | [HarfBuzz](https://harfbuzz.github.io/) (`harfbuzzjs`) | 1.6.2 | Reading and subsetting fonts for Edit text |
 | Bundled open fonts | from google/fonts | The fallback faces for Edit text when a document's own font cannot draw a letter: Arimo, Tinos, Cousine, Carlito, Caladea, Noto Sans Arabic, Noto Naskh Arabic and Noto Sans Symbols 2 |
 | [GNU Unifont](https://unifoundry.com/unifont/) | 18.0.01 | The last fallback face, for any character of the Basic Multilingual Plane no other font can draw; provisioned from ftp.gnu.org, pinned by sha256, embedded as a subset |
-| [Vite](https://vite.dev/) | 7.3.6 | Bundles the interface |
+| [Vite](https://vite.dev/) | 7.3.7 | Bundles the interface |
 | [Vitest](https://vitest.dev/) and [Playwright](https://playwright.dev/) with axe-core | | Unit tests, rendered accessibility tests and visual tests |
 
 Exact versions and hashes live in `package-lock.json` and the provisioning
@@ -507,8 +507,7 @@ which is the only part compiled here.
 The **name and the brand assets** in [`assets/brand/`](assets/brand/) are owned
 by Tenslor Inc. and are not covered by the code licence. A fork must use its
 own, so users can tell whose build they are running. What you may do with them
-without asking is in [`TRADEMARKS.md`](TRADEMARKS.md) (a draft, for legal review
-before launch).
+without asking is in [`TRADEMARKS.md`](TRADEMARKS.md).
 
 ---
 

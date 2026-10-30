@@ -11,7 +11,7 @@ read-only:
 
 ```
 icacls .tools\electron\43.4.1\electron.exe
-  → NT AUTHORITY\SYSTEM:(I)(F)   BUILTIN\Administrators:(I)(F)   EMEM-PC\emiso:(I)(F)
+  → NT AUTHORITY\SYSTEM:(I)(F)   BUILTIN\Administrators:(I)(F)   HOST\<user>:(I)(F)
 ```
 
 No `ALL APPLICATION PACKAGES` ACE and no container SID. An AppContainer's access

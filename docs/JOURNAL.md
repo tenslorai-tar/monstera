@@ -1350,6 +1350,8 @@ its later lines across the repository each land one line early. No check reads t
 **YYYYYYYY-18** — README.md, SECURITY.md and the community files publish `report@monsterapdf.com` as a security route and
 link the website, against the cloud rules' *report@ is not live, the website must not be discoverable before launch*.
 A report sent there is lost. The owner's decision; not changed here.
+*Correction, 2026-10-29:* the premise no longer holds. The owner made `report@monsterapdf.com` live and the website
+public and indexed for launch; a report sent there now arrives, and the cloud rules say so.
 **YYYYYYYY-19** — the product-name scan: its licence exemption matches any file whose name starts with *licence*
 (`licenceProvenance.proof.mjs` is never scanned); its masks pass a quoted name anywhere, not only the format's own
 registry string; `_` is stripped before hashing; commit messages, which B10 makes permanent, are not scanned (29 hits
@@ -52873,7 +52875,7 @@ One file, on Node v24.12.0 / libuv 1.51.0 / Windows 11:
 | Form | `realpath.native` | `dev:ino` |
 |---|---|---|
 | `C:\…\f.txt` | itself | one value |
-| `\\EMEM-PC\C$\…` | itself | *same* |
+| `\\HOST\C$\…` | itself | *same* |
 | `\\localhost\C$\…` | itself | *same* |
 | `Y:\…` via `subst` | folded to target | *same* |
 | hard link | itself | *same* |
