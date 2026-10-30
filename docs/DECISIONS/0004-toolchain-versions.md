@@ -276,3 +276,18 @@ build tools are recorded, so this is where rcedit is.
 Read from the registry on 2026-10-15: published 2026-08-25, not deprecated, one dependency (`pe-library` 2.0.1, MIT,
 not deprecated). rcedit 5.0.2 is removed: npm marks every release *"Package no longer supported"*, with no reason or
 successor. Not in `NOTICE` for the reason above: nothing of it ships.
+
+## Addition — 2026-10-29 — the development tools' security releases
+
+GitHub's Dependabot reported fifteen open alerts against development tools at launch. Each moves to the first release
+its advisories name as patched, read from the registry (`npm view`) and GitHub's alert list on 2026-10-29:
+
+| Package | Was | Now | Advisories |
+|---|---|---|---|
+| vite | 7.3.6 | **7.3.7**, still pinned exact; Deviation 2's reason for 7 over 8 stands | GHSA-698v-4r3x-3vcv, -587h-7wmj-h5pm, -r825-w8mm-5pxw, -rq7h-c2jc-7f22, -9jrq-w75r-8gcw |
+| vitest (and its `@vitest/mocker`) | 4.1.11 | 4.1.12 | GHSA-xp26-3454-mjgp, -qxg6-89mg-rqv8 |
+| happy-dom | 20.11.12 | **21.0.4**, a major | GHSA-834v-8h66-3h79, -5fpq-26gf-qwcr, -c8p4-j97h-3vg8 |
+| undici (through `@electron/get`, optional) | 7.30.0 | 7.30.1, inside its declared `^7.24.4` | GHSA-xjj6-f33q-929c, -9fm3-97px-rjf6, -qrxm-fqhp-jwvm, -2m5v-pch6-74hx, -4w7w-5xrc-9h26 |
+
+happy-dom 21's one breaking change turns its CSS-file and iframe loading off by default (its release notes, read
+2026-10-29), which is the class of its advisories; no test here loads either. None of these ships.
