@@ -13,8 +13,12 @@ import {
   MAX_ANNOTATION_TEXT,
   MAX_ASK_ATTACHMENTS,
   MAX_ASK_DOCUMENTS,
+  MAX_ANSWER_TEXT,
   MAX_CHAT_TEXT,
+  MAX_FILE_CONVERSATIONS,
+  CHAT_HISTORY_SETTING_ID,
   askShareOf,
+  conversationRoom,
   type DispatchableCommand,
   type WebSearchAbsence,
   choiceReadsImages,
@@ -95,6 +99,14 @@ import {
   ASSISTANT_MODEL_NOT_OFFERED,
   ASSISTANT_MODEL_NO_VISION,
   ASSISTANT_NO_COMMENTS,
+  ASSISTANT_ANSWER_CUT,
+  ASSISTANT_QUESTION_COUNT,
+  ASSISTANT_QUESTION_OVER,
+  ASSISTANT_FULL_COUNT,
+  ASSISTANT_FULL_PROVIDER,
+  ASSISTANT_START_NEW,
+  ASSISTANT_FILE_FULL_NEW,
+  ASSISTANT_FILE_FULL_UNSAVED,
   ASSISTANT_NO_KEY,
   ASSISTANT_SEARCHES_THE_WEB,
   ASSISTANT_WEB_ALWAYS,
@@ -317,6 +329,9 @@ function newSubscription(): string {
   return `s${String(Date.now())}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+/** Where the composer starts counting a question's characters: nine tenths of the bound (ADR-0277 Decision 1). */
+const QUESTION_COUNT_FROM = Math.floor(MAX_CHAT_TEXT * 0.9);
+
 const PROBLEMS = {
   unauthorised: ASSISTANT_PROBLEM_UNAUTHORISED,
   unreachable: ASSISTANT_PROBLEM_UNREACHABLE,
@@ -328,6 +343,7 @@ const PROBLEMS = {
   'page-too-large': ASSISTANT_PROBLEM_PAGE_TOO_LARGE,
   'searches-the-web': ASSISTANT_SEARCHES_THE_WEB,
   'no-comments': ASSISTANT_NO_COMMENTS,
+  'answer-cut': ASSISTANT_ANSWER_CUT,
 } as const;
 
 /** Why *Document + web* is off, as the sentence beside the disabled choice (ADR-0108). */
@@ -430,6 +446,7 @@ export function AssistantPanel({
   const providerId = useId();
   const modelId = useId();
   const hintId = useId();
+  const overId = useId();
   const sidesName = useId();
   const chooseId = useId();
   // THE PROVIDER AND EACH PROVIDER'S MODEL ARE SETTINGS (ADR-0117): this picker writes them, `main` reads Anthropic's for
@@ -592,7 +609,15 @@ export function AssistantPanel({
     const stopDone = subscribe('ai.done', (payload) => {
       const asking = live.current;
       if (asking?.subscription !== payload.subscription) return;
-      if (payload.refusal !== undefined) setProblem(payload.refusal);
+      // TOO LONG FOR THE MODEL is not a problem line but the conversation's state (ADR-0277 Decision 2): marked on the
+      // question that was refused, so `conversationRoom` reads the conversation as full for as long as it lasts.
+      if (payload.refusal === 'too-long') {
+        const asked = asking.read();
+        const at = asked.findLastIndex((each) => each.role === 'user');
+        asking.write(asked.map((each, index) => (index === at ? { ...each, refused: 'too-long' } : each)));
+      } else if (payload.refusal !== undefined) {
+        setProblem(payload.refusal);
+      }
       // WHAT THE WEB GAVE lands on the answer it belongs to — only for an ask made with the web on, so a *Document
       // only* answer never carries the *No web search was used* line (ADR-0108).
       const existing = asking.read();
@@ -667,8 +692,18 @@ export function AssistantPanel({
       // command's request and Regenerate. A model can be chosen without a key, since the list answers without one,
       // so the model was never the gate: a request went to main, which refused it after the turn was written, and
       // the panel said the missing key twice and *no text was found* once (F-V1). The readiness line says it once.
-      if (text === '' || model === '' || !hasKey || live.current !== null) return false;
+      // NOTHING `main` WOULD REFUSE IS SENT (ADR-0277): a question past the bound was written into the conversation and
+      // then refused by `ai.ask`'s schema, so every later question resent it and was refused too. The box says why.
       const store = focused.store;
+      if (
+        text === '' ||
+        model === '' ||
+        !hasKey ||
+        live.current !== null ||
+        conversationRoom(store.getState().conversation, text).kind !== 'room'
+      ) {
+        return false;
+      }
       const read = (): readonly ConversationTurn[] => store.getState().conversation;
       const write = (next: readonly ConversationTurn[]): void => {
         store.getState().converse(next);
@@ -779,6 +814,45 @@ export function AssistantPanel({
     [focused.docId],
   );
 
+  // WHAT SEND WOULD ASK, measured as it would be sent (trimmed), against what it would resend — the turns before an
+  // edited question when editing — by the rule `ask` takes (ADR-0277 Decisions 1 and 2).
+  const question = draft.trim();
+  const room = conversationRoom(editing === null ? turns : turns.slice(0, editing), question);
+
+  // A FILE AT ITS TWENTY, for the document whose New chat was refused (ADR-0277 Decision 6): held with that document's id,
+  // as an edit is, so another tab does not say it.
+  const [fileFullIn, setFileFullIn] = useState<DocId | null>(null);
+  const historyRefused = useSyncExternalStore(focused.store.subscribe, () => focused.store.getState().historyRefused);
+
+  /**
+   * *New chat*, and *Start a new conversation* where one is full: a new conversation begins, *Document only*
+   * (ADR-0108), and the one before is kept where history keeps it (ADR-0277 Decision 6). With history on, a file that
+   * already keeps `MAX_FILE_CONVERSATIONS` is asked about FIRST: nothing begins, and the panel says to remove one in the
+   * History, so no conversation is lost or trimmed in silence.
+   */
+  const startNew = useCallback(() => {
+    const store = focused.store;
+    const docId = focused.docId;
+    const begin = (): void => {
+      store.getState().startConversation();
+      setEditing(null);
+      setProblem(null);
+      setWebChosen(null);
+      setFileFullIn(null);
+    };
+    if (settings.get(CHAT_HISTORY_SETTING_ID) !== true || store.getState().conversation.length === 0) {
+      begin();
+      return;
+    }
+    void client['ai.history.count']({ docId }).then((answer) => {
+      if (answer.ok && answer.value.count >= MAX_FILE_CONVERSATIONS) {
+        setFileFullIn(docId);
+        return;
+      }
+      begin();
+    });
+  }, [client, focused, setEditing, settings]);
+
   /**
    * The paperclip: `main` runs the picker and answers handles. Files already attached stay; past eight, the rest are
    * counted and said rather than kept, `main`'s rule applied to the whole row.
@@ -796,7 +870,9 @@ export function AssistantPanel({
 
   const send = useCallback(() => {
     const asked = newRequest(scope);
-    if (asked === null) return;
+    // BEFORE AN EDIT IS APPLIED: a question that cannot go must not take the edited one and its answer with it.
+    const resent = editing === null ? turns : turns.slice(0, editing);
+    if (asked === null || conversationRoom(resent, draft.trim()).kind !== 'room') return;
     const wanted = attached.files.length === 0 ? asked : { ...asked, attachments: attached.files };
     // EDIT AND RESEND: the edited question and everything after it go before the new one is asked.
     // Only when the ask can begin, so a Send that cannot start leaves the conversation as it was.
@@ -1058,13 +1134,7 @@ export function AssistantPanel({
             disabled={streaming !== null}
             icon={Plus}
             label={ASSISTANT_NEW_CHAT}
-            onClick={() => {
-              writeTurns([]);
-              setEditing(null);
-              setProblem(null);
-              // A NEW CHAT STARTS *DOCUMENT ONLY* (ADR-0108), whatever the last one used.
-              setWebChosen(null);
-            }}
+            onClick={startNew}
             size="dense"
           />
         )}
@@ -1074,7 +1144,22 @@ export function AssistantPanel({
           {i18n._(READINESS[readiness])}
         </p>
       )}
-      {problem !== null && <p className="m-assistant__problem">{i18n._(PROBLEMS[problem])}</p>}
+      {problem !== null && (
+        <p className="m-assistant__problem">{i18n._(PROBLEMS[problem], { limit: MAX_ANSWER_TEXT })}</p>
+      )}
+      {/* A FILE AT ITS TWENTY SAVED CONVERSATIONS (ADR-0277 Decision 6), said where it stops something: a new conversation
+          not begun, or this one not being saved. Removing one in the History is the way on either way. */}
+      <div aria-live="polite" data-assistant-file-full-region="">
+        {fileFullIn === focused.docId ? (
+          <p className="m-assistant__problem" data-assistant-file-full="new">
+            {i18n._(ASSISTANT_FILE_FULL_NEW, { limit: MAX_FILE_CONVERSATIONS })}
+          </p>
+        ) : historyRefused === 'file-full' ? (
+          <p className="m-assistant__problem" data-assistant-file-full="unsaved">
+            {i18n._(ASSISTANT_FILE_FULL_UNSAVED, { limit: MAX_FILE_CONVERSATIONS })}
+          </p>
+        ) : null}
+      </div>
 
       <ol aria-label={i18n._(ASSISTANT_CONVERSATION_LABEL)} className="m-assistant__turns">
         {turns.map((turn, at) => (
@@ -1133,8 +1218,9 @@ export function AssistantPanel({
                   label={ASSISTANT_COPY}
                   onClick={() => {
                     // THROUGH MAIN: the renderer holds no clipboard permission (§2). *Copied* is every copy's one
-                    // confirmation (`confirmCopied`), shown only when main says the text went, never as a hope.
-                    void client['window.copyText']({ text: turn.text.slice(0, MAX_CHAT_TEXT) }).then((answer) => {
+                    // confirmation (`confirmCopied`), shown only when main says the text went, never as a hope. WHOLE:
+                    // the channel takes an answer's own bound, which `main` holds every answer to (ADR-0277).
+                    void client['window.copyText']({ text: turn.text }).then((answer) => {
                       if (answer.ok && answer.value.copied) confirmCopied({ toast });
                     });
                   }}
@@ -1337,7 +1423,8 @@ export function AssistantPanel({
         )}
         <textarea
           ref={composer}
-          aria-describedby={hintId}
+          aria-describedby={room.kind === 'question-over' ? `${hintId} ${overId}` : hintId}
+          aria-invalid={room.kind === 'question-over'}
           aria-label={i18n._(ASSISTANT_COMPOSER_LABEL)}
           className="m-assistant__draft"
           data-assistant-draft=""
@@ -1357,6 +1444,31 @@ export function AssistantPanel({
           rows={2}
           value={draft}
         />
+        {/* A FULL CONVERSATION, said in one sentence with the way on one press away (ADR-0277 Decision 2). The words in the
+            box stay, to be asked in the new conversation. In its own always-mounted live region, so it is announced. */}
+        <div aria-live="polite" data-assistant-full-region="">
+          {room.kind === 'full' && (
+            <div className="m-assistant__full" data-assistant-full={room.by}>
+              <p className="m-assistant__problem">{i18n._(room.by === 'count' ? ASSISTANT_FULL_COUNT : ASSISTANT_FULL_PROVIDER)}</p>
+              <Button disabled={streaming !== null} label={ASSISTANT_START_NEW} onClick={startNew} variant="primary" />
+            </div>
+          )}
+        </div>
+        {/* HOW LONG THE QUESTION IS, from nine tenths of the bound: a count a person can act on before Send refuses. */}
+        {room.kind === 'room' && question.length >= QUESTION_COUNT_FROM && (
+          <p className="m-assistant__state" data-assistant-count="">
+            {i18n._(ASSISTANT_QUESTION_COUNT, { count: question.length, limit: MAX_CHAT_TEXT })}
+          </p>
+        )}
+        {/* OVER THE BOUND, said and announced (ADR-0277 Decision 1): the region is always mounted, so a screen reader hears
+            the sentence when it appears. Send is off while it shows, and the words stay in the box. */}
+        <div aria-live="polite" data-assistant-over-region="">
+          {room.kind === 'question-over' && (
+            <p className="m-assistant__problem" data-assistant-over="" id={overId}>
+              {i18n._(ASSISTANT_QUESTION_OVER, { over: room.over, limit: MAX_CHAT_TEXT })}
+            </p>
+          )}
+        </div>
         <div className="m-assistant__composer-foot">
           {/* THE PAPERCLIP (ADR-0135), first in the foot: any file, several at once, through main's picker. Disabled at
               eight, the most one question carries, so it is never a control that picks and keeps nothing. */}
@@ -1371,7 +1483,9 @@ export function AssistantPanel({
               CONTROL (§10.5): with no key, or no model to ask, Send is disabled and the lines above say which. */}
           {streaming === null ? (
             <IconButton
-              disabled={!hasKey || model === '' || waitingForSides || blindForPicture || searchesAnyway}
+              disabled={
+                !hasKey || model === '' || waitingForSides || blindForPicture || searchesAnyway || room.kind !== 'room'
+              }
               icon={ArrowUp}
               label={ASSISTANT_SEND}
               onClick={send}

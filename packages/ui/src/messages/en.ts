@@ -1210,6 +1210,11 @@ export const TOAST_NOTHING_TO_TRANSLATE = messageKey('toast.nothing-to-translate
 export const TOAST_NOTHING_MARKED = messageKey('toast.nothing-marked-for-redaction');
 export const TOAST_TRANSLATE_REJECTED = messageKey('toast.translate-rejected');
 export const TOAST_TRANSLATE_UNREADABLE = messageKey('toast.translate-unreadable');
+/**
+ * A translation stopped at an answer's bound, or a page the provider refused as too long for its model (ADR-0277):
+ * nothing is written from half of one.
+ */
+export const TOAST_TRANSLATE_TOO_LONG = messageKey('toast.translate-too-long');
 export const TOAST_TRANSLATE_NO_MODEL = messageKey('toast.translate-no-model');
 export const TOAST_TRANSLATE_NOT_WRITABLE = messageKey('toast.translate-not-writable');
 // NAMED, one constant each, because the catalogue's reachability check reads exported names — an
@@ -2381,6 +2386,8 @@ export const ASSISTANT_YOU = messageKey('assistant.you');
 export const ASSISTANT_HISTORY = messageKey('assistant.history');
 export const HISTORY_BACK = messageKey('assistant.history.back');
 export const HISTORY_BACK_TO_LIST = messageKey('assistant.history.back-to-list');
+/** What the store keeps and what goes past it (ADR-0277 Decision 6, ADR-0093 Decision 5), said above the list. */
+export const HISTORY_BOUNDS = messageKey('assistant.history.bounds');
 export const HISTORY_UNNAMED = messageKey('assistant.history.unnamed');
 export const HISTORY_MESSAGES = messageKey('assistant.history.messages');
 export const HISTORY_SHOWN = messageKey('assistant.history.shown');
@@ -2403,6 +2410,22 @@ export const ASSISTANT_NOTICE = messageKey('assistant.notice');
 export const ASSISTANT_NO_KEY = messageKey('assistant.no-key');
 /** An ask about the comments of a document that has none, refused by main before any provider is reached (F-V1). */
 export const ASSISTANT_NO_COMMENTS = messageKey('assistant.no-comments');
+/** An answer `main` stopped at its length bound (ADR-0277 Decision 3), said where the answer ends. */
+export const ASSISTANT_ANSWER_CUT = messageKey('assistant.answer-cut');
+/** A question's length as it nears the bound (ADR-0277 Decision 1). */
+export const ASSISTANT_QUESTION_COUNT = messageKey('assistant.question-count');
+/** A question past the bound: how much, and where a long passage is better asked (ADR-0277 Decision 1). */
+export const ASSISTANT_QUESTION_OVER = messageKey('assistant.question-over');
+/** A conversation at `MAX_CHAT_TURNS` messages (ADR-0277 Decision 2). */
+export const ASSISTANT_FULL_COUNT = messageKey('assistant.full-count');
+/** A conversation the provider refused as too long for its model (ADR-0277 Decisions 2 and 5). */
+export const ASSISTANT_FULL_PROVIDER = messageKey('assistant.full-provider');
+/** The one press from a full conversation to a new one (ADR-0277 Decision 2). */
+export const ASSISTANT_START_NEW = messageKey('assistant.start-new');
+/** A new conversation not begun, because its file keeps the most saved conversations one file keeps (ADR-0277). */
+export const ASSISTANT_FILE_FULL_NEW = messageKey('assistant.file-full-new');
+/** This conversation not being saved, for the same reason (ADR-0277). */
+export const ASSISTANT_FILE_FULL_UNSAVED = messageKey('assistant.file-full-unsaved');
 /** A *Document only* ask to a model that searches the web for every answer, refused before sending (ADR-0108). */
 export const ASSISTANT_SEARCHES_THE_WEB = messageKey('assistant.searches-the-web');
 /** The *Document only / Document + web* switch, the Sources menu, and why a choice is disabled (ADR-0108). */
@@ -4094,6 +4117,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TOAST_TRANSLATE_REJECTED]: 'The provider refused to translate this page. Nothing was changed.',
   [TOAST_TRANSLATE_UNREADABLE]:
     'The provider’s answer could not be matched to the page’s text, so nothing was changed. Try again.',
+  [TOAST_TRANSLATE_TOO_LONG]:
+    'This page is too long to translate in one go, so nothing was changed. Select a part of the page and translate that.',
   [TOAST_TRANSLATE_NO_MODEL]: 'That provider offered no model to translate with. Nothing was changed.',
   [TOAST_TRANSLATE_NOT_WRITABLE]:
     'Some translated letters cannot be shown in this page’s fonts, so nothing was changed.',
@@ -5437,6 +5462,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_HISTORY]: 'History',
   [HISTORY_BACK]: 'Back to the conversation',
   [HISTORY_BACK_TO_LIST]: 'Back to History',
+  [HISTORY_BOUNDS]:
+    'Each file keeps up to {perFile, plural, one {# conversation} other {# conversations}}, and conversations are kept for up to {files, plural, one {# file} other {# files}}. When a new file would be one too many, the file saved longest ago is removed with its conversations.',
   [HISTORY_UNNAMED]: 'Earlier conversation',
   [HISTORY_MESSAGES]: '{count, plural, one {# message} other {# messages}}',
   [HISTORY_SHOWN]: 'This is a saved conversation, shown to read. It does not open the file.',
@@ -5459,6 +5486,20 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_NOTICE]: 'AI can make mistakes. Double check replies.',
   [ASSISTANT_NO_KEY]: 'This provider has no key stored. Add it in Settings › AI; the key stays on this machine.',
   [ASSISTANT_NO_COMMENTS]: 'This document has no comments to ask about, so nothing was sent.',
+  [ASSISTANT_QUESTION_COUNT]: '{count, plural, other {#}} of {limit, plural, other {# characters}}',
+  [ASSISTANT_QUESTION_OVER]:
+    'This question is {over, plural, one {# character} other {# characters}} over the limit of {limit, plural, other {#}}, so it cannot be sent. If it holds a passage from the document, ask about the page in Context, or select the passage on the page and ask about the selected text.',
+  [ASSISTANT_FULL_COUNT]:
+    'This conversation is full: it holds as many messages as one conversation can. Start a new conversation to ask more.',
+  [ASSISTANT_FULL_PROVIDER]:
+    'This conversation is now too long for the model to read, so the provider refused the last question. Start a new conversation to ask it again.',
+  [ASSISTANT_START_NEW]: 'Start a new conversation',
+  [ASSISTANT_FILE_FULL_NEW]:
+    'This file already keeps {limit, plural, one {# saved conversation} other {# saved conversations}}, the most one file keeps, so a new one was not started. Remove one in the History, then start a new conversation.',
+  [ASSISTANT_FILE_FULL_UNSAVED]:
+    'This file already keeps {limit, plural, one {# saved conversation} other {# saved conversations}}, the most one file keeps, so this one is not being saved. Remove one in the History and it will be saved.',
+  [ASSISTANT_ANSWER_CUT]:
+    'The answer was stopped at its length limit of {limit, plural, other {# characters}}. What is above is all of it up to there. Ask for the rest in a new question.',
   [ASSISTANT_SEARCHES_THE_WEB]:
     'This model searches the web for every answer, so nothing was sent. Choose another model, or turn on Document + web.',
   [ASSISTANT_WEB_LABEL]: 'Sources',

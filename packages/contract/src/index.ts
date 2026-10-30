@@ -141,10 +141,13 @@ export {
   ACCESSIBILITY_HUMAN_CHECKS,
   MAX_BARCODE_TEXT,
   MAX_PAGE_BARCODES,
-  // A saved conversation's bounds and shape (ADR-0093): the renderer trims to them before a save,
-  // and `main` validates a decrypted conversation against the same schema.
+  // A conversation's bounds and a saved one's shape (ADR-0093, ADR-0277): `main` validates a decrypted
+  // conversation against the same schema the renderer saves through.
   MAX_CHAT_TEXT,
   MAX_CHAT_TURNS,
+  MAX_ANSWER_TEXT,
+  type ConversationRoom,
+  conversationRoom,
   MAX_MODEL_ID,
   MAX_TRANSLATE_TEXT,
   MAX_TRANSLATED_TEXT,
@@ -156,6 +159,8 @@ export {
   type SavedConversation,
   MAX_HISTORY_PREVIEW,
   MAX_SAVED_CONVERSATIONS,
+  MAX_FILE_CONVERSATIONS,
+  historyKeySchema,
   savedConversationSchema,
   savedTurnSchema,
   savedTurnsSchema,

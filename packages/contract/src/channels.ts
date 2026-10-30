@@ -521,9 +521,45 @@ export const MAX_CHAT_TEXT = 16_384;
 export const MAX_CHAT_TURNS = 64;
 
 /**
- * The most characters of selected text one translation takes, and of the answer. The answer is held to the one bound
- * anything is COPIED at (`window.copyText`, the assistant's turn bound), so a translation is never one that cannot be
- * put on the clipboard; the question is half of it, since a translation may run longer than its source.
+ * The most characters one assistant answer holds (ADR-0277 Decision 3): four times a question's bound. `streamChat`
+ * stops an answer that reaches it and says so (`answer-cut`), so no answer is ever longer, and what carries one whole
+ * (Copy, a saved turn, an earlier answer resent in `ai.ask`) is bounded here without cutting anything.
+ */
+export const MAX_ANSWER_TEXT = 4 * MAX_CHAT_TEXT;
+
+/** Whether a conversation can take a question, and if not, why — what {@link conversationRoom} answers. */
+export type ConversationRoom =
+  | { readonly kind: 'room' }
+  /**
+   * The conversation can take no more questions: by `count`, the next would be past `MAX_CHAT_TURNS` messages; by
+   * `provider`, the provider refused it as longer than its model takes. A new conversation is the way on.
+   */
+  | { readonly kind: 'full'; readonly by: 'count' | 'provider' }
+  /** The question is longer than `MAX_CHAT_TEXT`, by `over` characters; the conversation itself can take one. */
+  | { readonly kind: 'question-over'; readonly over: number };
+
+/**
+ * Whether `question` can be asked of the conversation `turns` (ADR-0277 Decisions 1 and 2 and the correction of
+ * 2026-10-30): the ONE rule every route that asks takes (Send, a command's question, Regenerate), stating what
+ * `ai.ask`'s schema states for the count and a person's message, so nothing is sent that `main` would refuse and no
+ * question is written into a conversation and stuck there. A full conversation is said before a long question, since
+ * shortening the question would not help. An earlier answer's length is never a reason: it is resent at its own bound.
+ *
+ * @param turns what the ask would resend, oldest first; a turn the provider refused as too long marks it full.
+ */
+export function conversationRoom(
+  turns: readonly { readonly role: 'user' | 'assistant'; readonly refused?: 'too-long' }[],
+  question: string,
+): ConversationRoom {
+  if (turns.some((turn) => turn.refused === 'too-long')) return { kind: 'full', by: 'provider' };
+  if (turns.length + 1 > MAX_CHAT_TURNS) return { kind: 'full', by: 'count' };
+  return question.length > MAX_CHAT_TEXT ? { kind: 'question-over', over: question.length - MAX_CHAT_TEXT } : { kind: 'room' };
+}
+
+/**
+ * The most characters of selected text one translation takes, and of the answer. The answer stays within what can be
+ * COPIED (`window.copyText`, bounded at {@link MAX_ANSWER_TEXT}), so a translation is never one that cannot be put on
+ * the clipboard; the question is half of it, since a translation may run longer than its source.
  */
 export const MAX_TRANSLATE_TEXT = MAX_CHAT_TEXT / 2;
 export const MAX_TRANSLATED_TEXT = MAX_CHAT_TEXT;
@@ -582,7 +618,8 @@ export const MAX_DOCUMENT_NAME_LENGTH = 255;
 export const savedTurnSchema = z
   .object({
     role: z.enum(['user', 'assistant']),
-    text: z.string().max(MAX_CHAT_TEXT),
+    // THE ANSWER'S BOUND, so an answer is saved whole (ADR-0277 Decision 4); a person's question is within it.
+    text: z.string().max(MAX_ANSWER_TEXT),
     sent: askSentSchema.optional(),
     /** The model an asked turn went to, as its picker named it — so a restored answer keeps its caption. */
     model: z.string().max(MAX_MODEL_ID).optional(),
@@ -601,6 +638,14 @@ export type SavedTurn = z.infer<typeof savedTurnSchema>;
  */
 export const MAX_SAVED_CONVERSATIONS = 200;
 
+/**
+ * How many conversations one file keeps (ADR-0277 Decision 6). Twenty, because a conversation is full at
+ * `MAX_CHAT_TURNS` messages, so twenty are some 640 messages about one file, while the store stays bounded:
+ * {@link MAX_SAVED_CONVERSATIONS} files of this many conversations of `MAX_CHAT_TURNS` turns of `MAX_ANSWER_TEXT`. A file
+ * at this many is never trimmed: a new conversation there is refused (`file-full`) and the person is asked to remove one.
+ */
+export const MAX_FILE_CONVERSATIONS = 20;
+
 /** How long the first question quoted beside a saved conversation may be (ADR-0192): a preview, not a transcript. */
 export const MAX_HISTORY_PREVIEW = 160;
 
@@ -609,10 +654,18 @@ export const MAX_HISTORY_PREVIEW = 160;
  * naming no path), the file's name where the entry recorded one, when it was saved where it recorded that, how many turns it
  * has, and its first question.
  */
+/**
+ * A saved conversation's key, and a file's: sixty-four hex characters, the length of the SHA-256 that keys a file
+ * (ADR-0093) and of the random id a conversation is given (ADR-0277). Opaque to the renderer, and naming no path.
+ */
+export const historyKeySchema = z.string().length(64).regex(/^[0-9a-f]+$/u);
+
 export const savedConversationSchema = z
   .object({
-    // A SHA-256 in hex, so sixty-four characters exactly: the bound is the digest's own length.
-    key: z.string().length(64).regex(/^[0-9a-f]+$/u),
+    /** The conversation's own key, which `ai.history.read` and `ai.history.remove` name. */
+    key: historyKeySchema,
+    /** The file's key, shared by that file's conversations, so the History can show them together (ADR-0277). */
+    file: historyKeySchema,
     name: z.string().max(MAX_DOCUMENT_NAME_LENGTH).nullable(),
     /** An ISO 8601 instant, or `null` for an entry saved before entries recorded one. */
     savedAt: z.string().max(40).nullable(),
@@ -6510,38 +6563,54 @@ export const channels = {
   ),
 
   /**
-   * A document's saved conversation (ADR-0093), by `DocId`: `main` finds the file's entry by a digest
-   * of its path, which never crosses. Empty when nothing is saved, when saving is off, or when this
-   * machine cannot decrypt what was.
+   * A document's newest saved conversation (ADR-0093, ADR-0277), by `DocId`: `main` finds the file's entries by a digest
+   * of its path, which never crosses. `conversation` is the key the next save continues it under; `null`, with no turns,
+   * when nothing is saved, when saving is off, or when this machine cannot decrypt what was.
    */
   'ai.history.load': channel(
-    'The saved assistant conversation for an open document, if chat history is on.',
+    'The newest saved assistant conversation for an open document, if chat history is on.',
     z.object({ docId: docIdSchema }).strict(),
-    z.object({ turns: savedTurnsSchema }),
+    z.object({ turns: savedTurnsSchema, conversation: historyKeySchema.nullable() }),
     ['document-not-open'],
   ),
 
   /**
-   * Replaces a document's saved conversation; an empty list removes it (ADR-0093). `saved: false`
-   * when chat history is off — `main` reads the setting itself, so a renderer that asked anyway
-   * stores nothing.
+   * Saves a document's conversation (ADR-0277 Decision 6): `conversation` names the saved one it continues, which is
+   * replaced, or is `null` for a NEW one, which is added beside the file's others and whose key is answered. Nothing is
+   * removed by a save: an empty new conversation stores nothing, and an empty one that was saved keeps what it held, for
+   * removing is the History's. `saved: false` when chat history is off, since `main` reads the setting itself; `file-full`
+   * for a new conversation when the file already keeps `MAX_FILE_CONVERSATIONS`, which is never made room for in silence.
    */
   'ai.history.save': channel(
     'Saves an open document’s assistant conversation, when chat history is on.',
-    z.object({ docId: docIdSchema, turns: savedTurnsSchema }).strict(),
-    z.object({ saved: z.boolean() }),
-    ['document-not-open', 'secret-storage-unavailable'],
+    z.object({ docId: docIdSchema, conversation: historyKeySchema.nullable(), turns: savedTurnsSchema }).strict(),
+    z.object({ saved: z.boolean(), conversation: historyKeySchema.nullable() }),
+    ['document-not-open', 'secret-storage-unavailable', 'file-full'],
   ),
 
   /**
-   * Every saved conversation, newest saved first (ADR-0192) — what the Assistant's History lists. It does not wait on
-   * *Save chat history*: what was saved while it was on stays readable while it is off. Empty where nothing is saved or
-   * this machine cannot decrypt what was.
+   * How many conversations an open document's file keeps (ADR-0277 Decision 6), so starting a new one can say, before
+   * anything is lost, that the file is at `MAX_FILE_CONVERSATIONS`. Not behind the setting, as the History is not.
+   */
+  'ai.history.count': channel(
+    'How many saved assistant conversations an open document’s file keeps.',
+    z.object({ docId: docIdSchema }).strict(),
+    z.object({ count: z.number().int().nonnegative().max(MAX_FILE_CONVERSATIONS) }),
+    ['document-not-open'],
+  ),
+
+  /**
+   * Every saved conversation (ADR-0192, ADR-0277): the files newest saved first, and each file's conversations newest
+   * saved first beside one another — what the Assistant's History lists. It does not wait on *Save chat history*: what
+   * was saved while it was on stays readable while it is off. Empty where nothing is saved or this machine cannot
+   * decrypt what was.
    */
   'ai.history.list': channel(
-    'Every saved assistant conversation, newest first, with the file name where one was recorded.',
+    'Every saved assistant conversation, each file’s together and newest first, with the file name where one was recorded.',
     z.object({}).strict(),
-    z.object({ conversations: z.array(savedConversationSchema).max(MAX_SAVED_CONVERSATIONS) }),
+    z.object({
+      conversations: z.array(savedConversationSchema).max(MAX_SAVED_CONVERSATIONS * MAX_FILE_CONVERSATIONS),
+    }),
   ),
 
   /**
@@ -6594,14 +6663,15 @@ export const channels = {
         subscription: subscriptionIdSchema,
         provider: z.enum(AI_PROVIDER_IDS),
         model: z.string().min(1).max(MAX_MODEL_ID),
+        // EACH MESSAGE AT ITS AUTHOR'S BOUND (ADR-0277's correction of 2026-10-30): a person's question at
+        // `MAX_CHAT_TEXT`, an earlier answer at `MAX_ANSWER_TEXT`, so a long answer is resent whole and never
+        // makes its conversation one that cannot be asked again.
         messages: z
           .array(
-            z
-              .object({
-                role: z.enum(['user', 'assistant']),
-                text: z.string().min(1).max(MAX_CHAT_TEXT),
-              })
-              .strict(),
+            z.discriminatedUnion('role', [
+              z.object({ role: z.literal('user'), text: z.string().min(1).max(MAX_CHAT_TEXT) }).strict(),
+              z.object({ role: z.literal('assistant'), text: z.string().min(1).max(MAX_ANSWER_TEXT) }).strict(),
+            ]),
           )
           .min(1)
           .max(MAX_CHAT_TURNS),
@@ -7133,12 +7203,12 @@ export const channels = {
    * THROUGH `main`, because the renderer may hold no permission but `media` (ARCHITECTURE §2), so its
    * own `navigator.clipboard.writeText` is refused by the window's deny-all policy — measured live,
    * `NotAllowedError: Write permission denied`, with the window focused. Writing only: the renderer
-   * cannot READ the clipboard through this or any channel. Bounded by the assistant's own turn bound,
-   * the longest text anything copies this way.
+   * cannot READ the clipboard through this or any channel. Bounded by an assistant answer's bound
+   * (ADR-0277), the longest text anything copies this way, so an answer is copied whole.
    */
   'window.copyText': channel(
     'Puts the given text on the clipboard.',
-    z.object({ text: z.string().min(1).max(MAX_CHAT_TEXT) }).strict(),
+    z.object({ text: z.string().min(1).max(MAX_ANSWER_TEXT) }).strict(),
     z.object({ copied: z.boolean() }),
   ),
 

@@ -191,6 +191,7 @@ describe('browser shim', () => {
       'ai.attach',
       'ai.checkKey',
       'ai.history.clear',
+      'ai.history.count',
       'ai.history.list',
       'ai.history.load',
       'ai.history.read',

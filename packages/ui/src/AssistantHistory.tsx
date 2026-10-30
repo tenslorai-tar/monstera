@@ -1,5 +1,11 @@
 import { useLingui } from '@lingui/react';
-import type { ContractClient, SavedConversation, SavedTurn } from '@monstera/contract';
+import {
+  type ContractClient,
+  MAX_FILE_CONVERSATIONS,
+  MAX_SAVED_CONVERSATIONS,
+  type SavedConversation,
+  type SavedTurn,
+} from '@monstera/contract';
 import { type ReactElement, useCallback, useEffect, useState } from 'react';
 
 import {
@@ -8,6 +14,7 @@ import {
   ASSISTANT_YOU,
   HISTORY_BACK,
   HISTORY_BACK_TO_LIST,
+  HISTORY_BOUNDS,
   HISTORY_DELETE,
   HISTORY_DELETE_ASK,
   HISTORY_DELETE_KEEP,
@@ -41,8 +48,9 @@ type View =
     };
 
 /**
- * The Assistant's History (ADR-0192): every saved conversation, newest saved first, each with the name of the file it was
- * about, when it was saved and its first question — and **Open** to read it and **Delete** to remove it, which asks first.
+ * The Assistant's History (ADR-0192, ADR-0277 Decision 6): every saved conversation, each file's together and newest saved
+ * first, each with the name of the file it was about, when it was saved and its first question — and **Open** to read it
+ * and **Delete** to remove it, which asks first. The store's bounds are said above the list, where they apply.
  *
  * ## Open reads the conversation here; it does not open the file
  *
@@ -153,6 +161,12 @@ export function AssistantHistory({
       ) : view.conversations.length === 0 ? (
         <p className="m-assistant-history__note">{i18n._(HISTORY_EMPTY)}</p>
       ) : (
+        <>
+        {/* THE BOUNDS, said where they apply (ADR-0277 Decision 6): a file at twenty refuses a new conversation, and past
+            two hundred files the one saved longest ago goes with its conversations (ADR-0093 Decision 5). */}
+        <p className="m-assistant-history__note" data-assistant-history-bounds="">
+          {i18n._(HISTORY_BOUNDS, { perFile: MAX_FILE_CONVERSATIONS, files: MAX_SAVED_CONVERSATIONS })}
+        </p>
         <ul className="m-assistant-history__list">
           {view.conversations.map((entry) => (
             <li className="m-assistant-history__item" key={entry.key}>
@@ -203,6 +217,7 @@ export function AssistantHistory({
             </li>
           ))}
         </ul>
+        </>
       )}
     </section>
   );

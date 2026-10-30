@@ -63,3 +63,11 @@ nothing else, so the only way back to a conversation was to reopen its file and 
 carries the file's name and when it was saved inside its ciphertext, and three channels list the store, read one
 conversation and remove one, by the same digest and without a path. The decisions about the setting, the cipher, the key and
 the bound stand. [ADR-0192](0192-saved-assistant-conversations-are-listed-by-file-name-and-read-or-deleted-without-their-file.md).
+
+## Correction, 2026-10-30 — a file keeps several conversations
+
+One saved conversation per file is superseded by
+[ADR-0277](0277-the-assistants-limits-are-said-and-an-answer-is-never-cut-in-silence.md) Decisions 6 and 7 (the owner,
+2026-10-30): a file keeps up to twenty, a new conversation keeps the old one, and an entry saved in this decision's shape
+loads as the file's first conversation, unchanged. A saved turn's text is bounded at `MAX_ANSWER_TEXT`, not the question's
+bound (ADR-0277 Decision 4). The setting, the cipher, the key, the 200-file bound and *Clear chat history* stand.

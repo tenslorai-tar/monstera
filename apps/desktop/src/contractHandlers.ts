@@ -738,17 +738,29 @@ export function createContractHandlers(deps: {
       const key = deps.documents.historyKeyOf(docId);
       if (key === undefined) return Promise.resolve(err({ code: 'document-not-open' } as const));
       const on = storedSetting(deps.settings.read(), CHAT_HISTORY_STORED);
-      return Promise.resolve(ok({ turns: on ? [...deps.chatHistory.load(key)] : [] }));
+      const newest = on ? deps.chatHistory.load(key) : null;
+      return Promise.resolve(
+        ok(newest === null ? { turns: [], conversation: null } : { turns: [...newest.turns], conversation: newest.conversation }),
+      );
     },
-    'ai.history.save': ({ docId, turns }) => {
+    'ai.history.save': ({ docId, conversation, turns }) => {
       const key = deps.documents.historyKeyOf(docId);
       if (key === undefined) return Promise.resolve(err({ code: 'document-not-open' } as const));
-      if (!storedSetting(deps.settings.read(), CHAT_HISTORY_STORED)) return Promise.resolve(ok({ saved: false }));
+      if (!storedSetting(deps.settings.read(), CHAT_HISTORY_STORED)) {
+        return Promise.resolve(ok({ saved: false, conversation: null }));
+      }
       if (!deps.chatHistory.available()) return Promise.resolve(err({ code: 'secret-storage-unavailable' } as const));
       // THE FILE'S NAME AND THE MOMENT go into the entry (ADR-0192): main's own reads, so the History says which file a
       // conversation was about and when, and the renderer supplies neither.
-      deps.chatHistory.save(key, turns, deps.commands.nameOf(docId) ?? null, new Date());
-      return Promise.resolve(ok({ saved: true }));
+      const outcome = deps.chatHistory.save(key, conversation, turns, deps.commands.nameOf(docId) ?? null, new Date());
+      if ('refused' in outcome) return Promise.resolve(err({ code: outcome.refused }));
+      return Promise.resolve(ok({ saved: outcome.conversation !== null, conversation: outcome.conversation }));
+    },
+    // HOW MANY THE FILE KEEPS (ADR-0277 Decision 6), so a new conversation at the bound is said before it is begun.
+    'ai.history.count': ({ docId }) => {
+      const key = deps.documents.historyKeyOf(docId);
+      if (key === undefined) return Promise.resolve(err({ code: 'document-not-open' } as const));
+      return Promise.resolve(ok({ count: deps.chatHistory.count(key) }));
     },
     // THE HISTORY (ADR-0192): listed, read and removed by the digest, which names no path, and NOT behind the setting —
     // what was saved while it was on stays readable and removable while it is off, as clearing already does.

@@ -1,3 +1,4 @@
+import { MAX_ANSWER_TEXT } from '@monstera/contract';
 import { describe, expect, it } from 'vitest';
 
 import { type ChatMessage, dataEvents, deltaOf, prepareChat, streamChat } from './aiChat.js';
@@ -157,6 +158,62 @@ describe('streamChat', () => {
     expect(await answerTo('openai', 400, credit)).toBe('rejected');
   });
 
+  /** A fetch that refuses with this status and JSON body. */
+  const refusing = (status: number, body: unknown): typeof fetch =>
+    () => Promise.resolve(new Response(JSON.stringify(body), { status }));
+
+  it('ANTHROPIC: its documented too-long refusal (a 400 saying "prompt is too long") is too-long (ADR-0277)', async () => {
+    const answer = await streamChat({
+      provider: 'anthropic', model: 'm', key: 'k', messages: ASK, web: false,
+      // THE DOCUMENTED PHRASE ONLY: the page quotes no more of the message than this, so the case asserts no more.
+      fetchImpl: refusing(400, { type: 'error', error: { type: 'invalid_request_error', message: 'prompt is too long' } }),
+    });
+    expect(answer.refusal).toBe('too-long');
+  });
+
+  it('CONTROL: Anthropic’s other 400s stay rejected, and out of credit stays out of credit', async () => {
+    const other = await streamChat({
+      provider: 'anthropic', model: 'm', key: 'k', messages: ASK, web: false,
+      fetchImpl: refusing(400, { type: 'error', error: { type: 'invalid_request_error', message: 'messages: field required' } }),
+    });
+    expect(other.refusal).toBe('rejected');
+    const credit = await streamChat({
+      provider: 'anthropic', model: 'm', key: 'k', messages: ASK, web: false,
+      fetchImpl: refusing(400, { type: 'error', error: { type: 'invalid_request_error', message: 'Your credit balance is too low' } }),
+    });
+    expect(credit.refusal).toBe('out-of-credit');
+    // NOT ON ANOTHER STATUS: the documented answer is a 400.
+    const elsewhere = await streamChat({
+      provider: 'anthropic', model: 'm', key: 'k', messages: ASK, web: false,
+      fetchImpl: refusing(413, { type: 'error', error: { type: 'request_too_large', message: 'prompt is too long' } }),
+    });
+    expect(elsewhere.refusal).toBe('rejected');
+  });
+
+  it('OPENROUTER: a refusal whose error type is context_length_exceeded is too-long (ADR-0277)', async () => {
+    const answer = await streamChat({
+      provider: 'openrouter', model: 'm', key: 'k', messages: ASK, web: false,
+      fetchImpl: refusing(400, { error: { code: 400, message: 'x', metadata: { error_type: 'context_length_exceeded' } } }),
+    });
+    expect(answer.refusal).toBe('too-long');
+  });
+
+  it('CONTROL: a provider whose answer is not established stays rejected, whatever its body says', async () => {
+    // OPENAI'S OWN CODE NAME, which its public API documents for no chat route: recognising it would be a guess.
+    for (const provider of ['openai', 'groq', 'deepseek', 'mistral'] as const) {
+      const answer = await streamChat({
+        provider, model: 'm', key: 'k', messages: ASK, web: false,
+        fetchImpl: refusing(400, { error: { code: 'context_length_exceeded', message: 'too long', metadata: { error_type: 'context_length_exceeded' } } }),
+      });
+      expect(answer.refusal).toBe('rejected');
+    }
+    const otherType = await streamChat({
+      provider: 'openrouter', model: 'm', key: 'k', messages: ASK, web: false,
+      fetchImpl: refusing(400, { error: { code: 400, message: 'x', metadata: { error_type: 'payload_too_large' } } }),
+    });
+    expect(otherType.refusal).toBe('rejected');
+  });
+
   it('KEEPS what streamed when the stream ends badly', async () => {
     const broken = ((url: string) => {
       void url;
@@ -201,6 +258,71 @@ describe('streamChat', () => {
     });
 
     expect(answer).toStrictEqual({ text: '', stopped: true, searched: false, sources: [] });
+  });
+
+  /** A stream of OpenAI-format deltas, one per pull, that records whether its reader cancelled it. */
+  function deltas(pieces: readonly string[]): { readonly fetchImpl: typeof fetch; readonly read: () => { pulls: number; cancelled: boolean } } {
+    let pulls = 0;
+    let cancelled = false;
+    const fetchImpl = (() => {
+      const stream = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          const piece = pieces[pulls];
+          pulls += 1;
+          if (piece === undefined) {
+            controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
+            controller.close();
+            return;
+          }
+          controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ choices: [{ delta: { content: piece } }] })}\n\n`));
+        },
+        cancel() {
+          cancelled = true;
+        },
+      });
+      return Promise.resolve(new Response(stream, { status: 200 }));
+    }) as unknown as typeof fetch;
+    return { fetchImpl, read: () => ({ pulls, cancelled }) };
+  }
+
+  it('STOPS an answer that reaches MAX_ANSWER_TEXT, keeps every character up to it, says so, and ends the request (ADR-0277)', async () => {
+    // SEVENTY PIECES OF A THOUSAND, each its own letter run, so a kept prefix that skipped or repeated a piece differs.
+    const pieces = Array.from({ length: 70 }, (_, at) => String.fromCharCode(97 + (at % 26)).repeat(1000));
+    const { fetchImpl, read } = deltas(pieces);
+    const seen: string[] = [];
+
+    const answer = await streamChat({
+      provider: 'openai', model: 'm', key: 'k', messages: ASK, web: false, onDelta: (delta) => seen.push(delta), fetchImpl,
+    });
+
+    expect(answer.text).toBe(pieces.join('').slice(0, MAX_ANSWER_TEXT));
+    expect(answer.refusal).toBe('answer-cut');
+    expect(answer.stopped).toBe(false);
+    // WHAT THE PERSON WAS SHOWN is exactly what was kept, never a character past the bound.
+    expect(seen.join('')).toBe(answer.text);
+    // THE REQUEST ENDED THERE: the body was cancelled and not read to its end.
+    expect(read().cancelled).toBe(true);
+    expect(read().pulls).toBeLessThan(pieces.length);
+  });
+
+  it('CONTROL: an answer of exactly MAX_ANSWER_TEXT that ends there is whole, not cut', async () => {
+    const pieces = Array.from({ length: MAX_ANSWER_TEXT / 1024 }, () => 'x'.repeat(1024));
+    const { fetchImpl, read } = deltas(pieces);
+
+    const answer = await streamChat({ provider: 'openai', model: 'm', key: 'k', messages: ASK, web: false, fetchImpl });
+
+    expect(answer).toStrictEqual({ text: 'x'.repeat(MAX_ANSWER_TEXT), stopped: false, searched: false, sources: [] });
+    expect(read().cancelled).toBe(false);
+  });
+
+  it('a character the bound would split in half is left out whole', async () => {
+    // A PAIR STRADDLING THE BOUND: its first half would be the 65,536th code unit.
+    const { fetchImpl } = deltas(['y'.repeat(MAX_ANSWER_TEXT - 1), '😀 more']);
+
+    const answer = await streamChat({ provider: 'openai', model: 'm', key: 'k', messages: ASK, web: false, fetchImpl });
+
+    expect(answer.text).toBe('y'.repeat(MAX_ANSWER_TEXT - 1));
+    expect(answer.refusal).toBe('answer-cut');
   });
 
   it('CONTROL: the same failure without an abort is unreachable, not stopped', async () => {

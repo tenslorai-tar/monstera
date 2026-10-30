@@ -29,6 +29,7 @@ import {
   TOAST_TRANSLATE_NO_MODEL,
   TOAST_TRANSLATE_REJECTED,
   TOAST_TRANSLATE_UNREADABLE,
+  TOAST_TRANSLATE_TOO_LONG,
   TRANSLATE_PAGE_PROGRESS,
   TRANSLATE_PAGE_TITLE,
 } from '../messages/en.js';
@@ -49,6 +50,10 @@ const REFUSALS = {
   'not-the-service': ASSISTANT_PROBLEM_NOT_THE_SERVICE,
   // A translation never uses the web, so a model that always searches is refused before the page is sent (ADR-0108).
   'searches-the-web': ASSISTANT_SEARCHES_THE_WEB,
+  // An answer stopped at its bound (ADR-0277): half a translation is never written.
+  'answer-cut': TOAST_TRANSLATE_TOO_LONG,
+  // A page longer than the model takes (ADR-0277): the same remedy, a smaller part of it.
+  'too-long': TOAST_TRANSLATE_TOO_LONG,
 } as const satisfies Record<Extract<ChannelResult<'ai.translatePage'>, { kind: 'refused' }>['problem'], MessageKey>;
 
 export interface TranslatePageDeps extends DocumentCommandDeps {

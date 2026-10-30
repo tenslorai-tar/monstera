@@ -4,10 +4,14 @@ import { describe, expect, it } from 'vitest';
 import { createClient, wrapHandlers } from './boundary.js';
 import {
   LAYERS_PART,
+  MAX_ANSWER_TEXT,
   MAX_BACKUP_COPIES,
+  MAX_CHAT_TEXT,
+  MAX_CHAT_TURNS,
   MAX_RANGE_BYTES,
   channelIds,
   channels,
+  conversationRoom,
   type ContractHandlers,
   displayLocationSchema,
   preloadChannels,
@@ -488,8 +492,9 @@ const handlers: ContractHandlers = {
     );
   },
   'ai.checkKey': () => Promise.resolve(ok({ accepted: false as const, problem: 'unauthorised' as const })),
-  'ai.history.load': () => Promise.resolve(ok({ turns: [] })),
-  'ai.history.save': () => Promise.resolve(ok({ saved: false })),
+  'ai.history.load': () => Promise.resolve(ok({ turns: [], conversation: null })),
+  'ai.history.save': () => Promise.resolve(ok({ saved: false, conversation: null })),
+  'ai.history.count': () => Promise.resolve(ok({ count: 0 })),
   'ai.history.clear': () => Promise.resolve(ok({ cleared: 0 })),
   'ai.history.list': () => Promise.resolve(ok({ conversations: [] })),
   'ai.history.read': () => Promise.resolve(ok({ conversation: null })),
@@ -1051,5 +1056,75 @@ describe('document.exportExcel — which engine reads the tables (ADR-0086)', ()
   it('refuses a request that names no engine, or one this build does not have', () => {
     expect(params.safeParse({ ...edited, edits: [] }).success).toBe(false);
     expect(params.safeParse({ ...edited, engine: 'tesseract', edits: [] }).success).toBe(false);
+  });
+});
+
+describe('conversationRoom, the one rule for whether a question can be asked (ADR-0277)', () => {
+  /** A conversation of `count` turns, alternating from the person's, each within every bound. */
+  const conversation = (count: number): { role: 'user' | 'assistant'; text: string }[] =>
+    Array.from({ length: count }, (_, at) => ({ role: at % 2 === 0 ? 'user' : 'assistant', text: `t${String(at)}` }));
+  const asks = (turns: readonly { role: 'user' | 'assistant'; text: string }[], question: string): boolean =>
+    channels['ai.ask'].params.safeParse({
+      subscription: 's1-abc',
+      provider: 'anthropic',
+      model: 'm',
+      messages: [...turns, { role: 'user', text: question }],
+      web: false,
+    }).success;
+
+  it('a question within MAX_CHAT_TEXT has room; one past it is over by exactly how much', () => {
+    expect(conversationRoom([], 'q'.repeat(MAX_CHAT_TEXT))).toStrictEqual({ kind: 'room' });
+    expect(conversationRoom([], 'q'.repeat(MAX_CHAT_TEXT + 1))).toStrictEqual({ kind: 'question-over', over: 1 });
+    expect(conversationRoom([], 'q'.repeat(MAX_CHAT_TEXT + 300))).toStrictEqual({ kind: 'question-over', over: 300 });
+  });
+
+  it('FULL BY THE COUNT when the next question would be past MAX_CHAT_TURNS messages, and not one before', () => {
+    expect(conversationRoom(conversation(MAX_CHAT_TURNS - 1), 'q')).toStrictEqual({ kind: 'room' });
+    expect(conversationRoom(conversation(MAX_CHAT_TURNS), 'q')).toStrictEqual({ kind: 'full', by: 'count' });
+  });
+
+  it('FULL BY THE PROVIDER once a question was refused as too long; full is said before a long question', () => {
+    const refused = [...conversation(4), { role: 'user' as const, text: 'q', refused: 'too-long' as const }];
+    expect(conversationRoom(refused, 'q')).toStrictEqual({ kind: 'full', by: 'provider' });
+    expect(conversationRoom(refused, 'q'.repeat(MAX_CHAT_TEXT + 1))).toStrictEqual({ kind: 'full', by: 'provider' });
+  });
+
+  it('CONTROL: an earlier answer longer than a question may be leaves room (the correction of 2026-10-30)', () => {
+    const long = [{ role: 'user' as const, text: 'q' }, { role: 'assistant' as const, text: 'a'.repeat(MAX_ANSWER_TEXT) }];
+    expect(conversationRoom(long, 'q')).toStrictEqual({ kind: 'room' });
+    expect(asks(long, 'q')).toBe(true);
+  });
+
+  it('agrees with ai.ask’s schema at every edge it states, so nothing it lets through main refuses', () => {
+    const edges: [readonly { role: 'user' | 'assistant'; text: string }[], string][] = [
+      [[], 'q'.repeat(MAX_CHAT_TEXT)],
+      [[], 'q'.repeat(MAX_CHAT_TEXT + 1)],
+      [conversation(MAX_CHAT_TURNS - 1), 'q'],
+      [conversation(MAX_CHAT_TURNS), 'q'],
+    ];
+    for (const [turns, question] of edges) {
+      expect(conversationRoom(turns, question).kind === 'room').toBe(asks(turns, question));
+    }
+  });
+});
+
+describe('ai.ask bounds each message by who wrote it (ADR-0277, corrected 2026-10-30)', () => {
+  const ask = (messages: readonly { role: 'user' | 'assistant'; text: string }[]): boolean =>
+    channels['ai.ask'].params.safeParse({ subscription: 's1-abc', provider: 'anthropic', model: 'm', messages, web: false })
+      .success;
+
+  it('resends an earlier answer longer than a question may be, up to the answer bound', () => {
+    expect(ask([
+      { role: 'user', text: 'Explain every clause.' },
+      { role: 'assistant', text: 'a'.repeat(20_000) },
+      { role: 'user', text: 'And clause 4?' },
+    ])).toBe(true);
+    expect(ask([{ role: 'user', text: 'q' }, { role: 'assistant', text: 'a'.repeat(MAX_ANSWER_TEXT) }, { role: 'user', text: 'q' }])).toBe(true);
+  });
+
+  it('CONTROL: a person’s question past MAX_CHAT_TEXT, and an answer past MAX_ANSWER_TEXT, are refused', () => {
+    expect(ask([{ role: 'user', text: 'q'.repeat(MAX_CHAT_TEXT) }])).toBe(true);
+    expect(ask([{ role: 'user', text: 'q'.repeat(MAX_CHAT_TEXT + 1) }])).toBe(false);
+    expect(ask([{ role: 'user', text: 'q' }, { role: 'assistant', text: 'a'.repeat(MAX_ANSWER_TEXT + 1) }, { role: 'user', text: 'q' }])).toBe(false);
   });
 });

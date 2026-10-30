@@ -4,6 +4,7 @@ import {
   BARCODE_FORMATS,
   CONVERSION_CHANNELS,
   MAX_BARCODE_TEXT,
+  MAX_FILE_CONVERSATIONS,
   MAX_IMAGE_BYTES,
   MAX_LIBRARY_PICTURE_BYTES,
   MAX_OFFICE_MISSING_BLOCKS,
@@ -49,7 +50,7 @@ import {
   asFileHandle,
 } from '@monstera/shared';
 import { dirname, join, resolve } from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { CloudOutcomeRefused, type CloudStorage, unconfiguredCloud } from './cloudSession.js';
 import { type AttachmentReaders, NO_ATTACHMENTS } from './askAttachments.js';
@@ -73,9 +74,9 @@ import { type DocumentCommands, type EmailOutcome, type ImageRead, MissingSessio
 import type { ScannedSignaturePicture } from './signaturePicture.js';
 import { type LaunchDocuments, createLaunchDocuments } from './launchDocuments.js';
 import { type RecentFiles, createRecentFiles } from './recentFiles.js';
-import { createEphemeralSecrets } from './secretStore.js';
+import { type SecretCipher, createEphemeralSecrets } from './secretStore.js';
 import { createAssistant } from './assistant.js';
-import { type ChatHistory, noChatHistory } from './chatHistory.js';
+import { type ChatHistory, createChatHistory, noChatHistory } from './chatHistory.js';
 
 /**
  * An assistant with no key and nowhere to push: these cases are about the other channels,
@@ -2756,42 +2757,24 @@ settings: createEphemeralSettings(),
 describe('ai.history (ADR-0093)', () => {
   const DOC = asDocId('00000000-0000-4000-8000-0000000000a9');
 
+  /** The file key the fake kernel gives `DOC`: a digest's length, as the store's keys are. */
+  const FILE = 'f'.repeat(64);
+  /** A cipher that visibly transforms every byte, as `chatHistory.test.ts`' does. */
+  const XOR: SecretCipher = {
+    available: () => true,
+    encrypt: (value) => Buffer.from(Buffer.from(value, 'utf8').map((byte) => byte ^ 0x5a)),
+    decrypt: (cipher) => Buffer.from(cipher.map((byte) => byte ^ 0x5a)).toString('utf8'),
+  };
+  const folders: string[] = [];
+  afterEach(() => {
+    for (const folder of folders.splice(0)) rmSync(folder, { recursive: true, force: true });
+  });
+
+  /** The handlers over the REAL store in a fresh folder, so what they are tested against is what ships. */
   function withHistory(on: boolean) {
-    const saved = new Map<string, readonly { role: 'user' | 'assistant'; text: string }[]>();
-    /** What each save recorded beside its turns: the file's name and the moment (ADR-0192). */
-    const recorded = new Map<string, { name: string | null; savedAt: string }>();
-    const history: ChatHistory = {
-      available: () => true,
-      load: (key) => saved.get(key) ?? [],
-      save: (key, turns, name, savedAt) => {
-        saved.set(key, turns);
-        recorded.set(key, { name, savedAt: savedAt.toISOString() });
-      },
-      // NEWEST SAVED FIRST, as the real store lists: the map's insertion order, reversed.
-      list: () =>
-        [...saved.entries()].reverse().map(([key, turns]) => ({
-          key,
-          name: recorded.get(key)?.name ?? null,
-          savedAt: recorded.get(key)?.savedAt ?? null,
-          turns: turns.length,
-          preview: turns[0]?.text ?? '',
-        })),
-      read: (key) => {
-        const turns = saved.get(key);
-        return turns === undefined
-          ? null
-          : { name: recorded.get(key)?.name ?? null, savedAt: recorded.get(key)?.savedAt ?? null, turns };
-      },
-      remove: (key) => {
-        recorded.delete(key);
-        return saved.delete(key);
-      },
-      clear: () => {
-        const count = saved.size;
-        saved.clear();
-        return count;
-      },
-    };
+    const folder = mkdtempSync(join(tmpdir(), 'monstera-chat-history-'));
+    folders.push(folder);
+    const history: ChatHistory = createChatHistory(folder, XOR);
     const settings = createEphemeralSettings();
     settings.write({ 'ai.save-history': on });
     const handlers = createContractHandlers({
@@ -2800,8 +2783,8 @@ describe('ai.history (ADR-0093)', () => {
       capabilities: new CapabilityRegistry(),
       // ONLY THE NAME IS ASKED OF IT (ADR-0192): the save records the file's name beside its turns.
       commands: { nameOf: (docId: DocId) => (docId === DOC ? 'lease.pdf' : undefined) } as unknown as DocumentCommands,
-      // THE KERNEL'S DIGEST, faked: one open document whose file key is `file-key`.
-      documents: { historyKeyOf: (docId: DocId) => (docId === DOC ? 'file-key' : undefined) } as unknown as DocumentService,
+      // THE KERNEL'S DIGEST, faked: one open document whose file key is `FILE`.
+      documents: { historyKeyOf: (docId: DocId) => (docId === DOC ? FILE : undefined) } as unknown as DocumentService,
       openedDocument: () => Promise.resolve(),
       unlockDocument: () => Promise.resolve({ kind: 'not-locked' as const }),
       pickDocument: () => Promise.resolve(null),
@@ -2834,31 +2817,83 @@ settings,
       components: () => Promise.resolve([]),
     prepareEditing: () => Promise.resolve(false),
     });
-    return { handlers, saved };
+    return { handlers, history };
   }
 
   const TURNS = [{ role: 'user' as const, text: 'Q' }];
+  const AT = new Date('2026-10-30T09:00:00.000Z');
+  /** What a save answered as its conversation's key, or a failure that names the case. */
+  const keyOf = (answer: Awaited<ReturnType<ReturnType<typeof withHistory>['handlers']['ai.history.save']>>): string => {
+    if (!answer.ok || answer.value.conversation === null) throw new Error('the save stored no conversation');
+    return answer.value.conversation;
+  };
 
   it('with the setting OFF, a save stores NOTHING, whatever the renderer asked', async () => {
-    const { handlers, saved } = withHistory(false);
-    await expect(handlers['ai.history.save']({ docId: DOC, turns: TURNS })).resolves.toEqual({ ok: true, value: { saved: false } });
-    expect(saved.size).toBe(0);
+    const { handlers, history } = withHistory(false);
+    await expect(handlers['ai.history.save']({ docId: DOC, conversation: null, turns: TURNS })).resolves.toEqual({
+      ok: true,
+      value: { saved: false, conversation: null },
+    });
+    expect(history.list()).toStrictEqual([]);
   });
 
-  it('CONTROL: with it ON, the same save is stored under the FILE key and loads back', async () => {
-    const { handlers, saved } = withHistory(true);
-    await expect(handlers['ai.history.save']({ docId: DOC, turns: TURNS })).resolves.toEqual({ ok: true, value: { saved: true } });
-    expect([...saved.keys()]).toStrictEqual(['file-key']);
-    await expect(handlers['ai.history.load']({ docId: DOC })).resolves.toEqual({ ok: true, value: { turns: TURNS } });
+  it('CONTROL: with it ON, the same save is stored under the FILE and loads back with its key', async () => {
+    const { handlers, history } = withHistory(true);
+    const key = keyOf(await handlers['ai.history.save']({ docId: DOC, conversation: null, turns: TURNS }));
+    expect(history.list().map((entry) => [entry.file, entry.key])).toStrictEqual([[FILE, key]]);
+    await expect(handlers['ai.history.load']({ docId: DOC })).resolves.toEqual({ ok: true, value: { turns: TURNS, conversation: key } });
+  });
+
+  describe('a file keeps several conversations (ADR-0277 Decision 6)', () => {
+    it('a save naming its conversation REPLACES it; a save naming none ADDS one beside it, and the count says so', async () => {
+      const { handlers, history } = withHistory(true);
+      const first = keyOf(await handlers['ai.history.save']({ docId: DOC, conversation: null, turns: TURNS }));
+      const longer = [...TURNS, { role: 'assistant' as const, text: 'A' }];
+      expect(keyOf(await handlers['ai.history.save']({ docId: DOC, conversation: first, turns: longer }))).toBe(first);
+      await expect(handlers['ai.history.count']({ docId: DOC })).resolves.toEqual({ ok: true, value: { count: 1 } });
+      const second = keyOf(await handlers['ai.history.save']({ docId: DOC, conversation: null, turns: [{ role: 'user', text: 'Q2' }] }));
+      expect(second).not.toBe(first);
+      await expect(handlers['ai.history.count']({ docId: DOC })).resolves.toEqual({ ok: true, value: { count: 2 } });
+      // THE OLD ONE IS WHOLE, and the newest is what a reopened document loads.
+      expect(history.read(first)?.turns).toStrictEqual(longer);
+      await expect(handlers['ai.history.load']({ docId: DOC })).resolves.toEqual({
+        ok: true,
+        value: { turns: [{ role: 'user', text: 'Q2' }], conversation: second },
+      });
+    });
+
+    it('an EMPTY save removes nothing: a new one stores nothing, and a saved one keeps what it held', async () => {
+      const { handlers, history } = withHistory(true);
+      await expect(handlers['ai.history.save']({ docId: DOC, conversation: null, turns: [] })).resolves.toEqual({
+        ok: true,
+        value: { saved: false, conversation: null },
+      });
+      const key = keyOf(await handlers['ai.history.save']({ docId: DOC, conversation: null, turns: TURNS }));
+      await handlers['ai.history.save']({ docId: DOC, conversation: key, turns: [] });
+      expect(history.read(key)?.turns).toStrictEqual(TURNS);
+    });
+
+    it(`at ${String(MAX_FILE_CONVERSATIONS)} a NEW conversation is refused as file-full, and none is dropped to make room`, async () => {
+      const { handlers, history } = withHistory(true);
+      const keys: string[] = [];
+      for (let at = 0; at < MAX_FILE_CONVERSATIONS; at += 1) {
+        keys.push(keyOf(await handlers['ai.history.save']({ docId: DOC, conversation: null, turns: [{ role: 'user', text: `Q${String(at)}` }] })));
+      }
+      await expect(handlers['ai.history.save']({ docId: DOC, conversation: null, turns: TURNS })).resolves.toEqual({
+        ok: false,
+        error: { code: 'file-full' },
+      });
+      expect(history.count(FILE)).toBe(MAX_FILE_CONVERSATIONS);
+      expect(keys.every((key) => history.read(key) !== null)).toBe(true);
+      // CONTROL: a conversation the file already holds is still saved there.
+      expect(keyOf(await handlers['ai.history.save']({ docId: DOC, conversation: keys[0] ?? null, turns: TURNS }))).toBe(keys[0]);
+    });
   });
 
   describe('the History lists, reads and removes by the digest, with no document open (ADR-0192)', () => {
-    const KEY = 'a'.repeat(64);
-
     it('a save records the FILE’S NAME, and the list says it, with the first question as the preview', async () => {
-      const { handlers, saved } = withHistory(true);
-      await handlers['ai.history.save']({ docId: DOC, turns: TURNS });
-      expect([...saved.keys()]).toStrictEqual(['file-key']);
+      const { handlers } = withHistory(true);
+      await handlers['ai.history.save']({ docId: DOC, conversation: null, turns: TURNS });
       const listed = await handlers['ai.history.list']({});
       expect(listed.ok && listed.value.conversations.map((entry) => [entry.name, entry.turns, entry.preview])).toStrictEqual([
         ['lease.pdf', 1, 'Q'],
@@ -2867,35 +2902,40 @@ settings,
 
     it('is NOT behind the setting: what was saved lists, reads and removes with it OFF, while a SAVE still stores nothing', async () => {
       // A CONVERSATION SAVED while the setting was on, and the setting since turned off.
-      const { handlers, saved } = withHistory(false);
-      saved.set(KEY, TURNS);
+      const { handlers, history } = withHistory(false);
+      const saved = history.save(FILE, null, TURNS, null, AT);
+      const key = 'conversation' in saved && saved.conversation !== null ? saved.conversation : '';
       const listed = await handlers['ai.history.list']({});
-      expect(listed.ok && listed.value.conversations.map((entry) => entry.key)).toStrictEqual([KEY]);
-      expect((await handlers['ai.history.read']({ key: KEY })).ok).toBe(true);
-      await expect(handlers['ai.history.save']({ docId: DOC, turns: TURNS })).resolves.toEqual({ ok: true, value: { saved: false } });
+      expect(listed.ok && listed.value.conversations.map((entry) => entry.key)).toStrictEqual([key]);
+      expect((await handlers['ai.history.read']({ key })).ok).toBe(true);
+      await expect(handlers['ai.history.save']({ docId: DOC, conversation: null, turns: TURNS })).resolves.toEqual({
+        ok: true,
+        value: { saved: false, conversation: null },
+      });
       // CONTROL: the save changed nothing, so the list and the read above were answered from what was there.
-      expect([...saved.keys()]).toStrictEqual([KEY]);
-      await expect(handlers['ai.history.remove']({ key: KEY })).resolves.toEqual({ ok: true, value: { removed: true } });
-      expect(saved.size).toBe(0);
+      expect(history.list().map((entry) => entry.key)).toStrictEqual([key]);
+      await expect(handlers['ai.history.remove']({ key })).resolves.toEqual({ ok: true, value: { removed: true } });
+      expect(history.list()).toStrictEqual([]);
     });
 
     it('read answers the conversation by its key and null for a key nothing is saved under; remove says whether it removed', async () => {
-      const { handlers, saved } = withHistory(true);
-      saved.set(KEY, TURNS);
-      await expect(handlers['ai.history.read']({ key: KEY })).resolves.toEqual({
+      const { handlers, history } = withHistory(true);
+      const saved = history.save(FILE, null, TURNS, null, AT);
+      const key = 'conversation' in saved && saved.conversation !== null ? saved.conversation : '';
+      await expect(handlers['ai.history.read']({ key })).resolves.toEqual({
         ok: true,
-        value: { conversation: { name: null, savedAt: null, turns: TURNS } },
+        value: { conversation: { name: null, savedAt: AT.toISOString(), turns: TURNS } },
       });
       const other = 'b'.repeat(64);
       await expect(handlers['ai.history.read']({ key: other })).resolves.toEqual({ ok: true, value: { conversation: null } });
       await expect(handlers['ai.history.remove']({ key: other })).resolves.toEqual({ ok: true, value: { removed: false } });
-      expect(saved.has(KEY)).toBe(true);
+      expect(history.read(key)).not.toBeNull();
     });
   });
 
   it('a document that is not open is refused by name, and clear says how many went', async () => {
     const { handlers } = withHistory(true);
-    await handlers['ai.history.save']({ docId: DOC, turns: TURNS });
+    await handlers['ai.history.save']({ docId: DOC, conversation: null, turns: TURNS });
     const other = asDocId('00000000-0000-4000-8000-0000000000aa');
     const refused = await handlers['ai.history.load']({ docId: other });
     expect(refused.ok).toBe(false);

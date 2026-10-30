@@ -38,6 +38,8 @@ async function openPane(
     },
     // A SAVED CONVERSATION, so the chat is on screen without a provider to ask.
     aiHistory: {
+      // THE KEY MAIN GAVE IT (ADR-0277), which a later save would continue it under.
+      conversation: 'a'.repeat(64),
       turns: [
         // WHAT WENT, so the bubble carries the owner's *Sent page 2 of 15* and its readability is measured.
         {

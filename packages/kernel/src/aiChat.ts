@@ -1,7 +1,8 @@
-import { AI_PROVIDERS, type AiProviderId, MAX_WEB_SOURCES, webSearchOf } from '@monstera/contract';
+import { AI_PROVIDERS, type AiProviderId, MAX_ANSWER_TEXT, MAX_WEB_SOURCES, webSearchOf } from '@monstera/contract';
 import { serviceOrigin } from '@monstera/shared';
+import { z } from 'zod';
 
-import { anthropicErrorMessage, isAnthropicOutOfCredit } from './anthropicCredit.js';
+import { anthropicErrorMessage, isAnthropicOutOfCredit, isAnthropicPromptTooLong } from './anthropicCredit.js';
 import { credentialedFetch } from './credentialedFetch.js';
 
 /**
@@ -75,7 +76,63 @@ export type ChatRefusal =
   // A *Document only* ask to a model that searches before every answer (ADR-0108), refused before anything is sent.
   | 'searches-the-web'
   // An Azure OpenAI address that is not one of Azure's own (`serviceOrigin`), refused before anything is sent.
-  | 'not-the-service';
+  | 'not-the-service'
+  // An answer that reached `MAX_ANSWER_TEXT` (ADR-0277): stopped there, every character before it kept.
+  | 'answer-cut'
+  // The provider refused the conversation as longer than its model takes (ADR-0277 Decision 5), where established.
+  | 'too-long';
+
+/**
+ * Where each provider's refusal of a conversation too long for its model was ESTABLISHED, or why it was not (ADR-0277
+ * Decision 5): one entry per provider, so a provider added to the registry arrives owing its answer. Only the providers
+ * marked `read` are told apart; every other provider's refusal stays `rejected`, because a guessed error text would
+ * call a different refusal *full* and offer a new conversation that fixes nothing. Read 2026-10-29.
+ */
+const TOO_LONG_ESTABLISHED: Readonly<Record<AiProviderId, { readonly read: string } | { readonly notEstablished: string }>> = {
+  anthropic: {
+    read: 'Context windows page, "Context window overflow behavior": a 400 invalid_request_error, "prompt is too long" (isAnthropicPromptTooLong)',
+  },
+  openrouter: {
+    read: 'its API spec (openrouter/python-sdk, .speakeasy/in.openapi.yaml, ApiErrorType): error.metadata.error_type "context_length_exceeded", "stable across all API formats"; no HTTP status is tied to it, so any refusal carrying it',
+  },
+  openai: {
+    notEstablished:
+      'the Responses API documents only "the request will fail with a 400 error" (openai-python, truncation); its OpenAPI Error.code lists no value for chat completions or responses',
+  },
+  'azure-openai': { notEstablished: 'the 2024-10-21 inference spec lists no context-length code; Microsoft Learn could not be read here' },
+  gemini: { notEstablished: 'python-genai has only a generic APIError; ai.google.dev could not be reached here' },
+  mistral: { notEstablished: 'client-python states the rule, not the refusal: a 422 HTTPValidationError or a generic 4XX' },
+  xai: { notEstablished: 'its SDK is gRPC and names no context-length error; docs.x.ai could not be read here' },
+  groq: { notEstablished: 'groq-python has only generic error classes; console.groq.com could not be read here' },
+  perplexity: { notEstablished: 'no official SDK, and docs.perplexity.ai could not be read here' },
+  deepseek: { notEstablished: 'no official SDK, and api-docs.deepseek.com could not be read here' },
+};
+
+/** OpenRouter's canonical error type, where a refusal's body carries one (`TOO_LONG_ESTABLISHED.openrouter`). */
+const openRouterErrorSchema = z.object({ error: z.object({ metadata: z.object({ error_type: z.string() }) }) });
+
+/**
+ * Why a provider refused, from a response that is not OK and not a key refusal: the ONE place a refusal's body is read,
+ * so the out-of-credit and too-long readings cannot disagree about which provider says what.
+ */
+async function refusalOf(provider: AiProviderId, response: Response): Promise<ChatRefusal> {
+  const established = (which: AiProviderId): boolean => 'read' in TOO_LONG_ESTABLISHED[which];
+  if (provider === 'anthropic' && response.status === 400) {
+    // OUT OF CREDIT IS ITS OWN ANSWER: its 400 is shared with a malformed request, and only one of the two is the
+    // person's to fix — by paying, which *rejected* never says. `anthropicCredit.ts` owns both readings.
+    const message = await anthropicErrorMessage(response);
+    if (isAnthropicOutOfCredit(response.status, message)) return 'out-of-credit';
+    if (established('anthropic') && isAnthropicPromptTooLong(response.status, message)) return 'too-long';
+    return 'rejected';
+  }
+  if (provider === 'openrouter' && established('openrouter')) {
+    // A BODY THAT IS NOT JSON carries no error type; the refusal is then the plain one, which the status already says.
+    const body: unknown = await response.json().catch(() => null);
+    const parsed = openRouterErrorSchema.safeParse(body);
+    return parsed.success && parsed.data.error.metadata.error_type === 'context_length_exceeded' ? 'too-long' : 'rejected';
+  }
+  return 'rejected';
+}
 
 /**
  * Where an Azure OpenAI request goes: the resource's origin, `null` where no address is set, or `not-the-service`
@@ -622,21 +679,41 @@ export async function* dataEvents(stream: ReadableStream<Uint8Array>): AsyncGene
   const decoder = new TextDecoder();
   const reader = stream.getReader();
   let held = '';
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    // A CHUNK IS NOT A LINE. The decoder is given `stream: true` so a multi-byte character
-    // split across two chunks is not turned into two replacement characters.
-    held += decoder.decode(value, { stream: true });
-    const lines = held.split('\n');
-    held = lines.pop() ?? '';
-    for (const line of lines) {
-      const trimmed = line.trimEnd();
-      if (trimmed.startsWith('data:')) yield trimmed.slice('data:'.length).trim();
+  let ended = false;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      // A CHUNK IS NOT A LINE. The decoder is given `stream: true` so a multi-byte character
+      // split across two chunks is not turned into two replacement characters.
+      held += decoder.decode(value, { stream: true });
+      const lines = held.split('\n');
+      held = lines.pop() ?? '';
+      for (const line of lines) {
+        const trimmed = line.trimEnd();
+        if (trimmed.startsWith('data:')) yield trimmed.slice('data:'.length).trim();
+      }
     }
+    ended = true;
+  } finally {
+    // A CALLER THAT STOPS READING (an answer at its bound) leaves the generator at a `yield`, and only cancelling the
+    // body ends the request: a stream merely left locked keeps the connection, and the provider keeps writing to it.
+    if (!ended) await reader.cancel();
   }
   const last = held.trimEnd();
   if (last.startsWith('data:')) yield last.slice('data:'.length).trim();
+}
+
+/**
+ * As much of `piece` as fits after `held` characters within {@link MAX_ANSWER_TEXT}, never ending on half of a
+ * surrogate pair: a character the bound would split is left out whole rather than kept as a code unit no text holds.
+ */
+function withinAnswer(held: number, piece: string): string {
+  const room = MAX_ANSWER_TEXT - held;
+  if (piece.length <= room) return piece;
+  const kept = piece.slice(0, Math.max(0, room));
+  const end = kept.charCodeAt(kept.length - 1);
+  return end >= 0xd800 && end <= 0xdbff ? kept.slice(0, -1) : kept;
 }
 
 /**
@@ -684,17 +761,7 @@ export async function streamChat(request: ChatRequest): Promise<ChatAnswer> {
   if (response.status === 401 || response.status === 403) {
     return { text: '', stopped: false, refusal: 'unauthorised', ...unsearched };
   }
-  // OUT OF CREDIT IS ITS OWN ANSWER, for Anthropic alone: its 400 is shared with a malformed
-  // request, and only one of the two is the person's to fix — by paying, which *rejected* never
-  // says. `anthropicCredit.ts` owns the reading, because the recognition engine asks it too.
-  if (
-    provider === 'anthropic' &&
-    response.status === 400 &&
-    isAnthropicOutOfCredit(response.status, await anthropicErrorMessage(response))
-  ) {
-    return { text: '', stopped: false, refusal: 'out-of-credit', ...unsearched };
-  }
-  if (!response.ok) return { text: '', stopped: false, refusal: 'rejected', ...unsearched };
+  if (!response.ok) return { text: '', stopped: false, refusal: await refusalOf(provider, response), ...unsearched };
   if (response.body === null) return { text: '', stopped: false, refusal: 'unreadable', ...unsearched };
 
   let text = '';
@@ -711,6 +778,18 @@ export async function streamChat(request: ChatRequest): Promise<ChatAnswer> {
   // the citation splits fall mid-sentence and join with nothing, but a text block after a SEARCH starts a new thought
   // and joined with nothing reads "…this detail.Joseph B. Strauss…" — seen in the live run of 2026-09-26.
   let previousBlock: string | undefined;
+  /**
+   * Adds a piece of the answer, as much as `MAX_ANSWER_TEXT` leaves room for (ADR-0277 Decision 3); `false` once the
+   * answer has reached it, and the caller stops reading. The person is shown exactly what is kept.
+   */
+  const take = (piece: string): boolean => {
+    const kept = withinAnswer(text.length, piece);
+    if (kept !== '') {
+      text += kept;
+      onDelta?.(kept);
+    }
+    return kept.length === piece.length;
+  };
   try {
     for await (const data of dataEvents(response.body)) {
       const reading = readEvent(prepared.shape, data);
@@ -719,14 +798,12 @@ export async function streamChat(request: ChatRequest): Promise<ChatAnswer> {
       found.push(...reading.found);
       if (reading.block !== undefined) {
         if (reading.block === 'text' && previousBlock !== undefined && previousBlock !== 'text' && text !== '') {
-          text += '\n\n';
-          onDelta?.('\n\n');
+          if (!take('\n\n')) return { text, stopped: false, refusal: 'answer-cut', ...webPart() };
         }
         previousBlock = reading.block;
       }
       if (reading.text === '') continue;
-      text += reading.text;
-      onDelta?.(reading.text);
+      if (!take(reading.text)) return { text, stopped: false, refusal: 'answer-cut', ...webPart() };
     }
   } catch {
     // WHAT ARRIVED IS KEPT. A stream that ends badly has still shown the person words, and

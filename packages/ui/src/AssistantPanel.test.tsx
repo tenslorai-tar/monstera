@@ -6,10 +6,17 @@ import {
   type ContractClient,
   MAX_ASK_ATTACHMENTS,
   MAX_ASK_DOCUMENTS,
+  MAX_ANSWER_TEXT,
+  MAX_CHAT_TEXT,
+  MAX_CHAT_TURNS,
+  MAX_FILE_CONVERSATIONS,
+  CHAT_HISTORY_SETTING_ID,
+  IncidentLog,
   channels,
   createClient,
+  wrapHandler,
 } from '@monstera/contract';
-import { asDocId, asDocVersion } from '@monstera/shared';
+import { asDocId, asDocVersion, ok } from '@monstera/shared';
 import { I18nProvider } from '@lingui/react';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { type ReactElement, type ReactNode, useState } from 'react';
@@ -70,13 +77,28 @@ function recording(
   } = {},
   /** A refusal `main` answers every ask with, by code, in place of starting it. */
   refusal?: 'no-comments',
+  /**
+   * Whether `ai.ask` goes through the contract's REAL boundary (`wrapHandler`), as in `main`: `createClient` validates
+   * no params, so only this sees a request `ai.ask`'s schema refuses.
+   */
+  boundary = false,
+  /** How many saved conversations `main` says the document's file keeps (ADR-0277 Decision 6). */
+  historyCount = 0,
 ): {
   readonly client: ContractClient;
   readonly sent: { id: string; params: unknown }[];
 } {
   const sent: { id: string; params: unknown }[] = [];
+  const throughBoundary = wrapHandler(
+    channels,
+    'ai.ask',
+    () => Promise.resolve(ok({ started: true, sent: null })),
+    new IncidentLog(() => undefined),
+  );
   const client = createClient(channels, (id, params) => {
     sent.push({ id, params });
+    if (id === 'ai.ask' && boundary) return throughBoundary(params);
+    if (id === 'ai.history.count') return Promise.resolve(ok({ count: historyCount }));
     if (id === 'ai.models') {
       return Promise.resolve({
         ok: true,
@@ -178,6 +200,8 @@ async function drawn(options: {
   readonly onGoToDocument?: AssistantPanelProps['onGoToDocument'];
   readonly attaching?: Parameters<typeof recording>[6];
   readonly refusal?: Parameters<typeof recording>[7];
+  readonly boundary?: boolean;
+  readonly historyCount?: number;
 } = {}) {
   const wire = events();
   const settings = options.settings ?? new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
@@ -190,6 +214,8 @@ async function drawn(options: {
     options.among,
     options.attaching,
     options.refusal,
+    options.boundary ?? false,
+    options.historyCount ?? 0,
   );
   // EVERY TOAST THE PANEL RAISES, in order: a copy's confirmation goes through the window's toast.
   const toasts: unknown[][] = [];
@@ -443,8 +469,8 @@ describe('the assistant tab', () => {
     const KEY_A = 'a'.repeat(64);
     const KEY_B = 'b'.repeat(64);
     const ENTRIES = [
-      { key: KEY_A, name: 'contract.pdf', savedAt: '2026-10-07T09:30:00.000Z', turns: 2, preview: 'Who signs?' },
-      { key: KEY_B, name: null, savedAt: null, turns: 1, preview: 'An older question' },
+      { key: KEY_A, file: 'f'.repeat(64), name: 'contract.pdf', savedAt: '2026-10-07T09:30:00.000Z', turns: 2, preview: 'Who signs?' },
+      { key: KEY_B, file: 'e'.repeat(64), name: null, savedAt: null, turns: 1, preview: 'An older question' },
     ];
 
     /** The panel over a store the case holds: what is listed, what reads, what is removed. */
@@ -525,6 +551,26 @@ describe('the assistant tab', () => {
       expect(list?.textContent).toContain('1 message');
       // CONTROL: the live conversation's composer is not drawn while the History has the panel.
       expect(document.querySelector('.m-assistant__composer')).toBeNull();
+    });
+
+    it('lists one file’s conversations TOGETHER, in main’s order, each its own Open and Delete, and SAYS the bounds (ADR-0277)', async () => {
+      const LEASE = 'd'.repeat(64);
+      stored([
+        { key: '1'.repeat(64), file: LEASE, name: 'lease.pdf', savedAt: '2026-10-30T09:00:00.000Z', turns: 1, preview: 'Rent?' },
+        { key: '2'.repeat(64), file: LEASE, name: 'lease.pdf', savedAt: '2026-10-29T09:00:00.000Z', turns: 2, preview: 'Who signs?' },
+      ]);
+      await settle();
+      fireEvent.click(screen.getByRole('button', { name: 'History' }));
+      await settle();
+      const items = [...document.querySelectorAll('.m-assistant-history__item')].map((item) => item.textContent);
+      expect(items).toHaveLength(2);
+      expect(items[0]).toContain('Rent?');
+      expect(items[1]).toContain('Who signs?');
+      expect(screen.getAllByRole('button', { name: 'Open lease.pdf' })).toHaveLength(2);
+      expect(screen.getAllByRole('button', { name: 'Delete lease.pdf' })).toHaveLength(2);
+      expect(document.querySelector('[data-assistant-history-bounds]')?.textContent).toBe(
+        'Each file keeps up to 20 conversations, and conversations are kept for up to 200 files. When a new file would be one too many, the file saved longest ago is removed with its conversations.',
+      );
     });
 
     it('Open shows the conversation READ-ONLY by its key, and Back to History returns to the list', async () => {
@@ -1679,7 +1725,11 @@ describe('the chat extras (the owner’s design, 2026-09-15)', () => {
   const DOC = asDocId('00000000-0000-4000-8000-0000000000e5');
 
   /** A document conversation with one whole exchange in it, asked about the page. */
-  async function answered(extra: Partial<Parameters<typeof drawn>[0]> = {}) {
+  async function answered(
+    extra: Partial<Parameters<typeof drawn>[0]> = {},
+    /** The answer's text, pushed in pieces within `ai.delta`'s bound, and how it ended. */
+    reply: { readonly text?: string; readonly refusal?: 'answer-cut' } = {},
+  ) {
     const store = createDocumentStore(DOC, asDocVersion(1));
     const harness = await drawn({ focused: { docId: DOC, store, page: 2 }, ...extra });
     type('When is the review?');
@@ -1689,8 +1739,14 @@ describe('the chat extras (the owner’s design, 2026-09-15)', () => {
     });
     const subscription = (harness.sent.find((entry) => entry.id === 'ai.ask')?.params as { subscription: string })
       .subscription;
-    harness.push('ai.delta', { subscription, text: 'On 17 March.' });
-    harness.push('ai.done', { subscription, stopped: false, web: NO_WEB });
+    const text = reply.text ?? 'On 17 March.';
+    for (let at = 0; at < text.length; at += 8192) harness.push('ai.delta', { subscription, text: text.slice(at, at + 8192) });
+    harness.push('ai.done', {
+      subscription,
+      stopped: false,
+      ...(reply.refusal === undefined ? {} : { refusal: reply.refusal }),
+      web: NO_WEB,
+    });
     return { ...harness, store };
   }
 
@@ -1739,6 +1795,32 @@ describe('the chat extras (the owner’s design, 2026-09-15)', () => {
     ]);
     // EVERY COPY'S ONE CONFIRMATION, the window's toast.
     expect(toasts).toStrictEqual([['done', TOAST_COPIED]]);
+  });
+
+  it('COPY copies a 20,000-character answer WHOLE, within the channel’s own bound (ADR-0277)', async () => {
+    // LONGER THAN A QUESTION'S BOUND, which is where the copy used to cut it.
+    const long = Array.from({ length: 20_000 }, (_, at) => String.fromCharCode(97 + (at % 26))).join('');
+    expect(long.length).toBeGreaterThan(MAX_CHAT_TEXT);
+    const { sent } = await answered({}, { text: long });
+    fireEvent.click(screen.getByRole('button', { name: 'Copy this answer' }));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const copied = sent.filter((entry) => entry.id === 'window.copyText').map((entry) => entry.params);
+    expect(copied).toStrictEqual([{ text: long }]);
+    // AND MAIN'S BOUNDARY TAKES IT: `createClient` validates nothing, so the case asks the channel's own schema.
+    expect(channels['window.copyText'].params.safeParse(copied[0]).success).toBe(true);
+  });
+
+  it('an answer main stopped at its bound SAYS so, and keeps what arrived (ADR-0277)', async () => {
+    const { store } = await answered({}, { text: 'Up to the bound.', refusal: 'answer-cut' });
+    expect(
+      screen.getByText(
+        `The answer was stopped at its length limit of ${new Intl.NumberFormat('en').format(MAX_ANSWER_TEXT)} characters. What is above is all of it up to there. Ask for the rest in a new question.`,
+      ),
+    ).not.toBeNull();
+    expect(store.getState().conversation.at(-1)?.text).toBe('Up to the bound.');
   });
 
   it('CONTROL: a copy main says did not reach the clipboard says nothing', async () => {
@@ -1849,5 +1931,231 @@ describe('the provider and each provider’s model are SETTINGS (ADR-0117)', () 
       await Promise.resolve();
     });
     expect(sent.find((entry) => entry.id === 'ai.ask')?.params).toMatchObject({ model: 'retired-model' });
+  });
+});
+
+describe('a full conversation is said, with a new one a press away (ADR-0277 Decision 2)', () => {
+  const DOC = asDocId('00000000-0000-4000-8000-0000000000ca');
+  const FULL_COUNT = 'This conversation is full: it holds as many messages as one conversation can. Start a new conversation to ask more.';
+  const FULL_PROVIDER =
+    'This conversation is now too long for the model to read, so the provider refused the last question. Start a new conversation to ask it again.';
+  const settle = async (): Promise<void> => {
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  };
+  /** A conversation of `count` turns, alternating from the person's. */
+  const held = (count: number) =>
+    Array.from({ length: count }, (_, at) => ({ role: at % 2 === 0 ? ('user' as const) : ('assistant' as const), text: `t${String(at)}` }));
+
+  it('THROUGH THE REAL BOUNDARY: at MAX_CHAT_TURNS messages the next question is not sent, and the conversation says it is full', async () => {
+    const store = createDocumentStore(DOC, asDocVersion(1));
+    store.getState().converse(held(MAX_CHAT_TURNS));
+    const { sent } = await drawn({ focused: { docId: DOC, store, page: 0 }, boundary: true });
+    type('One more?');
+    // ENTER: on the code before ADR-0277 this sent a sixty-fifth message, `main`'s boundary refused it as `internal`,
+    // and the question stayed in the conversation.
+    fireEvent.keyDown(screen.getByLabelText('Ask about this document'), { key: 'Enter' });
+    await settle();
+    expect(sent.filter((entry) => entry.id === 'ai.ask')).toStrictEqual([]);
+    expect(store.getState().conversation).toHaveLength(MAX_CHAT_TURNS);
+    expect(screen.getByText(FULL_COUNT).closest('[aria-live="polite"]')).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Send' }).hasAttribute('disabled')).toBe(true);
+
+    // ONE PRESS: a new conversation, the question still in the box, and it goes.
+    fireEvent.click(screen.getByRole('button', { name: 'Start a new conversation' }));
+    expect(store.getState().conversation).toStrictEqual([]);
+    expect(screen.getByLabelText<HTMLTextAreaElement>('Ask about this document').value).toBe('One more?');
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await settle();
+    expect(sent.filter((entry) => entry.id === 'ai.ask').map((entry) => (entry.params as { messages: unknown }).messages)).toStrictEqual([
+      [{ role: 'user', text: 'One more?' }],
+    ]);
+  });
+
+  it('CONTROL: one message short of full, the question goes and nothing is said', async () => {
+    const store = createDocumentStore(DOC, asDocVersion(1));
+    store.getState().converse(held(MAX_CHAT_TURNS - 2));
+    const { sent } = await drawn({ focused: { docId: DOC, store, page: 0 }, boundary: true });
+    type('Last one?');
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await settle();
+    expect(sent.filter((entry) => entry.id === 'ai.ask')).toHaveLength(1);
+    expect(screen.queryByText(FULL_COUNT)).toBeNull();
+  });
+
+  it('THE PROVIDER’S too-long refusal makes the conversation full, said in one sentence, not as a refusal', async () => {
+    const store = createDocumentStore(DOC, asDocVersion(1));
+    const { sent, push } = await drawn({ focused: { docId: DOC, store, page: 0 } });
+    type('Summarise all of it.');
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await settle();
+    const subscription = (sent.find((entry) => entry.id === 'ai.ask')?.params as { subscription: string }).subscription;
+    push('ai.done', { subscription, stopped: false, refusal: 'too-long', web: NO_WEB });
+
+    expect(screen.getByText(FULL_PROVIDER)).not.toBeNull();
+    expect(screen.queryByText('The provider refused the request, so nothing more arrived. What is above is what it sent.')).toBeNull();
+    type('And then?');
+    expect(screen.getByRole('button', { name: 'Send' }).hasAttribute('disabled')).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Start a new conversation' }));
+    expect(store.getState().conversation).toStrictEqual([]);
+    expect(screen.queryByText(FULL_PROVIDER)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Send' }).hasAttribute('disabled')).toBe(false);
+  });
+});
+
+describe('a new conversation keeps the old one, and a file at twenty is said (ADR-0277 Decision 6)', () => {
+  const DOC = asDocId('00000000-0000-4000-8000-0000000000cb');
+  const FILE_FULL_NEW =
+    'This file already keeps 20 saved conversations, the most one file keeps, so a new one was not started. Remove one in the History, then start a new conversation.';
+  const historyOn = (): SettingsStore => {
+    const settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
+    settings.set(CHAT_HISTORY_SETTING_ID, true);
+    return settings;
+  };
+  const press = async (): Promise<void> => {
+    fireEvent.click(screen.getByRole('button', { name: 'New chat' }));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  };
+  const holding = () => {
+    const store = createDocumentStore(DOC, asDocVersion(1));
+    store.getState().converse([
+      { role: 'user', text: 'Who signs?' },
+      { role: 'assistant', text: 'Both parties.' },
+    ]);
+    return store;
+  };
+
+  it(`with history ON and the file at ${String(MAX_FILE_CONVERSATIONS)}, New chat begins NOTHING and says to remove one`, async () => {
+    const store = holding();
+    const { sent } = await drawn({ focused: { docId: DOC, store, page: 0 }, settings: historyOn(), historyCount: MAX_FILE_CONVERSATIONS });
+    await press();
+    expect(sent.filter((entry) => entry.id === 'ai.history.count')).toHaveLength(1);
+    expect(screen.getByText(FILE_FULL_NEW).closest('[aria-live="polite"]')).not.toBeNull();
+    // THE CONVERSATION IS UNTOUCHED, and no new one began.
+    expect(store.getState().conversation.map((turn) => turn.text)).toStrictEqual(['Who signs?', 'Both parties.']);
+    expect(store.getState().conversationSerial).toBe(0);
+  });
+
+  it('CONTROL: one short of the bound, New chat begins a NEW conversation, which the history saves beside the old', async () => {
+    const store = holding();
+    await drawn({ focused: { docId: DOC, store, page: 0 }, settings: historyOn(), historyCount: MAX_FILE_CONVERSATIONS - 1 });
+    await press();
+    expect(store.getState().conversation).toStrictEqual([]);
+    // A NEW SERIAL, which is what makes the history sync save a new conversation rather than empty the old one.
+    expect(store.getState().conversationSerial).toBe(1);
+    expect(screen.queryByText(FILE_FULL_NEW)).toBeNull();
+  });
+
+  it('with history OFF, New chat asks main nothing and begins a new conversation', async () => {
+    const store = holding();
+    const { sent } = await drawn({ focused: { docId: DOC, store, page: 0 }, historyCount: MAX_FILE_CONVERSATIONS });
+    await press();
+    expect(sent.some((entry) => entry.id === 'ai.history.count')).toBe(false);
+    expect(store.getState().conversationSerial).toBe(1);
+  });
+
+  it('a conversation the file has no room to save is SAID, not left unsaved in silence', async () => {
+    const store = holding();
+    store.getState().historyRefusedAs('file-full');
+    await drawn({ focused: { docId: DOC, store, page: 0 }, settings: historyOn() });
+    expect(
+      screen.getByText(
+        'This file already keeps 20 saved conversations, the most one file keeps, so this one is not being saved. Remove one in the History and it will be saved.',
+      ),
+    ).not.toBeNull();
+  });
+});
+
+describe('a question over the limit is said, and never sent (ADR-0277 Decision 1)', () => {
+  const DOC = asDocId('00000000-0000-4000-8000-0000000000c9');
+  const send = async (): Promise<void> => {
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  };
+  const composer = (): HTMLTextAreaElement => screen.getByLabelText<HTMLTextAreaElement>('Ask about this document');
+  const over = (by: number): string =>
+    `This question is ${by === 1 ? '1 character' : `${new Intl.NumberFormat('en').format(by)} characters`} over the limit of ${new Intl.NumberFormat('en').format(MAX_CHAT_TEXT)}, so it cannot be sent. If it holds a passage from the document, ask about the page in Context, or select the passage on the page and ask about the selected text.`;
+
+  it('THROUGH THE REAL BOUNDARY: a question one past the bound sends nothing, sticks nothing, and the next question is taken', async () => {
+    const store = createDocumentStore(DOC, asDocVersion(1));
+    const { sent } = await drawn({ focused: { docId: DOC, store, page: 0 }, boundary: true });
+    const long = 'q'.repeat(MAX_CHAT_TEXT + 1);
+    type(long);
+    // ENTER, the route that needs no button: on the code before ADR-0277 this asked, `main`'s boundary refused the
+    // schema as `internal`, and the question stayed in the conversation to be resent with every later one.
+    fireEvent.keyDown(composer(), { key: 'Enter' });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(sent.filter((entry) => entry.id === 'ai.ask')).toStrictEqual([]);
+    expect(store.getState().conversation).toStrictEqual([]);
+    // THE WORDS ARE NEVER TAKEN AWAY.
+    expect(composer().value).toBe(long);
+
+    // AND THE CONVERSATION IS NOT STUCK: a question within the bound goes alone, and `main`'s boundary takes it.
+    type('What is on page 1?');
+    await send();
+    const asks = sent.filter((entry) => entry.id === 'ai.ask');
+    expect(asks.map((entry) => (entry.params as { messages: unknown }).messages)).toStrictEqual([
+      [{ role: 'user', text: 'What is on page 1?' }],
+    ]);
+    expect(composer().value).toBe('');
+    expect(screen.queryByText('The provider refused the request, so nothing more arrived. What is above is what it sent.')).toBeNull();
+  });
+
+  it('over the bound, the box SAYS how much, announced, and Send is off', async () => {
+    await drawn({});
+    type('q'.repeat(MAX_CHAT_TEXT + 1));
+    expect(screen.getByText(over(1)).closest('[aria-live="polite"]')).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Send' }).hasAttribute('disabled')).toBe(true);
+    expect(composer().getAttribute('aria-invalid')).toBe('true');
+    // CONTROL: back within the bound, the sentence goes and Send returns.
+    type('q'.repeat(MAX_CHAT_TEXT));
+    expect(screen.queryByText(over(1))).toBeNull();
+    expect(screen.getByRole('button', { name: 'Send' }).hasAttribute('disabled')).toBe(false);
+  });
+
+  it('CONTROL: a question of exactly the bound is sent, and the boundary takes it', async () => {
+    const store = createDocumentStore(DOC, asDocVersion(1));
+    const { sent } = await drawn({ focused: { docId: DOC, store, page: 0 }, boundary: true });
+    type('q'.repeat(MAX_CHAT_TEXT));
+    await send();
+    expect(sent.filter((entry) => entry.id === 'ai.ask')).toHaveLength(1);
+    expect(composer().value).toBe('');
+    expect(store.getState().conversation.map((turn) => turn.text.length)).toStrictEqual([MAX_CHAT_TEXT]);
+  });
+
+  it('COUNTS from nine tenths of the bound, and not before', async () => {
+    await drawn({});
+    const from = Math.floor(MAX_CHAT_TEXT * 0.9);
+    type('q'.repeat(from - 1));
+    expect(document.querySelector('[data-assistant-count]')).toBeNull();
+    type('q'.repeat(from));
+    expect(screen.getByText(`${new Intl.NumberFormat('en').format(from)} of ${new Intl.NumberFormat('en').format(MAX_CHAT_TEXT)} characters`)).not.toBeNull();
+  });
+
+  it('an edited question that grows past the bound keeps the question and the answer it would replace', async () => {
+    const store = createDocumentStore(DOC, asDocVersion(1));
+    const wire = await drawn({ focused: { docId: DOC, store, page: 0 } });
+    type('When is the review?');
+    await send();
+    const subscription = (wire.sent.find((entry) => entry.id === 'ai.ask')?.params as { subscription: string }).subscription;
+    wire.push('ai.delta', { subscription, text: 'On 17 March.' });
+    wire.push('ai.done', { subscription, stopped: false, web: NO_WEB });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit your question and ask again' }));
+    type('q'.repeat(MAX_CHAT_TEXT + 5));
+    fireEvent.keyDown(composer(), { key: 'Enter' });
+    await send();
+    expect(store.getState().conversation.map((turn) => turn.text)).toStrictEqual(['When is the review?', 'On 17 March.']);
+    expect(screen.getByText(over(5))).not.toBeNull();
   });
 });
