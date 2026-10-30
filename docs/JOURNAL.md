@@ -892,6 +892,64 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-30 — Cloud run 25 merged: the corpus recount, and refused words never left without a question
+
+**The merge.** `origin/work/cloud-25-drawn-fonts` merged at c4314e17, its red Windows case fixed at 1c04faf8 (letters
+typed while a press waits for the faces never replace the whole block), main merged in at e61f77b9. The owner's decision
+of 2026-10-29: run 25's joined-letter rule is accepted for every font, so the corpus check covers every document.
+
+**The corpus recount** (every page of the eleven corpus documents through `editText.proof.mjs`'s per-page child, main's
+build at 0a44647d against the merge's; scratchpad tooling, documents by number only). 5,036 edits on main and 5,307 on
+the merge; main's child failed on document 5 page 1, which the merge runs. 632 edits on the ordinary-font documents
+changed, and none lost a character outside its block. Classified with a temporary measurement in `editExpectations.mjs`
+(the widest word against the block's column, the lines before and after, and the pieces a split word is read in), then
+removed:
+
+- **ADR-0275 working as decided**: words that main split are kept whole and the block widens, which the column check
+  reads as characters outside the column. 94 of the 116 measured column cases have a word wider than the column.
+- **The rest have no wider word**: blocks of one line growing right to their reach (ADR-0275 Decision 3, an older rule),
+  and blocks of several lines where **main had already broken a word that fit the column** — the writer's line limit is
+  narrower than the block's column on some blocks of document 4, and the symptom moved from a broken word to a wider
+  block.
+- **The 12 new *words run together* on document 4 are not the joined-letter rule**: no joined glyph or presentation form
+  is in any of them. Measured on page 11: the typed line was set 3 pt above the next block's first line (411 against
+  408), and the check reads the two overlapping lines interleaved. **Main's writer sets the same line in the same place**
+  (its edited page dumped and read the same way); main's reading happened to pass.
+- **The new *unseen words* on document 5 are table cells grown downward**: the typed words go below the cell, and the
+  next row, painted after them, covers them. Main broke the words and drew them over the next row's values instead.
+- **So one older defect, two symptoms: a block that grows downward draws over what lies below it.** Not a run 25
+  regression; open on the Edit text row.
+
+Drawn-font document 2: 88 edits failing an expectation on main, 71 on the merge, the merge's chiefly *outside its column*
+(59, the same widening). **Time**: the check after each edit took 4.46 s on main and 0.94 s on the merge (run 25's 25e
+reads a page once per document; 2,626 s against 553 s over document 2's 589 edits), the whole document 58 minutes
+against 21. The pre-push typecheck ran beside main's recount from 06:42:16Z to 06:45:08Z.
+
+**25a, in the development app**: a reference marker under a link, opened, End, words typed, a press away, saved and
+reopened: the frame grew from 17.5 to 67 px, no word broken, the link's hover not over the editor, the saved words one
+line. **25b**: with 839930f8's boundary rule put back for the run, the refusal is said beside the words and the editor
+stays — but the ribbon's Edit text button then closed it, the page showed the old words, the bar said Saved and a save
+wrote the old words. ADR-0278, the owner's answer: every route that would end such an editor asks first, and the bar
+says Unsaved changes. Built at 13f9beb6, a case per route.
+
+**Today's refusal classes** (mapped at e61f77b9; the owner's rule is that none is caused by the document): caused by the
+document — `text-not-writable` (a typed character no page font or bundled face can carry), `read-back` *transformed* (not
+upright, singular, lines under different transforms, a transform open at the content's end), *unknown-width* (a font
+stating no width), some of *numbering* (the two engines disagreeing about a page's text objects), and
+`protection-not-reproducible` (opened with the owner password only). By the person: *cropped*, and a paste past
+`MAX_EDIT_TEXT`, which arrives as `internal`. Every other is a failure.
+
+**Stated limits, moved from the row**: rotated text is not offered by the PDFium writer; a form placement deeper than 4
+steps or named past 64 characters is not offered (the corpus's deepest is 2, its longest name 7); words added to a table
+cell inside a form were measured once drawing nothing (document 6, 1 of 549 edits on documents 3 and 6, 2026-10-25),
+two causes fixed since, which one it met is open (YYYYYYYY-6).
+
+**Not reproduced, recorded**: `npm run build` exited 139 twice in its nested typecheck while the typecheck alone passed
+(about 3 GB of 12 GB free, the owner's app open); and the visual config's web server once ended 0xC0000005 starting the
+gallery, which builds on its own. No mechanism found for either.
+
+---
+
 ## 2026-10-29 — Stage audit of `f1c1dc16..f32c8c39` — findings AAAAAAAAA-1 to AAAAAAAAA-33
 
 Cloud run 23's last stretch and the release: Milestones 2b and 2c of the Edit text rebuild (ADR-0271's split answer,
