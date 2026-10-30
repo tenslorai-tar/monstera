@@ -266,6 +266,24 @@ describe('text inside a form (ADR-0269)', () => {
     expect(wide.ms).toBeLessThan(1_000);
   });
 
+  // THE OWNER'S BOUNDS OF 2026-10-30 (ADR-0269's correction of that date). Eight levels placed twenty-five times is 200
+  // placements of text, which the bounds of 4 and 64 offered 64 of (measured by cloud run 27): every one is offered now.
+  it('offers every placement of an 8-level form placed 25 times, 200 in all', async () => {
+    const { read } = await formPagesOf(await formGraph(8, 1, 25));
+    expect(read.paths).toHaveLength(200);
+    expect(Math.max(...read.paths.map((path) => path.length))).toBe(8);
+    expect(read.left).toStrictEqual({ deeper: false, more: false, unnamed: false });
+  });
+
+  // PAST BOTH BOUNDS a page still offers what fits, and says both reasons: the first placement's chain runs one level
+  // past the depth, and twenty placements of seventeen levels are more than the count.
+  it('offers what fits of a page past both bounds and says the rest is not offered, for each reason', async () => {
+    const { read } = await formPagesOf(await formGraph(MAX_FORM_DEPTH + 1, 1, 20));
+    expect(read.paths).toHaveLength(MAX_FORM_PLACEMENTS);
+    expect(read.paths.every((path) => path.length <= MAX_FORM_DEPTH)).toBe(true);
+    expect(read.left).toStrictEqual({ deeper: true, more: true, unnamed: false });
+  });
+
   // A FORM ALREADY ENTERED ON ITS PATH is not entered again: its text is offered where it was first entered, so a form
   // that draws itself, or two that draw each other, end the walk and say nothing is left out. CONTROL: the second form of
   // the pair IS offered, below the first, so the guard stops at a form's second entry on one path and not its first.

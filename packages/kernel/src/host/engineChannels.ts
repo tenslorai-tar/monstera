@@ -2370,8 +2370,12 @@ export const engineChannels = {
    * ([ADR-0269](../../../../docs/DECISIONS/0269-text-inside-a-form-is-edited-in-the-forms-own-content.md) Decision 1):
    * a NEW document of one page per placement, written into the output directory as `engine/extract`'s is, and each
    * placement's path, in that document's page order. A page with none writes nothing and answers 0 bytes and no path.
+   *
+   * ITS ANSWER IS A FILE: `MAX_FORM_PLACEMENTS` paths of `MAX_FORM_DEPTH` steps, each name at its worst encoding, is
+   * past the frame and within the answer file's ceiling, which `hostRoutes.test.ts` derives from this schema
+   * (ADR-0269's correction of 2026-10-30).
    */
-  'engine/form-pages': channel(
+  'engine/form-pages': fileAnswered(
     'Writes one page’s form placements that show text, each read as a page, into the output directory.',
     z
       .object({
