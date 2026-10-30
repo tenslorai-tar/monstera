@@ -17,6 +17,8 @@ A free, open-source, professional PDF editor for Windows 10 and 11
 
 <a href="https://apps.microsoft.com/detail/9NHV3B1PV3XS"><img src="https://get.microsoft.com/images/en-us%20dark.svg" alt="Get it on Microsoft Store" width="200"></a>
 
+Looking for the code of the version you installed? Every Store version is under [Releases](https://github.com/tenslorai-tar/monstera/releases).
+
 </div>
 
 ---
