@@ -44,11 +44,21 @@ const ROOT = repoRoot();
 const REQUIRED = process.argv.includes('--require-engines');
 const PAGE_HEIGHT = 792;
 /**
- * How close a mark's end must be to the glyph's edge: a point. It was set when MuPDF's JSON wrote a line's box in whole
- * points; the box now carries hundredths (ADR-0280's fifth correction) and every case here lands within 0.01, so a
- * tighter figure is available and is a change of its own, not made here.
+ * How close a mark's end must be to the glyph's edge: a hundredth of a point, the precision the page text's boxes carry
+ * (ADR-0280's fifth correction).
+ *
+ * MEASURED, not chosen: every case prints the worst edge it saw, and on 2026-10-31 (Linux, MuPDF 1.28.0, native engine)
+ * that was 0.0000 pt across all four font kinds and all three mark types. It is exactly zero because a mark is made
+ * from MuPDF's own character quads, the same quads the glyph edges are read from: an end either IS the glyph's edge or
+ * misses a whole glyph, several points, as the held-end control below shows. A hundredth separates the two by two
+ * orders of magnitude. It was a whole point until then, set when MuPDF's JSON wrote a line's box in whole points.
  */
-const TOLERANCE = 1;
+const TOLERANCE = 0.01;
+
+/** Whether a mark's span covers its line's glyphs, first to last, within {@link TOLERANCE}: the ONE statement of it. */
+function coversGlyphs(/** @type {{ left: number, right: number }} */ span, /** @type {{ first: number, last: number }} */ edges) {
+  return Math.abs(span.left - edges.first) <= TOLERANCE && Math.abs(span.right - edges.last) <= TOLERANCE;
+}
 
 /**
  * The Times lines, shared with the rendered case: what each half builds the page from and what the rendered case
@@ -77,12 +87,13 @@ const CASES = [
   'PREMISE: the engine reads the page as the seven lines it was given, and the Times lines at the boxes and glyph edges agreement-lines.json records',
   ...KINDS.map(([, name]) => `${String(name)}: a highlight, an underline and a strikethrough from the line's box edges cover its first glyph to its last`),
   'CONTROL: the end a held selection left, inside the second to last word, marks the long line short of its last glyph',
+  'CONTROL: a real mark with one end moved just past the tolerance, either way, no longer covers its glyphs',
 ];
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 6 });
-if (CASES.length !== 6) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 6`);
+const roster = createRoster(failures, { cases: 7 });
+if (CASES.length !== 7) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 7`);
 
 /** @param {number} at @param {boolean} held @param {string} detail */
 function check(at, held, detail) {
@@ -170,6 +181,10 @@ function markedSpan(document) {
  * @param {any} kernel
  */
 async function run(kernel) {
+  /** The furthest any mark's end lands from its glyph's edge, across every kind and every type, printed with each case. */
+  const spread = { worst: 0 };
+  /** A real mark and its glyphs, for the control that moves an end just past the tolerance. */
+  const lastSeen = /** @type {{ pair: { span: { left: number, right: number }, edges: { first: number, last: number } } | null }} */ ({ pair: null });
   const bytes = await linesPdf();
   const session = await kernel.mupdfWriter.open(bytes);
   /** @type {{ text: string, box: { x0: number, y0: number, x1: number, y1: number } }[]} */
@@ -245,13 +260,19 @@ async function run(kernel) {
       }
       for (const type of ['highlight', 'underline', 'strikeout']) {
         const span = await mark(type, at, box.x0, box.x1);
-        const fits = span !== null && Math.abs(span.left - edges.first) <= TOLERANCE && Math.abs(span.right - edges.last) <= TOLERANCE;
+        const fits = span !== null && coversGlyphs(span, edges);
+        if (span !== null && edges !== undefined) lastSeen.pair = { span, edges };
+        if (span !== null) spread.worst = Math.max(spread.worst, Math.abs(span.left - edges.first), Math.abs(span.right - edges.last));
         const said = span === null ? 'nothing' : `${span.left.toFixed(2)}..${span.right.toFixed(2)}`;
         seen.push(`${type} ${said} for glyphs ${edges.first.toFixed(2)}..${edges.last.toFixed(2)}`);
         if (!fits) wrong.push(`line ${String(at)}: ${type} marked ${said}, its glyphs are ${edges.first.toFixed(2)}..${edges.last.toFixed(2)}`);
       }
     }
-    check(1 + index, wrong.length === 0 && seen.length > 0, wrong.length === 0 ? seen.join('; ') : wrong.join('; '));
+    check(
+      1 + index,
+      wrong.length === 0 && seen.length > 0,
+      `${wrong.length === 0 ? seen.join('; ') : wrong.join('; ')}; worst edge so far ${spread.worst.toFixed(4)} pt against ${String(TOLERANCE)}`,
+    );
   }
 
   // THE HELD END: the middle of *term*, the second to last word of the long line, where the last move event on the line
@@ -265,6 +286,22 @@ async function run(kernel) {
     1 + KINDS.length,
     held !== null && edges !== undefined && edges.last - held.right > TOLERANCE,
     held === null || edges === undefined ? 'nothing was marked' : `marked to ${held.right.toFixed(2)}, its last glyph ends at ${edges.last.toFixed(2)}`,
+  );
+
+  // JUST PAST THE TOLERANCE, through the same predicate the cases above use: a real span that covers its glyphs, with
+  // one end moved by one and a half tolerances inward and then outward, must cover them in neither case.
+  const real = lastSeen.pair;
+  const past = TOLERANCE * 1.5;
+  const moved = real === null ? [] : [
+    { left: real.span.left + past, right: real.span.right },
+    { left: real.span.left - past, right: real.span.right },
+    { left: real.span.left, right: real.span.right - past },
+    { left: real.span.left, right: real.span.right + past },
+  ];
+  check(
+    2 + KINDS.length,
+    real !== null && coversGlyphs(real.span, real.edges) && moved.every((span) => !coversGlyphs(span, real.edges)),
+    real === null ? 'no mark was seen' : `each end moved by ${past.toFixed(3)} pt, both ways, is refused; the unmoved span is accepted`,
   );
 }
 
