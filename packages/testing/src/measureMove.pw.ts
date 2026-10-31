@@ -55,9 +55,14 @@ interface Frame {
   readonly caption: boolean;
 }
 
-/** Starts reading every frame: the page's mark at `at`, in PDF space, and what the overlay draws. */
+/**
+ * Starts reading every frame: the page's mark at `at`, in PDF space, and what the overlay draws. Answers once the FIRST
+ * frame has been read, so the press that follows has a frame before it: a press is dispatched when it arrives, not at a
+ * frame, and this browser runs frames as much as 250 ms apart while nothing animates (`markLook.pw.ts`, measured
+ * 2026-10-21), so returning at once let a press land before any frame on main's push run of 7263803b (41155774608).
+ */
 async function sample(page: Page, at: { x: number; y: number }): Promise<void> {
-  await page.evaluate((point) => {
+  await page.evaluate((point) => new Promise<void>((firstRead) => {
     const frames: Frame[] = [];
     const inputs: Record<string, number> = {};
     for (const kind of ['pointerdown', 'pointerup']) {
@@ -88,6 +93,7 @@ async function sample(page: Page, at: { x: number; y: number }): Promise<void> {
       const held = document.querySelectorAll('[data-mark-looks] [data-mark-look="poly"]').length;
       const caption = document.querySelector('[data-annotation-caption], [data-mark-look="caption"]') !== null;
       frames.push({ t: performance.now(), mark, moving, held, caption });
+      if (frames.length === 1) firstRead();
       requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
@@ -97,7 +103,7 @@ async function sample(page: Page, at: { x: number; y: number }): Promise<void> {
         return { frames, inputs };
       },
     });
-  }, at);
+  }), at);
 }
 
 async function stop(page: Page): Promise<{ frames: Frame[]; pressed: number; released: number }> {
