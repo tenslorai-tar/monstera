@@ -174,6 +174,9 @@ async function joined(
       pageText: () => {
         throw new Error('a field read must not read the page text');
       },
+      pageTextLetters: () => {
+        throw new Error('a field read must not read the page text layer');
+      },
       pageLinks: () => {
         throw new Error('a field read must not read the page links');
       },

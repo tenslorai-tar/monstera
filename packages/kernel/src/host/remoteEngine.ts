@@ -34,7 +34,7 @@ import {
 } from './engineChannels.js';
 import { hostRefusalFor } from './hostRefusals.js';
 import type { BoundedPageText } from './pageTextBound.js';
-import { EngineSerialiseMismatch, type SessionAreaSurface } from './remoteLifecycle.js';
+import { EngineSerialiseMismatch, type SessionAreaSurface, takeAnnounced } from './remoteLifecycle.js';
 import type {
   HostDestinationsReader,
   HostAnnotationsReader,
@@ -365,6 +365,57 @@ export function remoteMupdfPageText(
       await client['engine/page-text']({ session: sessions.handleFor(session), page, read }),
     );
 }
+
+/**
+ * THE TEXT LAYER'S READ over the boundary: one page's substrate JSON and its letters
+ * ([ADR-0280](../../../../docs/DECISIONS/0280-the-text-layer-places-each-letter-where-the-engine-reads-it.md), its
+ * second and fourth corrections).
+ *
+ * The round trip every file beside an answer takes: a name minted here, the channel told to write the letters there,
+ * and the file taken back held to exactly the count the host announced (`takeAnnounced`), which reads it and removes
+ * it. ON EVERY OTHER PATH IT IS REMOVED HERE: a call that fails or a host that ends mid-answer may have written it
+ * before the answer was lost, an answer that names no letters leaves a file nobody would take, and a file of another
+ * size is refused unread. `removeOutput` never throws on absence, so removing what was never written costs nothing.
+ *
+ * An answer with no letters is not an error: the host is hostile by invariant 25, and the page is placed as today.
+ */
+export function remoteMupdfPageTextLayer(
+  client: ClientApi<EngineChannels>,
+  sessions: RemoteSessions,
+  areas: Pick<SessionAreaSurface, 'mintName' | 'takeOutput' | 'removeOutput'>,
+): RemotePageTextLayerReader {
+  return async (session, page) => {
+    const area = sessions.areaFor(session);
+    const into = areas.mintName();
+    let answer: BoundedPageText & { readonly letters?: { readonly bytes: number; readonly walked: number } };
+    try {
+      answer = answered(
+        'engine/page-text',
+        await client['engine/page-text']({ session: sessions.handleFor(session), page, read: 'substrate', letters: into }),
+      );
+    } catch (error) {
+      await areas.removeOutput(area, into);
+      throw error;
+    }
+    const { letters, ...text } = answer;
+    if (letters === undefined) {
+      await areas.removeOutput(area, into);
+      return { ...text, letters: null };
+    }
+    try {
+      return { ...text, letters: { bytes: await takeAnnounced(areas, area, into, letters.bytes), walked: letters.walked } };
+    } catch (error) {
+      await areas.removeOutput(area, into);
+      throw error;
+    }
+  };
+}
+
+/** The text layer's read as the host answered it: the page's text, and its letters where the host wrote them. */
+export type RemotePageTextLayerReader = (
+  session: Parameters<HostPageTextReader>[0],
+  page: number,
+) => Promise<BoundedPageText & { readonly letters: { readonly bytes: Uint8Array; readonly walked: number } | null }>;
 
 /**
  * One page's text as the host answered it: MuPDF's JSON, and whether it is the part of the page one answer carries

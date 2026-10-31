@@ -45,6 +45,7 @@ function hostAnswering(drawn: DrawnBoxes) {
       probe: refuse('probe containment'),
       geometry: refuse('read the page tree'),
       pageText: refuse('read the page text'),
+      pageTextLetters: refuse('read the page text layer'),
       pageLinks: refuse('read the page links'),
       linkAddress: refuse('read a link address'),
       pageFills: refuse('read the page fills'),

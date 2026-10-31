@@ -256,6 +256,9 @@ function joined(
       pageText: () => {
         throw new Error('the lifecycle half must not read page text');
       },
+      pageTextLetters: () => {
+        throw new Error('the lifecycle half must not read the page text layer');
+      },
       pageLinks: () => {
         throw new Error('the lifecycle half must not read page links');
       },
@@ -705,6 +708,9 @@ describe('remoteMupdfLifecycle', () => {
         },
         pageText: () => {
           throw new Error('the byte-size case must not read page text');
+        },
+        pageTextLetters: () => {
+          throw new Error('the byte-size case must not read the page text layer');
         },
         pageLinks: () => {
           throw new Error('the byte-size case must not read page links');

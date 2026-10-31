@@ -134,6 +134,7 @@ import {
   BLOCK_FACE_TEXT_MAX,
   FACE_STYLES,
 } from '../blockFaceAnswer.js';
+import { LETTERS_FILE_MAX_BYTES } from '../textLetters.js';
 import { PAGE_TEXT_READS } from '../textStructure.js';
 import { PROBE_CODE_MAX_CHARS, PROBE_CODE_PATTERN } from './containment.js';
 import { pageRunsSchema } from './pageRunsWire.js';
@@ -2647,22 +2648,39 @@ export const engineChannels = {
    */
   'engine/page-text': fileAnswered(
     'Reads one page’s structured text from a session this host holds.',
-    z
-      .object({
-        session: sessionSchema,
-        /** Zero-based index, as `commands.ts` declares them. */
-        page: z.number().int().nonnegative(),
-        /**
-         * WHICH READ, by name
-         * ([ADR-0065](../../../../docs/DECISIONS/0065-a-tagged-documents-structure-is-the-engines-read-on-its-own-request.md)).
-         * A closed set and never an option string: the host composes the options
-         * from the name, so a request cannot choose what `fz_parse_stext_options`
-         * is handed. Required rather than defaulted, so every caller names the read
-         * it means and the substrate's is not the one a forgotten field gets.
-         */
-        read: z.enum(PAGE_TEXT_READS),
-      })
-      .strict(),
+    z.union([
+      z
+        .object({
+          session: sessionSchema,
+          /** Zero-based index, as `commands.ts` declares them. */
+          page: z.number().int().nonnegative(),
+          /**
+           * WHICH READ, by name
+           * ([ADR-0065](../../../../docs/DECISIONS/0065-a-tagged-documents-structure-is-the-engines-read-on-its-own-request.md)).
+           * A closed set and never an option string: the host composes the options
+           * from the name, so a request cannot choose what `fz_parse_stext_options`
+           * is handed. Required rather than defaulted, so every caller names the read
+           * it means and the substrate's is not the one a forgotten field gets.
+           */
+          read: z.enum(PAGE_TEXT_READS),
+        })
+        .strict(),
+      /**
+       * THE TEXT LAYER'S READ: the substrate's JSON AND, from the same structured text, the page's letters
+       * ([ADR-0280](../../../../docs/DECISIONS/0280-the-text-layer-places-each-letter-where-the-engine-reads-it.md), its
+       * second and fourth corrections), written into `letters` in the output directory, a name main chose, through the
+       * one mechanism every file beside an answer takes. Only the substrate read can name one: the union cannot carry
+       * letters beside another read, so no request asks a question the host would have to refuse.
+       */
+      z
+        .object({
+          session: sessionSchema,
+          page: z.number().int().nonnegative(),
+          read: z.literal('substrate'),
+          letters: outputNameSchema,
+        })
+        .strict(),
+    ]),
     z
       .object({
         /**
@@ -2679,6 +2697,18 @@ export const engineChannels = {
          * (`pageTextBound.ts`): a page past the bound is answered in part and says so, never refused.
          */
         truncated: z.boolean(),
+        /**
+         * THE LETTERS' FILE, where the request named one: how many bytes the host wrote, which main takes the file held
+         * to before reading a byte, at most `LETTERS_FILE_MAX_BYTES`; and how many text lines its walk gave, which main
+         * compares with the JSON's line count (`pageLetters`). Absent where no file was named.
+         */
+        letters: z
+          .object({
+            bytes: z.number().int().nonnegative().max(LETTERS_FILE_MAX_BYTES),
+            walked: z.number().int().nonnegative(),
+          })
+          .strict()
+          .exactOptional(),
       })
       .strict(),
     ['no-such-session'],

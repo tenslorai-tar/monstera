@@ -4,6 +4,8 @@ import { PDFDocument as PdfLibDocument, StandardFonts, degrees } from '@cantoo/p
 import { MAX_TEXT_LAYER_LINE, MAX_TEXT_LAYER_LINES } from '@monstera/contract/host';
 import { describe, expect, it, vi } from 'vitest';
 
+import { ANSWER_ENVELOPE_ROOM } from './host/answerFit.js';
+import { boundPageText } from './host/pageTextBound.js';
 import { structuredTextLetters } from './mupdfRaw.js';
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
 import { STRUCTURED_BUILDS, readPageTextJson, readPageTextWithLetters } from './pageText.js';
@@ -198,7 +200,7 @@ describe('the shim writes each page’s letters from the JSON’s own structured
         // THE SAME JSON, byte for byte: every line's text, order and box are today's.
         expect(read.json, name).toBe(read.today);
         const notes: string[] = [];
-        const letters = pageLetters(read.letters, read.texts, { page: 0, walked: read.walked, json: read.jsonLines }, (entry) => notes.push(entry));
+        const letters = pageLetters(read.letters, read.texts, { page: 0, walked: read.walked, json: read.jsonLines, truncated: false }, (entry) => notes.push(entry));
         tally.lines += read.texts.length;
         tally.paired += letters.filter((line) => line !== undefined).length;
         tally.fellBack += letters.filter((line) => line === undefined).length;
@@ -232,7 +234,7 @@ describe('the shim writes each page’s letters from the JSON’s own structured
       });
       const [read] = await readEvery(await document.save());
       if (read === undefined) throw new Error('no page');
-      const letters = pageLetters(read.letters, read.texts, { page: 0, walked: read.walked, json: read.jsonLines }, () => undefined);
+      const letters = pageLetters(read.letters, read.texts, { page: 0, walked: read.walked, json: read.jsonLines, truncated: false }, () => undefined);
       let worst = 0;
       read.texts.forEach((text, at) => {
         const got = places(letters[at]?.advances ?? []);
@@ -257,7 +259,7 @@ describe('the shim writes each page’s letters from the JSON’s own structured
       const { bytes, widthOf } = await timesPage(0, angle, standard);
       const [read] = await readEvery(bytes);
       if (read === undefined) throw new Error('no page');
-      const letters = pageLetters(read.letters, read.texts, { page: 0, walked: read.walked, json: read.jsonLines }, () => undefined);
+      const letters = pageLetters(read.letters, read.texts, { page: 0, walked: read.walked, json: read.jsonLines, truncated: false }, () => undefined);
       read.texts.forEach((text, at) => {
         const line = letters[at];
         if (line === undefined) throw new Error(`line ${String(at)} fell back`);
@@ -280,7 +282,7 @@ describe('the shim writes each page’s letters from the JSON’s own structured
     const [read] = await readEvery(emojiPage());
     if (read === undefined) throw new Error('no page');
     expect(read.texts).toStrictEqual(['A\u{1F600}A']);
-    const letters = pageLetters(read.letters, read.texts, { page: 0, walked: read.walked, json: read.jsonLines }, () => undefined);
+    const letters = pageLetters(read.letters, read.texts, { page: 0, walked: read.walked, json: read.jsonLines, truncated: false }, () => undefined);
     expect(letters[0]?.advances).toHaveLength(4);
     expect(letters[0]?.advances[2]).toBe(0);
   });
@@ -361,7 +363,7 @@ describe('the line-count comparison (ADR-0280’s fourth correction)', () => {
 
   it('uses the letters where the walk and the JSON count the same lines', () => {
     const notes: string[] = [];
-    const letters = pageLetters(bytes, ['one', 'two'], { page: 2, walked: 2, json: 2 }, (entry) => notes.push(entry));
+    const letters = pageLetters(bytes, ['one', 'two'], { page: 2, walked: 2, json: 2, truncated: false }, (entry) => notes.push(entry));
     expect(letters.map((each) => each?.advances)).toStrictEqual([
       [500, 500, 500],
       [500, 500, 500],
@@ -371,7 +373,7 @@ describe('the line-count comparison (ADR-0280’s fourth correction)', () => {
 
   it('places every line as today and logs an engine change where the walk gave one line fewer than the JSON', () => {
     const notes: string[] = [];
-    const letters = pageLetters(bytes, ['one', 'two'], { page: 2, walked: 2, json: 3 }, (entry) => notes.push(entry));
+    const letters = pageLetters(bytes, ['one', 'two'], { page: 2, walked: 2, json: 3, truncated: false }, (entry) => notes.push(entry));
     expect(letters).toStrictEqual([undefined, undefined]);
     expect(notes).toStrictEqual(["engine change: page 3's text has 3 lines and the letters' walk gave 2; the page's letters are placed as before"]);
     // CONTROL: without the comparison — the file read on its own — the same lines would have been used, so the fallback
@@ -379,6 +381,46 @@ describe('the line-count comparison (ADR-0280’s fourth correction)', () => {
     const alone = readLetters(bytes, ['one', 'two']);
     if (!('lines' in alone)) throw new Error('refused');
     expect(alone.lines.every((each) => each !== undefined)).toBe(true);
+  });
+
+  /**
+   * A PAGE WHOSE JSON WAS CUT (`pageTextBound.ts`): the JSON keeps a prefix of the page's lines, while the walk covered
+   * every line it could, so the two counts can never be equal. A real page, read as the host reads it, cut by the real
+   * bound at a ceiling half the JSON's written size.
+   */
+  async function cutPage(): Promise<{ letters: Uint8Array; walked: number; texts: string[] }> {
+    const document = await PdfLibDocument.create();
+    const page = document.addPage([612, 792]);
+    const font = await document.embedFont(StandardFonts.TimesRoman);
+    for (let row = 0; row < 40; row += 1) page.drawText(`Line ${String(row + 1)} of a page whose text is cut.`, { x: 72, y: 760 - row * 18, size: 10, font });
+    const session = await mupdfWriter.open(await document.save());
+    try {
+      const { json, letters, walked } = await readPageTextWithLetters(session, 0);
+      const cut = boundPageText(json, ANSWER_ENVELOPE_ROOM + Buffer.byteLength(JSON.stringify(json), 'utf8') / 2);
+      if (!cut.truncated) throw new Error('the fixture was not cut, so it could not show a cut page');
+      const texts = linesOf(parsePageText(cut.json)).map((kept) => kept.text);
+      return { letters, walked, texts };
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  }
+
+  it('uses the letters of a page whose JSON was cut, comparing the walk with the lines the JSON KEPT', async () => {
+    const { letters, walked, texts } = await cutPage();
+    expect(texts.length).toBeLessThan(walked);
+    const notes: string[] = [];
+    const placed = pageLetters(letters, texts, { page: 0, walked, json: texts.length, truncated: true }, (entry) => notes.push(entry));
+    expect(notes).toStrictEqual([]);
+    expect(placed.every((each) => each !== undefined)).toBe(true);
+  });
+
+  it('CONTROL: a page whose JSON was cut and whose walk really is short still falls back and logs', async () => {
+    const { letters, texts } = await cutPage();
+    const notes: string[] = [];
+    const placed = pageLetters(letters, texts, { page: 0, walked: texts.length - 1, json: texts.length, truncated: true }, (entry) => notes.push(entry));
+    expect(placed.every((each) => each === undefined)).toBe(true);
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toMatch(/^engine change: page 1's text has/u);
   });
 });
 

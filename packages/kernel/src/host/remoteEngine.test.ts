@@ -53,7 +53,7 @@ import { readScanTables } from '../scanTables.js';
 import { readPageAdjustment } from '../pageAdjustment.js';
 import { readPageWordBoxes } from '../wordBoxes.js';
 import { readLinkAddress, readPageLinks } from '../pageLinks.js';
-import { readPageTextJson } from '../pageText.js';
+import { readPageTextJson, readPageTextWithLetters } from '../pageText.js';
 import { withCellFills } from '../cellFills.js';
 import { linesOf, parsePageStructure, parsePageTables, parsePageText } from '../textStructure.js';
 import { composeWordDocument } from '../wordPictures.js';
@@ -351,6 +351,7 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
       // THE REAL READER for the same reason, so the text case below is about
       // what the HOST's document says rather than what a stub was told to say.
       pageText: readPageTextJson,
+      pageTextLetters: readPageTextWithLetters,
       pageLinks: readPageLinks,
       linkAddress: readLinkAddress,
       pageFills: readPageFills,
@@ -962,6 +963,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         pageText: () => {
           throw new Error('unused');
         },
+        pageTextLetters: () => {
+          throw new Error('unused');
+        },
         pageLinks: () => {
           throw new Error('unused');
         },
@@ -1149,6 +1153,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
           }),
         pageText: () => {
           throw new Error('the rotation-refusal case must not read page text');
+        },
+        pageTextLetters: () => {
+          throw new Error('the rotation-refusal case must not read the page text layer');
         },
         pageLinks: () => {
           throw new Error('the rotation-refusal case must not read page links');

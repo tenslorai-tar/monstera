@@ -137,6 +137,9 @@ async function joined(ocr: HostOcrReader): Promise<{
       pageText: () => {
         throw new Error('a recognition must not read the page text');
       },
+      pageTextLetters: () => {
+        throw new Error('a recognition must not read the page text layer');
+      },
       pageLinks: () => {
         throw new Error('a recognition must not read the page links');
       },

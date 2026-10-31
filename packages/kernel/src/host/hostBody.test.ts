@@ -143,6 +143,9 @@ function start(stream: HostByteStream) {
     pageText: () => {
       throw new Error('no case here reads page text');
     },
+    pageTextLetters: () => {
+      throw new Error('no case here reads the page text layer');
+    },
     pageLinks: () => {
       throw new Error('no case here reads page links');
     },

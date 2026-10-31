@@ -107,6 +107,15 @@ export type HostPageTextReader = (
 ) => Promise<string>;
 
 /**
+ * The text layer's read: the substrate's JSON and the page's letters from ONE structured text, and how many text lines
+ * the letters' walk gave (`readPageTextWithLetters`). Injected for {@link HostPageTextReader}'s reason.
+ */
+export type HostPageTextLettersReader = (
+  session: MupdfSession,
+  page: number,
+) => Promise<{ readonly json: string; readonly letters: Uint8Array; readonly walked: number }>;
+
+/**
  * Reads one page's links.
  *
  * Injected for `HostPageTextReader`'s reason: the handler proof drives this
@@ -558,6 +567,8 @@ export interface EngineHandlerParts {
   readonly probe: HostContainmentProbe;
   readonly geometry: PageGeometryReader;
   readonly pageText: HostPageTextReader;
+  /** The text layer's read, JSON and letters together. `readPageTextWithLetters`. */
+  readonly pageTextLetters: HostPageTextLettersReader;
   readonly pageLinks: HostPageLinksReader;
   /** One link's whole address, for a person following it. `engine/link-address`. */
   readonly linkAddress: HostLinkAddressReader;
@@ -661,6 +672,7 @@ export function createEngineHandlers({
   probe,
   geometry,
   pageText,
+  pageTextLetters,
   pageLinks,
   linkAddress,
   pageFills,
@@ -1034,9 +1046,17 @@ export function createEngineHandlers({
       return { ok: true, value: await geometry(held.session, pages) };
     },
 
-    'engine/page-text': async ({ session, page, read }) => {
+    'engine/page-text': async (request) => {
+      const { session, page, read } = request;
       const held = sessions.lookup(session);
       if (held === undefined) return gone;
+      // THE TEXT LAYER'S READ: one structured text gives the JSON and the letters, and the letters go into the file main
+      // named, through the output directory's one writer; the answer carries the count main takes it held to.
+      if ('letters' in request) {
+        const layer = await pageTextLetters(held.session, page);
+        const bytes = await files.writeOutput(held.outputDirectory, request.letters, layer.letters);
+        return { ok: true, value: { ...boundPageText(layer.json), letters: { bytes, walked: layer.walked } } };
+      }
       // NO try/catch, for `engine/page-geometry`'s reason: a text read of a
       // document the adapter already parsed either works or is a defect,
       // including a page index outside it.

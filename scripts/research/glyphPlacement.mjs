@@ -351,7 +351,7 @@ async function engineLetters(bytes) {
     const { json, letters, walked } = await readPageTextWithLetters(session, 0);
     const lines = linesOf(parsePageText(json));
     const texts = lines.slice(0, MAX_TEXT_LAYER_LINES).map((line) => line.text.slice(0, MAX_TEXT_LAYER_LINE));
-    const placedLines = pageLetters(letters, texts, { page: 0, walked, json: lines.length }, () => undefined);
+    const placedLines = pageLetters(letters, texts, { page: 0, walked, json: lines.length, truncated: false }, () => undefined);
     /** @type {Letter[]} */
     const placed = [];
     let fellBack = 0;

@@ -175,10 +175,13 @@ export function readLetters(bytes: Uint8Array, texts: readonly string[]): { read
 export function pageLetters(
   bytes: Uint8Array,
   texts: readonly string[],
-  counts: { readonly page: number; readonly walked: number; readonly json: number },
+  counts: { readonly page: number; readonly walked: number; readonly json: number; readonly truncated: boolean },
   noted: (entry: string) => void,
 ): readonly (LineLetters | undefined)[] {
-  if (counts.walked !== counts.json) {
+  // A JSON CUT AT THE ANSWER'S BOUND (`pageTextBound.ts`) holds a prefix of the page's lines while the walk covered the
+  // whole page, so the two can never be equal: the walk must then cover AT LEAST the lines the JSON kept. Compared with
+  // the whole page, every cut page would log a false engine change and lose its letters.
+  if (counts.truncated ? counts.walked < counts.json : counts.walked !== counts.json) {
     noted(`engine change: page ${String(counts.page + 1)}'s text has ${String(counts.json)} lines and the letters' walk gave ${String(counts.walked)}; the page's letters are placed as before`);
     return texts.map(() => undefined);
   }

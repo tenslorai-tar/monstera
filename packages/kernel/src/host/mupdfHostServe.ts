@@ -38,7 +38,7 @@ import { readTextFaces } from '../textFaces.js';
 import { readBlockFaces } from '../blockFaces.js';
 import { readPageWordBoxes } from '../wordBoxes.js';
 import { readLinkAddress, readPageLinks } from '../pageLinks.js';
-import { readPageTextJson } from '../pageText.js';
+import { readPageTextJson, readPageTextWithLetters } from '../pageText.js';
 import { cryptoBytes } from '../token.js';
 import { probeContainment } from './containment.js';
 import { engineChannels } from './engineChannels.js';
@@ -95,6 +95,8 @@ const engineHandlers = createEngineHandlers({
   // format, and re-serialising a parsed shape here would be a second format for
   // the same answer. The Word export below calls that same reader in this process.
   pageText: readPageTextJson,
+  // THE TEXT LAYER'S READ, JSON and letters from one structured text (ADR-0280's fourth correction).
+  pageTextLetters: readPageTextWithLetters,
   pageLinks: readPageLinks,
   linkAddress: readLinkAddress,
   pageFills: readPageFills,

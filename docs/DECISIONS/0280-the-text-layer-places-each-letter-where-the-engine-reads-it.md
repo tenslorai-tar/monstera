@@ -253,3 +253,24 @@ do that. It changes how many digits the serialiser keeps, not which space a numb
 page's display space, in points, and they leave `textStructure.ts` in exactly the units they did before, because the
 one reader that receives the scaled integers is the one that divides. No consumer ever sees a scaled number, and no
 zoom, device pixel ratio or render scale enters the path. The note is amended to say so where it stands.
+
+## Correction, 2026-10-31 — a cut page's lines are counted against what the JSON kept
+
+**Built by cloud run 30's step 4, the letters' file wired into `engine/page-text` as the second correction decided.**
+
+**The fourth correction's count check was wrong on a page whose JSON was cut.** `pageTextBound.ts` answers a page past
+one answer's ceiling with a prefix of its lines and `truncated`, while the letters' walk covers the whole page, so the
+JSON's line count and the walk's could never be equal there: every cut page would have logged an engine change that did
+not happen and lost its letters. Found while designing the wiring, before any build; a case on a real page cut by the
+real bound shows the false entry on the fourth correction's rule and none on this one.
+
+**The rule:** on a whole page the walk must give exactly the JSON's line count, as before; on a cut page it must give
+AT LEAST the lines the JSON kept. A cut page whose walk falls short of what was kept still places every line as today
+and logs the engine change, and a control holds that.
+
+**The fifth correction's cost on the densest page, stated as the owner asked:** asking for the JSON at
+`PAGE_TEXT_SCALE` made it about 6% larger (7,051,845 to 7,483,075 bytes on textWalk's L6 page, a stress fixture of
+39,201 lines), so that page, already cut at the answer's 8 MiB ceiling, keeps 36,014 lines where it kept 37,800. A
+normal page is about 13 KB and is not cut. Accepted by the owner, 2026-10-31; `ENGINE_PAGE_TEXT_MAX_BYTES`' own trigger
+stands, and the first real page cut is the evidence to look at the bound again.
+
