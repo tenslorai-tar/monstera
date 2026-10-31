@@ -25,8 +25,24 @@ interface Fixture {
 }
 const FILE = JSON.parse(readFileSync(new URL('../fixtures/text-markup/agreement-lines.json', import.meta.url), 'utf8')) as Fixture;
 
-type Kind = 'span' | 'svg';
-const KINDS: readonly Kind[] = ['span', 'svg'];
+type Kind = 'span' | 'svg' | 'A' | 'B';
+/** Run 29 measured `span,svg`; run 29b measures `span,A,B` (`TRIAL_KINDS`). */
+const KINDS = (process.env['TRIAL_KINDS'] ?? 'span,svg').split(',') as readonly Kind[];
+
+/**
+ * THE TRIAL'S OWN STYLE, beside the shipped stylesheets: run 29b's paint (the shipped `::selection`'s colour, the
+ * system's highlight in forced colours), the browser's own highlight made transparent on both candidates' lines, and
+ * the SVG placed over the page. Here rather than in the components, where a style string would be a JSX literal.
+ */
+const TRIAL_CSS = `
+.m-trial-paints { position: absolute; inset: 0; pointer-events: none; }
+.m-trial-paint { position: absolute; background: color-mix(in srgb, var(--accent) 35%, transparent); }
+@media (forced-colors: active) { .m-trial-paint { background: color-mix(in srgb, Highlight 45%, transparent); forced-color-adjust: none; } }
+.trial-kind-A .m-text-line::selection { background: transparent; }
+.m-trial-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.m-trial-svg-line { fill: transparent; white-space: pre; }
+.m-trial-svg-line::selection { background: transparent; fill: transparent; }
+`;
 /** `null` is the application's own face (`--font-ui`, which on Linux falls through to the system face). */
 const FAMILIES = [null, 'serif', 'sans-serif'] as const;
 
@@ -57,8 +73,8 @@ function pdfLines(): { text: string; baseline: number; xs: number[]; box: { x0: 
 }
 
 async function open(page: Page, kind: Kind, family: string | null, rotation = 0, zoom = 1.5, pages: readonly unknown[] | null = null): Promise<void> {
-  await page.setContent(`<!doctype html><html><head><style>${CSS}</style></head><body style="margin:0;padding:24px"><div id="root"></div></body></html>`);
-  if (family !== null) await page.addStyleTag({ content: `.m-text-line, .m-svg-text-line { font-family: ${family} !important; }` });
+  await page.setContent(`<!doctype html><html><head><style>${CSS}${TRIAL_CSS}</style></head><body style="margin:0;padding:24px"><div id="root"></div></body></html>`);
+  if (family !== null) await page.addStyleTag({ content: `.m-text-line, .m-svg-text-line, .m-trial-svg-line { font-family: ${family} !important; }` });
   await page.addScriptTag({ path: HARNESS });
   await page.evaluate(
     (spec) => {
@@ -72,6 +88,27 @@ async function open(page: Page, kind: Kind, family: string | null, rotation = 0,
 /** A PDF point on page 0, in window pixels. */
 async function at(page: Page, x: number, y: number): Promise<{ x: number; y: number }> {
   return page.evaluate(([px, py]) => (globalThis as unknown as { trial: { point: (a: number, x: number, y: number) => { x: number; y: number } } }).trial.point(0, px, py), [x, y] as const);
+}
+
+/**
+ * A PRESS at `point`, then its anchor is read. Run 29 clicked (`TRIAL_PRESS` unset): the caret a click leaves is the
+ * browser's, since `holdAnchorAtPress` anchors only on the first drag event. Run 29b presses and DRAGS 60 px across in
+ * four moves (`TRIAL_PRESS=drag`), so the anchor read is the one a drag starts from — what each layer's press rule owns.
+ */
+async function press(page: Page, point: { x: number; y: number }): Promise<void> {
+  if (process.env['TRIAL_PRESS'] !== 'drag') {
+    await page.mouse.click(point.x, point.y);
+    return;
+  }
+  // NOTHING SELECTED BEFORE THE PRESS: a press inside the last drag's selection starts the browser's drag of selected
+  // text, which moves no anchor — and read as a press 10 letters out on every layer (measured 2026-10-31, then fixed).
+  await page.evaluate(() => {
+    document.getSelection()?.removeAllRanges();
+  });
+  await page.mouse.move(point.x, point.y);
+  await page.mouse.down();
+  await page.mouse.move(point.x + 60, point.y, { steps: 4 });
+  await page.mouse.up();
 }
 
 /** Where the selection's anchor is: the line's index and the offset in it. */
@@ -121,7 +158,7 @@ for (const kind of KINDS) {
           if (line.text[k] === ' ') continue;
           const next = line.xs[k + 1] ?? FILE.x + widthOf(line.text);
           const point = await at(page, x + (next - x) * 0.3, line.baseline + FILE.size * 0.3);
-          await page.mouse.click(point.x, point.y);
+          await press(page, point);
           const caret = await anchor(page);
           presses += 1;
           const off = caret?.line !== index ? Infinity : caret.offset - k;
@@ -165,7 +202,7 @@ for (const kind of KINDS) {
         for (const [k] of line.xs.entries()) {
           if (line.text[k] === ' ' || line.text[k + 1] === undefined) continue;
           const point = await letterAt(page, index, k, 0.7);
-          await page.mouse.click(point.x, point.y);
+          await press(page, point);
           const caret = await anchor(page);
           presses += 1;
           if (caret?.line !== index || caret.offset !== k + 1) wrong += 1;
@@ -214,7 +251,7 @@ for (const kind of KINDS) {
           for (let step = 0; step < 9; step += 1) {
             const mid = (lo + hi) / 2;
             const point = await at(page, mid, line.baseline + FILE.size * 0.3);
-            await page.mouse.click(point.x, point.y);
+            await press(page, point);
             const caret = await anchor(page);
             if (caret !== null && caret.line === index && caret.offset > k) hi = mid;
             else lo = mid;
@@ -270,7 +307,7 @@ for (const kind of KINDS) {
     await page.setViewportSize({ width: 1400, height: 1000 });
     const cdp = await page.context().newCDPSession(page);
     await cdp.send('Performance.enable');
-    await page.setContent(`<!doctype html><html><head><style>${CSS}</style></head><body style="margin:0;padding:24px"><div id="root"></div></body></html>`);
+    await page.setContent(`<!doctype html><html><head><style>${CSS}${TRIAL_CSS}</style></head><body style="margin:0;padding:24px"><div id="root"></div></body></html>`);
     await page.addScriptTag({ path: HARNESS });
     const pages = Array.from({ length: 300 }, densePage);
     // RENDER (React, the conversions and the attributes) and LAYOUT (forced by reading a letter's box) timed apart.
@@ -336,7 +373,7 @@ for (const kind of KINDS) {
 // letter-spacing (natural advance read from layout, then the difference added), the line at its box, glyph-sized. Plain
 // DOM with none of the application's rules, which assume one text node per line, so this measures the platform alone.
 async function openLetters(page: Page, pages: readonly ReturnType<typeof densePage>[], family: string | null): Promise<{ render: number; layout: number }> {
-  await page.setContent(`<!doctype html><html><head><style>${CSS}</style></head><body style="margin:0;padding:24px"><div id="root"></div></body></html>`);
+  await page.setContent(`<!doctype html><html><head><style>${CSS}${TRIAL_CSS}</style></head><body style="margin:0;padding:24px"><div id="root"></div></body></html>`);
   if (family !== null) await page.addStyleTag({ content: `.trial-letter-line { font-family: ${family} !important; }` });
   return page.evaluate(
     ({ pages: all, zoom, height }) => {
@@ -441,6 +478,227 @@ test('route (a) raw: flips, highlight and cost of per-letter cells', async ({ pa
   rows['cost'] = { ...timing, elements: await page.evaluate(() => document.querySelectorAll('*').length), jsHeapMiB: Math.round((metrics.find((m) => m.name === 'JSHeapUsedSize')?.value ?? 0) / 1048576) };
   record(rows);
 });
+
+// RUN 29b: DOES OWNING THE MOVING END FIGHT CHROMIUM'S DRAG? Four drags on line 0, each ending inside a letter at 70%,
+// whose right end the rule says is AFTER that letter: the final selection's text, the corrections the rule made, and
+// whether the anchor stayed at the press. Fast is one move; slow is sixty; across a line end and back leaves the line
+// past its end and returns; off the page and back leaves the page entirely.
+for (const kind of KINDS) {
+  test(`drags: ${kind}`, async ({ page }) => {
+    await open(page, kind, null);
+    const first = pdfLines()[0];
+    if (first === undefined) throw new Error('fixture');
+    const from = 5;
+    const to = 41;
+    const start = await letterAt(page, 0, from, 0.25);
+    const end = await letterAt(page, 0, to, 0.7);
+    const pastEnd = await at(page, first.box.x1 + 30, first.baseline + FILE.size * 0.3);
+    const offPage = { x: 4, y: 4 };
+    const rows: Record<string, unknown> = { measure: 'drags', kind, expected: first.text.slice(from, to + 1) };
+    for (const [name, route] of [
+      ['fast', [end]],
+      ['slow', [end]],
+      ['acrossEndAndBack', [pastEnd, end]],
+      ['offPageAndBack', [offPage, end]],
+    ] as const) {
+      await page.evaluate(() => {
+        (globalThis as unknown as { trial: { movingEnd: { corrections: number } } }).trial.movingEnd.corrections = 0;
+      });
+      await page.mouse.move(start.x, start.y);
+      await page.mouse.down();
+      for (const point of route) await page.mouse.move(point.x, point.y, { steps: name === 'fast' ? 1 : name === 'slow' ? 60 : 12 });
+      await page.mouse.up();
+      const state = await page.evaluate((which) => {
+        const trial = (globalThis as unknown as { trial: { read: (k: string) => { text: string } | undefined; movingEnd: { corrections: number } } }).trial;
+        const selection = document.getSelection();
+        return { text: trial.read(which)?.text ?? null, anchor: selection?.anchorOffset ?? null, corrections: trial.movingEnd.corrections };
+      }, kind);
+      rows[name] = state;
+    }
+    record(rows);
+  });
+}
+
+// RUN 29b: ONE RESOLVER (B3a). The painted look and the words must both come from the Selection's range. A selection
+// set by script — no pointer moved — is the case where a painter that read anything else (here, the pointer, by the
+// trial's `BREAK.painter` mutation) would paint one thing while the copy says another.
+for (const kind of KINDS.filter((each) => each === 'A' || each === 'B')) {
+  test(`one resolver: ${kind}`, async ({ page }) => {
+    await open(page, kind, null);
+    const rows: Record<string, unknown> = { measure: 'one-resolver', kind };
+    for (const broken of [false, true]) {
+      // A DRAG FIRST, so the broken painter has a pointer to read; then the script moves the selection elsewhere.
+      const a = await letterAt(page, 1, 0, 0.25);
+      const b = await letterAt(page, 1, 6, 0.7);
+      await page.mouse.move(a.x, a.y);
+      await page.mouse.down();
+      await page.mouse.move(b.x, b.y, { steps: 8 });
+      await page.mouse.up();
+      const result = await page.evaluate(
+        async ([which, mutate]) => {
+          const trial = (globalThis as unknown as { trial: { read: (k: string) => { text: string; boxes: readonly { x: number; width: number }[] } | undefined; breakers: { painter: boolean } } }).trial;
+          trial.breakers.painter = mutate;
+          const line = document.querySelector('[data-text-line="0"]');
+          const node = line?.firstChild;
+          if (!(node instanceof Text)) return null;
+          document.getSelection()?.setBaseAndExtent(node, 14, node, 28);
+          await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+          const layer = document.querySelector('[data-text-layer="0"]')?.getBoundingClientRect();
+          const painted = [...document.querySelectorAll('.m-trial-paint')].map((block) => {
+            const r = block.getBoundingClientRect();
+            return { left: r.left - (layer?.left ?? 0), width: r.width };
+          });
+          trial.breakers.painter = false;
+          const read = trial.read(which);
+          return { text: read?.text ?? null, boxes: read?.boxes.map((box) => ({ left: box.x, width: box.width })) ?? [], painted };
+        },
+        [kind, broken] as const,
+      );
+      const agree =
+        result !== null &&
+        result.painted.length === result.boxes.length &&
+        result.painted.every((rect, k) => Math.abs(rect.left - (result.boxes[k]?.left ?? NaN)) < 0.5 && Math.abs(rect.width - (result.boxes[k]?.width ?? NaN)) < 0.5);
+      rows[broken ? 'broken' : 'intact'] = { text: result?.text ?? null, paintedAgreesWithWords: agree };
+    }
+    record(rows);
+  });
+}
+
+// RUN 29b: THE PAINTED HIGHLIGHT, in light, dark and high contrast, at 400 %: screenshots, evidence and not baselines.
+test('the painted highlight in light, dark and high contrast', async ({ page }) => {
+  await page.setViewportSize({ width: 2800, height: 1200 });
+  for (const kind of KINDS) {
+    for (const [scheme, forced] of [
+      ['light', 'none'],
+      ['dark', 'none'],
+      ['light', 'active'],
+    ] as const) {
+      await page.emulateMedia({ colorScheme: scheme, forcedColors: forced });
+      await open(page, kind, 'sans-serif', 0, 4);
+      await page.addStyleTag({ content: 'body { background: var(--surface, white); } .trial-page { background: var(--paper, white) !important; }' });
+      const from = await letterAt(page, 0, 15, 0.1);
+      const to = await letterAt(page, 0, 35, 0.9);
+      await page.mouse.move(from.x, from.y);
+      await page.mouse.down();
+      await page.mouse.move(to.x, to.y, { steps: 12 });
+      await page.mouse.up();
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      const top = await at(page, 150, FILE.lines[0] === undefined ? 0 : FILE.pageHeight - FILE.lines[0].box.y0 + 4);
+      await page.screenshot({ path: `${OUT}.highlight-${kind}-${scheme}${forced === 'active' ? '-contrast' : ''}.png`, clip: { x: top.x, y: top.y, width: 900, height: 90 } });
+    }
+  }
+  await page.emulateMedia({ colorScheme: 'light', forcedColors: 'none' });
+});
+
+// RUN 29b: COST WHILE SCROLLING WITH PAGES ARRIVING, from a cold start. Pages mount as the application mounts them: the
+// pages on screen, once the visible set has held for `SETTLE_MS` (`useSettledPages`). Two scrolls: a FLING (a wheel event
+// every frame for two seconds, then still for a second, so the pages it stops on arrive), and a READING scroll (a page's
+// worth, then a pause longer than the settle, thirty times, so pages arrive between scrolls). Every frame is timed by
+// animation frames; each arrival's render-and-layout time is the harness's own.
+for (const kind of KINDS) {
+  test(`scrolling with pages arriving: ${kind}`, async ({ page }) => {
+    await page.setViewportSize({ width: 1400, height: 1000 });
+    await page.setContent(`<!doctype html><html><head><style>${CSS}${TRIAL_CSS}</style></head><body style="margin:0;padding:24px"><div id="root"></div></body></html>`);
+    await page.addScriptTag({ path: HARNESS });
+    const pages = Array.from({ length: 300 }, densePage);
+    const rows: Record<string, unknown> = { measure: 'arriving', kind };
+    for (const scroll of ['fling', 'reading'] as const) {
+      await page.evaluate(
+        (spec) => {
+          window.scrollTo(0, 0);
+          (globalThis as unknown as { trial: { mount: (s: unknown) => void } }).trial.mount(spec);
+        },
+        { kind, pages, size: { width: 612, height: 792 }, rotation: 0, zoom: 1.5, settled: true },
+      );
+      await page.waitForTimeout(600);
+      await page.evaluate(() => {
+        const state = globalThis as unknown as { frames: number[]; arrivalsAt: number; trial: { arrivals: unknown[] } };
+        state.frames = [];
+        state.arrivalsAt = state.trial.arrivals.length;
+        let last = performance.now();
+        const tick = (now: number): void => {
+          state.frames.push(now - last);
+          last = now;
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      });
+      await page.mouse.move(700, 500);
+      if (scroll === 'fling') {
+        const until = Date.now() + 2000;
+        while (Date.now() < until) await page.mouse.wheel(0, 260);
+        await page.waitForTimeout(1000);
+      } else {
+        for (let step = 0; step < 30; step += 1) {
+          await page.mouse.wheel(0, 900);
+          await page.waitForTimeout(400);
+        }
+      }
+      const result = await page.evaluate(() => {
+        const state = globalThis as unknown as { frames: number[]; arrivalsAt: number; trial: { arrivals: { pages: number; ms: number }[] } };
+        const frames = state.frames.slice(1);
+        const arrivals = state.trial.arrivals.slice(state.arrivalsAt);
+        const perPage = arrivals.filter((each) => each.pages > 0).map((each) => each.ms / each.pages);
+        return {
+          frames: frames.length,
+          over16_7: frames.filter((f) => f > 16.7 + 0.5).length,
+          over33: frames.filter((f) => f > 33.4).length,
+          worstFrame: Number(Math.max(...frames).toFixed(1)),
+          arrivals: arrivals.length,
+          arrivedPages: arrivals.reduce((sum, each) => sum + each.pages, 0),
+          worstArrivalMs: Number(Math.max(0, ...arrivals.map((each) => each.ms)).toFixed(1)),
+          perPageMs: perPage.length === 0 ? null : Number((perPage.reduce((a, b) => a + b, 0) / perPage.length).toFixed(1)),
+        };
+      });
+      rows[scroll] = result;
+    }
+    record(rows);
+  });
+}
+
+// RUN 29b: THE COST OF PAINTING: a selection across a whole dense page set by script, and a drag that grows one down
+// the page in sixty moves, each paint timed by the painter itself.
+for (const kind of KINDS.filter((each) => each === 'A' || each === 'B')) {
+  test(`painting cost: ${kind}`, async ({ page }) => {
+    await page.setViewportSize({ width: 1400, height: 1400 });
+    await page.setContent(`<!doctype html><html><head><style>${CSS}${TRIAL_CSS}</style></head><body style="margin:0;padding:24px"><div id="root"></div></body></html>`);
+    await page.addScriptTag({ path: HARNESS });
+    await page.evaluate(
+      (spec) => {
+        (globalThis as unknown as { trial: { mount: (s: unknown) => void } }).trial.mount(spec);
+      },
+      { kind, pages: [densePage()], size: { width: 612, height: 792 }, rotation: 0, zoom: 1.5 },
+    );
+    const whole = await page.evaluate(async () => {
+      const trial = (globalThis as unknown as { trial: { paints: { frames: number; ms: number } } }).trial;
+      const lines = document.querySelectorAll('[data-text-line]');
+      const first = lines[0]?.firstChild;
+      const last = lines[lines.length - 1]?.firstChild;
+      if (!(first instanceof Text) || !(last instanceof Text)) return null;
+      trial.paints.frames = 0;
+      trial.paints.ms = 0;
+      document.getSelection()?.setBaseAndExtent(first, 0, last, last.length);
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      return { paints: trial.paints.frames, ms: Number(trial.paints.ms.toFixed(2)), rects: document.querySelectorAll('.m-trial-paint').length };
+    });
+    const top = await letterAt(page, 0, 2, 0.3);
+    await page.evaluate(() => {
+      const trial = (globalThis as unknown as { trial: { paints: { frames: number; ms: number } } }).trial;
+      trial.paints.frames = 0;
+      trial.paints.ms = 0;
+      document.getSelection()?.removeAllRanges();
+    });
+    await page.mouse.move(top.x + 300, 60);
+    await page.mouse.down();
+    await page.mouse.move(top.x + 300, 1150, { steps: 60 });
+    await page.mouse.up();
+    const grown = await page.evaluate(() => {
+      const trial = (globalThis as unknown as { trial: { paints: { frames: number; ms: number } } }).trial;
+      return { paints: trial.paints.frames, msPerPaint: Number((trial.paints.ms / Math.max(1, trial.paints.frames)).toFixed(2)), rects: document.querySelectorAll('.m-trial-paint').length };
+    });
+    record({ measure: 'painting', kind, whole, grown });
+  });
+}
 
 test('what a screen reader is given, by the svg element’s role', async ({ page }) => {
   const read: Record<string, string> = {};
@@ -588,7 +846,7 @@ for (const kind of KINDS) {
           if (line.text[k] === ' ') continue;
           const next = line.xs[k + 1] ?? FILE.x + widthOf(line.text);
           const point = await at(page, x + (next - x) * 0.3, line.baseline + FILE.size * 0.3);
-          await page.mouse.click(point.x, point.y);
+          await press(page, point);
           const caret = await anchor(page);
           presses += 1;
           if (caret?.line !== index || caret.offset !== k) wrong += 1;
