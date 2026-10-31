@@ -11,7 +11,10 @@ import {
   MAX_RANGE_BYTES,
   channelIds,
   channels,
+  conversationIsLong,
   conversationRoom,
+  LONG_CONVERSATION_TEXT,
+  MAX_CONVERSATION_TEXT,
   type ContractHandlers,
   displayLocationSchema,
   preloadChannels,
@@ -1085,6 +1088,36 @@ describe('conversationRoom, the one rule for whether a question can be asked (AD
     // keeps 64 — the first question dropped in silence (the stage audit of f32c8c39..0d48e788). CONTROL: `+ 1` let it ask.
     expect(conversationRoom(conversation(MAX_CHAT_TURNS - 1), 'q')).toStrictEqual({ kind: 'full', by: 'count' });
     expect(conversationRoom(conversation(MAX_CHAT_TURNS), 'q')).toStrictEqual({ kind: 'full', by: 'count' });
+  });
+
+  it('32 QUESTIONS IS NOT FULL (the owner, 2026-10-31): the 33rd goes, and the conversation is long', () => {
+    // CONTROL: the count of 64 messages was full until ADR-0277's correction of 2026-10-31.
+    expect(conversationRoom(conversation(64), 'q')).toStrictEqual({ kind: 'room' });
+    expect(asks(conversation(64), 'q')).toBe(true);
+    expect(conversationIsLong(conversation(64))).toBe(true);
+    expect(conversationIsLong(conversation(62))).toBe(false);
+  });
+
+  it('LONG BY ITS TEXT before 32 questions, once its own text is one document window', () => {
+    const asked = { role: 'user' as const, text: 'q' };
+    expect(conversationIsLong([asked, { role: 'assistant' as const, text: 'a'.repeat(LONG_CONVERSATION_TEXT - 1) }])).toBe(true);
+    // CONTROL: one character short of the window.
+    expect(conversationIsLong([asked, { role: 'assistant' as const, text: 'a'.repeat(LONG_CONVERSATION_TEXT - 2) }])).toBe(false);
+  });
+
+  it('FULL BY THE TEXT CEILING where the question and an answer at its bound would pass MAX_CONVERSATION_TEXT', () => {
+    const answers = MAX_CONVERSATION_TEXT / MAX_ANSWER_TEXT;
+    /** `count` questions of one letter, each answered at the answer's bound. */
+    const longAnswers = (count: number) =>
+      Array.from({ length: count * 2 }, (_, at) =>
+        at % 2 === 0 ? { role: 'user' as const, text: 'q' } : { role: 'assistant' as const, text: 'a'.repeat(MAX_ANSWER_TEXT) },
+      );
+    // ONE ANSWER SHORT OF THE CEILING, plus its questions: another answer at its bound would pass it.
+    expect(conversationRoom(longAnswers(answers - 1), 'q')).toStrictEqual({ kind: 'full', by: 'count' });
+    // CONTROL: two answers short leaves room for one.
+    expect(conversationRoom(longAnswers(answers - 2), 'q')).toStrictEqual({ kind: 'room' });
+    // AND MAIN TAKES NOTHING PAST IT: as many answers as the ceiling holds, with their questions, is refused.
+    expect(asks(longAnswers(answers), 'q')).toBe(false);
   });
 
   it('FULL BY THE PROVIDER once a question was refused as too long; full is said before a long question', () => {

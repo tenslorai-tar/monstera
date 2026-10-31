@@ -3646,6 +3646,13 @@ optgroup {
   align-items: center;
   /* HISTORY at the start, New chat at the end: the one control is always there and the other only with a conversation. */
   justify-content: space-between;
+  gap: var(--space-8);
+}
+
+/* WITH HISTORY OFF, the line that says New chat clears the conversation stands against New chat, at the end. */
+.m-assistant__history-off {
+  margin-inline-start: auto;
+  text-align: end;
 }
 
 /* THE HISTORY (ADR-0192): a bar with its way back, then the saved conversations, each a block with its own two buttons. */

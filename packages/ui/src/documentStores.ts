@@ -46,6 +46,8 @@ export interface ConversationTurn {
    * `conversationRoom` reads the conversation as full. On the turn, so it holds while the conversation does.
    */
   readonly refused?: 'too-long';
+  /** An answer `main` stopped at `MAX_ANSWER_TEXT` (ADR-0277 Decision 3): said under that answer, where it ends. */
+  readonly cut?: true;
   /** The second document's window, for a turn asked of both (ADR-0089). */
   readonly alongside?: AskSent;
   /**

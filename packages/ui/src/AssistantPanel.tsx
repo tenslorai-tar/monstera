@@ -18,6 +18,7 @@ import {
   MAX_FILE_CONVERSATIONS,
   CHAT_HISTORY_SETTING_ID,
   askShareOf,
+  conversationIsLong,
   conversationRoom,
   type DispatchableCommand,
   type WebSearchAbsence,
@@ -104,6 +105,8 @@ import {
   ASSISTANT_QUESTION_OVER,
   ASSISTANT_FULL_COUNT,
   ASSISTANT_FULL_PROVIDER,
+  ASSISTANT_LONG_NOTE,
+  ASSISTANT_HISTORY_OFF_CLEARS,
   ASSISTANT_START_NEW,
   ASSISTANT_FILE_FULL_NEW,
   ASSISTANT_FILE_FULL_UNSAVED,
@@ -172,7 +175,7 @@ import type { ShowToast } from './toasts.js';
 import { Button } from './primitives/Button.js';
 import { ChoiceMenu } from './primitives/ChoiceMenu.js';
 import { IconButton } from './primitives/IconButton.js';
-import { AI_MODELS_SETTING, AI_PROVIDER_SETTING } from './settings/ai.js';
+import { AI_MODELS_SETTING, AI_PROVIDER_SETTING, CHAT_HISTORY_SETTING } from './settings/ai.js';
 import { heldModels, holdModels } from './assistantModels.js';
 import { AssistantHistory } from './AssistantHistory.js';
 import type { SettingsStore } from './settingsStore.js';
@@ -453,6 +456,7 @@ export function AssistantPanel({
   // the recogniser, and a choice survives the panel closing. The list itself is fetched here, per provider.
   const provider = useSetting(settings, AI_PROVIDER_SETTING);
   const chosenModels = useSetting(settings, AI_MODELS_SETTING);
+  const historyOn = useSetting(settings, CHAT_HISTORY_SETTING);
   // WITH THE CAPABILITIES, because a model that cannot see is not offered a picture (ADR-0090):
   // `false` where the provider says so, `null` where it does not say.
   // WHAT THE PROVIDER LAST ANSWERED, from this panel's own read or else the session's (`assistantModels.ts`), and
@@ -615,6 +619,13 @@ export function AssistantPanel({
         const asked = asking.read();
         const at = asked.findLastIndex((each) => each.role === 'user');
         asking.write(asked.map((each, index) => (index === at ? { ...each, refused: 'too-long' } : each)));
+      } else if (payload.refusal === 'answer-cut') {
+        // AN ANSWER CUT AT ITS BOUND is said under that answer, where it ends (the owner, 2026-10-31), not at the pane's
+        // top: marked on the answer it describes, so it stays with it while the conversation does.
+        const answered = asking.read();
+        const at = answered.findLastIndex((each) => each.role === 'assistant');
+        if (at === -1) setProblem(payload.refusal);
+        else asking.write(answered.map((each, index) => (index === at ? { ...each, cut: true } : each)));
       } else if (payload.refusal !== undefined) {
         setProblem(payload.refusal);
       }
@@ -1126,6 +1137,13 @@ export function AssistantPanel({
           }}
           variant="quiet"
         />
+        {/* WITH HISTORY OFF, New chat CLEARS this conversation, said beside it before the press (the owner, 2026-10-31):
+            nothing keeps the old one, so the person learns it here rather than after. */}
+        {turns.length > 0 && !historyOn && (
+          <p className="m-assistant__state m-assistant__history-off" data-assistant-history-off="">
+            {i18n._(ASSISTANT_HISTORY_OFF_CLEARS)}
+          </p>
+        )}
         {turns.length > 0 && (
           // NEW CHAT, a "+" at the top right (the owner's review of 0.1.6.0): it empties this document's
           // conversation — and, with history on, its saved copy the next time it settles. Not while an answer is
@@ -1182,6 +1200,11 @@ export function AssistantPanel({
                 {line}
               </p>
             ))}
+            {turn.role === 'assistant' && turn.cut === true && (
+              <p className="m-assistant__problem" data-assistant-cut="">
+                {i18n._(ASSISTANT_ANSWER_CUT, { limit: MAX_ANSWER_TEXT })}
+              </p>
+            )}
             {turn.role === 'assistant' && (streaming === null || at !== turns.length - 1) && (
               <AnswerGrounding
                 answer={turn}
@@ -1454,6 +1477,13 @@ export function AssistantPanel({
             </div>
           )}
         </div>
+        {/* A LONG CONVERSATION, recommended a new chat and never blocked (ADR-0277's correction of 2026-10-31): from the
+            32nd question, or once its own text is one document window, since that text goes again with every question. */}
+        {room.kind === 'room' && conversationIsLong(turns) && (
+          <p className="m-assistant__state" data-assistant-long="">
+            {i18n._(ASSISTANT_LONG_NOTE)}
+          </p>
+        )}
         {/* HOW LONG THE QUESTION IS, from nine tenths of the bound: a count a person can act on before Send refuses. */}
         {room.kind === 'room' && question.length >= QUESTION_COUNT_FROM && (
           <p className="m-assistant__state" data-assistant-count="">

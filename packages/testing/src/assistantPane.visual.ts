@@ -28,6 +28,8 @@ interface Setup {
   readonly history?: { role: 'user' | 'assistant'; text: string }[];
   readonly asks?: boolean;
   readonly conversations?: readonly { key: string; file: string; name: string; savedAt: string; turns: number; preview: string }[];
+  /** Chat history switched off. */
+  readonly historyOff?: boolean;
 }
 
 /**
@@ -44,7 +46,7 @@ async function openPane(page: Page, look: Look, setup: Setup, observe?: (channel
     {
       opens: [{ kind: 'opened', docId: DOC, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'chat.pdf' }],
       documentBytes: new Map([[DOC, bytes]]),
-      settings: { 'appearance.context-panel-open': true, 'appearance.context-panel-tab': 'assistant', 'ai.save-history': true },
+      settings: { 'appearance.context-panel-open': true, 'appearance.context-panel-tab': 'assistant', 'ai.save-history': setup.historyOff !== true },
       // THE DEFAULT PROVIDER'S KEY (Anthropic), so Send is offered; a fixture no provider sees.
       secrets: { 'ai.anthropic-key': 'a-fixture-key' },
       aiModels: { source: 'fetched', models: [{ id: 'fixture-model', label: 'Fixture', capabilities: { vision: null, streaming: null } }] },
@@ -85,12 +87,30 @@ for (const look of LOOKS) {
     await expect(pane).toHaveScreenshot(`${look.name}-assistant-over-limit.png`);
   });
 
-  test(`${look.name}: a full conversation matches its baseline`, async ({ page }) => {
-    // A FULL CONVERSATION: MAX_CHAT_TURNS (64) turns saved.
+  test(`${look.name}: a long conversation's note matches its baseline`, async ({ page }) => {
+    // 32 QUESTIONS, which carries on with a recommendation since ADR-0277's correction of 2026-10-31.
     const pane = await openPane(page, look, { history: turns(64) });
-    await expect(pane.getByText('This conversation is full', { exact: false })).toBeVisible();
+    await expect(pane.getByText('This conversation is now long. We recommend starting a new chat to save cost.')).toBeVisible();
     await pane.locator('.m-assistant__turn').last().scrollIntoViewIfNeeded();
-    await expect(pane).toHaveScreenshot(`${look.name}-assistant-full.png`);
+    await page.mouse.move(400, 450);
+    await expect(pane).toHaveScreenshot(`${look.name}-assistant-long.png`);
+  });
+
+  test(`${look.name}: with history off, the line beside New chat matches its baseline`, async ({ page }) => {
+    // WITH HISTORY OFF NOTHING LOADS, so the conversation is asked here and its answer streamed in.
+    let subscription: string | undefined;
+    const pane = await openPane(page, look, { asks: true, historyOff: true }, (channel, params) => {
+      if (channel === 'ai.ask') subscription = (params as { subscription: string }).subscription;
+    });
+    await pane.getByLabel('Ask about this document').fill('Who signs?');
+    await pane.getByRole('button', { name: 'Send' }).click();
+    await expect.poll(() => subscription).toBeDefined();
+    const sent = subscription ?? '';
+    await pushEvent(page, 'ai.delta', { subscription: sent, text: 'Both parties sign on page 4.' });
+    await pushEvent(page, 'ai.done', { subscription: sent, stopped: false, web: { answer: 'fixture-answer', searched: false, sources: [] } });
+    await expect(pane.getByText('History is off, so New chat clears this conversation.')).toBeVisible();
+    await page.mouse.move(400, 450);
+    await expect(pane).toHaveScreenshot(`${look.name}-assistant-history-off.png`);
   });
 
   test(`${look.name}: an answer cut at its bound matches its baseline`, async ({ page }) => {

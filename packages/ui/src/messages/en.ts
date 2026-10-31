@@ -2418,8 +2418,12 @@ export const ASSISTANT_ANSWER_CUT = messageKey('assistant.answer-cut');
 export const ASSISTANT_QUESTION_COUNT = messageKey('assistant.question-count');
 /** A question past the bound: how much, and where a long passage is better asked (ADR-0277 Decision 1). */
 export const ASSISTANT_QUESTION_OVER = messageKey('assistant.question-over');
-/** A conversation at `MAX_CHAT_TURNS` messages (ADR-0277 Decision 2). */
+/** A conversation at its safety ceiling (ADR-0277 Decision 2 and its correction of 2026-10-31). */
 export const ASSISTANT_FULL_COUNT = messageKey('assistant.full-count');
+/** A long conversation's recommendation, which blocks nothing (ADR-0277's correction of 2026-10-31). */
+export const ASSISTANT_LONG_NOTE = messageKey('assistant.long-note');
+/** Beside New chat while chat history is off: the press clears this conversation (the owner, 2026-10-31). */
+export const ASSISTANT_HISTORY_OFF_CLEARS = messageKey('assistant.history-off-clears');
 /** A conversation the provider refused as too long for its model (ADR-0277 Decisions 2 and 5). */
 export const ASSISTANT_FULL_PROVIDER = messageKey('assistant.full-provider');
 /** The one press from a full conversation to a new one (ADR-0277 Decision 2). */
@@ -5495,6 +5499,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'This question is {over, plural, one {# character} other {# characters}} over the limit of {limit, plural, other {#}}, so it cannot be sent. If it holds a passage from the document, ask about the page in Context, or select the passage on the page and ask about the selected text.',
   [ASSISTANT_FULL_COUNT]:
     'This conversation is full: it holds as many messages as one conversation can. Start a new conversation to ask more.',
+  [ASSISTANT_LONG_NOTE]: 'This conversation is now long. We recommend starting a new chat to save cost.',
+  [ASSISTANT_HISTORY_OFF_CLEARS]: 'History is off, so New chat clears this conversation.',
   [ASSISTANT_FULL_PROVIDER]:
     'This conversation is now too long for the model to read, so the provider refused the last question. Start a new conversation to ask it again.',
   [ASSISTANT_START_NEW]: 'Start a new conversation',

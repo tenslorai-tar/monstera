@@ -519,7 +519,6 @@ export type StorePage = (typeof STORE_PAGES)[number];
 export const MAX_MODEL_ID = 128;
 export const MAX_MODELS = 512;
 export const MAX_CHAT_TEXT = 16_384;
-export const MAX_CHAT_TURNS = 64;
 
 /**
  * The most characters one assistant answer holds (ADR-0277 Decision 3): four times a question's bound. `streamChat`
@@ -528,12 +527,42 @@ export const MAX_CHAT_TURNS = 64;
  */
 export const MAX_ANSWER_TEXT = 4 * MAX_CHAT_TEXT;
 
+/**
+ * A conversation's SAFETY CEILING (ADR-0277's correction of 2026-10-31): the most messages, and the most characters of
+ * text, one conversation holds, far above normal use and there only to protect the application from a broken file. The
+ * text ceiling is 64 messages of `MAX_ANSWER_TEXT`, the bound an ask and a saved conversation already had, so carrying a
+ * conversation on past 32 questions makes neither larger (invariant L11).
+ */
+export const MAX_CHAT_TURNS = 512;
+export const MAX_CONVERSATION_TEXT = 64 * MAX_ANSWER_TEXT;
+
+/**
+ * When a conversation is LONG (ADR-0277's correction of 2026-10-31): a recommendation to start a new chat shows, and
+ * nothing is blocked. From the 32nd question, or once the conversation's own text reaches one document window
+ * (`MAX_ASK_CONTEXT`, 100,000 characters), since that text is sent again with every further question.
+ */
+export const LONG_CONVERSATION_QUESTIONS = 32;
+export const LONG_CONVERSATION_TEXT = MAX_ASK_CONTEXT;
+
+/** How many characters a conversation's turns hold: the text sent again with every further question. */
+export function conversationText(turns: readonly { readonly text: string }[]): number {
+  return turns.reduce((sum, turn) => sum + turn.text.length, 0);
+}
+
+/** Whether a conversation is long enough to recommend a new chat ({@link LONG_CONVERSATION_QUESTIONS}). */
+export function conversationIsLong(turns: readonly { readonly role: 'user' | 'assistant'; readonly text: string }[]): boolean {
+  return (
+    turns.filter((turn) => turn.role === 'user').length >= LONG_CONVERSATION_QUESTIONS ||
+    conversationText(turns) >= LONG_CONVERSATION_TEXT
+  );
+}
+
 /** Whether a conversation can take a question, and if not, why — what {@link conversationRoom} answers. */
 export type ConversationRoom =
   | { readonly kind: 'room' }
   /**
-   * The conversation can take no more questions: by `count`, the next and its answer would be past `MAX_CHAT_TURNS`
-   * messages; by
+   * The conversation can take no more questions: by `count`, the next and its answer would be past the safety ceiling
+   * (`MAX_CHAT_TURNS` messages, `MAX_CONVERSATION_TEXT` characters); by
    * `provider`, the provider refused it as longer than its model takes. A new conversation is the way on.
    */
   | { readonly kind: 'full'; readonly by: 'count' | 'provider' }
@@ -550,14 +579,16 @@ export type ConversationRoom =
  * @param turns what the ask would resend, oldest first; a turn the provider refused as too long marks it full.
  */
 export function conversationRoom(
-  turns: readonly { readonly role: 'user' | 'assistant'; readonly refused?: 'too-long' }[],
+  turns: readonly { readonly role: 'user' | 'assistant'; readonly text: string; readonly refused?: 'too-long' }[],
   question: string,
 ): ConversationRoom {
   if (turns.some((turn) => turn.refused === 'too-long')) return { kind: 'full', by: 'provider' };
   // THE QUESTION AND THE ANSWER IT GETS, both: a conversation left odd by an ask that failed (its question kept, no
   // answer) took one more at 63 and was 65 once answered, and the save kept the newest 64, dropping the first question
-  // in silence (the stage audit of f32c8c39..0d48e788). Counted whole, nothing asked can outgrow what is kept.
+  // in silence (the stage audit of f32c8c39..0d48e788). Counted whole, nothing asked can outgrow what is kept — by the
+  // count and by the text, the answer taken at its own bound.
   if (turns.length + 2 > MAX_CHAT_TURNS) return { kind: 'full', by: 'count' };
+  if (conversationText(turns) + question.length + MAX_ANSWER_TEXT > MAX_CONVERSATION_TEXT) return { kind: 'full', by: 'count' };
   return question.length > MAX_CHAT_TEXT ? { kind: 'question-over', over: question.length - MAX_CHAT_TEXT } : { kind: 'room' };
 }
 
@@ -633,7 +664,10 @@ export const savedTurnSchema = z
   })
   .strict();
 
-export const savedTurnsSchema = z.array(savedTurnSchema).max(MAX_CHAT_TURNS);
+export const savedTurnsSchema = z
+  .array(savedTurnSchema)
+  .max(MAX_CHAT_TURNS)
+  .refine((turns) => conversationText(turns) <= MAX_CONVERSATION_TEXT, { message: 'a saved conversation is within the text ceiling' });
 
 export type SavedTurn = z.infer<typeof savedTurnSchema>;
 
@@ -644,9 +678,8 @@ export type SavedTurn = z.infer<typeof savedTurnSchema>;
 export const MAX_SAVED_CONVERSATIONS = 200;
 
 /**
- * How many conversations one file keeps (ADR-0277 Decision 6). Twenty, because a conversation is full at
- * `MAX_CHAT_TURNS` messages, so twenty are some 640 messages about one file, while the store stays bounded:
- * {@link MAX_SAVED_CONVERSATIONS} files of this many conversations of `MAX_CHAT_TURNS` turns of `MAX_ANSWER_TEXT`. A file
+ * How many conversations one file keeps (ADR-0277 Decision 6), so the store stays bounded:
+ * {@link MAX_SAVED_CONVERSATIONS} files of this many conversations, each within {@link MAX_CONVERSATION_TEXT}. A file
  * at this many is never trimmed: a new conversation there is refused (`file-full`) and the person is asked to remove one.
  */
 export const MAX_FILE_CONVERSATIONS = 20;
@@ -6685,7 +6718,9 @@ export const channels = {
             ]),
           )
           .min(1)
-          .max(MAX_CHAT_TURNS),
+          .max(MAX_CHAT_TURNS)
+          // THE TEXT CEILING, so an ask is never larger than 64 messages of `MAX_ANSWER_TEXT` (invariant L11).
+          .refine((messages) => conversationText(messages) <= MAX_CONVERSATION_TEXT, { message: 'a conversation is within the text ceiling' }),
         /**
          * What the ask is about (ADR-0088). Absent is a conversation with no document in it;
          * present, `main` reads the scope's text into a bounded window for this ask alone.
