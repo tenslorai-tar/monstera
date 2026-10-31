@@ -156,6 +156,9 @@ export function kindOf(bytes) {
  * @returns {'read' | 'nothing-staged' | 'blind'}
  */
 export function whatWasRead(source, kinds) {
+  // A STAGED FILE THAT COULD NOT BE READ is blind whatever else was read beside it: its words were never looked at, and
+  // a readable file next to it answered *read* for both (the stage audit of f32c8c39..0d48e788).
+  if (source === 'staged' && kinds.includes('missing')) return 'blind';
   if (kinds.includes('text')) return 'read';
   if (source === 'staged' && !kinds.includes('missing')) return 'nothing-staged';
   return 'blind';

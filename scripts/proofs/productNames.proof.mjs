@@ -16,7 +16,7 @@ import { DENIED, kindOf, namedLines, whatWasRead } from '../lib/productNames.mjs
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 9 });
+const roster = createRoster(failures, { cases: 10 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -75,6 +75,10 @@ const maker = CMAP.split('-')[0] ?? '';
   const unread = whatWasRead('staged', [kindOf(null), 'binary']);
   const tree = whatWasRead('tree', ['binary']);
   check('CONTROL: a staged file that could not be read, or a tree with no text read, is still refused as blind', unread === 'blind' && tree === 'blind', `staged ${unread}, tree ${tree}`);
+  // BESIDE A FILE THAT WAS READ, too: the readable one answered *read* for the commit, and the unreadable one's words were
+  // never looked at. A fixture with no text beside it is one the old order also refused, so it separated nothing.
+  const beside = whatWasRead('staged', [kindOf(null), kindOf(Buffer.from('plain words\n'))]);
+  check('a staged file that could not be read is blind even beside one that was read', beside === 'blind', `judged ${beside}`);
 }
 // THE DENYLIST'S SIZE, from an independent claim: a list that shrank would agree with any count derived from it.
 check('the denylist holds the twenty-five spellings it was built with', DENIED.size === 25, `${String(DENIED.size)} held`);
