@@ -81,6 +81,42 @@ function emojiPage(): Uint8Array {
   return new TextEncoder().encode(text);
 }
 
+/**
+ * WRITES A CASE'S FIGURES ONLY WHEN ASKED: when the environment variable `variable` names a file. Unset, nothing is
+ * written, so no platform needs a default path — `/dev/null` was one, and on Windows it resolved to `D:\dev\null`, which
+ * does not exist, and the write threw before the assertions after it ran (CI run 41198907604, windows-latest).
+ */
+function recordFigures(variable: string, figures: unknown, write: (path: string, text: string) => void = writeFileSync): void {
+  const path = process.env[variable];
+  if (path === undefined || path === '') return;
+  write(path, JSON.stringify(figures, null, 1));
+}
+
+describe('recordFigures', () => {
+  // THE CONTROL: unset, nothing is written and nothing throws, on any platform; set, the one file named is written.
+  it('writes nothing when its variable is unset, and the named file when it is set', () => {
+    const writes: string[] = [];
+    const spy = (path: string): void => {
+      writes.push(path);
+    };
+    const name = 'MONSTERA_RECORD_FIGURES_PROBE';
+    const was = process.env[name];
+    try {
+      delete process.env[name];
+      expect(() => {
+        recordFigures(name, { a: 1 }, spy);
+      }).not.toThrow();
+      expect(writes).toStrictEqual([]);
+      process.env[name] = 'figures.json';
+      recordFigures(name, { a: 1 }, spy);
+      expect(writes).toStrictEqual(['figures.json']);
+    } finally {
+      if (was === undefined) delete process.env[name];
+      else process.env[name] = was;
+    }
+  });
+});
+
 interface PageRead {
   readonly today: string;
   readonly json: string;
@@ -165,7 +201,7 @@ describe('the shim writes each page’s letters from the JSON’s own structured
       }
       figures[name] = tally;
     }
-    writeFileSync(process.env['LETTERS_FIGURES'] ?? '/dev/null', JSON.stringify(figures, null, 1));
+    recordFigures('LETTERS_FIGURES', figures);
     // EVERY LINE PAIRS ON EVERY FIXTURE: a fallback anywhere names its fixture here.
     expect(Object.entries(figures).filter(([, tally]) => tally.fellBack > 0).map(([name]) => name)).toStrictEqual([]);
     // THE NESTED FIXTURE IS NESTED: a structure block inside a structure block, so the order is tested where it can differ.
@@ -197,7 +233,7 @@ describe('the shim writes each page’s letters from the JSON’s own structured
       });
       out[name] = Number(worst.toFixed(3));
     }
-    writeFileSync(process.env['LETTERS_DRIFT'] ?? '/dev/null', JSON.stringify(out));
+    recordFigures('LETTERS_DRIFT', out);
     expect(out['Courier']).toBeLessThan(0.02);
   });
 
