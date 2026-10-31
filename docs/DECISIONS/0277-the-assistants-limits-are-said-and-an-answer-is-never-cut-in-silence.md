@@ -125,3 +125,21 @@ Found by the stage audit of f32c8c39..0d48e788 (the local agent); the decisions'
   empty new one's. Each save now carries the conversation it is about and that conversation's own key, and a new
   conversation begun while the old one's last change was settling saves that change first, as the old one's
   (`chatHistorySync.ts`; two cases in `chatHistorySync.test.ts`, each red on the old module).
+
+## Correction, 2026-10-31: a long conversation carries on, with a recommendation; a ceiling guards the app
+
+The owner's decision of 2026-10-31; the decisions' text above is unchanged, and this replaces Decision 2's **count** as a
+stop. The provider's own too-long refusal stays a stop (Decision 5).
+
+- **At 32 questions the conversation carries on.** A quiet note recommends a new chat and blocks nothing: *This
+  conversation is now long. We recommend starting a new chat to save cost.* It shows from the 32nd question, or earlier
+  once the conversation's own text reaches **100,000 characters** — about 25,000 tokens sent again with every further
+  question, the size of one full document window (`MAX_ASK_CONTEXT`). Read in `contractHandlers.ts`' `ai.ask`: a
+  question's documents and attached files go with that question only and are not sent again, so what makes each later
+  question cost more is the conversation's own text, and that is what the note counts.
+- **A safety ceiling stays, far above normal use, only to protect the app from a broken file:** at most **512
+  messages** and at most **4,194,304 characters** of conversation text (`MAX_CONVERSATION_MESSAGES`,
+  `MAX_CONVERSATION_TEXT`). The text ceiling is today's own payload bound, 64 messages of `MAX_ANSWER_TEXT`, so an ask
+  and a saved conversation are never larger than Decision 4's bound already allowed (invariant L11 unchanged in bytes).
+  `conversationRoom` is full by that ceiling alone, counted with the answer it would get (the correction above), and
+  says so in Decision 2's sentence.
