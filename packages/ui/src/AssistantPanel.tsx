@@ -172,6 +172,7 @@ import type { ShowToast } from './toasts.js';
 import { Button } from './primitives/Button.js';
 import { ChoiceMenu } from './primitives/ChoiceMenu.js';
 import { IconButton } from './primitives/IconButton.js';
+import { useEndKept } from './primitives/useEndKept.js';
 import { AI_MODELS_SETTING, AI_PROVIDER_SETTING } from './settings/ai.js';
 import { heldModels, holdModels } from './assistantModels.js';
 import { AssistantHistory } from './AssistantHistory.js';
@@ -556,6 +557,8 @@ export function AssistantPanel({
   // marks are a message, because they are a language's own. Nothing is sent, and the Context menu stays on Selection
   // because the request is what points it (`requestedScope` above).
   const composer = useRef<HTMLTextAreaElement>(null);
+  // THE CONVERSATION AT ITS END STAYS THERE when the pane's height changes (`useEndKept`).
+  const keepEnd = useEndKept();
   const [quotedFrom, setQuotedFrom] = useState<number | undefined>(undefined);
   if (request?.quote !== undefined && request.serial !== handled && request.serial !== quotedFrom && request.about.docId === docId) {
     setQuotedFrom(request.serial);
@@ -1161,7 +1164,7 @@ export function AssistantPanel({
         ) : null}
       </div>
 
-      <ol aria-label={i18n._(ASSISTANT_CONVERSATION_LABEL)} className="m-assistant__turns">
+      <ol aria-label={i18n._(ASSISTANT_CONVERSATION_LABEL)} className="m-assistant__turns" ref={keepEnd}>
         {turns.map((turn, at) => (
           <Turn role={turn.role} key={`${String(at)}-${turn.role}`}>
             {/* WHO SAID IT, read and not drawn: the bubble's side says so to the eye (`app.css`). */}
