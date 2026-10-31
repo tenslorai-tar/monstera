@@ -166,6 +166,27 @@ export function readLetters(bytes: Uint8Array, texts: readonly string[]): { read
 }
 
 /**
+ * THE PAGE'S LETTERS AS `main` USES THEM: {@link readLetters}, after the line-count comparison
+ * (ADR-0280's fourth correction). The shim's walk reports how many text lines it walked; where that is not the JSON's
+ * line count for the same page, the walk and the JSON disagree about the page — a block MuPDF added that holds lines,
+ * say — so every line is placed as today and `noted` records the shortfall as an engine change, naming the page and
+ * both counts. Never an error, never a refusal.
+ */
+export function pageLetters(
+  bytes: Uint8Array,
+  texts: readonly string[],
+  counts: { readonly page: number; readonly walked: number; readonly json: number },
+  noted: (entry: string) => void,
+): readonly (LineLetters | undefined)[] {
+  if (counts.walked !== counts.json) {
+    noted(`engine change: page ${String(counts.page + 1)}'s text has ${String(counts.json)} lines and the letters' walk gave ${String(counts.walked)}; the page's letters are placed as before`);
+    return texts.map(() => undefined);
+  }
+  const read = readLetters(bytes, texts);
+  return 'lines' in read ? read.lines : texts.map(() => undefined);
+}
+
+/**
  * One line's record against its text: the same count of characters, the same check value over the binding's cut of
  * each, and a direction that is a direction — or `undefined`, and the line is placed as today. Each character's advance
  * goes on its first UTF-16 unit; a code point past U+FFFF advances 0 on its second.

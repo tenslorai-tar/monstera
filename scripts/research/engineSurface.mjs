@@ -149,7 +149,36 @@ if (table !== null) {
   if (!table.has('wasm_load_page')) throw new Error('CONTROL FAILED: the DLL table does not list wasm_load_page, which MuPDF certainly exports.');
   if (table.has('wasm_monstera_not_an_export')) throw new Error('CONTROL FAILED: the DLL table lists an invented export.');
 }
-const missing = table === null ? [] : [...called].filter((name) => !table.has(name));
+/**
+ * THE SHIM'S OWN `mz_*` EXPORTS the object model binds (`mupdfRaw.ts`' `library.func("… mz_name(…)")`), which the glue's
+ * signature table does not list: each is present where koffi binds it, and missing where it refuses. Named, so a
+ * required export cannot leave the list without this failing: `mz_text_letters` (ADR-0280's fourth correction).
+ */
+const mzCalled = new Set([...rawText.matchAll(/library\.func\("[^"]*?\b(mz_[a-z_]+)\(/gu)].map((m) => m[1] ?? ''));
+if (!mzCalled.has('mz_text_letters')) throw new Error('CONTROL FAILED: the object model binds no mz_text_letters, which the text layer requires.');
+
+/** @returns {string[] | null} the `mz_*` exports the object model binds that the DLL does not export; null where none is built */
+function mzMissing() {
+  const path = shimLibraryPath(root);
+  if (!existsSync(path)) return null;
+  const koffi = createRequire(RAW)('koffi');
+  const library = koffi.load(path);
+  /** @param {string} name */
+  const exported = (name) => {
+    try {
+      library.func(`void ${name}(void)`);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  if (exported('mz_monstera_not_an_export')) throw new Error('CONTROL FAILED: koffi bound an invented mz_ export, so a missing one would read as present.');
+  if (!exported('mz_init')) throw new Error('CONTROL FAILED: koffi did not bind mz_init, which the shim certainly exports.');
+  return [...mzCalled].filter((name) => !exported(name));
+}
+
+const mzAbsent = mzMissing();
+const missing = [...(table === null ? [] : [...called].filter((name) => !table.has(name))), ...(mzAbsent ?? [])];
 
 const out = process.stdout;
 /**
@@ -170,6 +199,7 @@ if (table === null) {
   out.write(`  the DLL's own table: NOT VERIFIED — ${shimLibraryPath(root)} is not built here\n`);
 } else {
   out.write(`  the DLL's own table: ${String(table.size)} exports; called and missing: ${String(missing.length)}\n`);
+  out.write(`  the shim's mz_* exports the object model binds: ${String(mzCalled.size)} (mz_text_letters among them); missing: ${String((mzAbsent ?? []).length)}\n`);
   for (const name of missing) out.write(`    MISSING ${name}\n`);
 }
 if (wasm.size > 0) {

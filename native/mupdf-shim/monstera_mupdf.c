@@ -46,6 +46,7 @@
  */
 
 #include <malloc.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -1541,3 +1542,187 @@ MZ_EXPORT void mz_free_pixmap(mz_ctx *c, void *pixmap)
  * bake a rendering decision into an extraction path, which is the coordinate
  * confusion invariant L3 exists to prevent.
  */
+
+/* ========================================================================== */
+/*
+ * THE TEXT LAYER'S LETTERS (ADR-0280 and its fourth correction).
+ *
+ * Writes `packages/kernel/src/textLetters.ts`' format for the structured-text page the JSON was written from, taken by
+ * its pointer so one page read builds one structured text: per text line, in MuPDF's own depth-first order
+ * (fz_stext_page_block_iterator_begin_dfs / _next_dfs / _eod_dfs, which step into struct blocks and keep their place
+ * through parent pointers, so there is no recursion here and no depth to cap), a 12-byte header and a signed 16-bit
+ * advance per character. It reproduces `writeLetters` exactly — the same rounding (Math.round is floor(x + 0.5)), the
+ * same end for a clipped line, the same check value over each character's low 16 bits — and the TypeScript case that
+ * compares the two on one page is what holds it to that.
+ *
+ * BOUNDED BY ITS CALLER. `capacity`, `max_lines` and `max_chars` are textLetters.ts' own figures, passed in rather than
+ * restated here. Every write is checked against `capacity` before it is made; a page that does not fit answers
+ * MZ_LETTERS_FULL with nothing written past the buffer. `*walked` is every text line the iterator gave, kept or not,
+ * which `main` compares with the JSON's line count for the page.
+ *
+ * It does none of main's checking: main reads this as from a hostile host (invariant 25).
+ */
+fz_context *mzg_context(void);
+
+#define MZ_LETTERS_FULL 2
+#define MZ_LETTERS_HEADER 12
+
+typedef struct
+{
+    unsigned char *out;
+    size_t capacity;
+    size_t used;
+    int full;
+} mz_letters_out;
+
+static double mz_round(double v)
+{
+    return floor(v + 0.5);
+}
+
+static int mz_letters_fits(mz_letters_out *w, size_t n)
+{
+    if (w->full || w->capacity - w->used < n)
+    {
+        w->full = 1;
+        return 0;
+    }
+    return 1;
+}
+
+static void mz_letters_put16(unsigned char *at, int value)
+{
+    at[0] = (unsigned char)(value & 0xff);
+    at[1] = (unsigned char)((value >> 8) & 0xff);
+}
+
+static void mz_letters_line(mz_letters_out *w, fz_stext_line *line, int max_chars)
+{
+    fz_stext_char *ch;
+    fz_stext_char *first = line->first_char;
+    fz_stext_char *after = NULL;
+    double dx = line->dir.x, dy = line->dir.y;
+    double fx, fy, ex, ey, previous;
+    int n = 0, k, carried = 1, size = 0;
+    unsigned int hash = 0x811c9dc5u;
+    unsigned char *header;
+
+    for (ch = first; ch != NULL && n < max_chars; ch = ch->next)
+    {
+        unsigned int c = (unsigned int)ch->c & 0xffffu;
+        hash ^= c & 0xffu;
+        hash *= 0x01000193u;
+        hash ^= c >> 8;
+        hash *= 0x01000193u;
+        n++;
+    }
+    after = ch;
+
+    /* WHERE THE KEPT LETTERS END: the first dropped letter's origin, or the last letter's far edge. */
+    if (after != NULL)
+    {
+        ex = after->origin.x;
+        ey = after->origin.y;
+    }
+    else if (line->last_char != NULL)
+    {
+        ex = (line->last_char->quad.ur.x + line->last_char->quad.lr.x) / 2.0;
+        ey = (line->last_char->quad.ur.y + line->last_char->quad.lr.y) / 2.0;
+    }
+    else
+    {
+        ex = 0;
+        ey = 0;
+    }
+    fx = first != NULL ? first->origin.x : ex;
+    fy = first != NULL ? first->origin.y : ey;
+    if (first != NULL)
+    {
+        double s = mz_round(first->size * 100.0);
+        size = s < 0 ? 0 : s > 65535 ? 65535 : (int)s;
+    }
+
+    /* A LINE THAT CANNOT BE CARRIED carries no advances; main places it as today. */
+    previous = 0;
+    for (k = 0, ch = first; k < n; k++, ch = ch->next)
+    {
+        double next_x = k + 1 < n ? ch->next->origin.x : ex;
+        double next_y = k + 1 < n ? ch->next->origin.y : ey;
+        double place = mz_round(((next_x - fx) * dx + (next_y - fy) * dy) * 100.0);
+        double place_here = k == 0 ? 0 : previous;
+        if (k == 0)
+            place_here = mz_round(((ch->origin.x - fx) * dx + (ch->origin.y - fy) * dy) * 100.0);
+        if (place - place_here > 32767 || place - place_here < -32767)
+            carried = 0;
+        previous = place;
+    }
+    if (!carried)
+        n = 0;
+
+    if (!mz_letters_fits(w, MZ_LETTERS_HEADER + 2 * (size_t)n))
+        return;
+    header = w->out + w->used;
+    mz_letters_put16(header, (int)mz_round(dx * 16384.0));
+    mz_letters_put16(header + 2, (int)mz_round(dy * 16384.0));
+    mz_letters_put16(header + 4, size);
+    header[6] = (unsigned char)(hash & 0xff);
+    header[7] = (unsigned char)((hash >> 8) & 0xff);
+    header[8] = (unsigned char)((hash >> 16) & 0xff);
+    header[9] = (unsigned char)((hash >> 24) & 0xff);
+    mz_letters_put16(header + 10, n);
+    w->used += MZ_LETTERS_HEADER;
+
+    previous = 0;
+    for (k = 0, ch = first; k < n; k++, ch = ch->next)
+    {
+        double next_x = k + 1 < n ? ch->next->origin.x : ex;
+        double next_y = k + 1 < n ? ch->next->origin.y : ey;
+        double here = k == 0 ? mz_round(((ch->origin.x - fx) * dx + (ch->origin.y - fy) * dy) * 100.0) : previous;
+        double place = mz_round(((next_x - fx) * dx + (next_y - fy) * dy) * 100.0);
+        mz_letters_put16(w->out + w->used, (int)(place - here));
+        w->used += 2;
+        previous = place;
+    }
+}
+
+MZ_EXPORT int mz_text_letters(fz_stext_page *page, unsigned char *out, int capacity, int max_lines, int max_chars, int *written, int *walked)
+{
+    fz_context *ctx = mzg_context();
+    fz_stext_page_block_iterator pos;
+    mz_letters_out w;
+    int lines = 0;
+
+    *written = 0;
+    *walked = 0;
+    if (ctx == NULL || page == NULL || out == NULL || capacity < 0 || max_lines < 0 || max_chars < 0)
+        return MZ_ERR;
+    w.out = out;
+    w.capacity = (size_t)capacity;
+    w.used = 0;
+    w.full = 0;
+
+    fz_try(ctx)
+    {
+        for (pos = fz_stext_page_block_iterator_begin_dfs(page); !fz_stext_page_block_iterator_eod_dfs(pos); pos = fz_stext_page_block_iterator_next_dfs(pos))
+        {
+            fz_stext_line *line;
+            if (pos.block->type != FZ_STEXT_BLOCK_TEXT)
+                continue;
+            for (line = pos.block->u.t.first_line; line != NULL; line = line->next)
+            {
+                if (lines < max_lines && !w.full)
+                    mz_letters_line(&w, line, max_chars);
+                lines++;
+            }
+        }
+    }
+    fz_catch(ctx)
+    {
+        return MZ_ERR;
+    }
+    *walked = lines;
+    if (w.full)
+        return MZ_LETTERS_FULL;
+    *written = (int)w.used;
+    return MZ_OK;
+}

@@ -5484,6 +5484,7 @@ export function openMupdfShim(libraryPath: string): void {
 		pageCount: library.func("int mz_page_count(void *c, void *d, _Out_ int *out)") as unknown as MzNative,
 		keepInlineImages: library.func("int mz_keep_inline_images(void *c, void *d, int number, _Out_ int *converted, _Out_ int *left)") as unknown as MzNative,
 		saveKept: library.func("int mz_save_kept(void *c, void *d, const char *path)") as unknown as MzNative,
+		textLetters: library.func("int mz_text_letters(intptr_t page, void *out, int capacity, int max_lines, int max_chars, _Out_ int *written, _Out_ int *walked)") as unknown as MzNative,
 	}
 }
 
@@ -5514,6 +5515,30 @@ interface MzApi {
 	readonly pageCount: MzNative
 	readonly keepInlineImages: MzNative
 	readonly saveKept: MzNative
+	readonly textLetters: MzNative
+}
+
+/**
+ * The shim's `mz_text_letters` (ADR-0280's fourth correction): `textLetters.ts`' format for this structured text's
+ * lines, written into `out` by MuPDF's own depth-first block walk, from the SAME structured text the JSON was written
+ * from. `full` where the page's letters do not fit `out`, with nothing written past it; `walked` is every text line the
+ * walk gave, which `main` compares with the JSON's count. The bounds are the caller's, `textLetters.ts`' own.
+ */
+export function structuredTextLetters(
+	structured: StructuredText,
+	out: Uint8Array,
+	maxLines: number,
+	maxChars: number,
+): { readonly status: "ok" | "full"; readonly written: number; readonly walked: number } {
+	const api = mzApi
+	if (api === undefined)
+		throw new Error("the MuPDF shim is not bound in this process")
+	const written: number[] = [ 0 ]
+	const walked: number[] = [ 0 ]
+	const status = api.textLetters(structured.pointer, out, out.length, maxLines, maxChars, written, walked)
+	if (status === 1)
+		throw new MupdfNativeError("read the letters of the page's text", "the walk failed")
+	return { status: status === 2 ? "full" : "ok", written: written[0] ?? 0, walked: walked[0] ?? 0 }
 }
 
 /** MuPDF refused, in its own words. */

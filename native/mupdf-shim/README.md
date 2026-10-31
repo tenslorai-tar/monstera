@@ -122,6 +122,10 @@ without the build going red.
 `mz_page_release`, `mz_open_page_count`. Previously omitted from this list,
 which made the one pair most worth documenting the one pair undocumented.
 
+**The text layer's letters** — `mz_text_letters` (ADR-0280's fourth correction): `textLetters.ts`' format for the
+structured-text page the JSON was written from, walked with MuPDF's own depth-first block iterator, into a buffer of
+the size it is given.
+
 **Instrumentation** — `mz_alloc_stats`, `mz_process_alloc_stats`,
 `mz_store_footprint`, `mz_store_debug`, `mz_purge_objects`, `mz_shrink_store`.
 

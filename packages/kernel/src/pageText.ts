@@ -1,4 +1,7 @@
+import { MAX_TEXT_LAYER_LINE, MAX_TEXT_LAYER_LINES } from '@monstera/contract/host';
+
 import type * as mupdf from './mupdfRaw.js';
+import { structuredTextLetters } from './mupdfRaw.js';
 
 import type { MupdfSession } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';
@@ -9,6 +12,7 @@ import {
   stextOptionsFor,
 } from './textStructure.js';
 import { pageInDocument } from './pageScope.js';
+import { LETTERS_FILE_MAX_BYTES } from './textLetters.js';
 
 /**
  * One page's text, read from a live session through the engine's own
@@ -121,10 +125,44 @@ export function readPageTextJson(
  * @param read the named read, whose option string the substrate composes
  */
 function structuredJson(document: mupdf.PDFDocument, page: number, read: PageTextRead): string {
-  const structured = document.loadPage(page).toStructuredText(stextOptionsFor(read));
+  const structured = structuredText(document, page, read);
   try {
     return structured.asJSON();
   } finally {
     structured.destroy();
   }
+}
+
+/** How many structured texts this module has built: the ONE place it builds one, so a read's count is observable. */
+export const STRUCTURED_BUILDS = { count: 0 };
+
+function structuredText(document: mupdf.PDFDocument, page: number, read: PageTextRead): mupdf.StructuredText {
+  STRUCTURED_BUILDS.count += 1;
+  return document.loadPage(page).toStructuredText(stextOptionsFor(read));
+}
+
+/** The buffer the shim writes a page's letters into: `textLetters.ts`' bound, allocated once per process. */
+let lettersBuffer: Uint8Array | undefined;
+
+/**
+ * The substrate read's JSON AND, from the same structured text, the page's letters
+ * ([ADR-0280](../../../docs/DECISIONS/0280-the-text-layer-places-each-letter-where-the-engine-reads-it.md), its fourth
+ * correction): the text layer's read, in the host. One build of the structured text for both. `walked` is every text
+ * line the shim's walk gave, for `main` to compare with the JSON's count; a page whose letters do not fit the bound
+ * answers none, and `main` places it as today.
+ */
+export function readPageTextWithLetters(session: MupdfSession, page: number): Promise<{ readonly json: string; readonly letters: Uint8Array; readonly walked: number }> {
+  return withDocument(session, (document) => {
+    pageInDocument(page, document.countPages());
+    const structured = structuredText(document, page, 'substrate');
+    try {
+      const json = structured.asJSON();
+      lettersBuffer ??= new Uint8Array(LETTERS_FILE_MAX_BYTES);
+      const read = structuredTextLetters(structured, lettersBuffer, MAX_TEXT_LAYER_LINES, MAX_TEXT_LAYER_LINE);
+      const letters = read.status === 'full' ? new Uint8Array(0) : lettersBuffer.slice(0, read.written);
+      return { json, letters, walked: read.walked };
+    } finally {
+      structured.destroy();
+    }
+  });
 }
