@@ -892,6 +892,139 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-31 — Stage audit of `f32c8c39..0d48e788` — findings BBBBBBBBB-1 to BBBBBBBBB-27
+
+Cloud runs 25 (Edit text on drawn fonts, ADR-0275), 26 (the assistant's limits and history, ADR-0277), 27 (node-forge
+1.4.2) and 28 (the bounded form walk), with the local agent's ADR-0278 safety net and the merges' corrections.
+`npm run audit:scope` at `0d48e788`: 59 commits, 161 files, within one batch; 6 proofs added, 51 modified, none removed;
+3 source files added, 61 changed, none removed.
+
+**Method.** Three read-only reviewers, for Edit text, the assistant, and forms with node-forge and the tooling, were
+given the range and CLAUDE.md's checklist, not this author's view; a fourth read the providers' documentation for NEXT-
+UPDATE item 35. Each finding fixed here was confirmed in the code and its case run red on the old code before the fix.
+**Stated limitation, not a pass:** the filed findings are read, not reproduced, except where *measured* says so.
+
+**Measured at the merges (development app, Windows 11, 2026-10-30), recorded rather than found.** Run 27: a document
+signed with a self-signed test certificate built as `documentSign.test.ts` builds one, saved, closed, reopened: Check
+signatures reads *Unchanged since it was signed*, with and without a DigiCert timestamp (the timestamped signature
+carries DigiCert's certificates). Selection and caret on an 11 pt Times page not embedded, 100% zoom, against the AFM
+letter positions: Select text's worst letter 3.75 pt in the shipped face (Segoe UI Variable), 4.49 sans-serif, 1.22
+serif, against Linux's 2.87 / 3.35 / 0.80; Edit text's letters within 1.88 pt (Tinos), its caret within 1.37 pt and never
+off the pressed letter. Run 28: `formGraph(8, 1, 25)`, all 200 placements outlined, Edit text on to outlines 5.5 s then
+4.7 s, MuPDF host peak 146 then 155 MB, PDFium 149 then 164 MB; `formGraph(1, 1, 300)` 256 outlined with the *too many*
+note; the *too deep* note on `formGraph(17, 1, 1)`; both notes as approved, in light and dark.
+
+### Fixed
+
+**BBBBBBBBB-1 — A page drawing more than 32 form placements ended the PDFium host** (found at the run 28 merge, in the
+app). `composition.ts` read every placement with `Promise.all`, past `ENGINE_HOST_MAX_IN_FLIGHT`'s premise of one serial
+lane per document; since e80a538a (bound 64), widened by run 28's 256. Read one at a time; `compositionHost.test.ts`,
+control the fan-out (`0d48e788`).
+
+**BBBBBBBBB-2 — ADR-0278's hold ended on a caret move.** `held` read the refusal's sentence, which any store change
+clears, and a selection publishes one: an arrow key inside refused words, then any route, lost them with *Saved*. The
+hold is its own state, ended only by a write or Discard; a press away no longer writes under the question
+(`66021580`, `editTextLeaving.pw.ts`, control the sentence rule).
+
+**BBBBBBBBB-3 — A conversation's first question was dropped in silence at 65 turns.** `conversationRoom` counted the
+question, not its answer, and a failed ask leaves 63 (`93dde166`).
+
+**BBBBBBBBB-4 — New chat within `SETTLE_MS` of an answer lost it**, and a waiting first save ran against the next
+conversation. One timer per store for every conversation; saves now carry their conversation (`27b4ebdd`, ADR-0277's
+correction of 2026-10-31).
+
+**BBBBBBBBB-5 — The product-name scan passed an unreadable staged file beside a readable one** (`whatWasRead`'s order;
+its control's fixture separated nothing). Fixed with a separating case, red on the old order.
+
+### Filed for the next update (NEXT-UPDATE, with the mechanism)
+
+- **-6 (C), measured.** A page whose forms hold more than 65,536 characters cannot be edited: PDFium's
+  `engine/text-runs` forwards `unaddressable` unclipped and its schema bounds it at `PDFIUM_PRIOR_TEXT_MAX`, so the
+  answer fails its own schema and becomes `internal` (`formGraph(16, 2, 1)`, 196,094). `engine/page-content` has the
+  same field and bound; a run's `text` and `words` are bounded with no producer clipping them (read). Document-caused.
+- **-7.** `editExpectations.mjs`' *new word in a drawn font* nets counts by spelling, so a typed drawn word and an old
+  one leaving its font cancel. **-8.** `operatorEdit.ts`' `joinedIn` takes any emptied block, not a join's, so a typed
+  word spelt like a deleted one can be set in a drawn font (25c's class). **-9.** `toUnicode`'s step-down has no case
+  (`fflx` fails for any rule). **-10.** `editTextLeaving.pw.ts`' Discard cases assert the route, not the words put back;
+  Redo, other commands and the window's × have no case. **-11.** `pageDisturbance.mjs`' cache shares a mutable `rgb`.
+- **-12 (2a, stated).** `editText.proof.mjs`' *form placements not offered* now counts pages, from the walk's reasons.
+- **-13.** `chatHistory.ts` refuses a file's twenty by `count`, including blobs that do not decrypt, while `list` omits
+  them: *Remove one in the History* with nothing to remove. **-14.** That sentence also says the conversation *will be
+  saved*; nothing saves again after a removal. **-15.** Two test names claim a clause they do not assert
+  (`chatHistorySync.test.ts` *a later save clears it*, `AssistantPanel.test.tsx` *saves beside the old*). **-16.** A
+  waiting save at close is sent after the close's flush returns (one round trip; read). **-17.** ADR-0277 Decision 6 says
+  New chat keeps the old conversation; with history off it is gone — the owner's call whether off should say so.
+  **-18.** The provider's *too long* mark is not saved, so a reopened conversation sends the refused question again.
+  **-19.** *Twenty are some 640 messages* is the questions; the messages are 1,280 (`channels.ts`, ADR-0277).
+- **-20.** A host rebuild reopens every affected document at once; past 32 open documents it would end the host it
+  built (read). **-21.** `machineNames.mjs` spells its own binary rule beside `kindOf`, never refuses an empty tree read,
+  and skips UTF-16 text unseen. **-22.** `formText.ts`' `MAX_FORM_VISITS` branch has no case (every fixture form shows
+  text). **-23.** `formsLeft.unnamed` is never true in a test and has no reader; `channels.ts`' comment names two
+  reasons. **-24.** The release's tag check reads local refs only.
+- **-25, measured, not explained.** CI at `c9b5500d` (run 41137717503): the dialog sweep's *boxed characters / edited*
+  state did not show within 5 s; the trace holds one frame in that window and the dialog in the page after it. Its parents
+  passed; `0d48e788` passed. First draw of an emoji is a guess, not a mechanism.
+- **-26, measured.** The text layer's read of `formGraph(16, 2, 1)` took 9.9 s in the MuPDF host: Select text's read
+  walks every placement unbounded. **-27, measured.** 200 placements read one at a time take 4.4 s, one image open each.
+
+### 1. Fixes classified
+
+Every fix in the range states its mechanism: the merges' (ADR-0278's routes, the form limits' correction, the
+ADR-0093 note) and this audit's five. One was a workaround wearing a fix's clothes: ADR-0278's `held` read a symptom
+(the sentence) for the state (words in no document), which -2 replaced.
+
+### 2. The easy shape
+
+-1 was the easy shape (a page of two placements against one of 200); -2 the easy order (refuse, then leave at once,
+never a caret moved between); -4 the easy timing (the settle time passed before New chat).
+
+### 2a. How things are proven
+
+-12: a count became a flag, stated. Nothing else changed how a claim is proven.
+
+### 3. Would CI have caught it?
+
+CI could see none of -1 to -5 before this range's cases; it does now, in `compositionHost.test.ts`,
+`editTextLeaving.pw.ts`, `channels.test.ts`, `AssistantPanel.test.tsx`, `chatHistorySync.test.ts` and
+`proof:productnames`. -6 and -26 need a document CI has none of. The other way round: -25 is a defect, or a stall,
+only a CI runner showed.
+
+### 4. Non-vacuous proofs
+
+Each new case was run against the old code and went red (-1 to -5). -5's old control and -9's case are fixtures the
+bug also handles; -15's names claim more than they assert.
+
+### 4a. Instruments' resolution
+
+The Windows offsets were measured against AFM letter positions with a control (the serif refit, 1.22 pt and no press
+on the wrong letter, against the app face's 3.75 pt); the drag-start counter was found to count Chromium's word
+snapping in the control too, so drags are reported by their start position, not that count.
+
+### 4b. Searches with a positive control
+
+-5 and -21 are scans that report clean when blind; -5 fixed, -21 filed.
+
+### 4c. Derived extents
+
+The roster counts touched here are literals raised by hand (`productNames.proof.mjs` 9 to 10). Nothing new derives.
+
+### 5. Executed or asserted
+
+Executed: -1, -2, -3, -4, -5, -6, -25, -26, -27 and the merges' measurements. Asserted from reading: the rest of the
+filed list.
+
+### 6. Architecture before or underneath
+
+Nothing in this range changed architecture under a feature; ADR-0278 and ADR-0277's correction preceded or named
+their builds.
+
+### 7. Documents against the code
+
+ADR-0277 gained a correction (-3, -4); the JOURNAL's form limits a correction at the run 28 merge. -17, -19 and -23
+are document claims the code contradicts, filed.
+
+---
+
 ## 2026-10-30 — Cloud run 25 merged: the corpus recount, and refused words never left without a question
 
 **The merge.** `origin/work/cloud-25-drawn-fonts` merged at c4314e17, its red Windows case fixed at 1c04faf8 (letters
