@@ -774,6 +774,11 @@ export class EngineSessions implements EngineSessionSource {
     this.failures({ event: 'edit-writer-defect', detail: `${kind} on ${docId}: ${detail}` });
   };
 
+  /** What the page text and the letters' walk disagreed about (ADR-0280): logged, never shown. */
+  readonly engineChange = (docId: DocId, detail: string): void => {
+    this.failures({ event: 'engine-change', detail: `${docId}: ${detail}` });
+  };
+
   /**
    * The passwords the open documents' files open with (ADR-0171 Decision 1). HERE, beside the entries, so the close
    * that drops a document's entry is the close that wipes its password: one teardown registration, not a second one a

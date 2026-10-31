@@ -58,3 +58,11 @@ export const MAX_TEXT_LAYER_LINES = 2048;
  * measured above cross about 10 KB.
  */
 export const MAX_TEXT_LAYER_LINE = 1024;
+
+/**
+ * The range of one letter's advance along its line, in hundredths of a point: a signed 16-bit integer, which is what
+ * the letters' file writes two bytes an advance as (ADR-0280, Decision 2), so ±327.67 pt. A line with an advance past
+ * it crosses with no letters and is placed as before.
+ */
+export const TEXT_LAYER_ADVANCE_MIN = -32768;
+export const TEXT_LAYER_ADVANCE_MAX = 32767;

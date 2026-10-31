@@ -426,6 +426,8 @@ export {
   remoteMupdfPageLinks,
   remoteMupdfPageText,
   type RemotePageTextReader,
+  remoteMupdfPageTextLayer,
+  type RemotePageTextLayerReader,
   remoteMupdfWordBoxes,
 } from './host/remoteEngine.js';
 export type { PageWordBoxes } from './wordBoxes.js';
@@ -570,7 +572,7 @@ export {
 // parsing, searching and scoring import no engine and bind no native library,
 // so a consumer that holds a `PageText` needs no reason to reach for `/engine`
 // (ADR-0026). Reading one from a document does, and `readPageText` is there.
-export { type TextLayer, type TextLayerLine, textLayerOf } from './textLayer.js';
+export { type TextLayer, type TextLayerLetters, type TextLayerLine, textLayerOf, withLetters } from './textLayer.js';
 export { type PageKind, pageKindOf } from './pageKind.js';
 export { countPageWords } from './wordCount.js';
 export {

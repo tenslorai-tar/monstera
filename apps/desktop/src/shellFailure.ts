@@ -164,6 +164,12 @@ export type ShellFailureEvent =
    */
   | 'edit-writer-defect'
   /**
+   * The engine's page text and its letters' walk disagreed about how many lines a page holds (ADR-0280's fourth and sixth
+   * corrections): MuPDF has changed something the walk does not follow. That page's lines are placed as before and nothing
+   * is shown or refused; this line names the page and both counts.
+   */
+  | 'engine-change'
+  /**
    * The shell could not close what it holds on the way out.
    *
    * A lifecycle failure like the rest, and the only one that happens when there

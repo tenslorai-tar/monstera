@@ -1,4 +1,4 @@
-import { MAX_TEXT_LAYER_LINE, MAX_TEXT_LAYER_LINES } from '@monstera/contract/host';
+import { MAX_TEXT_LAYER_LINE, MAX_TEXT_LAYER_LINES, TEXT_LAYER_ADVANCE_MAX } from '@monstera/contract/host';
 
 /**
  * WHERE EACH LETTER OF A PAGE'S TEXT LAYER IS: the one format, its one writer and its one reader (in `main`), side by
@@ -55,7 +55,7 @@ export const LETTERS_FILE_MAX_BYTES = MAX_TEXT_LAYER_LINES * (LETTERS_LINE_HEADE
 export const DIRECTION_ONE = 16384;
 
 /** The furthest one advance may go either way, in points: what a signed 16-bit count of hundredths holds. */
-export const ADVANCE_LIMIT = 32767 / 100;
+export const ADVANCE_LIMIT = TEXT_LAYER_ADVANCE_MAX / 100;
 
 /** One line's letters as `main` reads them, once checked against the line's text. */
 export interface LineLetters {
@@ -111,7 +111,9 @@ export function writeLetters(lines: readonly WalkedLine[]): Uint8Array {
     const places = [...characters.map(place), place(end)];
     const advances = characters.map((_, at) => (places[at + 1] ?? 0) - (places[at] ?? 0));
     // A LINE THAT CANNOT BE CARRIED carries no advances, and `main` places it as today.
-    const carried = advances.every((advance) => Math.abs(advance) <= 32767) ? advances : [];
+    // THE SHIM'S RULE EXACTLY (`mz_text_letters`), which this writer is held to byte for byte: symmetric, so -32768,
+    // which the format could hold, is not carried by either.
+    const carried = advances.every((advance) => Math.abs(advance) <= TEXT_LAYER_ADVANCE_MAX) ? advances : [];
     return { line, characters, advances: carried };
   });
   const bytes = new Uint8Array(records.reduce((sum, record) => sum + LETTERS_LINE_HEADER_BYTES + ADVANCE_BYTES * record.advances.length, 0));

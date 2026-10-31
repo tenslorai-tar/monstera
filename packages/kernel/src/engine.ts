@@ -12,7 +12,7 @@ export {
 } from './rotatePages.js';
 export { commandSpecs, declaredSpecs, localMupdfExecution } from './commandSpecs.js';
 export { readPageGeometry } from './pageGeometry.js';
-export { readPageText, readPageTextJson, type PageTextResult } from './pageText.js';
+export { readPageText, readPageTextJson, readPageTextWithLetters, type PageTextResult } from './pageText.js';
 export { readPageAdjustment } from './pageAdjustment.js';
 // THE PAGE STAMPS, the MuPDF writer's since ADR-0235, so they bind the native engine and live here rather than on the barrel.
 export { applyWatermarkPages, captureWatermarkPages, invertWatermarkPages } from './pageWatermark.js';

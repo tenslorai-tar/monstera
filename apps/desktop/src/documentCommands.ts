@@ -150,6 +150,7 @@ import {
   readAskWindow,
   structureOutlineOf,
   textLayerOf,
+  withLetters,
   saveDocument,
   placeStaged,
   type StagedImage,
@@ -405,6 +406,8 @@ export interface EngineSessionSource {
    * shown. Required, so a supervisor that would drop it is a compile error rather than a defect nobody sees.
    */
   readonly writerDefect: (docId: DocId, kind: string, detail: string) => void;
+  /** The page text and the letters' walk disagreeing about a page (ADR-0280): logged, never shown. Required, as above. */
+  readonly engineChange: (docId: DocId, detail: string) => void;
 }
 
 /**
@@ -1517,6 +1520,18 @@ export type DocumentPageText = (
 ) => Promise<PageText>;
 
 /**
+ * The text layer's read of one page: the same page text {@link DocumentPageText} answers, and the letters' file the host
+ * wrote beside it from the same structured text, or `null` where it wrote none
+ * ([ADR-0280](../../../docs/DECISIONS/0280-the-text-layer-places-each-letter-where-the-engine-reads-it.md)). Injected for
+ * {@link DocumentPageText}'s reason.
+ */
+export type DocumentPageTextLayer = (
+  docId: DocId,
+  sessions: DocumentSessions,
+  page: number,
+) => Promise<{ readonly text: PageText; readonly letters: { readonly bytes: Uint8Array; readonly walked: number } | null }>;
+
+/**
  * Reads one page's tagged structure.
  *
  * Injected for {@link DocumentPageText}'s reason, and one page for the same one. It
@@ -2532,6 +2547,8 @@ export interface DocumentCommandsParts {
   readonly save: SaveSource;
   readonly geometry: DocumentGeometry;
   readonly pageText: DocumentPageText;
+  /** The text layer's read of one page, its text and its letters (ADR-0280). */
+  readonly pageTextLayer: DocumentPageTextLayer;
   /** The `structure` read of one page — `pageStructure`'s (ADR-0065). */
   readonly pageStructure: DocumentPageStructure;
   /** The `table` read of one page — `exportExcel`'s (ADR-0073). */
@@ -2825,6 +2842,7 @@ export class DocumentCommands {
   readonly #save: SaveSource;
   readonly #geometry: DocumentGeometry;
   readonly #pageText: DocumentPageText;
+  readonly #pageTextLayer: DocumentPageTextLayer;
   readonly #pageStructure: DocumentPageStructure;
   readonly #pageTables: DocumentPageTables;
   readonly #pageAdjustment: DocumentPageAdjustment;
@@ -2930,6 +2948,7 @@ export class DocumentCommands {
     this.#save = parts.save;
     this.#geometry = parts.geometry;
     this.#pageText = parts.pageText;
+    this.#pageTextLayer = parts.pageTextLayer;
     this.#pageStructure = parts.pageStructure;
     this.#pageTables = parts.pageTables;
     this.#pageAdjustment = parts.pageAdjustment;
@@ -3164,8 +3183,12 @@ export class DocumentCommands {
       const sessions = this.#engine.sessions(docId);
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
-      const text = await this.#pageText(docId, sessions, page);
-      return textLayerOf(text, limit, MAX_TEXT_LAYER_LINE);
+      // THE TEXT LAYER'S READ: the page's text and its letters from one structured text, paired line by line in the one
+      // place that pairs them (`withLetters`); a disagreement is logged as an engine change and never shown.
+      const { text, letters } = await this.#pageTextLayer(docId, sessions, page);
+      return withLetters(textLayerOf(text, limit, MAX_TEXT_LAYER_LINE), text, letters, page, (entry) => {
+        this.#engine.engineChange(docId, entry);
+      });
     });
 
     return { version, ...value };

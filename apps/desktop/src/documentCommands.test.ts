@@ -77,6 +77,7 @@ import {
   stagedBytes,
   siblingNames,
   StaleTargetError,
+  parsePageText,
 } from '@monstera/kernel';
 // See the note in `engineSessions.test.ts`: a local engine in main's process is
 // the pre-host arrangement, and `/engine` is what makes that import say so
@@ -98,6 +99,7 @@ import {
   readPageLinks,
   readPageText,
   readPageTextJson,
+  readPageTextWithLetters,
   readPageAdjustment,
   readPageWordBoxes,
   detectFlatFields,
@@ -196,6 +198,7 @@ import {
   type DocumentFormFieldsReader,
   type DocumentDuplicatesReader,
   type DocumentPageText,
+  type DocumentPageTextLayer,
   type DocumentPageStructure,
   type DocumentPageTables,
   type DocumentPageAdjustment,
@@ -414,6 +417,10 @@ const localGeometry: DocumentGeometry = (id, sessions, pages) => {
 /** Refuses, for {@link noGeometry}'s reason: a case must say it reads text. */
 const noPageText: DocumentPageText = () =>
   Promise.reject(new Error('this case does not read page text'));
+
+/** Refuses, for {@link noGeometry}'s reason: a case must say it reads the text layer. */
+const noPageTextLayer: DocumentPageTextLayer = () =>
+  Promise.reject(new Error('this case does not read the text layer'));
 
 const noPageStructure: DocumentPageStructure = () =>
   Promise.reject(new Error('this case does not read page structure'));
@@ -769,6 +776,18 @@ const localPageText: DocumentPageText = async (id, sessions, page) => {
 };
 
 /**
+ * The production composition of the text layer's read, the way `composition.ts` assembles it over the host: one
+ * structured text's JSON parsed by the one reader, and its letters beside it (ADR-0280). In process, so the letters
+ * cross no file; the file's round trip is `pageTextLayer.test.ts`' subject.
+ */
+const localPageTextLayer: DocumentPageTextLayer = async (id, sessions, page) => {
+  const held = sessions.mupdf;
+  if (held === undefined) throw new MissingSessionError(id, 'mupdf');
+  const { json, letters, walked } = await readPageTextWithLetters(held, page);
+  return { text: { ...parsePageText(json), truncated: false }, letters: { bytes: letters, walked } };
+};
+
+/**
  * The production composition of the structure read, the way `composition.ts`
  * assembles it — the host's own reader under the `structure` name, then the one
  * walk. The real reader for `localPageText`'s reason: what the structure cases
@@ -905,6 +924,7 @@ const INERT = {
   },
   geometry: noGeometry,
   pageText: noPageText,
+  pageTextLayer: noPageTextLayer,
   pageStructure: noPageStructure,
   pageTables: noPageTables,
   pageAdjustment: noPageAdjustment,
@@ -1015,6 +1035,7 @@ const LOCAL_READS = {
   ...INERT,
   geometry: localGeometry,
   pageText: localPageText,
+  pageTextLayer: localPageTextLayer,
   pageStructure: localPageStructure,
   pageTables: localPageTables,
   pageAdjustment: localPageAdjustment,
@@ -1673,6 +1694,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
           commandEnded: () => undefined,
           commandBarred: () => false,
           writerDefect: () => undefined,
+          engineChange: () => undefined,
           sessions: () => {
             const cause = new Error(`EPERM: operation not permitted, stat '${SECRET}'`);
             cause.stack = `Error: EPERM: operation not permitted, stat '${SECRET}'\n    at readFileIdentity (${SECRET}:1:1)`;
@@ -2427,6 +2449,43 @@ describe('search is E2s first consumer, through the composition point', () => {
       engine: held,
     });
   }
+
+  describe('the text layer carries each line’s letters where the engine reads them (ADR-0280)', () => {
+    it('answers every line with its letters: its origin where it was drawn, each place at Helvetica’s own advance', async () => {
+      const held = new EngineSessions();
+      held.hold(searchable, { mupdf: searchSession });
+      const changes: string[] = [];
+      const commands = new DocumentCommands({
+        ...LOCAL_READS,
+        documents: searchService,
+        bus: bus(),
+        engine: Object.assign(held, {
+          engineChange: (_docId: DocId, detail: string) => {
+            changes.push(detail);
+          },
+        }),
+      });
+      const layer = await commands.pageTextLayer(searchable, 0, 100);
+      expect(layer.lines.map((line) => line.text)).toStrictEqual([...(PAGE_LINES[0] ?? [])]);
+      // HELVETICA'S OWN WIDTHS, each glyph alone, as `drawText` writes them: no kerning.
+      const reference = await (await PDFDocument.create()).embedFont(StandardFonts.Helvetica);
+      for (const [at, line] of layer.lines.entries()) {
+        const letters = line.letters;
+        if (letters === undefined) throw new Error(`line ${String(at)} crossed with no letters`);
+        expect(Math.abs(letters.origin.x - 72), `line ${String(at)} origin x`).toBeLessThan(0.02);
+        expect(Math.abs(letters.origin.y - (792 - (700 - at * 24))), `line ${String(at)} origin y`).toBeLessThan(0.02);
+        expect(letters.direction).toStrictEqual({ x: 1, y: 0 });
+        let place = 0;
+        let drawn = 0;
+        for (const [k, character] of Array.from(line.text).entries()) {
+          expect(Math.abs(place / 100 - drawn), `line ${String(at)}, letter ${String(k)}`).toBeLessThan(0.02);
+          place += letters.advances[k] ?? NaN;
+          drawn += reference.widthOfTextAtSize(character, 12);
+        }
+      }
+      expect(changes).toStrictEqual([]);
+    });
+  });
 
   describe('an assistant ask reads its window through the same text (ADR-0088)', () => {
     /** A provider's answer with nothing in it — these cases read the REQUEST. */
@@ -7868,6 +7927,7 @@ describe('a protect in this session: the holder follows it', () => {
       commandEnded: () => undefined,
       commandBarred: () => false,
       writerDefect: () => undefined,
+      engineChange: () => undefined,
     }));
     try {
       await commands.execute(docId, { kind: 'setDocumentProtection', encryption: 'aes-256', userPassword: KEY });

@@ -238,7 +238,7 @@ export const MAX_VIEW_MODEL_PAGES = 512;
  */
 export const MAX_SEARCH_MATCHES = 512;
 
-import { MAX_TEXT_LAYER_LINE, MAX_TEXT_LAYER_LINES } from './textLayerBounds.js';
+import { MAX_TEXT_LAYER_LINE, MAX_TEXT_LAYER_LINES, TEXT_LAYER_ADVANCE_MAX, TEXT_LAYER_ADVANCE_MIN } from './textLayerBounds.js';
 
 // THE TEXT LAYER'S TWO BOUNDS live in `textLayerBounds.ts`, with their measurements, so the MuPDF host can read them
 // (ADR-0280's second correction); re-exported here so every existing reader's import is unchanged.
@@ -5059,6 +5059,24 @@ export const channels = {
               x1: z.number(),
               y1: z.number(),
             }),
+            /**
+             * WHERE THE LINE'S LETTERS ARE, as the engine reads them
+             * ([ADR-0280](../../../docs/DECISIONS/0280-the-text-layer-places-each-letter-where-the-engine-reads-it.md),
+             * Decision 2), in the page's display space at scale 1; absent for a line placed as before.
+             *
+             * BOUNDED PER PAGE BY THE TWO BOUNDS ABOVE: at most {@link MAX_TEXT_LAYER_LINE} advances a line, one per UTF-16
+             * unit of a text that is itself at most that long, on at most {@link MAX_TEXT_LAYER_LINES} lines; each a
+             * signed 16-bit count of hundredths of a point, the letters' file's own range.
+             */
+            letters: z
+              .object({
+                origin: z.object({ x: z.number(), y: z.number() }).strict(),
+                direction: z.object({ x: z.number().min(-1).max(1), y: z.number().min(-1).max(1) }).strict(),
+                size: z.number().nonnegative(),
+                advances: z.array(z.number().int().min(TEXT_LAYER_ADVANCE_MIN).max(TEXT_LAYER_ADVANCE_MAX)).max(MAX_TEXT_LAYER_LINE).readonly(),
+              })
+              .strict()
+              .exactOptional(),
           }),
         )
         .max(MAX_TEXT_LAYER_LINES)

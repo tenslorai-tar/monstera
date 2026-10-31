@@ -110,6 +110,7 @@ import {
   type HostBlockFacesReader,
   type HostPageLinksReader,
   type RemotePageTextReader,
+  type RemotePageTextLayerReader,
   type HostWordBoxesReader,
   type HostCallDeadline,
   HostConnectionLost,
@@ -197,6 +198,7 @@ import {
   namedByDescriptor,
   remoteMupdfPageLinks,
   remoteMupdfPageText,
+  remoteMupdfPageTextLayer,
   remoteMupdfWordBoxes,
   remoteMupdfWriter,
   serialiseIntoFile,
@@ -1419,6 +1421,14 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       const answer = await engineHost.pageText(session, page, 'substrate');
       return { ...parsePageText(answer.json), truncated: answer.truncated };
     },
+    // THE TEXT LAYER'S READ: the same page text, parsed here by the one reader, and the letters the host wrote beside it
+    // from the same structured text (ADR-0280); `withLetters` pairs them in `pageTextLayer`.
+    pageTextLayer: async (docId, sessions, page) => {
+      const session = sessions.mupdf;
+      if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+      const answer = await engineHost.pageTextLayer(session, page);
+      return { text: { ...parsePageText(answer.json), truncated: answer.truncated }, letters: answer.letters };
+    },
     // THE LINK READ, composed here for the two reads above's reason. Unlike the
     // text, nothing is parsed on the way through: the host answers a declared
     // shape rather than a format, so there is no second reader to keep out of
@@ -2517,6 +2527,8 @@ function engineSessionOpener(
   readonly geometry: PageGeometryReader;
   /** One page's structured text as MuPDF's JSON, from whichever host is live, and whether it is all of the page. */
   readonly pageText: RemotePageTextReader;
+  /** The same page's text and its letters, the text layer's read, from whichever host is live (ADR-0280). */
+  readonly pageTextLayer: RemotePageTextLayerReader;
   /** One page's links, from whichever host is live. */
   readonly pageLinks: HostPageLinksReader;
   /** One page's filled shapes, from whichever host is live — a table cell's background. */
@@ -2756,9 +2768,12 @@ function engineSessionOpener(
    * and answered a later read with the transport's rejection rather than the divergence each wrapper names
    * (SSSSSSS-20). One value cannot be half cleared, and a reader added to `readersOf` is dropped with the rest.
    */
-  const readersOf = (...[client, remote]: Parameters<typeof remoteMupdfGeometry>) => ({
+  const readersOf = (...[client, remote, areas]: [...Parameters<typeof remoteMupdfGeometry>, SessionAreaSurface]) => ({
     geometry: remoteMupdfGeometry(client, remote),
     pageText: remoteMupdfPageText(client, remote),
+    // THE TEXT LAYER'S READ, its letters in a file beside the answer through the session's granted areas (ADR-0280): the
+    // same areas the writer takes its files back through.
+    pageTextLayer: remoteMupdfPageTextLayer(client, remote, areas),
     pageLinks: remoteMupdfPageLinks(client, remote),
     pageFills: remoteMupdfPageFills(client, remote),
     scanTables: remoteMupdfScanTables(client, remote),
@@ -2821,6 +2836,18 @@ function engineSessionOpener(
       );
     }
     return pageText(session, page, read);
+  };
+
+  /** The text layer's read, its text and its letters, bound the same way. See {@link readPageTextThroughHost}. */
+  const readPageTextLayerThroughHost: RemotePageTextLayerReader = (session, page) => {
+    const pageTextLayer = bound?.pageTextLayer ?? null;
+    if (pageTextLayer === null) {
+      throw new Error(
+        'A text layer read reached the engine with no host text reader registered. A session was resolved for this ' +
+          'document, so one was issued by a host — the supervisor and the host connection have diverged.',
+      );
+    }
+    return pageTextLayer(session, page);
   };
 
   /** The link read's half of the same registration. See {@link pageText}. */
@@ -3371,8 +3398,9 @@ function engineSessionOpener(
     // talking to two different hosts — which is the state a second
     // `createClient` here would make representable.
     const client = createClient(engineChannels, live.value.client.invoke);
-    writer = remoteMupdfWriter(client, remote, sessionAreas(platform, takenDirectory), sessionAssets(), notices);
-    bound = readersOf(client, remote);
+    const areas = sessionAreas(platform, takenDirectory);
+    writer = remoteMupdfWriter(client, remote, areas, sessionAssets(), notices);
+    bound = readersOf(client, remote, areas);
     return live.value;
   };
 
@@ -3734,6 +3762,7 @@ function engineSessionOpener(
     writers,
     geometry: readGeometry,
     pageText: readPageTextThroughHost,
+    pageTextLayer: readPageTextLayerThroughHost,
     pageLinks: readPageLinksThroughHost,
     pageFills: readPageFillsThroughHost,
     scanTables: readScanTablesThroughHost,

@@ -1,4 +1,7 @@
+import { MAX_TEXT_LAYER_LINE, MAX_TEXT_LAYER_LINES } from '@monstera/contract/host';
+
 import { type PageKind, pageKindOf } from './pageKind.js';
+import { pageLetters } from './textLetters.js';
 import type { PageText, TextLine } from './textStructure.js';
 import { linesOf } from './textStructure.js';
 
@@ -38,6 +41,55 @@ export interface TextLayerLine {
     readonly y0: number;
     readonly x1: number;
     readonly y1: number;
+  };
+  /**
+   * Where its letters are, as the engine reads them
+   * ([ADR-0280](../../../docs/DECISIONS/0280-the-text-layer-places-each-letter-where-the-engine-reads-it.md), Decision
+   * 2), or absent for a line placed as before: one whose letters did not pair with its text, a page whose walk and text
+   * disagreed, or a page read without them.
+   */
+  readonly letters?: TextLayerLetters;
+}
+
+/** One line's letters, in the page's display space at scale 1 (ADR-0280, Decision 2). */
+export interface TextLayerLetters {
+  /** The first letter's origin, which is the line's: the JSON's, in hundredths since ADR-0280's fifth correction. */
+  readonly origin: { readonly x: number; readonly y: number };
+  /** The unit vector along the line. */
+  readonly direction: { readonly x: number; readonly y: number };
+  /** The glyph size, in points. */
+  readonly size: number;
+  /** Each UTF-16 unit's advance along the direction, in hundredths of a point; a pair's second unit advances 0. */
+  readonly advances: readonly number[];
+}
+
+/**
+ * A layer's lines with their letters attached, by index: layer line `i` is the page's line `i` clipped
+ * ({@link textLayerOf}), and the letters' file holds records for the same lines in the same order, checked line by line
+ * against each line's text as the layer keeps it (`pageLetters`). The ONE place the two are paired.
+ *
+ * @param file the letters the host wrote and how many lines its walk gave, or `null` where it wrote none
+ * @param noted where a disagreement between the walk and the text is recorded: logged, never shown
+ */
+export function withLetters(
+  layer: TextLayer,
+  page: PageText,
+  file: { readonly bytes: Uint8Array; readonly walked: number } | null,
+  pageIndex: number,
+  noted: (entry: string) => void,
+): TextLayer {
+  if (file === null) return layer;
+  const all = linesOf(page);
+  const texts = all.slice(0, MAX_TEXT_LAYER_LINES).map((line) => line.text.slice(0, MAX_TEXT_LAYER_LINE));
+  const placed = pageLetters(file.bytes, texts, { page: pageIndex, walked: file.walked, json: all.length, truncated: page.truncated === true }, noted);
+  return {
+    ...layer,
+    lines: layer.lines.map((line, at) => {
+      const letters = placed[at];
+      const origin = all[at]?.origin;
+      if (letters === undefined || origin === undefined) return line;
+      return { ...line, letters: { origin: { x: origin.x, y: origin.y }, direction: letters.direction, size: letters.size, advances: letters.advances } };
+    }),
   };
 }
 

@@ -3028,9 +3028,20 @@ function pageTextLayerHandler(
       // kernel-side crosses without anyone deciding it should.
       return ok({
         version,
-        lines: lines.map(({ text, box }) => ({
+        lines: lines.map(({ text, box, letters }) => ({
           text,
           box: { x0: box.x0, y0: box.y0, x1: box.x1, y1: box.y1 },
+          // THE LETTERS, NAMED HERE as every field above is (ADR-0280, Decision 2): absent for a line placed as before.
+          ...(letters === undefined
+            ? {}
+            : {
+                letters: {
+                  origin: { x: letters.origin.x, y: letters.origin.y },
+                  direction: { x: letters.direction.x, y: letters.direction.y },
+                  size: letters.size,
+                  advances: [...letters.advances],
+                },
+              }),
         })),
         truncated,
         kind,
