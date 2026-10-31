@@ -107,3 +107,31 @@ the binding, and is not part of this decision.
 so an advance crosses as a number of up to seven bytes, not two. How the letters cross is the owner's to choose before
 the kernel half is built: the options and a recommendation are in cloud run 30's report. Decisions 1, 2 (the renderer's
 contract), 4, 5 and 6 stand.
+
+## Correction, 2026-10-31 — the letters cross in a file beside the answer; a rare character is paired, not dropped
+
+**Decided by:** the owner, 2026-10-31, on cloud run 30's report.
+
+**The letters cross in a FILE BESIDE THE ANSWER**, binary, two bytes an advance. The precedent is `engine/page-content`
+([ADR-0210](0210-the-editable-powerpoint-export-is-built-from-two-host-reads-and-a-slide-model.md)), which answers its
+JSON in the answer file and writes its pictures' bytes into a second file `main` names in the request. The MuPDF host
+already writes into a file `main` names, through the one mechanism `engine/extract` and `engine/form-pages` use: `into`
+in the request (`outputNameSchema`), `writeOutput` into the session's granted output directory, the count in the answer,
+and `main` taking it held to that count before reading (`takeAnnounced`) and removing it on every other path
+(`removeOutput`). `engine/page-text` takes the same: no second way of writing a file beside an answer (B3a). The
+page's JSON keeps its full 8 MiB, and the structured text is built once: the walk reads the object the JSON was written
+from. Only a read that asks for letters — the text layer's — names the file, so search and the other readers of the
+same page text pay nothing.
+
+Rejected, the three options of the report: a split of the one answer into 6 MiB of JSON and 2 MiB of letters (it cuts
+the JSON of a page it did not need to), a second channel (the structured text built twice a page, against a 10%
+target), and a larger ceiling (a host-wide bound moved for one feature).
+
+**The file's bound is derived from the text layer's own,** since the host writes letters only for the lines the layer
+keeps, clipped as the layer clips them: `MAX_TEXT_LAYER_LINES` lines of at most `MAX_TEXT_LAYER_LINE` advances.
+
+**A character past U+FFFF is PAIRED, not dropped,** withdrawing the first correction's fallback for it. The binding cuts
+the character's value (`String.fromCharCode`) but still calls `onChar` once per character with its own origin and
+quad. So each walked character is compared with the same cut applied to the JSON line's code point at the same place:
+an exact check on both sides, needing no change to the binding, and a line holding an emoji or a rare Chinese character
+gets exact positions. Such a character is two UTF-16 units of the line's text; its second unit advances 0.
