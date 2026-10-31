@@ -198,9 +198,36 @@ describe('streamChat', () => {
     expect(answer.refusal).toBe('too-long');
   });
 
+  /** An Azure OpenAI ask to its own resource, by Chat Completions (`web` off) or by Responses (`web` on). */
+  const azureAsk = (web: boolean, fetchImpl: typeof fetch) =>
+    streamChat({ provider: 'azure-openai', model: 'my-deployment', key: 'k', endpoint: 'https://mine.openai.azure.com/', messages: ASK, web, fetchImpl });
+  const AZURE_TOO_LONG = { error: { message: "This model's maximum context length is 300000 tokens.", type: 'invalid_request_error', param: 'messages', code: 'context_length_exceeded' } };
+
+  it('AZURE OPENAI, by Chat Completions: its documented 400 with code context_length_exceeded is too-long (item 35)', async () => {
+    const asked: string[] = [];
+    const answer = await azureAsk(false, (url) => {
+      asked.push(String(url));
+      return Promise.resolve(new Response(JSON.stringify(AZURE_TOO_LONG), { status: 400 }));
+    });
+    // THE ROUTE THE DOCUMENTATION IS ABOUT, so the case is not passing on another one.
+    expect(asked[0]).toContain('/chat/completions');
+    expect(answer.refusal).toBe('too-long');
+  });
+
+  it('CONTROL: Azure’s other 400s, and the same body through its Responses route, stay rejected', async () => {
+    const other = await azureAsk(false, refusing(400, { error: { message: 'x', type: 'invalid_request_error', param: 'tools', code: 'string_above_max_length' } }));
+    expect(other.refusal).toBe('rejected');
+    // RESPONSES IS DOCUMENTED AS A 500 WITH NO CODE for this case; the chat route's code arriving there is not read.
+    const responses = await azureAsk(true, refusing(400, AZURE_TOO_LONG));
+    expect(responses.refusal).toBe('rejected');
+    const documented = await azureAsk(true, refusing(500, { error: { message: 'The server had an error', type: 'server_error', param: null, code: null } }));
+    expect(documented.refusal).toBe('rejected');
+  });
+
   it('CONTROL: a provider whose answer is not established stays rejected, whatever its body says', async () => {
-    // OPENAI'S OWN CODE NAME, which its public API documents for no chat route: recognising it would be a guess.
-    for (const provider of ['openai', 'groq', 'deepseek', 'mistral'] as const) {
+    // OPENAI'S OWN CODE NAME, which its public API documents for no chat route: recognising it would be a guess. The
+    // providers whose pages state only a 400 (Mistral, Perplexity) or a name with no body (xAI) are here too.
+    for (const provider of ['openai', 'groq', 'deepseek', 'mistral', 'xai', 'perplexity'] as const) {
       const answer = await streamChat({
         provider, model: 'm', key: 'k', messages: ASK, web: false,
         fetchImpl: refusing(400, { error: { code: 'context_length_exceeded', message: 'too long', metadata: { error_type: 'context_length_exceeded' } } }),

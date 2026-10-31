@@ -99,14 +99,22 @@ const TOO_LONG_ESTABLISHED: Readonly<Record<AiProviderId, { readonly read: strin
     notEstablished:
       'the Responses API documents only "the request will fail with a 400 error" (openai-python, truncation); its OpenAPI Error.code lists no value for chat completions or responses',
   },
-  'azure-openai': { notEstablished: 'the 2024-10-21 inference spec lists no context-length code; Microsoft Learn could not be read here' },
-  gemini: { notEstablished: 'python-genai has only a generic APIError; ai.google.dev could not be reached here' },
-  mistral: { notEstablished: 'client-python states the rule, not the refusal: a 422 HTTPValidationError or a generic 4XX' },
-  xai: { notEstablished: 'its SDK is gRPC and names no context-length error; docs.x.ai could not be read here' },
-  groq: { notEstablished: 'groq-python has only generic error classes; console.groq.com could not be read here' },
-  perplexity: { notEstablished: 'no official SDK, and docs.perplexity.ai could not be read here' },
-  deepseek: { notEstablished: 'no official SDK, and api-docs.deepseek.com could not be read here' },
+  'azure-openai': {
+    read: 'CHAT COMPLETIONS ONLY, read 2026-10-31: Microsoft Learn, "Foundry Models sold by Azure", GPT-4.1 "Known issue" (git commit 2998a46d): a 400 whose error.code is "context_length_exceeded" (type invalid_request_error, param messages). The same section gives the Responses API a 500 server_error with no code, so a web-search ask through Responses stays rejected',
+  },
+  gemini: {
+    notEstablished:
+      'read 2026-10-31: ai.google.dev\'s troubleshooting and API errors pages name no refusal for input past the context window, their only 400 is a generic invalid_request; Vertex AI\'s page is another API',
+  },
+  mistral: { notEstablished: 'read 2026-10-31: docs.mistral.ai "Known limitations" says a request past the context window returns 400 Bad Request, and names no body field a 400 could be told apart by' },
+  xai: { notEstablished: 'read 2026-10-31: docs.x.ai names context_length_exceeded as a condition (context compaction) with no status or body field; its debugging page lists a bare 400' },
+  groq: { notEstablished: 'read 2026-10-31: console.groq.com/docs/errors gives error.message and error.type and nothing on context length' },
+  perplexity: { notEstablished: 'read 2026-10-31: docs.perplexity.ai says an input past the context window is a 400, with type invalid_request_error for every 4xx and error.code "always null"' },
+  deepseek: { notEstablished: 'read 2026-10-31: api-docs.deepseek.com\'s error codes list no context-length entry, only 400 Invalid Format and 422 Invalid Parameters' },
 };
+
+/** Azure OpenAI's Chat Completions error code, where a refusal's body carries one (`TOO_LONG_ESTABLISHED['azure-openai']`). */
+const azureErrorSchema = z.object({ error: z.object({ code: z.string() }) });
 
 /** OpenRouter's canonical error type, where a refusal's body carries one (`TOO_LONG_ESTABLISHED.openrouter`). */
 const openRouterErrorSchema = z.object({ error: z.object({ metadata: z.object({ error_type: z.string() }) }) });
@@ -115,7 +123,7 @@ const openRouterErrorSchema = z.object({ error: z.object({ metadata: z.object({ 
  * Why a provider refused, from a response that is not OK and not a key refusal: the ONE place a refusal's body is read,
  * so the out-of-credit and too-long readings cannot disagree about which provider says what.
  */
-async function refusalOf(provider: AiProviderId, response: Response): Promise<ChatRefusal> {
+async function refusalOf(provider: AiProviderId, shape: StreamShape, response: Response): Promise<ChatRefusal> {
   const established = (which: AiProviderId): boolean => 'read' in TOO_LONG_ESTABLISHED[which];
   if (provider === 'anthropic' && response.status === 400) {
     // OUT OF CREDIT IS ITS OWN ANSWER: its 400 is shared with a malformed request, and only one of the two is the
@@ -130,6 +138,13 @@ async function refusalOf(provider: AiProviderId, response: Response): Promise<Ch
     const body: unknown = await response.json().catch(() => null);
     const parsed = openRouterErrorSchema.safeParse(body);
     return parsed.success && parsed.data.error.metadata.error_type === 'context_length_exceeded' ? 'too-long' : 'rejected';
+  }
+  // AZURE'S CHAT COMPLETIONS ROUTE ONLY, and only its documented 400: its Responses route answers the same case as a
+  // 500 with no code, which is any server error and is not read as *full*.
+  if (provider === 'azure-openai' && shape === 'openai-chat' && response.status === 400 && established('azure-openai')) {
+    const body: unknown = await response.json().catch(() => null);
+    const parsed = azureErrorSchema.safeParse(body);
+    return parsed.success && parsed.data.error.code === 'context_length_exceeded' ? 'too-long' : 'rejected';
   }
   return 'rejected';
 }
@@ -761,7 +776,7 @@ export async function streamChat(request: ChatRequest): Promise<ChatAnswer> {
   if (response.status === 401 || response.status === 403) {
     return { text: '', stopped: false, refusal: 'unauthorised', ...unsearched };
   }
-  if (!response.ok) return { text: '', stopped: false, refusal: await refusalOf(provider, response), ...unsearched };
+  if (!response.ok) return { text: '', stopped: false, refusal: await refusalOf(provider, prepared.shape, response), ...unsearched };
   if (response.body === null) return { text: '', stopped: false, refusal: 'unreadable', ...unsearched };
 
   let text = '';
