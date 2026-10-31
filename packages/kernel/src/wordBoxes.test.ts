@@ -52,6 +52,24 @@ async function comparable(bytes: Uint8Array, withWords: boolean): Promise<Compar
   }
 }
 
+describe('pairWordBoxes, on lines set between whole points (ADR-0280’s fifth correction)', () => {
+  // THE TEXT LAYER'S LINES AND THE WORD READ'S, paired by text and by each edge within a point. A line's far edge is its
+  // origin plus its width; cut to whole points each, as the page text was before its precision scale, it fell up to two
+  // points short of the walked edge, past the point the rule allows, so the line kept no word boxes.
+  it('pairs every line, so each keeps its words', async () => {
+    const document = await PDFDocument.create();
+    const font = await document.embedFont(StandardFonts.Helvetica);
+    const sheet = document.addPage([500, 200]);
+    const texts = ['Lines set between whole points', 'pair with their own words', 'on every edge of the line'];
+    texts.forEach((text, at) => {
+      sheet.drawText(text, { x: 50.93, y: 150.91 - at * 30.37, size: 13.7, font });
+    });
+    const page = await comparable(await document.save({ useObjectStreams: false }), true);
+    expect(page.lines.map((line) => line.text)).toStrictEqual(texts);
+    expect(page.lines.map((line) => ('words' in line ? (line.words?.length ?? 0) : 0))).toStrictEqual([5, 5, 6]);
+  });
+});
+
 describe('readPageWordBoxes', () => {
   it('boxes each word where the FONT prints it, within a point — two tokens on the one line', async () => {
     const { bytes, secondStart, secondEnd } = await page('MMMMMMMMMM');
