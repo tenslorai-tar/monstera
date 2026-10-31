@@ -5,6 +5,7 @@ import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { type Page, expect, test } from '@playwright/test';
 
+import { documentDrawn } from './documentDrawn.js';
 import { EVERY_FIELD_KIND, EVERY_FIELD_KIND_ROWS, formPdf } from './formFieldsFixture.js';
 import { runCommand } from './helpScreensHarness.js';
 import { LOOKS, type Look, bridgeUnder } from './pageBridge.js';
@@ -99,20 +100,6 @@ async function sectionDrawn(page: Page, section: string): Promise<void> {
     () => true,
     `the ${section} section`,
   );
-}
-
-/**
- * Waits until the document is DRAWN: the page and its thumbnail each hold a canvas.
- *
- * Measured 2026-09-15, three zero-tolerance comparisons of one build: the first
- * matched all 33 images, the second failed two and the third one — `dark-section-comment`
- * at 0.42 of its pixels, whose received image held no page, no thumbnail and a status
- * bar still laying out. Playwright's stability rule is *two consecutive identical
- * frames*, and a document that has not started drawing is two identical frames. So
- * readiness is asserted on the thing that is late, never on how long to wait.
- */
-async function documentDrawn(page: Page): Promise<void> {
-  await expect.poll(() => page.locator('canvas:visible').count()).toBeGreaterThanOrEqual(2);
 }
 
 /**

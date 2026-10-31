@@ -2,6 +2,7 @@ import { asDocId, asDocVersion } from '@monstera/shared';
 import { type Locator, type Page, expect, test } from '@playwright/test';
 
 import { blockedPages } from './blockedPages.js';
+import { documentDrawn } from './documentDrawn.js';
 import { LOOKS, type Look, bridgeUnder, pushEvent } from './pageBridge.js';
 
 /**
@@ -59,6 +60,8 @@ async function openPane(page: Page, look: Look, setup: Setup, observe?: (channel
   await page.getByRole('button', { name: 'Open PDF…' }).click();
   const pane = page.locator('.m-context-panel');
   await expect(pane.locator('.m-assistant')).toBeVisible();
+  // THE DOCUMENT DRAWN, so the status bar it brings has taken its 36 from the panel before anything is captured.
+  await documentDrawn(page);
   await page.evaluate(() => document.fonts.ready.then(() => undefined));
   // THE POINTER OFF THE PANE, so no control holds a hover or a tooltip that depends on how long the run took.
   await page.mouse.move(400, 450);
