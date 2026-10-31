@@ -454,6 +454,17 @@ export const HOST_READS = [
 export const HOST_FILE_ANSWERS_LIVE = [['apps/desktop/src', 'apps/desktop/dist/entry.js', 'tsc'], ...HOST_READS];
 
 /**
+ * What `historyPerPdf.mjs` and `historyTodayControl.mjs` measure for ADR-0279: the shell's chat history store and
+ * file writer, and the kernel's atomic write, file surface and engine (`mupdfRaw`).
+ *
+ * @type {readonly BuildEdge[]}
+ */
+export const HISTORY_STORE = [
+  ['apps/desktop/src', 'apps/desktop/dist/entry.js', 'tsc'],
+  ['packages/kernel/src', 'packages/kernel/dist/index.js', 'tsc'],
+];
+
+/**
  * What `inlineImages.proof.mjs` runs: the shim's inline-image rewrite through the built native binding, and PDFium's
  * edit through the built adapter (ADR-0126).
  *

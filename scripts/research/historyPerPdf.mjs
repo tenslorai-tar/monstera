@@ -24,6 +24,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { HISTORY_STORE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { bindNativeEngine } from '../lib/nativeEngine.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
@@ -32,6 +33,8 @@ import { conversationOf } from './historyTodayControl.mjs';
 
 const ROOT = repoRoot();
 /** @param {string} relative */
+// THE BUILT CODE IS THE SUBJECT, so a stale build would measure yesterday's store under today's name.
+refuseStaleBuild(ROOT, HISTORY_STORE, 2);
 // LITERAL SPECIFIERS, so `proof:electronimports` can read what this loads: the built application's own writers.
 const { replaceWithRetry } = await import('../../apps/desktop/dist/settingsFile.js');
 const { atomicWrite } = await import('../../packages/kernel/dist/atomicWrite.js');

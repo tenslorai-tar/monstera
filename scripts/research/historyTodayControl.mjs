@@ -11,6 +11,9 @@ import { randomBytes } from 'node:crypto';
 import { mkdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { HISTORY_STORE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
+import { repoRoot } from '../lib/gitScope.mjs';
+
 /**
  * @typedef {{ available: () => boolean, encrypt: (value: string) => Buffer, decrypt: (blob: Buffer) => string }} Cipher
  * @typedef {{ role: 'user' | 'assistant', text: string }} Turn
@@ -43,6 +46,8 @@ const time = (run) => {
  * @param {{ work: string, cipher: Cipher, short: Turn[], long: Turn[], say: (line: string) => void }} input
  */
 export async function measureToday({ work, cipher, short, long, say }) {
+  // THE BUILT STORE IS THE SUBJECT, so a stale build would measure yesterday's under today's name.
+  refuseStaleBuild(repoRoot(), HISTORY_STORE, 2);
   // A LITERAL SPECIFIER, so `proof:electronimports` can read what this loads: today's shipped store.
   const { createChatHistory, CHAT_HISTORY_FILE } = await import('../../apps/desktop/dist/chatHistory.js');
   const directory = join(work, 'today');
