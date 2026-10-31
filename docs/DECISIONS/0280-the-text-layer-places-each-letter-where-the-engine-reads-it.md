@@ -135,3 +135,24 @@ the character's value (`String.fromCharCode`) but still calls `onChar` once per 
 quad. So each walked character is compared with the same cut applied to the JSON line's code point at the same place:
 an exact check on both sides, needing no change to the binding, and a line holding an emoji or a rare Chinese character
 gets exact positions. Such a character is two UTF-16 units of the line's text; its second unit advances 0.
+
+## Correction, 2026-10-31 — the walk cannot read the text layer's lines, and costs too much where it can
+
+Measured by cloud run 30, after the second correction and before any producer was built, on the Linux native shim:
+
+- **The walk sees none of the substrate read's characters.** `stextOptionsFor('substrate')` asks for `segment`, and a
+  segmented page puts every line inside a `structure` block (`"type":"structure","raw":"Split","std":"Div"` on a plain
+  pdf-lib Times page). `StructuredText.walk` (`mupdfRaw.ts`) does nothing for a block of type 2 and the binding offers
+  no accessor into one, so it walked no line and no character. `wordBoxes.ts` walks characters only because its read
+  (`WORD_BOX_READ_OPTIONS`) asks for no `segment`.
+- **A second read without `segment` does not pair, and costs too much.** On a dense page (45 lines of 95 letters) it
+  walked 45 lines, of which 23 paired with the JSON's by text and origin, and in another order; on `chromium-type3.pdf`
+  0 of 3; on `editor-fidelity.pdf` 15 of 15, out of order. It took 14.8 to 25 ms a dense page against the JSON read's
+  1.7 to 2.5: about seven FFI calls and a new `Font` object per character. Against a 10% target, the walk through the
+  binding is not a producer at any segmentation.
+
+So the second correction's *the walk reads the object the JSON was written from* does not hold. What does: the route
+(a file beside the answer, through the MuPDF host's one `into` mechanism), the format and `main`'s checks
+(`textLetters.ts`, committed with its cases), and Decisions 1, 2 and 4 to 6. Which producer writes the letters — an
+export of the shim that walks structure blocks in C and writes the format itself, or another — is a change to the
+shim's ABI ([ADR-0124](0124-mupdfs-own-bindings-compiled-native-are-the-shims-abi.md)) and is the owner's to decide (B4).
