@@ -174,6 +174,24 @@ describe('composeWordDocument — pictures, on the native engine', () => {
     expect(Object.keys(files).some((name) => name.startsWith('word/media/'))).toBe(false);
   });
 
+  // A PICTURE BETWEEN WHOLE POINTS: the page text now prints its box in hundredths (ADR-0280's fifth correction), and the
+  // picture read's key must be made the same way. The pictures above sit on whole points, which a whole-point key also
+  // matches, so they could not show it.
+  it('RICH: a picture placed between whole points is found by the picture read and written', async () => {
+    const document = await PDFDocument.create();
+    const font = await document.embedFont(StandardFonts.Helvetica);
+    const page = document.addPage([612, 792]);
+    page.drawText(ABOVE, { x: 50.4, y: 700.6, size: 11, font });
+    page.drawImage(await document.embedPng(quadrantPng()), { x: 50.37, y: 560.29, width: 200.55, height: 100.45 });
+    const fractional = await mupdfWriter.open(await document.save());
+    try {
+      const { pictures } = await composed(fractional, 'rich');
+      expect(pictures).toBe(1);
+    } finally {
+      await mupdfWriter.close(fractional);
+    }
+  });
+
   it('writes ONLY the chosen pages, in the set’s order, and refuses a page past the document (ADR-0161)', async () => {
     const document = await PDFDocument.create();
     const font = await document.embedFont(StandardFonts.Helvetica);

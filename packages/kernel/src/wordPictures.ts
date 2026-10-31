@@ -11,9 +11,10 @@ import { readPageTextJson } from './pageText.js';
 import {
   PICTURE_READ_OPTIONS,
   type PagePicture,
-  type PrintedBox,
   parsePageLayout,
   parsePageTables,
+  printedBoxOf,
+  samePrintedBox,
 } from './textStructure.js';
 import { type WordMode, type WordPage, wordDocumentParts } from './wordDocument.js';
 
@@ -60,18 +61,6 @@ async function* wordPages(session: MupdfSession, chosen: PageSet, mode: WordMode
 }
 
 /** A box as MuPDF's JSON writer prints it: each figure truncated toward zero, as `(int)` does in `stext-output.c`. */
-function printedOf(bbox: Rect): PrintedBox {
-  return {
-    x: Math.trunc(bbox[0]),
-    y: Math.trunc(bbox[1]),
-    w: Math.trunc(bbox[2] - bbox[0]),
-    h: Math.trunc(bbox[3] - bbox[1]),
-  };
-}
-
-function samePrinted(one: PrintedBox, two: PrintedBox): boolean {
-  return one.x === two.x && one.y === two.y && one.w === two.w && one.h === two.h;
-}
 
 /**
  * One page's pictures, drawn, in the order `pictures` names them.
@@ -79,9 +68,9 @@ function samePrinted(one: PrintedBox, two: PrintedBox): boolean {
  * **From a second read, matched by box.** The places come from the shared read,
  * where segmentation has put every picture inside a structure block that MuPDF's
  * walk does not enter; this read asks for the pictures alone, so the walk meets
- * each one, and its box truncated as the JSON writer truncates is the key.
- * Two pictures with the same whole-point box are paired in the order each read
- * met them — a stated limit, since no key tells them apart.
+ * each one, and its box cut as the JSON writer cuts it is the key (`printedBoxOf`).
+ * Two pictures with the same printed box are paired in the order each read met
+ * them — a stated limit, since no key tells them apart.
  *
  * @throws if a place has no picture behind it in this read — never a gap, since a
  *   package naming a picture it does not carry is one Word reports as damaged
@@ -102,7 +91,9 @@ export function drawPagePictures(
         },
       });
       return pictures.map((picture) => {
-        const match = found.find((entry) => !entry.used && samePrinted(printedOf(entry.bbox), picture.printed));
+        // THE BOX AS THE PAGE TEXT PRINTS IT, made by the one rule that says how (`printedBoxOf`): a copy of MuPDF's cut
+        // here kept whole points after the page text moved to hundredths, and found no picture between them.
+        const match = found.find((entry) => !entry.used && samePrintedBox(printedBoxOf(entry.bbox), picture.printed));
         if (match === undefined) {
           throw new Error(
             `page ${String(page + 1)} placed a picture at ${JSON.stringify(picture.printed)} and the picture ` +

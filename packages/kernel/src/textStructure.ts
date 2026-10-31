@@ -357,8 +357,8 @@ export interface PageText {
    */
   readonly images: number;
   /**
-   * The pictures' combined area, in the display units the lines' boxes are in (whole points, each box truncated as MuPDF
-   * prints it). Optional so a page built by hand (a fixture) reads as it did: absent is no area, and `pageKindOf` then
+   * The pictures' combined area, in the display units the lines' boxes are in (hundredths of a point, each box cut as
+   * MuPDF prints it). Optional so a page built by hand (a fixture) reads as it did: absent is no area, and `pageKindOf` then
    * decides by whether there is text at all.
    */
   readonly imageArea?: number;
@@ -588,14 +588,34 @@ export interface PagePicture {
   /** How many of the page's text blocks come before it in reading order. */
   readonly after: number;
   /**
-   * Its box exactly as MuPDF's JSON writer prints it: whole points, each truncated
-   * toward zero (`(int)` in `stext-output.c`). The key a second read of the same
-   * page matches it by, so it is kept as printed rather than as a rectangle.
+   * Its box exactly as MuPDF's JSON writer prints it: each field cut toward zero
+   * (`(int)` in `stext-output.c`) at {@link PAGE_TEXT_SCALE}, so in hundredths. The key a
+   * second read of the same page matches it by ({@link printedBoxOf}), so it is kept as
+   * printed rather than as a rectangle.
    */
   readonly printed: PrintedBox;
 }
 
-/** A box as MuPDF's JSON prints one: `x`, `y`, `w` and `h`, whole points. */
+/**
+ * A box from MuPDF's own walk, as its JSON writer prints the same box: each of `x`, `y`, `w` and `h` multiplied by
+ * {@link PAGE_TEXT_SCALE}, cut toward zero as `(int)` cuts, and read back as this module's reader reads it. The ONE
+ * statement of how a printed box is made, for a second read that must find the box the page text named.
+ */
+export function printedBoxOf(bbox: readonly [number, number, number, number]): PrintedBox {
+  const printed = (value: number): number => Math.trunc(value * PAGE_TEXT_SCALE) / PAGE_TEXT_SCALE;
+  return { x: printed(bbox[0]), y: printed(bbox[1]), w: printed(bbox[2] - bbox[0]), h: printed(bbox[3] - bbox[1]) };
+}
+
+/**
+ * Whether two printed boxes are the same box: equal to within one printed unit on each field, because MuPDF multiplies
+ * in 32-bit floats and this side in 64, so at a boundary the two cuts can fall one unit apart.
+ */
+export function samePrintedBox(one: PrintedBox, two: PrintedBox): boolean {
+  const near = (a: number, b: number): boolean => Math.abs(a - b) <= 1 / PAGE_TEXT_SCALE + 1e-9;
+  return near(one.x, two.x) && near(one.y, two.y) && near(one.w, two.w) && near(one.h, two.h);
+}
+
+/** A box as MuPDF's JSON prints one: `x`, `y`, `w` and `h`, in hundredths of a point since ADR-0280's fifth correction. */
 export interface PrintedBox {
   readonly x: number;
   readonly y: number;
