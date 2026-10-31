@@ -237,6 +237,25 @@ export const PICTURE_READ_OPTIONS: string = STEXT_OPTIONS.preserveImages;
 export const WORD_BOX_READ_OPTIONS: string = STEXT_OPTIONS.preserveImages;
 
 /**
+ * THE PRECISION THE PAGE TEXT'S JSON IS WRITTEN AT, and the one statement of it
+ * ([ADR-0280](../../../docs/DECISIONS/0280-the-text-layer-places-each-letter-where-the-engine-reads-it.md), its fifth
+ * correction). MuPDF's serialiser writes every block and line box, font size and line origin as
+ * `(int)(value * scale)` (1.28.0, `source/fitz/stext-output.c` 1139-1142, 1151-1154, 1173-1175, 1196-1199), so at
+ * scale 1 each arrives cut to a whole point toward zero. At 100 they arrive in hundredths, and this module's reader
+ * divides them back ({@link engineUnits}): no consumer ever sees a scaled number.
+ */
+export const PAGE_TEXT_SCALE = 100;
+
+/**
+ * THE ONE WAY THE PAGE TEXT'S JSON IS ASKED FOR: MuPDF's own serialiser at {@link PAGE_TEXT_SCALE}. Every caller that
+ * hands its answer to this module's parsers takes it from here, so no request spells a scale of its own. Typed by the
+ * one member it calls, so this module, which `main` imports, still names nothing of the native engine.
+ */
+export function pageTextJsonOf(structured: { asJSON(scale?: number): string }): string {
+  return structured.asJSON(PAGE_TEXT_SCALE);
+}
+
+/**
  * A rectangle in the page's **display space**, as two corners rather than a size.
  *
  * ## This said `FitzRect` and `FitzPoint` until 2026-09-08, and that was wrong
@@ -400,13 +419,22 @@ function field(from: RawNode | null, name: string): unknown {
   return from === null ? undefined : from[name];
 }
 
+/**
+ * A number MuPDF's serialiser MULTIPLIED by {@link PAGE_TEXT_SCALE}, back in points. Taken for exactly the fields
+ * `as_json` scales — block and line boxes, a line's font size and its origin — and for nothing else: a grid's `w` and
+ * `h` are counts of columns and rows (`stext-output.c` 1254, 1255), and dividing them would make three columns 0.03.
+ */
+function engineUnits(value: unknown): number {
+  return num(value, 0) / PAGE_TEXT_SCALE;
+}
+
 function rectOf(value: unknown): DisplayedRect {
   const box = node(value);
-  const x = num(field(box, 'x'), 0);
-  const y = num(field(box, 'y'), 0);
+  const x = engineUnits(field(box, 'x'));
+  const y = engineUnits(field(box, 'y'));
   return {
     topLeft: viewportPoint(x, y),
-    bottomRight: viewportPoint(x + num(field(box, 'w'), 0), y + num(field(box, 'h'), 0)),
+    bottomRight: viewportPoint(x + engineUnits(field(box, 'w')), y + engineUnits(field(box, 'h'))),
   };
 }
 
@@ -486,8 +514,8 @@ function walkBlocks(source: readonly unknown[], visitor: BlockVisitor): void {
       lines.push({
         text,
         box: rectOf(field(line, 'bbox')),
-        origin: viewportPoint(num(field(line, 'x'), 0), num(field(line, 'y'), 0)),
-        size: num(field(font, 'size'), 0),
+        origin: viewportPoint(engineUnits(field(line, 'x')), engineUnits(field(line, 'y'))),
+        size: engineUnits(field(font, 'size')),
         font: {
           name: str(field(font, 'name')) ?? '',
           family: str(field(font, 'family')) ?? '',
@@ -606,10 +634,10 @@ export function parsePageLayout(json: string): PageLayout {
       pictures.push({
         after: blocks.length,
         printed: {
-          x: num(field(box, 'x'), 0),
-          y: num(field(box, 'y'), 0),
-          w: num(field(box, 'w'), 0),
-          h: num(field(box, 'h'), 0),
+          x: engineUnits(field(box, 'x')),
+          y: engineUnits(field(box, 'y')),
+          w: engineUnits(field(box, 'w')),
+          h: engineUnits(field(box, 'h')),
         },
       });
     },

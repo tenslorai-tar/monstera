@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { engineJson } from './engineJsonFixture.js';
 import { scoreAgainstTruth } from './textAccuracy.js';
 import {
   PAGE_TEXT_READS,
@@ -40,7 +41,7 @@ function segmentedTwoColumn(): string {
     lines: [line(text, x, y)],
   });
 
-  return JSON.stringify({
+  return engineJson({
     blocks: [
       {
         type: 'structure',
@@ -62,7 +63,7 @@ function unsegmentedTwoColumn(): string {
     bbox: { x, y: y - 13, w: 22, h: 16 },
     lines: [{ wmode: 0, bbox: { x, y: y - 13, w: 22, h: 16 }, font: { size: 12 }, x, y, text }],
   });
-  return JSON.stringify({
+  return engineJson({
     blocks: [
       textBlock('left0', 72, 92),
       textBlock('right0', 340, 92),
@@ -195,7 +196,7 @@ function tablePage(options: { readonly spanned?: boolean } = {}): string {
     contents: [{ type: 'structure', raw: 'Split', std: 'Div', contents: [text(words, x)] }],
   });
   const secondRow = options.spanned === true ? [cell('Apple', 78)] : [cell('Apple', 78), cell('3', 198), cell('1.20', 318)];
-  return JSON.stringify({
+  return engineJson({
     blocks: [
       text('Above the table', 72),
       {
@@ -284,7 +285,7 @@ function taggedPage(): string {
     bbox: { x: 72, y, w: 80, h: 16 },
     lines: [{ wmode: 0, bbox: { x: 72, y, w: 80, h: 16 }, font: { size: 14 }, x: 72, y, text: words }],
   });
-  return JSON.stringify({
+  return engineJson({
     blocks: [
       {
         type: 'structure',
@@ -317,7 +318,7 @@ describe('parsePageStructure', () => {
   it('spells the engine’s misspelt type as the standard does — NonDtruct is NonStruct (MuPDF 1.28.0, device.c:966)', () => {
     // THE ENGINE'S OWN OUTPUT, not ours: `fz_structure_to_string` returns this for FZ_STRUCTURE_NONSTRUCT.
     const json = (std: string): string =>
-      JSON.stringify({
+      engineJson({
         blocks: [
           { type: 'structure', raw: 'NonStruct', std, contents: [{ type: 'text', lines: [{ bbox: { x: 0, y: 0, w: 1, h: 1 }, x: 0, y: 0, text: 'a' }] }] },
         ],
@@ -331,7 +332,7 @@ describe('parsePageStructure', () => {
   });
 
   it('an element with no text line inside it has no box', () => {
-    const json = JSON.stringify({
+    const json = engineJson({
       blocks: [{ type: 'structure', raw: 'Figure', std: 'Figure', contents: [{ type: 'image', bbox: { x: 5, y: 5, w: 40, h: 40 } }] }],
     });
     expect(parsePageStructure(json).nodes).toStrictEqual([{ role: 'Figure', raw: 'Figure', depth: 0, lines: 0, box: null }]);
@@ -349,7 +350,7 @@ describe('parsePageStructure', () => {
   });
 
   it('a tagged element inside a segmentation block keeps its own depth', () => {
-    const json = JSON.stringify({
+    const json = engineJson({
       blocks: [
         {
           type: 'structure',
@@ -413,7 +414,7 @@ describe('parsePageText', () => {
     // MuPDF's own node shape, measured 2026-09-17 on a Helvetica-Bold run:
     // {name, family, weight, style, size}. Two lines that differ in every
     // classified property, so a reader hard-wiring any one of them fails.
-    const json = JSON.stringify({
+    const json = engineJson({
       blocks: [
         {
           type: 'text',
@@ -495,7 +496,7 @@ describe('parsePageText', () => {
     // for exactly the segmented pages this option was turned on for — and zero
     // is *this page has no picture on it*, which is the answer that reads fine.
     const page = parsePageText(
-      JSON.stringify({
+      engineJson({
         blocks: [
           { type: 'image', bbox: { x: 0, y: 0, w: 100, h: 100 } },
           {
@@ -518,7 +519,7 @@ describe('parsePageText', () => {
     // Without this, `images` could be a count of blocks rather than of image
     // blocks and both cases above would still pass.
     const page = parsePageText(
-      JSON.stringify({
+      engineJson({
         blocks: [
           {
             type: 'text',
@@ -536,7 +537,7 @@ describe('parsePageText', () => {
     const flat: { readonly blocks: readonly unknown[] } = JSON.parse(unsegmentedTwoColumn()) as {
       readonly blocks: readonly unknown[];
     };
-    const withImage = JSON.stringify({
+    const withImage = engineJson({
       blocks: [{ type: 'image', bbox: { x: 0, y: 0, w: 10, h: 10 } }, flat.blocks[0]],
     });
     expect(parsePageText(withImage).blocks).toHaveLength(1);
@@ -573,7 +574,7 @@ describe('the accuracy score', () => {
   });
 
   it('reports a merged line as missing text, naming what it could not find', () => {
-    const merged = JSON.stringify({
+    const merged = engineJson({
       blocks: [
         {
           type: 'text',

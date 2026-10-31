@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { textLayerOf } from './textLayer.js';
+import { engineJson } from './engineJsonFixture.js';
 import type { PageText } from './textStructure.js';
 import { parsePageText } from './textStructure.js';
 
@@ -15,7 +16,7 @@ import { parsePageText } from './textStructure.js';
  */
 function pageOf(texts: readonly string[]): PageText {
   return parsePageText(
-    JSON.stringify({
+    engineJson({
       blocks: [
         {
           type: 'structure',

@@ -21,7 +21,7 @@ import {
 } from './ocrTextLayer.js';
 import { type TextLayer, textLayerOf } from './textLayer.js';
 import { findInPages, lineOf } from './textSearch.js';
-import { STEXT_OPTION_STRING, parsePageText } from './textStructure.js';
+import { STEXT_OPTION_STRING, pageTextJsonOf, parsePageText } from './textStructure.js';
 
 /**
  * The invisible text layer, read back through the reader this build ships.
@@ -73,7 +73,7 @@ function layerOf(bytes: Uint8Array, index = 0): TextLayer {
   if (!(document instanceof mupdf.PDFDocument)) throw new Error('the fixture did not parse');
   const stext = document.loadPage(index).toStructuredText(STEXT_OPTION_STRING);
   try {
-    return textLayerOf(parsePageText(stext.asJSON()), LINE_LIMIT, LINE_CHARS);
+    return textLayerOf(parsePageText(pageTextJsonOf(stext)), LINE_LIMIT, LINE_CHARS);
   } finally {
     stext.destroy();
   }
@@ -470,7 +470,7 @@ describe('writeRecognisedText', () => {
     const document = mupdf.PDFDocument.openDocument(bytes, 'application/pdf');
     if (!(document instanceof mupdf.PDFDocument)) throw new Error('the fixture did not parse');
     const stext = document.loadPage(0).toStructuredText(STEXT_OPTION_STRING);
-    const page = parsePageText(stext.asJSON());
+    const page = parsePageText(pageTextJsonOf(stext));
     stext.destroy();
 
     const found = findInPages([page], 'deliciosa');
@@ -495,7 +495,7 @@ describe('writeRecognisedText', () => {
     const document = mupdf.PDFDocument.openDocument(bytes, 'application/pdf');
     if (!(document instanceof mupdf.PDFDocument)) throw new Error('the fixture did not parse');
     const stext = document.loadPage(0).toStructuredText(STEXT_OPTION_STRING);
-    const page = parsePageText(stext.asJSON());
+    const page = parsePageText(pageTextJsonOf(stext));
     stext.destroy();
 
     // Without this the case above is satisfied by a search that matches anything,

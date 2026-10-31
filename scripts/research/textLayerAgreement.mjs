@@ -68,7 +68,7 @@ import * as mupdf from '../../packages/kernel/dist/mupdfRaw.js';
 import { bindNativeEngine } from '../lib/nativeEngine.mjs';
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
 
-import { STEXT_OPTION_STRING, parsePageText, plainTextOf } from '../../packages/kernel/dist/textStructure.js';
+import { STEXT_OPTION_STRING, pageTextJsonOf, parsePageText, plainTextOf } from '../../packages/kernel/dist/textStructure.js';
 import { TEXT_STRUCTURE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 
 // The native engine, bound through the one resolver before any engine call (ADR-0124).
@@ -231,7 +231,7 @@ function kernelText(bytes) {
   if (!(document instanceof mupdf.PDFDocument)) throw new Error('not a PDF');
   try {
     const page = document.loadPage(0);
-    return plainTextOf(parsePageText(page.toStructuredText(STEXT_OPTION_STRING).asJSON()));
+    return plainTextOf(parsePageText(pageTextJsonOf(page.toStructuredText(STEXT_OPTION_STRING))));
   } finally {
     document.destroy();
   }

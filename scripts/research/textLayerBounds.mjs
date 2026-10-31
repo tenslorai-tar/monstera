@@ -49,7 +49,7 @@ import { bindNativeEngine } from '../lib/nativeEngine.mjs';
 
 import { NATIVE_ENGINE, TEXT_STRUCTURE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { corpusCaveat, openCorpus } from '../lib/corpus.mjs';
-import { STEXT_OPTION_STRING, linesOf, parsePageText } from '../../packages/kernel/dist/textStructure.js';
+import { STEXT_OPTION_STRING, linesOf, pageTextJsonOf, parsePageText } from '../../packages/kernel/dist/textStructure.js';
 
 // The native engine, bound through the one resolver before any engine call (ADR-0124).
 bindNativeEngine();
@@ -95,7 +95,7 @@ function measure(bytes) {
       const loaded = document.loadPage(page);
       const stext = loaded.toStructuredText(STEXT_OPTION_STRING);
       engineCharacters += stext.asText().trim().length;
-      const lines = linesOf(parsePageText(stext.asJSON()));
+      const lines = linesOf(parsePageText(pageTextJsonOf(stext)));
       maxLines = Math.max(maxLines, lines.length);
       totalLines += lines.length;
       for (const line of lines) maxLine = Math.max(maxLine, line.text.length);

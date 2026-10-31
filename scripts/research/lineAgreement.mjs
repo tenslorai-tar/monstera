@@ -85,6 +85,7 @@ import {
   STEXT_OPTIONS,
   STEXT_OPTION_STRING,
   linesOf,
+  pageTextJsonOf,
   parsePageText,
 } from '../../packages/kernel/dist/textStructure.js';
 
@@ -208,7 +209,7 @@ function mupdfLines(document, index, options = STEXT_OPTION_STRING) {
   const page = document.loadPage(index);
   const stext = page.toStructuredText(options);
   try {
-    return linesOf(parsePageText(stext.asJSON()))
+    return linesOf(parsePageText(pageTextJsonOf(stext)))
       .map((line) => line.text)
       .filter((text) => text.trim().length > 0);
   } finally {

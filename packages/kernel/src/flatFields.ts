@@ -7,6 +7,7 @@ import { type PageTransform, toPdf, viewportPoint } from '@monstera/shared';
 import type { MupdfSession } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';
 import { frameOf, pageAt } from './pageAnnotations.js';
+import { linesOf, pageTextJsonOf, parsePageText } from './textStructure.js';
 
 /**
  * Where a flat page's form fields probably are
@@ -230,15 +231,11 @@ function draws(loaded: PDFPage): {
   loaded.runPageContents(device, mupdf.Matrix.identity);
   device.close();
 
-  const structured = JSON.parse(loaded.toStructuredText().asJSON()) as {
-    blocks?: { lines?: { bbox?: { x: number; y: number; w: number; h: number }; text?: string }[] }[];
-  };
-  for (const block of structured.blocks ?? []) {
-    for (const line of block.lines ?? []) {
-      const box = line.bbox;
-      if (box === undefined) continue;
-      text.push({ x0: box.x, y0: box.y, x1: box.x + box.w, y1: box.y + box.h, words: (line.text ?? '').slice(0, MAX_LABEL) });
-    }
+  // THE ONE REQUESTER AND THE ONE READER of MuPDF's JSON (ADR-0280's fifth correction): a parse of its own here read the
+  // boxes at whatever scale it asked for, and took them cut to whole points.
+  for (const line of linesOf(parsePageText(pageTextJsonOf(loaded.toStructuredText())))) {
+    const { topLeft, bottomRight } = line.box;
+    text.push({ x0: topLeft.x, y0: topLeft.y, x1: bottomRight.x, y1: bottomRight.y, words: line.text.slice(0, MAX_LABEL) });
   }
   return { paths, text };
 }

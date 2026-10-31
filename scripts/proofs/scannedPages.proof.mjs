@@ -52,7 +52,7 @@ import { NATIVE_ENGINE, PAGE_KIND, TEXT_STRUCTURE, refuseStaleBuild } from '../l
 import { corpusCaveat, openCorpus } from '../lib/corpus.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
-import { STEXT_OPTION_STRING, parsePageText } from '../../packages/kernel/dist/textStructure.js';
+import { STEXT_OPTION_STRING, pageTextJsonOf, parsePageText } from '../../packages/kernel/dist/textStructure.js';
 import { pageKindOf } from '../../packages/kernel/dist/pageKind.js';
 
 // The native engine, bound through the one resolver before any engine call (ADR-0124).
@@ -96,7 +96,7 @@ function kindOf(bytes, index) {
   const page = document.loadPage(index);
   const stext = page.toStructuredText(STEXT_OPTION_STRING);
   try {
-    return pageKindOf(parsePageText(stext.asJSON()));
+    return pageKindOf(parsePageText(pageTextJsonOf(stext)));
   } finally {
     stext.destroy();
   }

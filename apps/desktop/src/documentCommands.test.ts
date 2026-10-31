@@ -3217,11 +3217,19 @@ describe('pageStructure — a tagged page’s elements, never its words (ADR-006
   it('answers the elements in TREE order, each with its own lines', async () => {
     const answer = await structureCommands().pageStructure(tagged, 0);
 
-    expect(answer.nodes).toStrictEqual([
+    // TO THE HUNDREDTH, which is what the page text carries (ADR-0280's fifth correction); before it, every edge here was a
+    // whole point cut toward zero, and the far edges, an origin plus a height each cut, sat over a point short.
+    const hundredths = (value: number): number => Math.round(value * 100) / 100;
+    expect(
+      answer.nodes.map((node) => ({
+        ...node,
+        box: node.box === null ? null : { x0: hundredths(node.box.x0), y0: hundredths(node.box.y0), x1: hundredths(node.box.x1), y1: hundredths(node.box.y1) },
+      })),
+    ).toStrictEqual([
       // THE BOXES ARE THE ENGINE'S OWN LINES' UNION (ADR-0183): the document covers both paragraphs, each paragraph its line.
-      { role: 'Document', raw: 'Document', depth: 0, lines: 0, box: { x0: 72, y0: 176, x1: 159, y1: 595 } },
-      { role: 'P', raw: 'P', depth: 1, lines: 1, box: { x0: 72, y0: 176, x1: 159, y1: 195 } },
-      { role: 'P', raw: 'P', depth: 1, lines: 1, box: { x0: 72, y0: 576, x1: 136, y1: 595 } },
+      { role: 'Document', raw: 'Document', depth: 0, lines: 0, box: { x0: 72, y0: 176.95, x1: 159.15, y1: 596.18 } },
+      { role: 'P', raw: 'P', depth: 1, lines: 1, box: { x0: 72, y0: 176.95, x1: 159.15, y1: 196.18 } },
+      { role: 'P', raw: 'P', depth: 1, lines: 1, box: { x0: 72, y0: 576.95, x1: 136.56, y1: 596.18 } },
     ]);
     expect(answer.untaggedLines).toBe(0);
     expect(answer.truncated).toBe(false);

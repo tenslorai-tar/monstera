@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { PageText } from './textStructure.js';
+import { engineJson } from './engineJsonFixture.js';
 import { parsePageText } from './textStructure.js';
 import { countPageWords } from './wordCount.js';
 
@@ -13,7 +14,7 @@ import { countPageWords } from './wordCount.js';
  */
 function pageOf(texts: readonly string[]): PageText {
   return parsePageText(
-    JSON.stringify({
+    engineJson({
       blocks: [
         {
           type: 'structure',
@@ -75,7 +76,7 @@ describe('countPageWords', () => {
     // block must count as its text alone — and a reader that counted blocks
     // rather than lines would be one too many here.
     const withImage = parsePageText(
-      JSON.stringify({
+      engineJson({
         blocks: [
           { type: 'image', bbox: { x: 0, y: 0, w: 10, h: 10 } },
           {

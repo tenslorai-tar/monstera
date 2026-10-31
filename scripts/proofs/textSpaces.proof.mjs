@@ -139,7 +139,7 @@ async function run(pdfium, kernel) {
     const document = kernel.mupdf.PDFDocument.openDocument(bytes, 'application/pdf');
     const stext = document.loadPage(0).toStructuredText(kernel.stextOptionsFor('substrate'));
     try {
-      return kernel.parsePageText(stext.asJSON()).blocks.flatMap((/** @type {any} */ block) => block.lines.map((/** @type {any} */ line) => String(line.text)));
+      return kernel.parsePageText(kernel.pageTextJsonOf(stext)).blocks.flatMap((/** @type {any} */ block) => block.lines.map((/** @type {any} */ line) => String(line.text)));
     } finally {
       stext.destroy();
     }
@@ -203,10 +203,10 @@ if (!existsSync(library) || shim === null) {
   const { blockEditOf } = await import('../../packages/contract/dist/commands.js');
   const { localPdfiumExecution } = await import('../../packages/kernel/dist/pdfiumSpecs.js');
   const { groupIntoBlocks, isUpright, blockableOf } = await import('../../packages/kernel/dist/textLines.js');
-  const { parsePageText, stextOptionsFor } = await import('../../packages/kernel/dist/textStructure.js');
+  const { pageTextJsonOf, parsePageText, stextOptionsFor } = await import('../../packages/kernel/dist/textStructure.js');
   const { paragraphsOfLines } = await import('../../packages/shared/dist/index.js');
   const mupdf = await import('../../packages/kernel/dist/mupdfRaw.js');
-  await run(pdfium, { blockEditOf, localPdfiumExecution, groupIntoBlocks, isUpright, blockableOf, paragraphsOfLines, parsePageText, stextOptionsFor, mupdf });
+  await run(pdfium, { blockEditOf, localPdfiumExecution, groupIntoBlocks, isUpright, blockableOf, paragraphsOfLines, pageTextJsonOf, parsePageText, stextOptionsFor, mupdf });
   process.stdout.write(
     failures.length > 0
       ? `\n${String(failures.length)} text spaces case(s) FAILED:\n\n  - ${failures.join('\n\n  - ')}\n`

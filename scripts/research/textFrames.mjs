@@ -65,6 +65,7 @@ import {
 import {
   STEXT_OPTION_STRING,
   linesOf,
+  pageTextJsonOf,
   parsePageText,
 } from '../../packages/kernel/dist/textStructure.js';
 import { SHARED_INDEX, TEXT_STRUCTURE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
@@ -122,7 +123,7 @@ function probe(bytes) {
   if (!(document instanceof mupdf.PDFDocument)) throw new Error('not a PDF');
   try {
     const page = document.loadPage(0);
-    const parsed = parsePageText(page.toStructuredText(STEXT_OPTION_STRING).asJSON());
+    const parsed = parsePageText(pageTextJsonOf(page.toStructuredText(STEXT_OPTION_STRING)));
     const line = linesOf(parsed).find((entry) => entry.text.includes(TEXT));
     if (line === undefined) {
       throw new Error(

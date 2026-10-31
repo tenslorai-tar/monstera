@@ -8,7 +8,7 @@ import { spreadsheetParts } from './spreadsheetDocument.js';
 import { applyOcrPage } from './ocrTextLayer.js';
 import { SCAN_TABLE_ROWS, buildRuledTablePdf, buildScannedTablePdf, scanTableRecognised } from './scanTableFixture.js';
 import { readScanTables } from './scanTables.js';
-import { parsePageTables } from './textStructure.js';
+import { pageTextJsonOf, parsePageTables } from './textStructure.js';
 import { stextOptionsFor } from './textStructure.js';
 
 /**
@@ -40,7 +40,7 @@ async function onSession<T>(bytes: Uint8Array, work: (session: Awaited<ReturnTyp
 async function engineRuledSides(bytes: Uint8Array): Promise<number> {
   return onSession(bytes, (session) =>
     withDocument(session, (document) => {
-      const json = document.loadPage(0).toStructuredText(stextOptionsFor('table')).asJSON();
+      const json = pageTextJsonOf(document.loadPage(0).toStructuredText(stextOptionsFor('table')));
       return parsePageTables(json)
         .tables.flatMap((table) => table.borders ?? [])
         .flat()

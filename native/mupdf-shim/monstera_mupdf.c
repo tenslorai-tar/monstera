@@ -1541,6 +1541,14 @@ MZ_EXPORT void mz_free_pixmap(mz_ctx *c, void *pixmap)
  * SCALE 1.0f, so coordinates arrive in the page's own units. Scaling here would
  * bake a rendering decision into an extraction path, which is the coordinate
  * confusion invariant L3 exists to prevent.
+ *
+ * AMENDED 2026-10-31 (ADR-0280's fifth correction): the product asks for this
+ * serialiser's JSON at PAGE_TEXT_SCALE (100, `textStructure.ts`), because at 1
+ * it writes every box, size and origin as a whole point cut toward zero. That
+ * is a precision, not a rendering decision: the values stay in the page's
+ * display space, and the one reader divides the scaled fields back, so no
+ * consumer ever sees a scaled number. A shim path that returns would take the
+ * same constant rather than 1.0f.
  */
 
 /* ========================================================================== */

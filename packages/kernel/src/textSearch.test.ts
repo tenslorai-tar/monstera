@@ -1,13 +1,14 @@
 import { MATCH_TEXT_WINDOW } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
+import { engineJson } from './engineJsonFixture.js';
 import { type SearchOptions, type TextMatch, findInPages, lineOf } from './textSearch.js';
 import { type PageText, parsePageText } from './textStructure.js';
 
 /** A page built the way MuPDF returns one, so the search meets the real shape. */
 function pageOf(...blocks: readonly (readonly string[])[]): PageText {
   return parsePageText(
-    JSON.stringify({
+    engineJson({
       blocks: blocks.map((lines, block) => ({
         type: 'text',
         bbox: { x: 72, y: block * 40, w: 300, h: 32 },

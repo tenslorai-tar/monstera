@@ -51,7 +51,7 @@ import * as mupdf from '../../packages/kernel/dist/mupdfRaw.js';
 import { bindNativeEngine } from '../lib/nativeEngine.mjs';
 
 import { scoreAgainstTruth } from '../../packages/kernel/dist/textAccuracy.js';
-import { STEXT_OPTIONS, parsePageText } from '../../packages/kernel/dist/textStructure.js';
+import { STEXT_OPTIONS, pageTextJsonOf, parsePageText } from '../../packages/kernel/dist/textStructure.js';
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { formatError } from '../lib/reportError.mjs';
@@ -188,7 +188,7 @@ async function buildProseFixture() {
 function readStextJson(doc, options) {
   const structured = doc.loadPage(0).toStructuredText(options);
   try {
-    return structured.asJSON();
+    return pageTextJsonOf(structured);
   } finally {
     structured.destroy();
   }

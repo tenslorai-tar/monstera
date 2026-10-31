@@ -8,6 +8,7 @@ import { withDocument } from './mupdfWriter.js';
 import {
   type PageText,
   type PageTextRead,
+  pageTextJsonOf,
   parsePageText,
   stextOptionsFor,
 } from './textStructure.js';
@@ -127,7 +128,7 @@ export function readPageTextJson(
 function structuredJson(document: mupdf.PDFDocument, page: number, read: PageTextRead): string {
   const structured = structuredText(document, page, read);
   try {
-    return structured.asJSON();
+    return pageTextJsonOf(structured);
   } finally {
     structured.destroy();
   }
@@ -156,7 +157,7 @@ export function readPageTextWithLetters(session: MupdfSession, page: number): Pr
     pageInDocument(page, document.countPages());
     const structured = structuredText(document, page, 'substrate');
     try {
-      const json = structured.asJSON();
+      const json = pageTextJsonOf(structured);
       lettersBuffer ??= new Uint8Array(LETTERS_FILE_MAX_BYTES);
       const read = structuredTextLetters(structured, lettersBuffer, MAX_TEXT_LAYER_LINES, MAX_TEXT_LAYER_LINE);
       const letters = read.status === 'full' ? new Uint8Array(0) : lettersBuffer.slice(0, read.written);
