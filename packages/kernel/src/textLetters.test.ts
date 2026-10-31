@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 
 import { PDFDocument as PdfLibDocument, StandardFonts, degrees } from '@cantoo/pdf-lib';
 import { MAX_TEXT_LAYER_LINE, MAX_TEXT_LAYER_LINES } from '@monstera/contract/host';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { structuredTextLetters } from './mupdfRaw.js';
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
@@ -100,19 +100,17 @@ describe('recordFigures', () => {
       writes.push(path);
     };
     const name = 'MONSTERA_RECORD_FIGURES_PROBE';
-    const was = process.env[name];
     try {
-      delete process.env[name];
+      vi.stubEnv(name, undefined);
       expect(() => {
         recordFigures(name, { a: 1 }, spy);
       }).not.toThrow();
       expect(writes).toStrictEqual([]);
-      process.env[name] = 'figures.json';
+      vi.stubEnv(name, 'figures.json');
       recordFigures(name, { a: 1 }, spy);
       expect(writes).toStrictEqual(['figures.json']);
     } finally {
-      if (was === undefined) delete process.env[name];
-      else process.env[name] = was;
+      vi.unstubAllEnvs();
     }
   });
 });
