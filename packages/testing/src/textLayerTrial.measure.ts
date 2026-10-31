@@ -519,6 +519,46 @@ for (const kind of KINDS) {
   });
 }
 
+// RUN 29b: THE MOVING END ON EVERY LETTER. A drag from the line's first letter ending 70% into each letter of line 0 —
+// the rule says after it — at two speeds: the wrong ends, and how often the rule corrected the browser's focus, which is
+// where a fight would show (a correction undone and redone, or a final end that is neither).
+for (const kind of KINDS) {
+  test(`moving ends: ${kind}`, async ({ page }) => {
+    await open(page, kind, null);
+    const first = pdfLines()[0];
+    if (first === undefined) throw new Error('fixture');
+    const start = await letterAt(page, 0, 0, 0.25);
+    const rows: Record<string, unknown> = { measure: 'moving-ends', kind };
+    for (const steps of [1, 20]) {
+      let drags = 0;
+      let wrong = 0;
+      let corrections = 0;
+      for (let k = 3; k < first.text.length - 1; k += 1) {
+        if (first.text[k] === ' ') continue;
+        await page.evaluate(() => {
+          document.getSelection()?.removeAllRanges();
+          const trial = (globalThis as unknown as { trial: { movingEnd: { corrections: number } } }).trial;
+          trial.movingEnd.corrections = 0;
+        });
+        const end = await letterAt(page, 0, k, 0.7);
+        await page.mouse.move(start.x, start.y);
+        await page.mouse.down();
+        await page.mouse.move(end.x, end.y, { steps });
+        await page.mouse.up();
+        const got = await page.evaluate(() => {
+          const trial = (globalThis as unknown as { trial: { movingEnd: { corrections: number } } }).trial;
+          return { text: document.getSelection()?.toString() ?? '', corrections: trial.movingEnd.corrections };
+        });
+        drags += 1;
+        corrections += got.corrections;
+        if (got.text !== first.text.slice(0, k + 1)) wrong += 1;
+      }
+      rows[steps === 1 ? 'fast' : 'slow'] = { drags, wrong, corrections };
+    }
+    record(rows);
+  });
+}
+
 // RUN 29b: ONE RESOLVER (B3a). The painted look and the words must both come from the Selection's range. A selection
 // set by script — no pointer moved — is the case where a painter that read anything else (here, the pointer, by the
 // trial's `BREAK.painter` mutation) would paint one thing while the copy says another.
