@@ -156,3 +156,40 @@ So the second correction's *the walk reads the object the JSON was written from*
 (`textLetters.ts`, committed with its cases), and Decisions 1, 2 and 4 to 6. Which producer writes the letters — an
 export of the shim that walks structure blocks in C and writes the format itself, or another — is a change to the
 shim's ABI ([ADR-0124](0124-mupdfs-own-bindings-compiled-native-are-the-shims-abi.md)) and is the owner's to decide (B4).
+
+## Correction, 2026-10-31 — the producer: a shim export walking with MuPDF's own iterator
+
+**Decided by:** the owner, 2026-10-31, in two answers to cloud run 30's reports.
+
+**The producer is a Monstera export in the shim, `mz_text_letters`,** of the `mz_*` family ADR-0124 Decision 1 already
+compiles beside MuPDF's `mupdf.c` (`mz_rewrite_images`, `mz_save_compacted`, `mz_keep_inline_images` are called by the
+product today). It is not a hand-written wrapper of a MuPDF member, which is what ADR-0124 rejected; it needs no
+amendment to it. It takes the structured-text page the JSON is written from, by its pointer, so one page read builds one
+structured text; writes `textLetters.ts`' format into a buffer of the size it is given, checking each write against
+that size before making it and reporting a page that does not fit; and keeps every `fz_try` in its own frame, as the
+shim's README requires. It does none of `main`'s checking: the bound, the counts, the check values and the fallback
+stay in `textLetters.ts`.
+
+**It walks the blocks with MuPDF's own depth-first iterator,** `fz_stext_page_block_iterator_begin_dfs`, `_next_dfs`
+and `_eod_dfs` (MuPDF 1.28.0, `include/mupdf/fitz/structured-text.h` lines 1175, 1227 and 1252: *"The iterator never
+stops on struct blocks, and instead steps into them"*; defined in `source/fitz/stext-iterator.c`; walked by MuPDF's
+own segmentation in `source/fitz/stext-raft.c` lines 90 and 144), using its functions and its `.block` and nothing
+else of it (*"The parts of this are subject to change"*, line 1151). It keeps its place through the structures' parent
+pointers, so it does not recurse, and there is no depth cap: a cap would place some lines as today for a reason
+nothing records.
+
+**The shim's own note, answered.** `native/mupdf-shim/monstera_mupdf.c`, where `mz_stext_json` was removed, says:
+*"`fz_print_stext_page_as_json` is the authority's own answer to "what did the structuring produce"; a struct walked
+here would be a second opinion about a format MuPDF owns, and it would silently stop describing the tree the day
+MuPDF adds a block type (B3a)."*
+- Its first clause does not apply: the letters are something the JSON does not carry, not a second description of
+  what it describes. The line's text, order and box stay the JSON's alone.
+- Its second clause is answered twice. Which blocks are stepped into, and in what order, is MuPDF's iterator's
+  answer, the one its segmenter walks with, so a structure MuPDF changes is followed by MuPDF. And the export reports
+  how many lines it walked: `main` compares that with the JSON's line count for the page, and where they differ every
+  line keeps today's placement and the shortfall is written to the diagnostics log as an engine change, naming the
+  page and both counts — never shown as an error, never refused. A block type MuPDF adds that holds lines is found
+  there rather than silently.
+
+The order the iterator gives is asserted equal to the JSON's (whose writer recurses, `source/fitz/stext-output.c`
+lines 1122 to 1210) on the corpus fixtures, the angled-text fixtures and a page with nested structure blocks.
