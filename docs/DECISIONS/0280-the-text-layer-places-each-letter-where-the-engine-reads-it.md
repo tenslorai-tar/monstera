@@ -93,3 +93,17 @@ Every press at 30% and 70% of every letter, on pages turned 90, 180 and 270 degr
 Drag ends: 0 pt. A drag ending 70% into each letter of a line: 0 wrong, fast or slow, with the browser's focus corrected
 7 and 181 times and never left elsewhere. Painting a whole dense page's selection: 1 ms; a growing drag: 0.31 ms a
 frame. Per arriving page: 2.3 to 2.5 ms against today's 2.1 to 2.4 on the same runs.
+
+## Correction, 2026-10-31 — two things read after this was written, before any build
+
+**A character past U+FFFF cannot be read whole by the walk.** Decision 3 said the walk reads such a character's code
+point whole. It cannot: `mupdfRaw.ts`' `StructuredText.walk` builds the character it hands `onChar` with
+`String.fromCharCode` (line 2151) before any caller sees it, so the code point is already cut. Such a line's walked
+text differs from its JSON text, and it takes Decision 2's fallback: placed as today. Reading it whole is a change to
+the binding, and is not part of this decision.
+
+**The letters do not fit beside the JSON as Decision 3 assumed.** `engine/page-text` answers MuPDF's JSON up to
+`ENGINE_PAGE_TEXT_MAX_BYTES`, 8 MiB, over the file route, whose ceiling is also 8 MiB; and the host's pipe carries JSON,
+so an advance crosses as a number of up to seven bytes, not two. How the letters cross is the owner's to choose before
+the kernel half is built: the options and a recommendation are in cloud run 30's report. Decisions 1, 2 (the renderer's
+contract), 4, 5 and 6 stand.
