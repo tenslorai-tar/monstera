@@ -26,7 +26,16 @@ async function timesPage(rotation = 0, angle = 0, standard: StandardFonts = Stan
   LINES.forEach((text, at) => {
     page.drawText(text, { x: 72, y: 700 - at * (angle === 0 ? 14 : 74), size: 11, font, rotate: degrees(angle) });
   });
-  return { bytes: await document.save(), widthOf: (text) => font.widthOfTextAtSize(text, 11) };
+  return { bytes: await document.save(), widthOf: (text) => drawnWidth(font, text, 11) };
+}
+
+/**
+ * How far `drawText` advances over `text`: each glyph's own width, summed. NOT `widthOfTextAtSize`, which adds the
+ * font's kerning pairs (`StandardFontEmbedder.js`) while `drawText` writes one string with no kerning — so on Times,
+ * which has pairs, that reference sat up to 1.325 pt from what the page holds, and on Courier, which has none, at 0.
+ */
+function drawnWidth(font: { widthOfTextAtSize: (text: string, size: number) => number }, text: string, size: number): number {
+  return Array.from(text).reduce((sum, character) => sum + font.widthOfTextAtSize(character, size), 0);
 }
 
 /** A heading over two columns of short lines: segmentation nests structure blocks inside one another on it. */
@@ -207,8 +216,8 @@ describe('the shim writes each page’s letters from the JSON’s own structured
     expect(/"contents":\[[^\]]*"contents"/u.test(nested)).toBe(true);
   });
 
-  // MEASURED, the engine against the font's own metrics, written out for the report: Times (whose substitute's widths
-  // differ from the font's published metrics) and Courier (whose do not).
+  // MEASURED, the engine against the font's own metrics, written out for the report: Times, which has kerning pairs, and
+  // Courier, which has none, so a reference that kerned would be seen on the one and not the other.
   it('measures how far MuPDF places non-embedded Times and Courier from the fonts’ own advances', async () => {
     const out: Record<string, number> = {};
     for (const [name, standard] of [
@@ -227,19 +236,25 @@ describe('the shim writes each page’s letters from the JSON’s own structured
       let worst = 0;
       read.texts.forEach((text, at) => {
         const got = places(letters[at]?.advances ?? []);
-        for (let k = 0; k < text.length; k += 1) worst = Math.max(worst, Math.abs(font.widthOfTextAtSize(text.slice(0, k), 11) - (got[k] ?? NaN)));
+        for (let k = 0; k < text.length; k += 1) worst = Math.max(worst, Math.abs(drawnWidth(font, text.slice(0, k), 11) - (got[k] ?? NaN)));
       });
       out[name] = Number(worst.toFixed(3));
     }
     recordFigures('LETTERS_DRIFT', out);
+    expect(out['Times']).toBeLessThan(0.02);
     expect(out['Courier']).toBeLessThan(0.02);
   });
 
-  // COURIER, whose substitute's widths are the font's own, so MuPDF's placement and the font's metrics are one answer
-  // and the case measures the format and the walk alone. Times is measured above, where the two differ.
+  // TIMES, which has kerning pairs, and COURIER, which has none: the case measures the format and the walk against the
+  // advances the page holds, upright and turned.
   it('places each letter where the font’s own advances put it, upright and at 30 degrees, to the hundredth of a point', async () => {
-    for (const angle of [0, 30]) {
-      const { bytes, widthOf } = await timesPage(0, angle, StandardFonts.Courier);
+    for (const [angle, standard] of [
+      [0, StandardFonts.TimesRoman],
+      [30, StandardFonts.TimesRoman],
+      [0, StandardFonts.Courier],
+      [30, StandardFonts.Courier],
+    ] as const) {
+      const { bytes, widthOf } = await timesPage(0, angle, standard);
       const [read] = await readEvery(bytes);
       if (read === undefined) throw new Error('no page');
       const letters = pageLetters(read.letters, read.texts, { page: 0, walked: read.walked, json: read.jsonLines }, () => undefined);
