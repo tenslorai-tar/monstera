@@ -1,7 +1,8 @@
 # ADR-0279 — Saved conversations are kept without caps, each in its own file, and History reads one log
 
-- **Status:** Proposed — revised by *The owner's answers, 2026-10-31* at the end, which replaces Decisions 1, 2, 5 and
-  6 with one history file per PDF; awaiting the owner's approval of that section and its wording. Nothing in it is built.
+- **Status:** Accepted 2026-11-01 — as revised by *The owner's answers, 2026-10-31*, which replaces Decisions 1, 2, 5
+  and 6 with one history file per PDF, and with the one wording change in *The owner's approval, 2026-11-01* at the
+  end. Not built yet; until it is, ADR-0093 and ADR-0277 Decision 6 describe what ships.
 - **Date:** 2026-10-31
 - **Decided by:** the owner's decisions of 2026-10-31 (a to i below), as the local agent was asked to design and measure
   them; the shape and its measurements are the local agent's.
@@ -221,3 +222,18 @@ Every History string tied to the cross-document list changes; the rest stay.
   they belong to the file where it is, and moving, renaming or deleting the file removes them within a day; and how to
   turn saving off and clear them.
 - The site's privacy page changes in the same release (the site agent's task).
+
+## The owner's approval, 2026-11-01
+
+The owner approved this ADR as revised by *The owner's answers, 2026-10-31*, with one change of wording. `HISTORY_BOUNDS`
+is:
+
+> *Conversations about this file, kept on this computer. If the file is moved, renamed or deleted, they are removed
+> about a day after Monstera notices.*
+
+The owner's reason: the 24-hour removal (Decision 6 of that section) runs only while Monstera is open and idle, and the
+24 hours run from the first check that finds the PDF missing, so *removed within a day* was not true — a PDF moved while
+Monstera is closed is not noticed until it next runs. This replaces the *proposed* cell of the wording table's
+`HISTORY_BOUNDS` row and the words *removes them within a day* in *Owed when it is built*: the help page,
+`packages/ui/src/help/en/ai-assistant.md`, uses the same sentence. Every other proposed string stands as the table gives
+it. Nothing is built yet.

@@ -88,3 +88,9 @@ nothing when a PDF opens, and are kept by default.
 [ADR-0279](0279-saved-conversations-are-kept-without-caps-each-in-its-own-file-and-history-reads-one-log.md), proposed
 and awaiting approval, would supersede Decision 1 (off by default), Decision 2's single `chat-history.json`, Decision 3
 (the path digest) and Decision 5's 200-file bound. Until it is approved and built, this ADR describes what ships.
+
+## Correction, 2026-11-01 — ADR-0279 is accepted, and not built
+
+The owner approved
+[ADR-0279](0279-saved-conversations-are-kept-without-caps-each-in-its-own-file-and-history-reads-one-log.md) on
+2026-11-01. It supersedes Decisions 1, 2, 3 and 5 once it is built; until then this ADR still describes what ships.

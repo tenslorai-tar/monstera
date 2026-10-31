@@ -149,3 +149,9 @@ stop. The provider's own too-long refusal stays a stop (Decision 5).
 [ADR-0279](0279-saved-conversations-are-kept-without-caps-each-in-its-own-file-and-history-reads-one-log.md), proposed
 and awaiting the owner's approval, would supersede Decision 6's twenty conversations per file and its *file-full*
 refusal: no cap on conversations, nothing dropped. Until it is approved and built, Decision 6 describes what ships.
+
+## Correction, 2026-11-01 — ADR-0279 is accepted, and not built
+
+The owner approved
+[ADR-0279](0279-saved-conversations-are-kept-without-caps-each-in-its-own-file-and-history-reads-one-log.md) on
+2026-11-01. It supersedes Decision 6 once it is built; until then Decision 6 still describes what ships.
