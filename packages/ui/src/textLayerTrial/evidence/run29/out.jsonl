@@ -1,0 +1,16 @@
+{"measure":"letters","kind":"span","family":"app","worstLetterOffPt":-2.88,"presses":146,"wrong":34,"worstLetters":1}
+{"measure":"letters","kind":"span","family":"serif","worstLetterOffPt":0.81,"presses":146,"wrong":2,"worstLetters":1}
+{"measure":"letters","kind":"span","family":"sans-serif","worstLetterOffPt":-3.35,"presses":146,"wrong":38,"worstLetters":1}
+{"measure":"letters","kind":"svg","family":"app","worstLetterOffPt":0,"presses":146,"wrong":0,"worstLetters":0}
+{"measure":"letters","kind":"svg","family":"serif","worstLetterOffPt":0,"presses":146,"wrong":0,"worstLetters":0}
+{"measure":"letters","kind":"svg","family":"sans-serif","worstLetterOffPt":0,"presses":146,"wrong":0,"worstLetters":0}
+{"measure":"turned-zoomed","kind":"span","rotation":90,"zoom":1,"presses":146,"wrong":142}
+{"measure":"turned-zoomed","kind":"span","rotation":180,"zoom":1,"presses":146,"wrong":145}
+{"measure":"turned-zoomed","kind":"span","rotation":270,"zoom":1,"presses":146,"wrong":143}
+{"measure":"turned-zoomed","kind":"span","rotation":0,"zoom":0.5,"presses":146,"wrong":33}
+{"measure":"turned-zoomed","kind":"span","rotation":0,"zoom":4,"presses":146,"wrong":34}
+{"measure":"turned-zoomed","kind":"svg","rotation":90,"zoom":1,"presses":146,"wrong":0}
+{"measure":"turned-zoomed","kind":"svg","rotation":180,"zoom":1,"presses":146,"wrong":0}
+{"measure":"turned-zoomed","kind":"svg","rotation":270,"zoom":1,"presses":146,"wrong":0}
+{"measure":"turned-zoomed","kind":"svg","rotation":0,"zoom":0.5,"presses":146,"wrong":0}
+{"measure":"turned-zoomed","kind":"svg","rotation":0,"zoom":4,"presses":146,"wrong":0}

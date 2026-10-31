@@ -1,0 +1,4 @@
+{"sized":true,"measure":"cost","kind":"span","pages":300,"letters":1282500,"elements":14407,"mountMs":1928,"jsHeapMiB":68,"nodes":27913,"layoutCount":302,"scrollMs":2987,"frames":180,"frameP50":16.7,"frameP95":16.8,"frameMax":16.8,"over33ms":0}
+{"sized":true,"measure":"cost","kind":"svg","pages":300,"letters":1282500,"elements":14707,"mountMs":26421,"jsHeapMiB":77,"nodes":28213,"layoutCount":2,"scrollMs":2982,"frames":180,"frameP50":16.7,"frameP95":16.7,"frameMax":16.8,"over33ms":0}
+{"sized":true,"measure":"cost","kind":"span","pages":300,"letters":1282500,"elements":14407,"mountMs":987,"jsHeapMiB":68,"nodes":27913,"layoutCount":302,"scrollMs":2985,"frames":180,"frameP50":16.7,"frameP95":16.7,"frameMax":16.8,"over33ms":0}
+{"sized":true,"measure":"cost","kind":"svg","pages":300,"letters":1282500,"elements":14707,"mountMs":10415,"jsHeapMiB":77,"nodes":28213,"layoutCount":2,"scrollMs":3033,"frames":182,"frameP50":16.7,"frameP95":16.8,"frameMax":33.3,"over33ms":0}
