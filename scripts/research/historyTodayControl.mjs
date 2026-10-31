@@ -10,7 +10,6 @@
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 
 /**
  * @typedef {{ available: () => boolean, encrypt: (value: string) => Buffer, decrypt: (blob: Buffer) => string }} Cipher
@@ -41,10 +40,11 @@ const time = (run) => {
 };
 
 /**
- * @param {{ root: string, work: string, cipher: Cipher, short: Turn[], long: Turn[], say: (line: string) => void }} input
+ * @param {{ work: string, cipher: Cipher, short: Turn[], long: Turn[], say: (line: string) => void }} input
  */
-export async function measureToday({ root, work, cipher, short, long, say }) {
-  const { createChatHistory, CHAT_HISTORY_FILE } = await import(pathToFileURL(join(root, 'apps/desktop/dist/chatHistory.js')).href);
+export async function measureToday({ work, cipher, short, long, say }) {
+  // A LITERAL SPECIFIER, so `proof:electronimports` can read what this loads: today's shipped store.
+  const { createChatHistory, CHAT_HISTORY_FILE } = await import('../../apps/desktop/dist/chatHistory.js');
   const directory = join(work, 'today');
   /** @param {Turn[]} turns @param {string} name */
   const blob = (turns, name) => cipher.encrypt(JSON.stringify({ v: 2, name, savedAt: new Date().toISOString(), turns })).toString('base64');

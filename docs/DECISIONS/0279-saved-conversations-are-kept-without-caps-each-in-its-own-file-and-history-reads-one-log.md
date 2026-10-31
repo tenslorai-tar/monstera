@@ -157,7 +157,7 @@ stand. The title above names the replaced shape and is kept, as an ADR's text is
    records, beside it and renamed over it, at the confirm; Clear all and the 24-hour removal delete the file. A removed
    conversation's record is then in no file under the history folder (measured below, with a control that a kept
    conversation IS found by the same search). **Its cost is the file's size**: 9 to 120 ms for 20 to 1,000 short
-   conversations, 237 ms for 20 long ones (a 40 MB file) and 3.1 s for 200 long ones (400 MB). So the conversation
+   conversations, 237 to 297 ms for 20 long ones (a 40 MB file) and 3.1 to 3.9 s for 200 long ones (400 MB). So the conversation
    leaves History at the confirm and the rewrite runs off the main thread; its words are off the disk when the rewrite
    lands, seconds at the largest file measured.
 8. **Unchanged:** no caps; local only and sealed to the Windows account (one data key, wrapped by `safeStorage` once a
@@ -170,18 +170,19 @@ stand. The title above names the replaced shape and is kept, as an ADR's text is
 
 Read with `scripts/research/historyPerPdf.mjs`, which anyone can run: the shape in `historyPerPdfStore.mjs` (a prototype
 no shipped code imports), today's store in `historyTodayControl.mjs` run inside the pinned Electron main with the real
-`safeStorage`, and the guard with the shipped engine and `atomicWrite`. Medians of five, warm. Two runs were made; where
-they differ the range is given. The figures in *Measurements* above were read with instruments under `_review/`, which
+`safeStorage`, and the guard with the shipped engine and `atomicWrite`. Medians of five, warm. Three runs were made;
+where they differ the range is given, and the one reading no other run came near is named in its own row. The figures in *Measurements* above were read with instruments under `_review/`, which
 are not public, and nothing this section decides rests on them.
 
 | | today (one file, the control) | one file per PDF | target |
 |---|---|---|---|
 | opening a PDF, history read | 0 / 0.22 / 10.97 MB with 1 / 200 / 10,000 PDFs saved (0.6 to 0.8 / 3.3 to 3.4 / 243 to 275 ms) | **0 bytes** | 0 |
-| a save after an answer, 20 / 200 / 1,000 conversations on the PDF | 16 to 18 ms (short) and 637 to 643 ms (long) at 20; over the cap past it | **1.4 to 3.8 ms**, short or long | < 100 ms, flat |
-| a whole long conversation saved at once (only at the move from 1.1.2610.0) | — | 20 to 87 ms; 23 to 345 ms on a 2 GB file | |
-| a save with 1 / 200 / 10,000 other PDFs' files | 45 to 52 / 55 / 407 to 412 ms | **24 to 26 / 23 to 38 / 32 to 34 ms** | no change |
+| a save after an answer, 20 / 200 / 1,000 conversations on the PDF | 16 to 18 ms (short) and 637 to 745 ms (long) at 20; over the cap past it | **1.4 to 7.2 ms**, short or long | < 100 ms, flat |
+| the same, 200 long conversations (a 400 MB file), the third run only | — | **225 ms**, the same code that took 2.6 and 2.8 ms there in the other runs and 2.4 ms on a 2 GB file in the same run; not explained, and a reason to measure it again where it ships | |
+| a whole long conversation saved at once (only at the move from 1.1.2610.0) | — | 20 to 94 ms; 23 to 345 ms on a 2 GB file | |
+| a save with 1 / 200 / 10,000 other PDFs' files | 45 to 52 / 55 / 407 to 412 ms | **24 to 26 / 23 to 38 / 24 to 34 ms** | no change |
 | History, 20 / 200 / 1,000 conversations | 2 ms short, 324 to 437 ms long, at 20 | **5 to 11 / 22 to 38 / 92 to 322 ms** | < 100 ms at 200 |
-| Delete one, 20 / 200 / 1,000 short; 20 / 200 long | — | 9 to 44 / 23 to 29 / 81 to 120 ms; 237 ms / 3.1 s | off the disk at once |
+| Delete one, 20 / 200 / 1,000 short; 20 / 200 long | — | 9 to 44 / 23 to 52 / 81 to 120 ms; 237 to 297 ms / 3.1 to 3.9 s | off the disk at once |
 | the 24-hour check, 10,000 files | — | 22.6 to 23.3 s, 2.3 ms a file | never while working |
 | one data key wrapped and unwrapped by `safeStorage` | — | 0.2 to 9 ms, once a session | |
 

@@ -23,7 +23,6 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, unli
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 
 import { bindNativeEngine } from '../lib/nativeEngine.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
@@ -33,10 +32,10 @@ import { conversationOf } from './historyTodayControl.mjs';
 
 const ROOT = repoRoot();
 /** @param {string} relative */
-const built = (relative) => import(pathToFileURL(join(ROOT, relative)).href);
-const { replaceWithRetry } = await built('apps/desktop/dist/settingsFile.js');
-const { atomicWrite } = await built('packages/kernel/dist/atomicWrite.js');
-const { nodeFileSurface } = await built('packages/kernel/dist/fileSurface.js');
+// LITERAL SPECIFIERS, so `proof:electronimports` can read what this loads: the built application's own writers.
+const { replaceWithRetry } = await import('../../apps/desktop/dist/settingsFile.js');
+const { atomicWrite } = await import('../../packages/kernel/dist/atomicWrite.js');
+const { nodeFileSurface } = await import('../../packages/kernel/dist/fileSurface.js');
 
 const work = mkdtempSync(join(tmpdir(), 'monstera-history-'));
 const key = () => randomBytes(32).toString('hex');
@@ -137,7 +136,7 @@ for (const [own, turns] of /** @type {[number, import('./historyPerPdfStore.mjs'
 
 say('\nThe guard on Monstera\'s own saves, with the real engine and the real write-then-rename:');
 if (bindNativeEngine(ROOT) === null) throw new Error('the native MuPDF shim is not built: node scripts/provision/mupdf.mjs');
-const mupdf = await built('packages/kernel/dist/mupdfRaw.js');
+const mupdf = await import('../../packages/kernel/dist/mupdfRaw.js');
 const require = createRequire(join(ROOT, 'packages/testing/package.json'));
 const { PDFDocument, PDFHexString, StandardFonts } = require('@cantoo/pdf-lib');
 /** @param {boolean} withId @param {string} words */
@@ -148,9 +147,15 @@ async function made(withId, words) {
   if (withId) document.context.trailerInfo.ID = document.context.obj([PDFHexString.of(randomBytes(16).toString('hex')), PDFHexString.of(randomBytes(16).toString('hex'))]);
   return /** @type {Uint8Array} */ (await document.save({ useObjectStreams: false }));
 }
+/** The engine's PDF view of `bytes`, refused where they are not a PDF. @param {Uint8Array} bytes */
+function openPdf(bytes) {
+  const document = mupdf.PDFDocument.openDocument(bytes, 'application/pdf').asPDF();
+  if (document === null) throw new Error('not a PDF');
+  return document;
+}
 /** The /ID's first string as hex, read by the engine, or null. @param {Uint8Array} bytes */
 function idOf(bytes) {
-  const document = mupdf.PDFDocument.openDocument(bytes, 'application/pdf');
+  const document = openPdf(bytes);
   try {
     const id = document.getTrailer().get('ID');
     return id.isArray() ? Buffer.from(id.get(0).asString(), 'latin1').toString('hex') : null;
@@ -169,7 +174,7 @@ const sameDocument = (recorded, now) => (recorded.id !== null ? recorded.id === 
 /** Monstera's full save of `path` (the engine's 'garbage' save, then `atomicWrite`'s write-then-rename). @param {string} path */
 async function monsteraSave(path) {
   const { readFile } = await import('node:fs/promises');
-  const document = mupdf.PDFDocument.openDocument(await readFile(path), 'application/pdf');
+  const document = openPdf(await readFile(path));
   let bytes;
   try {
     bytes = document.saveToBuffer('garbage,encrypt=none').asUint8Array().slice();
@@ -264,7 +269,7 @@ app.whenReady().then(async () => {
   const started = performance.now();
   safeStorage.decryptString(safeStorage.encryptString('k'.repeat(64)));
   say('  one data key wrapped and unwrapped by safeStorage: ' + (performance.now() - started).toFixed(2) + ' ms, once per session');
-  await control.measureToday({ root: ROOT, work: WORK, cipher, short: control.conversationOf(4, false), long: control.conversationOf(32, true), say });
+  await control.measureToday({ work: WORK, cipher, short: control.conversationOf(4, false), long: control.conversationOf(32, true), say });
   app.quit();
 }).catch((error) => {
   process.stderr.write(String((error && error.stack) || error) + '\n');
@@ -274,7 +279,6 @@ app.whenReady().then(async () => {
 const program = join(work, 'control-main');
 mkdirSync(program, { recursive: true });
 const constants = [
-  `const ROOT = ${JSON.stringify(ROOT)};`,
   `const WORK = ${JSON.stringify(work)};`,
   `const CONTROL = ${JSON.stringify(join(ROOT, 'scripts/research/historyTodayControl.mjs'))};`,
 ].join('\n');
