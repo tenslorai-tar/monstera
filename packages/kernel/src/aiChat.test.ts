@@ -205,10 +205,10 @@ describe('streamChat', () => {
 
   it('AZURE OPENAI, by Chat Completions: its documented 400 with code context_length_exceeded is too-long (item 35)', async () => {
     const asked: string[] = [];
-    const answer = await azureAsk(false, (url) => {
-      asked.push(String(url));
+    const answer = await azureAsk(false, ((url: string) => {
+      asked.push(url);
       return Promise.resolve(new Response(JSON.stringify(AZURE_TOO_LONG), { status: 400 }));
-    });
+    }) as unknown as typeof fetch);
     // THE ROUTE THE DOCUMENTATION IS ABOUT, so the case is not passing on another one.
     expect(asked[0]).toContain('/chat/completions');
     expect(answer.refusal).toBe('too-long');
