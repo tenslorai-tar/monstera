@@ -193,3 +193,63 @@ MuPDF adds a block type (B3a)."*
 
 The order the iterator gives is asserted equal to the JSON's (whose writer recurses, `source/fitz/stext-output.c`
 lines 1122 to 1210) on the corpus fixtures, the angled-text fixtures and a page with nested structure blocks.
+
+## Correction, 2026-10-31 — the page text's JSON is read at MuPDF's own precision scale
+
+**Decided by:** the owner, 2026-10-31, answering cloud run 30's question about line origins.
+
+**Measured first, by cloud run 30's `scripts/research/glyphPlacement.mjs` (commit 7b291c9c):** PDF.js draws every
+glyph within 0.007 pt of where MuPDF reads it, on every font tried. What the text layer would have placed was 0.56 to
+0.90 pt out at the median and up to 1.069 pt at worst, and the worst letter on every fixture was a line's first. The
+cause is not the letters.
+
+**MuPDF's serialiser truncates every geometric number it writes.** `fz_print_stext_page_as_json(ctx, out, page, scale)`
+writes each one as `(int)(value * scale)` (MuPDF 1.28.0, `source/fitz/stext-output.c`, `as_json`):
+
+| field | lines |
+|---|---|
+| a text block's `bbox` x, y, w, h | 1139 to 1142 |
+| a line's `bbox` x, y, w, h | 1151 to 1154 |
+| a line's font `size` | 1173 |
+| a line's origin `x`, `y` (its first character's) | 1174, 1175 |
+| an image block's `bbox` x, y, w, h | 1196 to 1199 |
+
+Every product call passes no scale, and the binding's default is 1 (`mupdfRaw.ts`, `asJSON(scale = 1)`), so every one
+of those numbers reaches its reader cut to a whole point toward zero. A box's right edge, x plus w, can be nearly 2 pt
+short, and a 10.5 pt font reads as 10.
+
+**The class, not the instance.** Every reader of the page text's geometry takes these numbers: the text layer, search
+matches, `lineUnder`, `caretBesideLine`, markup quads made from a selection, spell check's marks, the Word export's
+picture placement, `pageKindOf`'s areas, and `flatFields.ts`, which requests and parses the JSON itself. Correcting the line origin alone would have left all of them on truncated
+boxes and sizes, and given the text layer's lines two sources of geometry.
+
+**The decision: ask MuPDF for the JSON at its own precision scale, and undo the scale in the one reader.**
+- `PAGE_TEXT_SCALE = 100`, ONE named constant in `textStructure.ts`. The JSON is requested through
+  `pageTextJsonOf(structured)` beside it, which passes that constant, and `textStructure.ts`' reader divides by it.
+  No second literal exists, and no request spells its own scale (B5). Every number then arrives in hundredths of a
+  point, still truncated by MuPDF but by less than 0.01 pt.
+- **The reader divides exactly the fields `as_json` multiplies**, the five rows above, and nothing else. The grid
+  block's `xpos` and `ypos` are written with `%g` and are not scaled (lines 1235 and 1247), and its `w` and `h` are
+  counts of columns and rows (lines 1254 and 1255), which `parsePageTables` reads and must keep as they are. A reader
+  that divided every number would turn a table's three columns into 0.03.
+- The text, the structure and the order of the JSON are unchanged; only those numbers change.
+- The letters' file is unchanged. Its advances are measured from the line's first character's exact origin, which is
+  now also the origin the JSON carries.
+
+**Rejected, and why:**
+- **The exact origin carried in the letters' file**, or a new field in the shim's export: it corrects the text layer's
+  lines and no other reader, and makes the line's geometry come from two places, one exact and one truncated. That is
+  a second opinion about where a line is (B3a), and it fixes the instance.
+- **A shim export that serialises the structured text with floats:** a second serialiser of a format MuPDF owns, which
+  is what the note quoted in the fourth correction warns against.
+- **Rounding instead of truncating in the reader:** the reader cannot recover what the writer threw away. Only the
+  writer's scale can.
+
+**The shim's older note, answered.** Where `mz_stext_json` was removed, `native/mupdf-shim/monstera_mupdf.c` keeps the
+note *"SCALE 1.0f, so coordinates arrive in the page's own units. Scaling here would bake a rendering decision into an
+extraction path, which is the coordinate confusion invariant L3 exists to prevent."* It was written for that withdrawn
+export, and its concern holds: a reader must never receive a coordinate in some other space. A precision scale does not
+do that. It changes how many digits the serialiser keeps, not which space a number is in: the values are still the
+page's display space, in points, and they leave `textStructure.ts` in exactly the units they did before, because the
+one reader that receives the scaled integers is the one that divides. No consumer ever sees a scaled number, and no
+zoom, device pixel ratio or render scale enters the path. The note is amended to say so where it stands.
