@@ -43,7 +43,11 @@ import { fontOfKind } from '../research/fontKindFixtures.mjs';
 const ROOT = repoRoot();
 const REQUIRED = process.argv.includes('--require-engines');
 const PAGE_HEIGHT = 792;
-/** How close a mark's end must be to the glyph's edge: a point, because MuPDF writes a line's box in whole points. */
+/**
+ * How close a mark's end must be to the glyph's edge: a point. It was set when MuPDF's JSON wrote a line's box in whole
+ * points; the box now carries hundredths (ADR-0280's fifth correction) and every case here lands within 0.01, so a
+ * tighter figure is available and is a change of its own, not made here.
+ */
 const TOLERANCE = 1;
 
 /**
@@ -186,7 +190,10 @@ async function run(kernel) {
   for (const [at, recorded] of AGREEMENT.lines.entries()) {
     const box = layer[at]?.box;
     const edges = glyphs.find((line) => line.text.trim() === recorded.text);
-    if (box === undefined || JSON.stringify(box) !== JSON.stringify(recorded.box)) stale.push(`line ${String(at)} reads at ${JSON.stringify(box)}`);
+    // EACH EDGE TO THE HUNDREDTH, the precision the page text carries (ADR-0280's fifth correction): the record holds
+    // hundredths, and an edge the reader adds up (an origin plus a height) carries a float's last digit besides.
+    const same = (/** @type {keyof typeof recorded.box} */ edge) => box !== undefined && Math.abs(box[edge] - recorded.box[edge]) < 0.005;
+    if (!(same('x0') && same('y0') && same('x1') && same('y1'))) stale.push(`line ${String(at)} reads at ${JSON.stringify(box)}`);
     if (edges === undefined || Math.abs(edges.first - recorded.glyphs.first) > 0.01 || Math.abs(edges.last - recorded.glyphs.last) > 0.01) {
       stale.push(`line ${String(at)}'s glyphs read ${edges === undefined ? 'nowhere' : `${String(edges.first)}..${String(edges.last)}`}`);
     }

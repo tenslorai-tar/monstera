@@ -7,7 +7,8 @@
     "engine still reads exactly these boxes (readPageText and textLayerOf) and these glyph edges (MuPDF's character",
     "quads, spaces skipped), so the file cannot go stale without the proof turning red.",
     "Read 2026-10-24 with MuPDF 1.28.0 through the native engine on Linux, by `npm run proof:lineendmarks`.",
-    "The boxes are whole points because MuPDF's JSON writes them so; the glyph edges are not."
+    "The boxes were read again 2026-10-31 the same way, in hundredths: the page text is now asked for at MuPDF's",
+    "precision scale (ADR-0280's fifth correction), where on 2026-10-24 its JSON wrote them in whole points."
   ],
   "size": 11,
   "x": 72,
@@ -16,25 +17,25 @@
     {
       "text": "This Agreement shall commence on the Effective Date and continue for the term of",
       "baseline": 700,
-      "box": { "x0": 72, "y0": 80, "x1": 439, "y1": 94 },
+      "box": { "x0": 72, "y0": 80.41, "x1": 439.49, "y1": 95.08 },
       "glyphs": { "first": 72, "last": 439.5 }
     },
     {
       "text": "twelve months, unless ended sooner under clause 9.",
       "baseline": 686,
-      "box": { "x0": 72, "y0": 94, "x1": 299, "y1": 108 },
+      "box": { "x0": 72, "y0": 94.41, "x1": 299.6, "y1": 109.08 },
       "glyphs": { "first": 72, "last": 299.6 }
     },
     {
       "text": "Short line.",
       "baseline": 672,
-      "box": { "x0": 72, "y0": 108, "x1": 117, "y1": 122 },
+      "box": { "x0": 72, "y0": 108.41, "x1": 117.83, "y1": 123.08 },
       "glyphs": { "first": 72, "last": 117.84 }
     },
     {
       "text": "Each party may end it on notice.",
       "baseline": 658,
-      "box": { "x0": 72, "y0": 122, "x1": 214, "y1": 136 },
+      "box": { "x0": 72, "y0": 122.41, "x1": 214.67, "y1": 137.08 },
       "glyphs": { "first": 72, "last": 214.67 }
     }
   ]
