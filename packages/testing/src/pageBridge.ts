@@ -1,4 +1,4 @@
-import { AI_SETUP_AT_START_SETTING_ID, BRIDGE_KEY, type MonsteraBridge } from '@monstera/contract';
+import { AI_SETUP_AT_START_SETTING_ID, BRIDGE_KEY, type EventId, type EventPayload, type MonsteraBridge, checkEvent } from '@monstera/contract';
 import type { Page } from '@playwright/test';
 
 import { createBrowserShim } from './browserShim.js';
@@ -163,8 +163,15 @@ export async function bridge(
     // `invoke` alone until 2026-09-19, while the preload has carried `subscribe` since
     // ADR-0082; nothing subscribed at mount until the close path did, and every Playwright
     // case then failed on a renderer that could not start. `main` pushes nothing to a page
-    // served by the shim, so a subscription here receives nothing and unsubscribes cleanly —
-    // the state `App`'s own default subscriber is in.
+    // served by the shim, so a subscription receives only what a case pushes through
+    // {@link pushEvent} — an answer streamed in, which no shim answer can stand for — and
+    // the payload is validated on arrival by `subscribeToEvent`, as `main`'s is.
+    const listeners = new Map<string, Set<(payload: unknown) => void>>();
+    Object.defineProperty(window, '__monsteraPush', {
+      value: (channel: string, payload: unknown) => {
+        for (const listener of listeners.get(channel) ?? []) listener(payload);
+      },
+    });
     const shape: MonsteraBridge = {
       invoke: (channel: string, params: unknown) =>
         (
@@ -172,7 +179,14 @@ export async function bridge(
             __monsteraInvoke: (c: string, p: unknown) => Promise<unknown>;
           }
         ).__monsteraInvoke(channel, params),
-      subscribe: () => () => undefined,
+      subscribe: (channel, listener) => {
+        const own = listeners.get(channel) ?? new Set<(payload: unknown) => void>();
+        listeners.set(channel, own);
+        own.add(listener);
+        return () => {
+          own.delete(listener);
+        };
+      },
       // A DROP OPENS WHAT A PICK OPENS HERE. The shim holds no files and no paths, and
       // main's dropped handler ends in the same `openPath` as the picker's, so the page
       // is served the shim's `document.open` answer — the same envelope shape.
@@ -185,4 +199,19 @@ export async function bridge(
     };
     Object.defineProperty(window, key, { value: shape });
   }, BRIDGE_KEY);
+}
+
+/**
+ * Pushes one declared event into a bridged page, as `main` pushes one: for a streamed answer, which the shim cannot
+ * stand for because `ai.ask` only starts one. Checked against the event registry first (`checkEvent`), so a case
+ * cannot push a payload `main` could never send.
+ */
+export async function pushEvent<K extends EventId>(page: Page, id: K, payload: EventPayload<K>): Promise<void> {
+  const checked = checkEvent(id, payload);
+  await page.evaluate(
+    ([channel, sent]) => {
+      (window as unknown as { __monsteraPush: (c: string, p: unknown) => void }).__monsteraPush(channel, sent);
+    },
+    [id, checked] as const,
+  );
 }

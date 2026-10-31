@@ -839,6 +839,13 @@ export interface BrowserShimOptions {
    * provider to ask. Absent is nothing saved, the setting's default.
    */
   readonly aiHistory?: ChannelResult<'ai.history.load'>;
+  /**
+   * Whether `ai.ask` answers *started*, for a case that then streams the answer in with `pushEvent`. Absent is
+   * *not started*: no provider in a browser.
+   */
+  readonly aiAskStarts?: boolean;
+  /** What `ai.history.list` answers: the History's saved conversations. Absent is none. */
+  readonly aiConversations?: ChannelResult<'ai.history.list'>['conversations'];
   /** What `ai.models.held` answers per provider. A provider absent here answers `aiModels`, or the empty list. */
   readonly aiHeldModels?: Partial<Record<AiProviderId, AiModelListAnswer>>;
   /**
@@ -2816,7 +2823,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     'ai.history.count': () => Promise.resolve(ok({ count: 0 })),
     'ai.history.clear': () => Promise.resolve(ok({ cleared: 0 })),
     // NOTHING KEPT, as the shim's load: the History lists none, and nothing named reads or removes.
-    'ai.history.list': () => Promise.resolve(ok({ conversations: [] })),
+    'ai.history.list': () => Promise.resolve(ok({ conversations: [...(options.aiConversations ?? [])] })),
     'ai.history.read': () => Promise.resolve(ok({ conversation: null })),
     'ai.history.remove': () => Promise.resolve(ok({ removed: false })),
     // THE SHIM HAS NO CLIPBOARD, so nothing is claimed copied.
@@ -2852,7 +2859,9 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     'settings.import': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
     'ai.ask': () =>
       Promise.resolve(
-        options.aiAskRefusal === undefined ? ok({ started: false, sent: null }) : err({ code: options.aiAskRefusal }),
+        options.aiAskRefusal === undefined
+          ? ok({ started: options.aiAskStarts === true, sent: null })
+          : err({ code: options.aiAskRefusal }),
       ),
     // NO FILE PICKER IN A BROWSER: what `main` answers a picker the person cancelled.
     'ai.attach': () => Promise.resolve(ok({ files: [], dropped: 0 })),
