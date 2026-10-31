@@ -240,19 +240,28 @@ async function drawingPage() {
   const tab = await browser.newPage();
   await tab.route('http://pdfjs.invalid/**', async (/** @type {any} */ route) => {
     const name = new URL(route.request().url()).pathname.slice(1);
-    if (name === 'index.html') return route.fulfill({ body: '<!doctype html><title>glyph placement</title>', contentType: 'text/html' });
+    // THE PAGE LOADS PDF.js ITSELF, as a module script, so nothing in this file imports a module this script's
+    // compiler and the import scans would have to resolve; the drawing reads it from the page's `pdfjsLib`.
+    if (name === 'index.html') {
+      return route.fulfill({
+        body:
+          '<!doctype html><title>glyph placement</title><script type="module">' +
+          "import * as pdfjs from '/pdf.mjs'; pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.mjs'; globalThis.pdfjsLib = pdfjs;" +
+          '</script>',
+        contentType: 'text/html',
+      });
+    }
     if (!/^pdf(\.worker)?\.mjs$/u.test(name)) return route.fulfill({ status: 404, body: '' });
     return route.fulfill({ body: readFileSync(join(PDFJS, name)), contentType: 'text/javascript' });
   });
   await tab.goto('http://pdfjs.invalid/index.html');
+  await tab.waitForFunction(() => /** @type {any} */ (globalThis).pdfjsLib !== undefined);
   /** @param {Uint8Array} bytes */
   const draw = (bytes) =>
     tab.evaluate(async (/** @type {number[]} */ data) => {
       // THE CALLBACK RUNS IN THE PAGE, so it reaches the page's globals through `globalThis`.
       const w = /** @type {any} */ (globalThis);
-      // THE PAGE'S OWN URL for the module, which this script's compiler cannot and should not resolve.
-      const pdfjs = /** @type {any} */ (await import(`${String(w.location.origin)}/pdf.mjs`));
-      pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.mjs';
+      const pdfjs = w.pdfjsLib;
       /** @type {{ c: string, x: number, y: number }[]} */
       const drawn = [];
       const proto = w.CanvasRenderingContext2D.prototype;
