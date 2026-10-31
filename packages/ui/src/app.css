@@ -6470,18 +6470,34 @@ optgroup {
 }
 
 .m-text-line::selection {
-  /* The highlight is the whole point: the text under it is transparent, so
-     this is the only thing a person sees change when they drag. */
-  background: color-mix(in srgb, var(--accent) 35%, transparent);
+  /* THE BROWSER'S HIGHLIGHT IS TRANSPARENT (ADR-0280, rule (i)): it is laid out in the substitute face, whose letters
+     stand where that face puts them, so the layer paints the selection itself from the engine's letters
+     (`.m-text-layer__selection`). The selection itself is still the browser's. */
+  background: transparent;
   color: transparent;
+}
+
+/* THE SELECTION AS PAINTED (`paintSelection`): one shape per line the selection crosses, from the engine's letters,
+   under the lines and taking no pointer. */
+.m-text-layer__selection {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.m-text-layer__selection polygon {
+  fill: color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 /* THE SELECTION, in high contrast: the system's highlight colour, as every other selection on the screen is. The layer
    opts out of forced colours (above), so this is chosen here rather than left to them; translucent, because the page's
-   own text under a transparent line is what shows through it. After the rule above, which it must override. */
+   own text under a transparent line is what shows through it. */
 @media (forced-colors: active) {
-  .m-text-line::selection {
-    background: color-mix(in srgb, Highlight 45%, transparent);
+  .m-text-layer__selection polygon {
+    fill: color-mix(in srgb, Highlight 45%, transparent);
   }
 }
 

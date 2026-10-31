@@ -158,6 +158,18 @@ export function engineBoxOnScreen(
 }
 
 /**
+ * A POINT the engine reported in display space at scale 1, on screen in the overlay's pixels: {@link engineBoxOnScreen}'s
+ * two conversions for one point, display to PDF at scale 1 and PDF to the viewport at the page's zoom and turn. A letter's
+ * place is a point, and a box would lose which corner it was.
+ */
+export function enginePointOnScreen(point: { readonly x: number; readonly y: number }, page: OverlayPage): { readonly x: number; readonly y: number } {
+  const shown = overlayTransform(page);
+  const unscaled = pageTransform(shown.crop, shown.rotation, 1);
+  const onScreen = toViewport(toPdf(viewportPoint(point.x, point.y), unscaled), shown);
+  return { x: onScreen.x, y: onScreen.y };
+}
+
+/**
  * A box the ENGINE reported in display space at scale 1, in PDF user space and ordered: the first of
  * {@link engineBoxOnScreen}'s two conversions, named for a caller that holds the page's transform rather than its
  * geometry — the select tool, which moves a link by the rectangle `addLink` and `editLink` take. The page's box and turn

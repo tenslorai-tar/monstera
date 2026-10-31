@@ -5,6 +5,7 @@ import { exactCaretOf, holdAnchorAtPress, withinClickWobble } from './pressAncho
 import type { OverlayPage } from './annotations/annotationSpace.js';
 import { engineBoxOnScreen, overlayTransform } from './annotations/annotationSpace.js';
 import { type HighlightPainter, type SearchHighlight, sharedPainter } from './searchHighlight.js';
+import { type LetterRun, type LineLetters, type SpanShape, caretAt, letterRun, spanEnd, spanShape } from './textLayerLetters.js';
 
 /**
  * One line of the page, as the channel reports it.
@@ -22,6 +23,96 @@ export interface TextLayerLine {
     readonly x1: number;
     readonly y1: number;
   };
+  /** Where its letters are, as the engine read them (ADR-0280, Decision 2); absent for a line placed as before. */
+  readonly letters?: LineLetters | undefined;
+}
+
+/**
+ * Each rendered line's letters on screen, keyed by its ELEMENT, set once per layout (`useLayoutEffect` below): the one
+ * geometry the selection's painter, `readTextSelection` and every press and drag rule read (ADR-0280, Decision 4). A line
+ * placed as before has no entry. A `WeakMap`, for {@link LAYERS}' reason.
+ */
+const RUNS = new WeakMap<Element, LetterRun>();
+
+/** One line a selection crosses: which, the span of its text, and the shape that span covers in the layer's pixels. */
+interface SelectedSpan {
+  readonly line: Element;
+  readonly from: number;
+  readonly to: number;
+  readonly shape: SpanShape;
+}
+
+/**
+ * THE ONE FUNCTION OF A SELECTION'S RANGE (ADR-0280, Decision 5, rule (i)): for each line the range crosses, in reading
+ * order, the span of its text the range holds and the shape that span covers, in the layer's pixels. The painter draws
+ * these shapes and `readTextSelection` reads its ends and boxes from them, so what a person sees selected and what every
+ * command takes cannot disagree.
+ *
+ * A line with letters is shaped from them ({@link spanShape}); a line placed as before keeps the shape the browser lays
+ * its range out in, as it did before letters existed. Nothing else is read: not the pointer, not a previous paint.
+ */
+function selectionSpans(range: Range, layer: Element): SelectedSpan[] {
+  const origin = layer.getBoundingClientRect();
+  const spans: SelectedSpan[] = [];
+  for (const line of layer.querySelectorAll('[data-text-line]')) {
+    if (!range.intersectsNode(line)) continue;
+    const node = line.firstChild;
+    if (node?.nodeType !== Node.TEXT_NODE) continue;
+    const text = node as Text;
+    // AN END INSIDE THE LINE is in its text node (an offset into it) or on the line element (before or after the text);
+    // an end outside it means the line is held from its start, or to its end.
+    const inLine = (container: Node, offset: number): number => (container === text ? offset : offset === 0 ? 0 : text.length);
+    const from = line.contains(range.startContainer) ? inLine(range.startContainer, range.startOffset) : 0;
+    const to = line.contains(range.endContainer) ? inLine(range.endContainer, range.endOffset) : text.length;
+    if (!(to > from)) continue;
+    const run = RUNS.get(line);
+    if (run !== undefined) {
+      const shape = spanShape(run, from, to);
+      if (shape !== null) spans.push({ line, from, to, shape });
+      continue;
+    }
+    // PLACED AS BEFORE: ACROSS from the range's own rectangles in this line, as the browser lays it out in the fitted
+    // substitute, and UP AND DOWN from the line's element, placed at the engine's box (`engineBoxOnScreen`). The range's
+    // rectangles alone are the substitute's line box, its top 4 px above the line's on a 28 pt line (`markLook.pw.ts`,
+    // 2026-10-21, 1600 by 900), and a look drawn from them stood above the words it marks.
+    const part = range.cloneRange();
+    part.setStart(text, from);
+    part.setEnd(text, to);
+    const across = [...part.getClientRects()].filter((rect) => rect.width > 0);
+    if (across.length === 0) continue;
+    const box = line.getBoundingClientRect();
+    const left = Math.min(...across.map((rect) => rect.left)) - origin.left;
+    const right = Math.max(...across.map((rect) => rect.right)) - origin.left;
+    const top = box.top - origin.top;
+    const bottom = box.bottom - origin.top;
+    spans.push({ line, from, to, shape: [{ x: left, y: top }, { x: right, y: top }, { x: right, y: bottom }, { x: left, y: bottom }] });
+  }
+  return spans;
+}
+
+/** The axis-aligned box around a span's shape, in the layer's pixels. */
+function boxOfShape(shape: SpanShape): { readonly x: number; readonly y: number; readonly width: number; readonly height: number } {
+  const xs = shape.map((point) => point.x);
+  const ys = shape.map((point) => point.y);
+  const x = Math.min(...xs);
+  const y = Math.min(...ys);
+  return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y };
+}
+
+/**
+ * RULE (ii), the caret a pointer means where it is ON a line (ADR-0280, Decision 6): from the engine's letters where the
+ * line has them ({@link caretAt}), and otherwise the browser's caret at the point, as before. `null` off every line.
+ */
+function caretUnder(root: Element, event: PointerEvent): { readonly node: Node; readonly offset: number } | null {
+  const line = lineUnder(event);
+  if (line === null) return null;
+  const node = line.firstChild;
+  const run = RUNS.get(line);
+  if (run !== undefined && node?.nodeType === Node.TEXT_NODE) {
+    const origin = root.getBoundingClientRect();
+    return { node, offset: caretAt(run, { x: event.clientX - origin.left, y: event.clientY - origin.top }) };
+  }
+  return exactCaretOf(event);
 }
 
 export interface TextLayerProps {
@@ -67,27 +158,6 @@ export interface TextSelection {
   readonly boxes: readonly { readonly x: number; readonly y: number; readonly width: number; readonly height: number }[];
 }
 
-/**
- * Rectangles merged into one box per line: two that overlap by more than half the smaller one's height are on one line,
- * and the line's box spans them both.
- */
-function linesOf(rects: readonly { left: number; top: number; right: number; bottom: number }[]): TextSelection['boxes'] {
-  const lines: { left: number; top: number; right: number; bottom: number }[] = [];
-  for (const rect of [...rects].sort((a, b) => a.top - b.top || a.left - b.left)) {
-    const line = lines.find(
-      (each) => Math.min(each.bottom, rect.bottom) - Math.max(each.top, rect.top) > Math.min(each.bottom - each.top, rect.bottom - rect.top) / 2,
-    );
-    if (line === undefined) {
-      lines.push({ ...rect });
-      continue;
-    }
-    line.left = Math.min(line.left, rect.left);
-    line.right = Math.max(line.right, rect.right);
-    line.top = Math.min(line.top, rect.top);
-    line.bottom = Math.max(line.bottom, rect.bottom);
-  }
-  return lines.map((line) => ({ x: line.left, y: line.top, width: line.right - line.left, height: line.bottom - line.top }));
-}
 
 /**
  * Each mounted layer's page and its viewport-to-PDF conversion, keyed by the layer's ELEMENT.
@@ -138,18 +208,47 @@ export function readTextSelection(selection: Selection | null = globalThis.docum
   const text = selectedText(clipped, layer);
   if (text === '') return undefined;
 
-  const rects = [...clipped.getClientRects()].filter((rect) => rect.width > 0 && rect.height > 0);
-  const first = rects[0];
-  const last = rects.at(-1);
+  // THE SAME SPANS THE PAINTER DRAWS (`selectionSpans`, rule (i)): the run's ends are the first span's start and the
+  // last span's end, each on its band's middle, and the boxes are the spans' own, so a markup made from this covers what
+  // the person saw selected.
+  const spans = selectionSpans(clipped, layer);
+  const first = spans[0];
+  const last = spans.at(-1);
   if (first === undefined || last === undefined) return undefined;
-  const origin = layer.getBoundingClientRect();
+  const from = spanEnd(first.shape, 'from');
+  const to = spanEnd(last.shape, 'to');
   return {
     page: entry.page,
     text,
-    from: entry.toPdf(first.left - origin.left, (first.top + first.bottom) / 2 - origin.top),
-    to: entry.toPdf(last.right - origin.left, (last.top + last.bottom) / 2 - origin.top),
-    boxes: linesOf(selectedLines(clipped, layer).map((rect) => ({ left: rect.left - origin.left, top: rect.top - origin.top, right: rect.right - origin.left, bottom: rect.bottom - origin.top }))),
+    from: entry.toPdf(from.x, from.y),
+    to: entry.toPdf(to.x, to.y),
+    boxes: spans.map((span) => boxOfShape(span.shape)),
   };
+}
+
+/**
+ * RULE (i)'s painter: the selection, drawn from its range alone ({@link selectionSpans}), into the layer's own surface.
+ * The browser's highlight is transparent (`app.css`), so this is what a person sees selected. A selection in no line of
+ * this layer clears it.
+ */
+export function paintSelection(root: Element, surface: SVGElement): void {
+  const selection = root.ownerDocument.getSelection();
+  const range = selection !== null && selection.rangeCount > 0 && !selection.isCollapsed ? selection.getRangeAt(0) : null;
+  const spans = range === null ? [] : selectionSpans(range, root);
+  const points = spans.map((span) => span.shape.map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(' '));
+  // REWRITTEN ONLY WHEN IT CHANGED: a growing drag fires a selection change per move, and most leave a line's shape alone.
+  const drawn = surface.getAttribute('data-shapes') ?? '';
+  const next = points.join('|');
+  if (drawn === next) return;
+  surface.setAttribute('data-shapes', next);
+  const owner = surface.ownerDocument;
+  surface.replaceChildren(
+    ...points.map((each) => {
+      const polygon = owner.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+      polygon.setAttribute('points', each);
+      return polygon;
+    }),
+  );
 }
 
 /**
@@ -211,32 +310,6 @@ export function copySelectedText(owner: Document): () => void {
   };
 }
 
-/**
- * The selected part of each line the range crosses, on screen: ACROSS from the range's own rectangles in that line, and
- * UP AND DOWN from the line's element, which is placed at the box the engine read for it (`engineBoxOnScreen`). A range's
- * rectangles are the substitute font's line box instead — its top 4 px above the line's on a 28 pt line, read 2026-10-21 by
- * `markLook.pw.ts` at 1600 by 900 — and the quads
- * MuPDF marks are the engine's, so a look drawn from them stood above the words it marks.
- */
-function selectedLines(range: Range, layer: Element): { left: number; top: number; right: number; bottom: number }[] {
-  const found: { left: number; top: number; right: number; bottom: number }[] = [];
-  for (const line of layer.querySelectorAll('[data-text-line]')) {
-    if (!range.intersectsNode(line)) continue;
-    const part = range.cloneRange();
-    if (!line.contains(range.startContainer)) part.setStart(line, 0);
-    if (!line.contains(range.endContainer)) part.setEnd(line, line.childNodes.length);
-    const across = [...part.getClientRects()].filter((rect) => rect.width > 0);
-    if (across.length === 0) continue;
-    const box = line.getBoundingClientRect();
-    found.push({
-      left: Math.min(...across.map((rect) => rect.left)),
-      right: Math.max(...across.map((rect) => rect.right)),
-      top: box.top,
-      bottom: box.bottom,
-    });
-  }
-  return found;
-}
 
 /**
  * Keeps a drag's selection on the page's text anchored where the press put it (`holdAnchorAtPress`, the mechanism and
@@ -274,8 +347,9 @@ export function holdPressedAnchor(root: HTMLElement): () => void {
       blank.dragging = true;
     }
     const line = lineUnder(event);
-    const exact = line !== null && typeof owner.caretPositionFromPoint === 'function' ? owner.caretPositionFromPoint(event.clientX, event.clientY) : null;
-    const onLetters = exact !== null && exact.offsetNode.nodeType === Node.TEXT_NODE && root.contains(exact.offsetNode) ? { node: exact.offsetNode as Text, offset: exact.offset } : null;
+    // THE LETTER UNDER THE POINTER, by rule (ii) (`caretUnder`): the engine's where the line has letters.
+    const under = line === null ? null : caretUnder(root, event);
+    const onLetters = under !== null && under.node.nodeType === Node.TEXT_NODE && root.contains(under.node) ? { node: under.node as Text, offset: under.offset } : null;
     // NOTHING IS SELECTED UNTIL THE POINTER REACHES A LINE'S LETTERS: blank space and a line's band beside its end are
     // no text crossed (the local agent's gesture, 2026-10-27: a press right of a short line's end, drifting down into its
     // band, selected from the page's first character to that line's end). Then the anchor is that line's caret where
@@ -334,7 +408,8 @@ export function holdPressedAnchor(root: HTMLElement): () => void {
   // the band of a line in another selected 1,252 characters from the top of the owner's page (2026-10-28).
   const unhold = holdAnchorAtPress(root, (event) => {
     const place = pressPlace(root, event);
-    if (place === 'line') return exactCaretOf(event);
+    // ON A LINE, THE ENGINE'S LETTER the press is on, and the side of it the press is on (`caretUnder`, rule (ii)).
+    if (place === 'line') return caretUnder(root, event);
     pressedOnBlank(event, place === 'blank' ? undefined : place);
     return null;
   });
@@ -380,6 +455,13 @@ export function caretOnLine(line: Element, x: number): { readonly node: Text; re
   if (first?.nodeType !== Node.TEXT_NODE) return null;
   const node = first as Text;
   const box = line.getBoundingClientRect();
+  // THE ENGINE'S LETTERS where the line has them (rule (ii)), at the point across on the line's own middle.
+  const run = RUNS.get(line);
+  const layer = line.closest('[data-text-layer]');
+  if (run !== undefined && layer !== null) {
+    const origin = layer.getBoundingClientRect();
+    return { node, offset: caretAt(run, { x: x - origin.left, y: (box.top + box.bottom) / 2 - origin.top }) };
+  }
   if (x <= box.left) return { node, offset: 0 };
   if (x >= box.right) return { node, offset: node.length };
   // THE LETTER UNDER THE POINT ACROSS, asked on the line's own middle, where the browser's hit test meets its text.
@@ -443,28 +525,58 @@ export function caretBesideLine(root: Element, x: number, y: number): { readonly
 export function followPastLineEnds(root: HTMLElement): () => void {
   let moves = 0;
   let besideText = false;
-  const pressed = (event: PointerEvent): void => {
-    moves = 0;
-    besideText = pressPlace(root, event) !== 'blank';
-  };
-  const moved = (event: PointerEvent): void => {
-    if ((event.buttons & 1) === 0 || !besideText) return;
-    moves += 1;
-    if (moves < 2) return;
-    if (!(event.target instanceof Element) || event.target.closest('.m-text-layer__gaps') === null) return;
+  /**
+   * The drag's last sample over a line with letters, while the button is held: the browser moves the selection's end by
+   * the substitute's letters in its own handling of the move, AFTER this layer's listeners, so the engine's letter is put
+   * back on the change that follows ({@link heldToLetters}).
+   */
+  let onLettersAt: PointerEvent | undefined;
+  /** Moves the selection's end to `caret` where it is not there already; one change, so no loop. */
+  const extendTo = (caret: { readonly node: Node; readonly offset: number } | null): void => {
     const selection = root.ownerDocument.getSelection();
     const anchor = selection?.anchorNode ?? null;
-    if (selection === null || anchor === null || !root.contains(anchor)) return;
-    const caret = caretBesideLine(root, event.clientX, event.clientY);
-    if (caret === null) return;
+    if (caret === null || selection === null || anchor === null || !root.contains(anchor)) return;
     if (selection.focusNode === caret.node && selection.focusOffset === caret.offset) return;
     selection.extend(caret.node, caret.offset);
   };
+  const pressed = (event: PointerEvent): void => {
+    moves = 0;
+    onLettersAt = undefined;
+    besideText = pressPlace(root, event) !== 'blank';
+  };
+  const moved = (event: PointerEvent): void => {
+    if ((event.buttons & 1) === 0 || !besideText) {
+      onLettersAt = undefined;
+      return;
+    }
+    moves += 1;
+    if (moves < 2) return;
+    if (!(event.target instanceof Element)) return;
+    const overGaps = event.target.closest('.m-text-layer__gaps') !== null;
+    // OVER A LINE WITH LETTERS, the moving end is the engine's letter the pointer is on (rule (ii)).
+    const line = overGaps ? null : lineUnder(event);
+    onLettersAt = line !== null && RUNS.has(line) ? event : undefined;
+    if (onLettersAt !== undefined) extendTo(caretUnder(root, event));
+    else if (overGaps) extendTo(caretBesideLine(root, event.clientX, event.clientY));
+  };
+  /** RULE (ii) AFTER THE BROWSER: the change its own handling of a move made is corrected to the engine's letter. */
+  const heldToLetters = (): void => {
+    if (onLettersAt === undefined || (onLettersAt.buttons & 1) === 0) return;
+    extendTo(caretUnder(root, onLettersAt));
+  };
+  const released = (): void => {
+    onLettersAt = undefined;
+  };
+  const owner = root.ownerDocument;
   root.addEventListener('pointerdown', pressed);
   root.addEventListener('pointermove', moved);
+  owner.addEventListener('selectionchange', heldToLetters);
+  owner.addEventListener('pointerup', released, true);
   return (): void => {
     root.removeEventListener('pointerdown', pressed);
     root.removeEventListener('pointermove', moved);
+    owner.removeEventListener('selectionchange', heldToLetters);
+    owner.removeEventListener('pointerup', released, true);
   };
 }
 
@@ -635,7 +747,33 @@ export function TextLayer({
   // on a new zoom: the font size is the box's height, and the substitute's width does not scale
   // with it exactly.
   useLayoutEffect(() => {
-    if (container.current !== null) fitLines(container.current);
+    const root = container.current;
+    if (root === null) return;
+    fitLines(root);
+    // EACH LINE'S LETTERS ON SCREEN, once per layout (ADR-0280, Decision 4): the geometry every rule here reads.
+    root.querySelectorAll('[data-text-line]').forEach((element, at) => {
+      const line = lines[at];
+      const run = line === undefined ? null : letterRun(line.letters, line.text.length, geometry);
+      if (run === null) RUNS.delete(element);
+      else RUNS.set(element, run);
+    });
+  }, [geometry, lines]);
+
+  // RULE (i): THE SELECTION IS PAINTED FROM ITS RANGE ALONE (`paintSelection`), on every change of it and once the
+  // geometry under it moves; the browser's own highlight is transparent (`app.css`).
+  const surface = useRef<SVGSVGElement | null>(null);
+  useEffect(() => {
+    const root = container.current;
+    const drawn = surface.current;
+    if (root === null || drawn === null) return undefined;
+    const paint = (): void => {
+      paintSelection(root, drawn);
+    };
+    paint();
+    root.ownerDocument.addEventListener('selectionchange', paint);
+    return (): void => {
+      root.ownerDocument.removeEventListener('selectionchange', paint);
+    };
   }, [geometry, lines]);
   // THE DEFAULT IS RESOLVED IN THE EFFECT, not here: `sharedPainter` reads
   // `globalThis`, and reading it during render would fix the answer before a
@@ -703,6 +841,8 @@ export function TextLayer({
     <div className="m-text-layer" data-text-layer={String(page)} ref={container}>
       {/* FIRST, so every line paints and hit-tests above it: what a drag meets between the lines (`.m-text-layer__gaps`). */}
       <div className="m-text-layer__gaps" aria-hidden="true" />
+      {/* THE SELECTION AS PAINTED (`paintSelection`), under the lines and taking no pointer, so it never hit-tests. */}
+      <svg aria-hidden="true" className="m-text-layer__selection" ref={surface} />
       {lines.map((line, index) => {
         // Display space to PDF user space, then PDF to the viewport: `engineBoxOnScreen`, the one conversion every
         // layer drawing an engine box takes.

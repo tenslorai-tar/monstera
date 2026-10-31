@@ -219,6 +219,16 @@ export type ShimPageLink = (
 export interface ShimPlacedLine {
   readonly text: string;
   readonly box: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
+  /**
+   * Where its letters are, as the engine would read them (ADR-0280, Decision 2). STATED BY THE TEST, for `pageWordBoxes`'
+   * reason: the shim has no engine. Absent, the line is answered with none and placed as before.
+   */
+  readonly letters?: {
+    readonly origin: { readonly x: number; readonly y: number };
+    readonly direction: { readonly x: number; readonly y: number };
+    readonly size: number;
+    readonly advances: readonly number[];
+  };
 }
 
 /**
@@ -2366,7 +2376,10 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       return Promise.resolve(
         ok({
           version: asDocVersion(current),
-          lines: kept.map((text, index) => ({ text, box: boxOf(docId, page, index) })),
+          lines: kept.map((text, index) => {
+            const letters = options.documentPageLines?.has(docId) === true ? undefined : placed?.[page]?.[index]?.letters;
+            return { text, box: boxOf(docId, page, index), ...(letters === undefined ? {} : { letters }) };
+          }),
           // The same one-past-the-limit honesty the kernel has, so a shim answer
           // and a real one disagree about nothing a test could come to rely on.
           truncated: all.length > limit,
