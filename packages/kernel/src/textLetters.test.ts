@@ -1,3 +1,4 @@
+import { MAX_TEXT_LAYER_LINE } from '@monstera/contract/host';
 import { describe, expect, it } from 'vitest';
 
 import { LETTERS_FILE_MAX_BYTES, LETTERS_LINE_HEADER_BYTES, type WalkedLine, readLetters, writeLetters } from './textLetters.js';
@@ -69,6 +70,22 @@ describe('main reads the letters as from a hostile host (invariant 25)', () => {
     const advances = answer.lines[0]?.advances ?? [];
     const last = advances.reduce((sum, advance) => sum + advance, 0) / 100;
     expect(Math.abs(last - 1000 * 5.0049)).toBeLessThanOrEqual(0.005);
+  });
+
+  // A LINE CLIPPED TO `MAX_TEXT_LAYER_LINE` LETTERS: its last kept letter advances to the next letter's origin, as every
+  // other letter does, and not to the end of the whole line. 1,100 letters 5 pt apart: the 1,024th advances 5 pt.
+  it('gives a clipped line’s last kept letter its advance to the next letter, not to the end of the line', () => {
+    const long: WalkedLine = {
+      direction: { x: 1, y: 0 },
+      size: 11,
+      characters: Array.from({ length: 1100 }, (_, at) => ({ c: 'x', x: 72 + at * 5, y: 700 })),
+      end: { x: 72 + 1100 * 5, y: 700 },
+    };
+    const answer = readLetters(writeLetters([long]), ['x'.repeat(MAX_TEXT_LAYER_LINE)]);
+    if (!('lines' in answer)) throw new Error('refused');
+    const advances = answer.lines[0]?.advances;
+    expect(advances).toHaveLength(MAX_TEXT_LAYER_LINE);
+    expect(advances?.at(-1)).toBe(500);
   });
 
   // A CHARACTER PAST U+FFFF IS PAIRED, the binding's cut applied on both sides: the walk hands U+1F600 as its low 16 bits

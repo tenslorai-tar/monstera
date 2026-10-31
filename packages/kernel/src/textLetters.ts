@@ -101,11 +101,14 @@ export function writeLetters(lines: readonly WalkedLine[]): Uint8Array {
   const kept = lines.slice(0, MAX_TEXT_LAYER_LINES);
   const records = kept.map((line) => {
     const characters = line.characters.slice(0, MAX_TEXT_LAYER_LINE);
-    const first = characters[0] ?? line.end;
+    // A CLIPPED LINE ENDS WHERE ITS FIRST DROPPED LETTER BEGINS, so its last kept letter advances as every other does;
+    // the end of the whole line would give that one letter the width of everything dropped.
+    const end = line.characters[characters.length] ?? line.end;
+    const first = characters[0] ?? end;
     // EACH LETTER'S PLACE ROUNDED, and the advances their differences, so a line's last letter is as near its place as
     // its first: rounding each advance alone would let the error grow along the line, half a hundredth a letter.
     const place = (to: { x: number; y: number }): number => Math.round(((to.x - first.x) * line.direction.x + (to.y - first.y) * line.direction.y) * 100);
-    const places = [...characters.map(place), place(line.end)];
+    const places = [...characters.map(place), place(end)];
     const advances = characters.map((_, at) => (places[at + 1] ?? 0) - (places[at] ?? 0));
     // A LINE THAT CANNOT BE CARRIED carries no advances, and `main` places it as today.
     const carried = advances.every((advance) => Math.abs(advance) <= 32767) ? advances : [];
