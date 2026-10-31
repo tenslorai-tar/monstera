@@ -930,6 +930,16 @@ them per leg (`accessibility-failures-<os>`) — the visual job's mechanism, one
 any leg; its trace and `error-context.md` name the element and where the focus was, and the mechanism is decided from
 them before anything in the editor or the case changes. Nothing about the case is changed to make it pass.
 
+**Added later on 2026-10-31: the first trace kept was the instrument's own fault.** The commit that made the gate
+keep traces (7585d6e4) was red on ubuntu-latest in run 41223400844: `editTextHandWalk.pw.ts:433`, the speed case's
+worst keystroke 58.9 ms against 50. Its upload worked (`accessibility-failures-ubuntu-latest`, 4.1 MB) and the
+trace inside it held 284 page snapshots. Measured on the owner's machine, the speed case alone, one worker:
+traced the way that commit traced it, 10 of 10 runs failed, keystroke median 44–55 ms against 4–7 ms untraced. Taken
+apart, five runs each, it is the **screencast**, not the DOM snapshots: snapshots alone 5.3–6.2 ms median, screencast
+alone 66–73 ms. The screencast is drawing work in the page that the timed cases measure. So the trace on CI now keeps
+the DOM and drops the screencast (`failureTrace`, held by `proof:visualfailures`, whose control is the previous
+rule). The DOM snapshots are what show where the focus was, which is what this entry's open item needs.
+
 ---
 
 ## 2026-10-31 — Stage audit of `f32c8c39..0d48e788` — findings BBBBBBBBB-1 to BBBBBBBBB-27

@@ -53,16 +53,27 @@ export function onGithubActions(env) {
 }
 
 /**
- * Playwright's trace mode for a run that keeps its failures. ON CI, recorded for every case and kept only for one that
- * fails, which the job uploads. LOCALLY, off: recording cost the visual file 196 s → 231 s at 2 workers (measured
- * 2026-10-20), and `editTextLeaving.pw.ts` 104 s and 112 s → 155 s and 147 s at 4 workers, runs alternated (measured
- * 2026-10-31 on the owner's machine, `--workers=4`, all 22 passing), on the owner's machine while it is blocked by the
- * run, and a local failure is read where it happened. What it costs the accessibility gate ON CI is read from that
+ * Playwright's trace for a run that keeps its failures. ON CI, recorded for every case and kept only for one that fails,
+ * which the job uploads: each action, the console, the network and the page's DOM before and after it.
+ *
+ * WITHOUT THE SCREENCAST, because it is work inside the page that the timed cases measure. Measured 2026-10-31 on the
+ * owner's machine, `editTextHandWalk.pw.ts`' speed case alone, one worker, five runs each, keystroke to paint median /
+ * worst: no trace 4.4–6.1 / 12.5–19.7 ms; DOM snapshots alone 5.3–6.2 / 15.3–31.2 ms; screencast alone 66–73 /
+ * 73–134 ms; both 43–48 / 60–62 ms, against a budget of 30 / 50. The screencast-and-snapshots trace failed that case on
+ * ubuntu-latest in run 41223400844 (worst 58.9 ms) and on ten of ten runs here. The DOM snapshots keep the page, the
+ * focus included; `error-context.md` keeps the failing moment's own.
+ *
+ * LOCALLY, off: recording cost the visual file 196 s → 231 s at 2 workers (measured
+ * 2026-10-20, with the screencast), and `editTextLeaving.pw.ts` at 4 workers 104 s and 112 s → 155 s and 147 s with
+ * the screencast, 103 s → 120 s with this trace (measured 2026-10-31 on the owner's machine, runs alternated, all 22
+ * passing; a second pair of this trace's runs was lost to a crash of the runner itself), on the owner's machine while
+ * it is blocked by the run, and a local failure is read where it happened. What it costs the accessibility gate ON CI is read from that
  * step's own duration, whose spread before tracing was 948–1213 s on windows-latest and 867–1234 s on ubuntu-latest
  * (runs 41207675823, 41212601632, 41212728867).
  * @param {Readonly<Record<string, string | undefined>>} env
- * @returns {'retain-on-failure' | 'off'}
+ * @returns {{ mode: 'retain-on-failure' | 'off', snapshots: boolean, screenshots: false, sources: boolean }}
  */
 export function failureTrace(env) {
-  return onGithubActions(env) ? 'retain-on-failure' : 'off';
+  const kept = onGithubActions(env);
+  return { mode: kept ? 'retain-on-failure' : 'off', snapshots: kept, screenshots: false, sources: kept };
 }

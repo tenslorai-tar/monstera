@@ -29,8 +29,8 @@ import { KEPT_RUNS, failureTrace } from '../test/visualFailures.mjs';
 
 /** @type {string[]} */
 const failures = [];
-// TWELVE CASES FOR EACH OF THE TWO RUNS, and the one runner-variable control they share.
-const roster = createRoster(failures, { cases: 25 });
+// THIRTEEN CASES FOR EACH OF THE TWO RUNS, and the one runner-variable control they share.
+const roster = createRoster(failures, { cases: 27 });
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
 function check(name, condition, detail) {
@@ -71,6 +71,18 @@ async function configUnder(kept, tag, env) {
   }
 }
 
+/**
+ * A config's trace as an object; a bare mode string is read as Playwright reads it, a trace with its defaults, which
+ * record the screencast.
+ * @param {{ use?: { trace?: unknown } }} config
+ * @returns {{ mode?: unknown, snapshots?: unknown, screenshots?: unknown }}
+ */
+const traceOf = (config) => {
+  const trace = config.use?.trace;
+  if (typeof trace === 'string') return { mode: trace, snapshots: true, screenshots: true };
+  return typeof trace === 'object' && trace !== null ? trace : {};
+};
+
 /** @param {string} from @param {string} to */
 const broken = (from, to) => {
   if (WORKFLOW.split(from).length !== 2) throw new Error(`the control's anchor ${JSON.stringify(from.slice(0, 80))} is not in ci.yml exactly once, so this control would mutate nothing, or the wrong step`);
@@ -96,20 +108,26 @@ for (const kept of KEPT_RUNS) {
   );
   const onRunner = await configUnder(kept, `runner-${kept.job}`, { GITHUB_ACTIONS: 'true' });
   check(
-    `${label}: ON CI the config keeps a failing case's trace, which the job uploads`,
-    onRunner.use?.trace === 'retain-on-failure',
+    `${label}: ON CI the config keeps a failing case's trace, with the page's DOM, which the job uploads`,
+    traceOf(onRunner).mode === 'retain-on-failure' && traceOf(onRunner).snapshots === true,
     `with GITHUB_ACTIONS=true, use.trace is ${JSON.stringify(onRunner.use?.trace)}.`,
+  );
+  check(
+    `${label}: and records no screencast, which is work inside the page a timed case measures`,
+    traceOf(onRunner).screenshots === false,
+    `with GITHUB_ACTIONS=true, use.trace is ${JSON.stringify(onRunner.use?.trace)}; the speed case's keystroke ran 43–73 ms ` +
+      'median under a screencast against 4–6 without (visualFailures.mjs).',
   );
   const here = await configUnder(kept, `local-${kept.job}`, {});
   check(
     `${label}: LOCALLY the config records no trace, so a local run keeps its speed`,
-    here.use?.trace === 'off',
+    traceOf(here).mode === 'off',
     `with no runner variable, use.trace is ${JSON.stringify(here.use?.trace)}.`,
   );
   check(
     `${label}: and the config this process loaded is the one its own environment selects`,
-    own.use?.trace === failureTrace(process.env),
-    `use.trace is ${JSON.stringify(own.use?.trace)}; this environment selects ${failureTrace(process.env)}.`,
+    JSON.stringify(own.use?.trace) === JSON.stringify(failureTrace(process.env)),
+    `use.trace is ${JSON.stringify(own.use?.trace)}; this environment selects ${JSON.stringify(failureTrace(process.env))}.`,
   );
 
   // NO UPLOAD STEP LEAVES THE CONTROLS NOTHING TO BREAK: said as that, and their cases go missing from the roster.
@@ -141,8 +159,10 @@ for (const kept of KEPT_RUNS) {
 
 check(
   'CONTROL: another tool’s CI=true, or GITHUB_ACTIONS=false, is not a runner — and the runner and local readings differ',
-  failureTrace({ CI: 'true' }) === 'off' && failureTrace({ GITHUB_ACTIONS: 'false' }) === 'off' && failureTrace({ GITHUB_ACTIONS: 'true' }) !== failureTrace({}),
-  `CI=true gave ${failureTrace({ CI: 'true' })}, GITHUB_ACTIONS=false gave ${failureTrace({ GITHUB_ACTIONS: 'false' })}. A rule keyed on ` +
+  failureTrace({ CI: 'true' }).mode === 'off' &&
+    failureTrace({ GITHUB_ACTIONS: 'false' }).mode === 'off' &&
+    failureTrace({ GITHUB_ACTIONS: 'true' }).mode !== failureTrace({}).mode,
+  `CI=true gave ${failureTrace({ CI: 'true' }).mode}, GITHUB_ACTIONS=false gave ${failureTrace({ GITHUB_ACTIONS: 'false' }).mode}. A rule keyed on ` +
     `any CI flag, or on the variable's presence, would turn tracing on for a developer's shell.`,
 );
 
