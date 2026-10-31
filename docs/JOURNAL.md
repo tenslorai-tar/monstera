@@ -892,6 +892,46 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-31 — OPEN: a refusal's sentence stayed after the caret moved, once, on Windows CI (NEXT-UPDATE item 54)
+
+**What failed.** Run 41212601632 (acd10faa), the `build` job's windows-latest leg, accessibility gate:
+`editTextLeaving.pw.ts:218` — *words a write refused are still held after the caret moves…* — expected no
+`.m-kit-problem` after ArrowLeft and found one, 14 readings over 5 s. Every other case in the file passed in that
+run, and the case passed on the same leg in main's run for 7263803b. No commit in `7263803b..acd10faa` touches
+`packages/ui/src/editText`, `packages/ui/src/editorKit`, the case or its helpers (`git log 7263803b..acd10faa --`
+over those paths: empty).
+
+**Not reproduced here.** 60 runs at 4 workers: 57 passed and the 3 failures were at page load
+(`canvas[data-page-canvas="0"]`, line 68) on a loaded machine, none at 218. 16 runs at a 6× CPU throttle
+(`Emulation.setCPUThrottlingRate`, a scratch copy of the case, deleted): all passed; read before and after the key,
+focus stayed on the surface, the caret went 31 → 30, and the sentence went.
+
+**Which element CI found is not known**, and it is the thing that would decide this. `.m-kit-problem` is the class of
+three elements in `BlockEditor.tsx` — the refusal (`role="alert"`), a menu's notice and the past-page line (both
+`role="status"`) — and the job kept nothing: its log named an `error-context.md` left on the runner. Read in the code,
+the notice is raised only by a menu item and the past-page line from the block's fixed box, so the refusal itself is
+the likely one; that is a reading, not an observation.
+
+**Two candidate mechanisms, neither established:**
+
+1. **The focus went elsewhere, and the write was tried again.** `BlockEditor`'s `focusin` and `pointerdown` listeners
+   finish the editor on any focus *away*; finishing writes, the shim refuses again, and the sentence is set again —
+   so the arrow could clear it and a second refusal put it back, or the arrow could have gone to whatever took the
+   focus. What would take the focus at that moment is not identified.
+2. **A paint put the store's caret back before the browser reported the arrow's.** The arrow's move reaches the store
+   only by the queued `selectionchange`; `EditorSurface`'s `paint` writes the store's selection into the page whenever
+   the surface has the focus. A paint between the key and that task would put the caret back at 31, the task would
+   read the store's own selection, nothing would be published, and the sentence would stay. What would paint in that
+   window is not identified either.
+
+**What changes now:** the accessibility gate keeps a failing case's page and, on CI, its trace, and the job uploads
+them per leg (`accessibility-failures-<os>`) — the visual job's mechanism, one list for both (`KEPT_RUNS` in
+`scripts/test/visualFailures.mjs`, held by `proof:visualfailures`). **Trigger:** the next failure of this case on
+any leg; its trace and `error-context.md` name the element and where the focus was, and the mechanism is decided from
+them before anything in the editor or the case changes. Nothing about the case is changed to make it pass.
+
+---
+
 ## 2026-10-31 — Stage audit of `f32c8c39..0d48e788` — findings BBBBBBBBB-1 to BBBBBBBBB-27
 
 Cloud runs 25 (Edit text on drawn fonts, ADR-0275), 26 (the assistant's limits and history, ADR-0277), 27 (node-forge
