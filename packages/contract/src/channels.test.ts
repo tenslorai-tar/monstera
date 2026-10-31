@@ -1079,8 +1079,11 @@ describe('conversationRoom, the one rule for whether a question can be asked (AD
     expect(conversationRoom([], 'q'.repeat(MAX_CHAT_TEXT + 300))).toStrictEqual({ kind: 'question-over', over: 300 });
   });
 
-  it('FULL BY THE COUNT when the next question would be past MAX_CHAT_TURNS messages, and not one before', () => {
-    expect(conversationRoom(conversation(MAX_CHAT_TURNS - 1), 'q')).toStrictEqual({ kind: 'room' });
+  it('FULL BY THE COUNT when the next question AND ITS ANSWER would be past MAX_CHAT_TURNS messages, and not one before', () => {
+    expect(conversationRoom(conversation(MAX_CHAT_TURNS - 2), 'q')).toStrictEqual({ kind: 'room' });
+    // ONE SHORT, as an ask that failed leaves it (its question kept, no answer): the answer would make it 65, and the save
+    // keeps 64 — the first question dropped in silence (the stage audit of f32c8c39..0d48e788). CONTROL: `+ 1` let it ask.
+    expect(conversationRoom(conversation(MAX_CHAT_TURNS - 1), 'q')).toStrictEqual({ kind: 'full', by: 'count' });
     expect(conversationRoom(conversation(MAX_CHAT_TURNS), 'q')).toStrictEqual({ kind: 'full', by: 'count' });
   });
 
@@ -1100,12 +1103,15 @@ describe('conversationRoom, the one rule for whether a question can be asked (AD
     const edges: [readonly { role: 'user' | 'assistant'; text: string }[], string][] = [
       [[], 'q'.repeat(MAX_CHAT_TEXT)],
       [[], 'q'.repeat(MAX_CHAT_TEXT + 1)],
-      [conversation(MAX_CHAT_TURNS - 1), 'q'],
+      [conversation(MAX_CHAT_TURNS - 2), 'q'],
       [conversation(MAX_CHAT_TURNS), 'q'],
     ];
     for (const [turns, question] of edges) {
       expect(conversationRoom(turns, question).kind === 'room').toBe(asks(turns, question));
     }
+    // THE ONE EDGE WHERE THE RULE IS STRICTER, by design: main would take the question, but its answer could not be kept.
+    expect(asks(conversation(MAX_CHAT_TURNS - 1), 'q')).toBe(true);
+    expect(conversationRoom(conversation(MAX_CHAT_TURNS - 1), 'q').kind).toBe('full');
   });
 });
 

@@ -1974,15 +1974,29 @@ describe('a full conversation is said, with a new one a press away (ADR-0277 Dec
     ]);
   });
 
-  it('CONTROL: one message short of full, the question goes and nothing is said', async () => {
+  it('CONTROL: room for one more question and its answer, the question goes; then it is full, said at once', async () => {
     const store = createDocumentStore(DOC, asDocVersion(1));
     store.getState().converse(held(MAX_CHAT_TURNS - 2));
     const { sent } = await drawn({ focused: { docId: DOC, store, page: 0 }, boundary: true });
+    expect(screen.queryByText(FULL_COUNT)).toBeNull();
     type('Last one?');
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
     await settle();
     expect(sent.filter((entry) => entry.id === 'ai.ask')).toHaveLength(1);
-    expect(screen.queryByText(FULL_COUNT)).toBeNull();
+    // ITS ANSWER WILL MAKE SIXTY-FOUR, so no further question has room from the moment this one is asked.
+    expect(screen.getByText(FULL_COUNT)).not.toBeNull();
+  });
+
+  it('a conversation one short of full, as a failed ask leaves it, is full: its answer could not be kept whole', async () => {
+    const store = createDocumentStore(DOC, asDocVersion(1));
+    store.getState().converse(held(MAX_CHAT_TURNS - 1));
+    const { sent } = await drawn({ focused: { docId: DOC, store, page: 0 }, boundary: true });
+    type('One more?');
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await settle();
+    // THE DECISION: nothing sent. CONTROL: counting the question alone sent it, and the save then dropped the first one.
+    expect(sent.filter((entry) => entry.id === 'ai.ask')).toHaveLength(0);
+    expect(screen.getByText(FULL_COUNT)).not.toBeNull();
   });
 
   it('THE PROVIDER’S too-long refusal makes the conversation full, said in one sentence, not as a refusal', async () => {

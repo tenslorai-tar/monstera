@@ -532,7 +532,8 @@ export const MAX_ANSWER_TEXT = 4 * MAX_CHAT_TEXT;
 export type ConversationRoom =
   | { readonly kind: 'room' }
   /**
-   * The conversation can take no more questions: by `count`, the next would be past `MAX_CHAT_TURNS` messages; by
+   * The conversation can take no more questions: by `count`, the next and its answer would be past `MAX_CHAT_TURNS`
+   * messages; by
    * `provider`, the provider refused it as longer than its model takes. A new conversation is the way on.
    */
   | { readonly kind: 'full'; readonly by: 'count' | 'provider' }
@@ -553,7 +554,10 @@ export function conversationRoom(
   question: string,
 ): ConversationRoom {
   if (turns.some((turn) => turn.refused === 'too-long')) return { kind: 'full', by: 'provider' };
-  if (turns.length + 1 > MAX_CHAT_TURNS) return { kind: 'full', by: 'count' };
+  // THE QUESTION AND THE ANSWER IT GETS, both: a conversation left odd by an ask that failed (its question kept, no
+  // answer) took one more at 63 and was 65 once answered, and the save kept the newest 64, dropping the first question
+  // in silence (the stage audit of f32c8c39..0d48e788). Counted whole, nothing asked can outgrow what is kept.
+  if (turns.length + 2 > MAX_CHAT_TURNS) return { kind: 'full', by: 'count' };
   return question.length > MAX_CHAT_TEXT ? { kind: 'question-over', over: question.length - MAX_CHAT_TEXT } : { kind: 'room' };
 }
 
