@@ -143,3 +143,9 @@ stop. The provider's own too-long refusal stays a stop (Decision 5).
   and a saved conversation are never larger than Decision 4's bound already allowed (invariant L11 unchanged in bytes).
   `conversationRoom` is full by that ceiling alone, counted with the answer it would get (the correction above), and
   says so in Decision 2's sentence.
+
+## Correction, 2026-10-31 — Decision 6 proposed to be superseded by ADR-0279
+
+[ADR-0279](0279-saved-conversations-are-kept-without-caps-each-in-its-own-file-and-history-reads-one-log.md), proposed
+and awaiting the owner's approval, would supersede Decision 6's twenty conversations per file and its *file-full*
+refusal: no cap on conversations, nothing dropped. Until it is approved and built, Decision 6 describes what ships.

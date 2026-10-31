@@ -80,3 +80,11 @@ a conversation already kept leaves it as it was, and an empty new one stores not
 ([ADR-0277](0277-the-assistants-limits-are-said-and-an-answer-is-never-cut-in-silence.md) Decision 6;
 `chatHistory.test.ts`, *an EMPTY save removes NOTHING*). Removing a conversation is the History's and Settings' *Clear
 chat history*, never a side effect of a panel that was emptied.
+
+## Correction, 2026-10-31 — proposed to be superseded by ADR-0279
+
+The owner decided on 2026-10-31 that saved conversations have no caps, follow the document rather than its path, load
+nothing when a PDF opens, and are kept by default.
+[ADR-0279](0279-saved-conversations-are-kept-without-caps-each-in-its-own-file-and-history-reads-one-log.md), proposed
+and awaiting approval, would supersede Decision 1 (off by default), Decision 2's single `chat-history.json`, Decision 3
+(the path digest) and Decision 5's 200-file bound. Until it is approved and built, this ADR describes what ships.
