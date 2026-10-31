@@ -108,3 +108,20 @@ So, decided by the owner on 2026-10-30:
 
 **Dates.** The Date line above says 2026-10-29, the day of Decisions 1 to 5. Decision 6, and with it Decision 7, was
 decided on 2026-10-30, as the *Decided by* line records; the Date line is left as written.
+
+## Correction, 2026-10-31: the count takes the answer too, and New chat keeps the last answer
+
+Found by the stage audit of f32c8c39..0d48e788 (the local agent); the decisions' text above is unchanged.
+
+- **The count above, "the next question would be past `MAX_CHAT_TURNS` messages", let a conversation outgrow what is
+  kept.** An ask that fails keeps its question and gets no answer, so a conversation can stand at 63; the question went,
+  its answer made 65, and the save keeps the newest 64 (`savedTurns`), so the first question was dropped in silence —
+  the shape this ADR's rejected alternatives refuse. `conversationRoom` now counts the question AND its answer: full
+  when the conversation would pass 64 once answered. At an even count nothing changes; the full sentence now appears as
+  the last question is asked rather than when its answer lands. `channels.test.ts` and `AssistantPanel.test.tsx` carry
+  it, each with the old count as the control.
+- **Decision 6's New chat lost the last answer when pressed within `SETTLE_MS` of it.** One settle timer per document
+  served every conversation, so New chat's change cancelled the old one's pending save, and the save that ran was the
+  empty new one's. Each save now carries the conversation it is about and that conversation's own key, and a new
+  conversation begun while the old one's last change was settling saves that change first, as the old one's
+  (`chatHistorySync.ts`; two cases in `chatHistorySync.test.ts`, each red on the old module).

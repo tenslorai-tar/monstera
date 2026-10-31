@@ -69,20 +69,19 @@ export function syncConversation(
   // THE LOADED TURNS are not saved back: nothing changed, and the first save would otherwise be a
   // rewrite of what was just read.
   let loaded: readonly ConversationTurn[] | undefined;
-  // WHICH SAVED CONVERSATION this one is (ADR-0277 Decision 6): its key once `main` has one, for the conversation the
-  // store's serial names. A new serial is a new conversation, saved as a new one, so the old one is kept, never replaced.
-  let saving: { readonly serial: number; readonly conversation: string | null } = {
-    serial: store.getState().conversationSerial,
-    conversation: null,
-  };
+  // WHICH SAVED CONVERSATION each one is (ADR-0277 Decision 6): its key once `main` has one, BY THE SERIAL that names it
+  // in the store. A new serial is a new conversation, saved as a new one, so the old one is kept, never replaced — and a
+  // key answered after New chat still lands on the conversation it was asked for.
+  const keys = new Map<number, string>();
   // A NEW CONVERSATION'S FIRST SAVE IS WAITED FOR: its key arrives with the answer, and a second save sent before it would
-  // add the same conversation twice. Every other save goes AT ONCE, in the same call, so the flush on close reaches `main`
-  // while it still holds the document.
-  let firstSave: Promise<void> | null = null;
-  let afterFirst = false;
+  // add the same conversation twice. The save waiting is that conversation's own latest state, never whichever one the
+  // store holds by then. Every other save goes AT ONCE, in the same call, so the flush on close reaches `main` while it
+  // still holds the document.
+  const firstSaves = new Map<number, Promise<void>>();
+  const waiting = new Map<number, readonly ConversationTurn[]>();
 
   if (enabled()) {
-    const serial = saving.serial;
+    const serial = store.getState().conversationSerial;
     void client['ai.history.load']({ docId }).then((answer) => {
       if (stopped || !answer.ok || answer.value.turns.length === 0) return;
       if (store.getState().conversation.length > 0 || store.getState().conversationSerial !== serial) return;
@@ -94,50 +93,67 @@ export function syncConversation(
         ...(turn.attached === undefined ? {} : { attached: turn.attached }),
       }));
       loaded = turns;
-      saving = { serial, conversation: answer.value.conversation };
+      if (answer.value.conversation !== null) keys.set(serial, answer.value.conversation);
       store.getState().converse(turns);
     });
   }
 
-  const saveNow = async (): Promise<void> => {
+  /** Saves conversation `serial` as `turns`, under its key where it has one. */
+  const saveNow = async (serial: number, turns: readonly ConversationTurn[]): Promise<void> => {
     if (!enabled()) return;
-    const state = store.getState();
-    if (state.conversationSerial !== saving.serial) saving = { serial: state.conversationSerial, conversation: null };
-    const asked = saving;
-    const answer = await client['ai.history.save']({ docId, conversation: asked.conversation, turns: savedTurns(state.conversation) });
-    // A CONVERSATION BEGUN SINCE is not this one: the key answered belongs to the conversation that was asked about.
-    if (store.getState().conversationSerial !== asked.serial) return;
+    const answer = await client['ai.history.save']({ docId, conversation: keys.get(serial) ?? null, turns: savedTurns(turns) });
+    if (answer.ok && answer.value.conversation !== null) keys.set(serial, answer.value.conversation);
+    // WHAT THE PANEL SAYS is about the conversation on show; an older one's answer changes nothing it says.
+    if (store.getState().conversationSerial !== serial) return;
     if (answer.ok) {
-      saving = { serial: asked.serial, conversation: answer.value.conversation ?? asked.conversation };
       if (answer.value.saved) store.getState().historyRefusedAs(null);
     } else if (answer.error.code === 'file-full') {
       // SAID, NOT DROPPED: the file keeps its twenty and this conversation is not saved until one is removed.
       store.getState().historyRefusedAs('file-full');
     }
   };
-  const save = (): void => {
-    if (firstSave !== null && store.getState().conversationSerial === saving.serial && saving.conversation === null) {
-      afterFirst = true;
+  const save = (serial: number, turns: readonly ConversationTurn[]): void => {
+    const first = firstSaves.get(serial);
+    if (first !== undefined) {
+      waiting.set(serial, turns);
       return;
     }
-    const keyless = saving.conversation === null || store.getState().conversationSerial !== saving.serial;
-    const sent = saveNow();
+    const keyless = !keys.has(serial);
+    const sent = saveNow(serial, turns);
     if (!keyless) return;
-    firstSave = sent.finally(() => {
-      firstSave = null;
-      if (afterFirst) {
-        afterFirst = false;
-        save();
-      }
-    });
+    firstSaves.set(
+      serial,
+      sent.finally(() => {
+        firstSaves.delete(serial);
+        const next = waiting.get(serial);
+        if (next !== undefined) {
+          waiting.delete(serial);
+          save(serial, next);
+        }
+      }),
+    );
   };
 
+  /** The save settling, made now: for a close, and for a conversation New chat is leaving. */
+  let settling: (() => void) | undefined;
   const unsubscribe = store.subscribe((state, previous) => {
     if (state.conversation === previous.conversation || state.conversation === loaded) return;
+    // A NEW CONVERSATION BEGUN while the old one's last change was still settling: that change is saved now, as the old
+    // one's, rather than cancelled by the new one's first change — which lost an answer that landed just before New chat.
+    if (state.conversationSerial !== previous.conversationSerial) settling?.();
     cancelPending?.();
+    const serial = state.conversationSerial;
+    const turns = state.conversation;
+    settling = () => {
+      cancelPending?.();
+      cancelPending = undefined;
+      settling = undefined;
+      save(serial, turns);
+    };
     cancelPending = schedule(() => {
       cancelPending = undefined;
-      if (!stopped) save();
+      settling = undefined;
+      if (!stopped) save(serial, turns);
     }, SETTLE_MS);
   });
 
@@ -147,10 +163,6 @@ export function syncConversation(
     if (stopped) return;
     stopped = true;
     unsubscribe();
-    if (cancelPending !== undefined) {
-      cancelPending();
-      cancelPending = undefined;
-      save();
-    }
+    settling?.();
   };
 }

@@ -195,6 +195,49 @@ describe('keeping a conversation saved (ADR-0093)', () => {
     expect(named(sent)).toStrictEqual([LOADED_KEY, null, null, newKey(1)]);
   });
 
+  it('NEW CHAT pressed while the last answer is still settling saves that answer in the OLD conversation first', async () => {
+    const store = createDocumentStore(DOC, asDocVersion(1));
+    const { client, sent } = recording(SAVED);
+    const clock = manual();
+    syncConversation(client, DOC, store, () => true, clock.schedule);
+    await settle();
+    // AN ANSWER LANDS and New chat is pressed before the settle time passes — as on *Start a new conversation*, which
+    // appears with the answer that fills a conversation (the stage audit of f32c8c39..0d48e788).
+    store.getState().converse([...SAVED, { role: 'user', text: 'Last question' }, { role: 'assistant', text: 'Last answer' }]);
+    store.getState().startConversation();
+    clock.flush();
+    await settle();
+    const saves = sent.filter((call) => call.id === 'ai.history.save').map((call) => call.params as { conversation: string | null; turns: readonly { text: string }[] });
+    // THE CALL MADE: the old conversation, under its own key, with the answer. CONTROL: the one settle timer per store was
+    // cancelled by New chat's change, so only the empty new conversation was saved and the answer was never kept.
+    expect(saves[0]?.conversation).toBe(LOADED_KEY);
+    expect(saves[0]?.turns.map((turn) => turn.text)).toStrictEqual(['Earlier question', 'Earlier answer', 'Last question', 'Last answer']);
+    expect(saves).toHaveLength(2);
+    expect(saves[1]?.conversation).toBeNull();
+  });
+
+  it('a new conversation’s waiting save is ITS OWN latest state, never the next conversation’s', async () => {
+    const store = createDocumentStore(DOC, asDocVersion(1));
+    const { client, sent } = recording([]);
+    const clock = manual();
+    syncConversation(client, DOC, store, () => true, clock.schedule);
+    await settle();
+    store.getState().converse([{ role: 'user', text: 'First' }]);
+    clock.flush();
+    // ITS FIRST SAVE IN FLIGHT, a second change waits for the key; then New chat and a question there.
+    store.getState().converse([{ role: 'user', text: 'First' }, { role: 'assistant', text: 'First answer' }]);
+    store.getState().startConversation();
+    store.getState().converse([{ role: 'user', text: 'Second conversation' }]);
+    clock.flush();
+    await settle();
+    await settle();
+    const saves = sent.filter((call) => call.id === 'ai.history.save').map((call) => call.params as { conversation: string | null; turns: readonly { text: string }[] });
+    // THE WAITING SAVE went under the first conversation's key with its own answer; the second began keyless.
+    const underFirst = saves.filter((each) => each.conversation === newKey(1));
+    expect(underFirst.map((each) => each.turns.map((turn) => turn.text))).toStrictEqual([['First', 'First answer']]);
+    expect(saves.some((each) => each.conversation === newKey(1) && each.turns.some((turn) => turn.text === 'Second conversation'))).toBe(false);
+  });
+
   it('CONTROL: without New chat, an emptied and refilled conversation is the SAME one', async () => {
     const store = createDocumentStore(DOC, asDocVersion(1));
     const { client, sent } = recording(SAVED);
