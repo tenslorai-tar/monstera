@@ -1,5 +1,5 @@
 import { glyphProcedureContours } from './drawnWeight.js';
-import type { PDFObject } from './mupdfRaw.js';
+import { Font, type PDFObject } from './mupdfRaw.js';
 import { bufferBytes } from './mupdfWriter.js';
 import { withoutSubsetTag } from './subsetName.js';
 import { type ToUnicode, readToUnicode } from './toUnicode.js';
@@ -56,6 +56,14 @@ export interface PageFont {
    * Absent where none were learned.
    */
   readonly readByPdfium?: ReadonlySet<number>;
+  /**
+   * Present where a simple font states no widths, carries no program MuPDF can load, and is not a standard font, whose AFM
+   * would give them:
+   * its widths are the closest normal font's (the owner's answer of 2026-11-01, ADR-0270's addition of that date), which
+   * only the writer's faces can say, by each code's character in {@link toUnicode}. `width` answers `null` here until
+   * the writer gives it those (`OperatorFaceSet.withClosestWidths`).
+   */
+  readonly widthsUnstated?: true;
 }
 
 /**
@@ -98,12 +106,16 @@ export async function loadStandardFonts(): Promise<StandardFontTables> {
  * A simple font with no ToUnicode, read through its encoding (ISO 32000-1 §9.10.2, ADR-0176's correction of 2026-10-25):
  * the encoding object read here, its table and the standard font's widths from `standard`.
  */
-function encodedAs(font: PDFObject, base: string | null, standard: StandardFontTables): { readonly toUnicode: ToUnicode; readonly width: (code: number) => number | null } | null {
+function encodedAs(
+  font: PDFObject,
+  base: string | null,
+  standard: StandardFontTables,
+): { readonly toUnicode: ToUnicode; readonly width: (code: number) => number | null; readonly measured: boolean } | null {
   const encoding = resolved(font.get('Encoding'));
   const differences = encoding.isDictionary() ? resolved(encoding.get('Differences')) : null;
   const named = encoding.isName() ? encoding.asName() : encoding.isDictionary() && differences?.isNull() === true ? nameOf(encoding.get('BaseEncoding')) : null;
   const table = standard.standardEncoding(named, encoding.isNull(), base);
-  return table === null ? null : { toUnicode: { text: table.text, bytes: 1 }, width: table.width };
+  return table === null ? null : { toUnicode: { text: table.text, bytes: 1 }, width: table.width, measured: table.measured };
 }
 
 /** A simple font's widths: `/FirstChar` and `/Widths`, each scaled by `scale`. */
@@ -114,6 +126,36 @@ function simpleWidths(font: PDFObject, scale: number): (code: number) => number 
   return (code) => {
     const width = widths[code - first];
     return width === undefined ? null : width * scale;
+  };
+}
+
+/**
+ * AN EMBEDDED PROGRAM'S OWN ADVANCES, for a simple font that states no `/Widths` (ADR-0270's addition of 2026-11-01): the
+ * glyph each code's character names in the program, by MuPDF's own lookup (`encodeCharacter`), and that glyph's advance
+ * (`advanceGlyph`), in ems, which is text space at a size of 1. The program is what draws the letters, so its advances
+ * are where they stand. `null` for a code whose character is unknown or that the program has no glyph for; `undefined`
+ * where there is no program MuPDF can load.
+ */
+function programWidths(descriptor: PDFObject, characterOf: (code: number) => string | undefined): ((code: number) => number | null) | undefined {
+  const stream = ['FontFile2', 'FontFile', 'FontFile3'].map((key) => descriptor.get(key)).find((each) => !each.isNull());
+  if (stream === undefined) return undefined;
+  let font: Font;
+  try {
+    font = new Font('embedded', bufferBytes(stream.readStream()));
+  } catch {
+    // A PROGRAM MUPDF CANNOT LOAD is one it draws in a substitute, so its letters stand by no advance of the program's:
+    // `undefined` sends the font to the closest normal font's widths, as one not embedded is.
+    return undefined;
+  }
+  const advances = new Map<number, number | null>();
+  return (code) => {
+    if (advances.has(code)) return advances.get(code) ?? null;
+    const character = characterOf(code);
+    const point = character === undefined ? undefined : character.codePointAt(0);
+    const glyph = point === undefined ? 0 : font.encodeCharacter(point);
+    const advance = glyph > 0 ? font.advanceGlyph(glyph) : null;
+    advances.set(code, advance);
+    return advance;
   };
 }
 
@@ -227,11 +269,24 @@ function read(resource: string, font: PDFObject, standard: StandardFontTables): 
   // encoding promises no glyph: measured in the owner's documents 6 and 8, words written so drew nothing.
   const own = toUnicodeOf(font);
   const carried = descriptor.isDictionary() && ['FontFile', 'FontFile2', 'FontFile3'].some((key) => !descriptor.get(key).isNull());
-  const encoded = own === null && !carried && subtype !== 'Type3' && descendant === null ? encodedAs(font, nameOf(font.get('BaseFont')), standard) : null;
+  const simple = subtype !== 'Type3' && descendant === null;
+  const encoded = own === null && !carried && simple ? encodedAs(font, nameOf(font.get('BaseFont')), standard) : null;
   if (encoded !== null) {
     const stated = width;
     width = (code) => stated(code) ?? encoded.width(code);
   }
+  // A SIMPLE FONT THAT STATES NO WIDTHS AT ALL (ADR-0270's addition of 2026-11-01): an embedded one is measured by its
+  // own program, its codes read as characters through its ToUnicode or else its encoding; one that is not embedded and
+  // not standard takes the closest normal font's, which the writer's faces give it. A program MuPDF cannot load is drawn
+  // in a substitute, as a font not embedded is, so it takes that same rule.
+  const unstated = simple && numbers(font.get('Widths')) === null;
+  let fromProgram: ((code: number) => number | null) | undefined;
+  if (unstated && carried) {
+    const characters = own ?? encodedAs(font, nameOf(font.get('BaseFont')), standard)?.toUnicode ?? null;
+    fromProgram = programWidths(descriptor, (code) => characters?.text.get(code));
+    if (fromProgram !== undefined) width = fromProgram;
+  }
+  const closest = unstated && fromProgram === undefined && encoded?.measured !== true;
   return {
     resource,
     subtype,
@@ -242,6 +297,7 @@ function read(resource: string, font: PDFObject, standard: StandardFontTables): 
     face: face === null ? null : withoutSubsetTag(face),
     weight: weightObject?.isNumber() === true ? weightObject.asNumber() : null,
     ...(outline === undefined ? {} : { outline }),
+    ...(closest ? { widthsUnstated: true as const } : {}),
   };
 }
 

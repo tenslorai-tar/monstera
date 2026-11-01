@@ -153,10 +153,12 @@ export async function applyEditTextOperators(
     const { content, holder } = target;
     // THE PAGE'S FONTS AS PDFium READ THEM (`pageFontsAsRead`): a glyph the page draws with a code its font names no text
     // for is still the page's own font's to set, and the check below reads the same fonts.
-    const fonts = pageFontsAsRead(pageFonts(holder, standard), content, read);
+    const asRead = pageFontsAsRead(pageFonts(holder, standard), content, read);
     // THE RESOLVER'S FACES AND THE BOX (ADR-0177): read on the first word that needs one, so an edit the page's own
     // fonts carry never reads a font file.
-    const faces = faceSet === null ? null : new faceSet(document, lazyFaces(), fonts);
+    const faces = faceSet === null ? null : new faceSet(document, lazyFaces(), asRead);
+    // A FONT THAT STATES NO WIDTHS takes the closest normal font's, which only the faces give (ADR-0270's addition).
+    const fonts = faces === null ? asRead : faces.withClosestWidths(asRead);
     // WHAT AN ARRANGE NEEDS (ADR-0264): the page's XObjects, so a drawn neighbour is found, and a free name for the plain
     // graphics state, added below only where the edit names it.
     const plainState = plainStateName(holder);
