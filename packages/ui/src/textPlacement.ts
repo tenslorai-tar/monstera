@@ -153,6 +153,25 @@ export function placeOf(placement: Placement, box: BlockBox): Omit<BlockPlace, '
 }
 
 /**
+ * WHERE A PLACED ONE-LINE BLOCK'S WORDS WRAP, in its own frame: the page x `reachAt` (`oneLineReach`) answers for the box
+ * where the placement puts it, taken back through its scale to the frame the writer lays the words out in before the
+ * place moves and scales them. The ONE answer the editor lays the line out to and the writer is sent (B3a): the editor
+ * laid a moved or scaled line out with no reach at all while the writer was sent the reach of the box where it OPENED, so
+ * the words shown on one line were saved wrapped at the old box's edge.
+ *
+ * A turn is not taken into it: a turned block's reach would be along its line across the page, and the box here is its
+ * unturned one, which both halves read alike.
+ */
+export function placedReach(placement: Placement, box: BlockBox, reachAt: (placed: BlockBox) => number): number {
+  const scale = placement.scale;
+  const x0 = box.x0 + placement.move.x;
+  const y1 = box.y1 + placement.move.y;
+  // SCALED ABOUT ITS TOP LEFT, then moved, as the writer places it.
+  const placed = { x0, y0: y1 - (box.y1 - box.y0) * scale, x1: x0 + (box.x1 - box.x0) * scale, y1 };
+  return box.x0 + (reachAt(placed) - placed.x0) / scale;
+}
+
+/**
  * The CSS transform that SHOWS a placement over the open block, in the block's own frame at `zoom`: scaled about its top
  * left, turned about the centre of what that left, then moved, the order the writer applies them in (the screen's y runs
  * down where the page's runs up, so a counter-clockwise turn is a negative CSS angle and a move up is negative).

@@ -150,6 +150,40 @@ describe('placing a block by its handles and keys (ADR-0180, ADR-0271 section 3)
     expect(only?.formatting?.place?.rotate).toBeCloseTo(90, 6);
   });
 
+  it('a MOVED one-line block typed in wraps at the reach where it now stands, laid out and sent alike (C3)', async () => {
+    // MOVED 100 RIGHT, alone on the page: its column is the margin mirrored from where it now starts, 612 - 172 = 440,
+    // 268 points from its left; in the block's own frame, where the writer lays the words out before the move, that is
+    // 72 + 268 = 340. The editor laid it out with no reach at all and the writer was sent 540, the reach of the box where
+    // it opened, so the two broke the line in different places.
+    const { drag, frame, surface, escape, sent } = opened();
+    drag('n', 100, 0);
+    act(() => {
+      fireEvent.keyDown(must(frame(), 'frame'), { key: 'Enter' });
+    });
+    act(() => {
+      typeAt(surface(), ' news', { paragraph: 0, offset: 11 });
+    });
+    expect(surface().style.maxInlineSize).toBe('268px');
+    await escape(surface());
+    expect(sent()).toStrictEqual([{ text: 'Garden club news', formatting: { place: { move: { x: 100, y: 0 }, reach: 340 } } }]);
+  });
+
+  it('a SCALED one-line block typed in wraps at its new column, taken back through its scale (C3)', async () => {
+    // HALF AS LARGE AGAIN about its top left, so its right edge is at 414 and its left unmoved: the column is 540, which
+    // in the block's own unscaled frame, where the writer lays its words out, is 72 + 468 / 1.5 = 384.
+    const { drag, frame, surface, escape, sent } = opened();
+    drag('se', 114, 0);
+    act(() => {
+      fireEvent.keyDown(must(frame(), 'frame'), { key: 'Enter' });
+    });
+    act(() => {
+      typeAt(surface(), ' news', { paragraph: 0, offset: 11 });
+    });
+    expect(surface().style.maxInlineSize).toBe('312px');
+    await escape(surface());
+    expect(sent()).toStrictEqual([{ text: 'Garden club news', formatting: { place: { scale: 1.5, reach: 384 } } }]);
+  });
+
   it('CONTROL: with no handle touched the finish carries no place, so the cases above are the handles’', async () => {
     const { escape, sent } = opened();
     await escape();

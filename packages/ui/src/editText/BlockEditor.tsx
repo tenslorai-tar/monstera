@@ -29,7 +29,18 @@ import {
 import { composing } from '../surfaces/shortcuts.js';
 import type { TextBlock } from '../textBlock.js';
 import { joinEdits, splitEdits } from '../textBlockOps.js';
-import { dragged, type Handle, NOT_PLACED, type Nudge, nudged, type Placement, placeOf, placeTransform } from '../textPlacement.js';
+import {
+  type BlockBox,
+  dragged,
+  type Handle,
+  NOT_PLACED,
+  type Nudge,
+  nudged,
+  type Placement,
+  placeOf,
+  placeTransform,
+  placedReach,
+} from '../textPlacement.js';
 import { type OpenedBlock, editOf } from './blockModel.js';
 import { type Placed, boxStyle } from './editing.js';
 import { type FaceKind, type RunFaces, editorFacesOf, faceCssOf } from './runFaces.js';
@@ -94,10 +105,11 @@ export interface BlockEditorProps {
   /** The names of the fonts the page's text is drawn in, for the font picker. */
   readonly pageFonts: readonly string[];
   /**
-   * For a block of one line, the page x its words may grow to before they wrap (`oneLineReach`): the line is laid out to
-   * it here and the writer is sent it, so both break the line in one place. Absent for a block of several lines.
+   * For a block of one line, the page x its words may grow to before they wrap, asked of the box where it stands
+   * (`oneLineReach`): the line is laid out to it here, wherever the person has moved or scaled the box to (`placedReach`),
+   * and the writer is sent it, so both break the line in one place. Absent for a block of several lines.
    */
-  readonly reach?: number | undefined;
+  readonly reach?: ((box: BlockBox) => number) | undefined;
 }
 
 /** The handles a block is placed by, and what each says it does. */
@@ -320,6 +332,8 @@ export function BlockEditor({
   /** The block's words as it opened, which a finish compares with to know its words changed. */
   const [openedText] = useState(() => editOf(opened.model).text);
   const moved = placeOf(placement, block.box) !== undefined;
+  // WHERE A ONE-LINE BLOCK'S WORDS WRAP, wherever it is placed (`placedReach`); none once the person gave it a measure.
+  const reachX = reach === undefined || placement.width !== undefined ? undefined : placedReach(placement, block.box, reach);
   const [problem, setProblem] = useState<Exclude<BlockCommit, 'written' | 'unchanged'> | undefined>(undefined);
   // WORDS A WRITE REFUSED, which no later change takes back (ADR-0278): the sentence goes when the person moves the caret
   // or types, but the words are still in no document until a write lands or they are discarded, and both close the editor.
@@ -415,10 +429,10 @@ export function BlockEditor({
         const place = placeOf(placement, block.box);
         // A BLOCK OF ONE LINE IS SENT ITS REACH, the right edge its words were laid out to here, where its words changed
         // and the person gave it no measure (which is then the measure): words as they were need no line broken.
-        const reached = reach === undefined || place?.width !== undefined || text === openedText || text === '' ? place : { ...place, reach };
+        const reached = reachX === undefined || place?.width !== undefined || text === openedText || text === '' ? place : { ...place, reach: reachX };
         return onCommit(text, reached === undefined ? formatting : { ...formatting, place: reached });
       }),
-    [block.box, onCommit, openedText, placement, reach, settle, store],
+    [block.box, onCommit, openedText, placement, reachX, settle, store],
   );
   const finish = useCallback((): Promise<void> => finishWith(), [finishWith]);
   useEffect(() => {
@@ -800,7 +814,9 @@ export function BlockEditor({
 
   const wraps = !block.lines.some((line) => line.soft) && placement.width === undefined;
   // A BLOCK OF ONE LINE grows right as it is typed in and wraps only at its reach, where the writer will (`oneLineReach`).
-  const reachWidth = reach === undefined || placement.width !== undefined || moved ? undefined : (reach - block.box.x0) * geometry.zoom;
+  // IN THE BLOCK'S OWN FRAME, inside the placer that moves and scales it, so a moved or scaled line is laid out to the
+  // reach where it now stands, the one the writer is sent.
+  const reachWidth = reachX === undefined ? undefined : (reachX - block.box.x0) * geometry.zoom;
   return (
     // THE FRAME GROWS WITH ITS WORDS: at least the block's height, as tall as the words, so its outline shows where they
     // now reach and what they overlap (growth by overlap, ADR-0271 section 3). AND AS WIDE: at least the width its words
