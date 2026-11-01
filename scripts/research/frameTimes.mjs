@@ -63,8 +63,10 @@
  * way, timed from the click event's own timestamp.
  *
  * Usage: node scripts/research/frameTimes.mjs --build package|dev --document <absolute .pdf> [--large]
- *   [--variant none|no-blur|no-gradients|no-thumbnails] [--scenarios scroll,drag,menu,draw,open,switch]
- *   [--then-open <absolute .pdf>|large]
+ *   [--variant none|no-blur|no-gradients|no-thumbnails] [--scenarios scroll,drag,menu,draw,open,switch,select]
+ *   [--then-open <absolute .pdf>|large] [--select-spin <ms>]
+ * The `select` scenario selects the first page's text whole and lets it go, thirty times a round in five rounds, each
+ * beside a control round that selects nothing, and reports what one selection costs each thread.
  * `--large` generates the scan-shaped fixture (`scripts/perf/largeFixture.mjs`) and measures that instead.
  */
 
@@ -345,12 +347,22 @@ function analyse(trace, startMark, endMark) {
 // ---------------------------------------------------------------------------------------------------------------
 // The application.
 
-/** The PIDs listening on the debugging port, from `netstat -ano`. */
+/**
+ * The PIDs holding the debugging port, from `netstat -ano`: listening on it, or serving a connection made to it. Both,
+ * because the listening socket was gone once this run had connected, in three launches of the development build in
+ * a row on 2026-11-01 (Electron 43.8.3): the port's only line was the launched process's end of this run's own
+ * connection, so a check of listeners alone named nobody.
+ */
 function portListeners() {
-  return execFileSync('netstat', ['-ano', '-p', 'TCP'], { encoding: 'utf8' })
-    .split('\n')
-    .filter((line) => line.includes(`127.0.0.1:${String(PORT)} `) && line.includes('LISTENING'))
-    .map((line) => Number(line.trim().split(/\s+/u).at(-1)));
+  return [
+    ...new Set(
+      execFileSync('netstat', ['-ano', '-p', 'TCP'], { encoding: 'utf8' })
+        .split('\n')
+        .map((line) => line.trim().split(/\s+/u))
+        .filter((fields) => fields[1] === `127.0.0.1:${String(PORT)}` && (fields[3] === 'LISTENING' || fields[3] === 'ESTABLISHED'))
+        .map((fields) => Number(fields.at(-1))),
+    ),
+  ];
 }
 
 /**
@@ -505,7 +517,7 @@ function frameStats(times, interval) {
   if (gaps.length === 0) return { frames: 0, median: NaN, p95: NaN, dropped: NaN };
   const at = (/** @type {number} */ q) => gaps[Math.min(gaps.length - 1, Math.floor(q * gaps.length))] ?? NaN;
   const dropped = gaps.reduce((sum, gap) => sum + Math.max(0, Math.round(gap / interval) - 1), 0);
-  return { frames: gaps.length + 1, median: Math.round(at(0.5) * 10) / 10, p95: Math.round(at(0.95) * 10) / 10, dropped };
+  return { frames: gaps.length + 1, median: Math.round(at(0.5) * 10) / 10, p95: Math.round(at(0.95) * 10) / 10, max: Math.round((gaps.at(-1) ?? NaN) * 10) / 10, dropped };
 }
 
 /** @param {any} cdp */
@@ -1008,6 +1020,63 @@ try {
           results.push({ label, round: round + 1, ...switched, ...trace });
         }
       }
+    }
+  }
+
+  if (scenarios.includes('select')) {
+    // A WHOLE PAGE SELECTED AND LET GO, thirty times a round, beside a control round of the same steps that selects
+    // nothing: the round's busy time less its control's, over thirty, is what one selection costs every thread —
+    // script, layout, paint and composite on the renderer's main thread, and raster and the GPU process beside it — so
+    // the browser's own highlight, painted by Chromium, is counted as surely as a highlight the application draws.
+    // `--select-spin <ms>` adds that much script to every selection, the instrument's resolution test.
+    const spin = Number(option('select-spin') ?? '0');
+    const SELECTIONS = 30;
+    const page0 = '[data-text-layer="0"] [data-text-line]';
+    await page.locator(page0).first().waitFor({ timeout: 60_000 });
+    const lineCount = await page.locator(page0).count();
+    const selectRound = (/** @type {boolean} */ selecting) => async () => {
+      for (let i = 0; i < SELECTIONS; i += 1) {
+        await page.evaluate(
+          (/** @type {{ selecting: boolean, last: number, spin: number }} */ { selecting: on, last, spin: ms }) => {
+            const w = /** @type {any} */ (globalThis);
+            if (!on) return w.document.getSelection()?.rangeCount ?? 0;
+            const first = w.document.querySelector('[data-text-layer="0"] [data-text-line="0"]')?.firstChild;
+            const end = w.document.querySelector(`[data-text-layer="0"] [data-text-line="${String(last)}"]`)?.firstChild;
+            if (!(first instanceof w.Text) || !(end instanceof w.Text)) throw new Error('no lines on the first page');
+            w.document.getSelection()?.setBaseAndExtent(first, 0, end, end.length);
+            const stop = performance.now() + ms;
+            while (performance.now() < stop) {
+              // The resolution test's deliberate script, after the selection is made.
+            }
+            return 0;
+          },
+          { selecting, last: lineCount - 1, spin },
+        );
+        await page.waitForTimeout(100);
+        await page.evaluate((/** @type {boolean} */ on) => (on ? /** @type {any} */ (globalThis).document.getSelection()?.removeAllRanges() : undefined), selecting);
+        await page.waitForTimeout(100);
+      }
+    };
+    for (let round = 1; round <= 5; round += 1) {
+      const selected = await measure(cdp, page, `select round ${String(round)}`, selectRound(true), interval);
+      const control = await measure(cdp, page, `select control ${String(round)}`, selectRound(false), interval);
+      const per = (/** @type {number} */ a, /** @type {number} */ b) => Math.round(((a - b) / SELECTIONS) * 1000) / 1000;
+      results.push({
+        label: `select per selection ${String(round)}`,
+        lines: lineCount,
+        spin,
+        mainMs: per(selected.mainBusy, control.mainBusy),
+        paintMs: per(selected.main['paint'] ?? 0, control.main['paint'] ?? 0),
+        scriptMs: per(selected.main['script'] ?? 0, control.main['script'] ?? 0),
+        layoutMs: per(selected.main['layout'] ?? 0, control.main['layout'] ?? 0),
+        compositeMs: per(selected.main['composite'] ?? 0, control.main['composite'] ?? 0),
+        rasterMs: per(selected.raster, control.raster),
+        gpuMs: per(selected.gpuMain + selected.viz, control.gpuMain + control.viz),
+        frames: {
+          selected: { median: selected.median, p95: selected.p95, max: selected.max, dropped: selected.dropped },
+          control: { median: control.median, p95: control.p95, max: control.max, dropped: control.dropped },
+        },
+      });
     }
   }
 
