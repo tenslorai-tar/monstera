@@ -8,7 +8,7 @@ import {
   MAX_ASK_DOCUMENTS,
   MAX_ANSWER_TEXT,
   MAX_CHAT_TEXT,
-  MAX_CHAT_TURNS,
+  MAX_CONVERSATION_TEXT,
   MAX_FILE_CONVERSATIONS,
   CHAT_HISTORY_SETTING_ID,
   IncidentLog,
@@ -1815,12 +1815,16 @@ describe('the chat extras (the owner’s design, 2026-09-15)', () => {
 
   it('an answer main stopped at its bound SAYS so, and keeps what arrived (ADR-0277)', async () => {
     const { store } = await answered({}, { text: 'Up to the bound.', refusal: 'answer-cut' });
-    expect(
-      screen.getByText(
-        `The answer was stopped at its length limit of ${new Intl.NumberFormat('en').format(MAX_ANSWER_TEXT)} characters. What is above is all of it up to there. Ask for the rest in a new question.`,
-      ),
-    ).not.toBeNull();
+    const said = screen.getByText(
+      `The answer was stopped at its length limit of ${new Intl.NumberFormat('en').format(MAX_ANSWER_TEXT)} characters. What is above is all of it up to there. Ask for the rest in a new question.`,
+    );
     expect(store.getState().conversation.at(-1)?.text).toBe('Up to the bound.');
+    // UNDER THE ANSWER IT DESCRIBES (the owner, 2026-10-31): inside that answer's own turn, after its text. CONTROL: it was
+    // the pane's top problem line, above the whole conversation.
+    const turn = said.closest('li');
+    expect(turn).not.toBeNull();
+    expect(turn?.textContent).toContain('Up to the bound.');
+    expect(store.getState().conversation.at(-1)?.cut).toBe(true);
   });
 
   it('CONTROL: a copy main says did not reach the clipboard says nothing', async () => {
@@ -1949,9 +1953,19 @@ describe('a full conversation is said, with a new one a press away (ADR-0277 Dec
   const held = (count: number) =>
     Array.from({ length: count }, (_, at) => ({ role: at % 2 === 0 ? ('user' as const) : ('assistant' as const), text: `t${String(at)}` }));
 
-  it('THROUGH THE REAL BOUNDARY: at MAX_CHAT_TURNS messages the next question is not sent, and the conversation says it is full', async () => {
+  /**
+   * A conversation at the SAFETY CEILING by its text, in two turns: rendering `MAX_CHAT_TURNS` (512) answers takes seconds
+   * in this DOM, and the count is the contract's own case (`channels.test.ts`); here the panel only has to obey `full`.
+   * `spare` characters short of where a question and an answer at its bound pass `MAX_CONVERSATION_TEXT`.
+   */
+  const atCeiling = (spare: number) => [
+    { role: 'user' as const, text: 'Summarise.' },
+    { role: 'assistant' as const, text: 'a'.repeat(MAX_CONVERSATION_TEXT - MAX_ANSWER_TEXT - 'Summarise.'.length - spare) },
+  ];
+
+  it('THROUGH THE REAL BOUNDARY: at the safety ceiling the next question is not sent, and the conversation says it is full', async () => {
     const store = createDocumentStore(DOC, asDocVersion(1));
-    store.getState().converse(held(MAX_CHAT_TURNS));
+    store.getState().converse(atCeiling(0));
     const { sent } = await drawn({ focused: { docId: DOC, store, page: 0 }, boundary: true });
     type('One more?');
     // ENTER: on the code before ADR-0277 this sent a sixty-fifth message, `main`'s boundary refused it as `internal`,
@@ -1959,7 +1973,7 @@ describe('a full conversation is said, with a new one a press away (ADR-0277 Dec
     fireEvent.keyDown(screen.getByLabelText('Ask about this document'), { key: 'Enter' });
     await settle();
     expect(sent.filter((entry) => entry.id === 'ai.ask')).toStrictEqual([]);
-    expect(store.getState().conversation).toHaveLength(MAX_CHAT_TURNS);
+    expect(store.getState().conversation).toHaveLength(2);
     expect(screen.getByText(FULL_COUNT).closest('[aria-live="polite"]')).not.toBeNull();
     expect(screen.getByRole('button', { name: 'Send' }).hasAttribute('disabled')).toBe(true);
 
@@ -1974,22 +1988,57 @@ describe('a full conversation is said, with a new one a press away (ADR-0277 Dec
     ]);
   });
 
+  const LONG_NOTE = 'This conversation is now long. We recommend starting a new chat to save cost.';
+
+  it('AT 32 QUESTIONS the conversation carries on: the 33rd goes, and the long note recommends a new chat (the owner, 2026-10-31)', async () => {
+    const store = createDocumentStore(DOC, asDocVersion(1));
+    store.getState().converse(held(64));
+    const { sent } = await drawn({ focused: { docId: DOC, store, page: 0 }, boundary: true });
+    // THE NOTE, and nothing blocked. CONTROL: before the correction this conversation was full and Send was off.
+    expect(screen.getByText(LONG_NOTE)).not.toBeNull();
+    expect(screen.queryByText(FULL_COUNT)).toBeNull();
+    type('A thirty-third?');
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await settle();
+    expect(sent.filter((entry) => entry.id === 'ai.ask')).toHaveLength(1);
+  });
+
+  it('LONG BY ITS TEXT before 32 questions: the note shows once the conversation holds one document window of text', async () => {
+    const store = createDocumentStore(DOC, asDocVersion(1));
+    store.getState().converse([
+      { role: 'user', text: 'Summarise.' },
+      { role: 'assistant', text: 'a'.repeat(60_000) },
+      { role: 'user', text: 'And the rest?' },
+      { role: 'assistant', text: 'a'.repeat(40_000) },
+    ]);
+    await drawn({ focused: { docId: DOC, store, page: 0 }, boundary: true });
+    expect(screen.getByText(LONG_NOTE)).not.toBeNull();
+  });
+
+  it('CONTROL: a short conversation carries no note', async () => {
+    const store = createDocumentStore(DOC, asDocVersion(1));
+    store.getState().converse(held(4));
+    await drawn({ focused: { docId: DOC, store, page: 0 }, boundary: true });
+    expect(screen.queryByText(LONG_NOTE)).toBeNull();
+  });
+
   it('CONTROL: room for one more question and its answer, the question goes; then it is full, said at once', async () => {
     const store = createDocumentStore(DOC, asDocVersion(1));
-    store.getState().converse(held(MAX_CHAT_TURNS - 2));
+    // ROOM FOR EXACTLY THIS QUESTION AND ITS ANSWER, and nothing after them.
+    store.getState().converse(atCeiling('Last one?'.length));
     const { sent } = await drawn({ focused: { docId: DOC, store, page: 0 }, boundary: true });
     expect(screen.queryByText(FULL_COUNT)).toBeNull();
     type('Last one?');
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
     await settle();
     expect(sent.filter((entry) => entry.id === 'ai.ask')).toHaveLength(1);
-    // ITS ANSWER WILL MAKE SIXTY-FOUR, so no further question has room from the moment this one is asked.
+    // ITS ANSWER MAY FILL THE CEILING, so no further question has room from the moment this one is asked.
     expect(screen.getByText(FULL_COUNT)).not.toBeNull();
   });
 
-  it('a conversation one short of full, as a failed ask leaves it, is full: its answer could not be kept whole', async () => {
+  it('a conversation whose last question has no answer, as a failed ask leaves it, is full where its answer could not be kept whole', async () => {
     const store = createDocumentStore(DOC, asDocVersion(1));
-    store.getState().converse(held(MAX_CHAT_TURNS - 1));
+    store.getState().converse([...atCeiling(0), { role: 'user', text: 'Unanswered?' }]);
     const { sent } = await drawn({ focused: { docId: DOC, store, page: 0 }, boundary: true });
     type('One more?');
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
@@ -2043,6 +2092,24 @@ describe('a new conversation keeps the old one, and a file at twenty is said (AD
     ]);
     return store;
   };
+
+  const HISTORY_OFF = 'History is off, so New chat clears this conversation.';
+
+  it('with history OFF, a line beside New chat says it clears this conversation (the owner, 2026-10-31)', async () => {
+    const store = holding();
+    await drawn({ focused: { docId: DOC, store, page: 0 } });
+    // CONTROL: before this line, nothing said so, and the conversation went with the press.
+    const line = screen.getByText(HISTORY_OFF);
+    expect(line.closest('.m-assistant__conversation-bar')).not.toBeNull();
+  });
+
+  it('CONTROL: with history ON the line is not shown, and with no conversation there is nothing to clear', async () => {
+    await drawn({ focused: { docId: DOC, store: holding(), page: 0 }, settings: historyOn() });
+    expect(screen.queryByText(HISTORY_OFF)).toBeNull();
+    cleanup();
+    await drawn({ focused: { docId: DOC, store: createDocumentStore(DOC, asDocVersion(1)), page: 0 } });
+    expect(screen.queryByText(HISTORY_OFF)).toBeNull();
+  });
 
   it(`with history ON and the file at ${String(MAX_FILE_CONVERSATIONS)}, New chat begins NOTHING and says to remove one`, async () => {
     const store = holding();

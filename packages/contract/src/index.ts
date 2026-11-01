@@ -145,6 +145,11 @@ export {
   // conversation against the same schema the renderer saves through.
   MAX_CHAT_TEXT,
   MAX_CHAT_TURNS,
+  MAX_CONVERSATION_TEXT,
+  LONG_CONVERSATION_QUESTIONS,
+  LONG_CONVERSATION_TEXT,
+  conversationIsLong,
+  conversationText,
   MAX_ANSWER_TEXT,
   type ConversationRoom,
   conversationRoom,

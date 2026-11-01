@@ -300,3 +300,39 @@ published 2026-10-27 and 1.4.2 is the latest. 1.4.1's changelog fixes the RSA PK
 (GHSA-86w9-cpqp-85rv in GitHub's alerts, GHSA-2g46-22mc-6gwp in forge's changelog) and sixteen others; 1.4.2 repairs
 `pem.decode`'s `Buffer` input, which 1.4.1 broke. Licence and dependencies unchanged (its `LICENSE` is byte-identical,
 and it has none). What this build reaches of it is in `docs/security/engine-advisories.json`'s entry of the same date.
+
+## Addition — 2026-11-01 — minimatch waits for the linters
+
+GitHub's Dependabot alert #30 (opened 2026-10-31): **minimatch**, GHSA-g3hv-75wg-m249 / CVE-2026-118764, *potential
+denial of service via globparts amplification*, moderate, vulnerable below 11.0.1 and first patched in 11.0.1
+(the alert, read through GitHub's API on 2026-11-01). The lockfile holds one copy, **10.2.6**, marked `"dev": true`,
+pulled in by four packages, none of which accepts 11 (`npm view`, 2026-11-01, every dist-tag of each):
+
+| Dependent | Latest | Its minimatch range | Pre-releases |
+|---|---|---|---|
+| eslint | 10.14.0 | `^10.2.6` | `next` 10.0.0-rc.2 `^10.1.1` |
+| @eslint/config-array | 0.23.5 | `^10.2.4` | — |
+| @typescript-eslint/typescript-estree | 8.72.1 | `^10.2.2` | `canary` 8.72.2-alpha.4 `^10.2.2` |
+| eslint-plugin-import-x | 4.17.1 | `^9.0.3 \|\| ^10.1.2` | — |
+
+minimatch 11.0.0 to 11.0.3 were published 2026-10-27 and 28, and no 10.x release carries the fix.
+
+**It does not ship.** The package carries exactly npm's production tree for the shipped workspaces —
+`scripts/release/packageMsix.mjs`' `productionPackages`, `npm ls --omit=dev --all --parseable` over `@monstera/desktop`,
+`kernel`, `contract`, `shared` and `nodemode`. Run on 2026-11-01, that command lists 47 packages: node-forge, which
+ships, is among them, and minimatch, brace-expansion and every ESLint package are not. No shipped source names it
+(`git grep minimatch` over `packages/*/src`, `apps/*/src` and `native`: nothing), so the renderer's bundle cannot carry
+it either.
+
+**Its patterns are this repository's own.** The flaw is in how a glob PATTERN is expanded. ESLint and its plugins take
+their patterns from `eslint.config.js` (`files`, `ignores`) and from the arguments `scripts/lib/lintcheck.mjs` passes
+(its test-file patterns and `--ignore-pattern`s); the files being linted are what the patterns are matched against,
+never patterns themselves. Writing a hostile pattern means changing the lint configuration, which is JavaScript that
+runs anyway, so the flaw gives such an author nothing they did not already have.
+
+**Not taken yet, and not forced.** An `overrides` entry putting minimatch 11 under linters that declare `^10` would
+run them against a major they were not built for, which is the class of change this ADR exists to refuse. The alert
+stays open, not dismissed, so it closes itself when the lockfile moves. **Trigger:** the first release of eslint,
+@eslint/config-array, @typescript-eslint/typescript-estree or eslint-plugin-import-x whose range admits 11.0.1 — then
+each dependent takes the release that does, lint runs over the whole tree with the project's own verb, and the change
+is recorded here.

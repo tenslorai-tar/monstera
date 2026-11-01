@@ -52,6 +52,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 import { RENDERED_SUITE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { BROWSERS_PATH } from '../provision/playwright.mjs';
+import { ACCESSIBILITY_OUTPUT_DIR, failureTrace } from './visualFailures.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PORT = 4173;
@@ -85,7 +86,10 @@ export default defineConfig({
   retries: 0,
   fullyParallel: false,
   reporter: [['list']],
+  // A FAILING CASE KEEPS ITS PAGE, AND ON CI ITS TRACE, where the job uploads them from (`visualFailures.mjs`' reasons).
+  outputDir: join(REPO_ROOT, ACCESSIBILITY_OUTPUT_DIR),
   use: {
+    trace: failureTrace(process.env),
     baseURL: `http://localhost:${String(PORT)}`,
     ...devices['Desktop Chrome'],
     // THE CLOCK AND THE LANGUAGE ARE THE TEST'S, never the machine's: a screen that shows a date formats it in the
