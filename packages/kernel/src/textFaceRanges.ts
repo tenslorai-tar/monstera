@@ -67,10 +67,25 @@ export interface FaceStyle {
  * A run PDFium left unnamed (`font: ""`), named by its font's descriptor where `faces` says which, and its kind, weight
  * and slant decided by the rules a named run takes: `faceOf`'s weight and name, the resolver's class. A run PDFium named
  * is returned as it is — two witnesses about one run, and the one that spoke first keeps its word (ADR-0256 Decision 2).
+ *
+ * ## Two numberings, joined by PDFium's own list
+ *
+ * `faces` numbers TEXT objects (`showOperators`' `object`, the k-th text-showing operator), and a run's `index` is its
+ * object's place among ALL the page's objects. They agree only while nothing but text comes first. So the run is found
+ * in `textObjects`, PDFium's page indices of its text objects in order (`PageRuns.textObjects`), and the k-th of those
+ * is text object k: the correspondence the operator writer reads too (`operatorEdit.ts`). Required, so no caller can
+ * name a run by the wrong number. Measured 2026-11-01: a page that fills a rectangle and then shows two Type 3 fonts
+ * named its first run with the second font's face, and its second with none.
  */
-export function namedByDescriptor<T extends { readonly index: number; readonly style: FaceStyle }>(run: T, faces: TextFaces): T {
+export function namedByDescriptor<T extends { readonly index: number; readonly style: FaceStyle }>(
+  run: T,
+  faces: TextFaces,
+  textObjects: readonly number[],
+): T {
   if (run.style.font !== '') return run;
-  const face = faceOfObject(faces, run.index);
+  const number = textObjects.indexOf(run.index);
+  if (number === -1) return run;
+  const face = faceOfObject(faces, number);
   if (face?.face === null || face?.face === undefined || face.face === '') return run;
   const read = faceOf({ program: undefined, weight: Math.max(0, face.weight ?? 0), flags: undefined, name: face.face });
   const kind = familyClass(face.face);
@@ -80,7 +95,7 @@ export function namedByDescriptor<T extends { readonly index: number; readonly s
   };
 }
 
-/** The face of PDFium's text object `object`, or `undefined` where the answer names none for it. */
+/** The face of text object `object` (the k-th text object, not a page index), or `undefined` where none is named. */
 export function faceOfObject(faces: TextFaces, object: number): TextFace | undefined {
   const range = faces.ranges.find((each) => each.first <= object && object <= each.last);
   return range === undefined ? undefined : faces.fonts[range.font];
