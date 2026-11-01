@@ -63,7 +63,7 @@
  * way, timed from the click event's own timestamp.
  *
  * Usage: node scripts/research/frameTimes.mjs --build package|dev --document <absolute .pdf> [--large]
- *   [--variant none|no-blur|no-gradients|no-thumbnails] [--scenarios scroll,drag,menu,draw,open,switch,select]
+ *   [--variant none|no-blur|no-gradients|no-thumbnails] [--scenarios scroll,drag,menu,draw,open,switch,select,arrive]
  *   [--then-open <absolute .pdf>|large] [--select-spin <ms>] [--select-rounds <n>] [--select-profile]
  * The `select` scenario selects the first page's text whole and lets it go, thirty times a round in five rounds, each
  * beside a control round that selects nothing, and reports what one selection costs each thread.
@@ -507,7 +507,16 @@ function frameStats(times, interval) {
   if (gaps.length === 0) return { frames: 0, median: NaN, p95: NaN, dropped: NaN };
   const at = (/** @type {number} */ q) => gaps[Math.min(gaps.length - 1, Math.floor(q * gaps.length))] ?? NaN;
   const dropped = gaps.reduce((sum, gap) => sum + Math.max(0, Math.round(gap / interval) - 1), 0);
-  return { frames: gaps.length + 1, median: Math.round(at(0.5) * 10) / 10, p95: Math.round(at(0.95) * 10) / 10, max: Math.round((gaps.at(-1) ?? NaN) * 10) / 10, dropped };
+  return {
+    frames: gaps.length + 1,
+    median: Math.round(at(0.5) * 10) / 10,
+    p95: Math.round(at(0.95) * 10) / 10,
+    max: Math.round((gaps.at(-1) ?? NaN) * 10) / 10,
+    // OVER A FRAME AND OVER TWO, at the display's own 60 Hz figures, which LOCAL-MERGE-RUN-30 states its targets in.
+    over16: gaps.filter((gap) => gap > 16.7).length,
+    over33: gaps.filter((gap) => gap > 33.3).length,
+    dropped,
+  };
 }
 
 /** @param {any} cdp */
@@ -1017,6 +1026,34 @@ try {
         }
       }
     }
+  }
+
+  if (scenarios.includes('arrive')) {
+    // PAGES ARRIVING FROM COLD, as a reader scrolls a long document: the wheel down 120 px every 50 ms, 240 times, over
+    // pages none of which has been shown. What each frame cost while they arrived, and the main thread's work per page
+    // whose text layer came in.
+    const before = await page.locator('[data-text-layer] [data-text-line]').count();
+    const list = await centre(page, '.m-page-list');
+    await page.mouse.move(list.x, list.y);
+    const arrived = await measure(
+      cdp,
+      page,
+      'pages arriving',
+      async () => {
+        for (let i = 0; i < 240; i += 1) {
+          await page.mouse.wheel(0, 120);
+          await page.waitForTimeout(50);
+        }
+        await page.waitForTimeout(1500);
+      },
+      interval,
+    );
+    const layers = await page.evaluate(() => {
+      const w = /** @type {any} */ (globalThis);
+      return [...w.document.querySelectorAll('[data-text-layer]')].filter((/** @type {any} */ layer) => layer.querySelector('[data-text-line]') !== null).map((/** @type {any} */ layer) => Number(layer.getAttribute('data-text-layer')));
+    });
+    const furthest = Math.max(...layers, 0);
+    results.push({ ...arrived, linesBefore: before, furthestPageWithText: furthest + 1, mainBusyPerPage: Math.round((arrived.mainBusy / Math.max(furthest, 1)) * 10) / 10 });
   }
 
   if (scenarios.includes('select')) {
