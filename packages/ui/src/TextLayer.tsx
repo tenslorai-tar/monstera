@@ -477,9 +477,40 @@ export function holdPressedAnchor(root: HTMLElement): () => void {
     pressedOnBlank(event, place === 'blank' ? undefined : place);
     return null;
   });
+  /**
+   * A CLICK ON A LINE WITH LETTERS leaves the engine's caret, as a drag from it anchors there: the press's own point,
+   * from `pointerdown`, whose coordinates are the exact ones (`holdAnchorAtPress`' reason). Only a drag is re-anchored
+   * there, so a click kept the browser's caret, its hit test of the substitute face, and a Shift+click or Shift+Arrow
+   * after it extended from a letter before or after the one pressed: two of four clicks on a Times line in the
+   * development app on Windows, 2026-11-01.
+   */
+  let clicked: PointerEvent | undefined;
+  const pressedForClick = (event: PointerEvent): void => {
+    const line = lineUnder(event);
+    clicked = event.button === 0 && event.pointerType !== 'touch' && line !== null && RUNS.has(line) ? event : undefined;
+  };
+  // ON `click`, which comes after the browser's own handling of the release: a press inside a selection is placed by
+  // that release, not by the press. A SHIFT+CLICK moves the selection's end there instead, which the browser had put at
+  // its own caret too: *Effect* for a Shift+click on the second half of *Effe*'s last letter.
+  const clickedOnLetters = (event: MouseEvent): void => {
+    const press = clicked;
+    clicked = undefined;
+    if (press === undefined || event.detail !== 1) return;
+    const selection = owner.getSelection();
+    if (selection === null || (!press.shiftKey && !selection.isCollapsed)) return;
+    const caret = caretUnder(root, press);
+    if (caret === null || !root.contains(caret.node)) return;
+    if (selection.focusNode === caret.node && selection.focusOffset === caret.offset) return;
+    if (press.shiftKey && selection.rangeCount > 0) selection.extend(caret.node, caret.offset);
+    else selection.collapse(caret.node, caret.offset);
+  };
+  root.addEventListener('pointerdown', pressedForClick);
+  root.addEventListener('click', clickedOnLetters);
   return (): void => {
     unhold();
     blankReleased();
+    root.removeEventListener('pointerdown', pressedForClick);
+    root.removeEventListener('click', clickedOnLetters);
   };
 }
 
@@ -680,6 +711,30 @@ function focusAsPress(root: Element): void {
   else if (owner.activeElement instanceof HTMLElement) owner.activeElement.blur();
 }
 
+/** Each layer's corrections of the selection that must land before its selection is painted for a frame. */
+const SETTLERS = new WeakMap<Element, Set<() => void>>();
+
+/**
+ * Registers `settle` to run before `root`'s selection is painted for a frame, in the one order a frame may have: the
+ * selection corrected, then painted. Two frame callbacks asked for separately run in the order they were asked for,
+ * which is the order of the listeners that asked, so the paint could run first and draw the uncorrected selection.
+ *
+ * @returns the cleanup that removes it
+ */
+function settleBeforePaint(root: Element, settle: () => void): () => void {
+  const held = SETTLERS.get(root) ?? new Set<() => void>();
+  SETTLERS.set(root, held);
+  held.add(settle);
+  return (): void => {
+    held.delete(settle);
+  };
+}
+
+/** Runs every correction registered for `root` ({@link settleBeforePaint}). */
+function settleSelection(root: Element): void {
+  for (const settle of SETTLERS.get(root) ?? []) settle();
+}
+
 /**
  * Takes a drag's moving end to the end of the line it runs past, which the gap cover alone does not.
  *
@@ -782,17 +837,25 @@ export function followPastLineEnds(root: HTMLElement): () => void {
           ? { text: range.startContainer as Text, from: range.startOffset, to: range.endOffset }
           : undefined;
     }
+    // OVER A LINE WITH LETTERS, the moving end is the engine's letter the pointer is on (rule (ii)); found by the letters
+    // (`lineUnder`), so over the cover too. Held from the FIRST move, for the corrections that come after the browser's
+    // own handling of it (`heldToLetters`): by then the press's drag decision is made, and the first frame of a drag was
+    // drawn with the browser's letter while this waited for a second move.
+    const line = lineUnder(event);
+    onLettersAt = line !== null && RUNS.has(line) ? event : undefined;
     if (moves < 2) return;
     if (!(event.target instanceof Element)) return;
     const overGaps = event.target.closest('.m-text-layer__gaps') !== null;
-    // OVER A LINE WITH LETTERS, the moving end is the engine's letter the pointer is on (rule (ii)); found by the letters
-    // (`lineUnder`), so over the cover too.
-    const line = lineUnder(event);
-    onLettersAt = line !== null && RUNS.has(line) ? event : undefined;
     if (onLettersAt !== undefined) follow(caretUnder(root, event));
     else if (overGaps) follow(caretBesideLine(root, event.clientX, event.clientY));
   };
-  /** RULE (ii) AFTER THE BROWSER: the change its own handling of a move made is corrected to the engine's letter. */
+  /**
+   * RULE (ii) AFTER THE BROWSER: the change its own handling of a move made is corrected to the engine's letter — on the
+   * change it reports, or BEFORE THE NEXT FRAME is painted ({@link settleBeforePaint}), whichever comes first.
+   * `selectionchange` is a queued task: recorded frame by frame in the development app on Windows, 2026-11-01
+   * (`textLayerWalk.mjs`, FLICKER), 26 of 80 frames of a slow drag were drawn with the browser's letter, one from the
+   * engine's, while the correction waited for the report; corrected before each frame, 0 of 79.
+   */
   const heldToLetters = (): void => {
     if (onLettersAt === undefined || (onLettersAt.buttons & 1) === 0) return;
     follow(caretUnder(root, onLettersAt));
@@ -800,18 +863,29 @@ export function followPastLineEnds(root: HTMLElement): () => void {
   const released = (): void => {
     onLettersAt = undefined;
   };
+  // A PRESS THAT STARTED DRAGGING SELECTED TEXT is the browser's drag and drop, which cancels the pointer: the selection
+  // it carries is never moved under it.
+  const abandoned = (): void => {
+    onLettersAt = undefined;
+  };
   const owner = root.ownerDocument;
+  const unsettle = settleBeforePaint(root, heldToLetters);
   root.addEventListener('pointerdown', pressed);
   root.addEventListener('mousedown', counted);
   root.addEventListener('pointermove', moved);
+  root.addEventListener('dragstart', abandoned);
   owner.addEventListener('selectionchange', heldToLetters);
   owner.addEventListener('pointerup', released, true);
+  owner.addEventListener('pointercancel', abandoned, true);
   return (): void => {
+    unsettle();
     root.removeEventListener('pointerdown', pressed);
     root.removeEventListener('mousedown', counted);
     root.removeEventListener('pointermove', moved);
+    root.removeEventListener('dragstart', abandoned);
     owner.removeEventListener('selectionchange', heldToLetters);
     owner.removeEventListener('pointerup', released, true);
+    owner.removeEventListener('pointercancel', abandoned, true);
   };
 }
 
@@ -1013,10 +1087,34 @@ export function TextLayer({
     const paint = (): void => {
       paintSelection(root, drawn);
     };
+    // AND BEFORE THE NEXT FRAME WHILE A DRAG MOVES IT, corrected first (`settleSelection`): `selectionchange` is a queued
+    // task, and the browser may draw a frame after a move has changed the selection and before the change is reported.
+    // Recorded frame by frame in the development app on Windows, 2026-11-01 (`textLayerWalk.mjs`, FLICKER, reading each
+    // frame after the application's own frame callbacks): with the correction waiting for the report, 26 of 80 frames
+    // of a slow drag were drawn with the browser's letter, one from the engine's; corrected and painted here, 0 of 79.
+    // Only the layer the selection is in, or whose shapes it is leaving, asks; a paint that changes nothing writes
+    // nothing (`drawShapes`).
+    let frame: number | undefined;
+    const beforeFrame = (event: PointerEvent): void => {
+      if ((event.buttons & 1) === 0 || frame !== undefined) return;
+      const selection = root.ownerDocument.getSelection();
+      const holds = (node: Node | null | undefined): boolean => node !== null && node !== undefined && root.contains(node);
+      if (!holds(selection?.anchorNode) && !holds(selection?.focusNode) && drawn.childElementCount === 0) return;
+      frame = requestAnimationFrame(() => {
+        frame = undefined;
+        // CORRECTED, THEN PAINTED (`settleBeforePaint`): a drag's end the browser moved by its own letters is put on the
+        // engine's before this frame shows it.
+        settleSelection(root);
+        paint();
+      });
+    };
     paint();
     root.ownerDocument.addEventListener('selectionchange', paint);
+    root.ownerDocument.addEventListener('pointermove', beforeFrame, true);
     return (): void => {
+      if (frame !== undefined) cancelAnimationFrame(frame);
       root.ownerDocument.removeEventListener('selectionchange', paint);
+      root.ownerDocument.removeEventListener('pointermove', beforeFrame, true);
     };
   }, [geometry, lines]);
   // THE DEFAULT IS RESOLVED IN THE EFFECT, not here: `sharedPainter` reads

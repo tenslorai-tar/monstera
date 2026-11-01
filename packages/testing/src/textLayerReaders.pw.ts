@@ -217,6 +217,49 @@ test('DOUBLE CLICK selects the word the engine has under the pointer', async ({ 
   expect(farthest(shape ?? [], spanCorners(agreement, 0, word.start, word.end))).toBeLessThan(0.5);
 });
 
+/**
+ * The caret a plain click leaves at each of `letters`' first and second halves, as offsets into line 0: what a
+ * Shift+click or Shift+Arrow then extends from. `at` names where letter `letter`, `fraction` along it, is on the window.
+ */
+async function clickedCarets(page: Page, letters: readonly number[], at: (letter: number, fraction: number) => Promise<{ x: number; y: number }>): Promise<{ letter: number; fraction: number; caret: number }[]> {
+  const read: { letter: number; fraction: number; caret: number }[] = [];
+  for (const letter of letters) {
+    for (const fraction of [0.25, 0.75]) {
+      const point = await at(letter, fraction);
+      await page.mouse.click(point.x, point.y);
+      // APART BY MORE THAN THE DOUBLE-CLICK INTERVAL, so each press is a first one.
+      await page.waitForTimeout(600);
+      read.push({ letter, fraction, caret: await page.evaluate(() => document.getSelection()?.focusOffset ?? -1) });
+    }
+  }
+  return read;
+}
+
+const CLICKED = [3, 9, 17, 24, 33, 41, 52, 60];
+
+test('A CLICK leaves the caret at the engine’s boundary, so a Shift+click extends from the letter pressed', async ({ page }) => {
+  // MEASURED IN THE DEVELOPMENT APP ON WINDOWS, 2026-11-01: a click on a letter's first half left the browser's caret,
+  // a letter on, and a Shift+click after it selected from there.
+  const agreement = await openAgreement(page);
+  const read = await clickedCarets(page, CLICKED, (letter, fraction) => Promise.resolve(onLetter(agreement, 0, letter, fraction)));
+  expect(read.filter((each) => each.caret !== each.letter + (each.fraction > 0.5 ? 1 : 0))).toStrictEqual([]);
+  // AND THE SHIFT+CLICK FROM IT.
+  const from = onLetter(agreement, 0, 9, 0.25);
+  const to = onLetter(agreement, 0, 40, 0.75);
+  await page.mouse.click(from.x, from.y);
+  await page.waitForTimeout(600);
+  await page.keyboard.down('Shift');
+  await page.mouse.click(to.x, to.y);
+  await page.keyboard.up('Shift');
+  expect(await page.evaluate(() => document.getSelection()?.toString() ?? '')).toBe(LINE.slice(9, 41));
+});
+
+test('CONTROL: on a line placed as before, a click leaves the browser’s caret, which is not the engine’s for some letter', async ({ page }) => {
+  const agreement = await openAgreement(page, { bare: 0 });
+  const read = await clickedCarets(page, CLICKED, (letter, fraction) => Promise.resolve(onLetter(agreement, 0, letter, fraction)));
+  expect(read.filter((each) => each.caret !== each.letter + (each.fraction > 0.5 ? 1 : 0)).length).toBeGreaterThan(0);
+});
+
 test('A DOUBLE CLICK WITH THE HIGHLIGHTER marks the word the engine has under the pointer', async ({ page }) => {
   // THE RELEASE READS THE SELECTION (the highlighter marks on `pointerup`), and a quick double click's release, click and
   // dblclick are all handled before the browser's queued `selectionchange` reports its own word: measured on Windows,
