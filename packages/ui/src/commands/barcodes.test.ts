@@ -19,7 +19,7 @@ const BOX = { x0: 60, y0: 390, x1: 110, y1: 360 };
 const STAMP = () => ({ author: 'A. Tester', created: '2026-09-24T09:38:00.000Z' });
 
 function contextOn(page: number | undefined): CommandContext {
-  return { docId: DOC, version: asDocVersion(1), hasSelection: false, dirty: false, page, pageCount: 5 } as CommandContext;
+  return { docId: DOC, version: asDocVersion(1), dirty: false, page, pageCount: 5 } as CommandContext;
 }
 
 function recordingAsk(answers: readonly unknown[] = []): {

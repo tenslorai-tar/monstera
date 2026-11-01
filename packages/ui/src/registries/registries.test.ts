@@ -21,7 +21,6 @@ const context: CommandContext = {
   selectedPages: [],
   docId: asDocId('00000000-0000-4000-8000-000000000001'),
   version: asDocVersion(1),
-  hasSelection: false,
   dirty: false,
   page: 0,
   pageCount: 1,
@@ -160,14 +159,14 @@ describe('CommandRegistry', () => {
     const registry = new CommandRegistry([
       command('edit.always'),
       command('edit.never', { when: () => false }),
-      command('edit.sometimes', { when: (ctx) => ctx.hasSelection }),
+      command('edit.sometimes', { when: (ctx) => ctx.dirty }),
     ]);
 
     // The assertion is the SET, not a count: "two are available" is also what a
     // registry that dropped the wrong one produces.
     expect(registry.available(context).map((c) => c.id)).toStrictEqual(['edit.always']);
     expect(
-      registry.available({ ...context, hasSelection: true }).map((c) => c.id),
+      registry.available({ ...context, dirty: true }).map((c) => c.id),
     ).toStrictEqual(['edit.always', 'edit.sometimes']);
   });
 
@@ -189,7 +188,6 @@ describe('CommandRegistry', () => {
       selectedPages: [],
       docId: undefined,
       version: undefined,
-      hasSelection: true,
       dirty: true,
       page: undefined,
       pageCount: undefined,
@@ -201,12 +199,12 @@ describe('CommandRegistry', () => {
   });
 
   it('gives a command by id only where it exists in the context, by `available`’s rule (VVVVVVV-30)', () => {
-    const registry = new CommandRegistry([command('edit.always'), command('edit.sometimes', { when: (ctx) => ctx.hasSelection })]);
+    const registry = new CommandRegistry([command('edit.always'), command('edit.sometimes', { when: (ctx) => ctx.dirty })]);
     // ABSENT where its `when` says so, though `get` has it: the control that ran it by name skipped exactly this.
     expect(registry.get('edit.sometimes')).toBeDefined();
     expect(registry.availableById('edit.sometimes', context)).toBeUndefined();
     // CONTROL: present where its `when` holds, and a command with no `when` is present everywhere.
-    expect(registry.availableById('edit.sometimes', { ...context, hasSelection: true })?.id).toBe('edit.sometimes');
+    expect(registry.availableById('edit.sometimes', { ...context, dirty: true })?.id).toBe('edit.sometimes');
     expect(registry.availableById('edit.always', context)?.id).toBe('edit.always');
     expect(registry.availableById('edit.unregistered', context)).toBeUndefined();
   });

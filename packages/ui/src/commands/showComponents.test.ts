@@ -16,7 +16,6 @@ import { showComponentsCommand } from './showComponents.js';
 const ANYWHERE = {
   docId: undefined,
   version: undefined,
-  hasSelection: false,
   dirty: false,
   page: undefined,
 } as unknown as CommandContext;

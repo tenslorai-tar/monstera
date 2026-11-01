@@ -17,7 +17,6 @@ function contextWith(docId: DocId | undefined, pageCount: number | undefined): C
   return {
     docId,
     version: docId === undefined ? undefined : asDocVersion(1),
-    hasSelection: false,
     dirty: false,
     page: 0,
     pageCount,

@@ -26,7 +26,6 @@ const CONTEXT: CommandContext = {
   selectedPages: [],
   docId: DOC,
   version: asDocVersion(4),
-  hasSelection: false,
   dirty: false,
   // NOT PAGE 0, so a command that sent a literal would be caught.
   page: 2,

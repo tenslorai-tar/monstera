@@ -19,7 +19,7 @@ import { aiSetupCommand } from './aiSetup.js';
  * the start-up offer turned off only by a Skip or a key that checks out.
  */
 
-const START = { docId: undefined, version: undefined, hasSelection: false, dirty: false, page: undefined } as unknown as CommandContext;
+const START = { docId: undefined, version: undefined, dirty: false, page: undefined } as unknown as CommandContext;
 
 interface Sent {
   readonly id: string;

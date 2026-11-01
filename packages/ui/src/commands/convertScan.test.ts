@@ -13,7 +13,6 @@ const CONTEXT: CommandContext = {
   selectedPages: [],
   docId: asDocId('doc-1'),
   version: asDocVersion(1),
-  hasSelection: false,
   dirty: false,
   page: 1,
   pageCount: 3,

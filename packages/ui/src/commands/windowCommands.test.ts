@@ -10,7 +10,6 @@ const WITH_DOCUMENT: CommandContext = {
   selectedPages: [],
   docId: asDocId('00000000-0000-4000-8000-0000000000c9'),
   version: asDocVersion(1),
-  hasSelection: false,
   dirty: false,
   page: 0,
   pageCount: 1,

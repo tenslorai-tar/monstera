@@ -18,7 +18,6 @@ import { donateCommand } from './donate.js';
 const ANYWHERE = {
   docId: undefined,
   version: undefined,
-  hasSelection: false,
   dirty: false,
   page: undefined,
 } as unknown as CommandContext;

@@ -14,7 +14,6 @@ function contextWith(pageCount: number): CommandContext {
   return {
     docId: DOC,
     version: asDocVersion(1),
-    hasSelection: false,
     dirty: false,
     page: 0,
     pageCount,
@@ -171,7 +170,6 @@ describe('the word count command', () => {
     await showWordCountCommand({ client, ask, track: UNTRACKED }).run({
       docId: undefined,
       version: undefined,
-      hasSelection: false,
       dirty: false,
       page: undefined,
       pageCount: undefined,
@@ -301,7 +299,6 @@ describe('the word count command', () => {
       command.when?.({
         docId: undefined,
         version: undefined,
-        hasSelection: false,
         dirty: false,
         page: undefined,
         pageCount: undefined,

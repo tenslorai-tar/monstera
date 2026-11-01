@@ -21,7 +21,6 @@ function contextWith(pageCount: number): CommandContext {
   return {
     docId: DOC,
     version: asDocVersion(1),
-    hasSelection: false,
     dirty: false,
     page: 0,
     pageCount,

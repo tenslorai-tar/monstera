@@ -55,7 +55,6 @@ const CONTEXT: CommandContext = {
   selectedPages: [],
   docId: DOC,
   version: asDocVersion(1),
-  hasSelection: false,
   dirty: false,
   page: 3,
   pageCount: 10,

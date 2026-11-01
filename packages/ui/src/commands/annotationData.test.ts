@@ -30,7 +30,7 @@ import { namedWorkSetAside } from './namedWorkSetAside.js';
  */
 
 const DOC = asDocId('00000000-0000-4000-8000-0000000000aa');
-const CONTEXT = { docId: DOC, version: asDocVersion(1), hasSelection: false, dirty: false, page: 0, pageCount: 1 } as CommandContext;
+const CONTEXT = { docId: DOC, version: asDocVersion(1), dirty: false, page: 0, pageCount: 1 } as CommandContext;
 
 /** The handle a faked write answers for what it wrote. */
 const WRITTEN = asFileHandle('Handle-comments-written');

@@ -37,7 +37,6 @@ function answering(answer: unknown): { readonly client: ContractClient; readonly
 const CONTEXT: CommandContext = {
   docId: DOC,
   version: asDocVersion(1),
-  hasSelection: false,
   dirty: false,
   page: 0,
   pageCount: 1,
