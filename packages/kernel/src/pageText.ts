@@ -4,6 +4,7 @@ import type * as mupdf from './mupdfRaw.js';
 import { structuredTextLetters } from './mupdfRaw.js';
 
 import type { MupdfSession } from './engineSeam.js';
+import { withinFormBounds } from './formText.js';
 import { withDocument } from './mupdfWriter.js';
 import {
   type PageText,
@@ -126,20 +127,30 @@ export function readPageTextJson(
  * @param read the named read, whose option string the substrate composes
  */
 function structuredJson(document: mupdf.PDFDocument, page: number, read: PageTextRead): string {
-  const structured = structuredText(document, page, read);
-  try {
-    return pageTextJsonOf(structured);
-  } finally {
-    structured.destroy();
-  }
+  return withStructuredText(document, page, read, pageTextJsonOf);
 }
 
 /** How many structured texts this module has built: the ONE place it builds one, so a read's count is observable. */
 export const STRUCTURED_BUILDS = { count: 0 };
 
-function structuredText(document: mupdf.PDFDocument, page: number, read: PageTextRead): mupdf.StructuredText {
-  STRUCTURED_BUILDS.count += 1;
-  return document.loadPage(page).toStructuredText(stextOptionsFor(read));
+/**
+ * A page's structured text, built and handed to `use`, then dropped: the ONE place this module builds one, so every read
+ * of a page's text — its JSON and the text layer's letters alike — is of the same page.
+ *
+ * WITHIN THE FORM BOUNDS (`withinFormBounds`, the rule Edit text's form read takes): a page whose forms the walk could
+ * not reach to the end is read from one page drawing what it kept, in MuPDF's own answer. That page lives only while the
+ * bound's work runs, so `use` runs inside it and the structured text is dropped before it is.
+ */
+function withStructuredText<T>(document: mupdf.PDFDocument, page: number, read: PageTextRead, use: (structured: mupdf.StructuredText) => T): T {
+  return withinFormBounds(document, page, ({ document: from, page: at }) => {
+    STRUCTURED_BUILDS.count += 1;
+    const structured = from.loadPage(at).toStructuredText(stextOptionsFor(read));
+    try {
+      return use(structured);
+    } finally {
+      structured.destroy();
+    }
+  }).value;
 }
 
 /** The buffer the shim writes a page's letters into: `textLetters.ts`' bound, allocated once per process. */
@@ -155,15 +166,12 @@ let lettersBuffer: Uint8Array | undefined;
 export function readPageTextWithLetters(session: MupdfSession, page: number): Promise<{ readonly json: string; readonly letters: Uint8Array; readonly walked: number }> {
   return withDocument(session, (document) => {
     pageInDocument(page, document.countPages());
-    const structured = structuredText(document, page, 'substrate');
-    try {
+    return withStructuredText(document, page, 'substrate', (structured) => {
       const json = pageTextJsonOf(structured);
       lettersBuffer ??= new Uint8Array(LETTERS_FILE_MAX_BYTES);
       const read = structuredTextLetters(structured, lettersBuffer, MAX_TEXT_LAYER_LINES, MAX_TEXT_LAYER_LINE);
       const letters = read.status === 'full' ? new Uint8Array(0) : lettersBuffer.slice(0, read.written);
       return { json, letters, walked: read.walked };
-    } finally {
-      structured.destroy();
-    }
+    });
   });
 }

@@ -50,6 +50,34 @@ describe('engine/text-runs’ bound', () => {
   });
 });
 
+describe('a page whose forms hold more characters than one string may (BBBBBBBBB-6)', () => {
+  // THE MEASURED PAGE: `formGraph(16, 2, 1)`, whose forms hold 196,094 characters the object walk cannot name. Both
+  // answers carry that count, and both refused it at a string's bound, so the page could not be opened for editing.
+  const MEASURED = 196_094;
+
+  it('engine/text-runs answers the count whole', () => {
+    const answer = { runs: [], truncated: false, unaddressable: MEASURED, box: null, markers: [] };
+    expect(pdfiumChannels['engine/text-runs'].result.safeParse(answer).success).toBe(true);
+  });
+
+  it('engine/page-content answers the count whole', () => {
+    const shape = pdfiumChannels['engine/page-content'].result;
+    const at = shape.safeParse({ ...pageContentAnswer(), unaddressable: MEASURED });
+    expect(at.success, at.success ? '' : JSON.stringify(at.error.issues.slice(0, 3))).toBe(true);
+  });
+
+  it('CONTROL: a count is still a whole number that is never negative', () => {
+    for (const unaddressable of [-1, 1.5]) {
+      expect(pdfiumChannels['engine/text-runs'].result.safeParse({ runs: [], truncated: false, unaddressable, box: null, markers: [] }).success).toBe(false);
+    }
+  });
+});
+
+/** The smallest answer `engine/page-content` accepts, which the case above adds its count to. */
+function pageContentAnswer(): Record<string, unknown> {
+  return { frame: { crop: { x0: 0, y0: 0, x1: 612, y1: 792 }, rotation: 0 }, runs: [], images: [], paths: [], opaque: [], unaddressable: 0, truncated: false, imageBytes: 0 };
+}
+
 describe('engine/page-runs’ answer', () => {
   const run = { index: 3, members: [3, 5], text: 'ab', left: 0, right: 1, bottom: 0, top: 1 };
   const answer = (runs: readonly unknown[]) => pdfiumChannels['engine/page-runs'].result.safeParse({ textObjects: [3, 4, 5], runs });

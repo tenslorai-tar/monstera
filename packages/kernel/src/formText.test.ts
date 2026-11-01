@@ -9,6 +9,8 @@ import { mupdfWriter, withDocument } from './mupdfWriter.js';
 import type { PageRuns } from './operatorEdit.js';
 import { pageContentStreams } from './pageContent.js';
 import { applyEditTextOperators } from './textOperatorEdit.js';
+import { readPageTextJson, readPageTextWithLetters } from './pageText.js';
+import { linesOf, parsePageText } from './textStructure.js';
 import { joinedContent, showOperators, textObjectCount } from './textOperators.js';
 
 /**
@@ -65,6 +67,33 @@ async function formPagesOf(bytes: Uint8Array): Promise<{ readonly read: Awaited<
     const start = performance.now();
     const read = await withDocument(session, (document) => formPagesDocument(document, 0));
     return { read, ms: performance.now() - start };
+  } finally {
+    await mupdfWriter.close(session);
+  }
+}
+
+/** Page 0's text as the text layer reads it (`readPageTextJson`), its words counted, and how long the read took. */
+async function pageTextOf(bytes: Uint8Array): Promise<{ readonly words: ReadonlySet<string>; readonly counts: ReadonlyMap<string, number>; readonly ms: number }> {
+  const session = await mupdfWriter.open(bytes);
+  try {
+    const start = performance.now();
+    const json = await readPageTextJson(session, 0, 'substrate');
+    const ms = performance.now() - start;
+    interface Node {
+      readonly lines?: readonly { readonly text?: string }[];
+      readonly contents?: readonly Node[];
+    }
+    const parsed = JSON.parse(json) as { blocks?: readonly Node[] };
+    // EVERY LINE, inside a structure block's contents as well, where MuPDF nests a tagged page's text.
+    const linesOf = (nodes: readonly Node[]): readonly { readonly text?: string }[] =>
+      nodes.flatMap((node) => [...(node.lines ?? []), ...linesOf(node.contents ?? [])]);
+    // EACH FORM'S WORD, `G` and its level: at 3 pt and a point apart MuPDF may join them into one string, so they are
+    // counted by their shape rather than split on spaces.
+    const counts = new Map<string, number>();
+    for (const line of linesOf(parsed.blocks ?? [])) {
+      for (const [word] of (line.text ?? '').matchAll(/G\d+/gu)) counts.set(word, (counts.get(word) ?? 0) + 1);
+    }
+    return { words: new Set(counts.keys()), counts, ms };
   } finally {
     await mupdfWriter.close(session);
   }
@@ -264,6 +293,48 @@ describe('text inside a form (ADR-0269)', () => {
     expect(wide.read.paths).toHaveLength(MAX_FORM_PLACEMENTS);
     expect(wide.read.left).toStrictEqual({ deeper: false, more: true, unnamed: false });
     expect(wide.ms).toBeLessThan(1_000);
+  });
+
+  // SELECT TEXT'S READ, through the same walk (finding BBBBBBBBB-26, measured at 9.9 s on this page in the host).
+  it('reads the text of a page past the form bounds in under 100 ms, from what the walk keeps', async () => {
+    const text = await pageTextOf(await formGraph(16, 2, 1));
+    expect(text.ms).toBeLessThan(100);
+    // WHAT THE WALK KEPT IS READ: the first form's word, and words of forms down to the deepest level kept.
+    expect(text.words.has('G1')).toBe(true);
+    expect(text.words.has(`G${String(MAX_FORM_DEPTH)}`)).toBe(true);
+    // AND NOTHING PAST THE DEPTH, which the walk does not enter.
+    expect(text.words.has(`G${String(MAX_FORM_DEPTH + 1)}`)).toBe(false);
+    // AND NO MORE PLACEMENTS THAN THE WALK KEEPS, which is what separates this page's two reads: the line above cannot,
+    // since the page has exactly `MAX_FORM_DEPTH` levels, while read whole it shows all 65,535 placements' words.
+    expect([...text.counts.values()].reduce((sum, each) => sum + each, 0)).toBeLessThanOrEqual(MAX_FORM_PLACEMENTS);
+  });
+
+  // THE TEXT LAYER'S READ IS THE SAME READ (ADR-0280's letters beside the JSON, B3a): bounded by the same walk, and its
+  // letters walk the lines its JSON holds, so a page past the bounds is never read whole for one of the two.
+  it('the text layer’s read of a page past the form bounds is bounded too, its letters from the same kept page', async () => {
+    const session = await mupdfWriter.open(await formGraph(16, 2, 1));
+    try {
+      const start = performance.now();
+      const read = await readPageTextWithLetters(session, 0);
+      const ms = performance.now() - start;
+      // WHAT IS READ separates the two reads: the walk keeps at most `MAX_FORM_PLACEMENTS` placements of this page's
+      // 65,535, each showing one word, and the page read whole shows them all.
+      const words = linesOf(parsePageText(read.json)).flatMap((line) => [...line.text.matchAll(/G\d+/gu)]).length;
+      expect(words).toBeGreaterThan(0);
+      expect(words).toBeLessThanOrEqual(MAX_FORM_PLACEMENTS);
+      expect(read.walked).toBe(linesOf(parsePageText(read.json)).length);
+      // AND HOW LONG, loosely: the bounded read measured 65 to 115 ms and the page read whole 1.18 s on a desktop on Windows
+      // (2026-11-02), and 9.9 s in the contained host (BBBBBBBBB-26).
+      expect(ms).toBeLessThan(1_000);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('CONTROL: a page within the bounds reads every placement, as MuPDF reads the page itself', async () => {
+    const text = await pageTextOf(await formGraph(8, 1, 25));
+    // EIGHT LEVELS, every one of the 200 placements: each level's word twenty-five times.
+    for (let level = 1; level <= 8; level += 1) expect(text.counts.get(`G${String(level)}`), `G${String(level)}`).toBe(25);
   });
 
   // THE OWNER'S BOUNDS OF 2026-10-30 (ADR-0269's correction of that date). Eight levels placed twenty-five times is 200
