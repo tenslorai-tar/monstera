@@ -1108,7 +1108,13 @@ export function TextLayer({
         paint();
       });
     };
-    paint();
+    // ONLY A LAYER THAT ALREADY SHOWS A SELECTION is painted again here, when its geometry moves under it; the selection is
+    // not even asked for otherwise. A layer whose lines just arrived cannot hold the selection, since its text did not
+    // exist, a change of geometry changes no selection, and any later selection reaches it through `selectionchange`.
+    // Profiled in the development app on Windows, 2026-11-01 (`frameTimes.mjs`, `--scenarios arrive --arrive-profile`):
+    // painting every arriving page cost 4.5 to 5.3 ms of its own time a page in a scroll with nothing selected, and
+    // reading only the selection's two end nodes still cost 4.9 to 6.8.
+    if (drawn.childElementCount > 0) paint();
     root.ownerDocument.addEventListener('selectionchange', paint);
     root.ownerDocument.addEventListener('pointermove', beforeFrame, true);
     return (): void => {
