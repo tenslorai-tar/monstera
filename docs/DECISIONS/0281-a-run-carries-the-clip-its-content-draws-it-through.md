@@ -33,8 +33,11 @@ with no warning.
    window is in force. The writer's check of lines under different transforms takes the same function, so the read and
    the writer cannot disagree about whether two lines share a clip (B3a).
 2. **The engine host reads it**, as it reads a page's Type 3 faces for the same grouping (ADR-0256): `textClips` answers
-   each text object of the page's content, in content order, its identity or none. Bounded by the text object bound the
-   PDFium wire already uses.
+   each text object of the page's content, in the writer's numbering, its identity or none. The answer is the faces
+   read's shape: the distinct clips once (at most 512) and ranges of consecutive objects in one clip (at most 2,048),
+   with the count of text objects the content shows, so both its frame and the PDFium requests that carry it fit the
+   262,144-byte frame (`hostRoutes.test.ts`). A page past either bound answers `truncated`, and no object of it is given
+   a clip: it is grouped as before.
 3. **The PDFium host takes the clips as an input** to `textRuns` and `pageRuns`, and gives each object the identity of
    its place among the page's text objects, which is the numbering the writer already joins PDFium's objects to the
    content by (ADR-0176 Decision 3, `PageRuns.textObjects`). The identity is part of a run's style for the join
