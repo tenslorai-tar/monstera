@@ -13,6 +13,7 @@ import {
   selectSpan,
   spanCorners,
 } from './agreementLetters.js';
+import { runCommand } from './palette.js';
 
 /**
  * EVERY READER OF A PAGE'S SELECTION, on the engine's letters (ADR-0280, Decision 5): what a search paints, what each
@@ -214,6 +215,80 @@ test('DOUBLE CLICK selects the word the engine has under the pointer', async ({ 
   // AND IT IS PAINTED THERE.
   const [shape] = await paintedIn(page, 'selection');
   expect(farthest(shape ?? [], spanCorners(agreement, 0, word.start, word.end))).toBeLessThan(0.5);
+});
+
+test('A DOUBLE CLICK WITH THE HIGHLIGHTER marks the word the engine has under the pointer', async ({ page }) => {
+  // THE RELEASE READS THE SELECTION (the highlighter marks on `pointerup`), and a quick double click's release, click and
+  // dblclick are all handled before the browser's queued `selectionchange` reports its own word: measured on Windows,
+  // Chromium 151, 2026-11-01, in every one of 79 recorded double clicks. A correction made only on that report marked the
+  // browser's word.
+  const sent: unknown[] = [];
+  const agreement = await openAgreement(page, {
+    observe: (channel, params) => {
+      if (channel === 'document.execute') sent.push(params);
+    },
+  });
+  await runCommand(page, 'Highlight text');
+  const word = await misplacedWord(page, agreement);
+  await page.mouse.dblclick(word.at.x, word.at.y);
+  await expect.poll(() => sent.length).toBe(1);
+  const ends = endsOf(sent[0]);
+  if (ends === undefined) throw new Error(`the highlighter sent no two ends: ${JSON.stringify(sent[0])}`);
+  const [start, end] = [agreement.inPdf(0, word.start), agreement.inPdf(0, word.end)];
+  expect(Math.abs(ends.from.x - start.x), `from ${String(ends.from.x)} against ${String(start.x)}`).toBeLessThan(0.3);
+  expect(Math.abs(ends.to.x - end.x), `to ${String(ends.to.x)} against ${String(end.x)}`).toBeLessThan(0.3);
+});
+
+/**
+ * A double click on *commence*'s third letter, its second press held and taken to *Effective*'s fifth, then forward
+ * from *Effective* back to *shall*; what was selected while held each time, and once let go.
+ */
+async function doubleClickDragged(
+  page: Page,
+  at: (letter: number) => Promise<{ x: number; y: number }>,
+): Promise<{ forward: string; back: string; released: string }> {
+  const [from, ahead, behind] = [await at(LINE.indexOf('commence') + 2), await at(LINE.indexOf('Effective') + 4), await at(LINE.indexOf('shall') + 2)];
+  const selected = (): Promise<string> => page.evaluate(() => document.getSelection()?.toString() ?? '');
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.up();
+  await page.mouse.down({ clickCount: 2 });
+  await page.mouse.move(ahead.x, ahead.y, { steps: 6 });
+  const forward = await selected();
+  await page.mouse.move(behind.x, behind.y, { steps: 12 });
+  const back = await selected();
+  await page.mouse.up();
+  return { forward, back, released: await selected() };
+}
+
+// WHOLE WORDS, as the browser's word breaker bounds them: forward from *commence* through *Effective*, and back from
+// *shall* through *commence*, the word first selected kept whole either way. Windows' own double click adds a word's
+// trailing space, so each end is compared without it.
+const FORWARD_WORDS = LINE.slice(LINE.indexOf('commence'), LINE.indexOf('Effective') + 'Effective'.length);
+const BACK_WORDS = LINE.slice(LINE.indexOf('shall'), LINE.indexOf('commence') + 'commence'.length);
+
+test('A DOUBLE CLICK HELD AND DRAGGED extends the selection by whole words, either way', async ({ page }) => {
+  // THE SECOND PRESS HELD: the browser extends a double click's selection a word at a time, and the engine's letters
+  // decide only which word the pointer is on.
+  const agreement = await openAgreement(page);
+  const dragged = await doubleClickDragged(page, (letter) => Promise.resolve(onLetter(agreement, 0, letter, 0.5)));
+  expect(dragged.forward.trim()).toBe(FORWARD_WORDS);
+  expect(dragged.back.trim()).toBe(BACK_WORDS);
+  expect(dragged.released.trim()).toBe(BACK_WORDS);
+});
+
+test('CONTROL: on a line placed as before, the browser extends a held double click by whole words', async ({ page }) => {
+  // THE BROWSER'S OWN RULE, which the case above holds the engine's letters to: the same gesture on the line with no
+  // letters, where nothing of this layer moves the selection, each letter found where the browser lays it out.
+  await openAgreement(page, { bare: 0 });
+  const layer = await page.locator('[data-text-layer="0"]').boundingBox();
+  if (layer === null) throw new Error('no text layer');
+  const dragged = await doubleClickDragged(page, async (letter) => {
+    const box = await laidOut(page, 0, letter, letter + 1);
+    return { x: layer.x + (box.left + box.right) / 2, y: layer.y + (box.top + box.bottom) / 2 };
+  });
+  expect(dragged.forward.trim()).toBe(FORWARD_WORDS);
+  expect(dragged.back.trim()).toBe(BACK_WORDS);
 });
 
 test('A DOUBLE CLICK AND THEN A TRIPLE CLICK on the same word end with its line selected', async ({ page }) => {

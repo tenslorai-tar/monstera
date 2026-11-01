@@ -598,6 +598,17 @@ export function caretBesideLine(root: Element, x: number, y: number): { readonly
 const WORDS = new Intl.Segmenter(undefined, { granularity: 'word' });
 
 /**
+ * The unit a press of `clicks` selects around `letter` of a line: its word, by the platform's word breaker, for a double
+ * click, and the whole line for a triple. The one rule {@link wordsByLetters} selects by and a held double or triple
+ * click's drag ({@link followPastLineEnds}) extends by.
+ */
+function unitAt(text: Text, letter: number, clicks: number): { readonly from: number; readonly to: number } | undefined {
+  if (clicks >= 3) return { from: 0, to: text.length };
+  const word = WORDS.segment(text.data).containing(letter);
+  return word === undefined ? undefined : { from: word.index, to: word.index + word.segment.length };
+}
+
+/**
  * A DOUBLE CLICK ON A LINE WITH LETTERS selects the word the engine has under the pointer (rule (ii)): the browser's
  * own double click picks the word under the substitute face's letters, which on a line drawn in a face unlike the
  * page's is a word or two away, and on a turned page, where the substitute lies across the line, anywhere along it.
@@ -632,27 +643,32 @@ export function wordsByLetters(root: HTMLElement): () => void {
     const text = node as Text;
     // A TRIPLE CLICK, the line the engine has under the pointer, whole: the browser's takes the line its hit test of the
     // substitute meets, which on a turned page is another line's text lying across this one.
-    let span = { from: 0, to: text.length };
-    if (event.detail === 2) {
-      const origin = root.getBoundingClientRect();
-      const letter = letterAt(run, { x: event.clientX - origin.left, y: event.clientY - origin.top });
-      const word = WORDS.segment(text.data).containing(letter);
-      if (word === undefined) return;
-      span = { from: word.index, to: word.index + word.segment.length };
-    }
+    const origin = root.getBoundingClientRect();
+    const span = unitAt(text, letterAt(run, { x: event.clientX - origin.left, y: event.clientY - origin.top }), event.detail);
+    if (span === undefined) return;
     // AFTER THE BROWSER'S OWN, never instead of it: the browser's handling of the press runs after this listener and
-    // selects its word or line, and is corrected on the change it reports or, should it report none, on the next task.
-    // Cancelling it instead left the browser's state from the press before standing — a first click inside a selection,
-    // whose release then removed the selection the third click of a triple click had made (Chromium 151, 2026-11-01).
+    // selects its word or line, and is corrected at the first of the change it reports, the next input, and the next
+    // task. Cancelling it instead left the browser's state from the press before standing — a first click inside a
+    // selection, whose release then removed the selection the third click of a triple click had made (Chromium 151,
+    // 2026-11-01).
     pending = { text, ...span };
     globalThis.setTimeout(correct, 0);
   };
+  // THE NEXT INPUT AS WELL AS THE REPORT: `selectionchange` is a queued task, and input already queued is handled before
+  // it. A quick double click's release, click and dblclick all came before it in every one of 79 double clicks recorded
+  // on Windows (Chromium 151, 2026-11-01), so a reader at the release — the highlighter marks on `pointerup` — took the
+  // browser's word, and on Windows its trailing space. A held press's first move is input too, and the drag extends from
+  // the word this puts in place ({@link followPastLineEnds}). On the document and capturing, so the correction lands
+  // before any handler of that input reads the selection.
+  const inputs = ['pointermove', 'pointerup', 'pointercancel', 'keydown', 'contextmenu'] as const;
   root.addEventListener('mousedown', pressed);
   owner.addEventListener('selectionchange', correct);
+  for (const input of inputs) owner.addEventListener(input, correct, true);
   return (): void => {
     pending = undefined;
     root.removeEventListener('mousedown', pressed);
     owner.removeEventListener('selectionchange', correct);
+    for (const input of inputs) owner.removeEventListener(input, correct, true);
   };
 }
 
@@ -699,6 +715,14 @@ export function followPastLineEnds(root: HTMLElement): () => void {
    * back on the change that follows ({@link heldToLetters}).
    */
   let onLettersAt: PointerEvent | undefined;
+  /** The press's click count, from `mousedown` (`PointerEvent.detail` is 0): a held double or triple click drags by units. */
+  let clicks = 1;
+  /**
+   * The word or line a held double or triple click selected, read on the drag's first move: before the browser's own
+   * handling of that move extends it, and after {@link wordsByLetters} has put the engine's unit in place, on that same
+   * move at the latest.
+   */
+  let unit: { readonly text: Text; readonly from: number; readonly to: number } | undefined;
   /** Moves the selection's end to `caret` where it is not there already; one change, so no loop. */
   const extendTo = (caret: { readonly node: Node; readonly offset: number } | null): void => {
     const selection = root.ownerDocument.getSelection();
@@ -707,10 +731,42 @@ export function followPastLineEnds(root: HTMLElement): () => void {
     if (selection.focusNode === caret.node && selection.focusOffset === caret.offset) return;
     selection.extend(caret.node, caret.offset);
   };
+  /**
+   * A HELD DOUBLE OR TRIPLE CLICK extends by whole words or lines (`unitAt`), as the browser does on a line with no
+   * letters: the unit first selected stays whole, and the end is the far side of the unit the pointer is on, before it
+   * or after it. Moved to the bare letter instead, the end selected *commence on the Effec* where the browser selected
+   * *commence on the Effective* (Chromium 151, 2026-11-01).
+   */
+  const extendByUnits = (caret: { readonly node: Node; readonly offset: number } | null): void => {
+    const selection = root.ownerDocument.getSelection();
+    if (unit === undefined || caret === null || selection === null || caret.node.nodeType !== Node.TEXT_NODE || !root.contains(caret.node)) return;
+    const text = caret.node as Text;
+    const first = root.ownerDocument.createRange();
+    first.setStart(unit.text, unit.from);
+    first.setEnd(unit.text, unit.to);
+    const side = first.comparePoint(text, caret.offset);
+    const [anchor, focus] =
+      side === 0
+        ? [unit.from, { node: unit.text, offset: unit.to }]
+        : side > 0
+          ? [unit.from, { node: text, offset: unitAt(text, Math.max(caret.offset - 1, 0), clicks)?.to ?? caret.offset }]
+          : [unit.to, { node: text, offset: unitAt(text, caret.offset, clicks)?.from ?? caret.offset }];
+    if (selection.anchorNode === unit.text && selection.anchorOffset === anchor && selection.focusNode === focus.node && selection.focusOffset === focus.offset) return;
+    selection.setBaseAndExtent(unit.text, anchor, focus.node, focus.offset);
+  };
+  /** The moving end to `caret`, by letters or, for a held double or triple click, by its units. */
+  const follow = (caret: { readonly node: Node; readonly offset: number } | null): void => {
+    if (clicks >= 2) extendByUnits(caret);
+    else extendTo(caret);
+  };
   const pressed = (event: PointerEvent): void => {
     moves = 0;
     onLettersAt = undefined;
+    unit = undefined;
     besideText = pressPlace(root, event) !== 'blank';
+  };
+  const counted = (event: MouseEvent): void => {
+    clicks = event.detail;
   };
   const moved = (event: PointerEvent): void => {
     if ((event.buttons & 1) === 0 || !besideText) {
@@ -718,6 +774,14 @@ export function followPastLineEnds(root: HTMLElement): () => void {
       return;
     }
     moves += 1;
+    if (moves === 1 && clicks >= 2) {
+      const selection = root.ownerDocument.getSelection();
+      const range = selection !== null && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+      unit =
+        range !== null && range.startContainer === range.endContainer && range.startContainer.nodeType === Node.TEXT_NODE && root.contains(range.startContainer)
+          ? { text: range.startContainer as Text, from: range.startOffset, to: range.endOffset }
+          : undefined;
+    }
     if (moves < 2) return;
     if (!(event.target instanceof Element)) return;
     const overGaps = event.target.closest('.m-text-layer__gaps') !== null;
@@ -725,24 +789,26 @@ export function followPastLineEnds(root: HTMLElement): () => void {
     // (`lineUnder`), so over the cover too.
     const line = lineUnder(event);
     onLettersAt = line !== null && RUNS.has(line) ? event : undefined;
-    if (onLettersAt !== undefined) extendTo(caretUnder(root, event));
-    else if (overGaps) extendTo(caretBesideLine(root, event.clientX, event.clientY));
+    if (onLettersAt !== undefined) follow(caretUnder(root, event));
+    else if (overGaps) follow(caretBesideLine(root, event.clientX, event.clientY));
   };
   /** RULE (ii) AFTER THE BROWSER: the change its own handling of a move made is corrected to the engine's letter. */
   const heldToLetters = (): void => {
     if (onLettersAt === undefined || (onLettersAt.buttons & 1) === 0) return;
-    extendTo(caretUnder(root, onLettersAt));
+    follow(caretUnder(root, onLettersAt));
   };
   const released = (): void => {
     onLettersAt = undefined;
   };
   const owner = root.ownerDocument;
   root.addEventListener('pointerdown', pressed);
+  root.addEventListener('mousedown', counted);
   root.addEventListener('pointermove', moved);
   owner.addEventListener('selectionchange', heldToLetters);
   owner.addEventListener('pointerup', released, true);
   return (): void => {
     root.removeEventListener('pointerdown', pressed);
+    root.removeEventListener('mousedown', counted);
     root.removeEventListener('pointermove', moved);
     owner.removeEventListener('selectionchange', heldToLetters);
     owner.removeEventListener('pointerup', released, true);
