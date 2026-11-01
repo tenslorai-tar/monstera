@@ -64,7 +64,7 @@
  *
  * Usage: node scripts/research/frameTimes.mjs --build package|dev --document <absolute .pdf> [--large]
  *   [--variant none|no-blur|no-gradients|no-thumbnails] [--scenarios scroll,drag,menu,draw,open,switch,select]
- *   [--then-open <absolute .pdf>|large] [--select-spin <ms>]
+ *   [--then-open <absolute .pdf>|large] [--select-spin <ms>] [--select-rounds <n>] [--select-profile]
  * The `select` scenario selects the first page's text whole and lets it go, thirty times a round in five rounds, each
  * beside a control round that selects nothing, and reports what one selection costs each thread.
  * `--large` generates the scan-shaped fixture (`scripts/perf/largeFixture.mjs`) and measures that instead.
@@ -347,22 +347,12 @@ function analyse(trace, startMark, endMark) {
 // ---------------------------------------------------------------------------------------------------------------
 // The application.
 
-/**
- * The PIDs holding the debugging port, from `netstat -ano`: listening on it, or serving a connection made to it. Both,
- * because the listening socket was gone once this run had connected, in three launches of the development build in
- * a row on 2026-11-01 (Electron 43.8.3): the port's only line was the launched process's end of this run's own
- * connection, so a check of listeners alone named nobody.
- */
+/** The PIDs listening on the debugging port, from `netstat -ano`. */
 function portListeners() {
-  return [
-    ...new Set(
-      execFileSync('netstat', ['-ano', '-p', 'TCP'], { encoding: 'utf8' })
-        .split('\n')
-        .map((line) => line.trim().split(/\s+/u))
-        .filter((fields) => fields[1] === `127.0.0.1:${String(PORT)}` && (fields[3] === 'LISTENING' || fields[3] === 'ESTABLISHED'))
-        .map((fields) => Number(fields.at(-1))),
-    ),
-  ];
+  return execFileSync('netstat', ['-ano', '-p', 'TCP'], { encoding: 'utf8' })
+    .split('\n')
+    .filter((line) => line.includes(`127.0.0.1:${String(PORT)} `) && line.includes('LISTENING'))
+    .map((line) => Number(line.trim().split(/\s+/u).at(-1)));
 }
 
 /**
@@ -805,8 +795,14 @@ try {
     }
     appPid = listener;
   } else {
-    if (!listeners.includes(/** @type {number} */ (child.pid))) {
-      throw new Error(`the port answers from PID ${listeners.join(', ')}, not the launched ${String(child.pid)} (exit code ${String(child.exitCode)})`);
+    // THE BROWSER THIS RUN IS CONNECTED TO NAMES ITS OWN PROCESS, which is the question netstat was asked to answer and
+    // could not: once connected, the port's listening socket was not listed, and the browser's end of the connection
+    // read CLOSED (three of eleven launches of the development build on 2026-11-01, netstat's lines printed by this
+    // check), so a check of the port named nobody while the launched process was the one answering.
+    const info = await (await browser.newBrowserCDPSession()).send('SystemInfo.getProcessInfo');
+    const answering = /** @type {{ type: string, id: number }[]} */ (info.processInfo).find((each) => each.type === 'browser')?.id;
+    if (answering !== child.pid) {
+      throw new Error(`the browser answering is PID ${String(answering)}, not the launched ${String(child.pid)} (exit code ${String(child.exitCode)})`);
     }
     appPid = child.pid;
   }
@@ -1057,8 +1053,22 @@ try {
         await page.waitForTimeout(100);
       }
     };
-    for (let round = 1; round <= 5; round += 1) {
+    // `--select-profile`: a sampled CPU profile over every selecting round, printed as each function's self and total
+    // time per selection, where the function is the bundle's own name and position (no source map is built).
+    const profiling = process.argv.includes('--select-profile');
+    const profiler = profiling ? await page.context().newCDPSession(page) : undefined;
+    if (profiler !== undefined) {
+      await profiler.send('Profiler.enable');
+      await profiler.send('Profiler.setSamplingInterval', { interval: 100 });
+    }
+    /** @type {any[]} */
+    const profiles = [];
+    // `--select-rounds <n>`: fewer rounds a launch, so two builds can be measured in turn, one launch each.
+    const rounds = Number(option('select-rounds') ?? '5');
+    for (let round = 1; round <= rounds; round += 1) {
+      await profiler?.send('Profiler.start');
       const selected = await measure(cdp, page, `select round ${String(round)}`, selectRound(true), interval);
+      if (profiler !== undefined) profiles.push((await profiler.send('Profiler.stop')).profile);
       const control = await measure(cdp, page, `select control ${String(round)}`, selectRound(false), interval);
       const per = (/** @type {number} */ a, /** @type {number} */ b) => Math.round(((a - b) / SELECTIONS) * 1000) / 1000;
       results.push({
@@ -1077,6 +1087,50 @@ try {
           control: { median: control.median, p95: control.p95, max: control.max, dropped: control.dropped },
         },
       });
+    }
+    if (profiles.length > 0) {
+      /** @type {Map<string, { self: number, total: number }>} */
+      const named = new Map();
+      for (const profile of profiles) {
+        /** @type {Map<number, any>} */
+        const nodes = new Map(profile.nodes.map((/** @type {any} */ node) => [node.id, node]));
+        /** @type {Map<number, number>} */
+        const parent = new Map();
+        for (const node of profile.nodes) for (const child of node.children ?? []) parent.set(child, node.id);
+        const key = (/** @type {any} */ node) => {
+          const frame = node.callFrame;
+          return `${frame.functionName || '(anonymous)'} ${String(frame.url).split('/').at(-1) ?? ''}:${String(frame.lineNumber)}:${String(frame.columnNumber)}`;
+        };
+        const deltas = profile.timeDeltas ?? [];
+        (profile.samples ?? []).forEach((/** @type {number} */ id, /** @type {number} */ at) => {
+          const ms = (deltas[at + 1] ?? deltas[at] ?? 0) / 1000;
+          const own = nodes.get(id);
+          if (own === undefined) return;
+          const entry = named.get(key(own)) ?? { self: 0, total: 0 };
+          entry.self += ms;
+          named.set(key(own), entry);
+          // TOTAL TIME once per function per sample, however often it recurs on the stack.
+          const seen = new Set();
+          for (let up = /** @type {number | undefined} */ (id); up !== undefined; up = parent.get(up)) {
+            const node = nodes.get(up);
+            if (node === undefined) break;
+            const name = key(node);
+            if (seen.has(name)) continue;
+            seen.add(name);
+            const each = named.get(name) ?? { self: 0, total: 0 };
+            each.total += ms;
+            named.set(name, each);
+          }
+        });
+      }
+      const count = profiles.length * SELECTIONS;
+      const rows = [...named.entries()].filter(([name]) => !/^\((idle|program|root)\)/u.test(name));
+      const top = (/** @type {'self' | 'total'} */ by) =>
+        rows
+          .sort((a, b) => b[1][by] - a[1][by])
+          .slice(0, 30)
+          .map(([name, ms]) => `${(ms.self / count).toFixed(3)} self ${(ms.total / count).toFixed(3)} total ms per select and clear  ${name}`);
+      results.push({ label: 'select profile, by self time', rows: top('self') }, { label: 'select profile, by total time', rows: top('total') });
     }
   }
 
