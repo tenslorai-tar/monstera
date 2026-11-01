@@ -90,6 +90,44 @@ function drawn(
   return { container, went, zoomed };
 }
 
+describe('the document line measures its room only when the end region changes (item 61)', () => {
+  /** The bar at a page and a name, rendered again in place, counting the style reads the line's measure makes. */
+  function measuresWhen(change: { readonly page: number; readonly name: string }): number {
+    const bar = (page: number, name: string): ReactElement => (
+      <Wrapped>
+        <StatusBar
+          name={name}
+          page={page}
+          pageCount={10}
+          zoom={1}
+          onGoTo={vi.fn()}
+          onZoom={vi.fn()}
+          registry={new CommandRegistry([])}
+          context={context}
+          byteLength={2_516_582}
+          toolHint={undefined}
+          saved={{ message: STATUS_UNSAVED, values: {}, dirty: true }}
+        />
+      </Wrapped>
+    );
+    const { rerender, unmount } = render(bar(3, 'annual.pdf'));
+    const reads = vi.spyOn(window, 'getComputedStyle');
+    rerender(bar(change.page, change.name));
+    const count = reads.mock.calls.length;
+    reads.mockRestore();
+    unmount();
+    return count;
+  }
+
+  it('a new PAGE reads no width: the page field is in the centre, and a scroll renders the bar at every page', () => {
+    expect(measuresWhen({ page: 4, name: 'annual.pdf' })).toBe(0);
+  });
+
+  it('CONTROL: a new NAME, which is in the line, measures it again', () => {
+    expect(measuresWhen({ page: 3, name: 'a much longer name for the annual report.pdf' })).toBeGreaterThan(0);
+  });
+});
+
 describe('StatusBar', () => {
   it('announces the page number a PERSON reads, not the index that crosses the contract', () => {
     // THE SEPARATING CASE for this surface. Page 4 of 10 is index 3, and a bar that printed the

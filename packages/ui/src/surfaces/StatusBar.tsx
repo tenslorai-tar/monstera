@@ -187,8 +187,17 @@ export function StatusBar({
     );
     setShownFacts((was) => (was.size === next.size && [...next].every((fact) => was.has(fact)) ? was : next));
   }, []);
-  // AFTER EVERY RENDER: no dependency list, because what moves the room — a task, a name, a count — is any prop.
-  useLayoutEffect(measureFacts);
+  // WHEN WHAT THE END REGION HOLDS CHANGES, and not after every render: a read of a width straight after React's writes
+  // forces the whole window's layout, and the bar renders at each page a scroll passes, since it shows the page. Measured
+  // 2026-11-01 on Chromium 151 (`longScroll.pw.ts`'s profile): 113 ms of a 37-page scroll through a 300-page document. What
+  // moves the room is in the end region: the four facts, the zoom's percentage, and which buttons are placed there (a
+  // task's progress joins them); the page field sits in the centre and moves nothing here.
+  const percent = Math.round(zoom * 100);
+  const endButtons = [...model.chrome, ...model.zoom.before, ...model.zoom.between, ...model.zoom.after].map((entry) => entry.command.id).join(' ');
+  const savedText = i18n._(saved.message, saved.values);
+  // THE LANGUAGE, not the catalogue object: every fact's words change with it, and the object is handed again unchanged.
+  const locale = i18n.locale;
+  useLayoutEffect(measureFacts, [measureFacts, name, pageCount, byteLength, savedText, saved.dirty, percent, endButtons, locale]);
   useLayoutEffect(() => {
     if (typeof ResizeObserver === 'undefined') return undefined;
     const observer = new ResizeObserver(measureFacts);

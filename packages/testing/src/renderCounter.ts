@@ -75,6 +75,9 @@ export async function installRenderCounter(page: Page, selectors: Readonly<Recor
           if (!element.matches(selector)) continue;
           const key = `${name}@${String(layer)}`;
           totals.set(key, (totals.get(key) ?? 0) + 1);
+          // AND BY PAGE, where the element names one (`data-page`): which slots rendered, not only how many.
+          const page = element.getAttribute('data-page');
+          if (page !== null) totals.set(`${key}#${page}`, (totals.get(`${key}#${page}`) ?? 0) + 1);
         }
       }
     };
@@ -129,4 +132,13 @@ export async function stopCounting(page: Page): Promise<RenderCounts> {
 /** One selector's count in one layer: absent from the totals is zero, never a lookup a case has to know to skip. */
 export function rendersOf(counts: RenderCounts, name: string, layer: number): number {
   return counts.totals[`${name}@${String(layer)}`] ?? 0;
+}
+
+/** The pages of one selector in one layer that rendered, each with its count, in page order. */
+export function pagesRendered(counts: RenderCounts, name: string, layer: number): readonly (readonly [number, number])[] {
+  const prefix = `${name}@${String(layer)}#`;
+  return Object.entries(counts.totals)
+    .filter(([key]) => key.startsWith(prefix))
+    .map(([key, renders]): readonly [number, number] => [Number(key.slice(prefix.length)), renders])
+    .sort((a, b) => a[0] - b[0]);
 }
