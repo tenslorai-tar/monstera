@@ -274,3 +274,33 @@ and logs the engine change, and a control holds that.
 normal page is about 13 KB and is not cut. Accepted by the owner, 2026-10-31; `ENGINE_PAGE_TEXT_MAX_BYTES`' own trigger
 stands, and the first real page cut is the evidence to look at the bound again.
 
+## Correction, 2026-11-01 — a line with letters is found by its band and laid along it; the browser's clicks are corrected, not cancelled
+
+**Found by cloud queue item A2, building every reader's case on pages turned three ways and on angled text.** Three
+things Decision 6 left to the browser's layout of the substitute were wrong wherever that layout is not the page's:
+
+1. **Which line a pointer is on.** Decision 6 said `lineUnder` and `caretBesideLine` read the engine's line BOX. On an
+   angled line that box is upright and covers its neighbours, and the browser's hit test, which `lineUnder` started
+   from, met another line's text: a drag on a line turned 20 degrees selected the line below it. For a line with
+   letters both now read its **band** — 0.25 of the glyph size below the baseline to 0.9 above it, from the first
+   letter's start to the last letter's end, at the line's own angle (`bandPlace`). A line placed as before keeps its
+   box.
+2. **Where the line's element is.** Decision 1 keeps one element per line, and it was placed in the line's upright box.
+   On a page turned 90 degrees that box is as tall as the line is long, so the fit scaled the line's text by
+   `scaleX(0.000828)` (Chromium 151, read off the element). The browser's own handling of a click inside a selection
+   met text with no width there, and after a drag a double click's word was removed by Chromium itself, every
+   `Selection` method traced and none called. A line with letters is now laid along them: the band's rectangle, turned
+   to the line's angle (`linePlacement`), still one element and one text node.
+3. **A double and a triple click.** Decision 6 named both and nothing built them: the browser chose the word under the
+   substitute's letters. The engine's letter now chooses (`letterAt`), the word is the platform's own word segment
+   holding it, and a triple click takes the line under the pointer by its band. **The browser's handling of the press
+   runs first and is corrected afterwards, never cancelled:** cancelling it left the browser's state from the click
+   before standing — a first click inside a selection — and a double click followed by a triple click on one word
+   ended with nothing selected.
+
+A search's matches are painted by the layer (Decision 5's last sentence); the Highlight API's registry still records
+which ranges match, and draws them transparent. The cases are `textLayerReaders.pw.ts`, 25 of them. On the text layer
+before this build (909c0430's `packages/ui/src`) 20 fail; the five that pass are the three turned pages' triple clicks,
+which the browser already chose correctly there, the double then triple click, which guards item 3's own regression,
+and the double click's control.
+
