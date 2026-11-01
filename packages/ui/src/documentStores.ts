@@ -201,6 +201,12 @@ export interface DocumentState {
    */
   readonly zoom: ZoomMode;
   /**
+   * The scale {@link zoom} resolves to on screen, as the scroller reports it: a fit's answer, or the mode's number. The
+   * zoom commands step from this, and it lives beside the mode rather than in `App`'s state because it moves on every
+   * step of a pinch: an updater closing over it there was rebuilt with it, and with it the command registry.
+   */
+  readonly shownZoom: number;
+  /**
    * How many pages the document has, once its parser has answered.
    *
    * `undefined` until then, which is a real state: the navigation commands
@@ -340,6 +346,9 @@ export interface DocumentActions {
   /** Records the magnification the reader chose for THIS document. */
   readonly zoomed: (mode: ZoomMode) => void;
 
+  /** Records the scale the chosen magnification resolved to on screen ({@link DocumentState.shownZoom}). */
+  readonly showedZoom: (scale: number) => void;
+
   /** Replaces the Organize grid's page selection (ADR-0104). Sorted, de-duplicated and bounded by the count. */
   readonly selectPages: (pages: readonly number[]) => void;
 
@@ -420,6 +429,8 @@ export function createDocumentStore(
     historyAt: 0,
     // THE ZOOM IT OPENS AT, which the *Starting zoom* setting chooses (the opener passes it) — DEFAULT_ZOOM otherwise.
     zoom,
+    // ONE until the scroller has resolved the mode, which it reports before it draws.
+    shownZoom: 1,
     // NOT ZERO. A document whose parser has not answered has an unknown page
     // count, and zero is a number the navigation commands would clamp against.
     pageCount: undefined,
@@ -513,6 +524,10 @@ export function createDocumentStore(
     },
     zoomed: (mode) => {
       set({ zoom: mode });
+    },
+    showedZoom: (scale) => {
+      if (scale === get().shownZoom) return;
+      set({ shownZoom: scale });
     },
     converse: (turns) => {
       set({ conversation: turns });

@@ -10,6 +10,7 @@ import { SettingsRegistry } from './registries/settings.js';
 import { ALL_SETTINGS } from './settings/all.js';
 import { LOUPE_SETTING } from './settings/viewing.js';
 import { SettingsStore } from './settingsStore.js';
+import { TextSelectionStore } from './textSelectionStore.js';
 
 afterEach(() => {
   cleanup();
@@ -60,7 +61,7 @@ function Shell({ settings, registry, quick = ['quick-toolbar'] }: { readonly set
   useLayoutEffect(() => {
     renders.shell += 1;
   });
-  const [answers] = useState(() => new CommandAnswers(settings));
+  const [answers] = useState(() => new CommandAnswers(settings, new TextSelectionStore(() => undefined)));
   useLayoutEffect(() => {
     answers.update(registry, BASE);
   }, [answers, registry]);

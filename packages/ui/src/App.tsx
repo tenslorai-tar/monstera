@@ -487,7 +487,7 @@ import { type SpellingDeps, startReview } from './spelling/reviewRun.js';
 import { QuickToolbar } from './surfaces/QuickToolbar.js';
 import { ContextMenuArea, type MenuAt, NO_MENU, menuGroups } from './surfaces/ContextMenu.js';
 import type { MenuContext } from './registries/placement.js';
-import { type TextSelection, readTextSelection } from './TextLayer.js';
+import { TextSelectionStore } from './textSelectionStore.js';
 import {
   type TextSelectionDeps,
   copySelectionCommand,
@@ -761,32 +761,17 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
   const [findSeed, setFindSeed] = useState<{ readonly text: string; readonly nonce: number } | undefined>(undefined);
   /**
    * The text selected in the focused document's text layer, as `readTextSelection` answers it on
-   * every `selectionchange`. State rather than a read at the moment of the right-click, because the
-   * menu's groups are decided when the region renders: a selection that re-renders nothing would
-   * leave the selected-text items out of the menu opened over it.
+   * every `selectionchange`: in a store the commands read when asked, never in this component's
+   * state, so a selection renders no part of the shell (`textSelectionStore.ts`). The menu over it is
+   * decided at the right-click (`menuAt`), which reads the store then.
    */
-  const [textSelection, setTextSelection] = useState<TextSelection | undefined>(undefined);
+  const [selectionStore] = useState(() => new TextSelectionStore());
   useEffect(() => {
-    const read = (): void => {
-      const next = readTextSelection();
-      // THE SAME SELECTION IS NOT A NEW ONE: `selectionchange` fires on every step of a drag, and a
-      // new object each time would re-render the shell for a selection that did not change.
-      setTextSelection((current) =>
-        current?.page === next?.page &&
-        current?.text === next?.text &&
-        current?.from.x === next?.from.x &&
-        current?.from.y === next?.from.y &&
-        current?.to.x === next?.to.x &&
-        current?.to.y === next?.to.y
-          ? current
-          : next,
-      );
-    };
-    document.addEventListener('selectionchange', read);
+    document.addEventListener('selectionchange', selectionStore.read);
     return (): void => {
-      document.removeEventListener('selectionchange', read);
+      document.removeEventListener('selectionchange', selectionStore.read);
     };
-  }, []);
+  }, [selectionStore]);
   /**
    * The long command currently running, for the status bar.
    *
@@ -2300,9 +2285,15 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
    *
    * The ± commands step from THIS, not from the mode: a reader at fit-width has
    * no number in their mode, and stepping from the last explicit scale would
-   * jump to somewhere they cannot see.
+   * jump to somewhere they cannot see. In the document's store, beside its mode (`DocumentState.shownZoom`).
    */
-  const [shownZoom, setShownZoom] = useState(1);
+  const shownZoom = view?.shownZoom ?? 1;
+  const showedZoom = useCallback(
+    (scale: number): void => {
+      store?.getState().showedZoom(scale);
+    },
+    [store],
+  );
 
   // The three reading aids, live. Read here rather than in the scroller because
   // the scroller takes a `SettingsStore` from nobody — it is handed what it
@@ -3855,16 +3846,20 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
   /**
    * The updater the zoom commands are given.
    *
-   * It closes over the shown scale rather than taking it as an argument at the
-   * call, because a command's `run(context)` cannot carry one — the same
-   * constraint that makes `findCommand` send the caret to a surface instead of
-   * taking a query.
+   * It reads the shown scale from the document's store when it runs rather than
+   * taking it as an argument at the call, because a command's `run(context)`
+   * cannot carry one — the same constraint that makes `findCommand` send the
+   * caret to a surface instead of taking a query. READ WHEN IT RUNS, not closed
+   * over: the scale moves on every step of a pinch, and an updater rebuilt with it
+   * rebuilt the command registry the zoom commands are made over, and every
+   * projection of it, on each step.
    */
   const changeZoom = useCallback(
     (next: (shown: number) => ZoomMode): void => {
-      store?.getState().zoomed(next(shownZoom));
+      const state = store?.getState();
+      state?.zoomed(next(state.shownZoom));
     },
-    [shownZoom, store],
+    [store],
   );
   // ONE STEP IN OR OUT BY THE READER'S *ZOOM STEP*, read here once: `+`, `−` and Ctrl+wheel all ask this with a
   // direction, so none of them holds a step of its own to disagree with the setting.
@@ -4115,7 +4110,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       dropped?: readonly string[];
     } = {};
     const textDeps: TextSelectionDeps = {
-      selection: () => textSelection,
+      selection: () => selectionStore.current(),
       place: placeHeld,
       style: () => style,
       // THE BROWSER'S OWN COPY, run by main on this window: the selection is still the
@@ -4544,7 +4539,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
             searchSelectionCommand(textDeps),
             // THE ASSISTANT'S FOUR (ADR-0088), after the menu's own seven: each names the words
             // and a question, and `askAssistant` reveals the panel that asks it.
-            ...assistantSelectionCommands({ selection: () => textSelection, ask: askAssistant }),
+            ...assistantSelectionCommands({ selection: () => selectionStore.current(), ask: askAssistant }),
           ];
         })(),
         zoomCommand('in', { onZoomStep: stepZoomBy }),
@@ -4704,9 +4699,10 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       onSavedByPerson,
       // Stable for the same reason: a memo over a state setter.
       busy,
-      // THE SELECTED-TEXT MENU reads these four: the selection its `when` asks about, the one
-      // dispatcher, the style a markup is drawn in, and the page that *Comment* asks for words.
-      textSelection,
+      // THE SELECTED-TEXT MENU reads these four: the selection's store its `when` asks, which is stable, so a
+      // selection never rebuilds the registry; the one dispatcher, the style a markup is drawn in, and the page that
+      // *Comment* asks for words.
+      selectionStore,
       placeHeld,
       style,
       write,
@@ -5044,8 +5040,11 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
     () => ({
       docId: open?.docId,
       version: open?.version,
-      // TEXT SELECTED in the focused document's text layer — the selected-text menu's condition.
-      hasSelection: textSelection !== undefined,
+      // TEXT SELECTED in the focused document's text layer, READ WHEN ASKED: a selection renders no part of the shell,
+      // so a value taken here would be the selection of the last render, which is not this one.
+      get hasSelection(): boolean {
+        return selectionStore.current() !== undefined;
+      },
       dirty: false,
       // WHERE THE READER IS, told by the scroller. `undefined` with no document
       // rather than a defaulted `FIRST_PAGE.kernel`: a command that ran against
@@ -5066,12 +5065,12 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       // WHETHER THE IN-PLACE EDITOR IS OPEN, which the formatting commands are offered for (ADR-0180).
       editingText: textEditorOpen,
     }),
-    [currentPage, open, pageCount, selectedPages, tabs, textEditorOpen, textSelection],
+    [currentPage, open, pageCount, selectedPages, selectionStore, tabs, textEditorOpen],
   );
   // THE ANSWERS IN A STORE THE SURFACES SUBSCRIBE TO, each for the commands it places (ADR-0272): written here after every
   // render with the registry and the base context, and read by nothing in this component, so an answer moving renders the
   // surfaces that draw it and not the shell.
-  const [answers] = useState(() => new CommandAnswers(settings));
+  const [answers] = useState(() => new CommandAnswers(settings, selectionStore));
   useLayoutEffect(() => {
     answers.update(registry, contextAsked);
   }, [answers, registry, contextAsked]);
@@ -5205,7 +5204,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       // outside what is ticked means THAT page, so the menu's commands must not act on the ticked ones.
       const at = { ...context, page, selectedPages: context.selectedPages.includes(page) ? context.selectedPages : NO_PAGES };
       const groups = menuGroups(registry, at, [
-        ...(textSelection?.page === page ? (['selection'] as const) : []),
+        ...(selectionStore.current()?.page === page ? (['selection'] as const) : []),
         ...(selection?.page === page ? (['annotation'] as const) : []),
         // THE SELECTED OBJECT'S MENU on its own page (ADR-0264 Decision 8), the annotation menu's rule.
         ...(objectSelection?.page === page ? (['object'] as const) : []),
@@ -5215,7 +5214,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       ]);
       return groups.length === 0 ? undefined : { context: at, groups };
     },
-    [context, designedFields, objectSelection?.page, registry, selection?.page, textSelection?.page],
+    [context, designedFields, objectSelection?.page, registry, selection?.page, selectionStore],
   );
 
   /**
@@ -5433,7 +5432,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
           onPageBox={pageBoxed}
           mode={zoomMode}
           onZoomStep={stepZoomBy}
-          onShownZoom={setShownZoom}
+          onShownZoom={showedZoom}
           goTo={goTo}
           onWentTo={wentTo}
           onPageCount={counted}
