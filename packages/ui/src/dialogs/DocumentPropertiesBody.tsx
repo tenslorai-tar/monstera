@@ -33,6 +33,7 @@ import {
   DOCUMENT_PROPERTIES_RESTRICTED,
   DOCUMENT_PROPERTIES_SECURITY,
   DOCUMENT_PROPERTIES_SIZE,
+  DOCUMENT_PROPERTIES_SIZE_NOTE,
   DOCUMENT_PROPERTIES_SUBJECT,
   DOCUMENT_PROPERTIES_TITLE_FIELD,
   DOCUMENT_PROPERTIES_VERSION,
@@ -109,9 +110,9 @@ export default function DocumentPropertiesBody({
           invalid={modifiedDate === undefined}
         />
       </DialogRow>
-      <p className="m-document-properties__note">{_(DOCUMENT_PROPERTIES_DATES_NOTE)}</p>
+      <p className="m-dialog-section__note">{_(DOCUMENT_PROPERTIES_DATES_NOTE)}</p>
 
-      <dl className="m-document-properties__facts">
+      <dl className="m-dialog-facts">
         <dt>{_(DOCUMENT_PROPERTIES_CREATOR)}</dt>
         <dd>{information.creator ?? _(DOCUMENT_PROPERTIES_NOT_STATED)}</dd>
         <dt>{_(DOCUMENT_PROPERTIES_PRODUCER)}</dt>
@@ -127,7 +128,11 @@ export default function DocumentPropertiesBody({
           })}
         </dd>
         <dt>{_(DOCUMENT_PROPERTIES_SIZE)}</dt>
-        <dd>{byteSize(i18n, bytes)}</dd>
+        <dd>
+          {byteSize(i18n, bytes)}
+          {/* THE DOCUMENT AS IT STANDS NOW, unsaved edits included (ADR-0283's answers), so the line says why it can differ from the file's own size. */}
+          <p className="m-dialog-section__note">{_(DOCUMENT_PROPERTIES_SIZE_NOTE)}</p>
+        </dd>
         <dt>{_(DOCUMENT_PROPERTIES_SECURITY)}</dt>
         <dd>
           {information.encryption === 'None' ? _(DOCUMENT_PROPERTIES_OPEN) : _(DOCUMENT_PROPERTIES_ENCRYPTED, { method: information.encryption })}

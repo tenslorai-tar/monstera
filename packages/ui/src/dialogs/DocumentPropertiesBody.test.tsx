@@ -70,6 +70,21 @@ describe('DocumentPropertiesBody', () => {
     expect(screen.getByText('Arial')).toBeTruthy();
   });
 
+  it('labels the size as the document now, and says it includes unsaved changes, beside the size itself', () => {
+    shown();
+    const label = screen.getByText('Size now');
+    expect(label.tagName).toBe('DT');
+    const value = label.nextElementSibling;
+    expect(value?.tagName).toBe('DD');
+    expect(value?.textContent).toMatch(/^2(?:\.0)?\s?KB/u);
+    expect(value?.textContent).toContain('Includes changes that are not saved yet, so it can differ from the size File Explorer shows.');
+  });
+
+  it('draws its facts in the dialogs’ shared grid, never the browser’s own list', () => {
+    shown();
+    expect(screen.getByText('Size now').closest('dl')?.className).toBe('m-dialog-facts');
+  });
+
   it('answers the six as edited, the dates as the command carries them', () => {
     const answered: unknown[] = [];
     shown(answered);

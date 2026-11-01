@@ -6569,6 +6569,25 @@ describe('protectDocumentCommand', () => {
       expect(said).toStrictEqual([TOAST_DOCUMENT_PROPERTIES_SET]);
     });
 
+    it('CONTROL: the size moves with an unsaved edit: the window is given the document’s length as it stands now', async () => {
+      const { client } = answering();
+      const sizes: unknown[] = [];
+      const ask = (_id: string, props: unknown): Promise<undefined> => {
+        sizes.push((props as { readonly bytes: number }).bytes);
+        return Promise.resolve(undefined);
+      };
+      const edited: CommandContext = {
+        ...CONTEXT,
+        version: asDocVersion(2),
+        dirty: true,
+        openDocuments: CONTEXT.openDocuments.map((open) => (open.docId === DOC ? { ...open, version: asDocVersion(2), byteLength: 4096 } : open)),
+      };
+      for (const context of [CONTEXT, edited]) {
+        await documentPropertiesCommand({ client, toast: () => undefined, stamp, signatures, onApplied: () => undefined, ask }).run(context);
+      }
+      expect(sizes).toStrictEqual([20, 4096]);
+    });
+
     it('CONTROL: the six answered unchanged, or the window dismissed, dispatch nothing', async () => {
       for (const answer of [{ fields: READ.fields }, undefined]) {
         const { client, sent } = answering();

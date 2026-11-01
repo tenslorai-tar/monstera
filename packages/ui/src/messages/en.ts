@@ -3189,6 +3189,7 @@ export const DOCUMENT_PROPERTIES_PAGES_LABEL = messageKey('dialog.document-prope
 export const DOCUMENT_PROPERTIES_PAGES = messageKey('dialog.document-properties.pages');
 export const DOCUMENT_PROPERTIES_PAGES_NONE = messageKey('dialog.document-properties.pages-none');
 export const DOCUMENT_PROPERTIES_SIZE = messageKey('dialog.document-properties.size');
+export const DOCUMENT_PROPERTIES_SIZE_NOTE = messageKey('dialog.document-properties.size-note');
 export const DOCUMENT_PROPERTIES_SECURITY = messageKey('dialog.document-properties.security');
 export const DOCUMENT_PROPERTIES_OPEN = messageKey('dialog.document-properties.open');
 export const DOCUMENT_PROPERTIES_ENCRYPTED = messageKey('dialog.document-properties.encrypted');
@@ -6994,7 +6995,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [DOCUMENT_PROPERTIES_PAGES_LABEL]: 'Pages',
   [DOCUMENT_PROPERTIES_PAGES]: '{count, plural, one {One page} other {# pages}}, the first {width} × {height} mm',
   [DOCUMENT_PROPERTIES_PAGES_NONE]: 'No pages',
-  [DOCUMENT_PROPERTIES_SIZE]: 'Size',
+  [DOCUMENT_PROPERTIES_SIZE]: 'Size now',
+  [DOCUMENT_PROPERTIES_SIZE_NOTE]: 'Includes changes that are not saved yet, so it can differ from the size File Explorer shows.',
   [DOCUMENT_PROPERTIES_SECURITY]: 'Security',
   [DOCUMENT_PROPERTIES_OPEN]: 'Not encrypted.',
   [DOCUMENT_PROPERTIES_ENCRYPTED]: 'Encrypted ({method}).',
