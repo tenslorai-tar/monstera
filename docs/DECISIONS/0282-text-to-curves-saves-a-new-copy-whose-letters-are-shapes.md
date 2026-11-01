@@ -121,3 +121,24 @@ All three questions answered as recommended, and a fourth settled beside them:
 
 So the decisions above stand as written and are built. *Before it is built* still holds for the figures: they are the
 Linux build's, and the shipped Windows build is measured, contained, at merge.
+
+## Correction, 2026-11-01: *no pixel past 192* was a rounded share, and the tolerance is restated from counts
+
+*What was measured* says no pixel of any copy differed by more than 192 levels, and Decision 6 made that the first
+clause of the tolerance. **It was never measured.** `textToCurves.mjs` printed each reading as a share of the page to
+three decimals of a percent, and on a 300 dpi Letter page (8,415,000 pixels) that prints `0` for anything under about 42
+pixels. The proof written to Decision 6, which counts, failed all three of its fixtures on that clause.
+
+Counted on the same six copies the same day, by the same Linux build: **0, 0, 1, 2, 6 and 32 pixels past 192** (the
+ordinary page, the Type 3 page, the annotations, the extras, the form, the dense page), the largest difference 214
+levels, and **none of them inside a letter**: every one sits at a letter's edge, where a glyph drawn as a filled shape
+anti-aliases differently. The instrument now prints the counts beside the shares.
+
+So Decision 6's pixel clause is restated, keeping its strictness where a changed shape would show:
+
+- **no pixel INSIDE a letter of the original** (its four neighbours inked) differs by more than 192 levels;
+- **at most 0.005% of a page's pixels** differ by more than 192 anywhere (420 of 8,415,000; measured at most 32);
+- at most 0.5% differ by more than 128, and at most 1% of those past 64 sit inside a letter, as before.
+
+The control that must fail still does: the page with one word removed fails the first clause, a pixel inside a letter
+differing by 255 levels. Everything else in this ADR stands.

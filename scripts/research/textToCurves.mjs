@@ -203,7 +203,19 @@ function pixels(before, after, dpi) {
     if (d > 64 && [at - 1, at + 1, at - a.width, at + a.width].every((each) => (a.pixels[each] ?? 255) < 64)) inside += 1;
   }
   const share = (/** @type {number} */ count) => Number(((100 * count) / a.pixels.length).toFixed(3));
-  return { dpi, past32: share(past[32] ?? 0), past64: share(past[64] ?? 0), past128: share(past[128] ?? 0), past192: share(past[192] ?? 0), insideOfPast64: (past[64] ?? 0) === 0 ? 0 : Number(((100 * inside) / (past[64] ?? 1)).toFixed(1)) };
+  // THE COUNT BESIDE EACH SHARE: a share to three decimals of a percent printed 0 for 32 pixels of 8,415,000, and
+  // ADR-0282 recorded that 0 as *no pixel past 192* (its 2026-11-01 correction).
+  return {
+    dpi,
+    pixels: a.pixels.length,
+    past32: share(past[32] ?? 0),
+    past64: share(past[64] ?? 0),
+    past128: share(past[128] ?? 0),
+    past192: share(past[192] ?? 0),
+    past128Pixels: past[128] ?? 0,
+    past192Pixels: past[192] ?? 0,
+    insideOfPast64: (past[64] ?? 0) === 0 ? 0 : Number(((100 * inside) / (past[64] ?? 1)).toFixed(1)),
+  };
 }
 
 /** @type {Record<string, Uint8Array>} */
