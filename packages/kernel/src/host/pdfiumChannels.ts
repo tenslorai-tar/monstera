@@ -151,6 +151,15 @@ export const SMALLEST_RUN_BYTES = 213;
 export const PDFIUM_PRIOR_TEXT_MAX = 65_536;
 
 /**
+ * HOW MANY OF A PAGE'S CHARACTERS THE OBJECT WALK CANNOT NAME, on every answer that says it: a COUNT, which crosses in the
+ * same few bytes whatever its value, so it carries no bound of any text's. It took {@link PDFIUM_PRIOR_TEXT_MAX}, a
+ * bound on how long one string may be, and a page whose forms held more characters than that failed its own answer's
+ * schema: `formGraph(16, 2, 1)`, 196,094 (finding BBBBBBBBB-6, measured), refused for editing as a page that could not be
+ * read. A whole number, never negative, as the renderer's channel already states the same field.
+ */
+export const unaddressableSchema = z.number().int().nonnegative();
+
+/**
  * How long a run's font name may be on this wire: ISO 32000's own limit on a name, 127 bytes. The adapter reads the
  * whole name, whatever its length, and cuts a longer one to this at a whole character for the wire (`wireFontName` in
  * `pdfiumFfi.ts`), so a document past the limit is still read. This said the bound followed from a 128-byte read
@@ -512,11 +521,11 @@ const basePdfiumChannels = {
          * Text inside a Form XObject, measured: a page with one embedded page
          * reports two objects to `FPDFPage_GetObject` while `FPDFText` extracts
          * every character, and the ones inside the form belong to objects the
-         * walk does not contain. Bounded by the page's own text rather than by
-         * `ENGINE_TEXT_OBJECTS_MAX`, which counts runs — so it takes the
-         * character bound this wire already uses for a page's words.
+         * walk does not contain. A count, with no text's bound
+         * (`unaddressableSchema`): it took the character bound this wire uses
+         * for a run's words, which a page's forms can hold more than.
          */
-        unaddressable: z.number().int().nonnegative().max(PDFIUM_PRIOR_TEXT_MAX),
+        unaddressable: unaddressableSchema,
         /**
          * The page box the runs are measured in, or `null` where PDFium answers none, in the runs' own frame: the box a
          * one-line block's column is taken from (ADR-0097 4a).
@@ -841,7 +850,7 @@ export const pdfiumChannels = {
         opaque: z
           .array(z.object({ index: z.number().int().nonnegative(), bounds: contentBoundsSchema }).strict())
           .max(PAGE_CONTENT_OPAQUE_MAX),
-        unaddressable: z.number().int().nonnegative().max(PDFIUM_PRIOR_TEXT_MAX),
+        unaddressable: unaddressableSchema,
         truncated: z.boolean(),
         /** The bytes written to `into`: the images' blob. */
         imageBytes: z.number().int().nonnegative().max(PAGE_CONTENT_BLOB_MAX),
