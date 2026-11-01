@@ -62,6 +62,42 @@ interface SelectedSpan {
  * its range out in, as it did before letters existed. Nothing else is read: not the pointer, not a previous paint.
  */
 function selectionSpans(range: Range, layer: Element): SelectedSpan[] {
+  // ONE ANSWER PER RANGE AND LAYOUT: the painter and `readTextSelection` both ask on one change, and the second is given
+  // the first's spans rather than every line's shape built again (cloud queue item A3, `textLayerSmoothness.measure.ts`).
+  const asked = { layer, layout: LAYOUT.version, start: range.startContainer, startOffset: range.startOffset, end: range.endContainer, endOffset: range.endOffset };
+  const held = LAST_SPANS.asked;
+  if (
+    held?.layer === asked.layer &&
+    held.layout === asked.layout &&
+    held.start === asked.start &&
+    held.startOffset === asked.startOffset &&
+    held.end === asked.end &&
+    held.endOffset === asked.endOffset
+  ) {
+    return LAST_SPANS.spans;
+  }
+  const spans = spansOf(range, layer);
+  LAST_SPANS.asked = asked;
+  LAST_SPANS.spans = spans;
+  return spans;
+}
+
+/**
+ * How many times any layer has laid its lines out ({@link RUNS}), so an answer of {@link selectionSpans} from before is
+ * never given after.
+ */
+const LAYOUT = { version: 0 };
+
+/** {@link selectionSpans}' last question and answer. */
+const LAST_SPANS: {
+  asked:
+    | { readonly layer: Element; readonly layout: number; readonly start: Node; readonly startOffset: number; readonly end: Node; readonly endOffset: number }
+    | undefined;
+  spans: SelectedSpan[];
+} = { asked: undefined, spans: [] };
+
+/** {@link selectionSpans}' answer, built. */
+function spansOf(range: Range, layer: Element): SelectedSpan[] {
   const origin = layer.getBoundingClientRect();
   const spans: SelectedSpan[] = [];
   for (const line of layer.querySelectorAll('[data-text-line]')) {
@@ -898,6 +934,7 @@ export function TextLayer({
       if (run === null) RUNS.delete(element);
       else RUNS.set(element, run);
     });
+    LAYOUT.version += 1;
   }, [runs]);
 
   // RULE (i): THE SELECTION IS PAINTED FROM ITS RANGE ALONE (`paintSelection`), on every change of it and once the

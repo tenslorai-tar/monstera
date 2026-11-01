@@ -782,9 +782,31 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
           : next,
       );
     };
-    document.addEventListener('selectionchange', read);
+    // ONCE A FRAME, the selection as it stands when the frame is drawn: a drag's move changes it twice, the browser's own
+    // change and the text layer's correction of it to the engine's letter (ADR-0280), and each read re-renders the shell,
+    // so reading on every change cost the drag a second render a move (cloud queue item A3, `textLayerSmoothness.measure.ts`).
+    let frame: number | undefined;
+    const soon = (): void => {
+      frame ??= requestAnimationFrame(() => {
+        frame = undefined;
+        read();
+      });
+    };
+    // AND AT ONCE BEFORE AN INPUT IS HANDLED, where a read is still owed: a menu or a command an input opens reads this
+    // state, and a right-click less than a frame after a drag's last move found the selection of the frame before.
+    const now = (): void => {
+      if (frame === undefined) return;
+      cancelAnimationFrame(frame);
+      frame = undefined;
+      read();
+    };
+    const inputs = ['pointerdown', 'keydown', 'contextmenu'] as const;
+    document.addEventListener('selectionchange', soon);
+    for (const input of inputs) document.addEventListener(input, now, true);
     return (): void => {
-      document.removeEventListener('selectionchange', read);
+      if (frame !== undefined) cancelAnimationFrame(frame);
+      document.removeEventListener('selectionchange', soon);
+      for (const input of inputs) document.removeEventListener(input, now, true);
     };
   }, []);
   /**
