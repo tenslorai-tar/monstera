@@ -142,3 +142,8 @@ So Decision 6's pixel clause is restated, keeping its strictness where a changed
 
 The control that must fail still does: the page with one word removed fails the first clause, a pixel inside a letter
 differing by 255 levels. Everything else in this ADR stands.
+
+## Note, 2026-11-01: the owner accepted the restated tolerance
+
+The owner accepted the correction above on 2026-11-01, as written: the three clauses replace Decision 6's pixel clause.
+Its figures are still the Linux build's; the shipped Windows build is measured at merge, as before.
