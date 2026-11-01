@@ -106,6 +106,7 @@ const MUPDF_READS = [
   'engine/destinations',
   'engine/layers',
   'engine/fonts',
+  'engine/document-information',
   'engine/pageMarks',
   'engine/annotations',
   // THE CLIPBOARD'S COPY IS ONE OF MuPDF'S READS for `engine/exportAnnotations`' reason: it walks

@@ -2,6 +2,7 @@ import type {
   AnnotationDataFormat,
   ButtonStep,
   CommandOfKind,
+  DocumentInformation,
   EncodedFormDataFormat,
   FormDataImportFormat,
   FormFieldHandle,
@@ -191,6 +192,9 @@ export type HostLayersReader = (session: MupdfSession) => Promise<ListedLayers>;
 
 /** Reads every font the document names. Injected for the readers above's reason. */
 export type HostFontsReader = (session: MupdfSession) => Promise<ListedDocumentFonts>;
+
+/** Reads the document's own information (ADR-0283). Injected for the readers above's reason. */
+export type HostDocumentInformationReader = (session: MupdfSession) => Promise<DocumentInformation>;
 
 /** Reads where each kind of page stamp is (ADR-0246). Injected for the readers above's reason. */
 export type HostPageMarksReader = (session: MupdfSession) => Promise<PageMarksRead>;
@@ -581,6 +585,8 @@ export interface EngineHandlerParts {
   readonly layers: HostLayersReader;
   /** Every font the document names (B2.8). `engine/fonts`. */
   readonly fonts: HostFontsReader;
+  /** The document's own information (ADR-0283). `engine/document-information`. */
+  readonly documentInformation: HostDocumentInformationReader;
   /** Where each kind of page stamp is (ADR-0246). `engine/pageMarks`. */
   readonly pageMarks: HostPageMarksReader;
   readonly annotations: HostAnnotationsReader;
@@ -674,6 +680,7 @@ export function createEngineHandlers({
   destinations,
   layers,
   fonts,
+  documentInformation,
   pageMarks,
   annotations,
   annotationRecords,
@@ -1178,6 +1185,12 @@ export function createEngineHandlers({
       const listed = await fonts(held.session);
       const { kept, truncated } = fittedList({ items: listed.fonts, truncated: listed.truncated });
       return { ok: true, value: { fonts: kept, truncated } };
+    },
+
+    'engine/document-information': async ({ session }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      return { ok: true, value: await documentInformation(held.session) };
     },
 
     'engine/pageMarks': async ({ session }) => {

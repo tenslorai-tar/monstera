@@ -17,6 +17,7 @@ import { readPageGeometry } from '../pageGeometry.js';
 import { readDestinations } from '../destinations.js';
 import { readLayers } from '../layers.js';
 import { readDocumentFonts } from '../documentFonts.js';
+import { readDocumentInformation } from '../documentInformation.js';
 import { readPageMarksOf } from '../pageMarks.js';
 import { detectFlatFields } from '../flatFields.js';
 import { readFormImportPlan } from '../formData.js';
@@ -114,6 +115,7 @@ const engineHandlers = createEngineHandlers({
   destinations: readDestinations,
   layers: readLayers,
   fonts: readDocumentFonts,
+  documentInformation: readDocumentInformation,
   pageMarks: readPageMarksOf,
   annotations: readAnnotations,
   formFields: readFormFields,

@@ -265,6 +265,7 @@ describe('browser shim', () => {
       'document.held',
       'document.importAnnotations',
       'document.importFormData',
+      'document.information',
       'document.insertImage',
       'document.layers',
       'document.listBackups',

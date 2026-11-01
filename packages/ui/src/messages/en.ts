@@ -3169,6 +3169,39 @@ export const SANITIZE_PART_JAVASCRIPT = messageKey('sanitize.javascript');
 export const SANITIZE_PART_EMBEDDED_FILES = messageKey('sanitize.embedded-files');
 export const SANITIZE_PART_EXTERNAL_ACTIONS = messageKey('sanitize.external-actions');
 export const SANITIZE_PART_FLATTEN = messageKey('sanitize.flatten');
+export const SANITIZE_PART_DOCUMENT_INFORMATION = messageKey('sanitize.document-information');
+export const DOCUMENT_PROPERTIES_COMMAND_TITLE = messageKey('command.document-properties.title');
+export const DOCUMENT_PROPERTIES_TITLE = messageKey('dialog.document-properties.title');
+export const DOCUMENT_PROPERTIES_TITLE_FIELD = messageKey('dialog.document-properties.title-field');
+export const DOCUMENT_PROPERTIES_AUTHOR = messageKey('dialog.document-properties.author');
+export const DOCUMENT_PROPERTIES_SUBJECT = messageKey('dialog.document-properties.subject');
+export const DOCUMENT_PROPERTIES_KEYWORDS = messageKey('dialog.document-properties.keywords');
+export const DOCUMENT_PROPERTIES_CREATED = messageKey('dialog.document-properties.created');
+export const DOCUMENT_PROPERTIES_MODIFIED = messageKey('dialog.document-properties.modified');
+export const DOCUMENT_PROPERTIES_DATE_HINT = messageKey('dialog.document-properties.date-hint');
+export const DOCUMENT_PROPERTIES_BAD_DATE = messageKey('dialog.document-properties.bad-date');
+export const DOCUMENT_PROPERTIES_DATES_NOTE = messageKey('dialog.document-properties.dates-note');
+export const DOCUMENT_PROPERTIES_CREATOR = messageKey('dialog.document-properties.creator');
+export const DOCUMENT_PROPERTIES_PRODUCER = messageKey('dialog.document-properties.producer');
+export const DOCUMENT_PROPERTIES_NOT_STATED = messageKey('dialog.document-properties.not-stated');
+export const DOCUMENT_PROPERTIES_VERSION = messageKey('dialog.document-properties.version');
+export const DOCUMENT_PROPERTIES_PAGES_LABEL = messageKey('dialog.document-properties.pages-label');
+export const DOCUMENT_PROPERTIES_PAGES = messageKey('dialog.document-properties.pages');
+export const DOCUMENT_PROPERTIES_PAGES_NONE = messageKey('dialog.document-properties.pages-none');
+export const DOCUMENT_PROPERTIES_SIZE = messageKey('dialog.document-properties.size');
+export const DOCUMENT_PROPERTIES_SECURITY = messageKey('dialog.document-properties.security');
+export const DOCUMENT_PROPERTIES_OPEN = messageKey('dialog.document-properties.open');
+export const DOCUMENT_PROPERTIES_ENCRYPTED = messageKey('dialog.document-properties.encrypted');
+export const DOCUMENT_PROPERTIES_RESTRICTED = messageKey('dialog.document-properties.restricted');
+export const DOCUMENT_PROPERTIES_PERMISSION_PRINT = messageKey('dialog.document-properties.permission-print');
+export const DOCUMENT_PROPERTIES_PERMISSION_COPY = messageKey('dialog.document-properties.permission-copy');
+export const DOCUMENT_PROPERTIES_PERMISSION_EDIT = messageKey('dialog.document-properties.permission-edit');
+export const DOCUMENT_PROPERTIES_PERMISSION_ANNOTATE = messageKey('dialog.document-properties.permission-annotate');
+export const DOCUMENT_PROPERTIES_FONTS = messageKey('dialog.document-properties.fonts');
+export const DOCUMENT_PROPERTIES_NO_FONTS = messageKey('dialog.document-properties.no-fonts');
+export const DOCUMENT_PROPERTIES_FONTS_MORE = messageKey('dialog.document-properties.fonts-more');
+export const DOCUMENT_PROPERTIES_APPLY = messageKey('dialog.document-properties.apply');
+export const TOAST_DOCUMENT_PROPERTIES_SET = messageKey('toast.document-properties-set');
 
 /** PROTECT › Signatures, where Stage 7's four signing rows land. */
 export const GROUP_SIGNATURES = messageKey('surface.ribbon.group.signatures');
@@ -5404,6 +5437,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TOAST_SENT_TO_PRINTER]: 'Sent to the printer',
   [TOAST_DOCUMENT_SIGNED]: 'Document signed. Save to keep the signature.',
   [TOAST_ACTIVE_CONTENT_REMOVED]: 'Active content removed. Save to keep the change.',
+  [TOAST_DOCUMENT_PROPERTIES_SET]: 'Document properties changed. Save to keep the change.',
   [TOAST_FORM_FLATTENED]: 'Form flattened. Save to keep the change.',
   [TOAST_FIELDS_FLATTENED]: 'The selected fields are flattened. Save to keep the change.',
   [FLATTEN_FORM_SCOPE]: 'Flatten',
@@ -6940,6 +6974,39 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SANITIZE_PART_EMBEDDED_FILES]: 'Attached files',
   [SANITIZE_PART_EXTERNAL_ACTIONS]: 'Actions that submit or fetch data',
   [SANITIZE_PART_FLATTEN]: 'Form fields and comments, flattened into the page',
+  [SANITIZE_PART_DOCUMENT_INFORMATION]: 'Document information: title, author, subject, keywords, dates and the programs that made it',
+  // ADR-0283: the window's words. The dates are the PDF's own and it says so; Windows' file dates are never touched.
+  [DOCUMENT_PROPERTIES_COMMAND_TITLE]: 'Document properties…',
+  [DOCUMENT_PROPERTIES_TITLE]: 'Document properties',
+  [DOCUMENT_PROPERTIES_TITLE_FIELD]: 'Title',
+  [DOCUMENT_PROPERTIES_AUTHOR]: 'Author',
+  [DOCUMENT_PROPERTIES_SUBJECT]: 'Subject',
+  [DOCUMENT_PROPERTIES_KEYWORDS]: 'Keywords',
+  [DOCUMENT_PROPERTIES_CREATED]: 'Created',
+  [DOCUMENT_PROPERTIES_MODIFIED]: 'Modified',
+  [DOCUMENT_PROPERTIES_DATE_HINT]: 'YYYY-MM-DD HH:MM',
+  [DOCUMENT_PROPERTIES_BAD_DATE]: 'Write the date as year-month-day and the time, for example 2026-11-01 09:30.',
+  [DOCUMENT_PROPERTIES_DATES_NOTE]: 'These are the dates written inside the PDF. The file’s dates in Windows are not changed.',
+  [DOCUMENT_PROPERTIES_CREATOR]: 'Made with',
+  [DOCUMENT_PROPERTIES_PRODUCER]: 'Saved as PDF by',
+  [DOCUMENT_PROPERTIES_NOT_STATED]: 'Not stated',
+  [DOCUMENT_PROPERTIES_VERSION]: 'PDF version',
+  [DOCUMENT_PROPERTIES_PAGES_LABEL]: 'Pages',
+  [DOCUMENT_PROPERTIES_PAGES]: '{count, plural, one {One page} other {# pages}}, the first {width} × {height} mm',
+  [DOCUMENT_PROPERTIES_PAGES_NONE]: 'No pages',
+  [DOCUMENT_PROPERTIES_SIZE]: 'Size',
+  [DOCUMENT_PROPERTIES_SECURITY]: 'Security',
+  [DOCUMENT_PROPERTIES_OPEN]: 'Not encrypted.',
+  [DOCUMENT_PROPERTIES_ENCRYPTED]: 'Encrypted ({method}).',
+  [DOCUMENT_PROPERTIES_RESTRICTED]: 'Not allowed: {actions}.',
+  [DOCUMENT_PROPERTIES_PERMISSION_PRINT]: 'printing',
+  [DOCUMENT_PROPERTIES_PERMISSION_COPY]: 'copying',
+  [DOCUMENT_PROPERTIES_PERMISSION_EDIT]: 'editing',
+  [DOCUMENT_PROPERTIES_PERMISSION_ANNOTATE]: 'comments',
+  [DOCUMENT_PROPERTIES_FONTS]: 'Fonts',
+  [DOCUMENT_PROPERTIES_NO_FONTS]: 'None',
+  [DOCUMENT_PROPERTIES_FONTS_MORE]: 'and more',
+  [DOCUMENT_PROPERTIES_APPLY]: 'Apply',
 
   [GROUP_SIGNATURES]: 'Signatures',
   [SIGN_DOCUMENT_COMMAND_TITLE]: 'Sign with Certificate',

@@ -179,6 +179,7 @@ function start(stream: HostByteStream) {
     layers: () => {
       throw new Error('no case here reads the layers');
     },
+    documentInformation: () => Promise.reject(new Error('this case reads no document information')),
     fonts: () => {
       throw new Error('no case here reads the fonts');
     },

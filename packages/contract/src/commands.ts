@@ -4621,10 +4621,72 @@ export const PDF_SANITIZE_PARTS = [
   'embedded-files',
   'external-actions',
   'flatten',
+  // ADR-0283 Decision 7: the Info dictionary and the catalogue's XMP packet.
+  'document-information',
 ] as const;
 
 /** One of {@link PDF_SANITIZE_PARTS}. */
 export type PdfSanitizePart = (typeof PDF_SANITIZE_PARTS)[number];
+
+/** The longest text one document-information field carries: a title or a keyword list, never a document's worth. */
+export const MAX_DOCUMENT_INFORMATION_TEXT = 4096;
+
+/**
+ * A date as document properties carries it (ADR-0283): ISO 8601 to the second, with its offset where the PDF stated
+ * one (`Z` or `±HH:MM`) and without where it did not, since a PDF date may name no zone and inventing one would change
+ * what it says.
+ */
+export const documentDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2})?$/u)
+  .max(25);
+
+/** The four texts document properties edits, by the window's names. */
+export const DOCUMENT_INFORMATION_TEXTS = ['title', 'author', 'subject', 'keywords'] as const;
+export type DocumentInformationText = (typeof DOCUMENT_INFORMATION_TEXTS)[number];
+
+/** The six values document properties edits: four texts, empty for none, and two dates, `null` for none. */
+export const documentInformationFieldsSchema = z
+  .object({
+    title: z.string().max(MAX_DOCUMENT_INFORMATION_TEXT),
+    author: z.string().max(MAX_DOCUMENT_INFORMATION_TEXT),
+    subject: z.string().max(MAX_DOCUMENT_INFORMATION_TEXT),
+    keywords: z.string().max(MAX_DOCUMENT_INFORMATION_TEXT),
+    created: documentDateSchema.nullable(),
+    modified: documentDateSchema.nullable(),
+  })
+  .strict();
+export type DocumentInformationFields = z.infer<typeof documentInformationFieldsSchema>;
+
+/**
+ * Sets the document's own information (ADR-0283): the Info dictionary always, and the XMP packet where the document
+ * has one, so no reader shows a stale value. All six together, because the window shows and sends them together.
+ */
+export const setDocumentInformationSchema = z
+  .object({ kind: z.literal('setDocumentInformation'), fields: documentInformationFieldsSchema })
+  .strict();
+
+/**
+ * What document properties shows (ADR-0283): the six as the document states them (XMP first, then Info), which of the
+ * two copies it has, and what is read only.
+ */
+export const documentInformationSchema = z
+  .object({
+    fields: documentInformationFieldsSchema,
+    has: z.object({ info: z.boolean(), xmp: z.boolean() }).strict(),
+    creator: z.string().max(MAX_DOCUMENT_INFORMATION_TEXT).nullable(),
+    producer: z.string().max(MAX_DOCUMENT_INFORMATION_TEXT).nullable(),
+    /** MuPDF's own report, `PDF-1.7` or the like. */
+    format: z.string().max(64),
+    /** MuPDF's own report of the encryption, `None` where there is none. */
+    encryption: z.string().max(256),
+    permissions: z.object({ print: z.boolean(), copy: z.boolean(), edit: z.boolean(), annotate: z.boolean() }).strict(),
+    pageCount: z.number().int().nonnegative(),
+    /** The first page's displayed size in points, `null` for a document with no page. */
+    firstPage: z.object({ width: z.number().nonnegative(), height: z.number().nonnegative() }).strict().nullable(),
+  })
+  .strict();
+export type DocumentInformation = z.infer<typeof documentInformationSchema>;
 
 /**
  * Strips active content from a document, and optionally flattens it.
@@ -7358,6 +7420,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   applyRedactionsSchema,
   markMatchesForRedactionSchema,
   sanitizeDocumentSchema,
+  setDocumentInformationSchema,
   signDocumentSchema,
   createFormFieldSchema,
   editFormFieldsSchema,
@@ -7543,6 +7606,8 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   // format's, and a renderer naming them would be a second opinion about what
   // JavaScript lives in a PDF.
   sanitizeDocumentSchema,
+  // RENDERABLE: six bounded values (ADR-0283), the same size whatever the document weighs.
+  setDocumentInformationSchema,
   // RENDERABLE, and the test it passes is the one `addAnnotation` passes: the
   // intent is a page index, a rectangle in the page's own space, a name and a
   // kind — bounded by `MAX_FIELD_NAME` and `MAX_FIELD_OPTIONS`, so the payload

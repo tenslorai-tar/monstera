@@ -4,7 +4,7 @@
      equal to it. Regenerate with `npx vitest run packages/ui/src/App.test.tsx -t "manual test checklist" -u`.
      Do not edit by hand. -->
 
-Every command the application registers — 275 — and the checks only the installed window can answer.
+Every command the application registers — 276 — and the checks only the installed window can answer.
 For each command: use it on a real document, see the correct effect, then save, close and reopen and see it kept
 (the wired-tools rule, CLAUDE.md). A command that needs a selection, a second document or a key says so when it
 is not available.
@@ -260,6 +260,7 @@ is not available.
 - [ ] **Autoscroll** · `view.autoscroll` · Shows: on screen · Help: *Move between pages*
 - [ ] **Cloud storage…** · `cloud.storage` · Shows: on screen · Help: *Open and save PDFs in OneDrive or Google Drive*
 - [ ] **Dark theme** · `view.theme-dark` · Shows: on screen
+- [ ] **Document properties…** · `document.properties` · Shows: a toast
 - [ ] **Focus layout** · `view.layout-focus` · Shows: on screen · Help: *Choose a layout: Ribbon, Studio or Focus*
 - [ ] **Paste** · `edit.paste` · Shows: on screen
 - [ ] **Save back to cloud** · `cloud.save-back` · Shows: a toast · Help: *Open and save PDFs in OneDrive or Google Drive*

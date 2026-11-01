@@ -112,6 +112,11 @@ import {
   invertSanitizeDocument,
 } from './documentSanitize.js';
 import {
+  applySetDocumentInformation,
+  captureSetDocumentInformation,
+  invertSetDocumentInformation,
+} from './documentInformation.js';
+import {
   applyAddLink,
   applyEditLink,
   applySetLinkOutline,
@@ -487,6 +492,12 @@ export const mupdfSpecs = {
     apply: applyMarkMatchesForRedaction,
     capture: captureMarkMatchesForRedaction,
     invert: invertMarkMatchesForRedaction,
+  },
+  setDocumentInformation: {
+    ...declaredCommands.setDocumentInformation,
+    apply: applySetDocumentInformation,
+    capture: captureSetDocumentInformation,
+    invert: invertSetDocumentInformation,
   },
   sanitizeDocument: {
     ...declaredCommands.sanitizeDocument,

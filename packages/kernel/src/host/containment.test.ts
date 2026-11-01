@@ -563,6 +563,7 @@ describe('the engine host answers a containment probe', () => {
     layers: () => {
       throw new Error('a containment probe must not read the layers');
     },
+    documentInformation: () => Promise.reject(new Error('this case reads no document information')),
     fonts: () => {
       throw new Error('a containment probe must not read the fonts');
     },

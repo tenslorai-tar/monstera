@@ -1460,6 +1460,35 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       );
     },
 
+    // THE DOCUMENT'S OWN INFORMATION (ADR-0283): one fixed reading, so the properties window opens filled in a browser.
+    'document.information': ({ docId }) => {
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' as const }));
+      return Promise.resolve(
+        ok({
+          version: asDocVersion(current),
+          information: {
+            fields: {
+              title: 'Quarterly report',
+              author: 'Lin Wei',
+              subject: 'Numbers for the board',
+              keywords: 'q3, money',
+              created: '2026-10-01T09:30:00+01:00',
+              modified: '2026-10-28T16:05:00Z',
+            },
+            has: { info: true, xmp: true },
+            creator: 'A word processor',
+            producer: 'A PDF library',
+            format: 'PDF-1.7',
+            encryption: 'None',
+            permissions: { print: true, copy: true, edit: true, annotate: true },
+            pageCount: 12,
+            firstPage: { width: 595.28, height: 841.89 },
+          },
+        }),
+      );
+    },
+
     // THE STAMPS A CASE SETS UP (ADR-0246), none where it sets none.
     'document.pageMarks': ({ docId }) => {
       const current = versions.get(docId);

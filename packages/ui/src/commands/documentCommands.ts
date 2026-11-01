@@ -114,6 +114,7 @@ import { withWorkProgress } from './workProgress.js';
 import { PDFA_LEVEL_DIALOG_ID, PDFA_LEVEL_OF, PDFA_LEVEL_RESULT } from '../dialogs/pdfaLevel.js';
 import { fontListOf } from '../fontList.js';
 import { PDFA_REMOVALS_DIALOG_ID } from '../dialogs/pdfaRemovals.js';
+import { DOCUMENT_PROPERTIES_DIALOG_ID, DOCUMENT_PROPERTIES_RESULT } from '../dialogs/documentProperties.js';
 import { OCR_OUTCOME_DIALOG_ID, type RecognisedWalk } from '../dialogs/ocrOutcome.js';
 import type { ScanReader } from '../dialogs/scanReader.js';
 import { PRINT_DIALOG_ID, type PrintAnswer } from '../dialogs/print.js';
@@ -333,6 +334,8 @@ import {
   EXPORTING_FORM_DATA,
   EXPORTING_PAGE_IMAGES,
   EXPORTING_PDFA,
+  DOCUMENT_PROPERTIES_COMMAND_TITLE,
+  TOAST_DOCUMENT_PROPERTIES_SET,
   EXPORTING_POWERPOINT,
   EXPORTING_TEXT,
   EXPORTING_WORD,
@@ -5525,6 +5528,48 @@ export function sanitizeDocumentCommand(deps: DocumentCommandDeps & WritesAFile)
         parts: [...answer.parts],
       });
       if (applied) confirmDone(deps, TOAST_ACTIVE_CONTENT_REMOVED);
+    },
+  };
+}
+
+/**
+ * File › Document properties
+ * ([ADR-0283](../../../../docs/DECISIONS/0283-document-properties-edits-the-info-dictionary-and-the-xmp-packet-together.md)):
+ * main's reading and the fonts, the window, and — only where a value changed — `setDocumentInformation`, which writes
+ * the Info dictionary and the XMP packet together. A read that is refused is said, as any command's refusal is.
+ */
+export function documentPropertiesCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
+  return {
+    id: 'document.properties',
+    feedback: TOASTS,
+    icon: 'Info',
+    title: DOCUMENT_PROPERTIES_COMMAND_TITLE,
+    placements: [{ surface: 'menu-bar', menu: 'file', group: 2, order: 30 }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined) return;
+      const docId = context.docId;
+      const [read, fonts] = await Promise.all([deps.client['document.information']({ docId }), deps.client['document.fonts']({ docId })]);
+      if (!read.ok) {
+        reportProblem(deps, read.error);
+        return;
+      }
+      const information = read.value.information;
+      const answer = DOCUMENT_PROPERTIES_RESULT.safeParse(
+        await deps.ask(DOCUMENT_PROPERTIES_DIALOG_ID, {
+          information,
+          // THE FONTS ARE A SECOND READ, `document.fonts` (B3a): where it is refused the window still opens, saying none.
+          fonts: fonts.ok ? fonts.value.fonts : [],
+          fontsTruncated: fonts.ok && fonts.value.truncated,
+          bytes: context.openDocuments.find((open) => open.docId === docId)?.byteLength ?? 0,
+        }),
+      );
+      if (!answer.success) return;
+      const fields = answer.data.fields;
+      const before = information.fields;
+      // NOTHING CHANGED, NOTHING SENT: a command that writes what was there would take a checkpoint and move the version.
+      if ((Object.keys(fields) as (keyof typeof fields)[]).every((key) => fields[key] === before[key])) return;
+      if (await applyDocumentCommand(deps, docId, { kind: 'setDocumentInformation', fields })) confirmDone(deps, TOAST_DOCUMENT_PROPERTIES_SET);
     },
   };
 }

@@ -1886,6 +1886,27 @@ const declarations = {
     // scan for it would find it.
     purpose: 'removal',
   },
+  setDocumentInformation: {
+    kind: 'setDocumentInformation',
+    // DRAWN FROM BYTES, the default ADR-0084 keeps: nothing on a page changes, but main's image is what a range read
+    // and a copy are answered from, and a title only the session held would be one main's image did not.
+    display: 'image',
+    // THE PAGES IT CHANGES (ADR-0262): none any surface draws.
+    pages: 'none',
+    // §3's matrix: metadata is MuPDF's (ADR-0283).
+    writer: 'mupdf',
+    // A CHECKPOINT, Sanitize's route: the prior XMP packet is the document's size, so a log entry carrying it would be
+    // unbounded, and one undo restores both copies together.
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    targets: 'none',
+    reads: 'none',
+    asset: 'none',
+    purpose: 'ordinary',
+  },
   signDocument: {
     kind: 'signDocument',
     display: 'image',

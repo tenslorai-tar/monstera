@@ -44,6 +44,7 @@ import type {
   HostFieldPropertiesReader,
   HostFlatFieldsReader,
   HostFontsReader,
+  HostDocumentInformationReader,
   HostFormFieldsReader,
   HostLayersReader,
   HostPageMarksReader,
@@ -553,6 +554,12 @@ export function remoteMupdfLayers(
 /** Every font the document names, over the boundary. See {@link remoteMupdfLayers}. */
 export function remoteMupdfFonts(client: ClientApi<EngineChannels>, sessions: RemoteSessions): HostFontsReader {
   return async (session) => answered('engine/fonts', await client['engine/fonts']({ session: sessions.handleFor(session) }));
+}
+
+/** The document's own information, over the boundary (ADR-0283). See {@link remoteMupdfFonts}. */
+export function remoteMupdfDocumentInformation(client: ClientApi<EngineChannels>, sessions: RemoteSessions): HostDocumentInformationReader {
+  return async (session) =>
+    answered('engine/document-information', await client['engine/document-information']({ session: sessions.handleFor(session) }));
 }
 
 /** Where each kind of page stamp is, over the boundary (ADR-0246). See {@link remoteMupdfLayers}. */

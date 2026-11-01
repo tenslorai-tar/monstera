@@ -389,12 +389,25 @@ function flatten(document: mupdf.PDFDocument): void {
   document.bake(true, true);
 }
 
+/**
+ * Removes the document's own information (ADR-0283 Decision 7): the trailer's Info dictionary and every XMP packet the
+ * catalogue and the pages carry, the places `pageRedact.ts`' burn-in clears for the same reason, since a page's packet
+ * may name its author as the document's does. Both copies go together, so neither is left to state what the other no
+ * longer does; the removal save collects them, so no earlier revision keeps them.
+ */
+function stripDocumentInformation(document: mupdf.PDFDocument): void {
+  document.getTrailer().delete('Info');
+  document.getTrailer().get('Root').delete('Metadata');
+  for (let page = 0; page < document.countPages(); page += 1) document.findPage(page).delete('Metadata');
+}
+
 /** Each part's own work, so a part added to the contract is a compile error. */
 const STRIP: Readonly<Record<PdfSanitizePart, (document: mupdf.PDFDocument) => void>> = {
   javascript: stripJavaScript,
   'embedded-files': stripEmbeddedFiles,
   'external-actions': stripExternalActions,
   flatten,
+  'document-information': stripDocumentInformation,
 };
 
 /**

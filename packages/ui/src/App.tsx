@@ -60,6 +60,7 @@ import {
   applyRedactionsCommand,
   redactMatchesCommand,
   sanitizeDocumentCommand,
+  documentPropertiesCommand,
   signDocumentCommand,
   signaturesCommand,
   docusignRetrieveCommand,
@@ -4294,6 +4295,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
         cropPagesCommand({ client, onApplied: applied, ask, stamp, signatures }),
         protectDocumentCommand({ client, onApplied: applied, ask, stamp, signatures, toast, documentKeys: stores.keys }),
         sanitizeDocumentCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
+        documentPropertiesCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
         signDocumentCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
         signaturesCommand({ client, onApplied: applied, ask, stamp, signatures }),
         docusignSendCommand({

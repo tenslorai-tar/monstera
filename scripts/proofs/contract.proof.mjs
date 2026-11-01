@@ -1110,6 +1110,21 @@ const MARK_MATCHES_SPEC = `  markMatchesForRedaction: {
     reads: 'none',
   },`;
 
+/** Filler, the document's own information (ADR-0283): a checkpoint, as Sanitize's. */
+const DOCUMENT_INFORMATION_SPEC = `  setDocumentInformation: {
+    kind: 'setDocumentInformation',
+    writer: 'mupdf',
+    apply: applySetDocumentInformation,
+    capture: captureSetDocumentInformation,
+    invert: invertSetDocumentInformation,
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    reads: 'none',
+  },`;
+
 /** Filler, the third on §4's removal row. */
 const SANITIZE_SPEC = `  sanitizeDocument: {
     kind: 'sanitizeDocument',
@@ -1326,6 +1341,9 @@ const SPEC_IMPORTS = `import {
   applySanitizeDocument,
   captureSanitizeDocument,
   invertSanitizeDocument,
+  applySetDocumentInformation,
+  captureSetDocumentInformation,
+  invertSetDocumentInformation,
   applySignDocument,
   captureSignDocument,
   invertSignDocument,
@@ -1559,6 +1577,23 @@ export const handlers: ContractHandlers = {
     Promise.resolve(ok({ version: asDocVersion(1), destinations: [], next: null, truncated: false })),
   'document.layers': () => Promise.resolve(ok({ version: asDocVersion(1), layers: [], next: null, truncated: false })),
   'document.fonts': () => Promise.resolve(ok({ version: asDocVersion(1), fonts: [], truncated: false })),
+  'document.information': () =>
+    Promise.resolve(
+      ok({
+        version: asDocVersion(1),
+        information: {
+          fields: { title: '', author: '', subject: '', keywords: '', created: null, modified: null },
+          has: { info: false, xmp: false },
+          creator: null,
+          producer: null,
+          format: 'PDF-1.7',
+          encryption: 'None',
+          permissions: { print: true, copy: true, edit: true, annotate: true },
+          pageCount: 1,
+          firstPage: { width: 612, height: 792 },
+        },
+      }),
+    ),
   'document.pageMarks': () =>
     Promise.resolve(
       ok({
@@ -1794,6 +1829,23 @@ export const handlers: ContractHandlers = {
     Promise.resolve(ok({ version: asDocVersion(1), destinations: [], next: null, truncated: false })),
   'document.layers': () => Promise.resolve(ok({ version: asDocVersion(1), layers: [], next: null, truncated: false })),
   'document.fonts': () => Promise.resolve(ok({ version: asDocVersion(1), fonts: [], truncated: false })),
+  'document.information': () =>
+    Promise.resolve(
+      ok({
+        version: asDocVersion(1),
+        information: {
+          fields: { title: '', author: '', subject: '', keywords: '', created: null, modified: null },
+          has: { info: false, xmp: false },
+          creator: null,
+          producer: null,
+          format: 'PDF-1.7',
+          encryption: 'None',
+          permissions: { print: true, copy: true, edit: true, annotate: true },
+          pageCount: 1,
+          firstPage: { width: 612, height: 792 },
+        },
+      }),
+    ),
   'document.pageMarks': () =>
     Promise.resolve(
       ok({
@@ -2110,6 +2162,23 @@ export const shim: ContractClient = {
     Promise.resolve(ok({ version: asDocVersion(1), destinations: [], next: null, truncated: false })),
   'document.layers': () => Promise.resolve(ok({ version: asDocVersion(1), layers: [], next: null, truncated: false })),
   'document.fonts': () => Promise.resolve(ok({ version: asDocVersion(1), fonts: [], truncated: false })),
+  'document.information': () =>
+    Promise.resolve(
+      ok({
+        version: asDocVersion(1),
+        information: {
+          fields: { title: '', author: '', subject: '', keywords: '', created: null, modified: null },
+          has: { info: false, xmp: false },
+          creator: null,
+          producer: null,
+          format: 'PDF-1.7',
+          encryption: 'None',
+          permissions: { print: true, copy: true, edit: true, annotate: true },
+          pageCount: 1,
+          firstPage: { width: 612, height: 792 },
+        },
+      }),
+    ),
   'document.pageMarks': () =>
     Promise.resolve(
       ok({
@@ -2329,6 +2398,7 @@ ${PROTECT_SPEC}
 ${REDACT_SPEC}
 ${MARK_MATCHES_SPEC}
 ${SANITIZE_SPEC}
+${DOCUMENT_INFORMATION_SPEC}
 ${SIGN_SPEC}
 ${CREATE_FIELD_SPEC}
 ${EDIT_FIELD_SPECS}
@@ -2465,6 +2535,7 @@ ${PROTECT_SPEC}
 ${REDACT_SPEC}
 ${MARK_MATCHES_SPEC}
 ${SANITIZE_SPEC}
+${DOCUMENT_INFORMATION_SPEC}
 ${SIGN_SPEC}
 ${CREATE_FIELD_SPEC}
 ${EDIT_FIELD_SPECS}
@@ -2608,6 +2679,7 @@ ${PROTECT_SPEC}
 ${REDACT_SPEC}
 ${MARK_MATCHES_SPEC}
 ${SANITIZE_SPEC}
+${DOCUMENT_INFORMATION_SPEC}
 ${SIGN_SPEC}
 ${CREATE_FIELD_SPEC}
 ${EDIT_FIELD_SPECS}
@@ -2675,6 +2747,7 @@ ${PROTECT_SPEC}
 ${REDACT_SPEC}
 ${MARK_MATCHES_SPEC}
 ${SANITIZE_SPEC}
+${DOCUMENT_INFORMATION_SPEC}
 ${SIGN_SPEC}
 ${CREATE_FIELD_SPEC}
 ${EDIT_FIELD_SPECS}
@@ -2751,6 +2824,7 @@ ${PROTECT_SPEC}
 ${REDACT_SPEC}
 ${MARK_MATCHES_SPEC}
 ${SANITIZE_SPEC}
+${DOCUMENT_INFORMATION_SPEC}
 ${SIGN_SPEC}
 ${CREATE_FIELD_SPEC}
 ${EDIT_FIELD_SPECS}
@@ -2823,6 +2897,7 @@ ${PROTECT_SPEC}
 ${REDACT_SPEC}
 ${MARK_MATCHES_SPEC}
 ${SANITIZE_SPEC}
+${DOCUMENT_INFORMATION_SPEC}
 ${SIGN_SPEC}
 ${CREATE_FIELD_SPEC}
 ${EDIT_FIELD_SPECS}
@@ -4085,8 +4160,9 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // 59 since `resetWholeForm` (2026-10-21, the owner's R23): three spelt, 55 counted, one.
     // 60 since `showHideFields` (2026-10-22, ADR-0259): three spelt, 56 counted, one.
     // 61 since `editDrawnObject` (2026-10-23, ADR-0264): three spelt, 57 counted, one.
+    // 62 since `setDocumentInformation` (2026-11-01, ADR-0283): three spelt, 58 counted, one.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){2} \| \.\.\. 57 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){2} \| \.\.\. 58 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

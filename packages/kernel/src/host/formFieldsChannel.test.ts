@@ -210,6 +210,7 @@ async function joined(
       layers: () => {
         throw new Error('a field read must not read the layers');
       },
+      documentInformation: () => Promise.reject(new Error('this case reads no document information')),
       fonts: () => {
         throw new Error('a field read must not read the fonts');
       },
