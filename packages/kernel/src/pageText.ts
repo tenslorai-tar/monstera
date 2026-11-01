@@ -1,6 +1,7 @@
 import type * as mupdf from './mupdfRaw.js';
 
 import type { MupdfSession } from './engineSeam.js';
+import { withinFormBounds } from './formText.js';
 import { withDocument } from './mupdfWriter.js';
 import {
   type PageText,
@@ -121,10 +122,16 @@ export function readPageTextJson(
  * @param read the named read, whose option string the substrate composes
  */
 function structuredJson(document: mupdf.PDFDocument, page: number, read: PageTextRead): string {
-  const structured = document.loadPage(page).toStructuredText(stextOptionsFor(read));
-  try {
-    return structured.asJSON();
-  } finally {
-    structured.destroy();
-  }
+  const one = (from: mupdf.PDFDocument, at: number): string => {
+    const structured = from.loadPage(at).toStructuredText(stextOptionsFor(read));
+    try {
+      return structured.asJSON();
+    } finally {
+      structured.destroy();
+    }
+  };
+  // WITHIN THE FORM BOUNDS (`withinFormBounds`, the rule Edit text's form read takes): a page whose forms the walk could
+  // not reach to the end is read from one page drawing what it kept, in MuPDF's own answer, so `parsePageText` stays its
+  // one reader.
+  return withinFormBounds(document, page, ({ document: from, page: at }) => one(from, at)).value;
 }

@@ -61,9 +61,12 @@ function decodedName(written: string): string {
 }
 
 /** A `Do`'s operand in `content[start, end)`, decoded, with where the operand itself sits; `undefined` for none. */
+/** A `Do` and the name it draws, as a content stream writes them: the one pattern both readers of a `Do` take. */
+const DO_SOURCE = String.raw`\/([^\s/<>[\]()%{}]+)\s+Do\b`;
+
 function doOperand(content: Uint8Array, start: number, end: number): { readonly name: string; readonly start: number; readonly end: number } | undefined {
   const text = LATIN1.decode(content.subarray(start, end));
-  const found = /\/([^\s/<>[\]()%{}]+)\s+Do\b/u.exec(text);
+  const found = new RegExp(DO_SOURCE, 'u').exec(text);
   if (found?.[1] === undefined) return undefined;
   return { name: decodedName(found[1]), start: start + found.index, end: start + found.index + 1 + found[1].length };
 }
@@ -315,20 +318,181 @@ export function formPagesDocument(document: PDFDocument, page: number): FormPage
   const placements = walk.placements.filter(showsText);
   const left: FormsLeftOut = { deeper: walk.deeper, more: walk.more, unnamed: walk.unnamed };
   if (placements.length === 0) return { bytes: new Uint8Array(), paths: [], left };
+  const bytes = withContentPages(
+    leaf,
+    placements.map((placement) => ({ content: wrappedForm(placement).bytes, resources: resourcesOf(placement) })),
+    (pages) => bufferBytes(savedBuffer(pages, '')),
+  );
+  return { bytes, paths: placements.map((placement) => placement.path), left };
+}
+
+/** The resources a placement's form draws with: its own, or its holder's where it states none, as a reader resolves it. */
+function resourcesOf(placement: Pick<FormPlacement, 'form' | 'holder'>): PDFObject {
+  const resources = placement.form.resolve().get('Resources');
+  return resources.isNull() ? placement.holder.getInheritable('Resources') : resources;
+}
+
+/**
+ * THE ONE BUILDER of a document of pages read in place of `leaf`: each content on a page of the leaf's own box and turn,
+ * with its resources grafted, so what is read off it lies where it lies on the page. Built in memory, handed to `work`,
+ * and destroyed; nothing of the leaf's document changes.
+ */
+function withContentPages<T>(
+  leaf: PDFObject,
+  contents: readonly { readonly content: Uint8Array; readonly resources: PDFObject }[],
+  work: (pages: PDFDocument) => T,
+): T {
   const pages = newDocument();
   try {
-    const box = leaf.getInheritable('MediaBox');
-    const mediabox: [number, number, number, number] = [box.get(0).asNumber(), box.get(1).asNumber(), box.get(2).asNumber(), box.get(3).asNumber()];
-    const turned = leaf.getInheritable('Rotate');
-    const rotate = (turned.isNull() ? 0 : ((turned.asNumber() % 360) + 360) % 360) as 0 | 90 | 180 | 270;
-    for (const placement of placements) {
-      const resources = placement.form.resolve().get('Resources');
-      const grafted = pages.graftObject(resources.isNull() ? placement.holder.getInheritable('Resources') : resources);
-      pages.insertPage(-1, pages.addPage(mediabox, rotate, grafted, wrappedForm(placement).bytes));
+    const { mediabox, rotate } = pageFrameOf(leaf);
+    for (const { content, resources } of contents) {
+      pages.insertPage(-1, pages.addPage(mediabox, rotate, pages.graftObject(resources), content));
     }
-    return { bytes: bufferBytes(savedBuffer(pages, '')), paths: placements.map((placement) => placement.path), left };
+    return work(pages);
   } finally {
     pages.destroy();
+  }
+}
+
+/** The leaf's box and turn, as a page read in its place takes them. */
+function pageFrameOf(leaf: PDFObject): { readonly mediabox: [number, number, number, number]; readonly rotate: 0 | 90 | 180 | 270 } {
+  const box = leaf.getInheritable('MediaBox');
+  const turned = leaf.getInheritable('Rotate');
+  return {
+    mediabox: [box.get(0).asNumber(), box.get(1).asNumber(), box.get(2).asNumber(), box.get(3).asNumber()],
+    rotate: (turned.isNull() ? 0 : ((turned.asNumber() % 360) + 360) % 360) as 0 | 90 | 180 | 270,
+  };
+}
+
+/** `content` with every form it draws taken out, its bytes blanked so every other offset stands: a form is read apart. */
+function withoutForms(content: Uint8Array, drawn: readonly DrawnObject[]): Uint8Array {
+  const out = new Uint8Array(content);
+  for (const each of drawn) if (each.kind === 'form') out.fill(0x20, each.start, each.end);
+  return out;
+}
+
+/** Whether `holder`'s resources name any form XObject: one that names none draws none. */
+function namesAForm(holder: PDFObject): boolean {
+  const resources = holder.getInheritable('Resources');
+  if (resources.isNull()) return false;
+  const listed = resources.resolve().get('XObject');
+  if (listed.isNull()) return false;
+  let found = false;
+  listed.resolve().forEach((value) => {
+    const subtype = value.resolve().get('Subtype');
+    if (!found && subtype.isName() && subtype.asName() === 'Form') found = true;
+  });
+  return found;
+}
+
+/**
+ * WHETHER THE WALK COULD STOP SHORT ON THIS PAGE, ruled out cheaply: at most how many placements the page's forms could
+ * make, counting every `Do` of a form name in each stream by the walk's own pattern, without reading a stream's
+ * operators. Where that is within {@link MAX_FORM_PLACEMENTS} and no path is deeper than {@link MAX_FORM_DEPTH}, the
+ * exact walk cannot stop short, so the page is read as it is and pays for no walk — every `Do` counted is at least
+ * every placement the walk would visit. A form met again on its own path, which the walk does not enter, is a graph
+ * this does not try to bound and is left to the exact walk.
+ *
+ * Measured 2026-11-01 (this kernel's vitest, the cloud machine): the exact walk on every page that names a form put
+ * about a millisecond on the read of a page wrapping its text in one form, 2.0 ms against 3.0.
+ */
+function couldPassBounds(leaf: PDFObject): boolean {
+  const pattern = new RegExp(DO_SOURCE, 'gu');
+  const memo = new Map<number, number>();
+  /** At most how many placements `holder` makes below it, or `Infinity` past what the bounds allow. */
+  const under = (holder: PDFObject, depth: number, entered: ReadonlySet<number>): number => {
+    // A HOLDER WHOSE RESOURCES NAME NO FORM draws none, and its stream is not read: a page with no form, and the one form
+    // a producer wraps a page's text in, cost the read a dictionary lookup.
+    if (!namesAForm(holder)) return 0;
+    const id = objectNumber(holder);
+    const known = id === -1 ? undefined : memo.get(id);
+    if (known !== undefined) return known;
+    const content = holder === leaf ? joinedContent(pageContentStreams(leaf)) : bufferBytes(holder.readStream());
+    let count = 0;
+    for (const [, name] of LATIN1.decode(content).matchAll(pattern)) {
+      const form = name === undefined ? undefined : xobjectNamed(holder, decodedName(name));
+      // A FORM ONLY: an image draws no placement, and its stream is never read here.
+      const subtype = form?.resolve().get('Subtype');
+      if (form === undefined || subtype?.isName() !== true || subtype.asName() !== 'Form') continue;
+      const formId = objectNumber(form);
+      if (entered.has(formId) || depth >= MAX_FORM_DEPTH) return Number.POSITIVE_INFINITY;
+      count += 1 + under(form, depth + 1, new Set([...entered, formId]));
+      if (count > MAX_FORM_PLACEMENTS) return Number.POSITIVE_INFINITY;
+    }
+    if (id !== -1) memo.set(id, count);
+    return count;
+  };
+  return under(leaf, 0, new Set()) > MAX_FORM_PLACEMENTS;
+}
+
+/**
+ * A PAGE'S TEXT, READ WITHIN THE FORM BOUNDS (finding BBBBBBBBB-26): `work` is given the page to read the page's text
+ * from — the page itself where the walk ({@link walkPage}, the bound Edit text's form read takes) reaches every
+ * placement, and otherwise ONE page drawing what the walk kept: the page's own content with its forms taken out, then
+ * each placement the walk kept, in its order, through a copy of its form with the forms IT draws taken out. A reader
+ * that drew the page asked MuPDF to follow every placement however many there are: `formGraph(16, 2, 1)`, 65,535 of
+ * them, took 9.9 s to select text on.
+ *
+ * One page, not one per placement: read a page each, the 257 pieces of that page took 140 ms (2026-11-01, this kernel's
+ * vitest on the cloud machine). A copy is made once per form object, however many placements draw it, and is drawn with
+ * the form's own box and matrix, as the page drew it.
+ *
+ * A page whose forms cannot make more placements than the bounds allow is the page itself and pays for no walk
+ * (`couldPassBounds`), so an ordinary page is read exactly as before.
+ *
+ * @returns what `work` answers, and whether the page was read from what the walk kept, past the bounds
+ */
+export function withinFormBounds<T>(
+  document: PDFDocument,
+  page: number,
+  work: (read: { readonly document: PDFDocument; readonly page: number }) => T,
+): { readonly value: T; readonly kept: boolean } {
+  const leaf = document.findPage(page);
+  if (!couldPassBounds(leaf)) return { value: work({ document, page }), kept: false };
+  const walk = walkPage(leaf);
+  if (!walk.more && !walk.deeper) return { value: work({ document, page }), kept: false };
+  const own = joinedContent(pageContentStreams(leaf));
+  const kept = newDocument();
+  try {
+    const map = kept.newGraftMap();
+    const stated = leaf.getInheritable('Resources');
+    const resources = stated.isNull() ? kept.newDictionary() : map.graftObject(stated.resolve());
+    if (resources.get('XObject').isNull()) resources.put('XObject', kept.newDictionary());
+    const xobjects = resources.get('XObject').resolve();
+    // ONE COPY PER FORM OBJECT, its own forms taken out, by the walk's own reading of its content.
+    const copies = new Map<number, string>();
+    const copyOf = (placement: FormPlacement): string => {
+      const id = objectNumber(placement.form);
+      const known = copies.get(id);
+      if (known !== undefined) return known;
+      const form = placement.form.resolve();
+      const dictionary = kept.newDictionary();
+      dictionary.put('Type', kept.newName('XObject'));
+      dictionary.put('Subtype', kept.newName('Form'));
+      for (const key of ['BBox', 'Matrix']) if (!form.get(key).isNull()) dictionary.put(key, map.graftObject(form.get(key)));
+      dictionary.put('Resources', map.graftObject(resourcesOf(placement)));
+      const name = freeName(xobjects, 'MonsteraKept');
+      xobjects.put(name, kept.addStream(withoutForms(placement.content, readFor(walk, placement.form).drawn), dictionary));
+      copies.set(id, name);
+      return name;
+    };
+    const encoder = new TextEncoder();
+    const cm = (matrix: Matrix | undefined): string => (matrix === undefined ? '' : `${matrix.map(written).join(' ')} cm`);
+    // EACH PLACEMENT AS ITS PATH PLACES IT: every step's inherited state and its CTM, and every form's matrix but the
+    // last, which its copy's own `/Matrix` applies as the `Do` draws it.
+    const drawn = walk.placements.map((placement) => {
+      const steps = placement.states.map((state, at) => {
+        const last = at === placement.states.length - 1;
+        return [state, cm(placement.chain[2 * at]), last ? '' : cm(placement.chain[2 * at + 1])].filter((part) => part !== '').join(' ');
+      });
+      return `q ${steps.join(' ')} /${copyOf(placement)} Do Q`;
+    });
+    const content = new Uint8Array([...withoutForms(own, drawnObjects(own, xobjectKinds(leaf))), ...encoder.encode(`\n${drawn.join('\n')}\n`)]);
+    const { mediabox, rotate } = pageFrameOf(leaf);
+    kept.insertPage(-1, kept.addPage(mediabox, rotate, resources, content));
+    return { value: work({ document: kept, page: 0 }), kept: true };
+  } finally {
+    kept.destroy();
   }
 }
 
