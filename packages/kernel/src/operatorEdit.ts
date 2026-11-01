@@ -1019,14 +1019,16 @@ function write(
    * block deleted beside it, was set in the deleted block's drawn font as though the page had said it there.
    */
   const joinedIn = new Map<EditedBlock, Map<PageFont, Set<string>>>();
-  const wordsOf = (text: string): string[] => tokens(text.replace(/\s+/gu, ' ').trim()).filter((token) => token !== ' ');
+  // COMPARED WITH EVERY WHITE SPACE REMOVED: where the read infers a space between two runs is not where the sent text
+  // has one, so a join of `A second heading…` read as runs `A` and `second heading…` is still a join.
+  const squeezed = (text: string): string => text.replace(/\s/gu, '');
   for (const emptied of blocks.filter((each) => each.text === '')) {
     const said = new Map<PageFont, Set<string>>();
-    const words: string[] = [];
+    let words = '';
     for (const index of emptied.lines.flat()) {
       const run = runs.get(index);
       if (run === undefined) continue;
-      words.push(...wordsOf(run.text));
+      words += squeezed(run.text);
       const at = run.members[0] === undefined ? undefined : opAt.get(run.members[0]);
       const op = at === undefined ? undefined : ops[at];
       const font = op === undefined ? undefined : (syntheticFonts.get(op) ?? (op.state.font === null ? undefined : fonts.get(op.state.font)));
@@ -1036,11 +1038,7 @@ function write(
       said.set(font, held);
     }
     // THE BLOCK IT JOINED: the one whose new words end with the emptied block's words, in order.
-    const joined = words.length === 0 ? undefined : blocks.find((each) => {
-      if (each.text === '') return false;
-      const theirs = wordsOf(each.text);
-      return theirs.length >= words.length && words.every((word, at) => theirs[theirs.length - words.length + at] === word);
-    });
+    const joined = words === '' ? undefined : blocks.find((each) => each.text !== '' && squeezed(each.text).endsWith(words));
     if (joined === undefined) continue;
     const into = joinedIn.get(joined) ?? new Map<PageFont, Set<string>>();
     for (const [font, held] of said) into.set(font, new Set([...(into.get(font) ?? []), ...held]));
