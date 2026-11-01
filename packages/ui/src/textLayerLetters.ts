@@ -95,25 +95,73 @@ export function letterRun(letters: LineLetters | undefined, textLength: number, 
  * the last is the text's length. A pair's second unit advances 0, so the caret never lands between its two halves.
  */
 export function caretAt(run: LetterRun, point: LayerPoint): number {
-  const along = (point.x - run.origin.x) * run.along.x + (point.y - run.origin.y) * run.along.y;
+  const along = alongOf(run, point);
   const { edges } = run;
   const last = edges.length - 1;
   if (along <= (edges[0] ?? 0)) return 0;
   if (along >= (edges[last] ?? 0)) return last;
-  let low = 0;
-  let high = last;
-  // THE LETTER THE POINT IS ON: the last edge at or before it, found by halving, since a dense line is a thousand edges.
-  while (high - low > 1) {
-    const middle = (low + high) >> 1;
-    if ((edges[middle] ?? 0) <= along) low = middle;
-    else high = middle;
-  }
+  const low = letterAt(run, point);
+  const high = low + 1;
   const from = edges[low] ?? 0;
   const to = edges[high] ?? 0;
   let caret = along - from < to - along ? low : high;
   // NEVER BETWEEN A PAIR'S TWO HALVES: its second unit advances 0, so two edges coincide; take the later.
   while (caret < last && (edges[caret + 1] ?? 0) === (edges[caret] ?? 0)) caret += 1;
   return caret;
+}
+
+/** How far along the line a point is from its origin, on screen. */
+function alongOf(run: LetterRun, point: LayerPoint): number {
+  return (point.x - run.origin.x) * run.along.x + (point.y - run.origin.y) * run.along.y;
+}
+
+/** How far above the baseline a point is, on screen, along {@link LetterRun.up}. */
+function upOf(run: LetterRun, point: LayerPoint): number {
+  return (point.x - run.origin.x) * run.up.x + (point.y - run.origin.y) * run.up.y;
+}
+
+/**
+ * WHERE A POINT IS AGAINST A LINE'S LETTERS: `'on'` inside the band from the first letter's start to the last letter's
+ * end, `'before'` or `'after'` in the band beyond either end, `'off'` outside the band. The line a pointer is on, and the
+ * line it is beside, are decided by this on a line with letters, at the line's own angle — the browser's hit test of
+ * the substitute is not, since on a turned page or an angled line the substitute's text and the element's upright box
+ * lie across other lines.
+ *
+ * `distance` is how far beyond the end the point is, along the line, and `middle` how far from the band's middle.
+ */
+export function bandPlace(run: LetterRun, point: LayerPoint): { readonly place: 'on' | 'before' | 'after' | 'off'; readonly distance: number; readonly middle: number } {
+  const up = upOf(run, point);
+  const [below, above] = run.band;
+  const middle = Math.abs(up - (below + above) / 2);
+  if (up < below || up > above) return { place: 'off', distance: 0, middle };
+  const along = alongOf(run, point);
+  const end = run.edges.at(-1) ?? 0;
+  if (along < 0) return { place: 'before', distance: -along, middle };
+  if (along > end) return { place: 'after', distance: along - end, middle };
+  return { place: 'on', distance: 0, middle };
+}
+
+/**
+ * The LETTER a point is on, by the engine's letters: the UTF-16 index whose advance holds the point along the line, the
+ * first before the line's start and the last past its end. What a double click takes its word from, where
+ * {@link caretAt} is the boundary between two letters. A pair's first unit, never its second, which advances 0.
+ */
+export function letterAt(run: LetterRun, point: LayerPoint): number {
+  const along = alongOf(run, point);
+  const { edges } = run;
+  const last = edges.length - 1;
+  if (last < 1) return 0;
+  let low = 0;
+  let high = last;
+  // THE LAST EDGE AT OR BEFORE THE POINT, found by halving, since a dense line is a thousand edges.
+  while (high - low > 1) {
+    const middle = (low + high) >> 1;
+    if ((edges[middle] ?? 0) <= along) low = middle;
+    else high = middle;
+  }
+  // A ZERO-WIDTH UNIT (a pair's second) holds no point: step back to the unit that advanced.
+  while (low > 0 && (edges[low + 1] ?? 0) === (edges[low] ?? 0)) low -= 1;
+  return low;
 }
 
 /** Four corners of a span's shape on screen, in order around it. */

@@ -304,3 +304,7 @@ before this build (909c0430's `packages/ui/src`) 20 fail; the five that pass are
 which the browser already chose correctly there, the double then triple click, which guards item 3's own regression,
 and the double click's control.
 
+**And a 26th, written after that count:** Edit › Translate on selected text read the platform's text of the selection
+rather than `readTextSelection`'s, so a selection across a line end was sent as *term oftwelve*. It now takes the one
+reading, required in its dependencies; the case fails on the text layer before this build with exactly that string.
+

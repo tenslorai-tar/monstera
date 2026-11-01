@@ -4266,7 +4266,17 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
         aiSetup,
         showWordCountCommand({ client, ask, track }),
         compareDocumentsCommand({ client, show: showSideBySide }),
-        translatePageCommand({ client, onApplied: applied, ask, stamp, signatures, toast, track, storedSecrets: () => storedSecrets }),
+        translatePageCommand({
+          client,
+          onApplied: applied,
+          ask,
+          stamp,
+          signatures,
+          toast,
+          track,
+          storedSecrets: () => storedSecrets,
+          selectedText: () => readTextSelection()?.text ?? '',
+        }),
         // THE TWO REPORTS ARE ONE TOOL'S (ADR-0183, ADR-0189): each command opens it in the document panel at its own section.
         inspectPageStructureCommand({ show: showReadingOrder }),
         accessibilityCheckCommand({ show: showAccessibilityCheck }),

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { engineBoxOnScreen } from './annotations/annotationSpace.js';
-import { caretAt, letterRun, spanEnd, spanShape } from './textLayerLetters.js';
+import { bandPlace, caretAt, letterAt, letterRun, spanEnd, spanShape } from './textLayerLetters.js';
 
 /**
  * The text layer's one geometry (ADR-0280, Decisions 4 to 6), pure: a line's letters on screen, the caret a point means
@@ -55,6 +55,38 @@ describe('the text layer’s letters on screen (ADR-0280)', () => {
     expect(Number(spanEnd(shape, 'from').x.toFixed(6))).toBe(82.4);
     expect(Number(spanEnd(shape, 'to').x.toFixed(6))).toBe(102.4);
     expect(spanShape(run, 2, 2)).toBeNull();
+  });
+
+  it('THE LETTER a point is on, for a double click: the unit whose advance holds it, a pair by its first unit', () => {
+    const run = letterRun(LETTERS, 4, UPRIGHT);
+    if (run === null) throw new Error('no run');
+    const y = 88;
+    expect(letterAt(run, { x: 72.4 + 9.9, y })).toBe(0);
+    expect(letterAt(run, { x: 72.4 + 10, y })).toBe(1);
+    // THE PAIR is units 1 and 2: its first spans 10 to 30 and its second advances 0, so no point is on the second.
+    expect(letterAt(run, { x: 72.4 + 29.9, y })).toBe(1);
+    expect(letterAt(run, { x: 72.4 + 31, y })).toBe(3);
+    // BEFORE THE FIRST and PAST THE LAST, the first and last letter.
+    expect(letterAt(run, { x: 10, y })).toBe(0);
+    expect(letterAt(run, { x: 500, y })).toBe(3);
+  });
+
+  it('THE BAND: on, before, after and off a line, at its own angle', () => {
+    const run = letterRun(LETTERS, 4, UPRIGHT);
+    if (run === null) throw new Error('no run');
+    // THE BAND runs from 0.25 of the size below the baseline (91.3) to 0.9 above it; y runs down the screen.
+    expect(bandPlace(run, { x: 80, y: 91.3 - 5 }).place).toBe('on');
+    const before = bandPlace(run, { x: 60, y: 91.3 - 5 });
+    expect(before.place).toBe('before');
+    expect(before.distance).toBeCloseTo(12.4, 9);
+    expect(bandPlace(run, { x: 72.4 + 40, y: 91.3 - 5 }).place).toBe('after');
+    expect(bandPlace(run, { x: 80, y: 91.3 - 11 }).place).toBe('off');
+    expect(bandPlace(run, { x: 80, y: 91.3 + 3 }).place).toBe('off');
+    // ON A LINE RUNNING DOWN THE SCREEN, a point down it is on it and one well across it is off it.
+    const down = letterRun({ ...LETTERS, direction: { x: 0, y: 1 } }, 4, UPRIGHT);
+    if (down === null) throw new Error('no run down the page');
+    expect(bandPlace(down, { x: 72.4 + 4, y: 91.3 + 20 }).place).toBe('on');
+    expect(bandPlace(down, { x: 72.4 + 20, y: 91.3 + 20 }).place).toBe('off');
   });
 
   it('follows the page’s turn and zoom: at 90 degrees and twice the size, the line runs down the screen', () => {

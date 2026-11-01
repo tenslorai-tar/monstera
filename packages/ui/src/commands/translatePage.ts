@@ -61,8 +61,12 @@ export interface TranslatePageDeps extends DocumentCommandDeps {
   readonly track: TrackTask;
   /** The secret settings stored, read when the command runs — which providers have a key. */
   readonly storedSecrets: () => readonly string[];
-  /** The words selected on the page, read when the command runs; the browser's selection where absent. */
-  readonly selectedText?: (() => string) | undefined;
+  /**
+   * The words selected on the page, read when the command runs: `readTextSelection`'s text, the one reading of a page's
+   * selection (B3a). Required, so no default can read the platform's text of it, which runs one line's last word into
+   * the next line's first.
+   */
+  readonly selectedText: () => string;
 }
 
 /**
@@ -100,7 +104,7 @@ export function translatePageCommand(deps: TranslatePageDeps): UiCommand {
       const { docId, page } = context;
       if (docId === undefined || page === undefined) return;
       // THE WORDS SELECTED, read BEFORE the dialog opens: a dialog takes focus and a selection goes with it.
-      const selected = (deps.selectedText ?? selectedTextOnPage)().trim().slice(0, MAX_TRANSLATE_TEXT);
+      const selected = deps.selectedText().trim().slice(0, MAX_TRANSLATE_TEXT);
       const stored = deps.storedSecrets();
       const providers = AI_PROVIDER_IDS.filter((id) => stored.includes(AI_PROVIDERS[id].keySetting));
       // THE NARROWING `ask`'S `unknown` LEAVES: the answer has been through the dialog's own result
@@ -278,9 +282,4 @@ async function translateSelection(
   }
   const copied = await deps.client['window.copyText']({ text: translated.value.text });
   if (copied.ok && copied.value.copied) confirmDone(deps, TOAST_TEXT_TRANSLATED);
-}
-
-/** The words selected on the page, from the browser's own selection. A dependency in the tests, which have none. */
-function selectedTextOnPage(): string {
-  return globalThis.document.getSelection()?.toString() ?? '';
 }

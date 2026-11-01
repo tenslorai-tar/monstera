@@ -6479,7 +6479,8 @@ optgroup {
 
 /* THE SELECTION AS PAINTED (`paintSelection`): one shape per line the selection crosses, from the engine's letters,
    under the lines and taking no pointer. */
-.m-text-layer__selection {
+.m-text-layer__selection,
+.m-text-layer__matches {
   position: absolute;
   inset: 0;
   inline-size: 100%;
@@ -6502,15 +6503,11 @@ optgroup {
 }
 
 /*
- * A search's matches, painted over the same glyphs without touching the tree.
+ * A search's matches, painted by the layer over the engine's letters (`paintMatches`, ADR-0280 rule (i)), beneath the
+ * selection. The registry's own highlights (`searchHighlight.ts`) record which words match and are transparent, for
+ * `::selection`'s reason: they are laid out in the substitute face.
  *
- * `::highlight()` is styled by NAME rather than by selector, so these two rules
- * are the whole stylesheet side of the feature — the names are registered from
- * `searchHighlight.ts` and match its two constants. A rule for a name nothing
- * registers paints nothing and costs nothing, which is what makes the absent-API
- * path silent rather than broken.
- *
- * Both are weaker than `::selection` above on purpose: a reader dragging across
+ * Both are weaker than the selection above on purpose: a reader dragging across
  * a highlighted match must still see their own selection win, because that is
  * the one they are making right now. `color` is left transparent by both, since
  * the glyphs under this layer are the raster's and the text here is a stand-in.
@@ -6520,13 +6517,17 @@ optgroup {
  * of thing, currently under the reader's attention — and one hue keeps the
  * contrast argument to a single pair.
  */
-::highlight(monstera-find) {
-  background-color: color-mix(in srgb, var(--accent) 28%, transparent);
-  color: transparent;
+.m-text-layer__matches polygon {
+  fill: color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
+.m-text-layer__matches polygon.is-active {
+  fill: color-mix(in srgb, var(--accent) 65%, transparent);
+}
+
+::highlight(monstera-find),
 ::highlight(monstera-find-active) {
-  background-color: color-mix(in srgb, var(--accent) 65%, transparent);
+  background-color: transparent;
   color: transparent;
 }
 
