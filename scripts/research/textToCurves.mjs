@@ -26,10 +26,13 @@ import { join } from 'node:path';
 
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFString, StandardFonts, rgb } from '@cantoo/pdf-lib';
 
+import { NATIVE_ENGINE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { bindNativeEngine } from '../lib/nativeEngine.mjs';
 
 const ROOT = repoRoot();
+// THE ONE BUILD IT READS, the MuPDF object model it draws and reads pages with: a stale one would answer for yesterday's.
+refuseStaleBuild(ROOT, NATIVE_ENGINE, 1);
 const argument = (/** @type {string} */ name) => {
   const at = process.argv.indexOf(name);
   return at === -1 ? undefined : process.argv[at + 1];
