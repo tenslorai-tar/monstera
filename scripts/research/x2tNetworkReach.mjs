@@ -48,7 +48,7 @@
  * Usage: node scripts/research/x2tNetworkReach.mjs
  */
 
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -57,6 +57,7 @@ import { pathToFileURL } from 'node:url';
 
 import { strToU8, zipSync } from 'fflate';
 
+import { childProcesses } from '../lib/childProcesses.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { onlyofficeRoot, x2tPath } from '../provision/onlyoffice.mjs';
@@ -138,25 +139,19 @@ function linkedDocx(url) {
 const htmlPage = (url) => strToU8(`<!doctype html><html><body><p>probe</p><img src="${xml(url)}"></body></html>\n`);
 
 /**
- * Every `powershell.exe` whose parent is `pid`, read once, as `pid commandline` lines.
+ * Every child of `pid`, read once, as `pid name commandline` lines. A process whose creation time could not be read is
+ * listed too, marked: this probe looks for a child that should not exist, so a process it cannot rule out is shown
+ * rather than dropped.
  *
  * @param {number} pid
  */
 function powershellChildren(pid) {
-  const result = spawnSync(
-    'powershell.exe',
-    [
-      '-NoProfile',
-      '-NonInteractive',
-      '-Command',
-      `Get-CimInstance Win32_Process -Filter "ParentProcessId=${String(pid)}" | ForEach-Object { "$($_.ProcessId) $($_.Name) $($_.CommandLine)" }`,
-    ],
-    { encoding: 'utf8', timeout: 20_000 },
-  );
-  return `${result.stdout}`
-    .split(/\r?\n/u)
-    .map((line) => line.trim())
-    .filter((line) => line !== '');
+  const { children, olderThanParent } = childProcesses(pid);
+  const unreadable = olderThanParent.filter((each) => each.created === null);
+  return [
+    ...children.map((each) => `${String(each.pid)} ${each.name} ${each.commandLine ?? ''}`.trim()),
+    ...unreadable.map((each) => `${String(each.pid)} ${each.name} ${each.commandLine ?? ''} (creation time unreadable)`.trim()),
+  ];
 }
 
 /** @param {number} pid */

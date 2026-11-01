@@ -60,16 +60,19 @@
  * and two means this cannot tell which one to kill — both are refusals rather
  * than a guess. That requirement is the positive control: a kill aimed at
  * nothing would otherwise read exactly like a kill the shell recovered from.
+ * A child is one `childProcesses.mjs` counts, which is more than a recorded
+ * parent id: a process an earlier, ended process started can carry this one's
+ * reused id.
  *
  * Usage: not directly. `node scripts/research/hostRecovery.mjs`.
  */
 
-import { spawnSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+import { childProcessIds, describeChildren } from '../lib/childProcesses.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { freezeHost } from './freezeHost.mjs';
@@ -111,42 +114,6 @@ const DEATH_BUDGET_MS = 5_000;
  * than the shell's recovery.
  */
 const POLL_MS = 250;
-
-/**
- * This process's child process ids.
- *
- * Through `Get-CimInstance` rather than a native call: this is a diagnostic in
- * a harness, not a mechanism the product depends on, and a koffi binding here
- * would be a third opinion about process enumeration for no gain.
- *
- * @returns {number[]}
- */
-function childProcessIds() {
-  const result = spawnSync(
-    'powershell.exe',
-    [
-      '-NoProfile',
-      '-NonInteractive',
-      '-Command',
-      // `ProcessId<>$PID` EXCLUDES THE ENUMERATOR ITSELF. Asking Windows for
-      // this process's children from inside a child of this process returns
-      // that child too, so every reading came back with one more than the truth
-      // — measured as `found 2 (13856, 14640)` with exactly one host running.
-      // Excluded by identity rather than by image name, because a filter on
-      // `powershell.exe` would also hide a host that happened to be one.
-      `Get-CimInstance Win32_Process -Filter "ParentProcessId=${String(process.pid)}" | ` +
-        `Where-Object { $_.ProcessId -ne $PID } | Select-Object -ExpandProperty ProcessId`,
-    ],
-    { encoding: 'utf8', timeout: 20_000 },
-  );
-  if (result.error !== undefined) {
-    throw new Error('could not enumerate this process’s children', { cause: result.error });
-  }
-  return `${result.stdout}`
-    .split(/\r?\n/)
-    .map((line) => Number(line.trim()))
-    .filter((id) => Number.isInteger(id) && id > 0);
-}
 
 /** @param {number} ms */
 function sleep(ms) {
@@ -340,7 +307,7 @@ async function main() {
         `expected exactly one child process — the engine host — and found ${String(before.length)} ` +
           `(${before.join(', ') || 'none'}). Zero means no host was created, so a kill would ` +
           `hit nothing and the recovery below would be recovery from an event that never ` +
-          `happened. Two means this cannot tell which process is the host.`,
+          `happened. Two means this cannot tell which process is the host. ${describeChildren()}`,
       );
     }
     const firstPid = before[0] ?? 0;

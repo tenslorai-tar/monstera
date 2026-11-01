@@ -26,7 +26,6 @@
  * Usage: not directly. `node scripts/research/hostFileAnswersLive.mjs`.
  */
 
-import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -34,6 +33,7 @@ import { pathToFileURL } from 'node:url';
 
 import { PDFDocument, StandardFonts, rgb } from '@cantoo/pdf-lib';
 
+import { childProcessIds } from '../lib/childProcesses.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { NO_FACE_CHARACTER } from '../lib/noFaceCharacter.mjs';
 import { formatError } from '../lib/reportError.mjs';
@@ -176,30 +176,6 @@ async function manyFieldsForm() {
 /** How long the hosts have to exit once killed. `hostRecoveryHost.mjs`' bound. */
 const DEATH_BUDGET_MS = 5_000;
 const POLL_MS = 250;
-
-/**
- * This process's child process ids — `composeHostLiveHost.mjs`' enumeration, for its cleanup.
- *
- * @returns {number[]}
- */
-function childProcessIds() {
-  const result = spawnSync(
-    'powershell.exe',
-    [
-      '-NoProfile',
-      '-NonInteractive',
-      '-Command',
-      `Get-CimInstance Win32_Process -Filter "ParentProcessId=${String(process.pid)}" | ` +
-        `Where-Object { $_.ProcessId -ne $PID } | Select-Object -ExpandProperty ProcessId`,
-    ],
-    { encoding: 'utf8', timeout: 20_000 },
-  );
-  if (result.error !== undefined) throw new Error('could not enumerate this process’s children', { cause: result.error });
-  return `${result.stdout}`
-    .split(/\r?\n/)
-    .map((line) => Number(line.trim()))
-    .filter((id) => Number.isInteger(id) && id > 0);
-}
 
 /** @param {number} ms */
 function sleep(ms) {

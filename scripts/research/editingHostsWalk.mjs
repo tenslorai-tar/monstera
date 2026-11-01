@@ -15,13 +15,13 @@
  * Processes are read with `Get-CimInstance Win32_Process` below the app's own `main`, so a host of another app or of an
  * earlier run is never counted. Nothing a person wrote is read.
  */
-import { execFileSync } from 'node:child_process';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 
+import { descendantsAmong, listProcesses } from '../lib/childProcesses.mjs';
 import { startWalk } from './liveWalk.mjs';
 
 const argv = process.argv.slice(2);
@@ -53,31 +53,16 @@ async function plainDocument() {
  * @returns {Record<string, number[]>}
  */
 function hostsBelow(root) {
-  const json = execFileSync(
-    'powershell',
-    ['-NoProfile', '-Command', 'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CommandLine | ConvertTo-Json -Compress'],
-    { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
-  );
-  /** @type {{ ProcessId: number, ParentProcessId: number, CommandLine: string | null }[]} */
-  const all = JSON.parse(json);
-  const below = new Set([root]);
-  for (let grew = true; grew; ) {
-    grew = false;
-    for (const each of all) {
-      if (below.has(each.ParentProcessId) && !below.has(each.ProcessId)) {
-        below.add(each.ProcessId);
-        grew = true;
-      }
-    }
-  }
+  const all = listProcesses();
+  const below = descendantsAmong(root, all);
   /** @type {Record<string, number[]>} */
   const found = { mupdf: [], pdfium: [], compose: [] };
   for (const each of all) {
-    if (!below.has(each.ProcessId) || each.ProcessId === root) continue;
-    const line = each.CommandLine ?? '';
+    if (!below.has(each.pid) || each.pid === root) continue;
+    const line = each.commandLine ?? '';
     // THE LONGEST ENTRY NAME FIRST: `hostEntry.js` is the tail of the other two.
     const kind = ['pdfium', 'compose', 'mupdf'].find((name) => line.includes(ENTRIES[/** @type {keyof typeof ENTRIES} */ (name)]));
-    if (kind !== undefined) found[kind]?.push(each.ProcessId);
+    if (kind !== undefined) found[kind]?.push(each.pid);
   }
   return found;
 }

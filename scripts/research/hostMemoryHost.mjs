@@ -30,7 +30,6 @@
  *                                                                  hostMemoryHost.mjs kill <report> <kill-at-bytes>
  */
 
-import { spawnSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
@@ -38,6 +37,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+import { childProcessIds, describeChildren } from '../lib/childProcesses.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { formatError } from '../lib/reportError.mjs';
 
@@ -49,30 +49,6 @@ const KILL_AT_BYTES = Number(process.argv[4] ?? 'NaN');
 /** How long an old host has to go at teardown — `hostRecoveryHost.mjs`' budget. */
 const DEATH_BUDGET_MS = 5_000;
 const POLL_MS = 250;
-
-/**
- * This process's child process ids, as `hostRecoveryHost.mjs` reads them (its comment has the reasons).
- *
- * @returns {number[]}
- */
-function childProcessIds() {
-  const result = spawnSync(
-    'powershell.exe',
-    [
-      '-NoProfile',
-      '-NonInteractive',
-      '-Command',
-      `Get-CimInstance Win32_Process -Filter "ParentProcessId=${String(process.pid)}" | ` +
-        `Where-Object { $_.ProcessId -ne $PID } | Select-Object -ExpandProperty ProcessId`,
-    ],
-    { encoding: 'utf8', timeout: 20_000 },
-  );
-  if (result.error !== undefined) throw new Error('could not enumerate this process’s children', { cause: result.error });
-  return `${result.stdout}`
-    .split(/\r?\n/)
-    .map((line) => Number(line.trim()))
-    .filter((id) => Number.isInteger(id) && id > 0);
-}
 
 /** @param {number} ms */
 function sleep(ms) {
@@ -251,7 +227,7 @@ async function main() {
     /** The one engine host's commit, read with the product sampler's own access. */
     const hostCommit = () => {
       const ids = childProcessIds();
-      if (ids.length !== 1) throw new Error(`expected exactly one child, the engine host, and found ${String(ids.length)}`);
+      if (ids.length !== 1) throw new Error(`expected exactly one child, the engine host, and found ${String(ids.length)}. ${describeChildren()}`);
       return readWithProductAccess(ids[0] ?? 0);
     };
 
