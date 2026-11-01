@@ -10,6 +10,7 @@ import {
   MAX_OFFICE_MISSING_BLOCKS,
   MAX_PAGE_BARCODES,
   MAX_SETTINGS_FILE_BYTES,
+  MAX_TRANSLATED_TEXT,
   RECENT_CHECK_CAP_MS,
   RECENT_PREVIEWS_SETTING_ID,
   SHOWN_SCHEME_MAX,
@@ -2678,6 +2679,23 @@ settings: createEphemeralSettings(),
     // THE SAME INSTRUCTION AND THE SAME REQUEST SHAPE as a page: one text, as a one-element list.
     expect(asked[0]?.system).toContain('into French');
     expect(JSON.parse(asked[0]?.user ?? '[]')).toStrictEqual(['Payment is due']);
+  });
+
+  it('a selection’s translation LONGER THAN 16,384 characters is answered whole, never cut (preserve, never drop)', async () => {
+    // TWENTY THOUSAND CHARACTERS of translation: the handler sliced it to MAX_CHAT_TEXT and answered *translated*.
+    const long = 'é'.repeat(20_000);
+    const { handlers } = translating(BLOCKS, JSON.stringify([long]));
+    const answer = await handlers['ai.translateText']({ text: 'Payment is due', provider: 'openai', model: 'm', language: 'fr' });
+    expect(answer).toStrictEqual({ ok: true, value: { kind: 'translated', text: long } });
+    // AND IT PASSES THE CHANNEL'S OWN ANSWER SCHEMA, which it would not if the bound stayed at the question's.
+    expect(channels['ai.translateText'].result.safeParse(answer.ok ? answer.value : null).success).toBe(true);
+  });
+
+  it('CONTROL: a translation past the copy bound is refused as cut, never sent short', async () => {
+    const { handlers } = translating(BLOCKS, JSON.stringify(['é'.repeat(MAX_TRANSLATED_TEXT + 1)]));
+    expect(
+      await handlers['ai.translateText']({ text: 'Payment is due', provider: 'openai', model: 'm', language: 'fr' }),
+    ).toStrictEqual({ ok: true, value: { kind: 'refused', problem: 'answer-cut' } });
   });
 
   it('CONTROL: selected text whose answer cannot be read is refused as unreadable after one more ask', async () => {

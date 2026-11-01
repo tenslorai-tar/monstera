@@ -77,11 +77,18 @@ export async function readAskWindow(
 
 /**
  * Text the renderer sent with the ask — a selection or a comment — as a window: the page it
- * belongs to, and the text itself.
+ * belongs to, and the text itself. **Cut** where the renderer cut it to the ask's bound, which only its whole length
+ * says (`carriedSelection`): the line under the turn then reads *cut short*, and the instruction tells the provider the
+ * text stops before its end, as a window that stopped early does.
  */
-export function carriedWindow(page: number, carried: string, pageCount: number): AskWindow {
-  const text = `${askPageMarker(page)}\n${carried}`;
-  return { text, sent: { firstPage: page, lastPage: page, pageCount, characters: text.length, truncated: false } };
+export function carriedWindow(
+  page: number,
+  carried: { readonly text: string; readonly whole: number },
+  pageCount: number,
+): AskWindow {
+  const text = `${askPageMarker(page)}\n${carried.text}`;
+  const truncated = carried.whole > carried.text.length;
+  return { text, sent: { firstPage: page, lastPage: page, pageCount, characters: text.length, truncated } };
 }
 
 /**

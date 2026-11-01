@@ -3,8 +3,10 @@ import {
   AI_PROVIDER_IDS,
   type AiProviderId,
   type ChannelResult,
+  MAX_ANSWER_TEXT,
   MAX_TRANSLATE_TEXT,
   type TranslationLanguage,
+  translationPieces,
 } from '@monstera/contract';
 import type { DocId, DocVersion, MessageKey } from '@monstera/shared';
 
@@ -23,6 +25,7 @@ import {
   TOAST_PAGES_TRANSLATED,
   TOAST_PAGES_TRANSLATED_PARTLY,
   TOAST_PAGE_TRANSLATED,
+  TOAST_SELECTION_TRANSLATION_TOO_LONG,
   TOAST_TEXT_TRANSLATED,
   TRANSLATE_PAGES_PROGRESS,
   TOAST_TRANSLATE_NOT_WRITABLE,
@@ -100,7 +103,8 @@ export function translatePageCommand(deps: TranslatePageDeps): UiCommand {
       const { docId, page } = context;
       if (docId === undefined || page === undefined) return;
       // THE WORDS SELECTED, read BEFORE the dialog opens: a dialog takes focus and a selection goes with it.
-      const selected = (deps.selectedText ?? selectedTextOnPage)().trim().slice(0, MAX_TRANSLATE_TEXT);
+      // WHOLE, never cut to one ask's bound: a long selection is translated in pieces (`translateSelection`).
+      const selected = (deps.selectedText ?? selectedTextOnPage)().trim();
       const stored = deps.storedSecrets();
       const providers = AI_PROVIDER_IDS.filter((id) => stored.includes(AI_PROVIDERS[id].keySetting));
       // THE NARROWING `ask`'S `unknown` LEAVES: the answer has been through the dialog's own result
@@ -127,7 +131,9 @@ export function translatePageCommand(deps: TranslatePageDeps): UiCommand {
           // IN PLACE FIRST: the blocks that hold the selected words are translated and written by the page's own per-page
           // command, one undo step. Only where NO block holds them — a selection that crosses blocks, or text in a form
           // field — is it translated and COPIED, as before, so a person is never left with nothing.
-          if (selected !== '') {
+          // A SELECTION LONGER THAN ONE ASK names its blocks by more words than `only` carries, so it goes straight to the
+          // copy, whole, rather than in place by its opening alone.
+          if (selected !== '' && selected.length <= MAX_TRANSLATE_TEXT) {
             const outcome = await translateOne(deps, docId, page, chosen, task.signal, true, selected);
             if (outcome !== 'nothing') return;
           }
@@ -266,17 +272,31 @@ async function translateSelection(
     deps.toast('problem', TOAST_NOTHING_SELECTED);
     return;
   }
-  const translated = await deps.client['ai.translateText']({ text, ...chosen });
-  if (signal.aborted) return;
-  if (!translated.ok) {
-    reportProblem(deps, translated.error);
+  // EVERY PIECE, in order (`translationPieces`): a selection longer than one ask is translated whole, never its opening
+  // presented as all of it. A refusal of any piece copies nothing, since half a translation is never copied as one.
+  const translations: string[] = [];
+  for (const piece of translationPieces(text)) {
+    const translated = await deps.client['ai.translateText']({ text: piece, ...chosen });
+    if (signal.aborted) return;
+    if (!translated.ok) {
+      reportProblem(deps, translated.error);
+      return;
+    }
+    if (translated.value.kind === 'refused') {
+      const problem = translated.value.problem;
+      deps.toast('problem', problem === 'answer-cut' || problem === 'too-long' ? TOAST_SELECTION_TRANSLATION_TOO_LONG : REFUSALS[problem]);
+      return;
+    }
+    translations.push(translated.value.text);
+  }
+  // A PIECE KEEPS THE WHITE SPACE IT WAS CUT AT, and a translation is answered trimmed, so the pieces join with a space.
+  const whole = translations.join(' ');
+  // MORE THAN ONE COPY CARRIES is said, and nothing is copied, rather than a translation cut at the clipboard's bound.
+  if (whole.length > MAX_ANSWER_TEXT) {
+    deps.toast('problem', TOAST_SELECTION_TRANSLATION_TOO_LONG);
     return;
   }
-  if (translated.value.kind === 'refused') {
-    deps.toast('problem', REFUSALS[translated.value.problem]);
-    return;
-  }
-  const copied = await deps.client['window.copyText']({ text: translated.value.text });
+  const copied = await deps.client['window.copyText']({ text: whole });
   if (copied.ok && copied.value.copied) confirmDone(deps, TOAST_TEXT_TRANSLATED);
 }
 

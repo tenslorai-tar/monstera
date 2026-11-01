@@ -1,4 +1,4 @@
-import { MAX_ASK_SELECTION } from '@monstera/contract';
+import { MAX_ASK_SELECTION, askAboutSchema } from '@monstera/contract';
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -38,7 +38,7 @@ describe('Ask AI · Explain · Summarise · Translate on selected text', () => {
 
     for (const command of commands) await command.run(CONTEXT);
 
-    const about = { scope: 'selection', docId: DOC, page: 4, text: 'the indemnity clause' };
+    const about = { scope: 'selection', docId: DOC, page: 4, text: 'the indemnity clause', whole: 20 };
     expect(asked).toStrictEqual([
       // ASK AI QUOTES the words for the person's own question and sends nothing; the other three ask at once.
       [about, { quote: 'the indemnity clause' }],
@@ -72,6 +72,20 @@ describe('Ask AI · Explain · Summarise · Translate on selected text', () => {
     await assistantSelectionCommands({ selection: () => long, ask })[1]?.run(CONTEXT);
     expect((asked[0]?.[0] as { text: string }).text).toHaveLength(MAX_ASK_SELECTION);
   });
+
+  it('carries the selection’s WHOLE length with the cut, so the asked turn says it went cut short', async () => {
+    // FIFTY CHARACTERS PAST THE BOUND went as a selection of exactly the bound, and nothing said any were left out.
+    const { ask, asked } = recording();
+    const long = { ...SELECTED, text: 'w'.repeat(MAX_ASK_SELECTION + 50) };
+    await assistantSelectionCommands({ selection: () => long, ask })[1]?.run(CONTEXT);
+    expect(asked[0]?.[0]).toMatchObject({ scope: 'selection', whole: MAX_ASK_SELECTION + 50 });
+    // AND IT PASSES THE CHANNEL'S SCHEMA, which requires the whole length of every carried text.
+    expect(askAboutSchema.safeParse(asked[0]?.[0]).success).toBe(true);
+    // CONTROL: a selection within the bound carries its own length, and goes as whole.
+    const { ask: shortAsk, asked: shortAsked } = recording();
+    await assistantSelectionCommands({ selection: () => SELECTED, ask: shortAsk })[1]?.run(CONTEXT);
+    expect(shortAsked[0]?.[0]).toMatchObject({ text: SELECTED.text, whole: SELECTED.text.length });
+  });
 });
 
 describe('Draft a reply with AI', () => {
@@ -94,7 +108,7 @@ describe('Draft a reply with AI', () => {
     expect(asked).toStrictEqual([
       [
         // A COMMENT scope: the instruction must not call a note "text the person selected".
-        { scope: 'comment', docId: DOC, page: 2, text: 'Can we move the date?' },
+        { scope: 'comment', docId: DOC, page: 2, text: 'Can we move the date?', whole: 21 },
         ASSISTANT_PROMPT_DRAFT_REPLY,
         { page: 2, index: 5, version: asDocVersion(7) },
       ],

@@ -3232,7 +3232,7 @@ export class DocumentCommands {
 
       const { pageCount } = await this.#geometry(docId, sessions, []);
       if (about.scope === 'selection' || about.scope === 'comment') {
-        return carriedWindow(about.page, about.text, pageCount);
+        return carriedWindow(about.page, about, pageCount);
       }
       // THE COMMENTS PANEL'S OWN LIST, read in the same lane: what the provider summarises is the
       // list a person can see, bounded by the list's bound and then by the window's.

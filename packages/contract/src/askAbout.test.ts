@@ -111,7 +111,9 @@ describe('the page frame an ask and its answer share', () => {
 
 describe('what an ask may be about', () => {
   it('refuses a selection with no text, and a scope it does not name', () => {
-    expect(askAboutSchema.safeParse({ scope: 'selection', docId: 'd', page: 0, text: '' }).success).toBe(false);
+    expect(askAboutSchema.safeParse({ scope: 'selection', docId: 'd', page: 0, text: '', whole: 1 }).success).toBe(false);
+    // A CARRIED TEXT WITH NO WHOLE LENGTH is refused: without it a cut would cross as the whole selection.
+    expect(askAboutSchema.safeParse({ scope: 'selection', docId: 'd', page: 0, text: 'words' }).success).toBe(false);
     expect(askAboutSchema.safeParse({ scope: 'library', docId: 'd' }).success).toBe(false);
     // A comment carries its text as a selection does, so it is refused without one too.
     expect(askAboutSchema.safeParse({ scope: 'comment', docId: 'd', page: 0 }).success).toBe(false);
@@ -125,8 +127,8 @@ describe('what an ask may be about', () => {
 
   it('CONTROL: accepts each of the five scopes it declares', () => {
     for (const about of [
-      { scope: 'selection', docId: 'd', page: 2, text: 'words' },
-      { scope: 'comment', docId: 'd', page: 2, text: 'a note' },
+      { scope: 'selection', docId: 'd', page: 2, text: 'words', whole: 5 },
+      { scope: 'comment', docId: 'd', page: 2, text: 'a note', whole: 6 },
       { scope: 'page', docId: 'd', page: 2 },
       { scope: 'document', docId: 'd' },
       { scope: 'comments', docId: 'd' },
@@ -178,14 +180,14 @@ describe('two documents side by side (ADR-0089)', () => {
     expect(request({ scope: 'document', docId: 'a' }, { scope: 'document', docId: 'a' })).toBe(false);
     expect(request({ scope: 'page', docId: 'a', page: 1 }, { scope: 'document', docId: 'b' })).toBe(false);
     expect(
-      request({ scope: 'selection', docId: 'a', page: 0, text: 'x' }, { scope: 'selection', docId: 'b', page: 0, text: 'y' }),
+      request({ scope: 'selection', docId: 'a', page: 0, text: 'x', whole: 1 }, { scope: 'selection', docId: 'b', page: 0, text: 'y', whole: 1 }),
     ).toBe(false);
     expect(request(undefined, { scope: 'document', docId: 'b' })).toBe(false);
     expect(request({ scope: 'comments', docId: 'a' }, { scope: 'comments', docId: 'b' })).toBe(false);
   });
 
   it('CONTROL: an ask with no second document is unchanged', () => {
-    expect(request({ scope: 'selection', docId: 'a', page: 0, text: 'x' }, undefined)).toBe(true);
+    expect(request({ scope: 'selection', docId: 'a', page: 0, text: 'x', whole: 1 }, undefined)).toBe(true);
   });
 });
 

@@ -156,6 +156,7 @@ export {
   MAX_MODEL_ID,
   MAX_TRANSLATE_TEXT,
   MAX_TRANSLATED_TEXT,
+  translationPieces,
   // ONE LIST SHAPE for `ai.models` and the Settings dialog's props (ADR-0117).
   AI_LIST_PROBLEMS,
   type AiModelListAnswer,
@@ -275,6 +276,7 @@ export {
   MAX_ASK_CONTEXT,
   MAX_ASK_DOCUMENTS,
   MAX_ASK_SELECTION,
+  carriedSelection,
   askAboutSchema,
   askAmongSchema,
   askCitation,

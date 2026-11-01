@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { cutPoint } from './boundedText.js';
 import { docIdSchema } from './schemas.js';
 
 /**
@@ -67,8 +68,21 @@ const carried = <Scope extends 'selection' | 'comment'>(scope: Scope) =>
       /** Zero-based, as every page index crossing the contract is. */
       page: z.number().int().nonnegative(),
       text: z.string().min(1).max(MAX_ASK_SELECTION),
+      /**
+       * How long the text was before it was cut to {@link MAX_ASK_SELECTION} — its own length where it was not. Carried
+       * so `main` says on the asked turn that it went cut short, which only the renderer can know (`carriedSelection`).
+       */
+      whole: z.number().int().positive(),
     })
     .strict();
+
+/**
+ * A selection's or a comment's text as an ask carries it: cut at the one rule (`cutPoint`) where it is longer than
+ * {@link MAX_ASK_SELECTION}, with its whole length, so the cut is said and never presented as the whole.
+ */
+export function carriedSelection(text: string): { readonly text: string; readonly whole: number } {
+  return { text: text.slice(0, cutPoint(text, MAX_ASK_SELECTION)), whole: text.length };
+}
 
 export const askAboutSchema = z.discriminatedUnion('scope', [
   carried('selection'),

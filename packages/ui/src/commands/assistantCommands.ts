@@ -1,4 +1,4 @@
-import { MAX_ASK_SELECTION } from '@monstera/contract';
+import { carriedSelection } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 
 import type { AnnotationSelection } from '../annotations/selectTool.js';
@@ -104,10 +104,10 @@ export function assistantSelectionCommands(deps: AssistantCommandDeps): readonly
     run: (context): void => {
       const selection = deps.selection();
       if (context.docId === undefined || selection === undefined) return;
-      // CUT TO THE CHANNEL'S BOUND rather than refused there: a long selection is still a
-      // question about its opening, and the window's line says what went.
-      const text = selection.text.slice(0, MAX_ASK_SELECTION);
-      deps.ask({ scope: 'selection', docId: context.docId, page: selection.page, text }, prompt ?? { quote: text });
+      // CUT TO THE CHANNEL'S BOUND rather than refused there: a long selection is still a question about its opening,
+      // and the line under the asked turn says it went cut short, from the whole length carried with it.
+      const carried = carriedSelection(selection.text);
+      deps.ask({ scope: 'selection', docId: context.docId, page: selection.page, ...carried }, prompt ?? { quote: carried.text });
     },
   }));
 }
@@ -170,7 +170,7 @@ export function draftReplyCommand(deps: {
       const { selection, item, text } = target;
       deps.ask(
         // A COMMENT, not a selection: the instruction names what the text is.
-        { scope: 'comment', docId: context.docId, page: selection.page, text: text.slice(0, MAX_ASK_SELECTION) },
+        { scope: 'comment', docId: context.docId, page: selection.page, ...carriedSelection(text) },
         ASSISTANT_PROMPT_DRAFT_REPLY,
         { page: selection.page, index: item.index, version: selection.version },
       );

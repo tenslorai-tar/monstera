@@ -3527,7 +3527,11 @@ function translateTextHandler(deps: { readonly assistant: Assistant }): Contract
     }
     const first = translated?.[0];
     if (first === undefined) return ok({ kind: 'refused', problem: 'unreadable' } as const);
-    return ok({ kind: 'translated', text: first.slice(0, MAX_TRANSLATED_TEXT) } as const);
+    // NEVER CUT: a translation past the bound is refused as the stream refuses an answer past it, and said, rather than
+    // copied short and called translated (preserve, never drop). The stream stops an answer at the same bound, so this
+    // holds the rule where the bound is stated rather than where it is hit.
+    if (first.length > MAX_TRANSLATED_TEXT) return ok({ kind: 'refused', problem: 'answer-cut' } as const);
+    return ok({ kind: 'translated', text: first } as const);
   };
 }
 

@@ -68,9 +68,17 @@ describe('the window an ask carries', () => {
   });
 
   it('a selection is its page marker and the selected words, reading nothing', () => {
-    const window = carriedWindow(6, 'the clause', 12);
+    const window = carriedWindow(6, { text: 'the clause', whole: 10 }, 12);
     expect(window.text).toBe('[Page 7]\nthe clause');
     expect(window.sent).toMatchObject({ firstPage: 6, lastPage: 6, pageCount: 12, truncated: false });
+  });
+
+  it('a selection the renderer CUT to the bound goes as cut short, and the provider is told it stops before its end', () => {
+    // TWENTY THOUSAND CHARACTERS SELECTED, sixteen thousand carried: the window answered `truncated: false`, so the line
+    // under the turn read as the whole selection.
+    const window = carriedWindow(0, { text: 'w'.repeat(16_384), whole: 20_000 }, 3);
+    expect(window.sent.truncated).toBe(true);
+    expect(askInstruction(window, 'selection', false)).toContain('stops before the end');
   });
 });
 
@@ -91,7 +99,7 @@ describe('the instruction a window travels in', () => {
   });
 
   it('calls a COMMENT a comment, and CONTROL: a selection is still called selected', () => {
-    const window = carriedWindow(0, 'Please check the date.', 1);
+    const window = carriedWindow(0, { text: 'Please check the date.', whole: 22 }, 1);
     // Seen live 2026-09-21: a comment went as a selection, and the model said "the text you selected".
     expect(askInstruction(window, 'comment', false)).toContain('a comment left on a PDF document');
     expect(askInstruction(window, 'comment', false)).not.toContain('selected');
