@@ -16,7 +16,10 @@
  * root, adds one more, and requires the provisioner to refuse and remove the tree; the CONTROL is the same copy
  * without the extra file, which must be accepted with no download, so the refusal is about the planted font.
  *
- * Downloads nothing. Needs the fonts provisioned for the copy cases (`--require-fonts` makes their absence red).
+ * Downloads nothing: a tree it makes the provisioner rebuild is rebuilt from the genuine files, held and checked by pin,
+ * with the network off. This line said so before 2026-11-01 while the two rebuild cases fetched the whole set from
+ * ftp.gnu.org and raw.githubusercontent.com on every run. Needs the fonts provisioned for the copy cases
+ * (`--require-fonts` makes their absence red).
  *
  * Usage: node scripts/provision/fonts.proof.mjs [--require-fonts]
  */
@@ -45,7 +48,7 @@ const requireFonts = process.argv.includes('--require-fonts');
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 11 });
+const roster = createRoster(failures, { cases: 12 });
 /** The cases that could not run here, by name, for the partial outcome. @type {string[]} */
 const missed = [];
 
@@ -155,10 +158,16 @@ try {
       if (plant) writeFileSync(join(fontsDirectory(root), 'Planted-Regular.ttf'), 'a font nobody pinned');
       return root;
     };
-    /** @param {string} root */
-    const answer = async (root) => {
+    /**
+     * THE GENUINE TREE HELD AND THE NETWORK OFF: a tree provisioned again is provisioned from the files this run already
+     * verified, each checked against its pin again, so the verdict is the provisioner's and never a server's. Until
+     * 2026-11-01 these two cases fetched all twenty-two files, and a timeout at ftp.gnu.org reddened run 41317768421.
+     *
+     * @param {string} root @param {string} [held]
+     */
+    const answer = async (root, held = genuine) => {
       try {
-        return (await provisionFonts({ root })).provisioned ? 'downloaded' : 'accepted';
+        return (await provisionFonts({ root, held, network: false })).provisioned ? 'downloaded' : 'accepted';
       } catch (error) {
         return formatError(error);
       }
@@ -188,6 +197,22 @@ try {
       `provisionFonts answered ${alteredAnswer}, then ${alteredAfter}`,
     );
 
+    // A HELD FILE IS TAKEN BY ITS PIN, NEVER ON TRUST: a held copy whose bytes differ is refused, the provision fails,
+    // and the tree it would have filled is not published with it — so taking held files weakens nothing a download
+    // checked. Built from a tree that must be provisioned again, so the held copy is actually read.
+    const badHeld = join(scratch, 'bad-held');
+    mkdirSync(badHeld, { recursive: true });
+    for (const font of BUNDLED_FONTS) copyFileSync(join(genuine, font.file), join(badHeld, font.file));
+    writeFileSync(join(badHeld, 'Tinos-Regular.ttf'), 'not the pinned bytes');
+    const refusedRoot = copyRoot('refused', true);
+    const refusedAnswer = await answer(refusedRoot, badHeld);
+    check(
+      'CONTROL: a held copy with another digest is refused, and the provision fails rather than using it',
+      /SHA-256 mismatch for Tinos-Regular\.ttf/u.test(refusedAnswer) &&
+        !existsSync(join(fontsDirectory(refusedRoot), 'Tinos-Regular.ttf')),
+      `provisionFonts answered ${refusedAnswer.split('\n')[0] ?? ''}`,
+    );
+
     const exact = copyRoot('exact', false);
     check(
       'CONTROL: the genuine set at the same place is accepted with no download',
@@ -199,7 +224,7 @@ try {
     // COULD NOT LOOK, recorded as such (RRRRRRR-13): each case not applicable here, and the run ends PARTLY MEASURED
     // through `unverifiable.mjs`, which makes it a failure under --require-fonts. These were passing cases labelled
     // UNVERIFIABLE, which a harness read as a complete pass.
-    for (const label of ['planted', 'altered', 'exact', 'genuine']) {
+    for (const label of ['planted', 'altered', 'refused held', 'exact', 'genuine']) {
       const name = `the ${label} copy case, which needs the bundled fonts provisioned`;
       roster.record(roster.mark(), name, false);
       missed.push(name);
