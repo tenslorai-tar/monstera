@@ -39,6 +39,8 @@ export interface JoinStyle {
   readonly underline?: true;
   readonly strike?: true;
   readonly highlight?: { readonly r: number; readonly g: number; readonly b: number };
+  /** Which clip the object is drawn through (`textObjectClips`, ADR-0281): objects in two clips are two runs. */
+  readonly clip?: string;
 }
 
 /**
@@ -106,7 +108,8 @@ function sameStyle(a: JoinStyle, b: JoinStyle): boolean {
     a.strike === b.strike &&
     a.highlight?.r === b.highlight?.r &&
     a.highlight?.g === b.highlight?.g &&
-    a.highlight?.b === b.highlight?.b
+    a.highlight?.b === b.highlight?.b &&
+    a.clip === b.clip
   );
 }
 

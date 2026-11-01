@@ -152,6 +152,7 @@ export {
   type HostScanTablesReader,
   type HostPageAdjustmentReader,
   type HostPageRewriteReader,
+  type HostTextClipsReader,
   type HostTextFacesReader,
   type HostBlockFacesReader,
   type HostPageLinksReader,
@@ -421,6 +422,7 @@ export {
   remoteMupdfScanTables,
   remoteMupdfPageAdjustment,
   remoteMupdfPageRewrite,
+  remoteMupdfTextClips,
   remoteMupdfTextFaces,
   remoteMupdfBlockFaces,
   remoteMupdfPageLinks,
@@ -431,6 +433,8 @@ export {
 export type { PageWordBoxes } from './wordBoxes.js';
 // PURE, and apart from `textFaces.ts`, which binds MuPDF (ADR-0256): `main` reads the answer without loading the engine.
 export { type TextFaces, namedByDescriptor } from './textFaceRanges.js';
+// PURE, and apart from `textClips.ts`, which binds MuPDF (ADR-0281): `main` hands the answer on without loading the engine.
+export type { TextClipRanges } from './textClipRanges.js';
 // PURE, and apart from `blockFaces.ts`, which binds MuPDF (ADR-0271 section 5): the read on open's shape and its runs.
 export { type BlockFaceRun, type BlockFaces, type FaceChoice, blockFaceRunsOf, facesInOrder } from './blockFaceAnswer.js';
 export { type CellFill, type PageFill, cellFillOf, withCellFills } from './cellFills.js';

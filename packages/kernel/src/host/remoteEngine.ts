@@ -55,6 +55,7 @@ import type {
   HostPageLinksReader,
   HostPageRewriteReader,
   HostPageTextReader,
+  HostTextClipsReader,
   HostTextFacesReader,
   HostWordBoxesReader,
   HostBlockFacesReader,
@@ -461,6 +462,11 @@ export function remoteMupdfPageRewrite(client: ClientApi<EngineChannels>, sessio
 /** One page's fonts' descriptor faces, over the boundary (ADR-0256) — {@link remoteMupdfPageRewrite}' shape. */
 export function remoteMupdfTextFaces(client: ClientApi<EngineChannels>, sessions: RemoteSessions): HostTextFacesReader {
   return async (session, page) => answered('engine/text-faces', await client['engine/text-faces']({ session: sessions.handleFor(session), page }));
+}
+
+/** Which clip each text object of a page is drawn through, over the boundary (ADR-0281) — {@link remoteMupdfTextFaces}' shape. */
+export function remoteMupdfTextClips(client: ClientApi<EngineChannels>, sessions: RemoteSessions): HostTextClipsReader {
+  return async (session, page) => answered('engine/text-clips', await client['engine/text-clips']({ session: sessions.handleFor(session), page }));
 }
 
 /** A block's faces, over the boundary (ADR-0271 section 5) — {@link remoteMupdfTextFaces}' shape. */

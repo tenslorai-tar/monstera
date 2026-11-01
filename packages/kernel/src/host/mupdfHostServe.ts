@@ -34,6 +34,7 @@ import { readPageFills } from '../pageFills.js';
 import { readScanTables } from '../scanTables.js';
 import { readPageAdjustment } from '../pageAdjustment.js';
 import { readPageRewrite } from '../pageRewrite.js';
+import { readTextClips } from '../textClips.js';
 import { readTextFaces } from '../textFaces.js';
 import { readBlockFaces } from '../blockFaces.js';
 import { readPageWordBoxes } from '../wordBoxes.js';
@@ -102,6 +103,7 @@ const engineHandlers = createEngineHandlers({
   pageAdjustment: readPageAdjustment,
   pageRewrite: readPageRewrite,
   textFaces: readTextFaces,
+  textClips: readTextClips,
   wordBoxes: readPageWordBoxes,
   blockFaces: readBlockFaces,
   // RUNS HERE, and that is §3's matrix rather than a placement. Recognition

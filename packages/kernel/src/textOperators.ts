@@ -21,6 +21,8 @@
  * operator names.
  */
 
+import { createHash } from 'node:crypto';
+
 import { DECORATION_KEY, DECORATION_TAG, type DecorationKind, type PageDecoration, type Rgb, decorationKindOf } from './markDecorations.js';
 import { pdfTextString } from './pdfTextString.js';
 
@@ -932,4 +934,37 @@ export function operatorOf(operators: readonly ShowOperator[], object: number): 
 /** How many text objects PDFium makes of this content: what the writer checks against PDFium's own count. */
 export function textObjectCount(operators: readonly ShowOperator[]): number {
   return operators.filter((operator) => operator.object !== null).length;
+}
+
+/** How many hex digits a clip's identity has ({@link clipIdentitiesAt}): 64 bits, which a wire holds it to. */
+export const CLIP_IDENTITY_LENGTH = 16;
+
+/**
+ * WHICH CLIP is in force at each offset (ADR-0281 Decision 1): the clip windows `contentLayout` reads there, each by its
+ * points in page space and its rule, hashed with SHA-256 and kept to {@link CLIP_IDENTITY_LENGTH} hex digits; `undefined`
+ * where no window is in force. Equal windows answer equal identities, and two sets of windows that differ anywhere answer
+ * different ones. THE ONE RULE for whether two places share a clip: the read gives each text object its identity by it,
+ * and the writer asks it of a block's lines.
+ */
+export function clipIdentitiesAt(content: Uint8Array, xobject: (name: string) => XObjectKind, offsets: readonly number[]): (string | undefined)[] {
+  return contentLayout(content, xobject, offsets).states.map((state) =>
+    state.windows.length === 0
+      ? undefined
+      : createHash('sha256')
+          .update(JSON.stringify(state.windows.map((window) => [window.evenOdd, window.points])))
+          .digest('hex')
+          .slice(0, CLIP_IDENTITY_LENGTH),
+  );
+}
+
+/**
+ * EACH TEXT OBJECT'S CLIP, in PDFium's numbering of the page's text objects (`ShowOperator.object`, the numbering the
+ * writer joins PDFium's objects to the content by): entry `k` is the clip text object `k` is drawn through, or `null`.
+ */
+export function textObjectClips(content: Uint8Array, xobject: (name: string) => XObjectKind): (string | null)[] {
+  const shown = showOperators(content).filter((operator) => operator.object !== null);
+  const identities = clipIdentitiesAt(content, xobject, shown.map((operator) => operator.start));
+  const clips: (string | null)[] = Array.from({ length: shown.length }, () => null);
+  for (const [at, operator] of shown.entries()) if (operator.object !== null) clips[operator.object] = identities[at] ?? null;
+  return clips;
 }

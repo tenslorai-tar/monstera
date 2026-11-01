@@ -122,6 +122,9 @@ const CASES = [
   'a paragraph that grows over bulleted lists OVERLAPS them: every drawn bullet and every item stays where it was (ADR-0271 section 11.1)',
   'THE CORPUS GATE: a clean count holds, and each defect it counts fails it alone (disturbed, failing, refused, unseen, logged, no edit made, a failed page, an unopened document)',
   'THE WRITER’S REACH: a paragraph grown onto a near twin of its new line disturbs nothing within the extent the writer reports; CONTROL: judged without it, the same edit is disturbed',
+  'TWO CLIPS IN ONE PARAGRAPH (the owner’s C4): offered as one block per clip, and after the edit, a save and a reopen each line is still drawn through its own clip',
+  'TWO CLIPS AT ONE POSITION: the two halves of one line stay two pieces, and after the edit, a save and a reopen each is still drawn through its own clip',
+  'CONTROL: the same paragraph through ONE clip is one block of two lines, as before, and reads back through that clip',
 ];
 
 /**
@@ -158,6 +161,36 @@ async function drawingsOf(pdfium, bytes, index) {
   }
 }
 
+/**
+ * Which clip each text object of page `index` is drawn through, read by the engine's own reader on the same bytes, as
+ * `main` asks the engine host before PDFium's run reads (ADR-0281).
+ * @param {any} kernel @param {Uint8Array} bytes @param {number} index
+ */
+async function clipsOf(kernel, bytes, index) {
+  const session = await kernel.mupdfWriter.open(bytes);
+  try {
+    return await kernel.readTextClips(session, index);
+  } finally {
+    await kernel.mupdfWriter.close(session);
+  }
+}
+
+/**
+ * A page's upright blocks AS `main` GROUPS THEM (`composition.ts`' `textBlocks`): `groupInFrames`, each run's clip and the
+ * page's drawn bullets, so the blocks this proof edits are the ones a person is offered. Until 2026-11-01 this proof
+ * grouped with `groupIntoBlocks` alone, a second opinion that agreed with `main` on every page whose text was drawn
+ * through one clip and on none drawn through two.
+ * @param {any} kernel @param {any} found
+ */
+function blocksAsTheAppGroups(kernel, found) {
+  return kernel.groupInFrames(
+    found.runs.filter((/** @type {any} */ run) => kernel.isUpright(run.style)).map((/** @type {any} */ run) => kernel.blockableOf(run)),
+    () => undefined,
+    (/** @type {any} */ run) => run.style.clip,
+    found.markers,
+  );
+}
+
 /** A refusal named by its error and step, its numbers masked, so equal causes count together. @param {unknown} error */
 function reasonOf(error) {
   const named = /** @type {any} */ (error);
@@ -180,8 +213,12 @@ async function walkPage(pdfium, kernel, bytes, index, quotes) {
   const probe = await kernel.mupdfWriter.open(bytes);
   /** @type {boolean} */
   let showsType3;
+  /** @type {any} */
+  let clips;
   try {
     showsType3 = (await kernel.readPageRewrite(probe, index)) === 'operators';
+    // THE CLIPS `main` ASKS THE ENGINE HOST FOR before PDFium's run reads (ADR-0281).
+    clips = await kernel.readTextClips(probe, index);
   } finally {
     await kernel.mupdfWriter.close(probe);
   }
@@ -195,21 +232,18 @@ async function walkPage(pdfium, kernel, bytes, index, quotes) {
   /** @type {boolean} */
   let unpacked;
   try {
-    const plain = await pdfium.textRuns(session, index);
+    const plain = await pdfium.textRuns(session, index, clips);
     // THE ROUTE: the application's, the operator writer for every page (ADR-0266), or the one before that ADR for the
     // counts it is measured against: PDFium for every page not showing Type 3 text, its packed text read unpacked.
     rewrite = (kernel.oldRoute ?? OLD_ROUTE) && !showsType3 ? 'objects' : 'operators';
     unpacked = kernel.readsUnpacked(plain.unaddressable, rewrite);
     if (unpacked) await pdfium.unpackedIfAsked(session, index, true);
-    read = unpacked ? await pdfium.textRuns(session, index) : plain;
-    runs = await pdfium.pageRuns(session, index);
+    read = unpacked ? await pdfium.textRuns(session, index, null) : plain;
+    runs = await pdfium.pageRuns(session, index, clips);
   } finally {
     await pdfium.pdfiumWriter.close(session);
   }
-  const groupedOf = (/** @type {any} */ found) =>
-    kernel.groupIntoBlocks(
-      found.runs.filter((/** @type {any} */ run) => kernel.isUpright(run.style)).map((/** @type {any} */ run) => kernel.blockableOf(run)),
-    );
+  const groupedOf = (/** @type {any} */ found) => blocksAsTheAppGroups(kernel, found);
   const grouped = groupedOf(read);
   // EACH BLOCK carries the pre-read its edit is written against, and a form's block its path (ADR-0269).
   /** @type {any[]} */
@@ -515,18 +549,19 @@ async function codeBlock() {
  * @param {boolean[]} [soft]
  */
 async function editFirstBlock(pdfium, kernel, bytes, text, soft) {
+  const clips = await clipsOf(kernel, bytes, 0);
   const session = await pdfium.pdfiumWriter.open(bytes);
   /** @type {any} */
   let read;
   /** @type {any} */
   let runs;
   try {
-    read = await pdfium.textRuns(session, 0);
-    runs = await pdfium.pageRuns(session, 0);
+    read = await pdfium.textRuns(session, 0, clips);
+    runs = await pdfium.pageRuns(session, 0, clips);
   } finally {
     await pdfium.pdfiumWriter.close(session);
   }
-  const blocks = kernel.groupIntoBlocks(read.runs.filter((/** @type {any} */ run) => kernel.isUpright(run.style)).map((/** @type {any} */ run) => kernel.blockableOf(run)));
+  const blocks = blocksAsTheAppGroups(kernel, read);
   const block = blocks[0];
   const lines = block.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index));
   const sent = soft ?? block.lines.map((/** @type {any} */ line) => line.soft);
@@ -540,6 +575,115 @@ async function editFirstBlock(pdfium, kernel, bytes, text, soft) {
   } finally {
     await kernel.mupdfWriter.close(copy);
   }
+}
+
+/**
+ * A page whose text is drawn through clips (the owner's C4), in Helvetica at 11 pt, each clip a rectangle that holds its
+ * own words' ink — from the font's descent to its ascent, measured by the font's own metrics — and nothing of the next:
+ * - `two-lines`: one paragraph's two lines at one pitch, which the grouping reads as one block, each line through its own
+ *   clip; with `oneClip`, both through one clip that holds both, the control;
+ * - `one-position`: one line drawn as two objects that abut on one baseline, its first words through a clip that ends
+ *   where they end and the rest through a clip that starts there, so the two are one run by every other measure.
+ * @param {'two-lines' | 'one-position'} shape @param {boolean} oneClip
+ */
+async function clippedPage(shape, oneClip) {
+  const document = await PDFDocument.create({ updateMetadata: false });
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  const page = document.addPage([612, 792]);
+  const size = 11;
+  const ascent = font.heightAtSize(size, { descender: false });
+  const descent = font.heightAtSize(size) - ascent;
+  /** @param {number} x0 @param {number} y0 @param {number} x1 @param {number} y1 @param {number} x @param {number} y @param {string} words */
+  const drawn = (x0, y0, x1, y1, x, y, words) =>
+    `q ${String(x0)} ${String(y0)} ${String(x1 - x0)} ${String(y1 - y0)} re W n BT /F1 ${String(size)} Tf ${String(x)} ${String(y)} Td (${words}) Tj ET Q`;
+  /** @type {string[]} */
+  const content = [];
+  if (shape === 'two-lines') {
+    // THE BOUNDARY BETWEEN THE LINES' INK: under the first line's descent and over the second line's ascent.
+    const between = (700 - descent + (686 + ascent)) / 2;
+    const [first, second] = ['The members agreed the budget for', 'the spring planting at the meeting.'];
+    content.push(oneClip ? drawn(0, 600, 612, 760, 72, 700, first) : drawn(0, between, 612, 760, 72, 700, first));
+    content.push(oneClip ? drawn(0, 600, 612, 760, 72, 686, second) : drawn(0, 600, 612, between, 72, 686, second));
+  } else {
+    const left = 'Small shops ';
+    const edge = 72 + font.widthOfTextAtSize(left, size);
+    content.push(drawn(0, 600, edge, 760, 72, 700, left), drawn(edge, 600, 612, 760, edge, 700, 'near the market sell snacks.'));
+  }
+  page.node.setFontDictionary(PDFName.of('F1'), font.ref);
+  page.node.set(PDFName.of('Contents'), document.context.register(document.context.stream(content.join('\n'))));
+  return new Uint8Array(await document.save({ useObjectStreams: false }));
+}
+
+/**
+ * Every block of page 0 grouped as `main` groups it, each one's words changed by `change`, in the ONE command the editor
+ * sends for a page's blocks; the page saved and read again by PDFium. What was read before and after, with each run's
+ * clip, is what {@link keptItsClip} judges.
+ * @param {any} pdfium @param {any} kernel @param {Uint8Array} bytes @param {(words: string) => string} change
+ */
+async function editEveryBlock(pdfium, kernel, bytes, change) {
+  const readOf = async (/** @type {Uint8Array} */ page) => {
+    const clips = await clipsOf(kernel, page, 0);
+    const session = await pdfium.pdfiumWriter.open(page);
+    try {
+      return { read: await pdfium.textRuns(session, 0, clips), runs: await pdfium.pageRuns(session, 0, clips) };
+    } finally {
+      await pdfium.pdfiumWriter.close(session);
+    }
+  };
+  const { read, runs } = await readOf(bytes);
+  const blocks = blocksAsTheAppGroups(kernel, read);
+  const lines = blocks.reduce((/** @type {number} */ sum, /** @type {any} */ block) => sum + block.lines.length, 0);
+  const runsBefore = read.runs.length;
+  /** @type {{ text: string, clip: string | undefined }[]} */
+  const before = read.runs.map((/** @type {any} */ run) => ({ text: run.text, clip: run.style.clip }));
+  const edits = blocks.map((/** @type {any} */ block) => {
+    const soft = block.lines.map((/** @type {any} */ line) => line.soft);
+    const words = kernel.paragraphsOfLines(block.lines.map((/** @type {any} */ line, /** @type {number} */ at) => ({ text: kernel.lineText(line.runs), soft: soft[at] ?? false })));
+    return {
+      lines: block.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index)),
+      soft,
+      text: change(words),
+      // A ONE-LINE BLOCK'S REACH TO THE MARGIN, as the editor sends it, so a word a little wider stays on the line.
+      ...(block.lines.length === 1 ? { place: { reach: 540 } } : {}),
+    };
+  });
+  const copy = await kernel.mupdfWriter.open(bytes);
+  try {
+    await kernel.applyEditTextOperators(copy, { kind: 'editTextOperators', page: 0, ...kernel.blockEditOf(edits), fit: 'reflow', version: 1 }, runs);
+    const saved = await kernel.mupdfWriter.serialise(copy);
+    const after = (await readOf(saved)).read.runs.map((/** @type {any} */ run) => ({ text: run.text, clip: run.style.clip }));
+    return { blocks: blocks.length, lines, runsBefore, before, after };
+  } catch (error) {
+    return { blocks: blocks.length, lines, runsBefore, before, after: [], refused: reasonOf(error) };
+  } finally {
+    await kernel.mupdfWriter.close(copy);
+  }
+}
+
+/**
+ * '' where every pair `[was, now]` holds: the run that read `was` before the edit is drawn through a clip, and the run
+ * that reads `now` after the save is drawn through THAT clip. Not vacuous: the clips read before must be present, and
+ * must differ from each other unless `same`, or a clip identity that read nothing would pass every line.
+ * @param {{ before: { text: string, clip: string | undefined }[], after: { text: string, clip: string | undefined }[], refused?: string }} edited
+ * @param {[string, string][]} pairs @param {boolean} [same]
+ */
+function keptItsClip(edited, pairs, same = false) {
+  if (edited.refused !== undefined) return `refused: ${edited.refused}`;
+  const clipOf = (/** @type {{ text: string, clip: string | undefined }[]} */ list, /** @type {string} */ word) => list.find((run) => run.text.includes(word))?.clip;
+  const wanted = pairs.map(([was]) => clipOf(edited.before, was));
+  if (wanted.some((clip) => clip === undefined)) return 'a line read before the edit is drawn through no clip: the identity read nothing';
+  if (!same && new Set(wanted).size !== wanted.length) return 'the lines read before the edit share a clip: the fixture or the identity does not tell them apart';
+  for (const [at, [was, now]] of pairs.entries()) {
+    const found = edited.after.find((run) => run.text.includes(now));
+    if (found === undefined) return `no run reads "${now}" after the save`;
+    if (found.clip !== wanted[at]) return `the line that read "${was}" now reads "${now}" through ${found.clip === undefined ? 'no clip' : 'another clip'}`;
+  }
+  return '';
+}
+
+/** @param {any} edited @param {[string, string][]} pairs @param {boolean} [same] */
+function clipReport(edited, pairs, same = false) {
+  return `${String(edited.blocks)} block(s), ${String(edited.lines)} line(s), ${String(edited.runsBefore)} run(s) read: ${keptItsClip(edited, pairs, same) || 'each in its clip'}`;
 }
 
 /**
@@ -640,7 +784,8 @@ async function formPlacementsOf(pdfium, kernel, bytes, index) {
   try {
     const found = [];
     for (const [at, path] of placed.paths.entries()) {
-      found.push({ path, read: await pdfium.textRuns(session, at), runs: await pdfium.pageRuns(session, at) });
+      // NO CLIPS for a form's page, as `main` reads it (ADR-0281 Decision 6).
+      found.push({ path, read: await pdfium.textRuns(session, at, null), runs: await pdfium.pageRuns(session, at, null) });
     }
     return found;
   } finally {
@@ -833,8 +978,8 @@ function report(document, tries) {
 async function run(pdfium, kernel) {
   /** @type {string[]} */
   const failures = [];
-  const roster = createRoster(failures, { cases: 16 });
-  if (CASES.length !== 16) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 16`);
+  const roster = createRoster(failures, { cases: 19 });
+  if (CASES.length !== 19) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 19`);
   const check = (/** @type {string} */ name, /** @type {boolean} */ held, /** @type {string} */ detail) => {
     const mark = roster.mark();
     if (!held) failures.push(`${name}\n      ${detail}`);
@@ -955,9 +1100,7 @@ async function run(pdfium, kernel) {
   const [firstPlaced] = placements;
   let twiceCheck = `${String(placements.length)} placement(s) read`;
   if (placements.length === 2 && firstPlaced !== undefined) {
-    const [block] = kernel.groupIntoBlocks(
-      firstPlaced.read.runs.filter((/** @type {any} */ run) => kernel.isUpright(run.style)).map((/** @type {any} */ run) => kernel.blockableOf(run)),
-    );
+    const [block] = blocksAsTheAppGroups(kernel, firstPlaced.read);
     const lines = block.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index));
     const soft = block.lines.map((/** @type {any} */ line) => line.soft);
     const copy = await kernel.mupdfWriter.open(twice);
@@ -1037,6 +1180,19 @@ async function run(pdfium, kernel) {
       withReach?.outcome === 'made' && !disturbedBy(withReach) && withoutReach?.outcome === 'made' && withoutReach.disturbed > 0,
       `with the reach ${JSON.stringify(withReach)}; without it ${JSON.stringify(withoutReach)}`,
     );
+  }
+
+  // EDIT TEXT'S CLIPS (the owner's C4, 2026-11-01): each line read back through the clip it was drawn through.
+  {
+    const paragraph = await clippedPage('two-lines', false);
+    const split = await editEveryBlock(pdfium, kernel, paragraph, (words) => words.replace('budget', 'income').replace('spring', 'summer'));
+    check(CASES[16] ?? '', split.blocks === 2 && keptItsClip(split, [['budget', 'income'], ['spring', 'summer']]) === '', clipReport(split, [['budget', 'income'], ['spring', 'summer']]));
+    const halves = await clippedPage('one-position', false);
+    const apart = await editEveryBlock(pdfium, kernel, halves, (words) => words.replace('near', 'past'));
+    check(CASES[17] ?? '', apart.runsBefore === 2 && keptItsClip(apart, [['Small', 'Small'], ['near', 'past']]) === '', clipReport(apart, [['Small', 'Small'], ['near', 'past']]));
+    const oneClip = await clippedPage('two-lines', true);
+    const whole = await editEveryBlock(pdfium, kernel, oneClip, (words) => words.replace('budget', 'income').replace('spring', 'summer'));
+    check(CASES[18] ?? '', whole.blocks === 1 && whole.lines === 2 && keptItsClip(whole, [['budget', 'income'], ['spring', 'summer']], true) === '', clipReport(whole, [['budget', 'income'], ['spring', 'summer']], true));
   }
 
   const countedWhole = corpus();
@@ -1214,13 +1370,14 @@ if (!existsSync(library) || shim === null || !existsSync(fontsDirectory(ROOT))) 
   pdfium.openPdfium(library);
   const { blockEditOf, readsUnpacked, commandsOf } = await import('../../packages/contract/dist/commands.js');
   const { formPagesDocument, textPlacements } = await import('../../packages/kernel/dist/formText.js');
-  const { groupIntoBlocks, isUpright, blockableOf } = await import('../../packages/kernel/dist/textLines.js');
+  const { groupInFrames, isUpright, blockableOf } = await import('../../packages/kernel/dist/textLines.js');
   const { paragraphsOfLines, lineText, compileQuery } = await import('../../packages/shared/dist/index.js');
   const { blocksReplaced, wordsOf } = await import('../../packages/contract/dist/blockReplace.js');
   const mupdf = await import('../../packages/kernel/dist/mupdfRaw.js');
   const { mupdfWriter } = await import('../../packages/kernel/dist/mupdfWriter.js');
   const { readPageRewrite } = await import('../../packages/kernel/dist/pageRewrite.js');
   const { applyEditTextOperators } = await import('../../packages/kernel/dist/textOperatorEdit.js');
+  const { readTextClips } = await import('../../packages/kernel/dist/textClips.js');
   const { localPdfiumExecution } = await import('../../packages/kernel/dist/pdfiumSpecs.js');
   const { bindEditFolders, loadEditFaces } = await import('../../packages/kernel/dist/editFaces.js');
   const { readCatalogueApart } = await import('../../packages/kernel/dist/fontCatalogueApart.js');
@@ -1238,7 +1395,7 @@ if (!existsSync(library) || shim === null || !existsSync(fontsDirectory(ROOT))) 
     compileQuery,
     blocksReplaced,
     wordsOf,
-    groupIntoBlocks,
+    groupInFrames,
     isUpright,
     blockableOf,
     paragraphsOfLines,
@@ -1247,6 +1404,7 @@ if (!existsSync(library) || shim === null || !existsSync(fontsDirectory(ROOT))) 
     mupdfWriter,
     readPageRewrite,
     applyEditTextOperators,
+    readTextClips,
     pdfiumExecution: withNoPassword(localPdfiumExecution),
   };
   if (CHILD !== null) await child(pdfium, kernel);

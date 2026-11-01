@@ -277,6 +277,9 @@ function joined(
       textFaces: () => {
         throw new Error('no case here reads the fonts’ faces');
       },
+      textClips: () => {
+        throw new Error('no case here reads the text clips');
+      },
       blockFaces: () => {
         throw new Error('no case here reads a block’s faces');
       },
@@ -726,6 +729,9 @@ describe('remoteMupdfLifecycle', () => {
         },
         textFaces: () => {
           throw new Error('no case here reads the fonts’ faces');
+        },
+        textClips: () => {
+          throw new Error('no case here reads the text clips');
         },
         blockFaces: () => {
           throw new Error('no case here reads a block’s faces');

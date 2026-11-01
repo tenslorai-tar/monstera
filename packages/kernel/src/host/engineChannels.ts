@@ -125,6 +125,8 @@ import { type DeclaredCommands, declaredCommands } from '../commandDeclarations.
 import type { KindsRoutedTo } from '../commandRouting.js';
 import { COPY_STANDINGS } from '../openCopy.js';
 import type { PlaceholderRequest } from '../signatureHole.js';
+import { CLIP_IDENTITY_PATTERN, TEXT_CLIP_RANGES_MAX, TEXT_CLIPS_MAX } from '../textClipRanges.js';
+import { CLIP_IDENTITY_LENGTH } from '../textOperators.js';
 import { TEXT_FACE_FONTS_MAX, TEXT_FACE_NAME_MAX, TEXT_FACE_RANGES_MAX } from '../textFaceRanges.js';
 import {
   BLOCK_FACE_CANDIDATES_MAX,
@@ -686,6 +688,32 @@ const engineLinkSchema = z.discriminatedUnion('kind', [
 ]);
 
 export const sessionSchema = z.string().min(1).max(ENGINE_SESSION_ID_MAX_CHARS);
+
+/**
+ * Which clip each text object of a page is drawn through (`textClipRanges.ts`, ADR-0281): `engine/text-clips`' answer,
+ * and the input the PDFium host's two run reads take, so the one shape is the one schema. A range names a clip the
+ * answer lists, and runs forward.
+ */
+export const textClipRangesSchema = z
+  .object({
+    objects: z.number().int().nonnegative(),
+    clips: z.array(z.string().length(CLIP_IDENTITY_LENGTH).regex(CLIP_IDENTITY_PATTERN)).max(TEXT_CLIPS_MAX),
+    ranges: z
+      .array(
+        z
+          .object({
+            first: z.number().int().nonnegative(),
+            last: z.number().int().nonnegative(),
+            clip: z.number().int().nonnegative().max(TEXT_CLIPS_MAX - 1),
+          })
+          .strict()
+          .refine((range) => range.last >= range.first, { message: 'a range cannot end before it starts' }),
+      )
+      .max(TEXT_CLIP_RANGES_MAX),
+    truncated: z.boolean(),
+  })
+  .strict()
+  .refine((answer) => answer.ranges.every((range) => range.clip < answer.clips.length), { message: 'a range names a clip the answer does not list' });
 
 /**
  * One page's prior `/Rotate`, verbatim (ADR-0009 §3).
@@ -2995,6 +3023,25 @@ export const engineChannels = {
         truncated: z.boolean(),
       })
       .strict(),
+    ['no-such-session'],
+  ),
+
+  /**
+   * Which clip each text object of one page is drawn through, by the page's own content
+   * ([ADR-0281](../../../../docs/DECISIONS/0281-a-run-carries-the-clip-its-content-draws-it-through.md) Decision 2):
+   * `main` asks it before PDFium's run reads, which take it, so no run and no block spans two clips. Framed, bounded, and
+   * the answer says when it stopped.
+   */
+  'engine/text-clips': channel(
+    'Reads which clip each text object of one page is drawn through, for one page of a session this host holds.',
+    z
+      .object({
+        session: sessionSchema,
+        /** Zero-based index, as `commands.ts` declares them. */
+        page: z.number().int().nonnegative(),
+      })
+      .strict(),
+    textClipRangesSchema,
     ['no-such-session'],
   ),
 

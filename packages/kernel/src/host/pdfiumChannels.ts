@@ -19,9 +19,11 @@ import {
   byteImageWire,
   coreEngineChannels,
   sessionSchema,
+  textClipRangesSchema,
 } from './engineChannels.js';
 import { pageRunsSchema } from './pageRunsWire.js';
 import { MAX_DRAWN_MARKERS } from '../textLines.js';
+import { CLIP_IDENTITY_LENGTH } from '../textOperators.js';
 
 /**
  * The channel set of the **PDFium** host
@@ -390,6 +392,8 @@ const basePdfiumChannels = {
         page: z.number().int().nonnegative(),
         /** Read with the page's forms moved onto it in this process's memory, and nothing saved (ADR-0232). */
         unpack: z.literal(true).exactOptional(),
+        /** Which clip each text object is drawn through, from the engine host (ADR-0281); `null` where none is known. */
+        clips: textClipRangesSchema.nullable(),
       })
       .strict(),
     z
@@ -453,6 +457,15 @@ const basePdfiumChannels = {
                         b: z.number().int().min(0).max(255),
                       })
                       .strict()
+                      .exactOptional(),
+                    /**
+                     * Which clip the run is drawn through (`clipIdentityOf`), for the join and the grouping only; never
+                     * to a renderer. An identity of a fixed length in hex, so a hostile page cannot size it.
+                     */
+                    clip: z
+                      .string()
+                      .length(CLIP_IDENTITY_LENGTH)
+                      .regex(/^[0-9a-f]+$/u)
                       .exactOptional(),
                   })
                   .strict(),
@@ -682,7 +695,15 @@ const basePdfiumChannels = {
    */
   'engine/page-runs': fileAnswered(
     'Answers a page’s joined text runs with the objects each is, and the page indices of its text objects.',
-    z.object({ session: sessionSchema, ...byteImageWire.read, page: z.number().int().nonnegative() }).strict(),
+    z
+      .object({
+        session: sessionSchema,
+        ...byteImageWire.read,
+        page: z.number().int().nonnegative(),
+        /** The clips `engine/text-runs` was given, so this join is that one (ADR-0281 Decision 3). */
+        clips: textClipRangesSchema.nullable(),
+      })
+      .strict(),
     pageRunsSchema,
     ['no-such-session', 'asset-missing', 'engine-refused'],
   ),

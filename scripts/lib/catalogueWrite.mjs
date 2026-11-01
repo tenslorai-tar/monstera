@@ -15,7 +15,7 @@
  * @typedef {{
  *   pdfium: any, mupdfWriter: any, applyEditTextOperators: any, blockEditOf: any, readsUnpacked: any,
  *   groupInFrames: any, inItsFrame: any, blockableOf: any, paragraphsOfLines: any, lineText: any, asDocVersion: any,
- *   fromTextFrame: any, expectEdit: any, engines: any,
+ *   fromTextFrame: any, expectEdit: any, engines: any, readTextClips: any,
  * }} WriteKit
  */
 
@@ -98,17 +98,27 @@ export async function writeCatalogueShape(kit, shape, options = {}) {
  * @returns {Promise<{ readonly read: any, readonly runs: any, readonly grouped: readonly any[] }>}
  */
 export async function readForEdit(kit, bytes, page) {
-  const { pdfium, readsUnpacked, groupInFrames, inItsFrame, blockableOf } = kit;
+  const { pdfium, readsUnpacked, groupInFrames, inItsFrame, blockableOf, mupdfWriter, readTextClips } = kit;
+  // THE CLIPS `main` ASKS THE ENGINE HOST FOR before PDFium's run reads (ADR-0281).
+  const engine = await mupdfWriter.open(bytes);
+  /** @type {any} */
+  let clips;
+  try {
+    clips = await readTextClips(engine, page);
+  } finally {
+    await mupdfWriter.close(engine);
+  }
   const session = await pdfium.pdfiumWriter.open(bytes);
   try {
-    const plain = await pdfium.textRuns(session, page);
+    const plain = await pdfium.textRuns(session, page, clips);
     const unpacked = readsUnpacked(plain.unaddressable, 'operators');
     if (unpacked) await pdfium.unpackedIfAsked(session, page, true);
-    const read = unpacked ? await pdfium.textRuns(session, page) : plain;
-    const runs = await pdfium.pageRuns(session, page);
+    const read = unpacked ? await pdfium.textRuns(session, page, null) : plain;
+    const runs = await pdfium.pageRuns(session, page, clips);
     const grouped = groupInFrames(
       read.runs.map((/** @type {any} */ run) => blockableOf(inItsFrame(run))),
       (/** @type {any} */ run) => run.frame?.matrix,
+      (/** @type {any} */ run) => run.style.clip,
       read.markers,
     );
     return { read, runs, grouped };

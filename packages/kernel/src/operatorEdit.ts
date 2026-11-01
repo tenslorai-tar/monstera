@@ -26,6 +26,7 @@ import {
   type Matrix,
   type ShowOperator,
   type XObjectKind,
+  clipIdentitiesAt,
   contentEnd,
   contentLayout,
   multiply,
@@ -1076,8 +1077,9 @@ function write(
       op !== undefined && ctm !== undefined && op.state.ctm.every((value, at) => Math.abs(value - (ctm[at] ?? 0)) <= SAME);
     if (!members.every((member) => sameCtm(ops[member]))) {
       const starts = members.map((member) => ops[member]?.start ?? 0);
-      const windows = contentLayout(content, arrangeWith.kinds, starts).states.map((state) => JSON.stringify(state.windows.map((window) => window.points)));
-      if (windows.some((each) => each !== windows[0])) throw new Refused({ reason: 'transformed', where: 'lines-under-different-ctms' });
+      // THE ONE RULE for whether two places share a clip (`clipIdentitiesAt`, ADR-0281), which the read groups by too.
+      const clips = clipIdentitiesAt(content, arrangeWith.kinds, starts);
+      if (clips.some((each) => each !== clips[0])) throw new Refused({ reason: 'transformed', where: 'lines-under-different-ctms' });
     }
     const inkRight = Math.max(...lines.flat().map((run) => run.right));
     const baselines = lines.map((line) => line[0]?.origin.y ?? 0);

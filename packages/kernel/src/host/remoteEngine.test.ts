@@ -27,6 +27,7 @@ import { rasterisePageImage } from '../pageImages.js';
 import { snapshotRegion } from '../pageSnapshot.js';
 import { readPageGeometry } from '../pageGeometry.js';
 import { readPageRewrite } from '../pageRewrite.js';
+import { readTextClips } from '../textClips.js';
 import { readTextFaces } from '../textFaces.js';
 import { readBlockFaces } from '../blockFaces.js';
 import { readDestinations } from '../destinations.js';
@@ -70,6 +71,7 @@ import {
   remoteMupdfPageAdjustment,
   remoteMupdfPageRewrite,
   remoteMupdfTextFaces,
+  remoteMupdfTextClips,
   remoteMupdfBlockFaces,
   remoteMupdfWordBoxes,
   remoteMupdfAccessibility,
@@ -267,6 +269,7 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
   readonly pageAdjustment: ReturnType<typeof remoteMupdfPageAdjustment>;
   readonly pageRewrite: ReturnType<typeof remoteMupdfPageRewrite>;
   readonly textFaces: ReturnType<typeof remoteMupdfTextFaces>;
+  readonly textClips: ReturnType<typeof remoteMupdfTextClips>;
   readonly blockFaces: ReturnType<typeof remoteMupdfBlockFaces>;
   readonly wordBoxes: ReturnType<typeof remoteMupdfWordBoxes>;
   readonly accessibility: ReturnType<typeof remoteMupdfAccessibility>;
@@ -358,6 +361,7 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
       pageAdjustment: readPageAdjustment,
       pageRewrite: readPageRewrite,
       textFaces: readTextFaces,
+      textClips: readTextClips,
       wordBoxes: readPageWordBoxes,
       blockFaces: readBlockFaces,
       // NOT THE REAL READER, where its neighbours above are. `recognisePage`
@@ -432,6 +436,7 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
     pageAdjustment: remoteMupdfPageAdjustment(client, sessions),
     pageRewrite: remoteMupdfPageRewrite(client, sessions),
     textFaces: remoteMupdfTextFaces(client, sessions),
+    textClips: remoteMupdfTextClips(client, sessions),
     blockFaces: remoteMupdfBlockFaces(client, sessions),
     wordBoxes: remoteMupdfWordBoxes(client, sessions),
     accessibility: remoteMupdfAccessibility(client, sessions),
@@ -983,6 +988,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         textFaces: () => {
           throw new Error('unused');
         },
+        textClips: () => {
+          throw new Error('unused');
+        },
         blockFaces: () => {
           throw new Error('unused');
         },
@@ -1170,6 +1178,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         },
         textFaces: () => {
           throw new Error('the rotation-refusal case must not read the fonts’ faces');
+        },
+        textClips: () => {
+          throw new Error('the rotation-refusal case must not read the text clips');
         },
         blockFaces: () => {
           throw new Error('the rotation-refusal case must not read a block’s faces');

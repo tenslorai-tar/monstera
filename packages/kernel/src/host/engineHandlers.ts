@@ -53,6 +53,7 @@ import {
 import type { PageFill } from '../cellFills.js';
 import type { ScanTable } from '../scanTableShape.js';
 import type { PageRewrite } from '../pageRewrite.js';
+import type { TextClipRanges } from '../textClipRanges.js';
 import type { TextFaces } from '../textFaceRanges.js';
 import type { BlockFaceRun, BlockFaces } from '../blockFaceAnswer.js';
 import type { LinkAddress, ListedPageLinks } from '../pageLinks.js';
@@ -145,6 +146,9 @@ export type HostPageRewriteReader = (session: MupdfSession, page: number) => Pro
 
 /** One page's fonts' descriptor faces and the text objects in each (ADR-0256): `readTextFaces` in the host. */
 export type HostTextFacesReader = (session: MupdfSession, page: number) => Promise<TextFaces>;
+
+/** Which clip each text object of one page is drawn through (ADR-0281): `readTextClips` in the host. */
+export type HostTextClipsReader = (session: MupdfSession, page: number) => Promise<TextClipRanges>;
 
 /** One page's word boxes (ADR-0137): `readPageWordBoxes` in the host, `remoteMupdfWordBoxes` across the pipe. */
 export type HostWordBoxesReader = (session: MupdfSession, page: number) => Promise<PageWordBoxes>;
@@ -571,6 +575,8 @@ export interface EngineHandlerParts {
   readonly pageRewrite: HostPageRewriteReader;
   /** A page's fonts' descriptor faces and the text objects in each (ADR-0256). `engine/text-faces`. */
   readonly textFaces: HostTextFacesReader;
+  /** Which clip each text object of a page is drawn through (ADR-0281). `engine/text-clips`. */
+  readonly textClips: HostTextClipsReader;
   /** A page's word boxes (ADR-0137). `engine/word-boxes`. */
   readonly wordBoxes: HostWordBoxesReader;
   /** The faces a block's new words are set in (ADR-0271 section 5). `engine/block-faces`. */
@@ -668,6 +674,7 @@ export function createEngineHandlers({
   pageAdjustment,
   pageRewrite,
   textFaces,
+  textClips,
   wordBoxes,
   blockFaces,
   ocr,
@@ -1136,6 +1143,14 @@ export function createEngineHandlers({
       // NO try/catch, for the link read's reason.
       const faces = await textFaces(held.session, page);
       return { ok: true, value: { fonts: [...faces.fonts], ranges: [...faces.ranges], truncated: faces.truncated } };
+    },
+
+    'engine/text-clips': async ({ session, page }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      // NO try/catch, for the link read's reason.
+      const clips = await textClips(held.session, page);
+      return { ok: true, value: { objects: clips.objects, clips: [...clips.clips], ranges: [...clips.ranges], truncated: clips.truncated } };
     },
 
     'engine/block-faces': async ({ session, page, form, runs }) => {

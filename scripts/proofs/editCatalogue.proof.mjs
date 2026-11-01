@@ -546,7 +546,11 @@ async function run(pdfium, kernel, kit) {
       const read = await readForEdit(kit, base.bytes, base.page);
       const grouped = withMarkers
         ? read.grouped
-        : kit.groupInFrames(read.read.runs.map((/** @type {any} */ run) => kit.blockableOf(kit.inItsFrame(run))), (/** @type {any} */ run) => run.frame?.matrix);
+        : kit.groupInFrames(
+            read.read.runs.map((/** @type {any} */ run) => kit.blockableOf(kit.inItsFrame(run))),
+            (/** @type {any} */ run) => run.frame?.matrix,
+            (/** @type {any} */ run) => run.style.clip,
+          );
       /** @type {string[]} */
       const found = [];
       for (const block of grouped.filter((/** @type {any} */ each) => textOf(each).includes('on Mondays'))) {
@@ -668,6 +672,7 @@ if (!existsSync(library) || shim === null || !existsSync(fontsDirectory(ROOT))) 
   const { groupInFrames, groupIntoBlocks, inItsFrame, isUpright, blockableOf } = await import('../../packages/kernel/dist/textLines.js');
   const { paragraphsOfLines, lineText, asDocVersion, fromTextFrame } = await import('../../packages/shared/dist/index.js');
   const { applyEditTextOperators } = await import('../../packages/kernel/dist/textOperatorEdit.js');
+  const { readTextClips } = await import('../../packages/kernel/dist/textClips.js');
   const { bindEditFolders, loadEditFaces } = await import('../../packages/kernel/dist/editFaces.js');
   const { readCatalogueApart } = await import('../../packages/kernel/dist/fontCatalogueApart.js');
   bindEditFolders(fontsDirectory(ROOT), null, readCatalogueApart);
@@ -675,7 +680,7 @@ if (!existsSync(library) || shim === null || !existsSync(fontsDirectory(ROOT))) 
   const kernel = { mupdf, mupdfWriter };
   const kit = {
     pdfium, mupdfWriter, applyEditTextOperators, blockEditOf, readsUnpacked, groupInFrames, inItsFrame, blockableOf, paragraphsOfLines,
-    lineText, asDocVersion, fromTextFrame, expectEdit, engines: { kernel, pdfium }, groupIntoBlocks, isUpright,
+    lineText, asDocVersion, fromTextFrame, expectEdit, engines: { kernel, pdfium }, groupIntoBlocks, isUpright, readTextClips,
   };
   await run(pdfium, kernel, kit);
 }

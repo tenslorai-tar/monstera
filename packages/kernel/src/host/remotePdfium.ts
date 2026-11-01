@@ -15,7 +15,7 @@ import type { PageRuns } from '../operatorEdit.js';
 import type { DrawnMarker } from '../textLines.js';
 import { assemblePageContent } from '../pageContentAssemble.js';
 import type { PageContent } from '../presentationContent.js';
-import type { TextRun } from '../pdfiumFfi.js';
+import type { TextClips, TextRun } from '../pdfiumFfi.js';
 import {
   BlockUnchangedError,
   EditRefusedError,
@@ -462,7 +462,7 @@ export function remotePdfiumTextRuns(
   client: ClientApi<PdfiumChannels>,
   held: () => PdfiumArea,
   transfer: PdfiumTransfer,
-): (image: PdfiumReadImage, page: number, unpack: boolean) => Promise<{
+): (image: PdfiumReadImage, page: number, unpack: boolean, clips: TextClips) => Promise<{
   readonly runs: readonly TextRun[];
   readonly truncated: boolean;
   readonly unaddressable: number;
@@ -471,14 +471,14 @@ export function remotePdfiumTextRuns(
   /** The small shapes the page draws as a list's bullets (`drawnMarkersOf`). */
   readonly markers: readonly DrawnMarker[];
 }> {
-  return async (image, page, unpack) => {
+  return async (image, page, unpack, clips) => {
     const { session, area } = held();
     const from = transfer.mintName();
     await placeReadImage(transfer, area, from, image);
     try {
       return answered(
         'engine/text-runs',
-        await client['engine/text-runs']({ session, from, password: frameKey(image), page, ...(unpack ? { unpack: true } : {}) }),
+        await client['engine/text-runs']({ session, from, password: frameKey(image), page, ...(unpack ? { unpack: true } : {}), clips: wireClips(clips) }),
       );
     } finally {
       await transfer.removeSnapshot(area, from);
@@ -537,6 +537,11 @@ export function remotePdfiumRenderPage(
   };
 }
 
+/** {@link TextClips} as the wire's mutable arrays take them; `null` as itself. */
+function wireClips(clips: TextClips): { objects: number; clips: string[]; ranges: { first: number; last: number; clip: number }[]; truncated: boolean } | null {
+  return clips === null ? null : { objects: clips.objects, clips: [...clips.clips], ranges: clips.ranges.map((range) => ({ ...range })), truncated: clips.truncated };
+}
+
 /**
  * A page's runs with their members and its text objects' page indices, over the boundary: ADR-0176's `pageRuns`
  * pre-read. {@link remotePdfiumTextRuns}' round trip, file-answered by the channel.
@@ -549,13 +554,13 @@ export function remotePdfiumPageRuns(
   client: ClientApi<PdfiumChannels>,
   held: () => PdfiumArea,
   transfer: PdfiumTransfer,
-): (image: PdfiumReadImage, page: number) => Promise<PageRuns> {
-  return async (image, page) => {
+): (image: PdfiumReadImage, page: number, clips: TextClips) => Promise<PageRuns> {
+  return async (image, page, clips) => {
     const { session, area } = held();
     const from = transfer.mintName();
     await placeReadImage(transfer, area, from, image);
     try {
-      const read = answered('engine/page-runs', await client['engine/page-runs']({ session, from, password: frameKey(image), page }));
+      const read = answered('engine/page-runs', await client['engine/page-runs']({ session, from, password: frameKey(image), page, clips: wireClips(clips) }));
       const text = new Set(read.textObjects);
       const seen = new Set<number>();
       for (const run of read.runs) {

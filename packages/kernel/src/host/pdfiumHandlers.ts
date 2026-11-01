@@ -5,7 +5,7 @@ import { HeldPassword } from '@monstera/shared';
 import type { CommandExecution } from '../commandRouting.js';
 import type { ImageSession } from '../engineSeam.js';
 import type { PageRuns } from '../operatorEdit.js';
-import type { PageContentRead, PageText, TextRun } from '../pdfiumFfi.js';
+import type { PageContentRead, PageText, TextClips, TextRun } from '../pdfiumFfi.js';
 import {
   BlockUnchangedError,
   EditRefusedError,
@@ -86,6 +86,8 @@ export type HostTextRunsReader = (
   page: number,
   /** Read the page with its forms' content moved onto it in memory, as an edit sent with `unpack` writes it (ADR-0232). */
   unpack: boolean,
+  /** Which clip each text object is drawn through, from the engine host (ADR-0281); `null` where none is known. */
+  clips: TextClips,
 ) => Promise<{
   /** `pdfiumFfi.ts`' own type, named by an erased import so no binding loads here. */
   readonly runs: readonly TextRun[];
@@ -134,7 +136,7 @@ export type HostPageRasteriser = (
  * How this process reads a page's joined runs with their members and its text objects' page indices (ADR-0176's
  * `pageRuns`). Injected for {@link HostTextRunsReader}'s reason.
  */
-export type HostPageRunsReader = (image: ImageSession, page: number) => Promise<PageRuns>;
+export type HostPageRunsReader = (image: ImageSession, page: number, clips: TextClips) => Promise<PageRuns>;
 
 /**
  * A page's own content for the editable PowerPoint export (ADR-0210): the wire's answer and the images' bytes, which the
@@ -404,7 +406,7 @@ export function createPdfiumHandlers({
       return { ok: true, value: { bytes: written, ...cappedBoxes(inverted), noted: [...inverted.noted] } };
     },
 
-    'engine/text-runs': async ({ session, from, password, page, unpack }) => {
+    'engine/text-runs': async ({ session, from, password, page, unpack, clips }) => {
       const held = areas.lookup(session);
       if (held === undefined) return gone;
       let image: ImageSession;
@@ -414,7 +416,7 @@ export function createPdfiumHandlers({
         return failed('asset-missing');
       }
       try {
-        const found = await textRuns(image, page, unpack === true);
+        const found = await textRuns(image, page, unpack === true, clips);
         // BOUNDED WHERE THE WALK IS and forwarded rather than re-derived: a
         // handler computing `truncated` from the array's length alone would answer
         // *you asked for that many* every time. The bound applied again here is
@@ -517,7 +519,7 @@ export function createPdfiumHandlers({
       return { ok: true, value: { bytes: written } };
     },
 
-    'engine/page-runs': async ({ session, from, password, page }) => {
+    'engine/page-runs': async ({ session, from, password, page, clips }) => {
       const held = areas.lookup(session);
       if (held === undefined) return gone;
       let image: ImageSession;
@@ -527,7 +529,7 @@ export function createPdfiumHandlers({
         return failed('asset-missing');
       }
       try {
-        const read = await pageRuns(image, page);
+        const read = await pageRuns(image, page, clips);
         // NO SLICE, unlike `engine/text-runs`: part of a page would number the rest wrongly, so a page past the bound
         // fails the schema and the edit is refused rather than written against a partial reading.
         return { ok: true, value: { textObjects: [...read.textObjects], runs: read.runs.map((run) => ({ ...run, members: [...run.members] })) } };

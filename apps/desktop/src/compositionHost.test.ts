@@ -207,6 +207,10 @@ const ENGINE: FakePeer = (channel, params) => {
       return CONTAINED;
     case 'engine/open':
       return SESSION;
+    // EDIT TEXT'S READS ASK WHICH CLIP EACH TEXT OBJECT IS DRAWN THROUGH FIRST (ADR-0281): answered as a page drawn through
+    // none, so a case about something else groups and writes as it did.
+    case 'engine/text-clips':
+      return { ok: true, value: { objects: 0, clips: [], ranges: [], truncated: false } };
     case 'engine/capture':
       // `present: false` is a page that carried NO `/Rotate` key, which is the
       // prior state a rotate most often replaces — and restoring it means
@@ -2191,19 +2195,21 @@ function blockFacesEngine(): {
  * A PDFium peer that answers `engine/page-runs` {@link PAGE_RUNS}, and records the page it was asked for and the bytes of
  * the image it was handed — read from inside the peer, the only moment the input exists ({@link pdfiumPeer}'s reason).
  */
-function pageRunsPeer(): { readonly peer: FakePeer; readonly asked: { page: number; image: string }[] } {
+function pageRunsPeer(): { readonly peer: FakePeer; readonly asked: { page: number; image: string }[]; readonly clips: unknown[] } {
   const inner = pdfiumPeer();
   let snapshot: string | null = null;
   const asked: { page: number; image: string }[] = [];
+  const clips: unknown[] = [];
   const peer: FakePeer = (channel, params) => {
     if (channel === 'engine/open') snapshot = (params as { snapshotDirectory: string }).snapshotDirectory;
     if (channel !== 'engine/page-runs') return inner.peer(channel, params);
     if (snapshot === null) throw new Error('engine/page-runs before engine/open');
     const { page, from } = params as { page: number; from: string };
     asked.push({ page, image: readFileSync(join(snapshot, from), 'utf8') });
+    clips.push((params as { clips: unknown }).clips);
     return { ok: true, value: PAGE_RUNS };
   };
-  return { peer, asked };
+  return { peer, asked, clips };
 }
 
 describe('the composition root, THE READ ON OPEN through both engine hosts (ADR-0271 section 5)', () => {
@@ -2237,6 +2243,8 @@ describe('the composition root, THE READ ON OPEN through both engine hosts (ADR-
 
     // HOP ONE: PDFium was asked for the page the renderer named, and handed the document's own image.
     expect(pdfium.asked).toStrictEqual([{ page: 3, image: '%PDF-1.7\n' }]);
+    // WITH THE CLIPS THE ENGINE HOST ANSWERED for that page (ADR-0281), so the pre-read joins as the editor's read did.
+    expect(pdfium.clips).toStrictEqual([{ objects: 0, clips: [], ranges: [], truncated: false }]);
     // AND NO FORM'S PAGES WERE BUILT, the page's own content being what was asked about.
     expect(mupdf.formPages).toStrictEqual([]);
     expect(first.harness.calls).not.toContain('peer.request:engine/form-pages');
@@ -2387,6 +2395,41 @@ describe('the composition root, EDIT TEXT’S READ of a page drawing many form p
     expect(pdfium.asked).toStrictEqual([0, ...MANY.map((_, at) => at)]);
     if (!read.ok) throw new Error(`the read failed: ${JSON.stringify(read.error)}`);
     expect(read.value.blocks.filter((block) => block.form !== undefined)).toHaveLength(MANY.length);
+  });
+
+  it('hands the engine host’s clips to PDFium’s read of the page, as they came, and a form placement’s read none (ADR-0281)', async () => {
+    const CLIPS = {
+      objects: 2,
+      clips: ['0123456789abcdef', 'fedcba9876543210'],
+      ranges: [
+        { first: 0, last: 0, clip: 0 },
+        { first: 1, last: 1, clip: 1 },
+      ],
+      truncated: false,
+    };
+    const engine = manyFormsEngine();
+    const clipped: FakePeer = (channel, params) => (channel === 'engine/text-clips' ? { ok: true, value: CLIPS } : engine(channel, params));
+    const pdfium = textRunsPeer();
+    const sent: unknown[] = [];
+    const recording: FakePeer = (channel, params) => {
+      if (channel === 'engine/text-runs') sent.push((params as { clips: unknown }).clips);
+      return pdfium.peer(channel, params);
+    };
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
+      appInfo,
+      pickDocument: () => Promise.resolve(aDocument('clipped.pdf')),
+      enginePlatform: platformAnswering(clipped).platform,
+      pdfiumPlatform: platformAnswering(recording).platform,
+    });
+    const opened = await handlers['document.open']({});
+    if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
+
+    await handlers['document.textBlocks']({ docId: opened.value.docId, page: 0, from: 0 });
+
+    // THE PAGE'S OWN READ FIRST, given exactly what the engine host answered; then every placement's, given none.
+    expect(sent[0]).toStrictEqual(CLIPS);
+    expect(sent.slice(1)).toStrictEqual(MANY.map(() => null));
   });
 });
 

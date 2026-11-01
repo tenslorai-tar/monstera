@@ -78,7 +78,8 @@ const engines = { kernel: { mupdf }, pdfium };
   process.stdout.write('  control: the check passes the correct edit and fails an unchanged page\n\n');
 }
 
-const kit = { pdfium, mupdfWriter, applyEditTextOperators, blockEditOf, readsUnpacked, groupInFrames, inItsFrame, blockableOf, paragraphsOfLines, lineText, asDocVersion, fromTextFrame, expectEdit, engines };
+const { readTextClips } = await import('../../packages/kernel/dist/textClips.js');
+const kit = { pdfium, mupdfWriter, applyEditTextOperators, blockEditOf, readsUnpacked, groupInFrames, inItsFrame, blockableOf, paragraphsOfLines, lineText, asDocVersion, fromTextFrame, expectEdit, engines, readTextClips };
 /** @type {{ id: string, verdict: string }[]} */
 const results = [];
 for (const shape of SHAPES.filter((each) => ONLY === undefined || each.id === ONLY)) {
