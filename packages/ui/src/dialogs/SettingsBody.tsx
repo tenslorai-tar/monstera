@@ -8,6 +8,7 @@ import {
   type AiModelListAnswer,
   type AiProviderId,
   type AzureDiPage,
+  SECRET_SETTING_IDS,
   type SecretSettingId,
   choiceReadsImages,
   defaultModel,
@@ -138,7 +139,7 @@ import { controlFor, DIALOG_SETTINGS, listedPages } from './settings.js';
  */
 
 /** One secret field's edit: text typed to replace it, or a request to remove it. */
-interface SecretDraft {
+export interface SecretDraft {
   readonly replace: string;
   readonly remove: boolean;
 }
@@ -195,6 +196,24 @@ function memberTitle(setting: SettingDefinition, member: string): MessageKey {
 /** Whether a provider's key is one of the stored secrets. */
 function keyStored(provider: AiProviderId, stored: readonly SecretSettingId[]): boolean {
   return stored.some((id) => id === AI_PROVIDERS[provider].keySetting);
+}
+
+/**
+ * THE KEYS STORED AS THIS DIALOG HAS LEFT THEM: what it opened with, less each key removed here, with each key typed
+ * here — every change to a key is written as it is made (ADR-0094), so this is what is stored now. The one answer every
+ * part of the dialog reads, as the other settings read their drafts: read from the list it OPENED with, a key removed
+ * here was still *A key is stored* beside *The stored key was removed*, and its provider still marked as keyed, until
+ * the dialog was opened again.
+ */
+export function heldKeys(
+  opened: readonly SecretSettingId[],
+  drafts: Readonly<Record<string, SecretDraft>>,
+): readonly SecretSettingId[] {
+  return SECRET_SETTING_IDS.filter((id) => {
+    const draft = drafts[id];
+    if (draft === undefined) return opened.includes(id);
+    return !draft.remove && (draft.replace !== '' || opened.includes(id));
+  });
 }
 
 /** One setting's control, derived from its schema, with no label of its own — the row carries it. */
@@ -404,7 +423,8 @@ function SettingControl({
             // TYPING A NEW KEY AFTER REMOVING THE OLD ONE is a replacement, so the removal is no longer the state.
             onSecret({ replace: value, remove: false });
           }}
-          placeholder={stored && !secret.remove ? SETTINGS_SECRET_PLACEHOLDER : undefined}
+          // `stored` IS THE KEY AS IT STANDS NOW (`heldKeys`), so a key removed here has no placeholder and no Remove.
+          placeholder={stored ? SETTINGS_SECRET_PLACEHOLDER : undefined}
           // A KEY OR A TOKEN, which every secret setting is: it runs long (ADR-0157).
           runsLong
           secret
@@ -414,7 +434,7 @@ function SettingControl({
             the key has one, and the red button that removes it. */}
         <div className="m-settings-row__key-actions">
           {keyCheck}
-          {stored && !secret.remove ? (
+          {stored ? (
             <RemoveKey
               disabled={!available}
               onRemove={() => {
@@ -423,7 +443,8 @@ function SettingControl({
             />
           ) : null}
         </div>
-        {stored && secret.remove ? (
+        {/* A REMOVAL MADE HERE, which is offered only for a stored key. */}
+        {secret.remove ? (
           <span className="m-settings-row__note" role="status">
             {_(SETTINGS_SECRET_REMOVED)}
           </span>
@@ -909,6 +930,8 @@ export default function SettingsBody({
     Object.fromEntries((shortcuts?.rows ?? []).map((row) => [row.id, row.chord])),
   );
   const [secrets, setSecrets] = useState<Readonly<Record<string, SecretDraft>>>({});
+  // THE KEYS STORED NOW (`heldKeys`), which every part of the page below reads rather than the list it opened with.
+  const held = heldKeys(storedSecrets, secrets);
   const [query, setQuery] = useState('');
   const [cleared, setCleared] = useState(false);
   const [clearedRecent, setClearedRecent] = useState(false);
@@ -953,7 +976,7 @@ export default function SettingsBody({
   const [refreshAsked, setRefreshAsked] = useState<Readonly<Partial<Record<AiProviderId, number>>>>({});
   const ensureList = (id: AiProviderId): void => {
     if (!secretsAvailable || refreshAsked[id] !== undefined) return;
-    if (!storedSecrets.some((held) => held === AI_PROVIDERS[id].keySetting)) return;
+    if (!keyStored(id, held)) return;
     setRefreshAsked((current) => ({ ...current, [id]: 1 }));
     report({ refresh: id });
   };
@@ -1018,7 +1041,7 @@ export default function SettingsBody({
         onChoose={(value) => {
           changeValue(setting, value);
         }}
-        storedSecrets={storedSecrets}
+        storedSecrets={held}
       />
     ) : controlFor(setting) === 'font' ? (
       <FontRow
@@ -1075,7 +1098,7 @@ export default function SettingsBody({
       }}
       secret={secrets[setting.id] ?? UNTOUCHED}
       setting={setting}
-      stored={storedSecrets.some((id) => id === setting.id)}
+      stored={held.some((id) => id === setting.id)}
       keyCheck={keyCheckFor(setting)}
     />
   );
@@ -1084,8 +1107,7 @@ export default function SettingsBody({
   function keyCheckFor(setting: SettingDefinition): ReactElement | undefined {
     const id = providerOfKey(setting);
     if (id === undefined) return undefined;
-    const draft = secrets[setting.id] ?? UNTOUCHED;
-    const hasKey = !draft.remove && (draft.replace !== '' || storedSecrets.some((held) => held === setting.id));
+    const hasKey = held.some((stored) => stored === setting.id);
     return (
       <KeyCheck
         canCheck={secretsAvailable && hasKey}
