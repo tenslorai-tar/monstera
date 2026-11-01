@@ -1,6 +1,6 @@
 # ADR-0282 — Text to curves saves a new copy whose every letter is a shape
 
-- **Status:** Proposed — not built. The owner approves the design first.
+- **Status:** Accepted 2026-11-01, by *The owner's answers, 2026-11-01* below. Proposed the same day.
 - **Date:** 2026-11-01
 - **Requested by:** the owner, 2026-11-01: *a tool that turns every letter of a PDF into curves (outlined text), for
   printing and for sending a file whose look must not depend on fonts.*
@@ -108,3 +108,16 @@ the `NoOutputFonts` parameter beside `PDFACompatibilityPolicy`, which PDF/A alre
 
 The readings above are from a Linux build of the same version, uncontained. The shipped `gswin64c.exe`, contained as
 PDF/A runs it, is measured with the same instrument on Windows first, and this ADR is corrected with what it reads.
+
+## The owner's answers, 2026-11-01
+
+All three questions answered as recommended, and a fourth settled beside them:
+
+1. **Form fields become part of the page**, said before it runs, as Decision 3 words it.
+2. **The name is *Convert text to curves*.**
+3. **Whole document first.** A page range is a later setting of the same command.
+4. FEATURES row 149's *hanging indents in lists* is the C5 list-item work on `work/cloud-36-clips-bullets`, and closes
+   when that branch merges; it is not this ADR's.
+
+So the decisions above stand as written and are built. *Before it is built* still holds for the figures: they are the
+Linux build's, and the shipped Windows build is measured, contained, at merge.
