@@ -1,7 +1,8 @@
 # ADR-0283 — Document properties edits the Info dictionary and the XMP packet together
 
-- **Status:** Proposed 2026-11-01, and built on that design: the owner asked for the feature, and it needs no
-  architecture change beyond registering into existing seams.
+- **Status:** Accepted 2026-11-01, by *The owner's answers, 2026-11-01* below. Proposed the same day, and built on
+  that design: the owner asked for the feature, and it needs no architecture change beyond registering into existing
+  seams.
 - **Date:** 2026-11-01
 - **Requested by:** a user, relayed by the owner: *view and edit a file's properties.*
 - **Relates:** ARCHITECTURE §3's writer-of-record matrix (metadata is MuPDF's), §4's save modes (a metadata scrub is a
@@ -65,3 +66,12 @@ kept.
 - **A whole XML parser in the kernel**: the edit touches six properties; a parse and re-serialise would rewrite every
   other property's bytes, which *preserve, never drop* rules out.
 - **An invertible capture of the packet**: unbounded in the log, for the cost a checkpoint already pays.
+
+## The owner's answers, 2026-11-01
+
+1. **Dates are typed as text for now**, as `YYYY-MM-DD HH:MM`. A date picker can come later; the input field has none.
+2. **The size shown is the document's size as it stands now**, which moves with unsaved edits, not the file's size on
+   disk. Its label says so: *Size now*, with a line saying it includes unsaved changes, so nobody compares it with File
+   Explorer's figure and thinks one of them is wrong.
+
+So the decisions above stand as written and are built, with the size's label as answer 2 words it.
