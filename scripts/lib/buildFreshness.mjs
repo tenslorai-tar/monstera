@@ -705,6 +705,9 @@ export const ARTEFACT_EDGES = {
   // The fidelity proof drives the same built adapter, and reads pixels rather
   // than text: it is the guard that an edit does not silently redraw the page.
   'proof:editfidelity': PDFIUM_ADAPTER,
+  // ADR-0282's proof, the pairs it declares at its own guard call: the census, the converter's command line and the
+  // engine. Missing on its first push, and named by `buildFreshness.proof.mjs`' anchor on Guards (run 41342201551).
+  'proof:texttocurves': TEXT_TO_CURVES,
   // THE ENGINE'S OBJECT MODEL TOO, on this and the two below, since ADR-0124 moved them onto `dist/mupdfRaw.js`:
   // every one of them imported it directly with only the parser declared, so a change to the binding alone left the
   // guard quiet about the file every page read goes through.
