@@ -48,7 +48,7 @@ const requireFonts = process.argv.includes('--require-fonts');
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 12 });
+const roster = createRoster(failures, { cases: 13 });
 /** The cases that could not run here, by name, for the partial outcome. @type {string[]} */
 const missed = [];
 
@@ -173,6 +173,16 @@ try {
       }
     };
 
+    // EVERY FETCH REFUSED AND COUNTED from here, so the rebuild cases below cannot pass by reaching a server: on the
+    // provisioner before `held` they made 12 attempts and failed (measured 2026-11-01 with fetch refused), and the
+    // case after them requires none.
+    const realFetch = globalThis.fetch;
+    let fetches = 0;
+    globalThis.fetch = (url) => {
+      fetches += 1;
+      return Promise.reject(new Error(`fonts.proof.mjs fetches nothing, and was asked for ${String(url)}`));
+    };
+
     // A TREE NOT AS PINNED IS REMOVED AND PROVISIONED AGAIN IN THE SAME RUN (P1, 07be167e): never used, and never left
     // for a second run. So each answer is `downloaded`, the planted or altered file is gone or pinned again, and the
     // tree that results is accepted as exact on the next call. Until P1 each of these threw and asked for another run.
@@ -213,6 +223,9 @@ try {
       `provisionFonts answered ${refusedAnswer.split('\n')[0] ?? ''}`,
     );
 
+    check('the rebuilds reached no server: every file came from the held tree, checked by its pin', fetches === 0, `${String(fetches)} fetch(es) attempted`);
+    globalThis.fetch = realFetch;
+
     const exact = copyRoot('exact', false);
     check(
       'CONTROL: the genuine set at the same place is accepted with no download',
@@ -224,7 +237,7 @@ try {
     // COULD NOT LOOK, recorded as such (RRRRRRR-13): each case not applicable here, and the run ends PARTLY MEASURED
     // through `unverifiable.mjs`, which makes it a failure under --require-fonts. These were passing cases labelled
     // UNVERIFIABLE, which a harness read as a complete pass.
-    for (const label of ['planted', 'altered', 'refused held', 'exact', 'genuine']) {
+    for (const label of ['planted', 'altered', 'refused held', 'no fetch', 'exact', 'genuine']) {
       const name = `the ${label} copy case, which needs the bundled fonts provisioned`;
       roster.record(roster.mark(), name, false);
       missed.push(name);
