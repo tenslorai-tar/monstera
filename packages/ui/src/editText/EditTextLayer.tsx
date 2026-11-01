@@ -23,6 +23,7 @@ import {
 import { paperAround } from '../paperAround.js';
 import type { TextBlock } from '../textBlock.js';
 import { neighbourOf, pageBox, wordsOfBlock } from '../textBlockOps.js';
+import type { BlockBox } from '../textPlacement.js';
 import { AreaPatch, type CssArea, type PatchArea } from './AreaPatch.js';
 import { modelOfBlock } from './blockModel.js';
 import { BlockEditor, type Opening } from './BlockEditor.js';
@@ -445,15 +446,17 @@ export function EditTextLayer({
               // A BLOCK OF ONE LINE grows to its column's edge or the page's margin before it wraps. A TURNED ONE grows the
               // same way in its own frame (ADR-0273), where its box and the boxes of the blocks set in its frame are, and
               // where the writer lays it out: the page seen along its line (`pageAlongFrame`).
+              // ASKED OF THE BOX WHERE IT STANDS, so a moved or scaled line wraps at its new column (`placedReach`).
               reach={
                 block.lines.length === 1
-                  ? oneLineReach(
-                      block.box,
-                      blocks.blocks.filter((other) => other !== block && sameTextFrame(other.frame ?? null, block.frame ?? null)).map((other) => other.box),
-                      block.frame === undefined
-                        ? { x0: geometry.crop[0], y0: geometry.crop[1], x1: geometry.crop[2], y1: geometry.crop[3] }
-                        : pageAlongFrame({ x0: geometry.crop[0], y0: geometry.crop[1], x1: geometry.crop[2], y1: geometry.crop[3] }, block.frame, block.box),
-                    )
+                  ? (box: BlockBox): number =>
+                      oneLineReach(
+                        box,
+                        blocks.blocks.filter((other) => other !== block && sameTextFrame(other.frame ?? null, block.frame ?? null)).map((other) => other.box),
+                        block.frame === undefined
+                          ? { x0: geometry.crop[0], y0: geometry.crop[1], x1: geometry.crop[2], y1: geometry.crop[3] }
+                          : pageAlongFrame({ x0: geometry.crop[0], y0: geometry.crop[1], x1: geometry.crop[2], y1: geometry.crop[3] }, block.frame, box),
+                      )
                   : undefined
               }
               restructure={

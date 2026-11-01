@@ -202,6 +202,26 @@ describe('editOperators on the Chromium print', () => {
     });
   });
 
+  it('a word TYPED into one block, spelt like a word of a block deleted beside it, goes to an ordinary face (BBBBBBBBB-8)', async () => {
+    // THE SECOND HEADING DELETED in the same edit, NOT joined: no block now ends with its words. `in` is one of them, and
+    // not one of the first heading's, and `joinedIn` took every emptied block's words as said everywhere, so the typed
+    // `in` was drawn in F4. (F5, the ordinary sibling, carries its letters, as it does `reading.`'s.)
+    await chromium((content, fonts) => {
+      const page = runsOf(content, fonts);
+      const heading = page.runs[0];
+      const second = page.runs.find((run) => run.text === 'A second heading in the same face.');
+      const result = editOperators(content, fonts, page, [
+        { lines: [[heading?.index ?? -1]], soft: [false], text: 'Monstera in heading.' },
+        { lines: [[second?.index ?? -1]], soft: [false], text: '' },
+      ]);
+      if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+      const [object = ''] = inserted(result.value);
+      const shown = [...object.matchAll(/\/(F\d) 28 Tf\n1 0 0 -1 [\d.]+ 97 Tm <[0-9A-F]+> Tj/gu)].map((match) => match[1]);
+      // `Monstera` drawn, the typed `in` in the ordinary sibling, `heading.` drawn again.
+      expect(shown).toStrictEqual(['F4', 'F5', 'F4']);
+    });
+  });
+
   it('CONTROL: words another font drew, joined into a Type 3 line, go to an ordinary face though its subset holds the letters', async () => {
     await chromium((content, fonts) => {
       const page = runsOf(content, fonts);
