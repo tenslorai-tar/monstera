@@ -2131,6 +2131,17 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' }));
       return Promise.resolve(ok({ kind: 'unavailable' as const }));
     },
+    // TEXT TO CURVES' SHIM (ADR-0282): PDF/A's reason, no Ghostscript and no census in a browser.
+    'document.curvesNotice': ({ docId }) => {
+      if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
+      if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' }));
+      return Promise.resolve(ok({ kind: 'unavailable' as const }));
+    },
+    'document.convertTextToCurves': ({ docId }) => {
+      if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
+      if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' }));
+      return Promise.resolve(ok({ kind: 'unavailable' as const }));
+    },
     // OPTIMIZE'S SHIM (ADR-0087): no rewriter runs in a browser, so the sizes are fixed per
     // setting — distinct, so a case can tell which setting reached the channel — at the version
     // the shim holds, and a save at any other version answers `changed`, as main's does.

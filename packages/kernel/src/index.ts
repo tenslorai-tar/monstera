@@ -192,6 +192,9 @@ export type { FlatFieldCandidate } from './flatFields.js';
 // the engine host and never in main (ADR-0076).
 export type { FoundBarcode } from './barcodeReader.js';
 export { contactCardFileText } from './contactCard.js';
+// WHAT A CURVES COPY LOST (ADR-0282 Decision 4): the comparison main makes of two censuses. The module takes MuPDF's
+// object model as a TYPE only, so nothing native is bound by this line; the census itself runs in the compose host.
+export { type KeptLoss, lostBetween } from './keptCensus.js';
 // VALUES AND TYPES WITH NO ENGINE: the check itself is on `@monstera/kernel/engine` (ADR-0078).
 export {
   type AccessibilityRuleResult,

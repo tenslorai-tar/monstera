@@ -36,6 +36,9 @@ export const READS_THE_DOCUMENT_OUT = [
   'document.exportPowerPoint',
   'document.exportExcel',
   'document.exportPdfa',
+  // TEXT TO CURVES' TWO (ADR-0282): the notice counts the bytes a save would write, and the copy converts them.
+  'document.curvesNotice',
+  'document.convertTextToCurves',
   'document.exportAnnotations',
 ] as const satisfies readonly { [K in keyof ContractClient]: ChannelParams<K> extends { readonly docId: unknown } ? K : never }[keyof ContractClient][];
 

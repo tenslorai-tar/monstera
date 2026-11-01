@@ -754,6 +754,10 @@ export {
   PDFA_LEFT_OUT_KINDS,
   type PdfaLeftOutKind,
   MAX_PDFA_LEFT_OUT,
+  KEPT_KINDS,
+  type KeptKind,
+  keptCountsSchema,
+  keptLossesSchema,
 } from './commands.js';
 // A REPLACEMENT'S BLOCK EDITS (ADR-0267): the find bar's and the spelling review's, and `proof:edittext`'s.
 export { type ReplacedBlock, blocksReplaced, wordsOf } from './blockReplace.js';

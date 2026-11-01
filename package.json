@@ -157,6 +157,7 @@
     "proof:pdfiumcontent": "node scripts/proofs/pdfiumPageContent.proof.mjs",
     "proof:pdfiumreadback": "node scripts/proofs/pdfiumReadBack.proof.mjs",
     "proof:editfidelity": "node scripts/proofs/editFidelity.proof.mjs",
+    "proof:texttocurves": "node scripts/proofs/textToCurves.proof.mjs",
     "proof:inlineimages": "node scripts/proofs/inlineImages.proof.mjs",
     "proof:type3edit": "node scripts/proofs/type3Edit.proof.mjs",
     "proof:lineendmarks": "node scripts/proofs/lineEndMarks.proof.mjs",

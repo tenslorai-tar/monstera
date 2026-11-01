@@ -63,6 +63,8 @@ export const SAVE_PROBLEM_DIALOG = declareDialog({
       'email-failed',
       'pdfa-unavailable',
       'pdfa-failed',
+      'curves-unavailable',
+      'curves-failed',
       'optimize-unavailable',
       'optimize-unreadable',
       'optimize-changed',

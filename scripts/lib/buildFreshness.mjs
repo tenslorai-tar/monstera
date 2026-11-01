@@ -311,6 +311,18 @@ export const COMPOSE_HOST_LIVE = [
 export const NATIVE_ENGINE = [['packages/kernel/src/mupdfRaw.ts', 'packages/kernel/dist/mupdfRaw.js', 'tsc']];
 
 /**
+ * What `textToCurves.proof.mjs` runs (ADR-0282): the census the command counts with, the converter's fixed command
+ * line, and the native engine both draw and read pages on.
+ *
+ * @type {BuildEdge[]}
+ */
+export const TEXT_TO_CURVES = [
+  ['packages/kernel/src/keptCensus.ts', 'packages/kernel/dist/keptCensus.js', 'tsc'],
+  ['apps/desktop/src/textToCurves.ts', 'apps/desktop/dist/textToCurves.js', 'tsc'],
+  ['packages/kernel/src/mupdfRaw.ts', 'packages/kernel/dist/mupdfRaw.js', 'tsc'],
+];
+
+/**
  * What `type3Edit.proof.mjs` runs (ADR-0176): PDFium's reading and MuPDF's operator writer, which reaches the
  * numbering, the fonts, the ToUnicode reader and the refusals beneath it. The kernel's whole `src`, so a module the
  * writer imports two steps down is dated too; the contract's encoder; and the native engine MuPDF runs on.

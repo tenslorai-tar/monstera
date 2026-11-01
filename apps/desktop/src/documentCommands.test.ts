@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 
@@ -224,6 +225,7 @@ import { EDIT_QUIET_MS, type EditWatchSurface } from './externalEditWatch.js';
 import { LayoutTextFailedError, type LayoutTextSource } from './layoutText.js';
 import { OfficeConversionFailedError } from './officeConversion.js';
 import { type PdfaSource, PdfaFailedError } from './pdfaConversion.js';
+import { type CountedKept, type CurvesSource, CurvesFailedError, type KeptCounter } from './textToCurves.js';
 import { type PrintDestination, PrintFailedError } from './printing.js';
 import { type ShareDestination, ShareFailedError, type ShareOffer } from './sharing.js';
 import { nodeEditWatchSurface } from './nodeEditWatch.js';
@@ -981,6 +983,8 @@ const INERT = {
   share: null,
   // NO PDF/A CONVERTER, the state of a machine that has not provisioned one.
   pdfa: null,
+  curves: null,
+  countKept: null,
   // NO OFFICE CONVERTER, for the same reason; an Office import case supplies its own.
   officeImport: null,
   // NO COMPOSE HOST, the state of a platform without one; an Optimize case supplies its own.
@@ -4036,6 +4040,11 @@ describe('exportText — the document’s words, streamed one page at a time', (
       /** The page set each Word export handed the host (ADR-0161). */
       readonly wordPages?: PageSet[];
       readonly pdfa?: PdfaSource | null;
+      /** Text to curves' converter and census (ADR-0282); absent, neither is there. */
+      readonly curves?: CurvesSource | null;
+      readonly countKept?: KeptCounter | null;
+      /** Where each name the copy picker was offered is recorded. */
+      readonly copyNames?: string[];
       readonly optimizer?: OptimizeSource | null;
       /** The password the document was unlocked with; absent, it opened with none. */
       readonly unlockedWith?: string;
@@ -4060,6 +4069,8 @@ describe('exportText — the document’s words, streamed one page at a time', (
       print: options.print ?? null,
       share: options.share ?? null,
       pdfa: options.pdfa ?? null,
+      curves: options.curves ?? null,
+      countKept: options.countKept ?? null,
       optimizer: options.optimizer ?? null,
       ...(options.barcodes === undefined
         ? {}
@@ -4108,7 +4119,10 @@ describe('exportText — the document’s words, streamed one page at a time', (
         pick:
           options.copyTo === undefined
             ? () => Promise.reject(new Error('a text export uses its own picker'))
-            : () => Promise.resolve(options.copyTo ?? null),
+            : (name) => {
+                options.copyNames?.push(name);
+                return Promise.resolve(options.copyTo ?? null);
+              },
         checkTarget: options.checkTarget ?? ((target) => textService.checkCopyTarget(target)),
       },
       pickText: (name) => {
@@ -4623,6 +4637,152 @@ describe('exportText — the document’s words, streamed one page at a time', (
     it('CONTROL: answers UNAVAILABLE before any dialog where no converter is provisioned', async () => {
       const { commands } = exportingTo(null, { pdfa: null });
       expect(await commands.exportPdfa(textDoc, 2, WORK)).toStrictEqual({ kind: 'unavailable' });
+    });
+  });
+
+  describe('text to curves (ADR-0282)', () => {
+    const FLUSHED = new TextEncoder().encode('%PDF-1.7 the document');
+    const COPY = '%PDF-1.7 every letter a shape';
+    const NONE = { pages: 2, marks: 0, links: 0, 'link-targets': 0, bookmarks: 0, attachments: 0, layers: 0, fields: 0, tags: 0, title: 0 };
+
+    /** A converter answering `before` as its census and writing {@link COPY}, recording what it was handed. */
+    function converter(before: CountedKept | null): { readonly source: CurvesSource; readonly given: Uint8Array[] } {
+      const given: Uint8Array[] = [];
+      return {
+        given,
+        source: (pdf) => {
+          given.push(pdf);
+          return Promise.resolve({
+            before,
+            output: (async function* () {
+              yield await Promise.resolve(new TextEncoder().encode(COPY));
+            })(),
+          });
+        },
+      };
+    }
+
+    /** A census of the written copy answering `after`, recording which file it was handed. */
+    function census(after: CountedKept | 'unreadable'): { readonly count: KeptCounter; readonly files: string[] } {
+      const files: string[] = [];
+      return {
+        files,
+        count: (source) => {
+          if ('file' in source) files.push(source.file);
+          if (after === 'unreadable') return Promise.resolve({ kind: 'unreadable' });
+          return Promise.resolve({ kind: 'counted', census: after, path: null, discard: () => Promise.resolve() });
+        },
+      };
+    }
+
+    const fileDigest = (path: string): string => createHash('sha256').update(readFileSync(path)).digest('hex');
+
+    it('writes the copy where the person picked, offered as "(curves)", and the document’s own file is untouched', async () => {
+      const original = join(directory, 'words.pdf');
+      const digest = fileDigest(original);
+      const destination = join(mkdtempSync(join(directory, 'curves-')), 'words (curves).pdf');
+      const names: string[] = [];
+      const { source, given } = converter({ kept: NONE, fonts: 1 });
+      const { commands } = exportingTo(null, {
+        curves: source,
+        countKept: census({ kept: NONE, fonts: 0 }).count,
+        flush: () => Promise.resolve(FLUSHED),
+        copyTo: destination,
+        copyNames: names,
+      });
+
+      const outcome = await commands.convertTextToCurves(textDoc, WORK);
+
+      expect(outcome).toStrictEqual({ kind: 'copied', bytes: COPY.length, before: FLUSHED.length, lost: [], compared: true, fontsLeft: 0, destination });
+      expect(readFileSync(destination, 'latin1')).toBe(COPY);
+      expect(names).toStrictEqual(['words (curves).pdf']);
+      expect(given).toStrictEqual([FLUSHED]);
+      expect(fileDigest(original)).toBe(digest);
+    });
+
+    it('REFUSES the document’s own file as the destination, and writes nothing there (control: the case above)', async () => {
+      const original = join(directory, 'words.pdf');
+      const digest = fileDigest(original);
+      const { source, given } = converter({ kept: NONE, fonts: 1 });
+      const { commands } = exportingTo(null, { curves: source, countKept: census({ kept: NONE, fonts: 0 }).count, flush: () => Promise.resolve(FLUSHED), copyTo: original });
+
+      const outcome = await commands.convertTextToCurves(textDoc, WORK);
+
+      expect(outcome).toStrictEqual({ kind: 'refused', others: [textDoc] });
+      // REFUSED BEFORE THE CONVERTER RAN: the check reads the destination first.
+      expect(given).toStrictEqual([]);
+      expect(fileDigest(original)).toBe(digest);
+    });
+
+    it('names every count that fell, a form’s fields among them, read from the FILE it wrote', async () => {
+      const destination = join(mkdtempSync(join(directory, 'curves-')), 'form.pdf');
+      const before = { kept: { ...NONE, fields: 3, tags: 7, links: 2, 'link-targets': 2 }, fonts: 5 };
+      const after = census({ kept: { ...NONE, links: 2, 'link-targets': 2 }, fonts: 0 });
+      const { commands } = exportingTo(null, { curves: converter(before).source, countKept: after.count, flush: () => Promise.resolve(FLUSHED), copyTo: destination });
+
+      const outcome = await commands.convertTextToCurves(textDoc, WORK);
+
+      expect(outcome?.kind === 'copied' && outcome.lost).toStrictEqual([
+        { kind: 'fields', before: 3, after: 0 },
+        { kind: 'tags', before: 7, after: 0 },
+      ]);
+      expect(after.files).toStrictEqual([destination]);
+    });
+
+    it('says the converter left fonts, where the copy still has some', async () => {
+      const destination = join(mkdtempSync(join(directory, 'curves-')), 'fonts.pdf');
+      const { commands } = exportingTo(null, {
+        curves: converter({ kept: NONE, fonts: 3 }).source,
+        countKept: census({ kept: NONE, fonts: 2 }).count,
+        flush: () => Promise.resolve(FLUSHED),
+        copyTo: destination,
+      });
+      const outcome = await commands.convertTextToCurves(textDoc, WORK);
+      expect(outcome?.kind === 'copied' && outcome.fontsLeft).toBe(2);
+    });
+
+    it('CONTROL: a copy that could not be counted is UNCOMPARED, never reported as having lost nothing', async () => {
+      for (const [before, after] of [
+        [null, census({ kept: NONE, fonts: 0 }).count],
+        [{ kept: { ...NONE, fields: 3 }, fonts: 1 }, census('unreadable').count],
+        [{ kept: { ...NONE, fields: 3 }, fonts: 1 }, null],
+      ] as const) {
+        const destination = join(mkdtempSync(join(directory, 'curves-')), 'uncounted.pdf');
+        const { commands } = exportingTo(null, { curves: converter(before).source, countKept: after, flush: () => Promise.resolve(FLUSHED), copyTo: destination });
+        const outcome = await commands.convertTextToCurves(textDoc, WORK);
+        expect(outcome?.kind === 'copied' && { lost: outcome.lost, compared: outcome.compared }).toStrictEqual({ lost: [], compared: false });
+      }
+    });
+
+    it('answers FAILED and writes no file when the converter made no copy', async () => {
+      const destination = join(mkdtempSync(join(directory, 'curves-')), 'failed.pdf');
+      const failing: CurvesSource = () => Promise.reject(new CurvesFailedError({ stage: 'no-output', said: null }));
+      const { commands } = exportingTo(null, { curves: failing, flush: () => Promise.resolve(FLUSHED), copyTo: destination });
+      expect(await commands.convertTextToCurves(textDoc, WORK)).toStrictEqual({ kind: 'failed' });
+      expect(existsSync(destination)).toBe(false);
+    });
+
+    it('the notice counts the bytes a save would write, and is UNAVAILABLE where either half cannot run', async () => {
+      const seen: Uint8Array[] = [];
+      const count: KeptCounter = (source) => {
+        if ('bytes' in source) seen.push(source.bytes);
+        return Promise.resolve({ kind: 'counted', census: { kept: { ...NONE, fields: 4, tags: 9 }, fonts: 1 }, path: null, discard: () => Promise.resolve() });
+      };
+      const { commands } = exportingTo(null, { curves: converter(null).source, countKept: count, flush: () => Promise.resolve(FLUSHED) });
+      expect(await commands.curvesNotice(textDoc, WORK)).toStrictEqual({ kind: 'counted', fields: 4, tags: 9 });
+      expect(seen).toStrictEqual([FLUSHED]);
+
+      expect(await exportingTo(null, { curves: null, countKept: count }).commands.curvesNotice(textDoc, WORK)).toStrictEqual({ kind: 'unavailable' });
+      expect(await exportingTo(null, { curves: converter(null).source, countKept: null }).commands.curvesNotice(textDoc, WORK)).toStrictEqual({
+        kind: 'unavailable',
+      });
+    });
+
+    it('CONTROL: answers UNAVAILABLE before any dialog where no converter is provisioned', async () => {
+      const names: string[] = [];
+      const { commands } = exportingTo(null, { curves: null, copyNames: names, copyTo: join(directory, 'never.pdf') });
+      expect(await commands.convertTextToCurves(textDoc, WORK)).toStrictEqual({ kind: 'unavailable' });
+      expect(names).toStrictEqual([]);
     });
   });
 

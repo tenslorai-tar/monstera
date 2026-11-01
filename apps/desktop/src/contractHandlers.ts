@@ -591,6 +591,8 @@ export function createContractHandlers(deps: {
     'document.print': printHandler(deps.commands),
     'document.email': emailHandler(deps.commands),
     'document.exportPdfa': finishing(exportPdfaHandler(deps.commands, mintWritten)),
+    'document.curvesNotice': finishing(curvesNoticeHandler(deps.commands)),
+    'document.convertTextToCurves': finishing(convertTextToCurvesHandler(deps.commands, mintWritten)),
     'document.optimizeMeasure': optimizeMeasureHandler(deps.commands),
     'document.optimize': optimizeHandler(deps.commands, mintWritten),
     'document.saveCopy': saveCopyHandler(deps.commands, mintWritten),
@@ -2572,6 +2574,53 @@ function exportPdfaHandler(commands: DocumentCommands, mint: MintWritten): Contr
             leftOutMore: outcome.leftOutMore,
             otherLeftOut: outcome.otherLeftOut,
             tagsDropped: outcome.tagsDropped,
+            written: mint(outcome.destination),
+          } as const);
+        case 'refused':
+          return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
+        case 'write-failed':
+        case 'unavailable':
+        case 'failed':
+          return ok({ kind: outcome.kind });
+      }
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/** What a curves copy will say before it runs (ADR-0282 Decision 3): the command's answer as it is. */
+function curvesNoticeHandler(commands: DocumentCommands): ContractHandlers['document.curvesNotice'] {
+  return async ({ docId, work }): Promise<Awaited<ReturnType<ContractHandlers['document.curvesNotice']>>> => {
+    try {
+      return ok(await commands.curvesNotice(docId, work));
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/** A curves copy (ADR-0282): a copy's outcomes with both sizes and what it lost, and the converter's two refusals. */
+function convertTextToCurvesHandler(commands: DocumentCommands, mint: MintWritten): ContractHandlers['document.convertTextToCurves'] {
+  return async ({ docId, work }): Promise<Awaited<ReturnType<ContractHandlers['document.convertTextToCurves']>>> => {
+    try {
+      const outcome = await commands.convertTextToCurves(docId, work);
+      if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
+      switch (outcome.kind) {
+        case 'copied':
+          return ok({
+            kind: 'copied',
+            bytes: outcome.bytes,
+            before: outcome.before,
+            lost: outcome.lost.map((loss) => ({ kind: loss.kind, before: loss.before, after: loss.after })),
+            compared: outcome.compared,
+            fontsLeft: outcome.fontsLeft,
             written: mint(outcome.destination),
           } as const);
         case 'refused':

@@ -4,7 +4,7 @@
      equal to it. Regenerate with `npx vitest run packages/ui/src/App.test.tsx -t "manual test checklist" -u`.
      Do not edit by hand. -->
 
-Every command the application registers — 275 — and the checks only the installed window can answer.
+Every command the application registers — 276 — and the checks only the installed window can answer.
 For each command: use it on a real document, see the correct effect, then save, close and reopen and see it kept
 (the wired-tools rule, CLAUDE.md). A command that needs a selection, a second document or a key says so when it
 is not available.
@@ -183,6 +183,7 @@ is not available.
 - [ ] **Keyboard shortcuts** — Application · `app.keyboard-shortcuts` · Shows: on screen · Help: *See and change keyboard shortcuts*
 - [ ] **Settings** — Application · `app.settings` · Shows: on screen · Help: *Change Monstera's settings*
 - [ ] **Export as PDF/A…** — Convert · `document.export-pdfa` · Shows: a toast · Help: *Save an archival copy (PDF/A)*
+- [ ] **Convert text to curves…** — Convert · `document.convert-text-to-curves` · Shows: a toast
 - [ ] **Save a smaller copy…** — Convert · `document.optimize` · Shows: a toast · Help: *Make a smaller copy of a PDF*
 - [ ] **Export text…** — Convert · `document.export-text` · Shows: a toast · Help: *Save the text as a text file*
 - [ ] **Export text with layout…** — Convert · `document.export-layout-text` · Shows: a toast · Help: *Save the text as a text file*

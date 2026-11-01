@@ -1,23 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { MAX_PDFA_REMOVALS } from '@monstera/contract';
-import {
-  INTEGRITY_LOW,
-  JOB_LIMIT_ACTIVE_PROCESS,
-  JOB_LIMIT_KILL_ON_JOB_CLOSE,
-  JOB_LIMIT_PROCESS_MEMORY,
-  JOB_UI_RESTRICTIONS_ALL,
-} from '@monstera/kernel';
-import { ok } from '@monstera/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import type { ConverterExecutablePath } from './containedProgram.js';
-import type { ConverterPlatform } from './converterSession.js';
-import type { JobHandle, ProcessHandle, ThreadHandle } from './engineHostFactory.js';
+import { drained, fakeConverterPlatform } from './converterFake.js';
 import type { ExitReading } from './externalConverter.js';
-import type { ContainerSid, UserSid } from './hostDacl.js';
 import {
   PDFA_OUTPUT_INTENT,
   PdfaFailedError,
@@ -29,7 +18,6 @@ import {
   removalsOf,
   undeclared,
 } from './pdfaConversion.js';
-import type { DirectoryCreationSurface } from './sessionDirectories.js';
 
 /**
  * The PDF/A conversion's own rules. Ghostscript itself is measured by
@@ -44,31 +32,6 @@ afterEach(() => {
   root = '';
 });
 
-const aProcess = { __handle: 'process' } as ProcessHandle;
-const aThread = { __handle: 'thread' } as ThreadHandle;
-const aJob = { __handle: 'job' } as JobHandle;
-
-/** Directories made and removed with `node:fs`, so the session pair exists and its removal is observable. */
-const directories: DirectoryCreationSurface = {
-  create: (path) => {
-    if (existsSync(path)) return 'exists';
-    mkdirSync(path);
-    return 'created';
-  },
-  remove: (path) => {
-    rmSync(path, { recursive: true, force: true });
-    return true;
-  },
-  removeTree: (path) => {
-    rmSync(path, { recursive: true, force: true });
-    return true;
-  },
-  list: () => [],
-  listFiles: () => [],
-  removeFile: () => true,
-  lastError: () => 0,
-};
-
 /** What Ghostscript writes at level 2, measured 2026-10-13: the XMP's attribute spelling and an output intent. */
 const DECLARED_2 = "%PDF-1.7 converted <rdf:Description pdfaid:part='2' pdfaid:conformance='B'/> /OutputIntents [3 0 R]";
 
@@ -76,68 +39,9 @@ function platform(
   said: string | null,
   exit: ExitReading = { kind: 'exited', code: 0 },
   writes: string = DECLARED_2,
-): {
-  readonly platform: ConverterPlatform;
-  readonly argumentsSeen: (readonly string[])[];
-} {
+): ReturnType<typeof fakeConverterPlatform> {
   root = mkdtempSync(join(tmpdir(), 'monstera-pdfa-'));
-  const argumentsSeen: (readonly string[])[] = [];
-  let limit = 0;
-  return {
-    argumentsSeen,
-    platform: {
-      sessionRoot: join(root, 'sessions'),
-      directories,
-      user: { sid: 'S-1-5-21-1' } as unknown as UserSid,
-      container: { sid: 'S-1-15-2-1' } as unknown as ContainerSid,
-      containerName: 'monstera-pdfa-converter',
-      executable: 'C:\\tools\\gswin64c.exe' as ConverterExecutablePath,
-      bounds: { processMemoryLimitBytes: 64 * 1024 * 1024, timeoutMs: 1_000 },
-      component: 'ghostscript',
-      cannotStart: () => undefined,
-      startProbe: ['-v'],
-      surfaceFor: (config) => ({
-        createSuspended: () => ok({ pid: 9, process: aProcess, thread: aThread }),
-        createJob: () => aJob,
-        applyLimits: (_job, bytes) => {
-          limit = bytes;
-          return true;
-        },
-        assignToJob: () => true,
-        readJobMembership: () => 'in-job',
-        readIntegrity: () => ({ kind: 'read', rid: INTEGRITY_LOW }),
-        readJobLimits: () => ({
-          kind: 'read',
-          limitFlags: JOB_LIMIT_ACTIVE_PROCESS | JOB_LIMIT_PROCESS_MEMORY | JOB_LIMIT_KILL_ON_JOB_CLOSE,
-          activeProcessLimit: 1,
-          processMemoryLimitBytes: limit,
-          uiRestrictions: JOB_UI_RESTRICTIONS_ALL,
-        }),
-        resume: () => 1,
-        terminate: () => undefined,
-        close: () => undefined,
-        processorTime: () => null,
-        diagnostics: () => said,
-        discardDiagnostics: () => undefined,
-        waitForExit: () => {
-          const args = config.program.commandArguments;
-          argumentsSeen.push(args);
-          const output = args.find((arg) => arg.startsWith('-sOutputFile='))?.slice('-sOutputFile='.length);
-          // WHAT THE CONVERTER READ is echoed into what it wrote, so a case can see which copy reached it.
-          const input = args.at(-1);
-          const read = input === undefined ? '' : readFileSync(input, 'latin1');
-          if (output !== undefined) writeFileSync(output, `${writes} read:${read}`);
-          return Promise.resolve(exit);
-        },
-      }),
-    },
-  };
-}
-
-async function drained(chunks: AsyncIterable<Uint8Array>): Promise<string> {
-  let text = '';
-  for await (const chunk of chunks) text += Buffer.from(chunk).toString('latin1');
-  return text;
+  return fakeConverterPlatform(root, said, exit, writes);
 }
 
 describe('pdfaArguments — ADR-0075’s fixed command line', () => {

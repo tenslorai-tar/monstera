@@ -72,6 +72,7 @@ import { PAGE_MARKS_NOTICE_DIALOG } from '../dialogs/pageMarksNotice.js';
 import { PAGE_TRANSITION_DIALOG } from '../dialogs/pageTransition.js';
 import { PDFA_LEVEL_DIALOG } from '../dialogs/pdfaLevel.js';
 import { PDFA_REMOVALS_DIALOG } from '../dialogs/pdfaRemovals.js';
+import { CURVES_RESULT_DIALOG, TEXT_TO_CURVES_DIALOG } from '../dialogs/textToCurves.js';
 import { PENDING_REDACTIONS_DIALOG } from '../dialogs/pendingRedactions.js';
 import { PLACE_BARCODE_DIALOG } from '../dialogs/placeBarcode.js';
 import { PRINT_DIALOG } from '../dialogs/print.js';
@@ -230,6 +231,8 @@ export const APPLICATION_DIALOGS: readonly RegisteredDialog[] = [
   PRINT_DIALOG,
   PDFA_LEVEL_DIALOG,
   PDFA_REMOVALS_DIALOG,
+  TEXT_TO_CURVES_DIALOG,
+  CURVES_RESULT_DIALOG,
   OPTIMIZE_DIALOG,
   PAGE_BARCODES_DIALOG,
   REGION_READ_DIALOG,
