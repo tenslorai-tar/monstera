@@ -2,10 +2,12 @@
 import { I18nProvider } from '@lingui/react';
 import {
   AI_PROVIDERS,
+  AI_PROVIDER_IDS,
   type AiModelListAnswer,
   type AiProviderId,
   ANTHROPIC_KEY_SETTING_ID,
   AZURE_KEY_SETTING_ID,
+  SECRET_SETTING_IDS,
 } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
@@ -14,7 +16,7 @@ import { describe, expect, it } from 'vitest';
 
 import { STARTING_STYLE_COLOUR } from '../annotations/annotationStyle.js';
 import { activateCatalogue, i18n } from '../i18n.js';
-import { EN, GRID_TITLE, STYLE_COLOUR_AUTO } from '../messages/en.js';
+import { AI_PROVIDER_NAMES, EN, GRID_TITLE, STYLE_COLOUR_AUTO } from '../messages/en.js';
 import { AZURE_OPENAI_ENDPOINT_SETTING } from '../settings/ai.js';
 import { ALL_SETTINGS } from '../settings/all.js';
 import { THEME_SETTING } from '../settings/appearance.js';
@@ -276,6 +278,51 @@ describe('SettingsBody', () => {
 
     const untouched = opened({ storedSecrets: [AZURE_KEY_SETTING_ID] });
     expect(untouched.reported).toStrictEqual([]);
+  });
+
+  it('EVERY KEY a person removes stops reading as stored at once, on its row and its provider, in the dialog it was removed in', () => {
+    // *The stored key was removed* stood under *A key is stored*, and the provider still read *— key stored*, until the
+    // dialog was opened again: the page read the list it opened with, where every other setting reads its draft.
+    for (const id of SECRET_SETTING_IDS) {
+      const setting = DIALOG_SETTINGS.find((each) => each.id === id);
+      if (setting === undefined) throw new Error(`no row for ${id}`);
+      const provider = AI_PROVIDER_IDS.find((each) => AI_PROVIDERS[each].keySetting === id);
+      render(
+        <Wrapped>
+          <SettingsBody
+            models={{}}
+            resolve={() => undefined}
+            secretsAvailable
+            storedSecrets={[id]}
+            update={() => undefined}
+            values={provider === undefined ? DEFAULTS : { ...DEFAULTS, 'ai.provider': provider }}
+          />
+        </Wrapped>,
+      );
+      goTo(setting.category);
+      const stored = 'A key is stored. Type a new one to replace it.';
+      const marked = provider === undefined ? undefined : `${english(AI_PROVIDER_NAMES[provider])} — key stored`;
+      // THE PREMISE, each time: the key reads as stored before it is removed, so its absence afterwards is the removal.
+      expect(screen.getAllByText(stored), id).toHaveLength(1);
+      if (marked !== undefined) expect(screen.getByRole('option', { name: marked }), id).toBeDefined();
+      fireEvent.click(screen.getByRole('button', { name: 'Remove the stored key' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Remove it' }));
+      expect(screen.getByText('The stored key was removed. Type a new one to add another.'), id).toBeDefined();
+      expect(screen.queryByText(stored), id).toBeNull();
+      if (marked !== undefined) expect(screen.queryByRole('option', { name: marked }), id).toBeNull();
+      cleanup();
+    }
+  });
+
+  it('CONTROL: a key typed after a removal reads as stored again, and one never touched still does', () => {
+    const { reported } = opened({ storedSecrets: [AZURE_KEY_SETTING_ID, ANTHROPIC_KEY_SETTING_ID] });
+    goTo(AZURE_DI_KEY_SETTING.category);
+    fireEvent.click(screen.getByRole('button', { name: 'Remove the stored key' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove it' }));
+    fireEvent.change(control(AZURE_DI_KEY_SETTING), { target: { value: 'a new key' } });
+    expect(reported.at(-1)).toStrictEqual({ values: {}, secrets: { [AZURE_KEY_SETTING_ID]: 'a new key' } });
+    expect(screen.getByText('A key is stored. Type a new one to replace it.')).toBeDefined();
+    expect(screen.queryByText('The stored key was removed. Type a new one to add another.')).toBeNull();
   });
 
   it('the OCR page names the exact Azure resource and reports each link as a PLACE, never an address (2026-10-07)', () => {

@@ -1051,7 +1051,7 @@ describe('the assistant about a document (ADR-0088)', () => {
   it('a command’s request asks at once about the words it names, and the menu offers that selection', async () => {
     const request: AssistantRequest = {
       serial: 1,
-      about: { scope: 'selection', docId: DOC_A, page: 2, text: 'the indemnity clause' },
+      about: { scope: 'selection', docId: DOC_A, page: 2, text: 'the indemnity clause', whole: 20 },
       prompt: ASSISTANT_PROMPT_EXPLAIN,
     };
     const { sent } = await drawn({ focused: focusedOn(), request });
@@ -1138,7 +1138,7 @@ describe('the assistant about a document (ADR-0088)', () => {
   it('CONTROL: a selection from ANOTHER document is not offered, so the menu never offers words not on show', async () => {
     const request: AssistantRequest = {
       serial: 1,
-      about: { scope: 'selection', docId: DOC_B, page: 2, text: 'words from B' },
+      about: { scope: 'selection', docId: DOC_B, page: 2, text: 'words from B', whole: 12 },
     };
     await drawn({ focused: focusedOn(DOC_A), request });
     // THE MENU, the one place the positive case above finds the selection since the line under it went (ADR-0088's
@@ -1155,7 +1155,7 @@ describe('the assistant about a document (ADR-0088)', () => {
   const box = (): HTMLTextAreaElement => screen.getByLabelText('Ask about this document');
   const QUOTING: AssistantRequest = {
     serial: 1,
-    about: { scope: 'selection', docId: DOC_A, page: 2, text: 'the indemnity clause' },
+    about: { scope: 'selection', docId: DOC_A, page: 2, text: 'the indemnity clause', whole: 20 },
     quote: 'the indemnity clause',
   };
 
@@ -1181,7 +1181,7 @@ describe('the assistant about a document (ADR-0088)', () => {
   it('names a COMMENT as a comment in the menu, and asks with the comment scope', async () => {
     const request: AssistantRequest = {
       serial: 1,
-      about: { scope: 'comment', docId: DOC_A, page: 3, text: 'Can we move the date?' },
+      about: { scope: 'comment', docId: DOC_A, page: 3, text: 'Can we move the date?', whole: 21 },
       prompt: ASSISTANT_PROMPT_DRAFT_REPLY,
       replyTo: { page: 3, index: 2, version: asDocVersion(9) },
     };
@@ -1204,7 +1204,7 @@ describe('the assistant about a document (ADR-0088)', () => {
     const posted: unknown[] = [];
     const request: AssistantRequest = {
       serial: 1,
-      about: { scope: 'comment', docId: DOC_A, page: 3, text: 'Can we move the date?' },
+      about: { scope: 'comment', docId: DOC_A, page: 3, text: 'Can we move the date?', whole: 21 },
       prompt: ASSISTANT_PROMPT_DRAFT_REPLY,
       replyTo: { page: 3, index: 2, version: asDocVersion(9) },
     };
@@ -1229,7 +1229,7 @@ describe('the assistant about a document (ADR-0088)', () => {
   it('a REMOUNT does not replay the last request — the live run’s re-sent draft', async () => {
     const request: AssistantRequest = {
       serial: 1,
-      about: { scope: 'comment', docId: DOC_A, page: 3, text: 'Can we move the date?' },
+      about: { scope: 'comment', docId: DOC_A, page: 3, text: 'Can we move the date?', whole: 21 },
       prompt: ASSISTANT_PROMPT_DRAFT_REPLY,
     };
     const focused = focusedOn();
@@ -1266,7 +1266,7 @@ describe('the assistant about a document (ADR-0088)', () => {
     const posted: unknown[] = [];
     const request: AssistantRequest = {
       serial: 1,
-      about: { scope: 'comment', docId: DOC_A, page: 3, text: 'Can we move the date?' },
+      about: { scope: 'comment', docId: DOC_A, page: 3, text: 'Can we move the date?', whole: 21 },
       prompt: ASSISTANT_PROMPT_DRAFT_REPLY,
       replyTo: { page: 3, index: 2, version: asDocVersion(9) },
     };
@@ -1454,7 +1454,7 @@ describe('the assistant about a document (ADR-0088)', () => {
       await drawn({
         focused: focusedOn(),
         beside: BESIDE,
-        request: { serial: 1, about: { scope: 'selection', docId: DOC_A, page: 6, text: 'the clause' } },
+        request: { serial: 1, about: { scope: 'selection', docId: DOC_A, page: 6, text: 'the clause', whole: 10 } },
       });
       expect(screen.queryByRole('radio')).toBeNull();
     });

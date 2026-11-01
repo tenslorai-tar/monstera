@@ -1,4 +1,4 @@
-import { blockEditOf, channels, createClient } from '@monstera/contract';
+import { MAX_ANSWER_TEXT, MAX_TRANSLATE_TEXT, blockEditOf, channels, createClient } from '@monstera/contract';
 import { asDocId, asDocVersion, err, ok, type MessageKey } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -9,6 +9,7 @@ import {
   TOAST_PAGES_TRANSLATED,
   TOAST_PAGES_TRANSLATED_PARTLY,
   TOAST_PAGE_TRANSLATED,
+  TOAST_SELECTION_TRANSLATION_TOO_LONG,
   TOAST_TEXT_TRANSLATED,
   TOAST_TRANSLATE_NOT_WRITABLE,
 } from '../messages/en.js';
@@ -289,6 +290,39 @@ describe('translatePageCommand', () => {
       expect(sent[2]?.params).toStrictEqual({ text: 'Payment is due', provider: 'openai', model: 'first-model', language: 'fr' });
       expect(sent[3]?.params).toStrictEqual({ text: 'Le paiement est dû' });
       expect(said).toStrictEqual([{ kind: 'done', message: TOAST_TEXT_TRANSLATED }]);
+    });
+
+    it('a selection LONGER THAN ONE ASK is translated whole, piece by piece, and copied whole (preserve, never drop)', async () => {
+      // TWENTY THOUSAND CHARACTERS of words: the command cut them to the first 8,192 and said *translated*.
+      const words = 'payment due '.repeat(1_700).trim();
+      const { sent, said } = await run({
+        dialog: SELECTION,
+        selected: words,
+        sequences: { 'ai.translateText': [{ kind: 'translated', text: 'A' }, { kind: 'translated', text: 'B' }, { kind: 'translated', text: 'C' }] },
+        answers: { 'window.copyText': { copied: true } },
+      });
+      const asked = sent.filter((call) => call.id === 'ai.translateText').map((call) => (call.params as { text: string }).text);
+      // EVERY CHARACTER went, in order, in pieces each within one ask; none in place, since `only` carries one ask.
+      expect(asked.join('')).toBe(words);
+      expect(asked.every((piece) => piece.length <= MAX_TRANSLATE_TEXT)).toBe(true);
+      expect(asked).toHaveLength(3);
+      expect(sent.some((call) => call.id === 'ai.translatePage')).toBe(false);
+      expect(sent.at(-1)).toStrictEqual({ id: 'window.copyText', params: { text: 'A B C' } });
+      expect(said).toStrictEqual([{ kind: 'done', message: TOAST_TEXT_TRANSLATED }]);
+    });
+
+    it('CONTROL: a selection’s translation longer than one copy carries copies NOTHING and says so', async () => {
+      const { sent, said } = await run({
+        dialog: SELECTION,
+        selected: 'payment due '.repeat(1_000).trim(),
+        answers: {
+          'ai.translatePage': { kind: 'nothing-to-translate' },
+          'ai.translateText': { kind: 'translated', text: 'é'.repeat(MAX_ANSWER_TEXT) },
+          'window.copyText': { copied: true },
+        },
+      });
+      expect(sent.some((call) => call.id === 'window.copyText')).toBe(false);
+      expect(said).toStrictEqual([{ kind: 'problem', message: TOAST_SELECTION_TRANSLATION_TOO_LONG }]);
     });
 
     it('with nothing selected it says so and sends nothing', async () => {

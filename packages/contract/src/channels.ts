@@ -2,6 +2,7 @@ import { MATCH_TEXT_WINDOW } from '@monstera/shared';
 import { z } from 'zod';
 
 import { AI_KEY_PAGES, AI_PROVIDER_IDS, AZURE_DI_PAGES } from './aiProviders.js';
+import { cutPoint } from './boundedText.js';
 import {
   MAX_ASK_ATTACHMENTS,
   MAX_ASK_CONTEXT,
@@ -550,7 +551,28 @@ export function conversationRoom(
  * the clipboard; the question is half of it, since a translation may run longer than its source.
  */
 export const MAX_TRANSLATE_TEXT = MAX_CHAT_TEXT / 2;
-export const MAX_TRANSLATED_TEXT = MAX_CHAT_TEXT;
+/**
+ * {@link MAX_ANSWER_TEXT} itself, the bound a stream stops an answer at and says so (`answer-cut`), so a translation that
+ * arrives is always whole. It was {@link MAX_CHAT_TEXT}, a bound the answer was then `slice`d to in silence: a
+ * translation running past 16,384 characters was copied cut and said *translated*.
+ */
+export const MAX_TRANSLATED_TEXT = MAX_ANSWER_TEXT;
+
+/**
+ * A selection as `ai.translateText` takes it: in pieces of at most {@link MAX_TRANSLATE_TEXT}, cut by the one rule
+ * (`cutPoint`), so a selection longer than one ask is translated whole, piece after piece, and never its opening alone.
+ * Joined again in order the pieces are the text.
+ */
+export function translationPieces(text: string): readonly string[] {
+  const pieces: string[] = [];
+  let rest = text;
+  while (rest.length > 0) {
+    const at = cutPoint(rest, MAX_TRANSLATE_TEXT);
+    pieces.push(rest.slice(0, at));
+    rest = rest.slice(at);
+  }
+  return pieces;
+}
 
 /**
  * Why asking a provider for its models did not answer a list — the one set a list and a key check both carry.

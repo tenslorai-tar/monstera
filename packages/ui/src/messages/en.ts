@@ -1215,6 +1215,7 @@ export const TOAST_TRANSLATE_UNREADABLE = messageKey('toast.translate-unreadable
  * nothing is written from half of one.
  */
 export const TOAST_TRANSLATE_TOO_LONG = messageKey('toast.translate-too-long');
+export const TOAST_SELECTION_TRANSLATION_TOO_LONG = messageKey('toast.selection-translation-too-long');
 export const TOAST_TRANSLATE_NO_MODEL = messageKey('toast.translate-no-model');
 export const TOAST_TRANSLATE_NOT_WRITABLE = messageKey('toast.translate-not-writable');
 // NAMED, one constant each, because the catalogue's reachability check reads exported names — an
@@ -4125,6 +4126,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'The provider’s answer could not be matched to the page’s text, so nothing was changed. Try again.',
   [TOAST_TRANSLATE_TOO_LONG]:
     'This page is too long to translate in one go, so nothing was changed. Select a part of the page and translate that.',
+  [TOAST_SELECTION_TRANSLATION_TOO_LONG]:
+    'The translation of this selection is longer than can be copied at once, so nothing was copied. Select a smaller part and translate that.',
   [TOAST_TRANSLATE_NO_MODEL]: 'That provider offered no model to translate with. Nothing was changed.',
   [TOAST_TRANSLATE_NOT_WRITABLE]:
     'Some translated letters cannot be shown in this page’s fonts, so nothing was changed.',
