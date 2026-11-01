@@ -64,7 +64,7 @@
  *
  * Usage: node scripts/research/frameTimes.mjs --build package|dev --document <absolute .pdf> [--large]
  *   [--variant none|no-blur|no-gradients|no-thumbnails] [--scenarios scroll,drag,menu,draw,open,switch,select,arrive]
- *   [--then-open <absolute .pdf>|large] [--select-spin <ms>] [--select-rounds <n>] [--select-profile]
+ *   [--then-open <absolute .pdf>|large] [--select-spin <ms>] [--select-rounds <n>] [--select-profile] [--arrive-profile]
  * The `select` scenario selects the first page's text whole and lets it go, thirty times a round in five rounds, each
  * beside a control round that selects nothing, and reports what one selection costs each thread.
  * `--large` generates the scan-shaped fixture (`scripts/perf/largeFixture.mjs`) and measures that instead.
@@ -517,6 +517,56 @@ function frameStats(times, interval) {
     over33: gaps.filter((gap) => gap > 33.3).length,
     dropped,
   };
+}
+
+/**
+ * Sampled CPU profiles read as each function's self and total time per `unit`, the 300 largest each way, where the
+ * function is the bundle's own name and position (no source map is built). Total time counts a function once per sample
+ * however often it recurs on the stack.
+ *
+ * @param {any[]} profiles @param {number} count how many units the profiles cover @param {string} unit
+ */
+function profileRows(profiles, count, unit) {
+  /** @type {Map<string, { self: number, total: number }>} */
+  const named = new Map();
+  for (const profile of profiles) {
+    /** @type {Map<number, any>} */
+    const nodes = new Map(profile.nodes.map((/** @type {any} */ node) => [node.id, node]));
+    /** @type {Map<number, number>} */
+    const parent = new Map();
+    for (const node of profile.nodes) for (const child of node.children ?? []) parent.set(child, node.id);
+    const key = (/** @type {any} */ node) => {
+      const frame = node.callFrame;
+      return `${frame.functionName || '(anonymous)'} ${String(frame.url).split('/').at(-1) ?? ''}:${String(frame.lineNumber)}:${String(frame.columnNumber)}`;
+    };
+    const deltas = profile.timeDeltas ?? [];
+    (profile.samples ?? []).forEach((/** @type {number} */ id, /** @type {number} */ at) => {
+      const ms = (deltas[at + 1] ?? deltas[at] ?? 0) / 1000;
+      const own = nodes.get(id);
+      if (own === undefined) return;
+      const entry = named.get(key(own)) ?? { self: 0, total: 0 };
+      entry.self += ms;
+      named.set(key(own), entry);
+      const seen = new Set();
+      for (let up = /** @type {number | undefined} */ (id); up !== undefined; up = parent.get(up)) {
+        const node = nodes.get(up);
+        if (node === undefined) break;
+        const name = key(node);
+        if (seen.has(name)) continue;
+        seen.add(name);
+        const each = named.get(name) ?? { self: 0, total: 0 };
+        each.total += ms;
+        named.set(name, each);
+      }
+    });
+  }
+  const rows = [...named.entries()].filter(([name]) => !/^\((idle|program|root)\)/u.test(name));
+  const top = (/** @type {'self' | 'total'} */ by) =>
+    rows
+      .sort((a, b) => b[1][by] - a[1][by])
+      .slice(0, 300)
+      .map(([name, ms]) => `${(ms.self / count).toFixed(3)} self ${(ms.total / count).toFixed(3)} total ms per ${unit}  ${name}`);
+  return { self: top('self'), total: top('total') };
 }
 
 /** @param {any} cdp */
@@ -1035,6 +1085,13 @@ try {
     const before = await page.locator('[data-text-layer] [data-text-line]').count();
     const list = await centre(page, '.m-page-list');
     await page.mouse.move(list.x, list.y);
+    // `--arrive-profile`: a sampled CPU profile over the same scroll, per page whose text arrived.
+    const profiler = process.argv.includes('--arrive-profile') ? await page.context().newCDPSession(page) : undefined;
+    if (profiler !== undefined) {
+      await profiler.send('Profiler.enable');
+      await profiler.send('Profiler.setSamplingInterval', { interval: 100 });
+      await profiler.send('Profiler.start');
+    }
     const arrived = await measure(
       cdp,
       page,
@@ -1054,6 +1111,10 @@ try {
     });
     const furthest = Math.max(...layers, 0);
     results.push({ ...arrived, linesBefore: before, furthestPageWithText: furthest + 1, mainBusyPerPage: Math.round((arrived.mainBusy / Math.max(furthest, 1)) * 10) / 10 });
+    if (profiler !== undefined) {
+      const top = profileRows([(await profiler.send('Profiler.stop')).profile], Math.max(furthest, 1), 'arriving page');
+      results.push({ label: 'arrive profile, by self time', rows: top.self }, { label: 'arrive profile, by total time', rows: top.total });
+    }
   }
 
   if (scenarios.includes('select')) {
@@ -1126,48 +1187,8 @@ try {
       });
     }
     if (profiles.length > 0) {
-      /** @type {Map<string, { self: number, total: number }>} */
-      const named = new Map();
-      for (const profile of profiles) {
-        /** @type {Map<number, any>} */
-        const nodes = new Map(profile.nodes.map((/** @type {any} */ node) => [node.id, node]));
-        /** @type {Map<number, number>} */
-        const parent = new Map();
-        for (const node of profile.nodes) for (const child of node.children ?? []) parent.set(child, node.id);
-        const key = (/** @type {any} */ node) => {
-          const frame = node.callFrame;
-          return `${frame.functionName || '(anonymous)'} ${String(frame.url).split('/').at(-1) ?? ''}:${String(frame.lineNumber)}:${String(frame.columnNumber)}`;
-        };
-        const deltas = profile.timeDeltas ?? [];
-        (profile.samples ?? []).forEach((/** @type {number} */ id, /** @type {number} */ at) => {
-          const ms = (deltas[at + 1] ?? deltas[at] ?? 0) / 1000;
-          const own = nodes.get(id);
-          if (own === undefined) return;
-          const entry = named.get(key(own)) ?? { self: 0, total: 0 };
-          entry.self += ms;
-          named.set(key(own), entry);
-          // TOTAL TIME once per function per sample, however often it recurs on the stack.
-          const seen = new Set();
-          for (let up = /** @type {number | undefined} */ (id); up !== undefined; up = parent.get(up)) {
-            const node = nodes.get(up);
-            if (node === undefined) break;
-            const name = key(node);
-            if (seen.has(name)) continue;
-            seen.add(name);
-            const each = named.get(name) ?? { self: 0, total: 0 };
-            each.total += ms;
-            named.set(name, each);
-          }
-        });
-      }
-      const count = profiles.length * SELECTIONS;
-      const rows = [...named.entries()].filter(([name]) => !/^\((idle|program|root)\)/u.test(name));
-      const top = (/** @type {'self' | 'total'} */ by) =>
-        rows
-          .sort((a, b) => b[1][by] - a[1][by])
-          .slice(0, 30)
-          .map(([name, ms]) => `${(ms.self / count).toFixed(3)} self ${(ms.total / count).toFixed(3)} total ms per select and clear  ${name}`);
-      results.push({ label: 'select profile, by self time', rows: top('self') }, { label: 'select profile, by total time', rows: top('total') });
+      const top = profileRows(profiles, profiles.length * SELECTIONS, 'select and clear');
+      results.push({ label: 'select profile, by self time', rows: top.self }, { label: 'select profile, by total time', rows: top.total });
     }
   }
 
