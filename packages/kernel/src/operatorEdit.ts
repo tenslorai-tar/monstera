@@ -7,6 +7,7 @@ import {
   blockShape,
   characterUnit,
   err,
+  listEntryOf,
   nextTabStop,
   ok,
   paragraphEdges,
@@ -1143,11 +1144,51 @@ function write(
       for (let unit = 1; unit < length; unit += 1) if (from[at + unit] !== first + unit) return false;
       return true;
     };
-    const extents = lines.map((line) => ({
-      x0: Math.min(...line.map((run) => run.run.left)),
-      x1: Math.max(...line.map((run) => run.run.right)),
-      characters: line.reduce((sum, run) => sum + run.run.text.length, 0),
-    }));
+    /**
+     * WHERE A LIST ENTRY'S WORDS BEGIN on a line (`listEntryOf`, the rule the editor reads too, the owner's C5): the origin
+     * of its first inked glyph after the marker's own, walked through the line's operators by their own advances. Inked
+     * characters are counted on both sides, so a space the page draws and one PDFium generated between two objects count
+     * alike. `undefined` where the line begins no entry, or where its codes cannot say what they show or how wide they are.
+     */
+    const wordsStartOf = (line: (typeof lines)[number]): number | undefined => {
+      const entry = listEntryOf(line.map((run) => run.run.text).join(''));
+      if (entry === undefined) return undefined;
+      let marker = entry.markerInk;
+      for (const piece of line) {
+        for (const member of piece.members) {
+          const op = ops[member];
+          const font = op?.state.font === null || op === undefined ? undefined : fonts.get(op.state.font);
+          if (op === undefined || font?.toUnicode == null) return undefined;
+          const origin = placed(member);
+          let tx = 0;
+          for (const element of op.elements) {
+            if (typeof element === 'number') {
+              tx -= (element / 1000) * op.state.size * op.state.scale;
+              continue;
+            }
+            for (const code of codesOf(font, element)) {
+              const inked = (font.toUnicode.text.get(code) ?? '').trim();
+              if (inked !== '' && marker <= 0) return origin.x + tx * origin.unit;
+              // IN UTF-16 UNITS, the unit `markerInk` counts in.
+              marker -= inked.length;
+              const width = advanceOf(font, [code], op.state);
+              if (width === null) return undefined;
+              tx += width;
+            }
+          }
+        }
+      }
+      return undefined;
+    };
+    const extents = lines.map((line) => {
+      const textStart = wordsStartOf(line);
+      return {
+        x0: Math.min(...line.map((run) => run.run.left)),
+        x1: Math.max(...line.map((run) => run.run.right)),
+        characters: line.reduce((sum, run) => sum + run.run.text.length, 0),
+        ...(textStart === undefined ? {} : { textStart }),
+      };
+    });
     const shape = blockShape(extents, soft);
     /** One character's width across the block: what two of its edges are compared in, the shape's own unit. */
     const unit = characterUnit(extents);

@@ -29,6 +29,12 @@ export interface LineExtent {
   readonly x0: number;
   readonly x1: number;
   readonly characters: number;
+  /**
+   * Where the line's words begin after a list entry's marker (`listEntryOf`), in the same space as `x0`, where the line
+   * begins one and its reader can say where its words are drawn; absent otherwise. Each caller states it from its own
+   * reading of where letters stand: the editor from the drawn words, the writer from the operators' advances.
+   */
+  readonly textStart?: number;
 }
 
 /** Which edge a paragraph's lines keep. Justified text is `left`, by the limit above. */
@@ -149,7 +155,9 @@ export interface ParagraphEdges {
  * - A paragraph of two lines or more keeps the leftmost of its lines after the first, and its first line's offset from
  *   that unless every line's start agrees (`agree`, one character).
  * - A paragraph of one line has nothing of its own to compare. It takes the block's indent only where it stands where the
- *   block's first lines do — a one-line item of a list whose other items hang — and otherwise keeps its own start.
+ *   block's first lines do — a one-line item of a list whose other items hang — and otherwise, where it is a list entry
+ *   whose words' start its reader states (`textStart`), it hangs from there: its marker stays where it stands and a line
+ *   it wraps onto starts under its words, not under its bullet (the owner's C5). Otherwise it keeps its own start.
  * - A block that is not left-aligned gives every paragraph the block's edge: its lines stand by their centre or their
  *   right, and no left edge is read from them.
  *
@@ -175,6 +183,8 @@ export function paragraphEdges(lines: readonly LineExtent[], soft: readonly bool
       edges.push({ left, firstIndent: agree(own.map((line) => line.x0), unit) ? 0 : first.x0 - left });
     } else if (block.firstIndent !== 0 && agree([first.x0, block.left + block.firstIndent], unit)) {
       edges.push({ left: first.x0 - block.firstIndent, firstIndent: block.firstIndent });
+    } else if (first.textStart !== undefined && first.textStart > first.x0) {
+      edges.push({ left: first.textStart, firstIndent: first.x0 - first.textStart });
     } else {
       edges.push({ left: first.x0, firstIndent: 0 });
     }

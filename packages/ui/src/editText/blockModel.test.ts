@@ -33,6 +33,33 @@ const BLOCK = block([
   { runs: [[3, 'A ', REGULAR], [4, 'bold', BOLD], [5, ' close.', REGULAR]], soft: false },
 ]);
 
+describe('a one-line list item opens hanging from its words (the owner’s C5)', () => {
+  /** One line at 72 whose run's words the page draws at the given lefts: its marker, then its words from `wordsAt`. */
+  const item = (text: string, words: { from: number; to: number; x0: number; x1: number }[]): TextBlock => {
+    const opened = block([{ runs: [[1, text, REGULAR]], soft: false }]);
+    const [only] = opened.lines;
+    if (only === undefined) throw new Error('no line');
+    return { ...opened, lines: [{ ...only, runs: only.runs.map((run) => ({ ...run, words })) }] };
+  };
+
+  it('a bullet, a number and a dash item each set their wrapped lines under their first word, not under the marker', () => {
+    const cases: [string, { from: number; to: number; x0: number; x1: number }[], number][] = [
+      ['• Garden club', [{ from: 0, to: 1, x0: 72, x1: 76 }, { from: 2, to: 8, x0: 84, x1: 118 }, { from: 9, to: 13, x0: 121, x1: 140 }], 84],
+      ['1. Garden club', [{ from: 0, to: 2, x0: 72, x1: 80 }, { from: 3, to: 9, x0: 86, x1: 120 }, { from: 10, to: 14, x0: 123, x1: 142 }], 86],
+      ['- Garden club', [{ from: 0, to: 1, x0: 72, x1: 76 }, { from: 2, to: 8, x0: 82, x1: 116 }, { from: 9, to: 13, x0: 119, x1: 138 }], 82],
+    ];
+    for (const [text, words, wordsAt] of cases) {
+      const [paragraph] = modelOfBlock(item(text, words)).model.paragraphs;
+      expect({ leftIndent: paragraph?.leftIndent, firstIndent: paragraph?.firstIndent }, text).toStrictEqual({ leftIndent: wordsAt - 72, firstIndent: 72 - wordsAt });
+    }
+  });
+
+  it('CONTROL: a one-line paragraph that begins no list entry keeps its own start', () => {
+    const [paragraph] = modelOfBlock(item('Garden club', [{ from: 0, to: 6, x0: 72, x1: 106 }, { from: 7, to: 11, x0: 109, x1: 128 }])).model.paragraphs;
+    expect({ leftIndent: paragraph?.leftIndent, firstIndent: paragraph?.firstIndent }).toStrictEqual({ leftIndent: 0, firstIndent: 0 });
+  });
+});
+
 describe('the Edit text adapter’s model of a block', () => {
   it('opens as the kernel’s own join of the words, with the page’s line breaks kept per paragraph', () => {
     const opened = modelOfBlock(BLOCK);

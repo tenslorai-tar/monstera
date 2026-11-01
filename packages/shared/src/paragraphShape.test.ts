@@ -145,6 +145,25 @@ describe('paragraphEdges (ADR-0179, corrected 2026-10-24)', () => {
     ]);
   });
 
+  it('hangs a ONE-LINE list item from where its words begin, so the line it wraps onto starts under them (the owner’s C5)', () => {
+    // A bullet at 72 and its words at 84, the block's only line: no line below it to learn a hang from.
+    expect(paragraphEdges([{ ...line(72, 30), textStart: 84 }], [false])).toStrictEqual([{ left: 84, firstIndent: -12 }]);
+    // And one in a block of plain paragraphs: the item hangs, the paragraph after it keeps its own start.
+    expect(paragraphEdges([{ ...line(72, 30), textStart: 84 }, line(72, 25), line(72, 8)], [false, true, false])).toStrictEqual([
+      { left: 84, firstIndent: -12 },
+      { left: 72, firstIndent: 0 },
+    ]);
+  });
+
+  it('CONTROL: a one-line item whose words’ start nobody states keeps its own start, as before', () => {
+    expect(paragraphEdges([line(72, 30)], [false])).toStrictEqual([{ left: 72, firstIndent: 0 }]);
+  });
+
+  it('CONTROL: a MULTI-line item keeps the hang it learns from its later lines, whatever its first line states', () => {
+    // Its second line at 86 is the hang; a stated start of 84 on the first line does not move it.
+    expect(paragraphEdges([{ ...line(72, 20), textStart: 84 }, line(86, 25)], [true, false])).toStrictEqual([{ left: 86, firstIndent: -14 }]);
+  });
+
   it('CONTROL: every paragraph of a centred block takes the block’s edge, since none of its lines stands by its left', () => {
     const edges = paragraphEdges([line(100, 10), line(85, 15), line(110, 6)], [true, false, false]);
     const shape = blockShape([line(100, 10), line(85, 15), line(110, 6)], [true, false, false]);

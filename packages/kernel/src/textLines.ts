@@ -50,7 +50,7 @@
  * 238.0**, so equality splits the very case the grouping exists for.
  */
 
-import { type TextFrame, blockShape, faceSeenAs, sameTextFrame } from '@monstera/shared';
+import { LIST_ENTRY, type TextFrame, blockShape, faceSeenAs, sameTextFrame } from '@monstera/shared';
 
 /** How a text object's matrix sets it (`orientationOf`, `pdfiumFfi.ts`): `upright` is the only one an editor is placed along. */
 export type Orientation = 'upright' | 'turned' | 'vertical' | 'slanted' | 'mirrored';
@@ -723,7 +723,6 @@ export const MAX_DRAWN_MARKERS = 4096;
 /** How far past a line's first letter a drawn bullet's right edge may reach and still stand before it: a rounding. */
 const SAME_EDGE = 0.5;
 
-export const LIST_ENTRY =/^(?:[•◦▪▫‣⁃●○■□](?!\s*$)|(?:[–—*-]|\(?(?:\d{1,3}|[a-z])[.)])\s)/u;
 
 /**
  * Whether each line of a block ENDS in a soft wrap, by the typesetter's own test and no constant: a line was soft-wrapped

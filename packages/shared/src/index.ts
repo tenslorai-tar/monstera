@@ -175,3 +175,4 @@ export {
   paragraphShape,
   paragraphSpacing,
 } from './paragraphShape.js';
+export { LIST_ENTRY, type ListEntry, listEntryOf } from './listEntry.js';
