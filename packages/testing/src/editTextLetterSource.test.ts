@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve, sep, win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
@@ -25,6 +25,15 @@ const UI = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'ui', 's
 const LETTER_READERS = [join(UI, 'textLayerLetters.ts'), join(UI, 'usePageText.ts')];
 const CHANNEL = /['"]document\.pageTextLayer['"]/u;
 
+/**
+ * A module's name under `packages/ui/src`, spelt with `/` on every platform. The paths compared above are the
+ * platform's own, so they agree with each other; a NAME is compared with names written in this file, and on Windows
+ * `resolve` hands back `\`, which no name written here contains.
+ */
+function named(file: string, flavour: Pick<typeof win32, 'relative' | 'sep'> = { relative, sep }, root = UI): string {
+  return flavour.relative(root, file).split(flavour.sep).join('/');
+}
+
 /** The modules a file imports by a relative path, resolved to their sources. */
 function importsOf(file: string): string[] {
   const text = readFileSync(file, 'utf8');
@@ -37,7 +46,7 @@ function importsOf(file: string): string[] {
 function readsLetters(file: string): string[] {
   const found = importsOf(file)
     .flatMap((imported) => LETTER_READERS.filter((reader) => reader === imported || reader === imported.replace(/\.ts$/u, '.tsx')))
-    .map((reader) => reader.slice(UI.length + 1));
+    .map((reader) => named(reader));
   if (CHANNEL.test(readFileSync(file, 'utf8'))) found.push('document.pageTextLayer');
   return found;
 }
@@ -57,10 +66,18 @@ describe('Edit text’s letters are PDFium’s (item 2)', () => {
     expect(readsLetters(join(UI, 'usePageText.ts'))).toContain('document.pageTextLayer');
   });
 
+  it('a module is named with / under Windows path rules too, where cutting the path keeps the \\ (red on windows-latest at d9479b3a)', () => {
+    const root = 'C:\\monstera\\packages\\ui\\src';
+    const file = win32.join(root, 'editText', 'blockModel.ts');
+    expect(named(file, win32, root)).toBe('editText/blockModel.ts');
+    // CONTROL: the spelling the case replaced, which the Windows leg failed on.
+    expect(file.slice(root.length + 1)).toBe('editText\\blockModel.ts');
+  });
+
   it('no module of Edit text or its editor kit reads the text layer’s letters', () => {
     const modules = ownModules();
     // NOT VACUOUS: both folders were read, the files the caret depends on among them.
-    expect(modules.map((file) => file.slice(UI.length + 1))).toEqual(expect.arrayContaining(['editText/blockModel.ts', 'editorKit/paint.ts']));
-    expect(modules.flatMap((file) => readsLetters(file).map((reader) => `${file.slice(UI.length + 1)}: ${reader}`))).toStrictEqual([]);
+    expect(modules.map((file) => named(file))).toEqual(expect.arrayContaining(['editText/blockModel.ts', 'editorKit/paint.ts']));
+    expect(modules.flatMap((file) => readsLetters(file).map((reader) => `${named(file)}: ${reader}`))).toStrictEqual([]);
   });
 });
