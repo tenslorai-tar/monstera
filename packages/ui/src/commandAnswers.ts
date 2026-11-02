@@ -4,6 +4,7 @@ import { onEditorChange } from './editorKit/openEditor.js';
 import type { CommandContext, CommandRegistry, UiCommand } from './registries/commands.js';
 import type { SurfaceId } from './registries/placement.js';
 import type { SettingsStore } from './settingsStore.js';
+import type { TextSelectionStore } from './textSelectionStore.js';
 
 /**
  * The commands' answers, which each surface subscribes to for the commands it places
@@ -13,7 +14,7 @@ import type { SettingsStore } from './settingsStore.js';
  *
  * A predicate is handed only the context, and many read a store they were given when the command was made: the
  * settings (Loupe, the rulers, the theme), the panels' presence, which reads the settings, the open text editor's
- * formatting. The React Compiler memoizes a surface by what it is given, so a surface must be given something new when
+ * formatting, and the text selected on the page (`textSelectionStore.ts`), which the selected-text commands and Copy read. The React Compiler memoizes a surface by what it is given, so a surface must be given something new when
  * one of its commands' answers moves, or it draws the answer from before (ADR-0258's correction, `commandStateLive.pw.ts`).
  * When the shell held every answer, every answer rendered the shell: a Bold press rendered `App`, the menu bar, the ribbon
  * and the status bar (about 15 ms of React work per press, profiled 2026-10-26). Here the shell writes the registry and
@@ -45,10 +46,12 @@ export class CommandAnswers {
   readonly #answers = new Map<string, string>();
   readonly #listeners = new Set<() => void>();
   readonly #settings: SettingsStore;
+  readonly #selection: Pick<TextSelectionStore, 'subscribe'>;
   #stops: readonly (() => void)[] = [];
 
-  constructor(settings: SettingsStore) {
+  constructor(settings: SettingsStore, selection: Pick<TextSelectionStore, 'subscribe'>) {
     this.#settings = settings;
+    this.#selection = selection;
   }
 
   /** The registry and the base context the predicates are asked against, as the shell renders them. */
@@ -66,6 +69,8 @@ export class CommandAnswers {
       this.#stops = [this.#settings.subscribe(() => {
         this.#recompute();
       }), onEditorChange(() => {
+        this.#recompute();
+      }), this.#selection.subscribe(() => {
         this.#recompute();
       })];
     }
