@@ -12,7 +12,12 @@ import { pageShown } from './settled.js';
  *
  * The cost is Chromium's own count of main-thread work, `Performance.getMetrics`' `ScriptDuration`, `LayoutDuration` and
  * `RecalcStyleDuration`, read before and after each event, so what is counted is everything the page did for it — the
- * application's script, the layout it forced and the style it recalculated — and not a timer a listener holds. Three
+ * application's script, the layout it forced and the style it recalculated — and not a timer a listener holds.
+ *
+ * **It does not count paint, compositing, raster or the GPU process.** So the browser's own selection highlight, which
+ * Chromium paints, costs today's build nothing here, while the build's highlight, drawn by script, is counted: a
+ * comparison of the two leans against the build. `scripts/research/frameTimes.mjs`' `select` scenario reads a trace and
+ * counts every thread. Three
  * readings, each repeated and printed as its spread:
  *
  * - **a page arriving**: a long document opened cold and scrolled one page at a time, each page's text layer waited for,

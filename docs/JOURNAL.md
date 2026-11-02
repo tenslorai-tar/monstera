@@ -981,6 +981,10 @@ with 1.5 to 4 GB free; open, to be compared with main under the same load.
 `formFieldScale`'s 2,000-field case alone at 5.3 s) and pass alone or on CI; and `npm run typecheck` ended with a
 segmentation fault under an 8 GB heap on this 12 GB machine and passed under 4 GB, mechanism not established.
 
+**Correction, 2026-11-02: CCCCCCCCC-17 is withdrawn.** The comment says that *on the code before ADR-0277* the message
+was the sixty-fifth, which is true of that code; it was recorded from a reviewer's note without reading the line. The
+follow-up commit closes CCCCCCCCC-5's case, CCCCCCCCC-13 and CCCCCCCCC-16, and changes nothing for -17.
+
 ---
 
 ## 2026-10-31 — OPEN: a refusal's sentence stayed after the caret moved, once, on Windows CI (NEXT-UPDATE item 54)

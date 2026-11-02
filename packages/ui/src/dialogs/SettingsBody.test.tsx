@@ -283,6 +283,8 @@ describe('SettingsBody', () => {
   it('EVERY KEY a person removes stops reading as stored at once, on its row and its provider, in the dialog it was removed in', () => {
     // *The stored key was removed* stood under *A key is stored*, and the provider still read *— key stored*, until the
     // dialog was opened again: the page read the list it opened with, where every other setting reads its draft.
+    // NOT VACUOUS: an empty list of keys would pass every row below without reading one.
+    expect(SECRET_SETTING_IDS.length).toBeGreaterThan(0);
     for (const id of SECRET_SETTING_IDS) {
       const setting = DIALOG_SETTINGS.find((each) => each.id === id);
       if (setting === undefined) throw new Error(`no row for ${id}`);

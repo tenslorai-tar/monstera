@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { render } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { TextLayer, type TextLayerLine } from './TextLayer.js';
 import type { HighlightPainter, SearchHighlight } from './searchHighlight.js';
@@ -174,5 +174,31 @@ describe('TextLayer search highlighting', () => {
     draw(LINES, undefined, painter);
 
     expect(pages.get(3)).toBeNull();
+  });
+});
+
+describe('a page whose lines just arrived asks the selection nothing', () => {
+  // ASKING IS THE COST, not painting: profiled in the development app on Windows, 2026-11-01, the first paint of every
+  // arriving page cost 4.5 to 5.3 ms with nothing selected, and reading only the selection's two end nodes still 4.9 to
+  // 6.8. A layer whose lines just arrived cannot hold the selection, so it is not asked.
+  it('mounts without asking the document for its selection', () => {
+    const asked = vi.spyOn(document, 'getSelection');
+    try {
+      draw([lineOf('the quick brown', 0), lineOf('fox jumps over', 1)], undefined, recording().painter);
+      expect(asked).not.toHaveBeenCalled();
+    } finally {
+      asked.mockRestore();
+    }
+  });
+
+  it('CONTROL: a selection change is still painted, which asks it', () => {
+    draw([lineOf('the quick brown', 0)], undefined, recording().painter);
+    const asked = vi.spyOn(document, 'getSelection');
+    try {
+      document.dispatchEvent(new Event('selectionchange'));
+      expect(asked).toHaveBeenCalled();
+    } finally {
+      asked.mockRestore();
+    }
   });
 });
