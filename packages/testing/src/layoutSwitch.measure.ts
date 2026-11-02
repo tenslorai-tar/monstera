@@ -178,20 +178,22 @@ async function measured(
     }
     const watch = { gaps: [] as number[], redrawn: new Set<string>(), boxes, generation };
     record.switchWatch = watch;
-    const original = CanvasRenderingContext2D.prototype.drawImage;
-    const holder = CanvasRenderingContext2D.prototype as unknown as { __measuredDraw?: typeof original };
-    holder.__measuredDraw ??= original;
-    const kept = holder.__measuredDraw;
-    CanvasRenderingContext2D.prototype.drawImage = function counted(this: CanvasRenderingContext2D, ...args: unknown[]) {
+    // THE PLATFORM'S OWN DRAW, kept once a page and wrapped: a property typed as a function taking its `this`, so the
+    // wrapper calls it with the canvas it was called on.
+    type Draw = (this: CanvasRenderingContext2D, ...rest: unknown[]) => void;
+    const prototype = CanvasRenderingContext2D.prototype as unknown as { drawImage: Draw; __measuredDraw?: Draw };
+    prototype.__measuredDraw ??= prototype.drawImage;
+    const kept = prototype.__measuredDraw;
+    prototype.drawImage = function counted(this: CanvasRenderingContext2D, ...args: unknown[]): void {
       const slot = this.canvas.closest<HTMLElement>('.m-page-slot');
       if (slot !== null && record.switchWatch === watch) watch.redrawn.add(slot.dataset['page'] ?? '?');
-      return (kept as (...rest: unknown[]) => void).apply(this, args);
-    } as typeof original;
+      kept.apply(this, args);
+    };
     if (hold > 0) {
       window.addEventListener(
         'pointerdown',
         function deliberateWork(event: Event) {
-          (window as unknown as { heldOn?: string }).heldOn = `${event.type} on ${(event.target as Element | null)?.textContent?.slice(0, 30) ?? '?'}`;
+          (window as unknown as { heldOn?: string }).heldOn = `${event.type} on ${(event.target as Element | null)?.textContent.slice(0, 30) ?? '?'}`;
           // HELD ON PURPOSE: the resolution test's known cost, under a name the profile must find. Arithmetic, reading the
           // clock only every few thousand steps: a loop of nothing but `performance.now()` is mostly time in that
           // native, and the sampler lost the frames above it in about one window of three, filing 11 ms under an
@@ -253,7 +255,11 @@ async function measured(
   const after = await metrics(session);
   const counts = await stopCounting(page);
   if (tracing) {
-    const traced = new Promise<void>((resolve) => session.once('Tracing.tracingComplete', () => resolve()));
+    const traced = new Promise<void>((resolve) => {
+      session.once('Tracing.tracingComplete', () => {
+        resolve();
+      });
+    });
     await session.send('Tracing.end');
     await traced;
   }
