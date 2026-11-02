@@ -690,7 +690,10 @@ await step('RIGHT-CLICK STRAIGHT AFTER A DRAG, then Translate: the menu offers i
   return { held, opened: dialogs.map((text) => text.replaceAll(/\s+/gu, ' ').slice(0, 160)) };
 });
 
-await step('COPY AND HIGHLIGHT turn on with a selection and off once it is cleared, in the menu over the page', async () => {
+/** The selected-text menu's items, each answered from the selection (cloud-34's store). */
+const SELECTION_ITEMS = /** @type {const} */ (['Copy', 'Highlight', 'Underline', 'Search for this', 'Ask AI', 'Translate']);
+
+await step('THE SELECTION’S ITEMS — Copy, Highlight, Underline, Search for this, Ask AI, Translate — turn on with a selection and off once it is cleared', async () => {
   // THE SELECTED-TEXT MENU'S ITEMS ARE ANSWERED FROM THE SELECTION: a right-click on a run offers them, and a right-click
   // after the run is cleared does not.
   await page.keyboard.press('Escape');
@@ -700,10 +703,12 @@ await step('COPY AND HIGHLIGHT turn on with a selection and off once it is clear
   await drag(await onLetter(0, 0, 10, 0.65), [end], 10);
   await page.mouse.click(end.x, end.y, { button: 'right' });
   const menu = page.getByRole('menu');
-  const offered = async () => ({
-    copy: await menu.getByRole('menuitem', { name: 'Copy', exact: true }).count(),
-    highlight: await menu.getByRole('menuitem', { name: 'Highlight', exact: true }).count(),
-  });
+  const offered = async () => {
+    /** @type {Record<string, number>} */
+    const counts = {};
+    for (const name of SELECTION_ITEMS) counts[name] = await menu.getByRole('menuitem', { name, exact: true }).count();
+    return counts;
+  };
   await expect(menu).toBeVisible();
   const on = await offered();
   await page.keyboard.press('Escape');
@@ -713,9 +718,12 @@ await step('COPY AND HIGHLIGHT turn on with a selection and off once it is clear
   await apart();
   await page.mouse.click(box.x + box.width / 2, Math.min(box.y + box.height / 2, 840), { button: 'right' });
   await page.waitForTimeout(300);
-  const off = (await menu.count()) === 0 ? { copy: 0, highlight: 0 } : await offered();
+  // A MENU MUST OPEN on the cleared page, or every item reads as absent because nothing was asked: the page's own menu.
+  if ((await menu.count()) === 0) throw new Error('a right-click on the cleared page opened no menu, so the items could not be looked for');
+  const off = await offered();
   await page.keyboard.press('Escape');
-  if (on.copy !== 1 || on.highlight !== 1 || off.copy !== 0 || off.highlight !== 0) throw new Error(`with a selection ${JSON.stringify(on)}, cleared ${JSON.stringify(off)}`);
+  const wrong = SELECTION_ITEMS.filter((name) => on[name] !== 1 || off[name] !== 0);
+  if (wrong.length > 0) throw new Error(`${wrong.join(', ')}: with a selection ${JSON.stringify(on)}, cleared ${JSON.stringify(off)}`);
   return { on, off };
 });
 
