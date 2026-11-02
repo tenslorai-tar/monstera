@@ -195,6 +195,31 @@ describe('applyEditTextOperators', () => {
     });
   });
 
+  // THE FULL WALK OF 2026-11-02: a space typed at the end of a heading, then Escape, was refused as "set-text 0".
+  it('writes a space typed at the END of the heading rather than refusing it, and MuPDF reads it after a reopen', async () => {
+    // CONTROL: the page as it came reads no space after the heading, so the reading below is the space written.
+    await withChromium(async (session) => {
+      const words = await withDocument(session, (document) => document.loadPage(0).toStructuredText('preserve-whitespace').asText());
+      expect(words).toContain('Monstera fixture heading.');
+      expect(words).not.toContain('Monstera fixture heading. ');
+    });
+    await withChromium(async (session, content) => {
+      const runs = headingRuns(content);
+      const outcome = await applyEditTextOperators(session, command(runs.runs[0]?.index ?? 0, 'Monstera fixture heading. '), runs).then(
+        () => null,
+        (error: unknown) => error,
+      );
+      expect(outcome).toBeNull();
+      const reopened = await mupdfWriter.open(await mupdfWriter.serialise(session));
+      try {
+        const words = await withDocument(reopened, (document) => document.loadPage(0).toStructuredText('preserve-whitespace').asText());
+        expect(words).toContain('Monstera fixture heading. ');
+      } finally {
+        await mupdfWriter.close(reopened);
+      }
+    });
+  });
+
   describe('a placement and an added box (ADR-0188)', () => {
     const words = 'Monstera fixture heading.';
     const placed = (index: number, place: NonNullable<Parameters<typeof blockEditOf>[0][number]['place']>): CommandOfKind<'editTextOperators'> => ({
