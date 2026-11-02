@@ -1,5 +1,5 @@
 import type { ClientApi, Command, CommandOfKind, FailureOf } from '@monstera/contract';
-import { blocksOfEdit, replacementsOf } from '@monstera/contract/host';
+import { MAX_FORM_PLACEMENTS, blocksOfEdit, replacementsOf } from '@monstera/contract/host';
 import type { Failure } from '@monstera/shared';
 
 import type {
@@ -480,6 +480,44 @@ export function remotePdfiumTextRuns(
         'engine/text-runs',
         await client['engine/text-runs']({ session, from, password: frameKey(image), page, ...(unpack ? { unpack: true } : {}), clips: wireClips(clips) }),
       );
+    } finally {
+      await transfer.removeSnapshot(area, from);
+    }
+  };
+}
+
+/**
+ * Several pages' text runs from one image, over the boundary: `engine/text-runs-pages`, which reads each page as
+ * {@link remotePdfiumTextRuns} reads one, for the pages of a page's form placements (no clips, nothing unpacked).
+ *
+ * THE IMAGE IS PLACED ONCE and every call reads that one file. The host answers as many pages as fit one answer, in
+ * order and at least one; this asks again from the first page it was not given, so the answers come back whole and in
+ * the order asked, one for each page. With nothing left out, which is every page of placements measured, that is one
+ * call.
+ */
+export function remotePdfiumTextRunsOfPages(
+  client: ClientApi<PdfiumChannels>,
+  held: () => PdfiumArea,
+  transfer: PdfiumTransfer,
+): (image: PdfiumReadImage, pages: readonly number[]) => Promise<readonly Awaited<ReturnType<ReturnType<typeof remotePdfiumTextRuns>>>[]> {
+  return async (image, pages) => {
+    if (pages.length === 0) return [];
+    const { session, area } = held();
+    const from = transfer.mintName();
+    await placeReadImage(transfer, area, from, image);
+    try {
+      const answers: Awaited<ReturnType<ReturnType<typeof remotePdfiumTextRuns>>>[] = [];
+      while (answers.length < pages.length) {
+        const asked = pages.slice(answers.length, answers.length + MAX_FORM_PLACEMENTS);
+        const read = answered(
+          'engine/text-runs-pages',
+          await client['engine/text-runs-pages']({ session, from, password: frameKey(image), pages: asked }),
+        );
+        // THE HOST'S OWN BOUND, held to here: an answer longer than the pages asked is not an answer to them.
+        if (read.pages.length > asked.length) throw new Error('engine/text-runs-pages answered more pages than it was asked for');
+        answers.push(...read.pages);
+      }
+      return answers;
     } finally {
       await transfer.removeSnapshot(area, from);
     }

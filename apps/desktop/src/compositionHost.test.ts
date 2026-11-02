@@ -2319,8 +2319,8 @@ describe('the composition root, EDIT TEXT’S READ of a page drawing many form p
   /** More placements than the host's in-flight backstop (`ENGINE_HOST_MAX_IN_FLIGHT`, 32), and fewer than the walk's bound. */
   const MANY: readonly FormPath[] = Array.from({ length: 40 }, (_, at) => [{ name: `Fm${String(at)}`, occurrence: 0 }]);
 
-  /** A MuPDF peer whose page is read by the operator writer and draws {@link MANY} placements. */
-  function manyFormsEngine(): FakePeer {
+  /** A MuPDF peer whose page is read by the operator writer and draws `paths` placements, {@link MANY} unless named. */
+  function manyFormsEngine(paths: readonly FormPath[] = MANY): FakePeer {
     const inner = serialisingEngine();
     let output: string | null = null;
     return (channel, params) => {
@@ -2330,71 +2330,107 @@ describe('the composition root, EDIT TEXT’S READ of a page drawing many form p
       if (output === null) throw new Error('engine/form-pages before engine/open');
       const bytes = new TextEncoder().encode(FORM_PAGES_TEXT);
       writeFileSync(join(output, (params as { into: string }).into), bytes);
-      return { ok: true, value: { bytes: bytes.length, paths: MANY, left: { deeper: false, more: false, unnamed: false } } };
+      return { ok: true, value: { bytes: bytes.length, paths, left: { deeper: false, more: false, unnamed: false } } };
     };
   }
 
-  /** A PDFium peer answering every `engine/text-runs` with one run, and recording each page it was asked for. */
-  function textRunsPeer(): { readonly peer: FakePeer; readonly asked: number[] } {
+  /** One page's answer: one run, saying `word` and the page it was read from, so a page's own answer can be told apart. */
+  const answerFor = (page: number) => ({
+    runs: [
+      {
+        index: 0,
+        last: 0,
+        text: `word ${String(page)}`,
+        bottom: 10,
+        top: 20,
+        left: 10,
+        right: 30,
+        style: {
+          size: 10,
+          colour: { r: 0, g: 0, b: 0 },
+          font: 'Helvetica',
+          serif: false,
+          mono: false,
+          italic: false,
+          bold: false,
+          orientation: 'upright' as const,
+          baseline: 12,
+        },
+      },
+    ],
+    truncated: false,
+    unaddressable: 0,
+    box: { x0: 0, y0: 0, x1: 612, y1: 792 },
+    markers: [],
+  });
+
+  /**
+   * A PDFium peer answering `engine/text-runs` and `engine/text-runs-pages`, and recording each call: the page asked of the
+   * one, the pages asked of the other. `fits` is how many pages one answer of the second carries, as a host's answer that
+   * filled its file would.
+   */
+  function textRunsPeer(fits = Number.POSITIVE_INFINITY): { readonly peer: FakePeer; readonly asked: number[]; readonly askedPages: number[][] } {
     const inner = pdfiumPeer();
     const asked: number[] = [];
+    const askedPages: number[][] = [];
     const peer: FakePeer = (channel, params) => {
+      if (channel === 'engine/text-runs-pages') {
+        const pages = [...(params as { pages: readonly number[] }).pages];
+        askedPages.push(pages);
+        return { ok: true, value: { pages: pages.slice(0, Math.max(1, Math.min(fits, pages.length))).map(answerFor) } };
+      }
       if (channel !== 'engine/text-runs') return inner.peer(channel, params);
       asked.push((params as { page: number }).page);
-      return {
-        ok: true,
-        value: {
-          runs: [
-            {
-              index: 0,
-              last: 0,
-              text: 'word',
-              bottom: 10,
-              top: 20,
-              left: 10,
-              right: 30,
-              style: {
-                size: 10,
-                colour: { r: 0, g: 0, b: 0 },
-                font: 'Helvetica',
-                serif: false,
-                mono: false,
-                italic: false,
-                bold: false,
-                orientation: 'upright',
-                baseline: 12,
-              },
-            },
-          ],
-          truncated: false,
-          unaddressable: 0,
-          box: { x0: 0, y0: 0, x1: 612, y1: 792 },
-          markers: [],
-        },
-      };
+      return { ok: true, value: answerFor((params as { page: number }).page) };
     };
-    return { peer, asked };
+    return { peer, asked, askedPages };
   }
 
-  it('reads every placement, one at a time, and the PDFium host is not ended for calls in flight', async () => {
-    const pdfium = textRunsPeer();
+  /** Opens the document whose page draws `paths` placements and reads its blocks, through `pdfium`. */
+  async function readThrough(pdfium: ReturnType<typeof textRunsPeer>, paths: readonly FormPath[] = MANY) {
     const { handlers } = createShellDependencies({
       ...harnessSurfaces('the composition-host test'),
       appInfo,
       pickDocument: () => Promise.resolve(aDocument('many-forms.pdf')),
-      enginePlatform: platformAnswering(manyFormsEngine()).platform,
+      enginePlatform: platformAnswering(manyFormsEngine(paths)).platform,
       pdfiumPlatform: platformAnswering(pdfium.peer).platform,
     });
     const opened = await handlers['document.open']({});
     if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
-
     const read = await handlers['document.textBlocks']({ docId: opened.value.docId, page: 0, from: 0 });
-
-    // THE CALLS MADE: the page's own read, then each placement's page of the built form pages in order. CONTROL: with the
-    // placements read together, the 33rd call outstanding ends the host and the read answers `internal`.
-    expect(pdfium.asked).toStrictEqual([0, ...MANY.map((_, at) => at)]);
     if (!read.ok) throw new Error(`the read failed: ${JSON.stringify(read.error)}`);
-    expect(read.value.blocks.filter((block) => block.form !== undefined)).toHaveLength(MANY.length);
+    return read.value;
+  }
+
+  it('reads every placement in ONE call of the image opened once, and gives each placement its own page’s runs', async () => {
+    const pdfium = textRunsPeer();
+    const read = await readThrough(pdfium);
+
+    // THE CALLS MADE: the page's own read, then ONE read of every placement's page, in order. They were one call each.
+    expect(pdfium.asked).toStrictEqual([0]);
+    expect(pdfium.askedPages).toStrictEqual([MANY.map((_, at) => at)]);
+    const inForms = read.blocks.filter((block) => block.form !== undefined);
+    expect(inForms).toHaveLength(MANY.length);
+    // EACH PLACEMENT ITS OWN PAGE'S WORDS, in its order: the answers are not shuffled or shared out.
+    expect(inForms.map((block) => block.lines[0]?.runs[0]?.text)).toStrictEqual(MANY.map((_, at) => `word ${String(at)}`));
+  });
+
+  it('a page of 200 placements is read in one call', async () => {
+    const two: readonly FormPath[] = Array.from({ length: 200 }, (_, at) => [{ name: `Fm${String(at)}`, occurrence: 0 }]);
+    const pdfium = textRunsPeer();
+    const read = await readThrough(pdfium, two);
+    expect(pdfium.askedPages).toHaveLength(1);
+    expect(pdfium.askedPages[0]).toHaveLength(200);
+    expect(read.blocks.filter((block) => block.form !== undefined)).toHaveLength(200);
+  });
+
+  it('where one answer cannot carry every page, it is asked again from the first page left out, and every page is read', async () => {
+    const pdfium = textRunsPeer(15);
+    const read = await readThrough(pdfium);
+    // 40 PAGES AT 15 AN ANSWER: from 0, from 15, from 30. Never a page asked twice, never one dropped.
+    expect(pdfium.askedPages.map((pages) => pages[0])).toStrictEqual([0, 15, 30]);
+    const inForms = read.blocks.filter((block) => block.form !== undefined);
+    expect(inForms.map((block) => block.lines[0]?.runs[0]?.text)).toStrictEqual(MANY.map((_, at) => `word ${String(at)}`));
   });
 
   it('hands the engine host’s clips to PDFium’s read of the page, as they came, and a form placement’s read none (ADR-0281)', async () => {
@@ -2427,9 +2463,10 @@ describe('the composition root, EDIT TEXT’S READ of a page drawing many form p
 
     await handlers['document.textBlocks']({ docId: opened.value.docId, page: 0, from: 0 });
 
-    // THE PAGE'S OWN READ FIRST, given exactly what the engine host answered; then every placement's, given none.
-    expect(sent[0]).toStrictEqual(CLIPS);
-    expect(sent.slice(1)).toStrictEqual(MANY.map(() => null));
+    // THE PAGE'S OWN READ, given exactly what the engine host answered, and it is the only read that takes clips: the
+    // placements are read by `engine/text-runs-pages`, which has no field for them.
+    expect(sent).toStrictEqual([CLIPS]);
+    expect(pdfium.askedPages).toHaveLength(1);
   });
 });
 
