@@ -50,7 +50,10 @@ export function appRootOption(argv) {
   return { appRoot };
 }
 
-/** How long `finish` lets the app close before reading the close as held by a question nobody will answer. */
+/**
+ * How long `finish` lets the app close before reading the close as held by a question nobody will answer. A close with
+ * nothing to ask took 2431 ms, read from `textRegressionWalk.mjs`' own "Closed in" line on 2026-11-02 after sixteen tabs.
+ */
 const CLOSE_HELD_MS = 60_000;
 
 /**
