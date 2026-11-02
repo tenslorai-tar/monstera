@@ -3,6 +3,7 @@ import { blockEditOf, type CommandOfKind, type FormPath, MAX_FORM_DEPTH, MAX_FOR
 import { asDocVersion } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
+import { formGraph } from './formGraphFixture.js';
 import { formPagesDocument, placementAt, textPlacements, unwrappedForm, wrappedForm } from './formText.js';
 import { ColorSpace, Matrix } from './mupdfRaw.js';
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
@@ -13,30 +14,6 @@ import { readPageTextJson, readPageTextWithLetters } from './pageText.js';
 import { linesOf, parsePageText } from './textStructure.js';
 import { joinedContent, showOperators, textObjectCount } from './textOperators.js';
 
-/**
- * A page whose forms nest `levels` deep, form k showing one word and drawing form k+1 `draws` times, the page drawing
- * the first `placed` times: `placed × (draws^levels - 1) / (draws - 1)` placements of text, from a file of a few KB.
- * `draws` 2 and `levels` 16 is the 4.9 KB shape measured at 5.6 s and about 1 GB in the contained host (cloud run 27,
- * 2026-10-30); `draws` 1 is a plain chain.
- */
-async function formGraph(levels: number, draws: number, placed: number): Promise<Uint8Array> {
-  const document = await PdfLibDocument.create();
-  const page = document.addPage([612, 792]);
-  const font = await document.embedFont(StandardFonts.Helvetica);
-  let next: PDFRef | undefined;
-  for (let level = levels; level >= 1; level -= 1) {
-    const inner = next === undefined ? '' : Array.from({ length: draws }, (_, at) => ` q 1 0 0 1 ${String(at)} -1 cm /G Do Q`).join('');
-    const resources = document.context.obj({ Font: { F1: font.ref }, ...(next === undefined ? {} : { XObject: { G: next } }) });
-    next = document.context.register(
-      document.context.stream(`BT /F1 3 Tf 0 0 Td (G${String(level)}) Tj ET${inner}`, { Type: 'XObject', Subtype: 'Form', BBox: [-50, -50, 50, 50], Resources: resources }),
-    );
-  }
-  if (next === undefined) throw new Error('a graph needs a level');
-  page.node.setXObject(PDFName.of('G'), next);
-  const content = Array.from({ length: placed }, (_, at) => `q 1 0 0 1 ${String(20 + at)} 400 cm /G Do Q`).join('\n');
-  page.node.addContentStream(document.context.register(document.context.stream(content)));
-  return document.save({ useObjectStreams: false });
-}
 
 /** A page drawing a form that draws itself, and a pair of forms that draw each other: paths without end. */
 async function selfDrawing(): Promise<Uint8Array> {

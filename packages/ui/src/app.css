@@ -4439,8 +4439,12 @@ optgroup {
   pointer-events: none;
 }
 
+/* ABOVE EDIT TEXT'S LAYER, which covers the whole page and comes after the note in the page's slot, so at no z-index the
+   layer was what a press on the note's offer landed on (`editTextScanNote.pw.ts`). The note itself passes every press
+   on: only its offer takes one, so nothing the layer holds is shut out, and a picture page has no outlines to cover. */
 .m-page-note {
   position: absolute;
+  z-index: 1;
   inset-block-start: 0;
   inset-inline: 0;
   margin: 0;

@@ -5,8 +5,9 @@
  * done in the running app with a real mouse and keyboard, each step screenshotted and recorded by `liveWalk.mjs`.
  *
  * Every expectation is a letter's place as the engine reads it, stated from the fixture's own font metrics: the page is
- * set in the standard Times, whose widths `textLetters.test.ts` holds MuPDF to within 0.005 pt. So a step that lands on
- * the browser's layout of the substitute face, or on a whole point, lands visibly away from what is asserted.
+ * set in the standard Times, whose widths and MuPDF's letters for this page agreed to 0.004 pt (2026-11-02, on Windows, the
+ * letters read for the walk's first line through the kernel's own `readPageTextWithLetters` and `withLetters`). So a step that
+ * lands on the browser's layout of the substitute face, or on a whole point, lands visibly away from what is asserted.
  *
  * ## The same walk, two builds
  *
@@ -55,6 +56,8 @@ const LINES = [
   { text: 'Recieve the notise promptly.', baseline: 652 },
 ];
 const ROTATIONS = /** @type {const} */ ([0, 90, 180, 270]);
+/** How near a letter's middle, on screen, the FLICKER step cannot tell this walk's caret from the application's. */
+const RESOLUTION_PX = 0.25;
 /** The angled page's one line, turned 20 degrees about its start. */
 const ANGLE = 20;
 const ANGLED = { x: 72, y: 400 };
@@ -275,8 +278,7 @@ for (const [index, rotation] of ROTATIONS.entries()) {
   });
 }
 
-for (const index of [0, 2]) {
-  const rotation = ROTATIONS[index] ?? 0;
+for (const [index, rotation] of ROTATIONS.entries()) {
   for (const [pace, steps] of /** @type {const} */ ([['slow', 30], ['fast', 2]])) {
     await step(`DRAG ${pace} on the page turned ${String(rotation)}: across a line end and back, and off the page and back`, async () => {
       const start = await onLetter(index, 0, 10, 0.65);
@@ -366,8 +368,22 @@ await step('FLICKER: a slow drag recorded frame by frame — no frame shows a ch
     }
     return best;
   };
+  // HOW FAR, ON SCREEN, A FRAME'S POINTER IS FROM THE NEAREST LETTER'S MIDDLE: where a caret changes sides.
+  const fromMiddle = (/** @type {number} */ x) => {
+    const along = (x - box.x) / scale - X0;
+    let nearest = Number.POSITIVE_INFINITY;
+    for (let letter = 0; letter < at.length - 1; letter += 1) nearest = Math.min(nearest, Math.abs(along - ((at[letter] ?? 0) + (at[letter + 1] ?? 0)) / 2));
+    return nearest * scale;
+  };
   const moving = frames.filter((frame, index) => index > 0 && frame.x !== 0 && frame.focus !== null && !frame.collapsed);
-  const off = moving.filter((frame) => frame.focus !== caretFor(frame.x));
+  // NOT JUDGED WITHIN THE INSTRUMENT'S RESOLUTION of a middle: this step turns a pointer's pixel into points through the
+  // layer's box, and the application through the page's own geometry, and the two differ there. Measured 2026-11-02 in
+  // the development app on Windows (this step's drag at 300 moves, four times, 1,180 frames): the engine's letters and these
+  // places agreed to 0.004 pt, and every frame on which the two carets differed had its pointer 0.004 to 0.090 pt (under
+  // 0.07 px) before a middle, with the painted band on the application's caret. The browser's own letters, which this
+  // step exists to catch, stand a letter away across most of a line, so they still show outside the margin.
+  const judged = moving.filter((frame) => fromMiddle(frame.x) > RESOLUTION_PX);
+  const off = judged.filter((frame) => frame.focus !== caretFor(frame.x));
   // EVERY FRAME ON THE ENGINE'S CARET: each is read after the move it follows was handled, so a frame one letter off is
   // the browser's own choice for that move, drawn before the correction landed.
   const elsewhere = off;
@@ -376,12 +392,14 @@ await step('FLICKER: a slow drag recorded frame by frame — no frame shows a ch
     ...elsewhere.map((frame) => `frame ${String(moving.indexOf(frame))}: caret ${String(frame.focus)}, the engine's ${String(caretFor(frame.x))}`),
     ...unpainted.map((frame) => `frame ${String(moving.indexOf(frame))}: nothing painted, caret ${String(frame.focus)}`),
   ];
+  // A MARGIN THAT TOOK MOST FRAMES would leave the step judging nothing, and read as a pass.
+  if (judged.length < moving.length / 2) throw new Error(`only ${String(judged.length)} of ${String(moving.length)} frames stood further than ${String(RESOLUTION_PX)} px from a letter's middle, too few to judge`);
   if (elsewhere.length > 0 || unpainted.length > 0) {
     throw new Error(
-      `${String(elsewhere.length)} of ${String(moving.length)} frames holding a selection showed a caret more than a letter from the engine's (${where.join('; ')}), and ${String(unpainted.length)} showed nothing painted`,
+      `${String(elsewhere.length)} of ${String(judged.length)} frames judged (of ${String(moving.length)} holding a selection) showed a caret other than the engine's (${where.join('; ')}), and ${String(unpainted.length)} showed nothing painted`,
     );
   }
-  return { frames: moving.length, oneLetterBehind: off.length, elsewhere: elsewhere.length };
+  return { frames: moving.length, judged: judged.length, withinResolution: moving.length - judged.length, elsewhere: elsewhere.length };
 });
 
 await step('THEMES: a run selected is painted in light, dark and high contrast', async () => {
@@ -403,8 +421,7 @@ await step('THEMES: a run selected is painted in light, dark and high contrast',
   return counts;
 });
 
-for (const index of [0, 2]) {
-  const rotation = ROTATIONS[index] ?? 0;
+for (const [index, rotation] of ROTATIONS.entries()) {
   await step(`DOUBLE AND TRIPLE CLICK on the page turned ${String(rotation)}: the engine's word, its line, and a double then a triple`, async () => {
     const effective = (LINES[0]?.text ?? '').indexOf('Effective');
     const at = await onLetter(index, 0, effective + 3, 0.5);
@@ -428,6 +445,40 @@ for (const index of [0, 2]) {
     return { word, line: line.trim().length };
   });
 }
+
+await step('SPLIT VIEW: a drag and a double click on each half, the upright page and the page turned 90', async () => {
+  const field = page.getByRole('textbox', { name: 'Go to page' });
+  await field.fill('1');
+  await field.press('Enter');
+  await page.waitForTimeout(300);
+  await page.keyboard.press('Control+Shift+E');
+  await expect(page.getByRole('button', { name: 'Close split view' })).toBeVisible();
+  const problems = [];
+  const results = [];
+  for (const index of [0, 1]) {
+    // THE LINE BROUGHT INTO ITS HALF'S VIEW, as a person scrolls that half: both halves share the left page's fitted
+    // zoom, so the page turned 90 is wider than its half and its line stands past the half's right edge (2026-11-02,
+    // the same in 1.1.2610.0).
+    await page.locator(`[data-text-layer="${String(index)}"]:visible [data-text-line]`).first().scrollIntoViewIfNeeded();
+    await page.waitForTimeout(300);
+    await apart();
+    const held = await drag(await onLetter(index, 0, 10, 0.65), [await onLetter(index, 0, 30, 0.65)], 10);
+    if (named(held.anchor) !== named({ page: index, line: 0, offset: 11 }) || named(held.focus) !== named({ page: index, line: 0, offset: 31 })) {
+      problems.push(`page ${String(index + 1)}'s drag held ${named(held.anchor)} to ${named(held.focus)}`);
+    }
+    if ((await painted(index)).length !== 1) problems.push(`page ${String(index + 1)}'s run is not painted as one band`);
+    await apart();
+    const effective = (LINES[0]?.text ?? '').indexOf('Effective');
+    const at = await onLetter(index, 0, effective + 3, 0.5);
+    await page.mouse.dblclick(at.x, at.y);
+    const word = (await readSelection()).text;
+    if (word !== 'Effective') problems.push(`page ${String(index + 1)}'s double click took ${JSON.stringify(word)}`);
+    results.push({ page: index + 1, word });
+  }
+  await page.getByRole('button', { name: 'Close split view' }).click();
+  if (problems.length > 0) throw new Error(problems.join('; '));
+  return { results };
+});
 
 await step('ANGLED LINE: a drag along a line turned 20 degrees takes the engine’s letters, painted along them', async () => {
   await apart();
@@ -550,6 +601,69 @@ await step('COPY across a line end: the words, with the space', async () => {
   return { copied };
 });
 
+// THREE LINES, the reviewer's item 26: what Copy and Ask AI give between the lines, recorded either way, and asserted
+// as Copy across one line end is, a space where each line ends.
+await step('COPY AND ASK AI over three lines: what each gives between the lines', async () => {
+  const first = LINES[0]?.text ?? '';
+  const second = LINES[1]?.text ?? '';
+  const third = LINES[2]?.text ?? '';
+  await apart();
+  await drag(await onLetter(0, 0, first.length - 8, 0.65), [await onLetter(0, 2, 5, 0.65)], 10);
+  await page.keyboard.press('Control+C');
+  await page.waitForTimeout(200);
+  const copied = await app.evaluate(({ clipboard }) => clipboard.readText());
+  const on = await onLetter(0, 1, 10, 0.5);
+  await page.mouse.click(on.x, on.y, { button: 'right' });
+  await page.getByRole('menu').getByRole('menuitem', { name: 'Ask AI', exact: true }).click();
+  const quoted = await page.getByLabel('Ask about this document').inputValue();
+  await page.keyboard.press('Escape');
+  const wanted = `${first.slice(first.length - 7)} ${second} ${third.slice(0, 6)}`;
+  const problems = [];
+  if (copied !== wanted) problems.push(`Copy gave ${JSON.stringify(copied)}, wanted ${JSON.stringify(wanted)}`);
+  if (quoted !== `“${wanted}” `) problems.push(`Ask AI's box holds ${JSON.stringify(quoted)}, wanted ${JSON.stringify(`“${wanted}” `)}`);
+  if (problems.length > 0) throw new Error(problems.join('; '));
+  return { copied, quoted };
+});
+
+for (const [index, rotation] of ROTATIONS.entries()) {
+  await step(`SHIFT+CLICK on the page turned ${String(rotation)}: a click, then a Shift+click on the next line, takes the run between`, async () => {
+    await apart();
+    const from = await onLetter(index, 0, 10, 0.65);
+    await page.mouse.click(from.x, from.y);
+    await apart();
+    const to = await onLetter(index, 1, 5, 0.65);
+    await page.keyboard.down('Shift');
+    await page.mouse.click(to.x, to.y);
+    await page.keyboard.up('Shift');
+    const read = await readSelection();
+    const wanted = { anchor: named({ page: index, line: 0, offset: 11 }), focus: named({ page: index, line: 1, offset: 6 }) };
+    if (named(read.anchor) !== wanted.anchor || named(read.focus) !== wanted.focus) {
+      throw new Error(`the selection runs ${named(read.anchor)} to ${named(read.focus)}, wanted ${wanted.anchor} to ${wanted.focus}`);
+    }
+    const shapes = await painted(index);
+    if (shapes.length !== 2) throw new Error(`${String(shapes.length)} painted shapes for a run over two lines`);
+    return { text: read.text, shapes: shapes.length };
+  });
+}
+
+for (const [index, rotation] of ROTATIONS.entries()) {
+  // THE REVIEWER'S ITEM 53: with text selected, does Shift+Arrow extend the selection. No FEATURES row or test claims it.
+  await step(`SHIFT+ARROW on the page turned ${String(rotation)}: a run dragged, then Shift+Right three times and Shift+Left once`, async () => {
+    await apart();
+    // TO LETTER 22, the *o* of *commence*: a letter, for the presses' reason.
+    await drag(await onLetter(index, 0, 10, 0.65), [await onLetter(index, 0, 22, 0.65)], 10);
+    for (let press = 0; press < 3; press += 1) await page.keyboard.press('Shift+ArrowRight');
+    await page.keyboard.press('Shift+ArrowLeft');
+    const read = await readSelection();
+    const wanted = { anchor: named({ page: index, line: 0, offset: 11 }), focus: named({ page: index, line: 0, offset: 25 }) };
+    if (named(read.anchor) !== wanted.anchor || named(read.focus) !== wanted.focus) {
+      throw new Error(`the selection runs ${named(read.anchor)} to ${named(read.focus)}, wanted ${wanted.anchor} to ${wanted.focus}`);
+    }
+    if ((await painted(index)).length !== 1) throw new Error('the run extended is not painted as one band');
+    return { text: read.text };
+  });
+}
+
 await step('ASK AI quotes the run in the assistant’s box (nothing is sent)', async () => {
   await fromMenu('Ask AI', 0, 10, 40);
   const quoted = await page.getByLabel('Ask about this document').inputValue();
@@ -576,7 +690,10 @@ await step('RIGHT-CLICK STRAIGHT AFTER A DRAG, then Translate: the menu offers i
   return { held, opened: dialogs.map((text) => text.replaceAll(/\s+/gu, ' ').slice(0, 160)) };
 });
 
-await step('COPY AND HIGHLIGHT turn on with a selection and off once it is cleared, in the menu over the page', async () => {
+/** The selected-text menu's items, each answered from the selection (cloud-34's store). */
+const SELECTION_ITEMS = /** @type {const} */ (['Copy', 'Highlight', 'Underline', 'Search for this', 'Ask AI', 'Translate']);
+
+await step('THE SELECTION’S ITEMS — Copy, Highlight, Underline, Search for this, Ask AI, Translate — turn on with a selection and off once it is cleared', async () => {
   // THE SELECTED-TEXT MENU'S ITEMS ARE ANSWERED FROM THE SELECTION: a right-click on a run offers them, and a right-click
   // after the run is cleared does not.
   await page.keyboard.press('Escape');
@@ -586,10 +703,12 @@ await step('COPY AND HIGHLIGHT turn on with a selection and off once it is clear
   await drag(await onLetter(0, 0, 10, 0.65), [end], 10);
   await page.mouse.click(end.x, end.y, { button: 'right' });
   const menu = page.getByRole('menu');
-  const offered = async () => ({
-    copy: await menu.getByRole('menuitem', { name: 'Copy', exact: true }).count(),
-    highlight: await menu.getByRole('menuitem', { name: 'Highlight', exact: true }).count(),
-  });
+  const offered = async () => {
+    /** @type {Record<string, number>} */
+    const counts = {};
+    for (const name of SELECTION_ITEMS) counts[name] = await menu.getByRole('menuitem', { name, exact: true }).count();
+    return counts;
+  };
   await expect(menu).toBeVisible();
   const on = await offered();
   await page.keyboard.press('Escape');
@@ -599,9 +718,12 @@ await step('COPY AND HIGHLIGHT turn on with a selection and off once it is clear
   await apart();
   await page.mouse.click(box.x + box.width / 2, Math.min(box.y + box.height / 2, 840), { button: 'right' });
   await page.waitForTimeout(300);
-  const off = (await menu.count()) === 0 ? { copy: 0, highlight: 0 } : await offered();
+  // A MENU MUST OPEN on the cleared page, or every item reads as absent because nothing was asked: the page's own menu.
+  if ((await menu.count()) === 0) throw new Error('a right-click on the cleared page opened no menu, so the items could not be looked for');
+  const off = await offered();
   await page.keyboard.press('Escape');
-  if (on.copy !== 1 || on.highlight !== 1 || off.copy !== 0 || off.highlight !== 0) throw new Error(`with a selection ${JSON.stringify(on)}, cleared ${JSON.stringify(off)}`);
+  const wrong = SELECTION_ITEMS.filter((name) => on[name] !== 1 || off[name] !== 0);
+  if (wrong.length > 0) throw new Error(`${wrong.join(', ')}: with a selection ${JSON.stringify(on)}, cleared ${JSON.stringify(off)}`);
   return { on, off };
 });
 

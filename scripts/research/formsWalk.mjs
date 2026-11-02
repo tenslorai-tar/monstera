@@ -3,7 +3,7 @@
  * The forms walk (CLOUD-BUNDLE section 0): the owner's form, filled and designed in the running app with a real mouse and
  * keyboard on Windows, each step screenshotted and recorded by `liveWalk.mjs`.
  *
- *   node scripts/research/formsWalk.mjs [path/to/form-test.pdf]
+ *   node scripts/research/formsWalk.mjs [path/to/form-test.pdf] [--app-root <checkout>]
  *
  * The form defaults to `_review/test-files/form-test.pdf`. It is copied before anything opens it, and the copies are what
  * the app writes to. Every step that changes the document is read back from the SAVED FILE by a second reader (pdf-lib
@@ -37,13 +37,15 @@ import {
   StandardFonts,
   decodePDFRawStream,
 } from '@cantoo/pdf-lib';
-import { boxSettled, root, startWalk, writesDone, writesIdle, writesLanded } from './liveWalk.mjs';
+import { appRootOption, boxSettled, root, startWalk, writesDone, writesIdle, writesLanded } from './liveWalk.mjs';
 import { savedSignature } from './savedPdf.mjs';
 
-const source = process.argv[2] ?? join(root, '_review/test-files/form-test.pdf');
+// `--app-root <checkout>` launches another checkout's built app (`appRootOption`); the form is the argument that is not it.
+const positional = process.argv.slice(2).filter((_, at, all) => all[at] !== '--app-root' && all[at - 1] !== '--app-root');
+const source = positional[0] ?? join(root, '_review/test-files/form-test.pdf');
 if (!existsSync(source)) throw new Error(`No form at ${source}. Pass the path to form-test.pdf.`);
 
-const walk = await startWalk('forms');
+const walk = await startWalk('forms', appRootOption(process.argv));
 const { page, output, copyOf, open, pickFiles, saveTo, command, section, pressOn, step, finish } = walk;
 const form = await copyOf(source);
 
@@ -188,12 +190,23 @@ await step('a tick box ticks at a press near its corner, and a radio chooses one
 await step('Edit fields shows every field as a box with its name, and a field tool places a field named for its kind', async () => {
   await command('Edit fields');
   await expect(page.locator('[data-field-box]').first()).toBeVisible();
+  const boxes = page.locator('[data-field-box]');
+  const boxesBefore = await boxes.count();
+  const before = await writesDone(page);
   await page.getByRole('button', { name: /^Text field/u }).first().click();
   const paper = await page.locator('canvas.m-page').first().boundingBox();
   if (paper === null) throw new Error('the page is not on screen');
+  const pressed = Date.now();
   await page.mouse.click(paper.x + paper.width - 60, paper.y + 40);
-  await expect(page.getByLabel('Name', { exact: true })).toHaveValue(/^Text\d+$/u);
-  return { name: await page.getByLabel('Name', { exact: true }).inputValue() };
+  // HOW LONG EACH PART TAKES IS RECORDED, and the wait is a bound on a hang, not a verdict on speed: a 5 s wait from the
+  // press read this step as failing on main when the selection came at about 4.5 s, in 1.1.2610.0 as on main, and the
+  // new field's box is drawn before it is selected, in both builds, by more than a second (probe and walk, 2026-11-02).
+  await writesLanded(page, before);
+  await expect(boxes).toHaveCount(boxesBefore + 1, { timeout: 60_000 });
+  const boxShownMs = Date.now() - pressed;
+  await expect(page.getByLabel('Name', { exact: true })).toHaveValue(/^Text\d+$/u, { timeout: 60_000 });
+  const selectedMs = Date.now() - pressed;
+  return { name: await page.getByLabel('Name', { exact: true }).inputValue(), boxShownMs, selectedMs };
 });
 
 await step('the new field moves with a drag, snaps to another field’s edge with a guide, and nudges with an arrow', async () => {
@@ -211,18 +224,32 @@ await step('the new field moves with a drag, snaps to another field’s edge wit
   // W6: AN ARROW STRAIGHT AFTER THE MOVE, and three more as a held key sends them, with no wait: the command lane sends
   // each where the one before left the field (measured 2026-10-12 before the lane: the first arrow raised "out of date").
   const before = await writesDone(page);
+  // WHERE THE KEYS GO: an arrow nudges the selected field only while the page's field layer holds the focus, and a step
+  // that saw no nudge said nothing of where the focus was (2026-11-02, both builds).
+  const focus = await page.locator('html').evaluate((root) => {
+    const active = root.ownerDocument.activeElement;
+    return active === null ? 'none' : `${active.tagName.toLowerCase()}.${String(active.className).slice(0, 80)}`;
+  });
+  const arrowed = Date.now();
   for (let press = 0; press < 4; press += 1) await page.keyboard.press('ArrowRight');
   // ALL FOUR NUDGES LANDED, which is when an out-of-date refusal would have been said (a 3 s sleep stood for this).
   await writesLanded(page, before, 4);
   const outOfDate = await page.getByText(/was out of date/u).count();
   expect(outOfDate).toBe(0);
+  // THE BOX MOVES AFTER THE WRITES, not with them: measured 2026-11-02 in both builds, the four nudges' writes all landed
+  // by 855 ms and the box stood still until it moved 4 px at once at 1.3 to 1.5 s. `boxSettled` read it still before it
+  // moved, which is the answer a box that never moves also gives, so the step waits for the move and records when.
+  await expect
+    .poll(async () => ((await boxes.first().boundingBox())?.x ?? 0) - (released?.x ?? 0), { timeout: 60_000, intervals: [100] })
+    .toBeGreaterThan(1);
+  const shownAfterMs = Date.now() - arrowed;
   const nudged = await boxSettled(page, () => boxes.first().boundingBox());
   const paper = await page.locator('canvas.m-page').first().boundingBox();
   if (released === null || nudged === null || paper === null) throw new Error('the field or the page is not on screen');
   // THE NUDGES MOVED IT right of where the drag left it, on screen; the save step reads where it was saved.
-  expect(nudged.x - released.x, JSON.stringify({ released, nudged })).toBeGreaterThan(1);
+  expect(nudged.x - released.x, JSON.stringify({ released, nudged, focus })).toBeGreaterThan(1);
   moved = { name: await page.getByLabel('Name', { exact: true }).inputValue(), box: nudged, paper, placed: at };
-  return { guidesWhileHeld: guides, outOfDateDialogs: outOfDate, released, nudged };
+  return { guidesWhileHeld: guides, outOfDateDialogs: outOfDate, released, nudged, shownAfterMs };
 });
 
 await step('O6: the custom border colour dragged through many colours, with no out-of-date dialog, and the last one kept', async () => {

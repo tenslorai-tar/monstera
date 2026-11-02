@@ -888,6 +888,7 @@ export {
   WEB_SEARCH_ABSENCES,
   choiceReadsImages,
   defaultModel,
+  modelFor,
   servesVision,
   webSearchOf,
   type AiModel,

@@ -539,7 +539,7 @@ export interface LayOutFrom {
  * Fills lines of a paragraph, greedily, from `from`.
  *
  * A line takes the next word while its width, the spaces between its words and that word's own width, are within the
- * limit; the white space after a line's last word is not kept and not counted. A word wider than a whole line is set
+ * limit; the white space after a line's last word is not counted, and is kept only where the paragraph ends there. A word wider than a whole line is set
  * whole on a line of its own, never broken (ADR-0275). Stops when `stopAt` says the line that would start next begins
  * where an old line did.
  *
@@ -610,6 +610,10 @@ export function layOutParagraph(
       trail = chunk.trail;
       trailWidth = trail === undefined ? 0 : measure(trail.run, trail.mark, trail.text, trail.at);
     }
+    // THE PARAGRAPH'S OWN END KEEPS ITS WHITE SPACE, uncounted: only a wrap ends a line inside what the person typed, so
+    // white space after the paragraph's last word is theirs to keep. Dropped, a space typed at a block's end laid out as
+    // the old line, which was kept, and the edit wrote nothing and was refused (the full walk of 2026-11-02).
+    if (at >= chunks.length && trail !== undefined) parts.push(trail);
     lines.push({ start, pieces: piecesOf(parts, measure), width });
     number += 1;
     const next = chunks[at];

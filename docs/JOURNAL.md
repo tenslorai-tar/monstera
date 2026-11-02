@@ -892,6 +892,74 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-11-02 — The full walk of main at `808e897c`: where it stands (paused, not finished)
+
+The reviewer's full walk of everything since 1.1.2610.0 (133 commits, runs 26 to 30 and cloud-18 to cloud-37), on
+`work/2026-11-02-walk`. Paused at about 14:45 for a planned loss of network; nothing is pushed and nothing has moved main.
+
+**Set up.** The second worktree, `monstera-main`, is detached at `v1.1.2610.0` with that tag's packages, its own MuPDF
+shim built from the tag's source (589 exports, none withheld missing) and its build. Its first build attempt ended in npm's
+exit 139 inside the typecheck, with no mechanism found, as before (CCCCCCCCC-20); the second, run alone with a 4,096 MB
+heap, passed. Free memory before the launches: 1.59 GB (the build), 3.02 GB (main's walk), 2.12 GB (the tag's walk), all
+under 3.5 GB; the rest was held by the owner's browsers and the editor.
+
+**Walked so far: the text-layer walk (`textLayerWalk.mjs`) only.**
+- **main:** 29 of 30 steps (`_review/walks/text-layer/2026-11-02T13-31-52`, gitignored).
+- **1.1.2610.0** (`--app-root`): 12 of 30 (`2026-11-02T13-37-14`). Most of its failures are steps stated in the engine's
+  letters, a rule that build does not have; each is still to be compared step by step and reported as a difference.
+- **A FAULT ON MAIN, not yet given a case:** FLICKER, a slow drag recorded frame by frame: 2 of 79 frames showed a caret
+  one letter past the engine's (frame 39: 32 against 31; frame 44: 36 against 35). The same step read 0 of 79 on the
+  merged build on 2026-11-02 before main moved, with no product change since, so it does not appear on every run.
+  CCCCCCCCC-4 already says no case CI runs holds this step.
+- **Not covered by that walk:** drags and double clicks on the pages turned 90 and 270 (it walks 0 and 180), Split view,
+  Shift+click and Shift+Arrow, and what a two- or three-line selection gives Copy and Ask AI.
+
+**Not started:** every done tool in `docs/FEATURES.md` through save and reopen; Edit text's five release-bar answers;
+forms; the AI panel; files saved by 1.1.2610.0 opened on main; every screen in light, dark and high contrast; the
+smoothness rounds against 1.1.2610.0; memory after ten documents.
+
+**Resume at:** the FLICKER fault, run alone to see how often it appears, then a case that fails, then the fix with its
+control. After that, the rest of the list above, in its order.
+
+**Added at 14:46:** main's walk run again alone (free memory 1.83 GB) passed 30 of 30, FLICKER with it. So the fault
+appeared in one of main's two walks today, and its frequency is still to be measured before a case can be written.
+
+**Added at 20:30, resumed after the network came back.** Walked since, on main's development build and on 1.1.2610.0's:
+- **The text layer** (`textLayerWalk.mjs`, now 46 steps with 90 and 270, Split view, Shift+click, Shift+Arrow, three-line
+  Copy and Ask AI, and the selection's six menu items): main 46 of 46; 1.1.2610.0 12 of 46, every difference an
+  improvement on main (turned pages, the double click's trailing space, Copy's line joins, the saved highlight's place).
+  FLICKER's two frames were within 0.25 px of a letter's middle, below what the instrument resolves (004854af).
+  **Split view, in both builds:** both halves share one zoom, a landscape page overflows its half, and Fit page and Fit
+  width do nothing there. Reported, not fixed.
+- **Edit text** (`textWalk.mjs`): main 26 of 28; 1.1.2610.0 21 of 28. A picture page's offer to recognise its words
+  could not be pressed in Edit text, in both builds, and is fixed with a case (4fe0a2be). Open on main: 9a, a word typed
+  on a recognised printed scan is drawn in a small mono face over the picture's words and its write did not settle in
+  120 s; and L2, one underline read back absent on one run of two.
+- **The regression walk** (`textRegressionWalk.mjs`): main 16 of 16. Its first run of Bold on and off found that **a
+  space typed at the end of any block was refused** (*set-text 0*), in both builds: the layout dropped white space after
+  a paragraph's last word, so the edit laid out as the old line and wrote nothing. Fixed with a kernel case that fails
+  without it (92eeff51). The walk then sat two hours on the app's own close question; it now writes its report first and
+  names a held close (6afb7a5a).
+- **Release-bar answers on an ordinary-font page:** edit text, yes; a different font for new text, yes; Bold added and
+  removed while typing, yes, the bold word saved in a bold Arimo and the rest left in Helvetica; nothing refused, yes,
+  after 92eeff51; untouched text not broken, yes on these pages. Selection's smoothness is item 8's.
+- **cloud-33's deep forms** (`deepFormsWalk.mjs`, 4f682735): the page shows in 22.7 s on main against 40.4 s; Edit text
+  reads it with its note on main and does not in 1.1.2610.0; a copy zoomed in gives the page's words. A redraw at 400 %
+  took over 30 s, left for item 8.
+- **The computer's clipboard:** one run of that walk printed text the person had copied into its own report; the report and logs
+  were deleted the same hour, and the walk now marks the clipboard first.
+
+Free memory before each launch stayed between 2.15 and 3.36 GB, under 3.5 GB throughout, the rest held by the owner's
+browsers. **Resume at:** the forms walk's result, then the AI panel, files saved by 1.1.2610.0, the three themes, every done
+tool, and the corpus; **stop and tell the owner before items 8 and 9.**
+
+**Added at 21:10: forms.** `formsWalk.mjs` on main 28 of 28; 1.1.2610.0 26 of 28 (A8.4's Calibri for a field, and
+Flatten of the selected fields, which passed in one of its runs). Main's first runs read 21 of 28 on two waits of the
+walk's own (a7d3e8db). **For item 8, the same in both builds:** a placed field is selected 1.2 to 5.6 s after the press;
+four arrow nudges are written by about 0.9 s and the field stands still until it moves all 4 px at once, at 1.3 s to 6.9 s.
+
+---
+
 ## 2026-11-02 — Cloud runs 31 to 37 merged; Edit text's open items seen closed
 
 Seven cloud branches merged onto `work/2026-11-01-merges` in order, each with its own conflicts resolved and recorded in

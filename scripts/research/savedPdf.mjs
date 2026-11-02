@@ -98,6 +98,12 @@ export async function savedMarks(path) {
 /**
  * The words of a saved file's pages, one string per page, read by PDF.js rather than by the app that wrote them.
  *
+ * EVERY RUN OF WHITESPACE IS ONE SPACE, so a phrase is found however the writer cut its line into items. PDF.js answers a
+ * line written word by word as one item per word with a space item between, and items joined with a space then read
+ * *W1 ␣ at ␣ 85* with the gaps tripled: measured 2026-11-02 in the text walk's saved files, where two Add text lines
+ * MuPDF reads whole were not found by this reader, and a third, written as one item, was. A question about spaces is
+ * {@link savedTextKeepingSpaces}'s.
+ *
  * @param {string} path
  * @returns {Promise<string[]>}
  */
@@ -108,7 +114,12 @@ export async function savedWords(path) {
   const pages = [];
   for (let at = 1; at <= loaded.numPages; at += 1) {
     const content = await (await loaded.getPage(at)).getTextContent();
-    pages.push(content.items.map((item) => ('str' in item ? item.str : '')).join(' '));
+    pages.push(
+      content.items
+        .map((item) => ('str' in item ? item.str : ''))
+        .join(' ')
+        .replaceAll(/\s+/gu, ' '),
+    );
   }
   await task.destroy();
   return pages;
