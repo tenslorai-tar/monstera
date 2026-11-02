@@ -892,6 +892,28 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-11-02 — Cloud runs 31 to 37 merged; Edit text's open items seen closed
+
+Seven cloud branches merged onto `work/2026-11-01-merges` in order, each with its own conflicts resolved and recorded in
+its merge commit: translate's whole selection (31), the edit writer's C3 and C7 (32), the form reads bounded in the one
+page-text reader (33), the selection store read once a frame (34), fonts with no widths (35), clip identity and list
+wraps (36, ADR-0281), and `hasSelection` out of the command context (37).
+
+**Seen in the development app on Windows, 2026-11-02**, which closes three of FEATURES row 149's open items:
+- **Hanging indents:** a list item typed past its line (the catalogue's `08-bulleted-lists`) wraps under its words, not
+  its marker (`LIST_ENTRY`, `listItemWrap.test.ts`).
+- **Fonts with no widths:** words typed into Times not embedded, with no `/Widths` (catalogue 03 and a pdf-lib page),
+  are measured by the closest normal font (ADR-0270's addition of 2026-11-01). A word the font cannot encode (`Ŝ`) is set
+  in its own face. Looked at zoomed in, no offset against the viewer's face is visible on these pages; that is a reading
+  of two pages, not a measure of the stated limit.
+- **Multi-clip blocks:** each clipped cell of catalogue 13 is its own block, and a word typed in one stays inside its
+  window. A word typed under catalogue 26's nine nested clips shows (ADR-0281).
+
+A block that grows draws over what is below it. That is the owner's kept behaviour (ADR-0271 11.1), so it leaves the
+open list rather than closing.
+
+---
+
 ## 2026-11-02 — Stage audit of `0d48e788..069d00cf` — findings CCCCCCCCC-1 to CCCCCCCCC-20
 
 Cloud run 30 (the text layer on the engine's letters, ADR-0280) taken over and merged by the local agent, its smoothness
