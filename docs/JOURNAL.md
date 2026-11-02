@@ -921,6 +921,9 @@ smoothness rounds against 1.1.2610.0; memory after ten documents.
 **Resume at:** the FLICKER fault, run alone to see how often it appears, then a case that fails, then the fix with its
 control. After that, the rest of the list above, in its order.
 
+**Added at 14:46:** main's walk run again alone (free memory 1.83 GB) passed 30 of 30, FLICKER with it. So the fault
+appeared in one of main's two walks today, and its frequency is still to be measured before a case can be written.
+
 ---
 
 ## 2026-11-02 — Cloud runs 31 to 37 merged; Edit text's open items seen closed
