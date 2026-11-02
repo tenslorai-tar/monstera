@@ -1739,7 +1739,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       // THE TWO NUMBERINGS JOINED BY PDFium's OWN LIST (`namedByDescriptor`): MuPDF numbers text objects, a run's index is
       // a place among all the page's objects, and only the page as it is has that list, so an unpacked read stays unnamed.
       const faces = showsType3 && !unpacked ? await engineHost.textFaces(mupdf, page) : null;
-      const textObjects = faces === null ? [] : (await pdfiumHost.pageRuns(image, page)).textObjects;
+      // THE SAME CLIPS THE RUNS WERE READ WITH (ADR-0281); the text objects' list is the page's whatever the clips.
+      const textObjects = faces === null ? [] : (await pdfiumHost.pageRuns(image, page, clips)).textObjects;
       const found = faces === null ? read : { ...read, runs: read.runs.map((run) => namedByDescriptor(run, faces, textObjects)) };
       // THE GROUPING IS MAIN'S, and this is the only place it happens.
       //
