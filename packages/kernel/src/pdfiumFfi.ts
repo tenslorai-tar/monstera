@@ -1015,7 +1015,10 @@ function walkRuns(
    */
   readonly unaddressableInk: number;
   /** Each drawn character of each object, in the order PDFium answered it, with where it starts across the page. */
-  readonly glyphs: ReadonlyMap<number, readonly { readonly char: string; readonly left: number; readonly right: number; readonly origin?: number }[]>;
+  readonly glyphs: ReadonlyMap<
+    number,
+    readonly { readonly char: string; readonly left: number; readonly right: number; readonly origin?: number; readonly end?: number }[]
+  >;
   /** Each object's text as PDFium answered it, by object index: the deck's input (`raws` in the walk). */
   readonly raws: ReadonlyMap<number, string>;
   /**
@@ -1059,7 +1062,7 @@ function walkRuns(
       return said !== undefined && said !== '' && said.trim() === '' && numberFrom(bindings.objectType(bindings.getObject(handle, at)), 'FPDFPageObj_GetType') === TEXT_OBJECT;
     };
     const ends = new Map<number, number>();
-    const glyphs = new Map<number, { char: string; left: number; right: number; origin?: number }[]>();
+    const glyphs = new Map<number, { char: string; left: number; right: number; origin?: number; end?: number }[]>();
     let unaddressable = 0;
     let unaddressableInk = 0;
     /** Each run's last drawn character, where it was a space: where its loose box ends and how wide it is. */
@@ -1174,6 +1177,9 @@ function walkRuns(
         left: inked ? x0 : (loose['left'] ?? x0),
         right: inked ? x1 : (loose['right'] ?? x1),
         ...(hasOrigin ? { origin: originX[0] ?? 0 } : {}),
+        // AND WHERE ITS ADVANCE ENDS, the loose box's right: with the origin, the letter's place along the line whatever its
+        // ink, which is where a caret beside it stands (`drawnWordsOf`' edges).
+        ...(hasLoose && loose['right'] !== undefined ? { end: loose['right'] } : {}),
       });
       glyphs.set(index, placed);
       // THE UNION, so a run's extent covers every character in it. A run sized

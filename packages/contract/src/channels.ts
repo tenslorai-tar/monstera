@@ -5904,6 +5904,17 @@ export const channels = {
                                       to: z.number().int().nonnegative().max(MAX_RUN_TEXT),
                                       x0: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
                                       x1: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
+                                      /**
+                                       * Where each of the word's letters stands along the line, from the same PDFium read
+                                       * as the word: one value per UTF-16 unit, a pair's second unit repeating its first's,
+                                       * then where the last letter's advance ends. The editor places each letter, and so
+                                       * the caret beside it, there. Absent where the read could not place the letters.
+                                       */
+                                      edges: z
+                                        .array(z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE))
+                                        .max(MAX_RUN_TEXT + 1)
+                                        .readonly()
+                                        .exactOptional(),
                                     })
                                     .strict(),
                                 )

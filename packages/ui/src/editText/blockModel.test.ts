@@ -89,3 +89,41 @@ describe('the Edit text adapter’s model of a block', () => {
     expect(editOf(centred).formatting).toStrictEqual({ paragraphs: [{ paragraph: 1, align: 'center' }] });
   });
 });
+
+describe('an untouched line is placed letter by letter where PDFium places its letters (item 2)', () => {
+  /** One line `ab c\u{10140}`, its words as the read gives them, with or without each word's letter edges. */
+  function placed(edges: { readonly first: boolean; readonly second: boolean }): TextBlock {
+    const opened = block([{ runs: [[1, 'ab c\u{10140}', REGULAR]], soft: false }]);
+    const words = [
+      { from: 0, to: 2, x0: 72, x1: 84, ...(edges.first ? { edges: [72, 77, 84] } : {}) },
+      { from: 3, to: 6, x0: 87, x1: 100, ...(edges.second ? { edges: [87, 92, 92, 100] } : {}) },
+    ];
+    const [line] = opened.lines;
+    if (line === undefined) throw new Error('no line');
+    return { ...opened, lines: [{ ...line, runs: line.runs.map((run) => ({ ...run, words })) }] };
+  }
+
+  it('gives each letter its own place, and a pair outside the basic plane one place of two units', () => {
+    expect(modelOfBlock(placed({ first: true, second: true })).words).toStrictEqual([
+      [
+        [
+          { from: 0, to: 1, x0: 72, x1: 77 },
+          { from: 1, to: 2, x0: 77, x1: 84 },
+          { from: 3, to: 4, x0: 87, x1: 92 },
+          { from: 4, to: 6, x0: 92, x1: 100 },
+        ],
+      ],
+    ]);
+  });
+
+  it('CONTROL: a line any word of which has no letter edges is placed by its words, as before', () => {
+    expect(modelOfBlock(placed({ first: true, second: false })).words).toStrictEqual([
+      [
+        [
+          { from: 0, to: 2, x0: 72, x1: 84 },
+          { from: 3, to: 6, x0: 87, x1: 100 },
+        ],
+      ],
+    ]);
+  });
+});

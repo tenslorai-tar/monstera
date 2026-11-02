@@ -124,6 +124,44 @@ describe('the kit’s editable surface', () => {
     expect(changed?.querySelectorAll('br[data-kit-wrap]')).toHaveLength(0);
   });
 
+  it('a keystroke in one line fits no untouched line again: a kept line’s fit is its own, at its own look (item 2)', () => {
+    const { root } = surface({ paragraphs: MODEL.paragraphs, wraps: [[], []], widths: [[60], [50]] });
+    const reads = { count: 0 };
+    const measure = Range.prototype.getBoundingClientRect;
+    Range.prototype.getBoundingClientRect = function counted(this: Range): DOMRect {
+      reads.count += 1;
+      return measure.call(this);
+    };
+    try {
+      act(() => {
+        input(root, 'insertText', 'X', { paragraph: 0, offset: 1 });
+      });
+      // THE SECOND LINE IS STILL AS DRAWN, so a re-fit would have measured it.
+      expect(root.querySelectorAll('[data-kit-paragraph]')[1]?.classList.contains('m-kit__paragraph--as-drawn')).toBe(true);
+      expect(reads.count).toBe(0);
+    } finally {
+      Range.prototype.getBoundingClientRect = measure;
+    }
+  });
+
+  it('CONTROL: a new look fits the untouched lines again, since their letters were restyled', () => {
+    const store = createEditorStore({ model: MODEL, selection: caret({ paragraph: 0, offset: 0 }) });
+    const drawn = { paragraphs: MODEL.paragraphs, wraps: [[], []], widths: [[60], [50]] };
+    const view = render(<EditorSurface drawn={drawn} editable label="Words" look={LOOK} store={store} />);
+    const reads = { count: 0 };
+    const measure = Range.prototype.getBoundingClientRect;
+    Range.prototype.getBoundingClientRect = function counted(this: Range): DOMRect {
+      reads.count += 1;
+      return measure.call(this);
+    };
+    try {
+      view.rerender(<EditorSurface drawn={drawn} editable label="Words" look={{ ...LOOK, zoom: 3 }} store={store} />);
+      expect(reads.count).toBeGreaterThan(0);
+    } finally {
+      Range.prototype.getBoundingClientRect = measure;
+    }
+  });
+
   it('takes the browser’s selection as the focus leaves the words, before a queued selectionchange could', () => {
     const { root, store } = surface();
     root.focus();

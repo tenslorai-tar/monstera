@@ -470,6 +470,12 @@ const basePdfiumChannels = {
                         to: z.number().int().nonnegative().max(PDFIUM_PRIOR_TEXT_MAX),
                         x0: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
                         x1: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
+                        /** Each letter's place along the line, one per unit and the last advance's end (`DrawnWord`). */
+                        edges: z
+                          .array(z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE))
+                          .max(PDFIUM_PRIOR_TEXT_MAX + 1)
+                          .readonly()
+                          .exactOptional(),
                       })
                       .strict(),
                   )

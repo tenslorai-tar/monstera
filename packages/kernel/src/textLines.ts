@@ -665,7 +665,17 @@ export interface DrawnWord {
   readonly to: number;
   readonly x0: number;
   readonly x1: number;
+  /**
+   * Where each of its letters stands along the line: one value per UTF-16 unit of `from`..`to`, the pen's origin for the
+   * letter that unit begins (a pair's second unit repeats its first's), and then where the last letter's advance ends.
+   * What a caret between two letters is placed by, in the substitute face the editor sets them in. Absent where a glyph
+   * of the word states no origin or no advance, or the origins run backwards (right-to-left text read in drawn order).
+   */
+  readonly edges?: readonly number[];
 }
+
+/** Hundredths of a point: finer than a caret can be told apart at any zoom, and short on the wire. */
+const EDGE_STEP = 100;
 
 /**
  * A run's words where the page draws them, from its drawn characters in the order drawn: each word of `text` (letters
@@ -679,17 +689,21 @@ export interface DrawnWord {
  */
 export function drawnWordsOf(
   text: string,
-  glyphs: readonly { readonly char: string; readonly left: number; readonly right: number }[],
+  glyphs: readonly { readonly char: string; readonly left: number; readonly right: number; readonly origin?: number; readonly end?: number }[],
 ): readonly DrawnWord[] | undefined {
+  type Glyph = (typeof glyphs)[number];
   // THE GLYPHS AS UNITS, so a character the text page answered as two (a pair outside the basic plane) pairs unit by unit.
-  const units = glyphs.flatMap((glyph) => glyph.char.split('').map((unit) => ({ unit, glyph }))).filter(({ unit }) => unit.trim() !== '');
+  const units = glyphs.flatMap((glyph) => glyph.char.split('').map((unit, place) => ({ unit, glyph, first: place === 0 }))).filter(({ unit }) => unit.trim() !== '');
   const words: DrawnWord[] = [];
   let next = 0;
-  let open: { from: number; x0: number; x1: number } | undefined;
+  let open: { from: number; x0: number; x1: number; units: { glyph: Glyph; first: boolean }[] } | undefined;
   for (let at = 0; at <= text.length; at += 1) {
     const unit = text[at];
     if (unit === undefined || unit.trim() === '') {
-      if (open !== undefined) words.push({ from: open.from, to: at, x0: open.x0, x1: open.x1 });
+      if (open !== undefined) {
+        const edges = edgesOf(open.units);
+        words.push({ from: open.from, to: at, x0: open.x0, x1: open.x1, ...(edges === undefined ? {} : { edges }) });
+      }
       open = undefined;
       continue;
     }
@@ -697,9 +711,31 @@ export function drawnWordsOf(
     if (paired?.unit !== unit) return undefined;
     next += 1;
     const { left, right } = paired.glyph;
-    open = open === undefined ? { from: at, x0: left, x1: Math.max(left, right) } : { from: open.from, x0: Math.min(open.x0, left), x1: Math.max(open.x1, right) };
+    const own = { glyph: paired.glyph, first: paired.first };
+    open =
+      open === undefined
+        ? { from: at, x0: left, x1: Math.max(left, right), units: [own] }
+        : { from: open.from, x0: Math.min(open.x0, left), x1: Math.max(open.x1, right), units: [...open.units, own] };
   }
   return next === units.length ? words : undefined;
+}
+
+/**
+ * A word's letter edges ({@link DrawnWord.edges}) from its units' glyphs: each unit's glyph origin, a pair's second unit
+ * repeating its first's, and the last glyph's advance end; `undefined` where any glyph lacks either, or where they do not
+ * run left to right.
+ */
+function edgesOf(units: readonly { readonly glyph: { readonly origin?: number; readonly end?: number }; readonly first: boolean }[]): readonly number[] | undefined {
+  const edges: number[] = [];
+  for (const { glyph, first } of units) {
+    if (glyph.origin === undefined || glyph.end === undefined) return undefined;
+    edges.push(first ? glyph.origin : (edges.at(-1) ?? glyph.origin));
+  }
+  const last = units.at(-1)?.glyph.end;
+  if (last === undefined) return undefined;
+  edges.push(last);
+  const rounded = edges.map((edge) => Math.round(edge * EDGE_STEP) / EDGE_STEP);
+  return rounded.every((edge, at) => at === 0 || edge >= (rounded[at - 1] ?? edge)) ? rounded : undefined;
 }
 
 /** A small shape the page draws as a list's bullet, by its box in page space (`drawnMarkersOf`, the read's). */
