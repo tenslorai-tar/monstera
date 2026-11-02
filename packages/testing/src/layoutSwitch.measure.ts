@@ -326,7 +326,9 @@ async function measured(
     layout: (after['LayoutDuration'] ?? 0) - (before['LayoutDuration'] ?? 0),
     style: (after['RecalcStyleDuration'] ?? 0) - (before['RecalcStyleDuration'] ?? 0),
     task: (after['TaskDuration'] ?? 0) - (before['TaskDuration'] ?? 0),
-    functions: [...self.entries()].sort((a, b) => b[1] - a[1]).slice(0, 15),
+    // EVERY FUNCTION OVER 0.1 ms, not a top few: which functions make a window's top changes from window to window, so a
+    // fixed cut leaves a function out of most windows, and a summary over rounds then reads it as nearly nothing.
+    functions: [...self.entries()].filter(([, ms]) => ms >= 0.1).sort((a, b) => b[1] - a[1]),
     inclusive: (name) => inclusiveTime.get(name) ?? 0,
     where,
     browser,
