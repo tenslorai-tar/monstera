@@ -95,6 +95,8 @@ interface Reading {
   readonly style: number;
   readonly task: number;
   readonly functions: readonly (readonly [string, number])[];
+  /** The time in `getBoundingClientRect`, by the function that called it. */
+  readonly forcedBy: readonly (readonly [string, number])[];
   /** Time INCLUDING callees, by function name: a function's own time is split with every native it calls. */
   readonly inclusive: (name: string) => number;
   readonly where: Readonly<Record<string, number>>;
@@ -288,6 +290,16 @@ async function measured(
       inclusiveTime.set(name, (inclusiveTime.get(name) ?? 0) + ms);
     }
   }
+  // WHO FORCES A LAYOUT: the time inside `getBoundingClientRect`, by the script function that called it, since the
+  // native alone names no caller and the switch's largest single native is that read.
+  const forced = new Map<string, number>();
+  for (const [at, id] of (profile.samples ?? []).entries()) {
+    const leaf = nodes.get(id);
+    if (leaf?.callFrame.functionName !== 'getBoundingClientRect') continue;
+    const parent = nodes.get(parentOf.get(id) ?? -1);
+    const caller = parent === undefined ? '?' : `${parent.callFrame.functionName || '(anonymous)'} ${parent.callFrame.url.split('/').at(-1) ?? ''}:${String(parent.callFrame.lineNumber + 1)}`;
+    forced.set(caller, (forced.get(caller) ?? 0) + (profile.timeDeltas?.[at] ?? 0) / 1000);
+  }
   const self = new Map<string, number>();
   const where: Record<string, number> = {};
   for (const [at, id] of (profile.samples ?? []).entries()) {
@@ -330,6 +342,7 @@ async function measured(
     // fixed cut leaves a function out of most windows, and a summary over rounds then reads it as nearly nothing.
     functions: [...self.entries()].filter(([, ms]) => ms >= 0.1).sort((a, b) => b[1] - a[1]),
     inclusive: (name) => inclusiveTime.get(name) ?? 0,
+    forcedBy: [...forced.entries()].sort((a, b) => b[1] - a[1]),
     where,
     browser,
     redrawn: watched.redrawn,
@@ -363,6 +376,7 @@ function printed(label: string, reading: Reading): string {
     `SWITCH ${label}: script ${round(reading.script)} ms, layout ${round(reading.layout)}, style ${round(reading.style)}, all tasks ${round(reading.task)}; frames over 16.7 ms ${String(reading.longFrames)}, longest ${round(reading.longest)}; pages redrawn ${String(reading.redrawn)}, moved ${String(reading.moved)}; slot renders ${String(reading.slotRenders)}, list renders ${String(reading.listRenders)}`,
     `  samples by where: ${where}`,
     `  browser stages (ms): ${browser}`,
+    `  getBoundingClientRect by caller: ${reading.forcedBy.map(([name, ms]) => `${name} ${round(ms)}`).join(' | ')}`,
     ...reading.functions.map(([name, ms]) => `  ${round(ms).padStart(7)} ms  ${name}`),
   ].join('\n');
 }

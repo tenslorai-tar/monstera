@@ -689,6 +689,24 @@ export function PageList({
     () => (layout === 'pair' ? spreadPages(onShow, pageCount, coverPage) : [onShow]),
     [coverPage, layout, onShow, pageCount],
   );
+  /**
+   * WHICH SLOTS ARE OUT OF THE LAYOUT, written by the list onto the slots' own elements: the one writer of `hidden`.
+   *
+   * Not a slot prop. As one, a switch into or out of Single page or Facing changed it on every slot and re-rendered all
+   * of them, 38 to 41 slot renders a switch whose pages kept their size, for one attribute each (measured 2026-11-02,
+   * `layoutSwitch.measure.ts`). The slot draws nothing from it: a hidden slot is never visible, so never drawn.
+   *
+   * After EVERY commit of the list rather than on its own inputs, so a slot element made again by a render is put right
+   * by that same render's effect, before the browser paints; and only where the value differs, since writing a boolean
+   * attribute its own value can still invalidate the element's style.
+   */
+  useLayoutEffect(() => {
+    for (let page = 0; page < pageCount; page += 1) {
+      const slot = slotFor(page);
+      const out = oneScreen && !shownPages.includes(page);
+      if (slot !== undefined && slot.hidden !== out) slot.hidden = out;
+    }
+  });
   /** The page a turn forward or back lands on: the next page, or in Facing the next pair's first. */
   const turned = useCallback(
     (direction: 1 | -1): number =>
@@ -1566,7 +1584,6 @@ export function PageList({
           // and every slot then rendered with it (`sameSlotProps`).
           onTabField={fieldSelection?.onTab}
           scroller={scroller}
-          hidden={oneScreen && !shownPages.includes(page)}
         />
       )))}
     </div>
@@ -1805,7 +1822,6 @@ function PageSlotBody({
   onFocusedField,
   onTabField,
   scroller,
-  hidden,
 }: {
   readonly page: number;
   /**
@@ -1886,8 +1902,6 @@ function PageSlotBody({
   readonly onTabField: ((page: number, index: number, backwards: boolean, filled: boolean) => void) | undefined;
   /** The scroller the slot sits in, whose box decides which tiles are wanted. */
   readonly scroller: React.RefObject<HTMLElement | null>;
-  /** Out of the layout: single page shows only the page on show, and a hidden slot is never visible, so never drawn. */
-  readonly hidden: boolean;
 }): ReactElement {
   const { i18n } = useLingui();
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -2254,7 +2268,8 @@ function PageSlotBody({
     <div
       {...linkPointer.props}
       className="m-page-slot"
-      hidden={hidden}
+      // NOT `hidden`: the list writes that onto this element (`PageList`'s layout effect), so a switch of layout that
+      // hides or shows a slot does not render it.
       ref={slotRef}
       // ITS HEIGHT ALSO AS A PROPERTY, which Fit page's margins centre it by (`.m-page-list--fit-page`): a value that is
       // genuinely dynamic, the token rule's own line.
