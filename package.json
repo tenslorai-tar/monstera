@@ -85,6 +85,7 @@
     "proof:errorreport": "node scripts/lib/reportError.proof.mjs",
     "proof:passroster": "node scripts/lib/passRoster.proof.mjs",
     "proof:board": "node scripts/lib/boardStatus.proof.mjs",
+    "proof:childprocesses": "node scripts/lib/childProcesses.proof.mjs",
     "proof:preload": "node scripts/proofs/preloadSurface.proof.mjs",
     "proof:electronprovision": "node scripts/provision/electron.proof.mjs",
     "proof:electronimports": "node scripts/proofs/electronImports.proof.mjs",

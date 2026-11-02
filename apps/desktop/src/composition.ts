@@ -1736,8 +1736,11 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       const read = unpacked ? await pdfiumHost.textRuns(image, page, true, null) : plain;
       // A TYPE 3 RUN NAMED BY ITS DESCRIPTOR (ADR-0256): PDFium reads such a font as no name and no weight, so on a page
       // showing Type 3 text MuPDF says each font's face, and only the runs PDFium left unnamed take it.
-      const faces = showsType3 ? await engineHost.textFaces(mupdf, page) : null;
-      const found = faces === null ? read : { ...read, runs: read.runs.map((run) => namedByDescriptor(run, faces)) };
+      // THE TWO NUMBERINGS JOINED BY PDFium's OWN LIST (`namedByDescriptor`): MuPDF numbers text objects, a run's index is
+      // a place among all the page's objects, and only the page as it is has that list, so an unpacked read stays unnamed.
+      const faces = showsType3 && !unpacked ? await engineHost.textFaces(mupdf, page) : null;
+      const textObjects = faces === null ? [] : (await pdfiumHost.pageRuns(image, page)).textObjects;
+      const found = faces === null ? read : { ...read, runs: read.runs.map((run) => namedByDescriptor(run, faces, textObjects)) };
       // THE GROUPING IS MAIN'S, and this is the only place it happens.
       //
       // ADR-0049 permits a grouping of ours where no engine answers, and its

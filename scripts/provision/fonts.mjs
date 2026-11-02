@@ -34,7 +34,7 @@
  *   node scripts/provision/fonts.mjs [--force] [--check]
  */
 
-import { mkdir, rm } from 'node:fs/promises';
+import { copyFile, mkdir, rm } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -152,10 +152,19 @@ async function verifyLicences(root) {
 /**
  * Provisions the set, or verifies the one already there.
  *
- * @param {{ root: string, force?: boolean }} options
+ * ## `held`: fonts already fetched, taken by their pins and never on trust
+ *
+ * A folder holding some of the pinned files, `fonts.proof.mjs`' genuine tree: each file found there is copied in and
+ * checked against its pinned SHA-256 like a download, and one that differs is REFUSED (deleted unread, the provision
+ * failing) rather than used or quietly fetched again, so a wrong file still fails. With `network: false` a file not held
+ * is refused too, so a caller can know nothing was fetched: measured 2026-11-01, the proof's two re-provision cases
+ * fetched all twenty-two files from ftp.gnu.org and raw.githubusercontent.com on every run, and a connect timeout at
+ * ftp.gnu.org reddened CI run 41317768421 on a branch that changed nothing about fonts.
+ *
+ * @param {{ root: string, force?: boolean, held?: string, network?: boolean }} options
  * @returns {Promise<{ provisioned: boolean, directory: string }>}
  */
-export async function provisionFonts({ root, force = false }) {
+export async function provisionFonts({ root, force = false, held, network = true }) {
   await verifyLicences(root);
   const directory = fontsDirectory(root);
   // A FOLDER NOT AS PINNED is removed and provisioned again in this run (`presentAsPinned`).
@@ -173,6 +182,14 @@ export async function provisionFonts({ root, force = false }) {
   await mkdir(staging, { recursive: true });
   try {
     for (const font of BUNDLED_FONTS) {
+      const kept = held === undefined ? null : join(held, font.file);
+      if (kept !== null && (await fileExists(kept))) {
+        const destination = join(staging, font.file);
+        await copyFile(kept, destination);
+        await verifyFileDigest({ path: destination, sha256: font.sha256, context: `${font.file}, taken from ${held ?? ''}` });
+        continue;
+      }
+      if (!network) throw new Error(`${font.file} is not held at ${held ?? '(no folder)'}, and this provision may not fetch it`);
       await downloadVerified({
         url: urlOf(font),
         allowedHosts: ALLOWED_HOSTS,

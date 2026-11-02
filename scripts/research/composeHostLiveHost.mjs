@@ -37,12 +37,12 @@
  * Usage: not directly. `node scripts/research/composeHostLive.mjs`.
  */
 
-import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+import { childProcessIds } from '../lib/childProcesses.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { NO_FACE_CHARACTER } from '../lib/noFaceCharacter.mjs';
 import { formatError } from '../lib/reportError.mjs';
@@ -97,36 +97,6 @@ const IMAGES = [
 /** How long the hosts have to exit once killed. `hostRecoveryHost.mjs`' bound. */
 const DEATH_BUDGET_MS = 5_000;
 const POLL_MS = 250;
-
-/**
- * This process's child process ids.
- *
- * `hostRecoveryHost.mjs`' enumeration, written out rather than imported because that
- * file runs its experiment on import. It is harness cleanup, not a mechanism the
- * product depends on.
- *
- * @returns {number[]}
- */
-function childProcessIds() {
-  const result = spawnSync(
-    'powershell.exe',
-    [
-      '-NoProfile',
-      '-NonInteractive',
-      '-Command',
-      `Get-CimInstance Win32_Process -Filter "ParentProcessId=${String(process.pid)}" | ` +
-        `Where-Object { $_.ProcessId -ne $PID } | Select-Object -ExpandProperty ProcessId`,
-    ],
-    { encoding: 'utf8', timeout: 20_000 },
-  );
-  if (result.error !== undefined) {
-    throw new Error('could not enumerate this process’s children', { cause: result.error });
-  }
-  return `${result.stdout}`
-    .split(/\r?\n/)
-    .map((line) => Number(line.trim()))
-    .filter((id) => Number.isInteger(id) && id > 0);
-}
 
 /** @param {number} ms */
 function sleep(ms) {

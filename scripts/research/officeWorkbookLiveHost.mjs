@@ -22,6 +22,7 @@ import { pathToFileURL } from 'node:url';
 import { PDFDocument } from '@cantoo/pdf-lib';
 import { strToU8, zipSync } from 'fflate';
 
+import { childProcessIds } from '../lib/childProcesses.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { pdftotextPath } from '../provision/poppler.mjs';
@@ -236,30 +237,6 @@ async function main() {
     rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
   process.exit(0);
-}
-
-/**
- * This process's child process ids — `hostFileAnswersLiveHost.mjs`' enumeration.
- *
- * @returns {number[]}
- */
-function childProcessIds() {
-  const result = spawnSync(
-    'powershell.exe',
-    [
-      '-NoProfile',
-      '-NonInteractive',
-      '-Command',
-      `Get-CimInstance Win32_Process -Filter "ParentProcessId=${String(process.pid)}" | ` +
-        `Where-Object { $_.ProcessId -ne $PID } | Select-Object -ExpandProperty ProcessId`,
-    ],
-    { encoding: 'utf8', timeout: 20_000 },
-  );
-  if (result.error !== undefined) throw new Error('could not enumerate this process’s children', { cause: result.error });
-  return `${result.stdout}`
-    .split(/\r?\n/)
-    .map((line) => Number(line.trim()))
-    .filter((id) => Number.isInteger(id) && id > 0);
 }
 
 main().catch((error) => {
