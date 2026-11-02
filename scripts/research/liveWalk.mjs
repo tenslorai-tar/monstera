@@ -389,16 +389,26 @@ async function walkOn(walk, app, page, output, runCommand) {
     const passed = steps.filter((each) => each.outcome === 'passed').length;
     await writeFile(join(output, 'report.json'), `${JSON.stringify({ walk, steps }, null, 2)}\n`);
     const closing = Date.now();
-    const closed = await Promise.race([
+    const shell = app.process();
+    // ENDED IS THE PROCESS'S OWN WORD, never the close call's: a close that threw was read as closed until a development
+    // app from a walk at 20:04 on 2026-11-02 was found still open an hour later.
+    const ended = () => shell.exitCode !== null || shell.signalCode !== null;
+    const settled = await Promise.race([
       app.close().then(
-        () => true,
-        () => true,
+        () => 'closed',
+        () => 'threw',
       ),
       new Promise((resolve) => {
-        setTimeout(() => resolve(false), CLOSE_HELD_MS).unref();
+        setTimeout(() => resolve('held'), CLOSE_HELD_MS).unref();
       }),
     ]);
-    if (!closed) {
+    if (settled !== 'held' && !ended()) await new Promise((resolve) => setTimeout(resolve, 2000));
+    const closed = settled !== 'held' && ended();
+    if (settled !== 'held' && !closed) {
+      process.stdout.write(`\nCLOSE ${String(settled).toUpperCase()} and the app's process had not ended, so it was ended\n`);
+      shell.kill();
+    }
+    if (settled === 'held') {
       const asked = await page.locator('[role=dialog], [role=alertdialog]').allInnerTexts().catch(() => /** @type {string[]} */ ([]));
       const held = asked.map((text) => text.replaceAll(/\s+/gu, ' ').slice(0, 200)).join(' | ') || 'no dialog on screen';
       await writeFile(join(output, 'report.json'), `${JSON.stringify({ walk, steps, closeHeld: held }, null, 2)}\n`);
