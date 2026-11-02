@@ -892,6 +892,37 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-11-02 — The full walk of main at `808e897c`: where it stands (paused, not finished)
+
+The reviewer's full walk of everything since 1.1.2610.0 (133 commits, runs 26 to 30 and cloud-18 to cloud-37), on
+`work/2026-11-02-walk`. Paused at about 14:45 for a planned loss of network; nothing is pushed and nothing has moved main.
+
+**Set up.** The second worktree, `monstera-main`, is detached at `v1.1.2610.0` with that tag's packages, its own MuPDF
+shim built from the tag's source (589 exports, none withheld missing) and its build. Its first build attempt ended in npm's
+exit 139 inside the typecheck, with no mechanism found, as before (CCCCCCCCC-20); the second, run alone with a 4,096 MB
+heap, passed. Free memory before the launches: 1.59 GB (the build), 3.02 GB (main's walk), 2.12 GB (the tag's walk), all
+under 3.5 GB; the rest was held by the owner's browsers and the editor.
+
+**Walked so far: the text-layer walk (`textLayerWalk.mjs`) only.**
+- **main:** 29 of 30 steps (`_review/walks/text-layer/2026-11-02T13-31-52`, gitignored).
+- **1.1.2610.0** (`--app-root`): 12 of 30 (`2026-11-02T13-37-14`). Most of its failures are steps stated in the engine's
+  letters, a rule that build does not have; each is still to be compared step by step and reported as a difference.
+- **A FAULT ON MAIN, not yet given a case:** FLICKER, a slow drag recorded frame by frame: 2 of 79 frames showed a caret
+  one letter past the engine's (frame 39: 32 against 31; frame 44: 36 against 35). The same step read 0 of 79 on the
+  merged build on 2026-11-02 before main moved, with no product change since, so it does not appear on every run.
+  CCCCCCCCC-4 already says no case CI runs holds this step.
+- **Not covered by that walk:** drags and double clicks on the pages turned 90 and 270 (it walks 0 and 180), Split view,
+  Shift+click and Shift+Arrow, and what a two- or three-line selection gives Copy and Ask AI.
+
+**Not started:** every done tool in `docs/FEATURES.md` through save and reopen; Edit text's five release-bar answers;
+forms; the AI panel; files saved by 1.1.2610.0 opened on main; every screen in light, dark and high contrast; the
+smoothness rounds against 1.1.2610.0; memory after ten documents.
+
+**Resume at:** the FLICKER fault, run alone to see how often it appears, then a case that fails, then the fix with its
+control. After that, the rest of the list above, in its order.
+
+---
+
 ## 2026-11-02 — Cloud runs 31 to 37 merged; Edit text's open items seen closed
 
 Seven cloud branches merged onto `work/2026-11-01-merges` in order, each with its own conflicts resolved and recorded in
