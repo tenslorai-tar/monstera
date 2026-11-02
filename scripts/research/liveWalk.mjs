@@ -37,6 +37,23 @@ export const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 export const WALK_WINDOW = { width: 1400, height: 900 };
 
 /**
+ * The walks' `--app-root <checkout>` option, which launches another checkout's built app (a release's worktree, for a
+ * before-and-after) while the walk, its fixtures and its output stay here: the one reading of it every walk takes.
+ * @param {readonly string[]} argv
+ * @returns {{ appRoot?: string }}
+ */
+export function appRootOption(argv) {
+  const at = argv.indexOf('--app-root');
+  if (at === -1) return {};
+  const appRoot = argv[at + 1];
+  if (appRoot === undefined || appRoot.startsWith('--')) throw new Error('--app-root names no checkout');
+  return { appRoot };
+}
+
+/** How long `finish` lets the app close before reading the close as held by a question nobody will answer. */
+const CLOSE_HELD_MS = 60_000;
+
+/**
  * How many writes (or, with `kind`, works) the window has finished: `data-writes-done` on the root, which the renderer
  * keeps (`packages/ui/src/inFlight.ts`, which says what each kind counts). Note it before an action, and hand it to
  * {@link writesLanded}.
@@ -356,14 +373,38 @@ async function walkOn(walk, app, page, output, runCommand) {
     process.stdout.write(`${record.outcome === 'passed' ? 'ok  ' : 'FAIL'}  ${name}${record.problem === undefined ? '' : `\n      ${record.problem.split('\n')[0] ?? ''}`}\n`);
   };
 
-  /** Closes the app and writes the record; the last line printed is the verdict. */
+  /**
+   * Writes the record, then closes the app; the last line printed is the verdict.
+   *
+   * THE RECORD FIRST, AND A CLOSE THE APP HOLDS IS ENDED, NOT WAITED ON. The app holds its window's close while anything
+   * is unsaved and asks (`windowClose.ts`), which is right for a person and has nobody to answer it here: a step that
+   * failed with an editor holding refused words left that question up, and the walk of 2026-11-02 waited on it for two
+   * hours with its report unwritten. The walk's documents are its own copies, so the process is ended and the question
+   * that held it is printed and recorded, because a close the app held is itself something a step left behind.
+   */
   const finish = async () => {
-    await app.close().catch(() => undefined);
     const passed = steps.filter((each) => each.outcome === 'passed').length;
     await writeFile(join(output, 'report.json'), `${JSON.stringify({ walk, steps }, null, 2)}\n`);
-    process.stdout.write(`\nScreenshots and report.json: ${output}\n`);
+    const closing = Date.now();
+    const closed = await Promise.race([
+      app.close().then(
+        () => true,
+        () => true,
+      ),
+      new Promise((resolve) => {
+        setTimeout(() => resolve(false), CLOSE_HELD_MS).unref();
+      }),
+    ]);
+    if (!closed) {
+      const asked = await page.locator('[role=dialog], [role=alertdialog]').allInnerTexts().catch(() => /** @type {string[]} */ ([]));
+      const held = asked.map((text) => text.replaceAll(/\s+/gu, ' ').slice(0, 200)).join(' | ') || 'no dialog on screen';
+      await writeFile(join(output, 'report.json'), `${JSON.stringify({ walk, steps, closeHeld: held }, null, 2)}\n`);
+      process.stdout.write(`\nCLOSE HELD by the app for ${String(CLOSE_HELD_MS / 1000)} s, so the process was ended: ${held}\n`);
+      app.process().kill();
+    }
+    process.stdout.write(`\nClosed in ${String(Date.now() - closing)} ms. Screenshots and report.json: ${output}\n`);
     process.stdout.write(`WALK ${walk}: ${String(passed)} of ${String(steps.length)} steps passed\n`);
-    process.exitCode = passed === steps.length ? 0 : 1;
+    process.exitCode = passed === steps.length && closed ? 0 : 1;
   };
 
   return { app, page, output, copyOf, open, pickFiles, saveTo, command, section, pressOn, step, finish, sizeWindow };

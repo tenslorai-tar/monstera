@@ -28,7 +28,7 @@ import { expect as defaultExpect } from '@playwright/test';
 import { PDFDict, PDFDocument, PDFHexString, PDFName, PDFRawStream, PDFString, StandardFonts } from '@cantoo/pdf-lib';
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { bindNativeEngine } from '../lib/nativeEngine.mjs';
-import { boxSettled, root, startWalk, writesDone, writesIdle, writesLanded } from './liveWalk.mjs';
+import { appRootOption, boxSettled, root, startWalk, writesDone, writesIdle, writesLanded } from './liveWalk.mjs';
 import { savedContent, savedFonts, savedWords } from './savedPdf.mjs';
 import { tabMarks, textSteps } from './textWalkSteps.mjs';
 
@@ -41,8 +41,6 @@ if (bindNativeEngine() === null) throw new Error('the MuPDF shim is not built he
 
 // `--app-root <checkout>` launches another checkout's built app, a worktree of a release for a before-and-after, while
 // the walk, its fixtures and its output stay here; the documents are the arguments that are not that option.
-const rootAt = process.argv.indexOf('--app-root');
-const appRoot = rootAt === -1 ? undefined : process.argv[rootAt + 1];
 const positional = process.argv.slice(2).filter((_, at, all) => all[at] !== '--app-root' && all[at - 1] !== '--app-root');
 const sample = positional[0] ?? join(root, '_review/test-files/sample5.pdf');
 const handwritten = positional[1] ?? join(homedir(), 'Desktop', 'Handwritten table.pdf');
@@ -52,7 +50,7 @@ if (!existsSync(sample)) throw new Error(`No document at ${sample}. Pass the pat
 // for 3 to 4.5 s after a click away, so the default 5 s wait on an expectation is too short and 30 s is what a step gets.
 const expect = defaultExpect.configure({ timeout: 30_000 });
 
-const walk = await startWalk('text', appRoot === undefined ? {} : { appRoot });
+const walk = await startWalk('text', appRootOption(process.argv));
 const { app, page, output, copyOf, open, saveTo, command, section, step, finish } = walk;
 const document = await copyOf(sample);
 

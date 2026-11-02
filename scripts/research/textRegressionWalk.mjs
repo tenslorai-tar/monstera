@@ -32,7 +32,7 @@ import { PDFDocument, PDFName, PDFString, StandardFonts } from '@cantoo/pdf-lib'
 import { expect as defaultExpect } from '@playwright/test';
 
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
-import { root, startWalk, writesDone, writesIdle } from './liveWalk.mjs';
+import { appRootOption, root, startWalk, writesDone, writesIdle } from './liveWalk.mjs';
 import { savedContent, savedFonts, savedTextKeepingSpaces, savedWords } from './savedPdf.mjs';
 import { tabMarks, textSteps } from './textWalkSteps.mjs';
 
@@ -121,8 +121,7 @@ async function everydayPage() {
 }
 
 // `--app-root <checkout>` launches another checkout's built app, a release's worktree for a before-and-after.
-const rootAt = process.argv.indexOf('--app-root');
-const walk = await startWalk('text-regression', rootAt === -1 ? {} : { appRoot: process.argv[rootAt + 1] });
+const walk = await startWalk('text-regression', appRootOption(process.argv));
 const { page, output, open, section, step, finish } = walk;
 const { editor, panel, ensureEditText, openAt, pressAway, problems, chooseFont, savedCopy } = textSteps(walk);
 
@@ -579,6 +578,74 @@ await step('13. a Type 3 heading given letters its subset lacks is written by th
   const words = (await savedTextKeepingSpaces(await savedCopy('13-type3.pdf'))).replaceAll(/\s+/gu, ' ');
   expect(words, words.slice(0, 200)).toContain('heading. zap');
   return { said, words: words.slice(0, 120) };
+});
+
+// THE OWNER'S RELEASE BAR (2026-11-02): Bold added AND REMOVED on newly typed words, by Ctrl+B as a person types, kept by
+// the write. Read twice: in the block reopened from the written page, and in the saved file's fonts.
+await step('14. Bold on and off while typing: Ctrl+B, a word, Ctrl+B, a word; written, reopened, the first bold and the second not', async () => {
+  const fresh = join(output, 'everyday-bold.pdf');
+  await writeFile(fresh, await readFile(everyday));
+  await open(fresh);
+  await section('Edit');
+  await ensureEditText();
+  // THE SMALL PRINT, which is not bold and has room to its right: on the heading, already bold, the first Ctrl+B turns
+  // Bold off, and its words wrapped over the paragraph, the owner's kept behaviour, where the reread joins them to it.
+  const small = EVERYDAY.below.slice(0, 15);
+  await openBlock(small);
+  // EXACTLY THE BUTTON: the font picker's own name holds the face, so "Bold" alone also finds "Font: Times-Bold".
+  const boldButton = panel().getByRole('button', { name: 'Bold', exact: true });
+  await expect(boldButton).toHaveAttribute('aria-pressed', 'false');
+  await page.keyboard.type(' ');
+  await page.keyboard.press('Control+B');
+  await expect(boldButton).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.type('boldword');
+  await page.keyboard.press('Control+B');
+  await expect(boldButton).toHaveAttribute('aria-pressed', 'false');
+  await page.keyboard.type(' plainword');
+  const typed = await runsDrawn();
+  await commit();
+  await openBlock(small);
+  const reopened = await runsDrawn();
+  await page.keyboard.press('Escape');
+  await expect(editor()).toHaveCount(0);
+  const fonts = await savedFonts(await savedCopy('14-bold.pdf'));
+  /** @param {{ text: string, weight: string }[]} runs @param {string} word */
+  const weightOf = (runs, word) => runs.find((run) => run.text.includes(word))?.weight;
+  const heavy = (/** @type {string | undefined} */ weight) => Number(weight ?? '0') >= 600;
+  const wanted = { typed: [true, false], reopened: [true, false] };
+  const got = {
+    typed: [heavy(weightOf(typed, 'boldword')), heavy(weightOf(typed, 'plainword'))],
+    reopened: [heavy(weightOf(reopened, 'boldword')), heavy(weightOf(reopened, 'plainword'))],
+  };
+  expect(got, JSON.stringify({ typed, reopened })).toStrictEqual(wanted);
+  return { typed, reopened, fonts };
+});
+
+// FOUND BY STEP 14'S FIRST RUN (2026-11-02): a space typed at a block's end laid out as the old line, which was kept, so
+// the edit wrote nothing and was refused, in 1.1.2610.0 as on main.
+// BOTH WRITERS: the everyday page's standard font is the operator writer's, the word processor's subsets PDFium's.
+await step('15. a space typed at the end of a block, then Escape: nothing refused, and the space is in the saved file', async () => {
+  /** @type {Record<string, string>} */
+  const read = {};
+  for (const [name, source, start, words] of /** @type {const} */ ([
+    ['everyday', everyday, EVERYDAY.heading, EVERYDAY.heading],
+    ['subsets', serif, 'Results.', 'tested.'],
+  ])) {
+    const fresh = join(output, `${name}-trailing.pdf`);
+    await writeFile(fresh, await readFile(source));
+    await open(fresh);
+    await section('Edit');
+    await ensureEditText();
+    await openBlock(start);
+    await page.keyboard.type(' ');
+    await page.keyboard.press('Escape');
+    await expect(editor(), name).toHaveCount(0, { timeout: 120_000 });
+    expect(await problems(), name).toStrictEqual([]);
+    const saved = await savedTextKeepingSpaces(await savedCopy(`15-${name}.pdf`));
+    read[name] = saved.slice(0, 160);
+    expect(saved, `${name}: ${saved.slice(0, 160)}`).toContain(`${words} `);
+  }
+  return { read };
 });
 
 await finish();
