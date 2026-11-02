@@ -67,6 +67,40 @@ export class OperatorFaceSet {
     };
   }
 
+  /**
+   * `fonts` with every font that states no widths and carries no program (`widthsUnstated`) given the CLOSEST NORMAL
+   * FONT's (the owner's answer of 2026-11-01, ADR-0270's addition): each code's width is its character's own advance in
+   * the face the typed-word rule chooses for that font — `editPieces`, asked with the font's own request, exactly as
+   * `LookedWeights.unmarkedWeight` asks it — so letters set again and letters typed into that run are measured in one
+   * face, by one chooser (B3a). A code whose character is unknown, or that face cannot draw, still states none.
+   */
+  withClosestWidths(fonts: ReadonlyMap<string, PageFont>): ReadonlyMap<string, PageFont> {
+    return new Map(
+      [...fonts].map(([name, font]) => {
+        if (font.widthsUnstated !== true) return [name, font] as const;
+        const measured = new Map<number, number | null>();
+        const width = (code: number): number | null => {
+          const stated = font.width(code);
+          if (stated !== null) return stated;
+          if (!measured.has(code)) measured.set(code, this.#closestWidth(font, font.toUnicode?.text.get(code)));
+          return measured.get(code) ?? null;
+        };
+        return [name, { ...font, width }] as const;
+      }),
+    );
+  }
+
+  /** `character`'s advance, in ems, in the face the typed-word rule sets it in for `font`; `null` where none draws it. */
+  #closestWidth(font: PageFont, character: string | undefined): number | null {
+    const point = character?.codePointAt(0);
+    if (character === undefined || point === undefined) return null;
+    const piece = editPieces(character, () => false, this.#weights.requestFor(font), this.source.faces, []).find((each) => each.face !== null);
+    if (piece?.face === undefined || piece.face === null || piece.boxed.length > 0) return null;
+    const shaping = this.#shaping(piece.face, piece.face.weights === null ? {} : { wght: piece.weight });
+    const glyph = shaping.glyphFor(point);
+    return glyph === undefined ? null : shaping.nominalAdvance(glyph) / shaping.unitsPerEm;
+  }
+
   /** The fonts the edit added, by resource name, as the page will read them once {@link finish} has written them. */
   get pageFonts(): ReadonlyMap<string, PageFont> {
     return new Map([...this.#added.values()].map((added) => [added.resource, added.page]));

@@ -118,3 +118,25 @@ Five things the correction above did not say, each settled by a measurement rath
 5. **A word whose shaping draws a glyph standing for no character is written, never refused.** The operator writer
    refused such a word — "refused by name, which loses nothing" — and Thai SARA AM in any face is one. The glyph takes
    a code with no `ToUnicode` entry, and MuPDF reads the word back exactly as typed.
+
+## Addition, 2026-11-01 — the owner's answer: a font that gives no letter widths
+
+**The owner's words (2026-11-01):** *a font that gives no letter widths and is NOT embedded: Edit text uses the widths of
+the closest normal font.* This is Decision 3's rule applied to widths: never refuse; the closest normal font; never draw
+or build a font to imitate one.
+
+Until this answer such a font was dropped from its own line: the writer takes a font as a word's carrier only where it
+states every code's width, so with none stated every word on the edited line, the untouched ones too, was set again in
+the typed-word rule's face (measured 2026-11-01 in `fontWidths.test.ts` before the change: the line's first letter read
+back in `GEGMZR+Caladea-Regular`, a font the edit added, in place of the page's `Caladea`). Two cases, one rule
+each:
+
+1. **Embedded, and no widths stated**: the widths are read from the embedded program itself, its own advance for each
+   glyph. The program is what draws the letters, so its advances are where the letters stand; nothing is guessed.
+2. **Not embedded, and no widths stated** (and not one of the standard fonts, whose AFM widths ISO 32000-1 §9.6.2.2
+   already gives): each code's width is its character's advance in the face the typed-word rule chooses for that font
+   (`resolveRuns`, asked with the run's font's own request), the one chooser both take (B3a). The face chosen is the one
+   a word typed into that run would be set in, so letters set again and letters typed are measured in one face.
+
+No font is built and no glyph is drawn by either: a width is a number the writer places by, and the letters stay the
+page's own.

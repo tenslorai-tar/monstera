@@ -33,6 +33,8 @@ function embedderFor(name: StandardName): StandardFontEmbedder {
 export interface StandardEncoding {
   readonly text: ReadonlyMap<number, string>;
   readonly width: (code: number) => number | null;
+  /** Whether `width` is a standard font's AFM: false where the table is only an encoding's, which states no widths. */
+  readonly measured: boolean;
 }
 
 /**
@@ -67,6 +69,7 @@ export function standardEncoding(named: string | null, absent: boolean, base: st
   const metrics = standard !== null && table === embedderFor(standard) ? table.font : null;
   return {
     text,
+    measured: metrics !== null,
     width: (code) => {
       const glyph = glyphs.get(code);
       const width = metrics === null || glyph === undefined ? undefined : metrics.getWidthOfGlyph(glyph);
