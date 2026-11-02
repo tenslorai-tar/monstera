@@ -643,6 +643,20 @@ Two things transfer, and the second is the one worth keeping:
 
 These were given directly and bind every agent on this project.
 
+- **A full app walk before every MSIX** (the owner, 2026-11-02, for this build and
+  every build after it): *"This app is now in the store, I cannot afford to release
+  broken tools that were already working, so anytime the agent is running to build
+  an msix, a FULL APP WALK must be done to ensure everything still works."*
+
+  So every MSIX, test or Store, is packed only from a sha that a full walk of every
+  tool passed on: old and new, listed from the command, dialog and settings
+  registries, and compared with the live release. A fix made after the walk means
+  the rows it can reach are walked again on the new sha before packing.
+
+  **The pack is to refuse a sha with no passing walk record, and that refusal is
+  not built yet** (2026-11-02): until it lands, this rule is the only thing
+  holding it, which is the state this file's escape-guard section warns about.
+
 - **Never write *any* file through a tool that resolves escape sequences.** Not
   a shell heredoc, not `printf`, not `sed`, not an inline `node -e` or
   `python -c`. Use the file-editing tools. This rule used to say "prose or
