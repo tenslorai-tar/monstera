@@ -278,8 +278,7 @@ for (const [index, rotation] of ROTATIONS.entries()) {
   });
 }
 
-for (const index of [0, 2]) {
-  const rotation = ROTATIONS[index] ?? 0;
+for (const [index, rotation] of ROTATIONS.entries()) {
   for (const [pace, steps] of /** @type {const} */ ([['slow', 30], ['fast', 2]])) {
     await step(`DRAG ${pace} on the page turned ${String(rotation)}: across a line end and back, and off the page and back`, async () => {
       const start = await onLetter(index, 0, 10, 0.65);
@@ -422,8 +421,7 @@ await step('THEMES: a run selected is painted in light, dark and high contrast',
   return counts;
 });
 
-for (const index of [0, 2]) {
-  const rotation = ROTATIONS[index] ?? 0;
+for (const [index, rotation] of ROTATIONS.entries()) {
   await step(`DOUBLE AND TRIPLE CLICK on the page turned ${String(rotation)}: the engine's word, its line, and a double then a triple`, async () => {
     const effective = (LINES[0]?.text ?? '').indexOf('Effective');
     const at = await onLetter(index, 0, effective + 3, 0.5);
@@ -447,6 +445,40 @@ for (const index of [0, 2]) {
     return { word, line: line.trim().length };
   });
 }
+
+await step('SPLIT VIEW: a drag and a double click on each half, the upright page and the page turned 90', async () => {
+  const field = page.getByRole('textbox', { name: 'Go to page' });
+  await field.fill('1');
+  await field.press('Enter');
+  await page.waitForTimeout(300);
+  await page.keyboard.press('Control+Shift+E');
+  await expect(page.getByRole('button', { name: 'Close split view' })).toBeVisible();
+  const problems = [];
+  const results = [];
+  for (const index of [0, 1]) {
+    // THE LINE BROUGHT INTO ITS HALF'S VIEW, as a person scrolls that half: both halves share the left page's fitted
+    // zoom, so the page turned 90 is wider than its half and its line stands past the half's right edge (2026-11-02,
+    // the same in 1.1.2610.0).
+    await page.locator(`[data-text-layer="${String(index)}"]:visible [data-text-line]`).first().scrollIntoViewIfNeeded();
+    await page.waitForTimeout(300);
+    await apart();
+    const held = await drag(await onLetter(index, 0, 10, 0.65), [await onLetter(index, 0, 30, 0.65)], 10);
+    if (named(held.anchor) !== named({ page: index, line: 0, offset: 11 }) || named(held.focus) !== named({ page: index, line: 0, offset: 31 })) {
+      problems.push(`page ${String(index + 1)}'s drag held ${named(held.anchor)} to ${named(held.focus)}`);
+    }
+    if ((await painted(index)).length !== 1) problems.push(`page ${String(index + 1)}'s run is not painted as one band`);
+    await apart();
+    const effective = (LINES[0]?.text ?? '').indexOf('Effective');
+    const at = await onLetter(index, 0, effective + 3, 0.5);
+    await page.mouse.dblclick(at.x, at.y);
+    const word = (await readSelection()).text;
+    if (word !== 'Effective') problems.push(`page ${String(index + 1)}'s double click took ${JSON.stringify(word)}`);
+    results.push({ page: index + 1, word });
+  }
+  await page.getByRole('button', { name: 'Close split view' }).click();
+  if (problems.length > 0) throw new Error(problems.join('; '));
+  return { results };
+});
 
 await step('ANGLED LINE: a drag along a line turned 20 degrees takes the engine’s letters, painted along them', async () => {
   await apart();
@@ -568,6 +600,69 @@ await step('COPY across a line end: the words, with the space', async () => {
   if (copied !== wanted) throw new Error(`copied ${JSON.stringify(copied)}, wanted ${JSON.stringify(wanted)}`);
   return { copied };
 });
+
+// THREE LINES, the reviewer's item 26: what Copy and Ask AI give between the lines, recorded either way, and asserted
+// as Copy across one line end is, a space where each line ends.
+await step('COPY AND ASK AI over three lines: what each gives between the lines', async () => {
+  const first = LINES[0]?.text ?? '';
+  const second = LINES[1]?.text ?? '';
+  const third = LINES[2]?.text ?? '';
+  await apart();
+  await drag(await onLetter(0, 0, first.length - 8, 0.65), [await onLetter(0, 2, 5, 0.65)], 10);
+  await page.keyboard.press('Control+C');
+  await page.waitForTimeout(200);
+  const copied = await app.evaluate(({ clipboard }) => clipboard.readText());
+  const on = await onLetter(0, 1, 10, 0.5);
+  await page.mouse.click(on.x, on.y, { button: 'right' });
+  await page.getByRole('menu').getByRole('menuitem', { name: 'Ask AI', exact: true }).click();
+  const quoted = await page.getByLabel('Ask about this document').inputValue();
+  await page.keyboard.press('Escape');
+  const wanted = `${first.slice(first.length - 7)} ${second} ${third.slice(0, 6)}`;
+  const problems = [];
+  if (copied !== wanted) problems.push(`Copy gave ${JSON.stringify(copied)}, wanted ${JSON.stringify(wanted)}`);
+  if (quoted !== `“${wanted}” `) problems.push(`Ask AI's box holds ${JSON.stringify(quoted)}, wanted ${JSON.stringify(`“${wanted}” `)}`);
+  if (problems.length > 0) throw new Error(problems.join('; '));
+  return { copied, quoted };
+});
+
+for (const [index, rotation] of ROTATIONS.entries()) {
+  await step(`SHIFT+CLICK on the page turned ${String(rotation)}: a click, then a Shift+click on the next line, takes the run between`, async () => {
+    await apart();
+    const from = await onLetter(index, 0, 10, 0.65);
+    await page.mouse.click(from.x, from.y);
+    await apart();
+    const to = await onLetter(index, 1, 5, 0.65);
+    await page.keyboard.down('Shift');
+    await page.mouse.click(to.x, to.y);
+    await page.keyboard.up('Shift');
+    const read = await readSelection();
+    const wanted = { anchor: named({ page: index, line: 0, offset: 11 }), focus: named({ page: index, line: 1, offset: 6 }) };
+    if (named(read.anchor) !== wanted.anchor || named(read.focus) !== wanted.focus) {
+      throw new Error(`the selection runs ${named(read.anchor)} to ${named(read.focus)}, wanted ${wanted.anchor} to ${wanted.focus}`);
+    }
+    const shapes = await painted(index);
+    if (shapes.length !== 2) throw new Error(`${String(shapes.length)} painted shapes for a run over two lines`);
+    return { text: read.text, shapes: shapes.length };
+  });
+}
+
+for (const [index, rotation] of ROTATIONS.entries()) {
+  // THE REVIEWER'S ITEM 53: with text selected, does Shift+Arrow extend the selection. No FEATURES row or test claims it.
+  await step(`SHIFT+ARROW on the page turned ${String(rotation)}: a run dragged, then Shift+Right three times and Shift+Left once`, async () => {
+    await apart();
+    // TO LETTER 22, the *o* of *commence*: a letter, for the presses' reason.
+    await drag(await onLetter(index, 0, 10, 0.65), [await onLetter(index, 0, 22, 0.65)], 10);
+    for (let press = 0; press < 3; press += 1) await page.keyboard.press('Shift+ArrowRight');
+    await page.keyboard.press('Shift+ArrowLeft');
+    const read = await readSelection();
+    const wanted = { anchor: named({ page: index, line: 0, offset: 11 }), focus: named({ page: index, line: 0, offset: 25 }) };
+    if (named(read.anchor) !== wanted.anchor || named(read.focus) !== wanted.focus) {
+      throw new Error(`the selection runs ${named(read.anchor)} to ${named(read.focus)}, wanted ${wanted.anchor} to ${wanted.focus}`);
+    }
+    if ((await painted(index)).length !== 1) throw new Error('the run extended is not painted as one band');
+    return { text: read.text };
+  });
+}
 
 await step('ASK AI quotes the run in the assistant’s box (nothing is sent)', async () => {
   await fromMenu('Ask AI', 0, 10, 40);
