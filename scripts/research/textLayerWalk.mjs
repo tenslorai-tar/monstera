@@ -576,6 +576,35 @@ await step('RIGHT-CLICK STRAIGHT AFTER A DRAG, then Translate: the menu offers i
   return { held, opened: dialogs.map((text) => text.replaceAll(/\s+/gu, ' ').slice(0, 160)) };
 });
 
+await step('COPY AND HIGHLIGHT turn on with a selection and off once it is cleared, in the menu over the page', async () => {
+  // THE SELECTED-TEXT MENU'S ITEMS ARE ANSWERED FROM THE SELECTION: a right-click on a run offers them, and a right-click
+  // after the run is cleared does not.
+  await page.keyboard.press('Escape');
+  await layerOf(0);
+  await apart();
+  const end = await onLetter(0, 0, 40, 0.65);
+  await drag(await onLetter(0, 0, 10, 0.65), [end], 10);
+  await page.mouse.click(end.x, end.y, { button: 'right' });
+  const menu = page.getByRole('menu');
+  const offered = async () => ({
+    copy: await menu.getByRole('menuitem', { name: 'Copy', exact: true }).count(),
+    highlight: await menu.getByRole('menuitem', { name: 'Highlight', exact: true }).count(),
+  });
+  await expect(menu).toBeVisible();
+  const on = await offered();
+  await page.keyboard.press('Escape');
+  // CLEARED by a click on the page's blank middle, as a hand clears a selection.
+  const box = await layerOf(0);
+  await page.mouse.click(box.x + box.width / 2, Math.min(box.y + box.height / 2, 840));
+  await apart();
+  await page.mouse.click(box.x + box.width / 2, Math.min(box.y + box.height / 2, 840), { button: 'right' });
+  await page.waitForTimeout(300);
+  const off = (await menu.count()) === 0 ? { copy: 0, highlight: 0 } : await offered();
+  await page.keyboard.press('Escape');
+  if (on.copy !== 1 || on.highlight !== 1 || off.copy !== 0 || off.highlight !== 0) throw new Error(`with a selection ${JSON.stringify(on)}, cleared ${JSON.stringify(off)}`);
+  return { on, off };
+});
+
 await step('SPELL CHECK marks the misspelt word on its letters', async () => {
   await page.keyboard.press('Escape');
   await layerOf(0);
