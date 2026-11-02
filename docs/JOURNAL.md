@@ -912,6 +912,19 @@ wraps (36, ADR-0281), and `hasSelection` out of the command context (37).
 A block that grows draws over what is below it. That is the owner's kept behaviour (ADR-0271 11.1), so it leaves the
 open list rather than closing.
 
+**Added 2026-11-02, before main moved: the scroll's extra time is not the form bound.** The 37-page cold scroll
+(`frameTimes.mjs --scenarios arrive`, the probe's 300-page dense document) read about 3% more main-thread time a page on
+the merged build than on `d1147537` (550 against 536 ms, medians). Timed again at `a3cd11e9` with `withinFormBounds` in
+place and with it toggled off in a second tree (a local edit, not committed), three runs each in turn: **with** 521.3,
+426.5, 374.7 ms a page; **without** 431.0, 456.2, 361.2. Medians 426.5 and 431.0; each set's spread (147 and 95 ms) is
+many times the difference. The bound also runs in the engine host, and this figure is the renderer's main thread. Not
+pursued here: the cloud's part 6 group Q reworks long-document scrolling and measures from the new main.
+
+**A known speed-dependent case.** `formText.test.ts`' *reads the text of a page past the form bounds in under 100 ms*
+(cloud run 33) takes 105 to 344 ms under vitest on this machine and passes on CI's runners. The merged read is no slower
+than run 33's own (58 to 161 ms against 65 to 115, timed by a probe of the read alone). The limit is left unchanged, so
+the case fails locally on a slow or loaded machine for a reason that is not a defect.
+
 ---
 
 ## 2026-11-02 — Stage audit of `0d48e788..069d00cf` — findings CCCCCCCCC-1 to CCCCCCCCC-20
