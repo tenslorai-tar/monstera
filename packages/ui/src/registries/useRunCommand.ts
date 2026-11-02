@@ -8,6 +8,25 @@ import type { CommandContext, CommandRegistry, UiCommand } from './commands.js';
  */
 export type RunCommand = (command: UiCommand | string, how?: 'run' | 'hold') => void;
 
+/** The context and the registry on screen now. */
+export interface OnScreen {
+  readonly context: CommandContext;
+  readonly registry: CommandRegistry | undefined;
+}
+
+/**
+ * THE CONTEXT AND THE REGISTRY ON SCREEN AT THE MOMENT OF ASKING, through a function that keeps its identity: what
+ * {@link useRunCommand} runs against, and what a caller that must await what it runs reads (a form button's steps,
+ * ADR-0259, run Print and wait for it). Taken after each commit, before the frame is painted.
+ */
+export function useOnScreen(context: CommandContext, registry?: CommandRegistry): () => OnScreen {
+  const latest = useRef<OnScreen>({ context, registry });
+  useLayoutEffect(() => {
+    latest.current = { context, registry };
+  });
+  return useCallback(() => latest.current, []);
+}
+
 /**
  * THE ONE WAY a projection runs a command from a press (ADR-0258's measurement): a function that keeps its identity, and
  * reads the context — and, for a command named by id, the registry — on screen when it is called rather than when it was
@@ -25,17 +44,17 @@ export type RunCommand = (command: UiCommand | string, how?: 'run' | 'hold') => 
  * painted, so a press always runs what the screen it was made on showed.
  */
 export function useRunCommand(context: CommandContext, registry?: CommandRegistry): RunCommand {
-  const latest = useRef({ context, registry });
-  useLayoutEffect(() => {
-    latest.current = { context, registry };
-  });
-  return useCallback((named: UiCommand | string, how: 'run' | 'hold' = 'run') => {
-    const now = latest.current;
-    const command = typeof named === 'string' ? now.registry?.get(named) : named;
-    if (command === undefined) return;
-    // Not awaited, for `QuickToolbar`'s reason: a handler returning a promise would make React's event handling wait on
-    // IPC, and nothing here reads the result.
-    if (how === 'hold') command.hold?.(now.context);
-    else void command.run(now.context);
-  }, []);
+  const onScreen = useOnScreen(context, registry);
+  return useCallback(
+    (named: UiCommand | string, how: 'run' | 'hold' = 'run') => {
+      const now = onScreen();
+      const command = typeof named === 'string' ? now.registry?.get(named) : named;
+      if (command === undefined) return;
+      // Not awaited, for `QuickToolbar`'s reason: a handler returning a promise would make React's event handling wait on
+      // IPC, and nothing here reads the result.
+      if (how === 'hold') command.hold?.(now.context);
+      else void command.run(now.context);
+    },
+    [onScreen],
+  );
 }

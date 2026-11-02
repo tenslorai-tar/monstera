@@ -379,6 +379,7 @@ import {
   shapeToolCommands,
 } from './commands/annotationCommands.js';
 import { CommandRegistry, type CommandContext, type UiCommand } from './registries/commands.js';
+import { useOnScreen } from './registries/useRunCommand.js';
 import { SHORTCUTS_SETTING } from './settings/keyboard.js';
 import { type LiveReading, ToolRegistry, readingAfter } from './registries/tools.js';
 import { APPLICATION_DIALOGS } from './registries/applicationDialogs.js';
@@ -5117,6 +5118,10 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
    * shows a page goes through the zoom and the navigator every other way of showing one takes; and a step that is one of
    * the application's own commands (Print) runs that registered command, so its dialogs are the ones the ribbon opens.
    */
+  // THE CONTEXT AT THE PRESS, not at the render: the command context moves with the current page, and a press handler
+  // that took it was new at every page a scroll passed, so the fill every page slot takes was too, and each page change
+  // rendered every slot of the document (`PageList`'s `sameSlotProps`, item 61).
+  const onScreen = useOnScreen(context, registry);
   const pressFormButton = useCallback(
     (handle: Extract<PageFill, { readonly press: unknown }>): void => {
       if (activeId === undefined) return;
@@ -5132,7 +5137,8 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
         navigator.jumpTo(page);
       };
       const run = async (id: ButtonCommandId): Promise<void> => {
-        await registry.availableById(id, context)?.run(context);
+        const now = onScreen();
+        await now.registry?.availableById(id, now.context)?.run(now.context);
       };
       // A FILE A BUTTON OPENS is settled as a pick is: a tab, the open one brought forward, or the problem said.
       const settleFileOpen = (answer: Parameters<typeof settleButtonFileOpen>[1]): unknown => settleButtonFileOpen(openDeps, answer);
@@ -5143,7 +5149,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
         trigger: handle.press,
       });
     },
-    [activeId, applyCarryingFields, ask, changeZoom, client, context, navigator, openDeps, registry, toast],
+    [activeId, applyCarryingFields, ask, changeZoom, client, navigator, onScreen, openDeps, toast],
   );
   /** The form layer's one way in: a fill, a signature, or a press. */
   const fillOrPress = useCallback(

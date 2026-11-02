@@ -4,6 +4,7 @@ import type { DocId, DocVersion, MessageKey } from '@monstera/shared';
 import type React from 'react';
 import {
   type ReactElement,
+  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -743,6 +744,8 @@ export function PageList({
   // AT THE VERSION THE FIELDS WERE READ AT, never the version on show: while a write's re-read is in flight the page
   // still draws the last list, and its indices name widgets at that list's version, which the lane then judges.
   const fieldsVersion = pageFields.version;
+  // EVERY SLOT TAKES THIS, so it keeps its identity for as long as the parent's does (`sameSlotProps`): App's is stable
+  // across page changes for that reason (`fillOrPress`).
   const fillOnPage = useMemo(
     () =>
       onFillField === undefined || fieldsVersion === undefined
@@ -1067,7 +1070,7 @@ export function PageList({
    *
    * **AND NOT BEFORE A PAGE IS MEASURED.** At mount every slot is at its minimum, so a reveal then
    * scrolls to where page N sits among minimum slots; the first measurement arrives a moment later,
-   * every estimate takes it at once (`lastKnownBefore`), and the same scroll offset is inside an
+   * every estimate takes it at once (`estimatesOf`), and the same scroll offset is inside an
    * earlier page. Traced over the debugging port 2026-09-18: slots `260,260,260,260,260` and
    * `top=568` at the reveal, then `792,…` and the status at page 1 of 5, for a reader on page 3.
    *
@@ -1308,7 +1311,8 @@ export function PageList({
 
   // THE PAGES IN USE (ADR-0247): those on screen, and the page after them, drawn only within the memory limit
   // (`pixelLedger.ts`). Every other page keeps its slot and holds no pixels.
-  const aheadSize = aheadPage === undefined ? undefined : (sizes.get(aheadPage) ?? lastKnownBefore(sizes, aheadPage) ?? startEstimate);
+  const estimates = useMemo(() => estimatesOf(sizes, pageCount), [sizes, pageCount]);
+  const aheadSize = aheadPage === undefined ? undefined : (sizes.get(aheadPage) ?? estimates[aheadPage] ?? startEstimate);
   // ITS BYTES WHEN DRAWN at the scale pages are drawn at now: the measured box, rescaled from the scale it was measured
   // at, four bytes a pixel.
   const aheadBytes =
@@ -1473,7 +1477,7 @@ export function PageList({
           copyOf={planned === null ? undefined : copyOf}
           keeps={plans?.unchangedBetween}
           rotation={planned === null ? rotations.get(page) : plannedRotationOf(planned[page] ?? { source: page, turn: 0 })}
-          size={sizes.get(page) ?? lastKnownBefore(sizes, page) ?? startEstimate}
+          size={sizes.get(page) ?? estimates[page] ?? startEstimate}
           zoom={shown}
           renderZoom={renderZoom}
           onMeasured={measured}
@@ -1481,7 +1485,7 @@ export function PageList({
           onPainted={paintedPage}
           // THE SLOT'S OWN MEASUREMENT, not the inherited estimate: an overlay
           // placed over a page using a neighbour's box would put every
-          // rectangle in the wrong frame. `lastKnownBefore` above is a size
+          // rectangle in the wrong frame. `estimatesOf` above is a size
           // estimate for layout, which is a different tolerance from a
           // coordinate system.
           drawing={sizes.has(page) ? drawing : undefined}
@@ -1490,7 +1494,9 @@ export function PageList({
           // GATED ON THE SLOT'S OWN MEASUREMENT for `drawing`'s reason: an outline
           // placed with a neighbour's box would sit over the wrong words.
           editing={sizes.has(page) ? editing : undefined}
-          paused={paused}
+          // ONLY WHERE AN EDITING MODE READS IT (`useSettledRead`): the scroll sets and clears it as it starts and stops,
+          // and handed to every slot it rendered every slot of the document each time.
+          paused={sizes.has(page) && editing !== undefined && paused}
           // ONLY THE REQUEST'S OWN PAGE, gated on its measurement for `drawing`'s reason.
           writing={sizes.has(page) && writing?.request.page === page ? writing : undefined}
           // THE SLOT'S OWN MEASUREMENT GATES THIS TOO, and for `drawing`'s
@@ -1532,13 +1538,9 @@ export function PageList({
           revealField={fieldSelection?.reveal?.page === page ? fieldSelection.reveal : undefined}
           focusField={fieldSelection?.focus?.page === page ? fieldSelection.focus : undefined}
           onFocusedField={fieldSelection?.onFocused}
-          onTabField={
-            fieldSelection?.onTab === undefined
-              ? undefined
-              : (index, backwards, filled) => {
-                  fieldSelection.onTab?.(page, index, backwards, filled);
-                }
-          }
+          // ONE CALLBACK FOR THE LIST, taking the page: an arrow made here per slot was new on every render of the list,
+          // and every slot then rendered with it (`sameSlotProps`).
+          onTabField={fieldSelection?.onTab}
           scroller={scroller}
           hidden={layout === 'single' && page !== onShow}
         />
@@ -1707,18 +1709,24 @@ function PageSpans({
   return <Rulers unit={unit} zoom={zoom} size={spans.size} across={spans.across} down={spans.down} />;
 }
 
-function lastKnownBefore(
-  sizes: ReadonlyMap<number, Measured>,
-  page: number,
-): Measured | undefined {
-  for (let index = page - 1; index >= 0; index -= 1) {
-    const known = sizes.get(index);
-    if (known !== undefined) return known;
+/**
+ * Every page's size estimate, in one pass: the nearest page measured before it, and before the first measured page, the
+ * first measured page. Asked per slot per render, a scan back from each page was quadratic in the document's length:
+ * 39 ms of a 37-page scroll through 300 pages (`longScroll.pw.ts`'s profile, Chromium 151, 2026-11-01).
+ */
+function estimatesOf(sizes: ReadonlyMap<number, Measured>, pageCount: number): readonly (Measured | undefined)[] {
+  const estimates: (Measured | undefined)[] = [];
+  // THE LOWEST MEASURED PAGE, which every page before it takes.
+  let lowest: number | undefined;
+  for (const index of sizes.keys()) if (lowest === undefined || index < lowest) lowest = index;
+  const first = lowest === undefined ? undefined : sizes.get(lowest);
+  let known: Measured | undefined;
+  for (let page = 0; page < pageCount; page += 1) {
+    // A MEASURED PAGE takes its own size, so the estimate given for it is never read.
+    estimates.push(known ?? first);
+    known = sizes.get(page) ?? known;
   }
-  for (const [index, known] of [...sizes].sort(([a], [b]) => a - b)) {
-    if (index > page) return known;
-  }
-  return undefined;
+  return estimates;
 }
 
 /**
@@ -1728,7 +1736,7 @@ function lastKnownBefore(
  * releases the bitmap — clearing a canvas by setting `width = 0` keeps the
  * element and its backing store alive, and this is the one place that matters.
  */
-function PageSlot({
+function PageSlotBody({
   page,
   source,
   turn,
@@ -1851,7 +1859,7 @@ function PageSlot({
   readonly revealField: { readonly index: number; readonly stamp: number } | undefined;
   readonly focusField: { readonly index: number; readonly stamp: number; readonly say?: FieldProblem | undefined } | undefined;
   readonly onFocusedField: ((stamp: number) => void) | undefined;
-  readonly onTabField: ((index: number, backwards: boolean, filled: boolean) => void) | undefined;
+  readonly onTabField: ((page: number, index: number, backwards: boolean, filled: boolean) => void) | undefined;
   /** The scroller the slot sits in, whose box decides which tiles are wanted. */
   readonly scroller: React.RefObject<HTMLElement | null>;
   /** Out of the layout: single page shows only the page on show, and a hidden slot is never visible, so never drawn. */
@@ -2192,6 +2200,15 @@ function PageSlot({
     editing === undefined && (drawing === undefined || drawing.tool.fromSelection !== undefined),
     onFollowLink,
   );
+  const tabField = useMemo(
+    () =>
+      onTabField === undefined
+        ? undefined
+        : (index: number, backwards: boolean, filled: boolean): void => {
+            onTabField(page, index, backwards, filled);
+          },
+    [onTabField, page],
+  );
   const formLayer =
     fields === undefined || size === undefined || onFillField === undefined || editing !== undefined ? null : (
       <FormLayer
@@ -2204,7 +2221,7 @@ function PageSlot({
         {...(fieldsOver ? { comments: annotations ?? [] } : {})}
         focus={focusField}
         onFocused={onFocusedField}
-        onTab={onTabField}
+        onTab={tabField}
         highlight={fieldsHighlighted}
       />
     );
@@ -2464,6 +2481,38 @@ function PageSlot({
     </div>
   );
 }
+
+type PageSlotProps = Parameters<typeof PageSlotBody>[0];
+
+/** Whether two measurements are the same page box drawn at the same scale: equal values, whatever object holds them. */
+function sameMeasured(a: Measured | undefined, b: Measured | undefined): boolean {
+  if (a === b) return true;
+  if (a === undefined || b === undefined) return false;
+  return (
+    a.width === b.width &&
+    a.height === b.height &&
+    a.drawnAt === b.drawnAt &&
+    a.rotation === b.rotation &&
+    a.crop.every((value, at) => value === b.crop[at])
+  );
+}
+
+/**
+ * A SLOT RENDERS WHEN SOMETHING IT SHOWS CHANGES, and never because the list did. The list holds every page's state
+ * (`sizes`, `painted`, `visible`), so each page that arrives commits the list, and every slot of the document rendered
+ * with it: 300 slots about 210 times in a 37-page scroll, measured on Chromium 151 (`longScroll.pw.ts`, 2026-11-01),
+ * where the page arriving was the one slot whose props had changed. Every prop is compared by identity, as React's own
+ * memo does, but the size, which an unmeasured slot takes from the page measured before it (`estimatesOf`): a new
+ * object holding the same box is not a change.
+ */
+function sameSlotProps(before: Readonly<PageSlotProps>, after: Readonly<PageSlotProps>): boolean {
+  for (const key of Object.keys(after) as (keyof PageSlotProps)[]) {
+    if (key === 'size' ? !sameMeasured(before.size, after.size) : !Object.is(before[key], after[key])) return false;
+  }
+  return Object.keys(before).length === Object.keys(after).length;
+}
+
+const PageSlot = memo(PageSlotBody, sameSlotProps);
 
 /**
  * The paper's colour at a point in a slot, in CSS pixels from the slot's corner — read from whichever drawn canvas lies
