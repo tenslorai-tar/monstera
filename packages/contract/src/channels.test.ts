@@ -254,7 +254,7 @@ const handlers: ContractHandlers = {
   // than that something did. An all-zero model is the shape a dropped array and
   // a flat document produce alike.
   'document.viewModel': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), pageCount: 2, rotations: [0, 90] })),
+    Promise.resolve(ok({ version: asDocVersion(1), pageCount: 2, rotations: [0, 90], direction: 'L2R' as const })),
   // ONE MATCH AND `truncated: false`, so a case can assert what crossed rather
   // than that something did. An empty list is the shape a dropped array and a
   // page with no hits produce alike — and it is search's reassuring answer.

@@ -121,6 +121,7 @@ function answeringClient(model?: Readonly<Record<string, unknown>>): ContractCli
       version: asDocVersion(1),
       pageCount: 1,
       rotations: [90],
+      direction: 'L2R',
     },
     'document.readRange': { kind: 'bytes' as const, bytes: new Uint8Array(8) },
     // The scroller asks every visible page for its selectable text; these cases
@@ -251,7 +252,7 @@ describe('a view model that describes a different version than the view is opene
     //
     // `undefined` and not `0`: PDF.js then falls back to the page's own
     // `/Rotate`, which is what this renderer actually knows.
-    await drawWith({ version: asDocVersion(9), pageCount: 1, rotations: [90] });
+    await drawWith({ version: asDocVersion(9), pageCount: 1, rotations: [90], direction: 'L2R' });
 
     expect(drawn).toStrictEqual([undefined]);
   });

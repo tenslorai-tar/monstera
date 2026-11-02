@@ -30,7 +30,12 @@ async function pages(): Promise<Uint8Array> {
 
 const FIELD: ShimFormField = { page: 1, index: 0, kind: 'text', name: 'Name', values: ['Ada'], on: null, options: [], readOnly: false, multiline: false, rect: { x0: 72, y0: 600, x1: 372, y1: 624 } };
 
-async function opened(page: Page, settings: Readonly<Record<string, unknown>>, sent: { channel: string; params: unknown }[] = []): Promise<void> {
+async function opened(
+  page: Page,
+  settings: Readonly<Record<string, unknown>>,
+  sent: { channel: string; params: unknown }[] = [],
+  direction: 'L2R' | 'R2L' = 'L2R',
+): Promise<void> {
   const bytes = await pages();
   await page.setViewportSize({ width: 1600, height: 1000 });
   await bridge(
@@ -41,6 +46,8 @@ async function opened(page: Page, settings: Readonly<Record<string, unknown>>, s
       pageLines: Array.from({ length: PAGES }, (_, at) => [`Words of page ${String(at + 1)}`]),
       formFields: [[FIELD]],
       settings,
+      // THE READING ORDER the kernel would read from the document's catalog, answered by the shim's view model.
+      viewModels: [{ pageCount: PAGES, rotations: [0], direction }],
     },
     (channel, params) => {
       sent.push({ channel, params });
@@ -87,6 +94,39 @@ test.describe('page layouts (ADR-0284)', () => {
     const [first, second] = await slots(page);
     expect(first?.top).toBe(second?.top);
     expect(first?.left ?? 0).toBeLessThan(second?.left ?? 0);
+  });
+
+  test('a RIGHT-TO-LEFT document in Continuous facing stands page 1 to the RIGHT of page 2, level with it', async ({ page }) => {
+    await opened(page, { 'viewing.page-layout': 'facing' }, [], 'R2L');
+    const [first, second, third] = await slots(page);
+    if (first === undefined || second === undefined || third === undefined) throw new Error('fewer than three pages shown');
+    expect(first.top).toBe(second.top);
+    expect(first.left).toBeGreaterThan(second.left);
+    // PAGE 3 BEGINS THE NEXT ROW ON THE RIGHT, where page 1 stands.
+    expect(third.left).toBe(first.left);
+    expect(third.top).toBeGreaterThan(first.top);
+  });
+
+  test('and with the cover page, the cover stands alone on the LEFT, and page 2 stands right of page 3', async ({ page }) => {
+    await opened(page, { 'viewing.page-layout': 'facing', 'viewing.cover-page': true }, [], 'R2L');
+    const [cover, second, third] = await slots(page);
+    if (cover === undefined || second === undefined || third === undefined) throw new Error('fewer than three pages shown');
+    expect(cover.left).toBe(third.left);
+    expect(second.left).toBeGreaterThan(third.left);
+    expect(second.top).toBe(third.top);
+    expect(cover.top).toBeLessThan(second.top);
+  });
+
+  test('in Facing, Next page moves to the next pair in reading order, still right to left', async ({ page }) => {
+    await opened(page, { 'viewing.page-layout': 'pair' }, [], 'R2L');
+    const before = await slots(page);
+    expect(before.map((each) => each.page)).toStrictEqual([0, 1]);
+    expect(before[0]?.left ?? 0).toBeGreaterThan(before[1]?.left ?? 0);
+    await page.locator('.m-page-list').focus();
+    await page.keyboard.press('PageDown');
+    await expect.poll(async () => (await slots(page)).map((each) => each.page)).toStrictEqual([2, 3]);
+    const after = await slots(page);
+    expect(after[0]?.left ?? 0).toBeGreaterThan(after[1]?.left ?? 0);
   });
 
   test('the View menu’s Facing shows one pair, and Next page moves to the next pair', async ({ page }) => {
@@ -138,6 +178,56 @@ test.describe('page layouts (ADR-0284)', () => {
     expect(Math.max(...strokes)).toBeLessThanOrEqual(50);
     const fills = sent.filter((call) => call.channel === 'document.execute').map((call) => JSON.stringify(call.params));
     expect(fills.some((each) => each.includes('Ada Lovelace'))).toBe(true);
+  });
+
+  test('OPENING in Continuous facing: from Open to the first frame shown, when asked for (MONSTERA_LAYOUT_OPEN=R2L or L2R)', async ({ page }) => {
+    const asked = process.env['MONSTERA_LAYOUT_OPEN'];
+    test.skip(asked !== 'R2L' && asked !== 'L2R', 'a measurement, run by hand');
+    const direction = asked === 'R2L' ? 'R2L' : 'L2R';
+    const bytes = await pages();
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await bridge(page, {
+      opens: [{ kind: 'opened', docId: DOC, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'Layouts.pdf' }],
+      documentBytes: new Map([[DOC, bytes]]),
+      pageLines: Array.from({ length: PAGES }, (_, at) => [`Words of page ${String(at + 1)}`]),
+      settings: { 'viewing.page-layout': 'facing' },
+      viewModels: [{ pageCount: PAGES, rotations: [0], direction }],
+    });
+    await page.goto('/');
+    const button = page.getByRole('button', { name: 'Open PDF…' });
+    await expect(button).toBeVisible();
+    // TIMED IN THE PAGE, from the press to the mutation that marks the first frame shown: Playwright's own waits poll at
+    // 100 ms and up, which cannot separate two builds a few milliseconds apart. `MONSTERA_LAYOUT_OPEN_DELAY` holds the
+    // press up that long on purpose, the resolution test: the figure must move by it.
+    const delay = Number(process.env['MONSTERA_LAYOUT_OPEN_DELAY'] ?? '0');
+    await page.evaluate((hold) => {
+      const record = window as unknown as { opened?: { began?: number; shown?: number } };
+      record.opened = {};
+      window.addEventListener(
+        'pointerdown',
+        () => {
+          record.opened = { began: performance.now() };
+          const until = performance.now() + hold;
+          while (performance.now() < until) {
+            // HELD ON PURPOSE for the resolution test; zero otherwise.
+          }
+        },
+        { capture: true, once: true },
+      );
+      new MutationObserver((changes, observer) => {
+        for (const change of changes) {
+          if (change.target instanceof HTMLElement && change.target.dataset['firstFrame'] === 'shown') {
+            if (record.opened !== undefined) record.opened.shown = performance.now();
+            observer.disconnect();
+          }
+        }
+      }).observe(document.body, { attributes: true, attributeFilter: ['data-first-frame'], subtree: true });
+    }, delay);
+    await button.click();
+    await expect(page.locator('.m-page-pane[data-first-frame="shown"]')).toHaveCount(1, { timeout: 30_000 });
+    const opened = await page.evaluate(() => (window as unknown as { opened?: { began?: number; shown?: number } }).opened);
+    if (opened?.began === undefined || opened.shown === undefined) throw new Error('the press or the first frame was not seen');
+    console.log(`TIMING open ${direction} ${(opened.shown - opened.began).toFixed(1)} ms`);
   });
 
   test('SWITCHING LAYOUT, Continuous to Facing to Continuous facing: the frames it takes, when asked for (MONSTERA_LAYOUT_FRAMES=1)', async ({ page }) => {

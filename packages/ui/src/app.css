@@ -4225,11 +4225,8 @@ optgroup {
   align-items: start;
 }
 
-/* THE COVER PAGE (`viewing.cover-page`, ADR-0284): page 1 alone in the right column, so the grid's next row is 2–3, as
-   a printed book opens. The slot is a grid item wherever the menu draws it, so its column is set on the slot. */
-.m-page-list--cover .m-page-slot[data-page='0'] {
-  grid-column-start: 2;
-}
+/* WHICH CELL each page takes, the cover page alone in its row among them, is the slot's own style from `spreadPlace`
+   (`pageSpreads.ts`, ADR-0284 Decision 10): the one rule, so the grid's flow never has to agree with it. */
 
 /* SINGLE PAGE hides every other slot; stated so no display rule on the slot can bring one back. */
 .m-page-slot[hidden] {

@@ -84,7 +84,7 @@ import { FIRST_PAGE, pdfjsPageOf } from './pageNumbering.js';
 import { holdPage } from './pageResidency.js';
 import { motionReduced } from './settings/appearance.js';
 import type { PageLayout } from './settings/viewing.js';
-import { facesPages, spreadPages, stepSpread } from './pageSpreads.js';
+import { facesPages, spreadPages, spreadPlace, stepSpread } from './pageSpreads.js';
 import {
   type PageRotation,
   RenderCancelledError,
@@ -642,7 +642,7 @@ export function PageList({
   //
   // DECLARED FIRST AMONG THE READS, so its effect asks first: every read of the document waits in main's one lane for
   // it, and this is the one the first page cannot draw without. The text and the marks below wait for the first frame.
-  const { now: rotations, at: rotationsAt } = usePageRotations(client, docId, version, nearAndAhead);
+  const { now: rotations, at: rotationsAt, direction } = usePageRotations(client, docId, version, nearAndAhead);
   /**
    * WHETHER THE FIRST FRAME HAS BEEN SHOWN: the mount's starting page drawn at the zoom it is shown at, and scrolled to
    * (the owner's rule, *never show an unfinished screen*; the review of 0.1.8.0 saw seconds of empty slots, a flash of
@@ -1389,8 +1389,6 @@ export function PageList({
         'm-page-list',
         // BOTH FACING LAYOUTS ARE THE TWO-COLUMN GRID: Facing hides every slot but its pair's, as Single page does.
         spread ? 'm-page-list--facing' : '',
-        // THE COVER PAGE stands alone in the right column (`app.css`), so the pairs after it are 2–3, 4–5.
-        spread && coverPage ? 'm-page-list--cover' : '',
         // ONE PAGE TO A SCREEN, centred, at Fit page in a continuous layout (`app.css`); facing pages fit a spread, and
         // single page already shows one.
         fitOnePage ? 'm-page-list--fit-page' : '',
@@ -1567,6 +1565,11 @@ export function PageList({
           onTabField={fieldSelection?.onTab}
           scroller={scroller}
           hidden={oneScreen && !shownPages.includes(page)}
+          // WHERE THE PAGE STANDS in a facing layout, from the one pairing rule and the document's reading order
+          // (`spreadPlace`). Facing shows one pair, so its pair stands on the first row; two numbers rather than an
+          // object, so `sameSlotProps` compares them by value.
+          spreadRow={spread ? (layout === 'pair' ? 0 : spreadPlace(page, coverPage, direction).row) : undefined}
+          spreadColumn={spread ? spreadPlace(page, coverPage, direction).column : undefined}
         />
       )))}
     </div>
@@ -1806,6 +1809,8 @@ function PageSlotBody({
   onTabField,
   scroller,
   hidden,
+  spreadRow,
+  spreadColumn,
 }: {
   readonly page: number;
   /**
@@ -1888,6 +1893,9 @@ function PageSlotBody({
   readonly scroller: React.RefObject<HTMLElement | null>;
   /** Out of the layout: single page shows only the page on show, and a hidden slot is never visible, so never drawn. */
   readonly hidden: boolean;
+  /** In a facing layout, the row (from 0) and column (1 left, 2 right) `spreadPlace` gives this page; otherwise none. */
+  readonly spreadRow: number | undefined;
+  readonly spreadColumn: 1 | 2 | undefined;
 }): ReactElement {
   const { i18n } = useLingui();
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -2259,9 +2267,14 @@ function PageSlotBody({
       // ITS HEIGHT ALSO AS A PROPERTY, which Fit page's margins centre it by (`.m-page-list--fit-page`): a value that is
       // genuinely dynamic, the token rule's own line.
       style={
-        shown === undefined
+        shown === undefined && spreadColumn === undefined
           ? undefined
-          : ({ width: shown.width, height: shown.height, '--m-slot-h': `${String(shown.height)}px` } as React.CSSProperties)
+          : {
+              ...(shown === undefined ? {} : { width: shown.width, height: shown.height, '--m-slot-h': `${String(shown.height)}px` }),
+              // ITS CELL IN THE FACING GRID, stated rather than left to the grid's flow: the flow places items left to
+              // right, so a right-to-left pair and a cover page alone in its row both need the cell named.
+              ...(spreadColumn === undefined || spreadRow === undefined ? {} : { gridRow: spreadRow + 1, gridColumn: spreadColumn }),
+            }
       }
     >
       {mounted && tiled ? (

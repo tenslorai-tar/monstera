@@ -2611,6 +2611,9 @@ export const engineChannels = {
           )
           .max(ENGINE_GEOMETRY_MAX_PAGES)
           .readonly(),
+        // THE DOCUMENT'S READING ORDER, one of two names (`PageGeometry['direction']`): a host answering anything else is
+        // refused here rather than read as either.
+        direction: z.enum(['L2R', 'R2L']),
       })
       .strict(),
     ['no-such-session'],

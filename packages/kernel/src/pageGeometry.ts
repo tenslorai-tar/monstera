@@ -108,7 +108,19 @@ export interface PageGeometry {
    * `sizes`, which are MuPDF's own bounds and a second rule. One field, so *shows nothing* and *its box* cannot disagree.
    */
   readonly boxes: readonly (Box | null)[];
+  /**
+   * The order the document's pages are read in, from the catalog's `/ViewerPreferences /Direction`: `R2L` for a book
+   * bound on the right (Arabic, Hebrew), where the earlier page of a facing pair stands on the right; `L2R` otherwise.
+   * A scalar like `pageCount`, so it crosses with every answer and costs one dictionary read (ADR-0284 Decision 10).
+   *
+   * **A missing, malformed or unknown value is `L2R`**, which is ISO 32000's own default for the key: the reading
+   * every document had before this was read, so no document's pairs move unless it says so.
+   */
+  readonly direction: ReadingDirection;
 }
+
+/** A document's reading order, as `/ViewerPreferences /Direction` names it. */
+export type ReadingDirection = 'L2R' | 'R2L';
 
 /** A displayed page size, in points. */
 export interface PageSize {
@@ -167,6 +179,9 @@ export function readPageGeometry(
       sizes.push({ width: x1 - x0, height: y1 - y0 });
       boxes.push(displayedBox(page.getObject()));
     }
-    return { pageCount, rotations, sizes, boxes };
+    const named = document.getTrailer().get('Root', 'ViewerPreferences', 'Direction');
+    const value = named.isNull() ? named : named.resolve();
+    const direction: ReadingDirection = value.isName() && value.asName() === 'R2L' ? 'R2L' : 'L2R';
+    return { pageCount, rotations, sizes, boxes, direction };
   });
 }

@@ -92,7 +92,7 @@ const ANSWERS: Readonly<Record<string, unknown>> = {
     ],
   },
   'document.readRange': { kind: 'bytes' as const, bytes: new Uint8Array(8) },
-  'document.viewModel': { version: asDocVersion(1), pageCount: 2, rotations: [90] },
+  'document.viewModel': { version: asDocVersion(1), pageCount: 2, rotations: [90], direction: 'L2R' },
   // The scroller asks every visible page for its selectable text; these cases
   // are about the boundary, so the answer is empty rather than seeded.
   'document.pageTextLayer': {

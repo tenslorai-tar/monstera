@@ -13,6 +13,7 @@ import {
   PDFName,
   PDFRawStream,
   PDFString,
+  ReadingDirection,
   StandardFonts,
   decodePDFRawStream,
   rgb,
@@ -1378,6 +1379,23 @@ describe('the view model is the route a mutation reaches the screen by (OOOOO-1)
     expect(model.pageCount).toBe(3);
     expect(model.rotations).toHaveLength(ALL_PAGES.length);
     expect(model.version).toBeGreaterThan(0);
+    // CONTROL for the case below: a document whose catalog says nothing reads left to right.
+    expect(model.direction).toBe('L2R');
+  });
+
+  it('carries a RIGHT-TO-LEFT document’s reading order, written by another library, to the answer (ADR-0284 Decision 10)', async () => {
+    const written = await PDFDocument.create();
+    for (let index = 0; index < 3; index += 1) written.addPage([612, 792]);
+    written.catalog.getOrCreateViewerPreferences().setReadingDirection(ReadingDirection.R2L);
+    const session = await mupdfWriter.open(await written.save());
+    try {
+      const held = new EngineSessions();
+      held.hold(docId, { mupdf: session });
+      const commands = new DocumentCommands({ ...LOCAL_READS, documents: service, bus: bus(), engine: held });
+      expect((await commands.viewModel(docId, [0])).direction).toBe('R2L');
+    } finally {
+      await mupdfWriter.close(session);
+    }
   });
 
   it('THE CLAIM: a rotate moves the view model while the BYTE ROUTE reports nothing', async () => {

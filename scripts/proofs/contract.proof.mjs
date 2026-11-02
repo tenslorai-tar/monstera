@@ -1538,7 +1538,7 @@ export const handlers: ContractHandlers = {
   'document.readRange': ({ begin, end }) =>
     Promise.resolve(ok({ kind: 'bytes' as const, bytes: new Uint8Array(end - begin) })),
   'document.viewModel': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), pageCount: 1, rotations: [0] })),
+    Promise.resolve(ok({ version: asDocVersion(1), pageCount: 1, rotations: [0], direction: 'L2R' as const })),
   'document.searchPage': () =>
     Promise.resolve(ok({ version: asDocVersion(1), matches: [], truncated: false })),
   'document.pageTextLayer': () =>
@@ -1773,7 +1773,7 @@ export const handlers: ContractHandlers = {
   'document.readRange': ({ begin, end }) =>
     Promise.resolve(ok({ kind: 'bytes' as const, bytes: new Uint8Array(end - begin) })),
   'document.viewModel': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), pageCount: 1, rotations: [0] })),
+    Promise.resolve(ok({ version: asDocVersion(1), pageCount: 1, rotations: [0], direction: 'L2R' as const })),
   'document.searchPage': () =>
     Promise.resolve(ok({ version: asDocVersion(1), matches: [], truncated: false })),
   'document.pageTextLayer': () =>
@@ -2089,7 +2089,7 @@ export const shim: ContractClient = {
   'document.readRange': () =>
     Promise.resolve(ok({ kind: 'bytes' as const, bytes: new Uint8Array(0) })),
   'document.viewModel': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), pageCount: 1, rotations: [0] })),
+    Promise.resolve(ok({ version: asDocVersion(1), pageCount: 1, rotations: [0], direction: 'L2R' as const })),
   'document.searchPage': () =>
     Promise.resolve(ok({ version: asDocVersion(1), matches: [], truncated: false })),
   'document.pageTextLayer': () =>

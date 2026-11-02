@@ -4910,6 +4910,12 @@ export const channels = {
        * L11 sweep in `payloadBounds.test.ts`, 2026-09-03.
        */
       rotations: z.array(z.number().int().nonnegative()).max(MAX_VIEW_MODEL_PAGES).readonly(),
+      /**
+       * The order the document's pages are read in, from its `/ViewerPreferences /Direction`, read in the kernel
+       * (ADR-0284 Decision 10): `R2L` puts the earlier page of a facing pair on the right. Anything the document does not
+       * say is `L2R`. A scalar, like `pageCount`, so it crosses with every answer.
+       */
+      direction: z.enum(['L2R', 'R2L']),
     }),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),
