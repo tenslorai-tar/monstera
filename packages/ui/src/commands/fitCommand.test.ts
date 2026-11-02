@@ -37,8 +37,8 @@ describe('the two fits on Home › Display (ADR-0107’s 2026-10-02 correction)'
 
   it('each sets its fit as a MODE, never a number', async () => {
     const { asked, width, page } = fits();
-    await width.run({ selectedPages: [], docId: undefined, version: undefined, hasSelection: false, dirty: false, page: undefined, pageCount: undefined, openDocuments: [] });
-    await page.run({ selectedPages: [], docId: undefined, version: undefined, hasSelection: false, dirty: false, page: undefined, pageCount: undefined, openDocuments: [] });
+    await width.run({ selectedPages: [], docId: undefined, version: undefined, dirty: false, page: undefined, pageCount: undefined, openDocuments: [] });
+    await page.run({ selectedPages: [], docId: undefined, version: undefined, dirty: false, page: undefined, pageCount: undefined, openDocuments: [] });
     expect(asked).toStrictEqual([{ kind: 'fit-width' }, { kind: 'fit-page' }]);
   });
 });

@@ -30,7 +30,6 @@ const CONTEXT: CommandContext = {
   selectedPages: [],
   docId: DOC,
   version: asDocVersion(1),
-  hasSelection: false,
   dirty: false,
   // THE PAGE IS NOT THE END. An append that sent `page + 1` instead of the count
   // would pass a fixture where the two agree.

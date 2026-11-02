@@ -18,7 +18,6 @@ import { rateUsCommand } from './rateUs.js';
 const ANYWHERE = {
   docId: undefined,
   version: undefined,
-  hasSelection: false,
   dirty: false,
   page: undefined,
 } as unknown as CommandContext;

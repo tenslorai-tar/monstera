@@ -20,7 +20,6 @@ const CONTEXT: CommandContext = {
   selectedPages: [],
   docId: undefined,
   version: undefined,
-  hasSelection: false,
   dirty: false,
   page: undefined,
   pageCount: undefined,

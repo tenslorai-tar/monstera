@@ -3257,7 +3257,7 @@ describe('App', () => {
     expect(ids).toHaveLength(ANCHOR.length);
     // WHERE EACH IS DRAWN, by the projections' own rules: its ribbon, quick toolbar, status bar and rail placements, and
     // every menu of the bar the menu bar's own model puts it in (a section's menu is its ribbon section, ADR-0107).
-    const context = { docId: DOC, version: asDocVersion(1), hasSelection: false, dirty: false, page: 0, pageCount: 1, openDocuments: [], selectedPages: [] };
+    const context = { docId: DOC, version: asDocVersion(1), dirty: false, page: 0, pageCount: 1, openDocuments: [], selectedPages: [] };
     const menus = new Map<string, string[]>();
     for (const menu of projections.menuBarModel(commands, context)) {
       for (const group of menu.groups) {
@@ -3299,7 +3299,7 @@ describe('App', () => {
     if (commands === undefined) throw new Error('the shell reported no registries');
     // EVERY COMMAND SHOWN, so a command a `when` hides in this context is held too: hidden now is drawn later.
     const everything = new CommandRegistry(commands.all().map((command) => ({ ...command, when: () => true })));
-    const context = { docId: DOC, version: asDocVersion(1), hasSelection: false, dirty: false, page: 0, pageCount: 1, openDocuments: [], selectedPages: [] };
+    const context = { docId: DOC, version: asDocVersion(1), dirty: false, page: 0, pageCount: 1, openDocuments: [], selectedPages: [] };
     /** The ids of every command a model's output names, wherever in its shape it sits. */
     const drawn = (model: unknown): string[] => {
       const found: string[] = [];
@@ -3371,7 +3371,6 @@ describe('App', () => {
       selectedPages: [0],
       docId: asDocId('00000000-0000-4000-8000-000000000001'),
       version: asDocVersion(1),
-      hasSelection: true,
       dirty: true,
       page: 0,
       pageCount: 3,

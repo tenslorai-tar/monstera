@@ -17,7 +17,6 @@ function contextWith(open: readonly DocId[], focused: { readonly docId: DocId | 
     selectedPages: [],
     docId,
     version: asDocVersion(1),
-    hasSelection: false,
     dirty: false,
     page: 0,
     pageCount: 3,

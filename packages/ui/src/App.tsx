@@ -5066,18 +5066,15 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
   /** The one mode the page lists draw: the tool slot holds at most one of them, so at most one is defined. */
   const pageEditing = tabOrderEditing ?? editing ?? objectEditing ?? fieldEditing;
 
-  // The start screen's context: no document focused. `hasSelection` and `dirty`
-  // are false because there is nothing to select in and nothing to dirty — not
-  // because they are unknown.
+  // The start screen's context: no document focused. `dirty` is false because
+  // there is nothing to dirty — not because it is unknown. WHETHER TEXT IS
+  // SELECTED is no field of it: a context is copied and kept, and a copy made
+  // earlier would hold an old answer. The selected-text commands read the
+  // selection when they are asked (`textSelectionCommands.ts`).
   const contextAsked = useMemo(
     () => ({
       docId: open?.docId,
       version: open?.version,
-      // TEXT SELECTED in the focused document's text layer, READ WHEN ASKED: a selection renders no part of the shell,
-      // so a value taken here would be the selection of the last render, which is not this one.
-      get hasSelection(): boolean {
-        return selectionStore.current() !== undefined;
-      },
       dirty: false,
       // WHERE THE READER IS, told by the scroller. `undefined` with no document
       // rather than a defaulted `FIRST_PAGE.kernel`: a command that ran against
@@ -5098,7 +5095,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       // WHETHER THE IN-PLACE EDITOR IS OPEN, which the formatting commands are offered for (ADR-0180).
       editingText: textEditorOpen,
     }),
-    [currentPage, open, pageCount, selectedPages, selectionStore, tabs, textEditorOpen],
+    [currentPage, open, pageCount, selectedPages, tabs, textEditorOpen],
   );
   // THE ANSWERS IN A STORE THE SURFACES SUBSCRIBE TO, each for the commands it places (ADR-0272): written here after every
   // render with the registry and the base context, and read by nothing in this component, so an answer moving renders the

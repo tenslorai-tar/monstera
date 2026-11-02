@@ -39,8 +39,6 @@ export interface CommandContext {
   readonly docId: DocId | undefined;
   /** The focused document's version. Present exactly when `docId` is. */
   readonly version: DocVersion | undefined;
-  /** Whether anything is selected on the canvas. */
-  readonly hasSelection: boolean;
   /** Whether the document has unsaved changes. */
   readonly dirty: boolean;
   /**

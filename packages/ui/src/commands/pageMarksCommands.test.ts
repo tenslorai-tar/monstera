@@ -17,7 +17,6 @@ const CONTEXT: CommandContext = {
   selectedPages: [],
   docId: DOC,
   version: asDocVersion(1),
-  hasSelection: false,
   dirty: false,
   // NOT THE FIRST PAGE, and NOT ONE THE STAMPS ARE ON: Edit draws on the read's pages, so a command that took the page
   // on show would send `[3]` where the read said `[[0, 1], 5]`.
