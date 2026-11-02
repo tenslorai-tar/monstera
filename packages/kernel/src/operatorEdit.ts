@@ -1288,6 +1288,22 @@ function write(
      * caller records: the plan measures a word and the layout writes it, and both must hear the same answer.
      */
     const answers = new Map<string, readonly FacePiece[] | null>();
+    /**
+     * A SPACE IN AN ADDED BOX is its face's own space glyph, where the face has one (item 17): every word of a box comes
+     * from a face, since the box's own font is a stand-in that draws nothing, so a space answered with no pieces made each
+     * word a segment of its own at its own `Tm`, with nothing between them but distance. A second reader then read the
+     * line by the gaps ("W1   at   85"), and a phrase search could miss it. Set in the face, the space is a glyph in the
+     * words' own font and the line joins into one run (`layOut`).
+     *
+     * ONLY THERE. A space between words a page's own font draws stays a gap where that font carries none, so a page's
+     * words that were separate pieces stay as they were, and are never moved by a face's space width; and no face is
+     * named for it, so a space is never what refuses an edit.
+     */
+    const addedSpace = (source: ShowOperator, restyle: Restyle | undefined): readonly FacePiece[] => {
+      if (!syntheticFonts.has(source)) return [];
+      const faced = faces?.set(TAB_GAP, source, () => null, restyle) ?? null;
+      return faced !== null && faced.length === 1 ? faced : [];
+    };
     /** @param said whether the page already said this word here (`saidAt`): only then may a drawn font set it. */
     const piecesOf = (source: ShowOperator, token: string, restyle: Restyle | undefined, said: boolean): readonly FacePiece[] | null => {
       const font = fontOf(source);
@@ -1303,7 +1319,7 @@ function write(
         found !== null
           ? [found]
           : token === ' '
-            ? []
+            ? addedSpace(source, restyle)
             : (across ??
               faces?.set(token, source, restyle === undefined ? (stretch) => carrier(font, stretch, drawn) : () => null, restyle) ??
               null);
