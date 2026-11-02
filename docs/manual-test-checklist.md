@@ -4,7 +4,7 @@
      equal to it. Regenerate with `npx vitest run packages/ui/src/App.test.tsx -t "manual test checklist" -u`.
      Do not edit by hand. -->
 
-Every command the application registers — 275 — and the checks only the installed window can answer.
+Every command the application registers — 280 — and the checks only the installed window can answer.
 For each command: use it on a real document, see the correct effect, then save, close and reopen and see it kept
 (the wired-tools rule, CLAUDE.md). A command that needs a selection, a second document or a key says so when it
 is not available.
@@ -194,7 +194,12 @@ is not available.
 - [ ] **Open from web address…** — Create · `document.open-from-url` · Shows: on screen · Help: *Open a PDF from a web address*
 - [ ] **New PDF from camera…** — Create · `document.new-from-camera` · Shows: on screen · Help: *Make a PDF with your camera*
 - [ ] **Zoom in** — Display · `view.zoom-in` · Shows: on screen · Help: *Read the status bar*
+- [ ] **Single page** — Display · `view.page-layout-single` · Shows: on screen · Help: *Show pages one at a time or side by side*
 - [ ] **Zoom out** — Display · `view.zoom-out` · Shows: on screen · Help: *Read the status bar*
+- [ ] **Continuous** — Display · `view.page-layout-continuous` · Shows: on screen · Help: *Show pages one at a time or side by side*
+- [ ] **Facing** — Display · `view.page-layout-pair` · Shows: on screen · Help: *Show pages one at a time or side by side*
+- [ ] **Continuous facing** — Display · `view.page-layout-facing` · Shows: on screen · Help: *Show pages one at a time or side by side*
+- [ ] **Show cover page** — Display · `view.cover-page` · Shows: on screen · Help: *Show pages one at a time or side by side*
 - [ ] **Fit width** — Display · `view.fit-width` · Shows: on screen · Help: *Read the status bar*
 - [ ] **Fit page** — Display · `view.fit-page` · Shows: on screen · Help: *Read the status bar*
 - [ ] **Show rulers** — Display · `view.toggle-rulers` · Shows: on screen · Help: *Show rulers and a grid*

@@ -1,0 +1,81 @@
+import { asDocId, asDocVersion } from '@monstera/shared';
+import { describe, expect, it } from 'vitest';
+
+import { activateCatalogue, i18n } from '../i18n.js';
+import { EN, PAGE_LAYOUT_OPTION_TITLES } from '../messages/en.js';
+import { CommandRegistry, type CommandContext } from '../registries/commands.js';
+import { SettingsRegistry } from '../registries/settings.js';
+import { ALL_SETTINGS } from '../settings/all.js';
+import { COVER_PAGE_SETTING, PAGE_LAYOUT_SETTING } from '../settings/viewing.js';
+import { SettingsStore } from '../settingsStore.js';
+import { menuBarModel } from '../surfaces/projections.js';
+import { pageLayoutCommands } from './viewCommands.js';
+
+/** The page layout's commands and the one setting they write (ADR-0284 Decision 5). */
+
+const context: CommandContext = {
+  selectedPages: [],
+  docId: asDocId('00000000-0000-4000-8000-000000000001'),
+  version: asDocVersion(1),
+  hasSelection: false,
+  dirty: false,
+  page: 0,
+  pageCount: 4,
+  openDocuments: [],
+};
+
+function harness(): { readonly settings: SettingsStore; readonly registry: CommandRegistry } {
+  const settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
+  return { settings, registry: new CommandRegistry(pageLayoutCommands({ settings })) };
+}
+
+/** The layout commands shown checked now. */
+function checked(registry: CommandRegistry): string[] {
+  return ['continuous', 'single', 'pair', 'facing']
+    .map((layout) => `view.page-layout-${layout}`)
+    .filter((id) => registry.get(id)?.checked?.(context) === true);
+}
+
+describe('the page layout, reached where a person reads (ADR-0284)', () => {
+  it('a layout chosen from the control is the setting: Settings reads the value the command wrote', () => {
+    const { settings, registry } = harness();
+    void registry.get('view.page-layout-pair')?.run(context);
+    expect(settings.get(PAGE_LAYOUT_SETTING.id)).toBe('pair');
+    expect(checked(registry)).toStrictEqual(['view.page-layout-pair']);
+  });
+
+  it('and a layout chosen in Settings is what the control shows checked', () => {
+    const { settings, registry } = harness();
+    settings.set(PAGE_LAYOUT_SETTING.id, 'facing');
+    expect(checked(registry)).toStrictEqual(['view.page-layout-facing']);
+  });
+
+  it('a STORED “facing” from today is Continuous facing: its command and its option title say so', () => {
+    activateCatalogue('en', EN);
+    const { settings, registry } = harness();
+    settings.set(PAGE_LAYOUT_SETTING.id, 'facing');
+    expect(registry.get('view.page-layout-facing')?.title).toBe(PAGE_LAYOUT_OPTION_TITLES.facing);
+    expect(i18n._(PAGE_LAYOUT_OPTION_TITLES.facing)).toBe('Continuous facing');
+    expect(PAGE_LAYOUT_SETTING.schema.parse('facing')).toBe('facing');
+  });
+
+  it('Show cover page toggles its own setting, off by default', () => {
+    const { settings, registry } = harness();
+    expect(settings.get(COVER_PAGE_SETTING.id)).toBe(false);
+    void registry.get('view.cover-page')?.run(context);
+    expect(settings.get(COVER_PAGE_SETTING.id)).toBe(true);
+    expect(registry.get('view.cover-page')?.checked?.(context)).toBe(true);
+  });
+
+  it('all five sit in the View menu under Page layout, in reading order', () => {
+    const { registry } = harness();
+    const view = menuBarModel(registry, context).find((menu) => menu.id === 'view');
+    const ids = view?.groups.flatMap((group) => group.items.flatMap((entry) => (entry.kind === 'command' ? [entry.command.id] : []))) ?? [];
+    expect(ids).toStrictEqual(['view.page-layout-single', 'view.page-layout-continuous', 'view.page-layout-pair', 'view.page-layout-facing', 'view.cover-page']);
+    expect(view?.groups.map((group) => group.caption)).toStrictEqual([PAGE_LAYOUT_SETTING.title]);
+  });
+
+  it('CONTROL: as installed, Continuous is the one checked, as every document has always opened', () => {
+    expect(checked(harness().registry)).toStrictEqual(['view.page-layout-continuous']);
+  });
+});

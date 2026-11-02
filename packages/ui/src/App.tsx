@@ -150,6 +150,7 @@ import { DEFAULT_ZOOM, startingZoomMode, stepZoom, type ZoomDirection, type Zoom
 import {
   autoscrollCommand,
   commandPaletteCommand,
+  pageLayoutCommands,
   toggleDarkPageCommand,
   toggleFieldHighlightCommand,
   toggleGridCommand,
@@ -418,6 +419,7 @@ import {
   LOUPE_SETTING,
   PAGE_BADGES_SETTING,
   PAGE_LAYOUT_SETTING,
+  COVER_PAGE_SETTING,
   type PageLayout,
   AUTOSCROLL_PIXELS_PER_SECOND,
   AUTOSCROLL_SPEED_SETTING,
@@ -3865,6 +3867,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
   const pageBadges = useSetting(settings, PAGE_BADGES_SETTING);
   const smoothScroll = useSetting(settings, SMOOTH_SCROLL_SETTING);
   const layout = useSetting(settings, PAGE_LAYOUT_SETTING);
+  const coverPage = useSetting(settings, COVER_PAGE_SETTING);
   const autoscrollSpeed = useSetting(settings, AUTOSCROLL_SPEED_SETTING);
 
   /**
@@ -4625,10 +4628,12 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
         toggleContextPanelCommand({ presence }),
         // §7'S LAYOUT-MODE SWITCH and §10.3's "Esc returns": one command per mode, and Leave Focus.
         ...layoutModeCommands({ settings }),
-        pageMoveCommand('next', { navigator }),
-        pageMoveCommand('previous', { navigator }),
-        pageMoveCommand('first', { navigator }),
-        pageMoveCommand('last', { navigator }),
+        // THE PAGE LAYOUT (ADR-0284): one command per layout and the cover page, all writing the one setting.
+        ...pageLayoutCommands({ settings }),
+        pageMoveCommand('next', { navigator, settings }),
+        pageMoveCommand('previous', { navigator, settings }),
+        pageMoveCommand('first', { navigator, settings }),
+        pageMoveCommand('last', { navigator, settings }),
         historyCommand('back', { navigator }),
         historyCommand('forward', { navigator }),
         goToCommand(),
@@ -5281,9 +5286,10 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       pageBadges,
       smoothScroll,
       layout,
+      coverPage,
       onFirstFrame: markFramed,
     }),
-    [client, layout, markFramed, versionMoved, pageBadges, presence, quality, requestPassword, rulers, secondRenderer, settings, showGrid, smoothScroll, split, stores.keys, tileAbove, unit],
+    [client, coverPage, layout, markFramed, versionMoved, pageBadges, presence, quality, requestPassword, rulers, secondRenderer, settings, showGrid, smoothScroll, split, stores.keys, tileAbove, unit],
   );
 
   return (
@@ -5507,7 +5513,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
           spotlights={spotlights}
           secondRenderer={secondRenderer}
           tileAbove={tileAbove}
-          quality={quality} pageBadges={pageBadges} smoothScroll={smoothScroll} layout={layout}
+          quality={quality} pageBadges={pageBadges} smoothScroll={smoothScroll} layout={layout} coverPage={coverPage}
           autoscroll={autoscrollOn === open.docId ? AUTOSCROLL_PIXELS_PER_SECOND[autoscrollSpeed] : undefined}
           onAutoscrollEnd={stopAutoscroll}
           requestPassword={requestPassword}
@@ -5966,6 +5972,7 @@ type BackgroundLayer = Pick<
   | 'pageBadges'
   | 'smoothScroll'
   | 'layout'
+  | 'coverPage'
   | 'onFirstFrame'
 >;
 
@@ -6177,6 +6184,7 @@ function PageCanvas({
   pageBadges,
   smoothScroll,
   layout,
+  coverPage,
   autoscroll,
   onAutoscrollEnd,
   settings,
@@ -6299,6 +6307,8 @@ function PageCanvas({
   readonly smoothScroll: boolean;
   /** How the pages are laid out (`viewing.page-layout`). */
   readonly layout: PageLayout;
+  /** Whether the facing layouts start with page 1 alone (`viewing.cover-page`, ADR-0284). */
+  readonly coverPage: boolean;
   /** Autoscroll's pace while it runs on this document, `PageList.autoscroll`. */
   readonly autoscroll: number | undefined;
   readonly onAutoscrollEnd: () => void;
@@ -6706,6 +6716,7 @@ function PageCanvas({
       pageBadges={pageBadges}
       smoothScroll={smoothScroll}
       layout={split ? 'single' : layout}
+      coverPage={split ? false : coverPage}
       // AUTOSCROLL MOVES THIS PANE, the document's first; the second is a place a reader looks across to.
       autoscroll={autoscroll}
       onAutoscrollEnd={onAutoscrollEnd}
@@ -6759,6 +6770,7 @@ function PageCanvas({
       pageBadges={pageBadges}
       smoothScroll={smoothScroll}
       layout="single"
+      coverPage={false}
       menuAt={menuAt}
     />
   );

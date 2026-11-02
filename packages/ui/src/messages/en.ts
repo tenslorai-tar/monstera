@@ -2705,11 +2705,15 @@ export const PAGE_LAYOUT_DESCRIPTION = messageKey('setting.viewing.page-layout.d
 export const PAGE_LAYOUT_CONTINUOUS = messageKey('setting.viewing.page-layout.continuous');
 export const PAGE_LAYOUT_SINGLE = messageKey('setting.viewing.page-layout.single');
 export const PAGE_LAYOUT_FACING = messageKey('setting.viewing.page-layout.facing');
+export const PAGE_LAYOUT_PAIR = messageKey('setting.viewing.page-layout.pair');
 export const PAGE_LAYOUT_OPTION_TITLES = {
   continuous: PAGE_LAYOUT_CONTINUOUS,
   single: PAGE_LAYOUT_SINGLE,
+  pair: PAGE_LAYOUT_PAIR,
   facing: PAGE_LAYOUT_FACING,
 } as const;
+export const COVER_PAGE_TITLE = messageKey('setting.viewing.cover-page.title');
+export const COVER_PAGE_DESCRIPTION = messageKey('setting.viewing.cover-page.description');
 export const GRID_DESCRIPTION = messageKey('setting.viewing.grid.description');
 export const GRID_SIZE_TITLE = messageKey('setting.viewing.grid-size.title');
 export const GRID_SIZE_DESCRIPTION = messageKey('setting.viewing.grid-size.description');
@@ -5800,10 +5804,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [AUTOSCROLL_SPEED_OPTION_TITLES.fast]: 'Fast',
   [PAGE_LAYOUT_TITLE]: 'Page layout',
   [PAGE_LAYOUT_DESCRIPTION]:
-    'Continuous shows pages one after another. Single page shows one at a time, and scrolling past its end turns to the next. Facing pages shows them in pairs, like an open book.',
+    'Continuous shows pages one after another. Single page shows one at a time, and scrolling past its end turns to the next. Facing shows one pair at a time, like an open book. Continuous facing shows the pairs one after another.',
   [PAGE_LAYOUT_OPTION_TITLES.continuous]: 'Continuous',
   [PAGE_LAYOUT_OPTION_TITLES.single]: 'Single page',
-  [PAGE_LAYOUT_OPTION_TITLES.facing]: 'Facing pages',
+  [PAGE_LAYOUT_OPTION_TITLES.pair]: 'Facing',
+  [PAGE_LAYOUT_OPTION_TITLES.facing]: 'Continuous facing',
+  [COVER_PAGE_TITLE]: 'Show cover page',
+  [COVER_PAGE_DESCRIPTION]: 'In the facing layouts, the first page stands alone on the right, so pages 2 and 3 face each other as in a printed book.',
   [GRID_DESCRIPTION]: 'A grid over the page, for lining marks up.',
   [GRID_SIZE_TITLE]: 'Grid size',
   [GRID_SIZE_DESCRIPTION]:

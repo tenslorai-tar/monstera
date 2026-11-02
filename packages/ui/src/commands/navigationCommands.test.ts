@@ -2,7 +2,14 @@ import { asDocId, asDocVersion } from '@monstera/shared';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { CommandContext } from '../registries/commands.js';
+import { SettingsRegistry } from '../registries/settings.js';
+import { ALL_SETTINGS } from '../settings/all.js';
+import { COVER_PAGE_SETTING, PAGE_LAYOUT_SETTING, SPLIT_VIEW_SETTING } from '../settings/viewing.js';
+import { SettingsStore } from '../settingsStore.js';
 import { historyCommand, pageMoveCommand } from './navigationCommands.js';
+
+/** The settings as installed: Continuous, no cover page, no Split view. */
+const store = (): SettingsStore => new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
 
 /**
  * The navigation commands, against a recording navigator.
@@ -33,31 +40,31 @@ describe('pageMoveCommand', () => {
     // The fixture is deliberately mid-document: a command that ignored the
     // context and sent a literal would pass a case written at page 0.
     const navigator = recording();
-    void pageMoveCommand('next', { navigator }).run(contextAt(3, 10));
+    void pageMoveCommand('next', { navigator, settings: store() }).run(contextAt(3, 10));
     expect(navigator.jumpTo).toHaveBeenCalledWith(4);
 
-    void pageMoveCommand('previous', { navigator }).run(contextAt(3, 10));
+    void pageMoveCommand('previous', { navigator, settings: store() }).run(contextAt(3, 10));
     expect(navigator.jumpTo).toHaveBeenLastCalledWith(2);
   });
 
   it('goes to the ends by the documents own count', () => {
     const navigator = recording();
-    void pageMoveCommand('last', { navigator }).run(contextAt(3, 10));
+    void pageMoveCommand('last', { navigator, settings: store() }).run(contextAt(3, 10));
     // NINE, not ten: pages are zero-based here and the last index is count - 1.
     // A command that sent the count would be one past the end, which is the
     // off-by-one this build has already shipped once in the other direction.
     expect(navigator.jumpTo).toHaveBeenCalledWith(9);
 
-    void pageMoveCommand('first', { navigator }).run(contextAt(3, 10));
+    void pageMoveCommand('first', { navigator, settings: store() }).run(contextAt(3, 10));
     expect(navigator.jumpTo).toHaveBeenLastCalledWith(0);
   });
 
   it('clamps at both ends instead of asking for a page that is not there', () => {
     const navigator = recording();
-    void pageMoveCommand('next', { navigator }).run(contextAt(9, 10));
+    void pageMoveCommand('next', { navigator, settings: store() }).run(contextAt(9, 10));
     expect(navigator.jumpTo).toHaveBeenCalledWith(9);
 
-    void pageMoveCommand('previous', { navigator }).run(contextAt(0, 10));
+    void pageMoveCommand('previous', { navigator, settings: store() }).run(contextAt(0, 10));
     expect(navigator.jumpTo).toHaveBeenLastCalledWith(0);
   });
 
@@ -67,7 +74,7 @@ describe('pageMoveCommand', () => {
     // finds no slot and does nothing, so the store would be the only thing that
     // could tell — and it would have a spurious history entry.
     const navigator = recording();
-    void pageMoveCommand('last', { navigator }).run(contextAt(0, 0));
+    void pageMoveCommand('last', { navigator, settings: store() }).run(contextAt(0, 0));
     expect(navigator.jumpTo).not.toHaveBeenCalled();
   });
 
@@ -82,8 +89,41 @@ describe('pageMoveCommand', () => {
       openDocuments: [],
     };
     const navigator = recording();
-    expect(pageMoveCommand('next', { navigator }).when?.(noDocument)).toBe(false);
-    expect(pageMoveCommand('next', { navigator }).when?.(contextAt(0, 5))).toBe(true);
+    expect(pageMoveCommand('next', { navigator, settings: store() }).when?.(noDocument)).toBe(false);
+    expect(pageMoveCommand('next', { navigator, settings: store() }).when?.(contextAt(0, 5))).toBe(true);
+  });
+
+  describe('in a facing layout, by pair (ADR-0284 Decision 8)', () => {
+    /** The settings with `layout` on, the cover page as given, and Split view as given. */
+    const facing = (layout: 'pair' | 'facing', cover: boolean, split = false): SettingsStore => {
+      const settings = store();
+      settings.set(PAGE_LAYOUT_SETTING.id, layout);
+      settings.set(COVER_PAGE_SETTING.id, cover);
+      settings.set(SPLIT_VIEW_SETTING.id, split);
+      return settings;
+    };
+    /** The page a move asks for, from `page` of ten. */
+    const asked = (move: 'next' | 'previous', settings: SettingsStore, page: number): unknown => {
+      const navigator = recording();
+      void pageMoveCommand(move, { navigator, settings }).run(contextAt(page, 10));
+      return navigator.jumpTo.mock.calls[0]?.[0];
+    };
+
+    it('next goes to the next pair’s first page, in Facing and in Continuous facing', () => {
+      expect(asked('next', facing('pair', false), 2)).toBe(4);
+      expect(asked('next', facing('facing', false), 2)).toBe(4);
+    });
+
+    it('with a cover page, next from the cover goes to pages 2 and 3, and previous from them back to it', () => {
+      expect(asked('next', facing('pair', true), 0)).toBe(1);
+      expect(asked('previous', facing('pair', true), 1)).toBe(0);
+      expect(asked('previous', facing('pair', true), 3)).toBe(1);
+    });
+
+    it('CONTROL: in Continuous, and in Split view whatever the layout, next is the next page', () => {
+      expect(asked('next', store(), 2)).toBe(3);
+      expect(asked('next', facing('pair', false, true), 2)).toBe(3);
+    });
   });
 });
 

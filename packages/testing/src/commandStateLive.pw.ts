@@ -65,6 +65,11 @@ const CHOOSES: Readonly<Record<string, string>> = {
   'view.layout-ribbon': 'view.layout-studio',
   'view.layout-studio': 'view.layout-ribbon',
   'view.layout-focus': 'view.layout-ribbon',
+  // THE PAGE LAYOUT (ADR-0284): four choices of one setting; the cover page beside them toggles.
+  'view.page-layout-continuous': 'view.page-layout-single',
+  'view.page-layout-single': 'view.page-layout-continuous',
+  'view.page-layout-pair': 'view.page-layout-continuous',
+  'view.page-layout-facing': 'view.page-layout-continuous',
   'view.show-pages': 'view.show-bookmarks',
   'view.show-bookmarks': 'view.show-pages',
   'view.show-layers': 'view.show-pages',
