@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { act, render } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { pointOf, positionOf } from './dom.js';
 import { EditorSurface } from './EditorSurface.js';
@@ -122,6 +122,35 @@ describe('the kit’s editable surface', () => {
     const changed = root.querySelectorAll('[data-kit-paragraph]')[0];
     expect(changed?.classList.contains('m-kit__paragraph--as-drawn')).toBe(false);
     expect(changed?.querySelectorAll('br[data-kit-wrap]')).toHaveLength(0);
+  });
+
+  it('a keystroke in one line fits no untouched line again: a kept line’s fit is its own, at its own look (item 2)', () => {
+    const { root } = surface({ paragraphs: MODEL.paragraphs, wraps: [[], []], widths: [[60], [50]] });
+    // A SPY THAT CALLS THROUGH, so the measure the fit reads is the one it always reads, and only the count is added.
+    const reads = vi.spyOn(Range.prototype, 'getBoundingClientRect');
+    try {
+      act(() => {
+        input(root, 'insertText', 'X', { paragraph: 0, offset: 1 });
+      });
+      // THE SECOND LINE IS STILL AS DRAWN, so a re-fit would have measured it.
+      expect(root.querySelectorAll('[data-kit-paragraph]')[1]?.classList.contains('m-kit__paragraph--as-drawn')).toBe(true);
+      expect(reads).not.toHaveBeenCalled();
+    } finally {
+      reads.mockRestore();
+    }
+  });
+
+  it('CONTROL: a new look fits the untouched lines again, since their letters were restyled', () => {
+    const store = createEditorStore({ model: MODEL, selection: caret({ paragraph: 0, offset: 0 }) });
+    const drawn = { paragraphs: MODEL.paragraphs, wraps: [[], []], widths: [[60], [50]] };
+    const view = render(<EditorSurface drawn={drawn} editable label="Words" look={LOOK} store={store} />);
+    const reads = vi.spyOn(Range.prototype, 'getBoundingClientRect');
+    try {
+      view.rerender(<EditorSurface drawn={drawn} editable label="Words" look={{ ...LOOK, zoom: 3 }} store={store} />);
+      expect(reads).toHaveBeenCalled();
+    } finally {
+      reads.mockRestore();
+    }
   });
 
   it('takes the browser’s selection as the focus leaves the words, before a queued selectionchange could', () => {

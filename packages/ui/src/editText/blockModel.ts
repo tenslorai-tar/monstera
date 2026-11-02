@@ -92,6 +92,41 @@ export interface OpenedBlock {
 }
 
 /** A block's lines, grouped into paragraphs: a line ending soft carries on in the next. */
+/** A word of a line as the read placed it, in the paragraph's offsets, with its letters' edges where the read gave them. */
+interface PlacedWord extends DrawnWordPlace {
+  readonly edges: readonly number[] | undefined;
+  /** The word's own UTF-16 units, so a letter is never cut between the two halves of a pair. */
+  readonly units: string;
+}
+
+/**
+ * What the editor fits a line's letters to (`fitDrawnLines`): EACH LETTER where PDFium places it, when every word of the
+ * line carries its letters' edges from the read that gave Edit text its words; otherwise each word, as before; and a line
+ * with no places at all is fitted whole by its width. Fitted a word at a time, a substitute face's own letter widths stood
+ * inside each word, so the caret sat a fraction of a letter off the page's letters (item 2).
+ *
+ * Never MuPDF's letters: Edit text's blocks, words and writer are PDFium's, and a feature takes letter positions from
+ * the engine its own model comes from (the owner's rule, 2026-11-02).
+ */
+function drawnPlaces(words: readonly PlacedWord[]): DrawnWordPlace[] {
+  const plain = words.map(({ from, to, x0, x1 }) => ({ from, to, x0, x1 }));
+  if (!words.every((word) => word.edges?.length === word.units.length + 1)) return plain;
+  const letters: DrawnWordPlace[] = [];
+  for (const word of words) {
+    const edges = word.edges ?? [];
+    for (let at = 0; at < word.units.length; ) {
+      // A PAIR'S TWO HALVES ARE ONE LETTER: the next cut is past both.
+      const code = word.units.codePointAt(at) ?? 0;
+      const width = code > 0xffff ? 2 : 1;
+      const x0 = edges[at] ?? word.x0;
+      const x1 = edges[at + width] ?? word.x1;
+      letters.push({ from: word.from + at, to: word.from + at + width, x0, x1 });
+      at += width;
+    }
+  }
+  return letters;
+}
+
 function linesByParagraph(block: TextBlock): TextBlock['lines'][number][][] {
   const paragraphs: TextBlock['lines'][number][][] = [];
   let open: TextBlock['lines'][number][] = [];
@@ -151,17 +186,27 @@ export function modelOfBlock(block: TextBlock): OpenedBlock {
     let length = 0;
     for (const [at, line] of lines.entries()) {
       // THE LINE'S WORDS AS DRAWN, in the paragraph's offsets; none unless every run of the line says where its are.
-      const lineWords: DrawnWordPlace[] = [];
+      const lineWords: PlacedWord[] = [];
       let every = true;
       for (const run of line.runs) {
         const style = runStyleOf(run.style, run.index);
         runs.push({ text: run.text, style, base: style });
         const own = run.words?.filter((word) => word.to <= run.text.length && word.from < word.to);
         if (own === undefined) every = false;
-        else lineWords.push(...own.map((word) => ({ from: length + word.from, to: length + word.to, x0: word.x0, x1: word.x1 })));
+        else
+          lineWords.push(
+            ...own.map((word) => ({
+              from: length + word.from,
+              to: length + word.to,
+              x0: word.x0,
+              x1: word.x1,
+              edges: word.edges,
+              units: run.text.slice(word.from, word.to),
+            })),
+          );
         length += run.text.length;
       }
-      placed.push(every ? lineWords : []);
+      placed.push(every ? drawnPlaces(lineWords) : []);
       if (at === lines.length - 1) continue;
       const join = joinAfterLine(lineText(line.runs), true);
       const last = line.runs.at(-1);

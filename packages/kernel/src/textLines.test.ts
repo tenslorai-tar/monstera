@@ -840,4 +840,44 @@ describe('drawnWordsOf', () => {
   it('pairs a character outside the basic plane unit by unit', () => {
     expect(drawnWordsOf('\u{10140}x', [{ char: '\u{10140}', left: 0, right: 8 }, { char: 'x', left: 8, right: 12 }])).toStrictEqual([{ from: 0, to: 3, x0: 0, x1: 12 }]);
   });
+
+  describe('each letter’s place, from the pen’s origin and the advance (item 2)', () => {
+    /** Glyphs whose ink sits inside their advance, as a letter's does: the origin and the advance's end are not the ink. */
+    const placed = (text: string, advances: readonly number[]) => {
+      let pen = 10;
+      return Array.from(text).map((char, at) => {
+        const origin = pen;
+        pen += advances[at] ?? 5;
+        return { char, left: origin + 0.4, right: pen - 0.3, origin, end: pen };
+      });
+    };
+
+    it('gives each word an edge per letter at its ORIGIN, and its last letter’s advance end, not the ink', () => {
+      expect(drawnWordsOf('ab cd', placed('ab cd', [3, 7, 2, 9, 4]))).toStrictEqual([
+        { from: 0, to: 2, x0: 10.4, x1: 19.7, edges: [10, 13, 20] },
+        { from: 3, to: 5, x0: 22.4, x1: 34.7, edges: [22, 31, 35] },
+      ]);
+    });
+
+    it('repeats a pair’s first edge for its second unit, so no letter is cut between its halves', () => {
+      const glyphs = [
+        { char: '\u{10140}', left: 0, right: 8, origin: 0, end: 8 },
+        { char: 'x', left: 8, right: 12, origin: 8, end: 12 },
+      ];
+      expect(drawnWordsOf('\u{10140}x', glyphs)?.[0]?.edges).toStrictEqual([0, 0, 8, 12]);
+    });
+
+    it('CONTROL: a glyph with no origin or no advance gives its word no edges, and the word is still placed', () => {
+      const glyphs = placed('ab', [3, 7]).map((glyph, at) => (at === 1 ? { char: glyph.char, left: glyph.left, right: glyph.right } : glyph));
+      expect(drawnWordsOf('ab', glyphs)).toStrictEqual([{ from: 0, to: 2, x0: 10.4, x1: 19.7 }]);
+    });
+
+    it('CONTROL: letters whose origins run backwards give no edges, as right-to-left text read in drawn order does', () => {
+      const glyphs = [
+        { char: 'a', left: 20, right: 24, origin: 20, end: 24 },
+        { char: 'b', left: 10, right: 14, origin: 10, end: 14 },
+      ];
+      expect(drawnWordsOf('ab', glyphs)?.[0]?.edges).toBeUndefined();
+    });
+  });
 });

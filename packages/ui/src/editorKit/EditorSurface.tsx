@@ -107,7 +107,11 @@ export function EditorSurface({ store, look, drawn, label, className, style, edi
     const element = root.current;
     if (element === null) return undefined;
     const owner = element.ownerDocument;
-    const built = new WeakMap<Paragraph, { readonly element: HTMLElement; readonly asDrawn: boolean; readonly look: Look }>();
+    /**
+     * Each paragraph's element, whether it is laid out as the page drew it, the look it is styled at, and the look it was
+     * last FITTED at (`fitDrawnLines`): a kept line is fitted again only when it is new or restyled.
+     */
+    const built = new WeakMap<Paragraph, { readonly element: HTMLElement; readonly asDrawn: boolean; readonly look: Look; readonly fitted?: Look }>();
     let composing: { readonly selection: Selection } | undefined;
 
     /**
@@ -157,12 +161,20 @@ export function EditorSurface({ store, look, drawn, label, className, style, edi
         const elements = lay(model.paragraphs, moved);
         const children = Array.from(element.children);
         if (children.length !== elements.length || children.some((child, at) => child !== elements[at])) element.replaceChildren(...elements);
-        // EACH LINE AS WIDE AS THE PAGE DRAWS IT, now it is laid out: its letters over the page's (`fitDrawnLines`).
+        // EACH LINE AS WIDE AS THE PAGE DRAWS IT, now it is laid out: its letters over the page's (`fitDrawnLines`). ONLY A
+        // LINE NEW OR RESTYLED SINCE ITS LAST FIT: a kept line's fit reads its own letters at its own look, so fitting it
+        // again changes nothing, and every keystroke re-fitted every untouched line of the block — 100 to 160 ms a
+        // keystroke in a block of 24 lines (Chromium 151, `editTextCaret.pw.ts`' timing, 2026-11-02).
         const widths = latest.current.drawn?.widths;
         const words = latest.current.drawn?.words;
         if (widths !== undefined) {
           for (const [index, row] of elements.entries()) {
-            if (row.classList.contains(AS_DRAWN_CLASS)) fitDrawnLines(row, widths[index] ?? [], now.zoom, words?.[index] ?? []);
+            if (!row.classList.contains(AS_DRAWN_CLASS)) continue;
+            const paragraph = model.paragraphs[index];
+            const kept = paragraph === undefined ? undefined : built.get(paragraph);
+            if (kept?.fitted === now) continue;
+            fitDrawnLines(row, widths[index] ?? [], now.zoom, words?.[index] ?? []);
+            if (paragraph !== undefined && kept !== undefined) built.set(paragraph, { ...kept, fitted: now });
           }
         }
         // THE OPENING'S PLACES, read once, in points so a zoom does not move them.
