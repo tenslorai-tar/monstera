@@ -740,7 +740,7 @@ describe('text set at an angle is grouped in its own frame (ADR-0273)', () => {
   const blockable = <R extends { readonly style: { readonly size: number } }>(run: R) => ({ ...run, setting: 'Face|12|0,0,0', size: run.style.size });
 
   it('groups a turned paragraph as the upright one it is in its frame: two lines, one block, carrying the frame', () => {
-    const blocks = groupInFrames(PARAGRAPH.map((run) => blockable(inItsFrame(run))), (run) => run.frame.matrix);
+    const blocks = groupInFrames(PARAGRAPH.map((run) => blockable(inItsFrame(run))), (run) => run.frame.matrix, () => undefined);
     expect(blocks).toHaveLength(1);
     expect(blocks[0]?.frame).toStrictEqual(TURN);
     expect(blocks[0]?.lines.map((line) => line.runs.map((run) => run.text).join(''))).toStrictEqual(['Turned thirty degrees,', 'and two lines long.']);
@@ -770,9 +770,37 @@ describe('text set at an angle is grouped in its own frame (ADR-0273)', () => {
       blockable(upright),
       blockable(inItsFrame(sheared)),
     ];
-    const blocks = groupInFrames(mixed, (run) => run.frame?.matrix);
+    const blocks = groupInFrames(mixed, (run) => run.frame?.matrix, () => undefined);
     // THE SAME FRAME BOX in all three, so only the frames part them.
     expect(blocks.map((block) => block.frame ?? null)).toStrictEqual([null, TURN, slant]);
+  });
+
+  describe('clip by clip (the owner’s C4)', () => {
+    /** Two lines of one paragraph at one pitch, which today are one block, each drawn through the clip named. */
+    const lines = (first: string | undefined, second: string | undefined) => [
+      { ...blockable({ index: 1, text: 'The first line of it,', left: 72, right: 190, bottom: 698, top: 710, style: { baseline: 700, size: 12 } }), clip: first },
+      { ...blockable({ index: 2, text: 'and its second line.', left: 72, right: 180, bottom: 684, top: 696, style: { baseline: 686, size: 12 } }), clip: second },
+    ];
+    const texts = (blocks: readonly { readonly lines: readonly { readonly runs: readonly { readonly text: string }[] }[] }[]) =>
+      blocks.map((block) => block.lines.map((line) => line.runs.map((run) => run.text).join('')));
+
+    it('splits a paragraph whose two lines are drawn through two clips into two blocks, one line each', () => {
+      const blocks = groupInFrames(lines('aaaaaaaaaaaaaaaa', 'bbbbbbbbbbbbbbbb'), () => undefined, (run) => run.clip);
+      expect(texts(blocks)).toStrictEqual([['The first line of it,'], ['and its second line.']]);
+    });
+
+    it('CONTROL: the same lines through ONE clip, or through none, are one block of two lines, as before', () => {
+      expect(texts(groupInFrames(lines('aaaaaaaaaaaaaaaa', 'aaaaaaaaaaaaaaaa'), () => undefined, (run) => run.clip))).toStrictEqual([
+        ['The first line of it,', 'and its second line.'],
+      ]);
+      expect(texts(groupInFrames(lines(undefined, undefined), () => undefined, (run) => run.clip))).toStrictEqual([
+        ['The first line of it,', 'and its second line.'],
+      ]);
+    });
+
+    it('a line drawn through a clip is not one block with a line drawn through none', () => {
+      expect(texts(groupInFrames(lines('aaaaaaaaaaaaaaaa', undefined), () => undefined, (run) => run.clip))).toHaveLength(2);
+    });
   });
 });
 

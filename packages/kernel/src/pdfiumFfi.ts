@@ -94,6 +94,7 @@ import { readInLineOrder } from './bidiLine.js';
 import { pdfTextString } from './pdfTextString.js';
 import { type DrawnWord, MAX_DRAWN_MARKERS, type Orientation, drawnWordsOf, isUpright, lineBaselineOf } from './textLines.js';
 import { type JoinedRun, joinRuns, membersOf } from './textRunJoin.js';
+import { type TextClipRanges, clipOfTextObject } from './textClipRanges.js';
 
 /**
  * The PDFium native boundary.
@@ -589,6 +590,15 @@ export interface RunStyle {
   readonly underline?: true;
   readonly strike?: true;
   readonly highlight?: { readonly r: number; readonly g: number; readonly b: number };
+  /**
+   * WHICH CLIP the object is drawn through, by the content's own parse (`textObjectClips`, ADR-0281), absent where none:
+   * for the join and the grouping only, never to a renderer. Two objects under different clips are never one run, and
+   * two lines under different clips are never one block, because the writer sets a block's lines in one object where its
+   * first line stood, inside that line's clip: a line from another clip written there is hidden by a clip it was never
+   * drawn through. Given to the walk ({@link TextClips}), never read from PDFium, whose content parser drops a clip that
+   * holds its object.
+   */
+  readonly clip?: string;
 }
 
 /**
@@ -798,16 +808,25 @@ function pageBoxOf(bindings: Bound, handle: unknown): PageText['box'] {
  * `textObjectText` loads a text page per object, which is right for one object
  * and quadratic for a page of them. This walks the characters once.
  */
-export function textRuns(session: PdfiumSession, page: number): Promise<PageText> {
+export function textRuns(
+  session: PdfiumSession,
+  page: number,
+  /**
+   * Which clip each text object is drawn through (ADR-0281). The host's serve always passes the wire's, which requires
+   * it; `null`, the default, is no clip known, for a reader whose answer groups no block a writer sets.
+   */
+  clips: TextClips = null,
+): Promise<PageText> {
   return promised(() =>
     onPage(session, page, (handle) => {
       const bindings = api();
       const walked = walkRuns(bindings, handle);
+      // EACH RUN'S CLIP, given (ADR-0281): the join never crosses one, and the grouping splits a block where it changes.
       // THE MEMBERS STAY HERE: the wire names a run by its first and last object, and the edit recomputes the rest. So
       // do the glyphs as drawn: they are what a line's order is found from, and the line is read here, once.
       // AND THE MEASURE ITS LINES WERE SET TO, where an edit recorded one (ADR-0097's correction of 2026-10-17): the
       // widest of its objects', so a joined run carries it whichever of its objects was written last.
-      const runs = readWalk(bindings, handle, walked).map(({ members, drawn: _drawn, ...run }) => {
+      const runs = readWalk(bindings, handle, walked, clips).map(({ members, drawn: _drawn, ...run }) => {
         const measure = Math.max(0, ...members.map((index) => recordedMeasureOf(bindings, bindings.getObject(handle, index)) ?? 0));
         // A RUN SET AT AN ANGLE carries its frame (ADR-0273), from the one answer the writer lays it out by.
         const frame = run.style.orientation === 'upright' ? undefined : runFrameOf(bindings, handle, members);
@@ -874,11 +893,12 @@ function objectIsMono(bindings: Bound, object: unknown): boolean {
  * writer reads each run's state from its own operators — but for whether every object of a run is fixed pitch, which no
  * operator says and the writer's wrap needs (ADR-0096's correction of 2026-10-25).
  */
-export function pageRuns(session: PdfiumSession, page: number): Promise<PageRuns> {
+export function pageRuns(session: PdfiumSession, page: number, /** As {@link textRuns}' `clips`. */ clips: TextClips = null): Promise<PageRuns> {
   return promised(() =>
     onPage(session, page, (handle) => {
       const bindings = api();
-      const runs = joinedWalk(bindings, handle, walkRuns(bindings, handle)).map(({ index, members, text, left, right, bottom, top, style }) => {
+      // THE CLIPS `textRuns` WAS GIVEN, so this join is that one (ADR-0281 Decision 3).
+      const runs = joinedWalk(bindings, handle, walkRuns(bindings, handle), clips).map(({ index, members, text, left, right, bottom, top, style }) => {
         const fixed = members.every((member) => objectIsMono(bindings, bindings.getObject(handle, member)));
         // ITALIC BY THE STYLE THE EDITOR SHOWS (`styleOf`), so the writer judges a mark's italic by the same answer.
         return { index, members, text, left, right, bottom, top, ...(fixed ? { fixedPitch: true as const } : {}), ...(style.italic ? { italic: true as const } : {}) };
@@ -928,8 +948,9 @@ function readWalk(
   bindings: Bound,
   handle: unknown,
   walked: { readonly runs: ReadonlyMap<number, WalkedRun> },
+  clips: TextClips,
 ): JoinedRun<RunStyle>[] {
-  return readInLineOrder(joinedWalk(bindings, handle, walked), (run) => isUpright(run.style));
+  return readInLineOrder(joinedWalk(bindings, handle, walked, clips), (run) => isUpright(run.style));
 }
 
 /**
@@ -940,18 +961,42 @@ function joinedWalk(
   bindings: Bound,
   handle: unknown,
   walked: { readonly runs: ReadonlyMap<number, WalkedRun> },
+  clips: TextClips,
 ): JoinedRun<RunStyle>[] {
   const programs = new Map<string, ProgramFace | undefined>();
   // THE MARKED DECORATIONS EACH OBJECT'S WORDS CARRY, before the join, so an underlined word is never joined into the
   // plain words beside it (`sameStyle` compares them).
   const decorations = pageDecorations(bindings, handle).map(({ decoration }) => decoration);
+  // AND THE CLIP EACH IS DRAWN THROUGH, so no run is joined across two (ADR-0281 Decision 3).
+  const clipOf = clipsByObject(bindings, handle, clips);
   return joinRuns(
-    [...walked.runs.entries()].map(([index, run]) => ({
-      index,
-      ...run,
-      style: withDecorations(styleOf(bindings, bindings.getObject(handle, index), programs), run, decorations),
-    })),
+    [...walked.runs.entries()].map(([index, run]) => {
+      const clip = clipOf.get(index);
+      const style = withDecorations(styleOf(bindings, bindings.getObject(handle, index), programs), run, decorations);
+      return { index, ...run, style: clip === undefined ? style : { ...style, clip } };
+    }),
   );
+}
+
+/**
+ * The clip of each text object of a page, as the engine host reads it from the content (`engine/text-clips`, ADR-0281),
+ * or `null` where none is known: a form placement's page, which the engine host does not hold.
+ */
+export type TextClips = TextClipRanges | null;
+
+/**
+ * {@link TextClips} by PDFium's object index: the `k`-th text object among the page's objects (`textObjectsOn`), the
+ * numbering the writer joins PDFium's objects to the content by (ADR-0176 Decision 3). WHERE THE COUNTS DIFFER, or the
+ * answer was truncated, no object is given a clip (`clipOfTextObject`): that page is grouped as before, and a page whose
+ * numbering does not join is refused by the writer on its own (ADR-0270 Decision 4).
+ */
+function clipsByObject(bindings: Bound, handle: unknown, clips: TextClips): ReadonlyMap<number, string> {
+  if (clips === null) return new Map();
+  const order = textObjectsOn(bindings, handle);
+  return new Map(order.flatMap((index, k) => {
+    const clip = clipOfTextObject(clips, order.length, k);
+    return clip === undefined ? [] : [[index, clip] as const];
+  }));
 }
 
 /** One run as the walk accumulates it: text and the union of its characters' boxes. */
@@ -2931,7 +2976,8 @@ function layOutBlocks(
       // AND A LINE THAT RUNS BOTH WAYS IS READ AS IT WAS TYPED, by the reading `textRuns` answers (`readWalk`): the words
       // each named run holds here are the words the editor showed for it, so the edit diffs what a person typed against
       // what they were shown, and a line they left alone is not set again.
-      const joined = readWalk(bindings, handle, walked);
+      // NO CLIPS: this writer is sent no Edit text change (ADR-0266), and its join stays the one it was measured with.
+      const joined = readWalk(bindings, handle, walked, null);
       const blocks = edits.map((edit) => ({
         text: edit.text,
         soft: edit.soft,
@@ -5293,7 +5339,8 @@ export async function pageContent(session: PdfiumSession, page: number): Promise
         // model holds for the producers it was measured on and the places hold for all of them, so the deck takes the places.
         // TWO READERS OF ONE AUTHORITY, stated rather than hidden: the day they are reconciled this goes (a finding, not a fix).
         // `drawn` IS THIS FILE'S: the wire's run is strict, and a field it does not name is a reply main refuses.
-        runs: joinedWalk(bindings, handle, walked).map(({ members, drawn: _drawn, ...run }) => {
+        // NO CLIPS: a comparison's read, which groups no block a writer sets.
+        runs: joinedWalk(bindings, handle, walked, null).map(({ members, drawn: _drawn, ...run }) => {
           const raw = members.map((member) => walked.raws.get(member) ?? '').join('');
           return rightToLeftCount(raw) === 0
             ? run

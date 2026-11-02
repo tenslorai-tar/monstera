@@ -108,6 +108,7 @@ function build(protectedWriting: Protection, protectedImage?: ProtectedImage) {
       annotationImportPlan: refuse('plan a comment import'),
       pageRewrite: refuse('rewrite a page'),
       textFaces: refuse('read the fonts’ faces'),
+      textClips: refuse('read the text clips'),
       blockFaces: refuse('read a block’s faces'),
       duplicates: refuse('look for duplicates'),
       extract: refuse('build a document'),

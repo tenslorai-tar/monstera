@@ -1,5 +1,5 @@
 import type { BlockFormatting, BlockMarkSet, ParagraphProps, TextBlockStyle } from '@monstera/contract';
-import { joinAfterLine, lineText, paragraphEdges } from '@monstera/shared';
+import { joinAfterLine, lineText, listEntryOf, paragraphEdges } from '@monstera/shared';
 
 import type { Model, Paragraph, ParagraphSetting, Run, RunStyle } from '../editorKit/model.js';
 import type { DrawnWordPlace } from '../editorKit/paint.js';
@@ -106,6 +106,23 @@ function linesByParagraph(block: TextBlock): TextBlock['lines'][number][][] {
 }
 
 /**
+ * Where a list entry's words begin on `line` (`listEntryOf`, the rule the writer reads too): the left of its first word
+ * as the page draws it, at or after the marker and the spaces after it. `undefined` where the line begins no entry, or
+ * the run holding that word does not say where its words are drawn.
+ */
+function wordsStartOf(line: TextBlock['lines'][number]): number | undefined {
+  const entry = listEntryOf(lineText(line.runs));
+  if (entry === undefined) return undefined;
+  let offset = 0;
+  for (const run of line.runs) {
+    const end = offset + run.text.length;
+    if (entry.wordsAt < end) return run.words?.find((word) => offset + word.from >= entry.wordsAt)?.x0;
+    offset = end;
+  }
+  return undefined;
+}
+
+/**
  * The block as the kit's model: a paragraph per hard break, a run per page run in its own style and base, the space a
  * soft wrap stands for in the style of the run before it; each paragraph at its own edges on the page (`paragraphEdges`,
  * the function the writer sets it with), and aligned as the block is.
@@ -114,7 +131,10 @@ export function modelOfBlock(block: TextBlock): OpenedBlock {
   const edges =
     block.shape.align === 'left'
       ? paragraphEdges(
-          block.lines.map((line) => ({ x0: line.box.x0, x1: line.box.x1, characters: lineText(line.runs).length })),
+          block.lines.map((line) => {
+            const textStart = wordsStartOf(line);
+            return { x0: line.box.x0, x1: line.box.x1, characters: lineText(line.runs).length, ...(textStart === undefined ? {} : { textStart }) };
+          }),
           block.lines.map((line) => line.soft),
         )
       : [];

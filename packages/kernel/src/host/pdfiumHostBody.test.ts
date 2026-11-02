@@ -719,7 +719,7 @@ describe('the PDFium host body', () => {
       }, undefined, files),
     );
     await stream.whenSent(2);
-    stream.feed(request('t1', 'engine/text-runs', { session, from: IN, password: 'sample-only-0171', page: 0 }, ANSWER));
+    stream.feed(request('t1', 'engine/text-runs', { session, from: IN, password: 'sample-only-0171', page: 0, clips: null }, ANSWER));
     await stream.whenSent(3);
 
     // CONTROL: the apply case above sends `null` and records no key, so this separates a carried key from none.
@@ -822,7 +822,7 @@ describe('the PDFium host body', () => {
     const { session, calls } = await openArea(files);
     files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([7]));
 
-    stream.feed(request('t1', 'engine/text-runs', { session, from: IN, password: null, page:3 }, ANSWER));
+    stream.feed(request('t1', 'engine/text-runs', { session, from: IN, password: null, page: 3, clips: null }, ANSWER));
     await stream.whenSent(2);
 
     // THE ANSWER IS IN A FILE, and the frame says how many bytes (ADR-0125): a page drawing one object per glyph
@@ -937,7 +937,7 @@ describe('the PDFium host body', () => {
     const files = emptyFiles();
     const { session, calls } = await openArea(files);
     files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([7]));
-    stream.feed(request('p1', 'engine/page-runs', { session, from: IN, password: null, page: 2 }, ANSWER));
+    stream.feed(request('p1', 'engine/page-runs', { session, from: IN, password: null, page: 2, clips: null }, ANSWER));
     await stream.whenSent(2);
     const written = files.written.get(`${AREA.outputDirectory}|${ANSWER}`);
     expect(answerIn(stream.sent[1])).toStrictEqual({ id: 'p1', answerFile: { bytes: written?.length, credentials: [] } });
@@ -980,7 +980,7 @@ describe('the PDFium host body', () => {
     const files = emptyFiles();
     const { session } = await openArea(files);
     files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([0]));
-    stream.feed(request('p1', 'engine/page-runs', { session, from: IN, password: null, page: 0 }, ANSWER));
+    stream.feed(request('p1', 'engine/page-runs', { session, from: IN, password: null, page: 0, clips: null }, ANSWER));
     await stream.whenSent(2);
     expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: false, error: { code: 'engine-refused' } } });
   });
@@ -1022,7 +1022,7 @@ describe('the PDFium host body', () => {
     await stream.whenSent(2);
     expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: true } });
 
-    stream.feed(request('t1', 'engine/text-runs', { session, from: IN, password: null, page:0 }, ANSWER));
+    stream.feed(request('t1', 'engine/text-runs', { session, from: IN, password: null, page: 0, clips: null }, ANSWER));
     await stream.whenSent(3);
     // ORDINARY, NOT TERMINAL: a rebuilt host holds none of the previous one's
     // areas, so an id it does not hold is an outcome the supervisor answers
@@ -1045,7 +1045,7 @@ describe('the PDFium host body', () => {
     const { session, body, calls } = await openArea(files);
     files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([7]));
 
-    stream.feed(request('t1', 'engine/text-runs', { session, from: IN, password: null, page:0 }));
+    stream.feed(request('t1', 'engine/text-runs', { session, from: IN, password: null, page: 0, clips: null }));
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(body.termination()?.code).toBe('malformed-request');
     // REFUSED BEFORE THE HANDLER: nothing was read, and nothing was answered or written.

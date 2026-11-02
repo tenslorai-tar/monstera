@@ -50,7 +50,7 @@
  * 238.0**, so equality splits the very case the grouping exists for.
  */
 
-import { type TextFrame, blockShape, faceSeenAs, sameTextFrame } from '@monstera/shared';
+import { LIST_ENTRY, type TextFrame, blockShape, faceSeenAs, sameTextFrame } from '@monstera/shared';
 
 /** How a text object's matrix sets it (`orientationOf`, `pdfiumFfi.ts`): `upright` is the only one an editor is placed along. */
 export type Orientation = 'upright' | 'turned' | 'vertical' | 'slanted' | 'mirrored';
@@ -93,20 +93,27 @@ export function inItsFrame<R extends { readonly left: number; readonly right: nu
  * frame's coordinates where they are upright, and each block of a frame carries it. Upright runs have no frame and are
  * grouped exactly as they always were. A block never mixes frames: two runs set at different angles are not one line.
  *
- * The ONE grouping for the editor's read and every walk that must agree with it (B3a). `frameOf` names a run's frame;
- * the runs are given in their frame's coordinates already ({@link inItsFrame}).
+ * AND CLIP BY CLIP: runs drawn through different clips are never one block. The writer sets a block's lines in one
+ * object where its first line stood, inside that line's clip, so a line from another clip written there would be hidden
+ * by a clip it was never drawn through. Split here, each block has one clip and is a block the writer already writes
+ * (the owner's C4, 2026-11-01). A page whose text is drawn through one clip, or none, is grouped exactly as before.
+ *
+ * The ONE grouping for the editor's read and every walk that must agree with it (B3a). `frameOf` names a run's frame and
+ * `clipOf` its clip (`RunStyle.clip`); the runs are given in their frame's coordinates already ({@link inItsFrame}).
  */
 export function groupInFrames<R extends BlockableRun<unknown>>(
   runs: readonly R[],
   frameOf: (run: R) => TextFrame | undefined,
+  clipOf: (run: R) => string | undefined,
   /** The page's drawn bullets, in page space (`groupIntoBlocks`): asked of the upright text only, whose space it is. */
   markers: readonly DrawnMarker[] = [],
 ): readonly (EditableBlock<R['style']> & { readonly frame?: TextFrame })[] {
-  const groups: { readonly frame: TextFrame | null; readonly runs: R[] }[] = [];
+  const groups: { readonly frame: TextFrame | null; readonly clip: string | undefined; readonly runs: R[] }[] = [];
   for (const run of runs) {
     const frame = frameOf(run) ?? null;
-    const group = groups.find((each) => sameTextFrame(each.frame, frame));
-    if (group === undefined) groups.push({ frame, runs: [run] });
+    const clip = clipOf(run);
+    const group = groups.find((each) => sameTextFrame(each.frame, frame) && each.clip === clip);
+    if (group === undefined) groups.push({ frame, clip, runs: [run] });
     else group.runs.push(run);
   }
   // UPRIGHT FIRST, then each frame in the order its first run was read, so a page with no angled text is answered as before.
@@ -716,7 +723,6 @@ export const MAX_DRAWN_MARKERS = 4096;
 /** How far past a line's first letter a drawn bullet's right edge may reach and still stand before it: a rounding. */
 const SAME_EDGE = 0.5;
 
-export const LIST_ENTRY =/^(?:[•◦▪▫‣⁃●○■□](?!\s*$)|(?:[–—*-]|\(?(?:\d{1,3}|[a-z])[.)])\s)/u;
 
 /**
  * Whether each line of a block ENDS in a soft wrap, by the typesetter's own test and no constant: a line was soft-wrapped

@@ -106,6 +106,7 @@ import {
   type HostScanTablesReader,
   type HostPageAdjustmentReader,
   type HostPageRewriteReader,
+  type HostTextClipsReader,
   type HostTextFacesReader,
   type HostBlockFacesReader,
   type HostPageLinksReader,
@@ -190,6 +191,7 @@ import {
   remoteMupdfScanTables,
   remoteMupdfPageAdjustment,
   remoteMupdfPageRewrite,
+  remoteMupdfTextClips,
   remoteMupdfTextFaces,
   remoteMupdfBlockFaces,
   blockFaceRunsOf,
@@ -1306,12 +1308,18 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
    */
   const pageRunsOf = async (docId: DocId, sessions: DocumentSessions, page: number, form: FormPath | null): Promise<PageRuns> => {
     if (pdfiumHost === null) throw new EngineUnavailableError('reading which objects a page’s text is made of');
-    if (form === null) return pdfiumHost.pageRuns(pdfiumReadImage(docId, sessions), page);
+    if (form === null) {
+      const mupdf = sessions.mupdf;
+      if (mupdf === undefined) throw new MissingSessionError(docId, 'mupdf');
+      // THE CLIPS THE EDITOR'S READ WAS GROUPED BY (ADR-0281), so the runs this edit writes are the runs it was shown.
+      return pdfiumHost.pageRuns(pdfiumReadImage(docId, sessions), page, await engineHost.textClips(mupdf, page));
+    }
     // A FORM'S BLOCKS (ADR-0269): its placement's page, from the same build of the placements the read offered them on.
     const placed = await formPagesOf(docId, sessions, page);
     const at = placed.paths.findIndex((path) => sameFormPath(path, form));
     if (at === -1) throw new EditRefusedError('set-text', 0, `page ${String(page)} no longer draws the form the edit names`);
-    return pdfiumHost.pageRuns(placed.image, at);
+    // NO CLIPS for a form's page (ADR-0281 Decision 6): the engine host does not hold the document it is a page of.
+    return pdfiumHost.pageRuns(placed.image, at, null);
   };
   // THE SAME FLUSH, STAGED: the bytes stay where the host wrote them until they are placed, so a save, a copy and a
   // refreshed image never hold them in `main` (ADR-0121 Decision 2 and its addendum). `currentBytes`' check, the
@@ -1713,7 +1721,10 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       // WHETHER THE PAGE'S OWN CONTENT SHOWS TYPE 3 TEXT, MuPDF's reading (ADR-0176 Decision 1): the PDFium API has no query
       // for a font's type. It names a Type 3 run's face below; it no longer chooses a writer.
       const showsType3 = (await engineHost.pageRewrite(mupdf, page)) === 'operators';
-      const plain = await pdfiumHost.textRuns(image, page, false);
+      // WHICH CLIP EACH TEXT OBJECT IS DRAWN THROUGH, by the page's own content (ADR-0281): PDFium's read joins and the
+      // grouping below splits by it, so no block spans two clips.
+      const clips = await engineHost.textClips(mupdf, page);
+      const plain = await pdfiumHost.textRuns(image, page, false, clips);
       // EVERY PAGE'S TEXT IS THE OPERATOR WRITER'S (ADR-0266 and its corrections): it changes only the edited block's own
       // instructions, where PDFium's page rewrite writes the whole page again and was measured re-fonting and moving text
       // nobody edited — on a page whose text is packed inside a form too, so such text is not offered for editing.
@@ -1721,7 +1732,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       // TEXT PACKED INSIDE A FORM IS READ UNPACKED (ADR-0232) only on a page PDFium writes, which since ADR-0266 is none:
       // the rule stays the one place that says so. NEVER for Edit object's read (ADR-0264 Decision 5).
       const unpacked = !asItIs && readsUnpacked(plain.unaddressable, rewrite);
-      const read = unpacked ? await pdfiumHost.textRuns(image, page, true) : plain;
+      // AN UNPACKED READ TAKES NO CLIPS: its page holds the forms' text objects too, which the content's numbering does not.
+      const read = unpacked ? await pdfiumHost.textRuns(image, page, true, null) : plain;
       // A TYPE 3 RUN NAMED BY ITS DESCRIPTOR (ADR-0256): PDFium reads such a font as no name and no weight, so on a page
       // showing Type 3 text MuPDF says each font's face, and only the runs PDFium left unnamed take it.
       const faces = showsType3 ? await engineHost.textFaces(mupdf, page) : null;
@@ -1746,6 +1758,9 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       // ONE GROUPING for the page's runs and each form placement's (ADR-0269), so a form's text is grouped as a page's is.
       const blocksOf = (runs: typeof found.runs, markers: typeof found.markers) => {
         const wordsByIndex = new Map(runs.flatMap((run) => (run.words === undefined ? [] : [[run.index, run.words] as const])));
+        // EACH RUN'S CLIP, for the grouping only (`groupInFrames`): it splits a block where the clip changes, and the
+        // style the renderer is sent names no clip.
+        const clipByIndex = new Map(runs.flatMap((run) => (run.style.clip === undefined ? [] : [[run.index, run.style.clip] as const])));
         const grouped = (asItIs ? runs.filter((run) => isUpright(run.style)) : runs).map((run) => inItsFrame(run));
         // EACH RUN'S RISE FROM ITS LINE (the owner's N14): grouped with the page's baseline, then sent as the offset from
         // the line's (`withRises`), which is what the writer keeps and what the editor draws a superscript at.
@@ -1770,6 +1785,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
               },
             })),
             (run) => run.frame?.matrix,
+            (run) => clipByIndex.get(run.index),
             // THE PAGE'S DRAWN BULLETS, so a list's items whose bullets are shapes read as items and not as one paragraph.
             markers,
           );
@@ -1805,7 +1821,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       const placements: { form: FormPath; blocks: ReturnType<typeof blocksOf>; truncated: boolean }[] = [];
       if (placed !== null) {
         for (const [at, form] of placed.paths.entries()) {
-          const read = await pdfiumHost.textRuns(placed.image, at, false);
+          // NO CLIPS for a form's page (ADR-0281 Decision 6).
+          const read = await pdfiumHost.textRuns(placed.image, at, false, null);
           placements.push({ form, blocks: blocksOf(read.runs, read.markers), truncated: read.truncated });
         }
       }
@@ -2541,6 +2558,8 @@ function engineSessionOpener(
   readonly pageRewrite: HostPageRewriteReader;
   /** One page's fonts' descriptor faces, from whichever host is live (ADR-0256). */
   readonly textFaces: HostTextFacesReader;
+  /** Which clip each text object of one page is drawn through, from whichever host is live (ADR-0281). */
+  readonly textClips: HostTextClipsReader;
   /** The faces a block's new words are set in, from whichever host is live (ADR-0271 section 5). */
   readonly blockFaces: HostBlockFacesReader;
   /** One page's word boxes, from whichever host is live (ADR-0137). */
@@ -2780,6 +2799,7 @@ function engineSessionOpener(
     pageAdjustment: remoteMupdfPageAdjustment(client, remote),
     pageRewrite: remoteMupdfPageRewrite(client, remote),
     textFaces: remoteMupdfTextFaces(client, remote),
+    textClips: remoteMupdfTextClips(client, remote),
     blockFaces: remoteMupdfBlockFaces(client, remote),
     wordBoxes: remoteMupdfWordBoxes(client, remote),
     destinations: remoteMupdfDestinations(client, remote),
@@ -2926,6 +2946,19 @@ function engineSessionOpener(
       );
     }
     return textFaces(session, page);
+  };
+
+  /** Which clip each text object of a page is drawn through (ADR-0281), the same registration's. See {@link pageText}. */
+  const readTextClipsThroughHost: HostTextClipsReader = (session, page) => {
+    const textClips = bound?.textClips ?? null;
+    if (textClips === null) {
+      throw new Error(
+        'A text-clips read reached the engine with no host reader registered. A session was ' +
+          'resolved for this document, so one was issued by a host — the supervisor and the ' +
+          'host connection have diverged.',
+      );
+    }
+    return textClips(session, page);
   };
 
   /** The read on open's half of the same registration (ADR-0271 section 5). See {@link pageText}. */
@@ -3769,6 +3802,7 @@ function engineSessionOpener(
     pageAdjustment: readPageAdjustmentThroughHost,
     pageRewrite: readPageRewriteThroughHost,
     textFaces: readTextFacesThroughHost,
+    textClips: readTextClipsThroughHost,
     blockFaces: readBlockFacesThroughHost,
     wordBoxes: readWordBoxesThroughHost,
     destinations: readDestinationsThroughHost,
@@ -4135,11 +4169,11 @@ function pdfiumHostBinding(
       serialiseInto: serialiseIntoFile((session: ImageSession) => Promise.resolve(session.bytes)),
     },
     starts: (asker) => counting(() => hostStarts(ensure, failures, asker)),
-    textRuns: (image, page, unpack) => counting(async () => (await ensure()).textRuns(image, page, unpack)),
+    textRuns: (image, page, unpack, clips) => counting(async () => (await ensure()).textRuns(image, page, unpack, clips)),
     pageObjects: (image, page) => counting(async () => (await ensure()).pageObjects(image, page)),
     renderPage: (image, page, width, height, withoutText) =>
       counting(async () => (await ensure()).renderPage(image, page, width, height, withoutText)),
-    pageRuns: (image, page) => counting(async () => (await ensure()).pageRuns(image, page)),
+    pageRuns: (image, page, clips) => counting(async () => (await ensure()).pageRuns(image, page, clips)),
     pageContent: (image, page) => counting(async () => (await ensure()).pageContent(image, page)),
     retireIfIdle,
     close,

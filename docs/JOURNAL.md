@@ -892,6 +892,97 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-11-02 — Stage audit of `0d48e788..069d00cf` — findings CCCCCCCCC-1 to CCCCCCCCC-20
+
+Cloud run 30 (the text layer on the engine's letters, ADR-0280) taken over and merged by the local agent, its smoothness
+work, and the merges of cloud runs 31 to 35 onto `work/2026-11-01-merges`; recorded in the commit that merges run 36,
+which carried the range past one batch (201 files). `npm run audit:scope` at `069d00cf`: 74 commits, 172 files; 12 proofs
+added, 45 modified, none removed; 18 source files added, 60 changed, none removed.
+
+**Method.** The 45 modified proofs were read by three read-only reviewers, every hunk of `git log -p` over the range and
+of the staged merge, for a check loosened under a correction's name; they reported none, and the corrections they weighed
+are below. The rest was read by this author. **Stated limitation, not a pass:** a finding is *measured* only where it says
+so.
+
+### Fixed in the range
+
+**CCCCCCCCC-1 — A double click's word waited for a queued report.** The text layer replaced the browser's word on the next
+`selectionchange`; in 79 recorded double clicks the release, click and dblclick were all handled first, so the
+highlighter marked the browser's word (Windows' with its trailing space). Corrected at the next input as well
+(`52db5335`); `textLayerReaders.pw.ts`, the highlighter's double click, red 3 of 3 on the old code.
+
+**CCCCCCCCC-2 — A held double click dragged by letters.** Found writing CCCCCCCCC-1's control: rule (ii) moved a drag's end
+to the bare letter, so *commence on the Effec* where the browser selects whole words. Extends by the unit pressed
+(`unitAt`, `52db5335`); its case red 19 of 19 before, its control on a line placed as before.
+
+**CCCCCCCCC-3 — A click kept the browser's caret** (`ebb23945`, found by `textLayerWalk.mjs`). Only a drag took the
+engine's letter; a Shift+click after a click started a letter off on two of four clicks. The case and its control are in
+`textLayerReaders.pw.ts`.
+
+**CCCCCCCCC-4 — A drag's frames showed the browser's letter** (`ebb23945`): 26 of 80 frames one letter off, the correction
+waiting for the report; corrected and painted before each frame (`settleBeforePaint`), 0 of 79. **Open in part:** the
+evidence is the walk's frame record, run locally; no case CI runs holds it, and a rendered case could not reproduce the
+order (CCCCCCCCC-7).
+
+**CCCCCCCCC-5 — Every arriving page asked the selection** (`d1147537`), 4.5 to 5.3 ms a page in a scroll with nothing
+selected, and reading only its two end nodes 4.9 to 6.8; measured by `frameTimes.mjs --arrive-profile`. The case,
+`TextLayer.test.tsx`, follows this commit: red with the unconditional paint put back.
+
+**CCCCCCCCC-6 — The walk's frame recorder read a frame before its paint.** Asked for from a free-running callback, it ran
+ahead of the application's own frame callbacks and reported two unpainted frames that were never drawn. Read from a
+listener added after the application's (`ebb23945`). The comment the artefact had already produced was corrected in the
+same commit.
+
+**CCCCCCCCC-7 — A correction at the release, not kept.** Written for CCCCCCCCC-4's reason; its case, a quick highlighter
+drag, passed with the line removed, because Playwright's moves and release are separate round trips. Neither was kept.
+
+**CCCCCCCCC-8 — `frameTimes.mjs`' launch check named nobody** in three of eleven development launches: once connected, no
+listening socket was listed and the browser's end read CLOSED. A widening to established connections, made the same day,
+did not hold. Replaced by the browser's own process (`SystemInfo.getProcessInfo`, `aaa124e5`, `d078179e`).
+
+**CCCCCCCCC-9 — cloud-33's "nothing past the depth" could not fail.** Its page has exactly `MAX_FORM_DEPTH` levels. A
+placement count is added beside it, and the text layer's read is bounded by the same walk (`6513652e`).
+
+**CCCCCCCCC-10 — cloud-34 removed the import run 30's Translate read the selection through.** Translate reads the store,
+as the other selected-text commands do (`eae21c99`).
+
+### Stated limits, recorded
+
+**CCCCCCCCC-11 — `frameTimes.mjs`' `select` scenario fails a 0.5 ms resolution test** (0.5 ms of added script read as
+54.01 against 54.02); its rounds spread 51 to 71 ms. It settles a gap outside both ranges, never a 1 ms one.
+
+**CCCCCCCCC-12 — The `arrive` scenario was never resolution-tested.** Its frames over 33 ms spread 125 to 153 over eight
+runs, wider than the differences they were asked to judge; main was moved on the CPU profile, which resolved
+CCCCCCCCC-5's cost and its removal (0.09 ms).
+
+**CCCCCCCCC-13 — `textLayerSmoothness.measure.ts` counts script, layout and style only**, so the browser's own highlight
+on main costs it nothing while the build's paint is counted. Recorded in `3d0f22d4`; its header does not say so (fixed
+in the commit after this one).
+
+**CCCCCCCCC-14 — cloud-33's 100 ms read limit fails on this desktop**, 105 to 344 ms; timed in turn, cloud-33's own read
+58 to 161 ms and the merged one 65 to 115, so the merge costs nothing, and CI passed it.
+
+**CCCCCCCCC-15 — No case reads the remote `textClips` path** (cloud-36): `remoteEngine.test.ts` wires its stub and no case
+asks it.
+
+**CCCCCCCCC-16 — A new loop over `SECRET_SETTING_IDS`** (`SettingsBody.test.tsx`, `972f7c07`) passes on an empty set;
+guarded in the commit after this one.
+
+**CCCCCCCCC-17 — A stale count in a comment**: `AssistantPanel.test.tsx` still says "a sixty-fifth message" where the
+ceiling is 512 (`68e79642`); corrected in the commit after this one.
+
+**CCCCCCCCC-18 — `wordBoxes.test.ts` and `wordPictures.test.ts`' new cases** separate the old behaviour by their fixtures'
+fractional positions, stated in comments; no control runs the old code. Read, not reproduced.
+
+**CCCCCCCCC-19 — Rendered cases fail locally about one in twenty while opening** (the text not appearing within 5 s),
+with 1.5 to 4 GB free; open, to be compared with main under the same load.
+
+**CCCCCCCCC-20 — Unit cases time out locally under load** (`App`, `AppClose`, `AppTabs`, office conversions,
+`formFieldScale`'s 2,000-field case alone at 5.3 s) and pass alone or on CI; and `npm run typecheck` ended with a
+segmentation fault under an 8 GB heap on this 12 GB machine and passed under 4 GB, mechanism not established.
+
+---
+
 ## 2026-10-31 — OPEN: a refusal's sentence stayed after the caret moved, once, on Windows CI (NEXT-UPDATE item 54)
 
 **What failed.** Run 41212601632 (acd10faa), the `build` job's windows-latest leg, accessibility gate:

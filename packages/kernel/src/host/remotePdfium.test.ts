@@ -486,7 +486,7 @@ describe('main’s PDFium writer', () => {
 
     it('answers the host’s reading, and removes the input it wrote whatever happened', async () => {
       const { transfer, pageRuns } = asking([run(0, [0, 2]), run(3, [3])]);
-      expect(await pageRuns(imageOf(new Uint8Array([5])), 4)).toStrictEqual({
+      expect(await pageRuns(imageOf(new Uint8Array([5])), 4, null)).toStrictEqual({
         textObjects: [0, 2, 3],
         runs: [run(0, [0, 2]), run(3, [3])],
       });
@@ -495,11 +495,11 @@ describe('main’s PDFium writer', () => {
 
     it('refuses a member that is not one of the text objects the same answer names', async () => {
       // OBJECT 1 IS NOT TEXT here: a host naming it would have the writer set a rule as a glyph.
-      await expect(asking([run(0, [0, 1])]).pageRuns(imageOf(new Uint8Array([5])), 4)).rejects.toThrow(/object 1 in a run/u);
+      await expect(asking([run(0, [0, 1])]).pageRuns(imageOf(new Uint8Array([5])), 4, null)).rejects.toThrow(/object 1 in a run/u);
     });
 
     it('refuses an object named in two runs', async () => {
-      await expect(asking([run(0, [0, 2]), run(2, [2, 3])]).pageRuns(imageOf(new Uint8Array([5])), 4)).rejects.toThrow(/two runs/u);
+      await expect(asking([run(0, [0, 2]), run(2, [2, 3])]).pageRuns(imageOf(new Uint8Array([5])), 4, null)).rejects.toThrow(/two runs/u);
     });
   });
 
@@ -567,12 +567,18 @@ describe('main’s PDFium writer', () => {
     // what the host said: a `toMatchObject` on the indices would pass against
     // one that dropped the text and the extent, and both are what the grouping
     // and the chooser above it are made of.
-    expect(await textRuns(imageOf(new Uint8Array([5])), 4, false)).toStrictEqual({ runs, truncated: false, unaddressable: 9, box, markers: [] });
+    expect(await textRuns(imageOf(new Uint8Array([5])), 4, false, null)).toStrictEqual({ runs, truncated: false, unaddressable: 9, box, markers: [] });
     expect(transfer.log).toStrictEqual(['write:001', 'remove:001']);
     // UNPACK CROSSES ONLY WHEN ASKED (ADR-0232): a plain read names no `unpack`, which the strict wire would also take.
-    await textRuns(imageOf(new Uint8Array([5])), 4, true);
+    await textRuns(imageOf(new Uint8Array([5])), 4, true, null);
     expect(sent.map((params) => (params as { unpack?: true }).unpack)).toStrictEqual([undefined, true]);
     expect(Object.hasOwn(sent[0] as object, 'unpack')).toBe(false);
+    // THE CLIPS CROSS AS GIVEN (ADR-0281): to both reads, so the run shown and the run written are one join's.
+    const clips = { objects: 3, clips: ['0123456789abcdef', 'fedcba9876543210'], ranges: [{ first: 0, last: 1, clip: 0 }, { first: 2, last: 2, clip: 1 }], truncated: false };
+    await textRuns(imageOf(new Uint8Array([5])), 4, false, clips);
+    expect((sent.at(-1) as { clips?: unknown }).clips).toStrictEqual(clips);
+    // CONTROL: none known crosses as none, not as an empty answer that would read as "no object has a clip".
+    expect((sent[0] as { clips?: unknown }).clips).toBeNull();
   });
 
   it('an image WRITTEN FROM WHERE MAIN KEEPS IT is written by its own writer into the file the call names, and holds no bytes here (R11)', async () => {
@@ -597,16 +603,16 @@ describe('main’s PDFium writer', () => {
         return Promise.resolve(5);
       },
     };
-    await textRuns(written, 2, false);
+    await textRuns(written, 2, false, null);
     expect(wroteInto).toStrictEqual(['001']);
     expect(transfer.log).toStrictEqual(['write-with:001', 'remove:001']);
     expect(transfer.snapshots.size).toBe(0);
     expect(sent[0]).toMatchObject({ from: '001', password: 'sample-only-0171', page: 2 });
     // EVERY READER takes it the same way — the one helper, not a branch per reader.
-    await pageRuns(written, 2);
+    await pageRuns(written, 2, null);
     expect(wroteInto).toStrictEqual(['001', '002']);
     // CONTROL: bytes in hand still go through the bytes leg.
-    await textRuns(imageOf(new Uint8Array([5])), 2, false);
+    await textRuns(imageOf(new Uint8Array([5])), 2, false, null);
     expect(transfer.log.slice(-2)).toStrictEqual(['write:003', 'remove:003']);
   });
 });

@@ -44,6 +44,9 @@ describe('joinRuns', () => {
     const bold = { ...STYLE, bold: true };
     const cases: [string, ObjectRun[]][] = [
       ['a style change', [glyph(0, 'a', 72), glyph(1, 'b', 77, 700, bold)]],
+      // TWO CLIPS AT ONE POSITION (the owner's C4): abutting on one baseline, in one style, joined they were one piece
+      // written in the first one's clip.
+      ['a clip change', [glyph(0, 'a', 72, 700, { ...STYLE, clip: '0123456789abcdef' }), glyph(1, 'b', 77, 700, { ...STYLE, clip: 'fedcba9876543210' })]],
       ['a new line', [glyph(0, 'a', 72), glyph(1, 'b', 77, 688)]],
       ['a line at tight leading, its ink barely touching', [glyph(0, 'a', 72), glyph(1, 'b', 77, 693.5)]],
       // A SUPERSCRIPT IN THE SAME SIZE AND FACE (the owner's N14): its ink overlaps the line's by 4 of 10, past the
@@ -57,6 +60,11 @@ describe('joinRuns', () => {
       ],
     ];
     for (const [why, runs] of cases) expect(joinRuns(runs), why).toHaveLength(2);
+  });
+
+  it('CONTROL: abutting objects drawn through ONE clip join as before', () => {
+    const clipped = { ...STYLE, clip: '0123456789abcdef' };
+    expect(joinRuns([glyph(0, 'a', 72, 700, clipped), glyph(1, 'b', 77, 700, clipped)])).toHaveLength(1);
   });
 
   it('a DESCENDER keeps its glyph on the line: ink that reaches lower is still the same line', () => {
