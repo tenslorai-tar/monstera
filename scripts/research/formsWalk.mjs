@@ -226,8 +226,8 @@ await step('the new field moves with a drag, snaps to another field’s edge wit
   const before = await writesDone(page);
   // WHERE THE KEYS GO: an arrow nudges the selected field only while the page's field layer holds the focus, and a step
   // that saw no nudge said nothing of where the focus was (2026-11-02, both builds).
-  const focus = await page.evaluate(() => {
-    const active = globalThis.document.activeElement;
+  const focus = await page.locator('html').evaluate((root) => {
+    const active = root.ownerDocument.activeElement;
     return active === null ? 'none' : `${active.tagName.toLowerCase()}.${String(active.className).slice(0, 80)}`;
   });
   const arrowed = Date.now();
