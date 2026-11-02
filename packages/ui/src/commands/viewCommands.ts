@@ -1,5 +1,8 @@
 import {
   AUTOSCROLL_TITLE,
+  COVER_PAGE_TITLE,
+  PAGE_LAYOUT_OPTION_TITLES,
+  PAGE_LAYOUT_TITLE,
   DARK_PAGE_TITLE,
   FIELD_HIGHLIGHT_TITLE,
   GRID_TITLE,
@@ -13,11 +16,16 @@ import {
 } from '../messages/en.js';
 import { type UiCommand, VISIBLE } from '../registries/commands.js';
 import { hasDocument } from './documentCommands.js';
+import type { IconName } from '../primitives/icons.js';
 import {
+  COVER_PAGE_SETTING,
   DARK_PAGE_SETTING,
   FIELD_HIGHLIGHT_SETTING,
   GRID_SETTING,
   LOUPE_SETTING,
+  PAGE_LAYOUT_SETTING,
+  PAGE_LAYOUTS,
+  type PageLayout,
   RULERS_SETTING,
   SPLIT_VIEW_SETTING,
 } from '../settings/viewing.js';
@@ -96,6 +104,53 @@ export function toggleRulersCommand(deps: { readonly settings: SettingsStore }):
       deps.settings.set(RULERS_SETTING.id, deps.settings.get(RULERS_SETTING.id) !== true);
     },
   };
+}
+
+/** Each page layout's place among the five: the order a person reads them in, Tools › Display and the View menu alike. */
+const PAGE_LAYOUT_ORDER: Readonly<Record<PageLayout, number>> = { single: 20, continuous: 21, pair: 22, facing: 23 };
+const PAGE_LAYOUT_ICONS: Readonly<Record<PageLayout, IconName>> = { single: 'File', continuous: 'FileStack', pair: 'Columns2', facing: 'Files' };
+
+/**
+ * THE PAGE LAYOUT, reached where a person reads (ADR-0284 Decision 5): a command per layout, each writing the one setting
+ * (`viewing.page-layout`) and shown checked when it is the one on, and *Show cover page* beside them. A change here and
+ * one in Settings are the same stored value, read live, so neither can show the other's old answer.
+ *
+ * Their ids are `view.page-layout-*`, never `view.layout-*`, which are the window's layout (Ribbon, Studio, Focus): two
+ * things called a layout, kept apart by name.
+ */
+export function pageLayoutCommands(deps: { readonly settings: SettingsStore }): readonly UiCommand[] {
+  const layoutCommand = (layout: PageLayout): UiCommand => ({
+    id: `view.page-layout-${layout}`,
+    feedback: VISIBLE,
+    icon: PAGE_LAYOUT_ICONS[layout],
+    title: PAGE_LAYOUT_OPTION_TITLES[layout],
+    placements: [
+      { surface: 'ribbon', section: 'tools', group: GROUP_DISPLAY, order: PAGE_LAYOUT_ORDER[layout], size: 'small' },
+      // GROUP 5, the first number the View menu leaves free (0 to 4 are taken, one caption each, ADR-0107).
+      { surface: 'menu-bar', menu: 'view', group: 5, order: PAGE_LAYOUT_ORDER[layout], caption: PAGE_LAYOUT_TITLE },
+    ],
+    when: hasDocument,
+    checked: () => deps.settings.get(PAGE_LAYOUT_SETTING.id) === layout,
+    run: (): void => {
+      deps.settings.set(PAGE_LAYOUT_SETTING.id, layout);
+    },
+  });
+  const cover: UiCommand = {
+    id: 'view.cover-page',
+    feedback: VISIBLE,
+    icon: 'PanelRight',
+    title: COVER_PAGE_TITLE,
+    placements: [
+      { surface: 'ribbon', section: 'tools', group: GROUP_DISPLAY, order: 24, size: 'small' },
+      { surface: 'menu-bar', menu: 'view', group: 5, order: 24, caption: PAGE_LAYOUT_TITLE },
+    ],
+    when: hasDocument,
+    checked: () => deps.settings.get(COVER_PAGE_SETTING.id) === true,
+    run: (): void => {
+      deps.settings.set(COVER_PAGE_SETTING.id, deps.settings.get(COVER_PAGE_SETTING.id) !== true);
+    },
+  };
+  return [...PAGE_LAYOUTS.map(layoutCommand), cover];
 }
 
 /**

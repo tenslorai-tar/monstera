@@ -1123,5 +1123,95 @@
         "menu": "view"
       }
     ]
+  },
+  {
+    "id": "view.page-layout-continuous",
+    "title": "Continuous",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "tools"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "view"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "tools"
+      }
+    ]
+  },
+  {
+    "id": "view.page-layout-single",
+    "title": "Single page",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "tools"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "view"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "tools"
+      }
+    ]
+  },
+  {
+    "id": "view.page-layout-pair",
+    "title": "Facing",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "tools"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "view"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "tools"
+      }
+    ]
+  },
+  {
+    "id": "view.page-layout-facing",
+    "title": "Continuous facing",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "tools"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "view"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "tools"
+      }
+    ]
+  },
+  {
+    "id": "view.cover-page",
+    "title": "Show cover page",
+    "where": [
+      {
+        "surface": "ribbon",
+        "section": "tools"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "view"
+      },
+      {
+        "surface": "menu-bar",
+        "menu": "tools"
+      }
+    ]
   }
 ]

@@ -8,7 +8,21 @@ import {
   PREVIOUS_PAGE_TITLE,
 } from '../messages/en.js';
 import { type CommandContext, type UiCommand, VISIBLE } from '../registries/commands.js';
+import { facesPages, stepSpread } from '../pageSpreads.js';
+import { COVER_PAGE_SETTING, PAGE_LAYOUT_SETTING, SPLIT_VIEW_SETTING } from '../settings/viewing.js';
+import type { SettingsStore } from '../settingsStore.js';
 import { hasDocument } from './documentCommands.js';
+
+/**
+ * Whether next and previous move by PAIR now, and from which pairing (ADR-0284 Decision 8): in both facing layouts,
+ * read from the one setting at the press, and never in Split view, whose halves each show one page.
+ */
+function facingNow(settings: SettingsStore): { readonly cover: boolean } | undefined {
+  if (settings.get(SPLIT_VIEW_SETTING.id) === true) return undefined;
+  const layout = PAGE_LAYOUT_SETTING.schema.safeParse(settings.get(PAGE_LAYOUT_SETTING.id));
+  if (!layout.success || !facesPages(layout.data)) return undefined;
+  return { cover: settings.get(COVER_PAGE_SETTING.id) === true };
+}
 
 /**
  * Moving around a document.
@@ -68,7 +82,7 @@ function within(page: number, pageCount: number): number {
  */
 export function pageMoveCommand(
   move: 'next' | 'previous' | 'first' | 'last',
-  deps: { readonly navigator: Navigator },
+  deps: { readonly navigator: Navigator; readonly settings: SettingsStore },
 ): UiCommand {
   const titles = {
     next: NEXT_PAGE_TITLE,
@@ -114,12 +128,18 @@ export function pageMoveCommand(
       const count = context.pageCount ?? 0;
       if (count === 0) return;
       const at = context.page ?? 0;
-      const target = {
-        next: at + 1,
-        previous: at - 1,
-        first: 0,
-        last: count - 1,
-      }[move];
+      // BY PAIR IN A FACING LAYOUT: the next or previous pair's first page (`pageSpreads.ts`), so a press never lands on
+      // the right-hand page of the pair already on show.
+      const facing = move === 'next' || move === 'previous' ? facingNow(deps.settings) : undefined;
+      const target =
+        facing !== undefined
+          ? stepSpread(at, count, facing.cover, move === 'next' ? 1 : -1)
+          : {
+              next: at + 1,
+              previous: at - 1,
+              first: 0,
+              last: count - 1,
+            }[move];
       deps.navigator.jumpTo(within(target, count));
     },
   };

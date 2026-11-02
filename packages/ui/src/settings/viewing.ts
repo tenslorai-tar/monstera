@@ -1,6 +1,8 @@
 import { z } from 'zod';
 
 import {
+  COVER_PAGE_DESCRIPTION,
+  COVER_PAGE_TITLE,
   RESTORE_SESSION_DESCRIPTION,
   RESTORE_SESSION_TITLE,
   DARK_PAGE_DESCRIPTION,
@@ -151,8 +153,12 @@ export const SMOOTH_SCROLL_SETTING: SettingDefinition<z.ZodBoolean> = {
   category: 'viewing',
 };
 
-/** How pages are laid out on the page area — Part F's *"page layout (continuous / single / facing)"*. */
-export const PAGE_LAYOUTS = ['continuous', 'single', 'facing'] as const;
+/**
+ * How pages are laid out on the page area — Part F's *"page layout (continuous / single / facing)"*, and ADR-0284's
+ * four. THE STORED `facing` KEEPS ITS MEANING, the scrolling two-column grid, now titled *Continuous facing*; one pair
+ * at a time is `pair`, a member added, so every value a person stored still parses and means what it did.
+ */
+export const PAGE_LAYOUTS = ['continuous', 'single', 'pair', 'facing'] as const;
 
 export type PageLayout = (typeof PAGE_LAYOUTS)[number];
 
@@ -170,6 +176,20 @@ export const PAGE_LAYOUT_SETTING: SettingDefinition<z.ZodEnum<{ [K in PageLayout
   fallback: 'continuous',
   category: 'viewing',
   optionTitles: PAGE_LAYOUT_OPTION_TITLES,
+};
+
+/**
+ * THE COVER PAGE (ADR-0284 Decision 3): in the two facing layouts, page 1 alone on the right, so pages 2 and 3 face
+ * each other as in a printed book. A choice beside the layout rather than more layouts, since it applies to two of them
+ * and to nothing else. Off by default, which is how the pages paired before it existed.
+ */
+export const COVER_PAGE_SETTING: SettingDefinition<z.ZodBoolean> = {
+  id: 'viewing.cover-page',
+  title: COVER_PAGE_TITLE,
+  description: COVER_PAGE_DESCRIPTION,
+  schema: z.boolean(),
+  fallback: false,
+  category: 'viewing',
 };
 
 /** How fast Autoscroll moves — Part F's *"autoscroll speed"* (`BUILD-PROMPT.md`:610). */

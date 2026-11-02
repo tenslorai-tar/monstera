@@ -349,7 +349,7 @@ describe('PageList', () => {
         showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
         unit="in"
         search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous" coverPage={false}
         menuAt={undefined}
       />,
     );
@@ -384,7 +384,7 @@ describe('PageList', () => {
           showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
           unit="in"
           search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
-          secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
+          secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous" coverPage={false}
           menuAt={undefined}
           panning={panning}
         />,
@@ -444,7 +444,7 @@ describe('PageList', () => {
         showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
         unit="in"
         search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous" coverPage={false}
         menuAt={undefined}
       />,
     );
@@ -490,7 +490,7 @@ describe('PageList', () => {
         tileAbove={2}
         quality={2}
         pageBadges={false}
-        smoothScroll={false} layout="continuous"
+        smoothScroll={false} layout="continuous" coverPage={false}
         menuAt={undefined}
       />,
     );
@@ -534,7 +534,7 @@ describe('PageList', () => {
           tileAbove={2}
           quality={1}
           pageBadges={pageBadges}
-          smoothScroll={false} layout="continuous"
+          smoothScroll={false} layout="continuous" coverPage={false}
           menuAt={undefined}
         />,
       );
@@ -580,7 +580,7 @@ describe('PageList', () => {
           tileAbove={1.5}
           quality={quality}
           pageBadges={false}
-          smoothScroll={false} layout="continuous"
+          smoothScroll={false} layout="continuous" coverPage={false}
           menuAt={undefined}
         />,
       );
@@ -638,7 +638,7 @@ describe('PageList', () => {
         showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
         unit="in"
         search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous" coverPage={false}
         menuAt={undefined}
       />,
     );
@@ -675,7 +675,7 @@ describe('PageList', () => {
         showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
         unit="in"
         search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous" coverPage={false}
         menuAt={undefined}
       />,
     );
@@ -731,7 +731,7 @@ describe('PageList', () => {
         showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
         unit="in"
         search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous" coverPage={false}
         menuAt={undefined}
       />,
     );
@@ -775,7 +775,7 @@ describe('PageList', () => {
         showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
         unit="in"
         search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous" coverPage={false}
         menuAt={undefined}
       />,
     );
@@ -835,7 +835,7 @@ describe('PageList', () => {
         showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
         unit="in"
         search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous" coverPage={false}
         menuAt={undefined}
         editing={editing}
       />,
@@ -876,7 +876,7 @@ describe('PageList', () => {
         showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
         unit="in"
         search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous" coverPage={false}
         menuAt={undefined}
       />,
     );
@@ -907,7 +907,7 @@ describe('PageList', () => {
         showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
         unit="in"
         search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous" coverPage={false}
         menuAt={undefined}
       />,
     );
@@ -950,7 +950,7 @@ describe('PageList', () => {
         showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
         unit="in"
         search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous" coverPage={false}
         menuAt={undefined}
       />,
     );
@@ -984,7 +984,7 @@ describe('PageList', () => {
         showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
         unit="in"
         search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous" coverPage={false}
         menuAt={undefined}
       />,
     );
@@ -1035,7 +1035,7 @@ describe('PageList', () => {
         showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
         unit="in"
         search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous" coverPage={false}
         menuAt={undefined}
       />,
     );
@@ -1104,6 +1104,7 @@ describe('PageList', () => {
       pageBadges: false,
       smoothScroll: false,
       layout: 'continuous' as const,
+      coverPage: false,
       menuAt: undefined,
     };
     const { rerender } = render(<PageList {...props} view={viewDrawing()} version={VERSION} />);
@@ -1147,7 +1148,7 @@ describe('PageList', () => {
         showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
         unit="in"
         search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous" coverPage={false}
         menuAt={undefined}
       />,
     );
@@ -1193,6 +1194,7 @@ describe('PageList', () => {
       pageBadges: false,
       smoothScroll: false,
       layout: 'continuous' as const,
+      coverPage: false,
       menuAt: undefined,
     };
     const { container, rerender } = render(<PageList {...props} startAt={2} />);
@@ -1232,6 +1234,7 @@ describe('PageList', () => {
       pageBadges: false,
       smoothScroll: false,
       layout: 'continuous' as const,
+      coverPage: false,
       menuAt: undefined,
     };
     const { container, rerender } = render(<PageList {...props} goTo={undefined} />);
@@ -1281,6 +1284,7 @@ describe('PageList', () => {
       pageBadges: false,
       smoothScroll: false,
       layout: 'continuous' as const,
+      coverPage: false,
       menuAt: undefined,
     };
     const { container, rerender } = render(<PageList {...props} goTo={undefined} />);
@@ -1333,6 +1337,7 @@ describe('PageList', () => {
         pageBadges: false,
         smoothScroll,
         layout: 'continuous' as const,
+      coverPage: false,
         menuAt: undefined,
       };
       const { container, rerender, unmount } = render(<PageList {...props} goTo={undefined} />);
@@ -1395,7 +1400,7 @@ describe('PageList', () => {
           showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
           unit="in"
           search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous" coverPage={false}
         menuAt={undefined}
         />,
       );
@@ -1426,7 +1431,7 @@ describe('PageList', () => {
             showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
             unit="in"
             search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous" coverPage={false}
         menuAt={undefined}
           />,
         );
@@ -1467,7 +1472,7 @@ describe('PageList', () => {
             showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
             unit="in"
             search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous" coverPage={false}
         menuAt={undefined}
           />,
         );
@@ -1495,7 +1500,7 @@ describe('PageList', () => {
             showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
             unit="in"
             search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous" coverPage={false}
         menuAt={undefined}
           />,
         );
@@ -1541,7 +1546,7 @@ describe('PageList', () => {
         showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
         unit="in"
         search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
-        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous" coverPage={false}
         menuAt={undefined}
       />,
     );
@@ -1566,7 +1571,10 @@ describe('PageList', () => {
 
   describe('PAGE LAYOUT (viewing.page-layout)', () => {
     /** The props every layout case shares, at five pages and scale 1. */
-    const layoutProps = (layout: PageLayout, extra: { onWentTo?: () => void; onShownZoom?: (z: number) => void; mode?: ZoomMode } = {}) => ({
+    const layoutProps = (
+      layout: PageLayout,
+      extra: { onWentTo?: () => void; onShownZoom?: (z: number) => void; mode?: ZoomMode; coverPage?: boolean } = {},
+    ) => ({
       startAt: FIRST_PAGE.kernel,
       client: clientAnswering().client,
       view: viewDrawing(),
@@ -1590,6 +1598,7 @@ describe('PageList', () => {
       pageBadges: false,
       smoothScroll: false,
       layout,
+      coverPage: extra.coverPage ?? false,
       menuAt: undefined,
     });
     /** The pages whose slots are in the layout — not hidden. */
@@ -1636,7 +1645,7 @@ describe('PageList', () => {
         await Promise.resolve();
       });
       await act(async () => {
-        rerender(<PageList {...props} layout="single" goTo={undefined} />);
+        rerender(<PageList {...props} layout="single" coverPage={false} goTo={undefined} />);
         await Promise.resolve();
       });
       expect(shownPages(container)).toStrictEqual([2]);
@@ -1671,6 +1680,59 @@ describe('PageList', () => {
       await settle();
       fireEvent.wheel(scrollerOf(continuous.container), { deltaY: 100 });
       expect(shownPages(continuous.container)).toStrictEqual([0, 1, 2, 3, 4]);
+    });
+
+    describe('FACING, one pair at a time, and the cover page (ADR-0284)', () => {
+      it('FACING shows exactly one pair, and a wheel past its edge turns to the next pair', async () => {
+        const { container } = render(<PageList {...layoutProps('pair')} goTo={undefined} />);
+        await settle();
+        expect(shownPages(container)).toStrictEqual([0, 1]);
+        fireEvent.wheel(scrollerOf(container), { deltaY: 100 });
+        expect(shownPages(container)).toStrictEqual([2, 3]);
+      });
+
+      it('a request for a RIGHT-HAND page shows that page’s pair: a search hit, a link, a bookmark, a thumbnail', async () => {
+        const props = layoutProps('pair');
+        const { container, rerender } = render(<PageList {...props} goTo={undefined} />);
+        await settle();
+        await act(async () => {
+          rerender(<PageList {...props} goTo={3} />);
+          await Promise.resolve();
+        });
+        expect(shownPages(container)).toStrictEqual([2, 3]);
+      });
+
+      it('the COVER PAGE puts page 1 alone and pages 2 and 3 together in Facing', async () => {
+        const props = layoutProps('pair', { coverPage: true });
+        const { container } = render(<PageList {...props} goTo={undefined} />);
+        await settle();
+        expect(shownPages(container)).toStrictEqual([0]);
+        fireEvent.wheel(scrollerOf(container), { deltaY: 100 });
+        expect(shownPages(container)).toStrictEqual([1, 2]);
+      });
+
+      it('and in Continuous facing: every page shown, the grid marked so page 1 stands in the right column', async () => {
+        const { container } = render(<PageList {...layoutProps('facing', { coverPage: true })} goTo={undefined} />);
+        await settle();
+        expect(shownPages(container)).toStrictEqual([0, 1, 2, 3, 4]);
+        expect(scrollerOf(container).classList.contains('m-page-list--cover')).toBe(true);
+      });
+
+      it('a STORED “facing” from today opens as Continuous facing: the two-column grid with every page in it', async () => {
+        const { container } = render(<PageList {...layoutProps('facing')} goTo={undefined} />);
+        await settle();
+        expect(scrollerOf(container).classList.contains('m-page-list--facing')).toBe(true);
+        expect(scrollerOf(container).classList.contains('m-page-list--cover')).toBe(false);
+        expect(shownPages(container)).toStrictEqual([0, 1, 2, 3, 4]);
+      });
+
+      it('CONTROL: Continuous is one column with every page, as today, and the cover page changes nothing in it', async () => {
+        const { container } = render(<PageList {...layoutProps('continuous', { coverPage: true })} goTo={undefined} />);
+        await settle();
+        expect(scrollerOf(container).classList.contains('m-page-list--facing')).toBe(false);
+        expect(scrollerOf(container).classList.contains('m-page-list--cover')).toBe(false);
+        expect(shownPages(container)).toStrictEqual([0, 1, 2, 3, 4]);
+      });
     });
 
     describe('AUTOSCROLL (view.autoscroll at viewing.autoscroll-speed)', () => {
@@ -1865,7 +1927,7 @@ describe('PageList', () => {
           showGrid={showGrid} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
           unit="in"
           search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
-          secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
+          secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous" coverPage={false}
           menuAt={undefined}
         />,
       );
@@ -1923,7 +1985,7 @@ describe('PageList', () => {
           showGrid={{ size: 'auto', divisions: 1 }} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
           unit="in"
           search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
-          secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
+          secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous" coverPage={false}
           menuAt={undefined}
         />,
       );

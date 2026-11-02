@@ -3233,6 +3233,7 @@ describe('App', () => {
     const ANCHOR = [
       ...['view.theme-system', 'view.theme-light', 'view.theme-dark'],
       ...['view.layout-ribbon', 'view.layout-studio', 'view.layout-focus'],
+      ...['view.page-layout-continuous', 'view.page-layout-single', 'view.page-layout-pair', 'view.page-layout-facing', 'view.cover-page'],
       ...['view.show-properties', 'view.show-pages', 'view.show-bookmarks', 'view.show-layers', 'view.show-search'],
       ...['view.show-comments', 'view.show-fields', 'view.toggle-panel', 'view.toggle-context-panel', 'view.toggle-quick-toolbar'],
       ...['view.toggle-rulers', 'view.toggle-grid', 'view.toggle-dark-page', 'view.toggle-field-highlight', 'view.toggle-loupe'],

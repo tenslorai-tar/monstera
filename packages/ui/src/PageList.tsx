@@ -84,6 +84,7 @@ import { FIRST_PAGE, pdfjsPageOf } from './pageNumbering.js';
 import { holdPage } from './pageResidency.js';
 import { motionReduced } from './settings/appearance.js';
 import type { PageLayout } from './settings/viewing.js';
+import { facesPages, spreadPages, stepSpread } from './pageSpreads.js';
 import {
   type PageRotation,
   RenderCancelledError,
@@ -419,10 +420,12 @@ export interface PageListProps {
   /** Whether going to a page glides there (`viewing.smooth-scroll`); reduced motion overrides it. */
   readonly smoothScroll: boolean;
   /**
-   * How the pages are laid out (`viewing.page-layout`): one column, one page at a time, or facing pairs. Required for
-   * `secondRasteriser`'s reason.
+   * How the pages are laid out (`viewing.page-layout`): one column, one page at a time, one facing pair at a time, or
+   * facing pairs one after another (ADR-0284). Required for `secondRasteriser`'s reason.
    */
   readonly layout: PageLayout;
+  /** Whether the facing layouts start with page 1 alone on the right (`viewing.cover-page`, ADR-0284 Decision 3). */
+  readonly coverPage: boolean;
   /**
    * AUTOSCROLL's pace in CSS pixels a second while it runs (`view.autoscroll`, at `viewing.autoscroll-speed`), or
    * `undefined` while it does not. Only the pane in front is given one.
@@ -597,6 +600,7 @@ export function PageList({
   pageBadges,
   smoothScroll,
   layout,
+  coverPage,
   autoscroll,
   onAutoscrollEnd,
   menuAt,
@@ -659,13 +663,16 @@ export function PageList({
     readonly request: number | undefined;
     readonly layout: PageLayout;
   }>({ page: startAt, request: goTo, layout });
+  // ONE SCREEN AT A TIME: Single page shows one page, Facing one pair (ADR-0284). Both keep `single` above.
+  const oneScreen = layout === 'single' || layout === 'pair';
   if (single.request !== goTo || single.layout !== layout) {
     const [topmost] = [...visible].sort((a, b) => a - b);
+    const wasOneScreen = single.layout === 'single' || single.layout === 'pair';
     setSingle({
       page:
         goTo !== undefined && goTo !== single.request
           ? goTo
-          : layout === 'single' && single.layout !== 'single' && topmost !== undefined
+          : oneScreen && !wasOneScreen && topmost !== undefined
             ? topmost
             : single.page,
       request: goTo,
@@ -674,6 +681,20 @@ export function PageList({
   }
   // A PAGE PAST THE END MEANS THE LAST PAGE, the request's rule below: a delete can leave the page on show beyond it.
   const onShow = Math.min(single.page, pageCount - 1);
+  /**
+   * The pages on show in a one-screen layout: the page, or in Facing the pair holding it (`pageSpreads.ts`), so a
+   * search hit, a link or a thumbnail on a right-hand page shows that page's pair.
+   */
+  const shownPages = useMemo(
+    () => (layout === 'pair' ? spreadPages(onShow, pageCount, coverPage) : [onShow]),
+    [coverPage, layout, onShow, pageCount],
+  );
+  /** The page a turn forward or back lands on: the next page, or in Facing the next pair's first. */
+  const turned = useCallback(
+    (direction: 1 | -1): number =>
+      layout === 'pair' ? stepSpread(onShow, pageCount, coverPage, direction) : Math.min(Math.max(onShow + direction, 0), pageCount - 1),
+    [coverPage, layout, onShow, pageCount],
+  );
   const lastTurn = useRef(Number.NEGATIVE_INFINITY);
   // THE SELECTABLE TEXT FOR WHAT IS ON SCREEN. Held here rather than lifted to
   // a caller because `visible` is this component's answer and it changes on
@@ -889,7 +910,7 @@ export function PageList({
    */
   // FACING PAGES FIT A SPREAD, two pages and the gap between them: fitting one page's width would push its partner
   // off the pane. The gap is taken from the pane rather than added to the pages, because it does not scale with them.
-  const spread = layout === 'facing';
+  const spread = facesPages(layout);
   /** Fit page in one column: each page takes the whole pane, so no part of another shows (`.m-page-list--fit-page`). */
   const fitOnePage = mode.kind === 'fit-page' && layout === 'continuous';
   const resolved = resolveZoom(
@@ -1040,9 +1061,9 @@ export function PageList({
   useEffect(() => {
     if (goTo === undefined) return;
     const box = scroller.current;
-    // SINGLE PAGE: the request already chose the page on show (`single`, adjusted as the request arrived), so going
-    // there is starting at its top.
-    if (layout === 'single') {
+    // SINGLE PAGE AND FACING: the request already chose the page on show (`single`, adjusted as the request arrived), and
+    // in Facing its pair, so going there is starting at its top.
+    if (oneScreen) {
       if (box !== null) box.scrollTop = 0;
     } else {
       // A GLIDE only where the reader chose one AND nothing asked for stillness (`viewing.smooth-scroll`).
@@ -1050,7 +1071,7 @@ export function PageList({
       slotFor(Math.min(goTo, pageCount - 1))?.scrollIntoView({ block: 'start', behavior: glide ? 'smooth' : 'auto' });
     }
     onWentTo();
-  }, [goTo, layout, onWentTo, pageCount, slotFor, smoothScroll]);
+  }, [goTo, oneScreen, onWentTo, pageCount, slotFor, smoothScroll]);
 
   /**
    * The page this scroller MOUNTS at, revealed once — the scroll half of `startAt`.
@@ -1197,9 +1218,10 @@ export function PageList({
       }
       last = now;
       if (box.scrollTop + box.clientHeight >= box.scrollHeight - 1) {
-        if (layout === 'single' && onShow < pageCount - 1) {
+        const next = turned(1);
+        if (oneScreen && next !== onShow) {
           box.scrollTop = 0;
-          setSingle((current) => ({ ...current, page: onShow + 1 }));
+          setSingle((current) => ({ ...current, page: next }));
           return;
         }
         stop();
@@ -1224,19 +1246,18 @@ export function PageList({
       box.removeEventListener('pointerdown', stop);
       box.removeEventListener('wheel', stop);
     };
-  }, [autoscroll, layout, onAutoscrollEnd, onShow, pageCount]);
+  }, [autoscroll, oneScreen, onAutoscrollEnd, onShow, turned]);
 
   const onWheel = useCallback(
     (event: React.WheelEvent<HTMLDivElement>): void => {
       if (!event.ctrlKey) {
-        // SINGLE PAGE: a wheel that would scroll past the page's end turns to the next, and past its top to the one
-        // before, which lands at that page's top.
+        // SINGLE PAGE AND FACING: a wheel that would scroll past the page's end turns to the next page or pair, and past
+        // its top to the one before, which lands at its top.
         const box = scroller.current;
-        if (layout !== 'single' || box === null) return;
+        if (!oneScreen || box === null) return;
         const atEnd = box.scrollTop + box.clientHeight >= box.scrollHeight - 1;
-        const next =
-          event.deltaY > 0 && atEnd ? onShow + 1 : event.deltaY < 0 && box.scrollTop <= 0 ? onShow - 1 : undefined;
-        if (next === undefined || next < 0 || next >= pageCount) return;
+        const next = event.deltaY > 0 && atEnd ? turned(1) : event.deltaY < 0 && box.scrollTop <= 0 ? turned(-1) : undefined;
+        if (next === undefined || next === onShow) return;
         // ONE TURN PER GESTURE: a wheel sends a burst of events, and every one after the first arrives at the new
         // page's edge too. The interval is chosen, not measured — long enough to span a notch's burst, short enough
         // that a reader turning deliberately never waits on it.
@@ -1252,7 +1273,7 @@ export function PageList({
       // trackpad and a mouse zoom at different rates. The reader's step is the amount.
       onZoomStep(event.deltaY < 0 ? 'in' : 'out');
     },
-    [layout, onShow, onZoomStep, pageCount],
+    [oneScreen, onShow, onZoomStep, turned],
   );
   /**
    * What a slot reports after drawing, as ONE stable callback.
@@ -1366,7 +1387,10 @@ export function PageList({
       tabIndex={0}
       className={[
         'm-page-list',
-        layout === 'facing' ? 'm-page-list--facing' : '',
+        // BOTH FACING LAYOUTS ARE THE TWO-COLUMN GRID: Facing hides every slot but its pair's, as Single page does.
+        spread ? 'm-page-list--facing' : '',
+        // THE COVER PAGE stands alone in the right column (`app.css`), so the pairs after it are 2–3, 4–5.
+        spread && coverPage ? 'm-page-list--cover' : '',
         // ONE PAGE TO A SCREEN, centred, at Fit page in a continuous layout (`app.css`); facing pages fit a spread, and
         // single page already shows one.
         fitOnePage ? 'm-page-list--fit-page' : '',
@@ -1542,7 +1566,7 @@ export function PageList({
           // and every slot then rendered with it (`sameSlotProps`).
           onTabField={fieldSelection?.onTab}
           scroller={scroller}
-          hidden={layout === 'single' && page !== onShow}
+          hidden={oneScreen && !shownPages.includes(page)}
         />
       )))}
     </div>

@@ -42,12 +42,16 @@ async function densePages(): Promise<{ readonly bytes: Uint8Array; readonly line
 
 const COUNTED = { slot: '.m-page-list [data-page]', list: '.m-page-pane' };
 
-async function opened(page: Page): Promise<void> {
+/** The page layout a run reads in (`viewing.page-layout`): Continuous unless `MONSTERA_SCROLL_LAYOUT` names another. */
+const LAYOUT = process.env['MONSTERA_SCROLL_LAYOUT'] ?? 'continuous';
+
+async function opened(page: Page, layout: string = LAYOUT): Promise<void> {
   const { bytes, lines } = await densePages();
   await bridge(page, {
     opens: [{ kind: 'opened', docId: DOC, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'dense.pdf' }],
     documentBytes: new Map([[DOC, bytes]]),
     pageLines: lines,
+    settings: { 'viewing.page-layout': layout },
   });
   await installRenderCounter(page, COUNTED);
   await page.goto('/');
@@ -56,15 +60,20 @@ async function opened(page: Page): Promise<void> {
   await page.waitForTimeout(1500);
 }
 
-/** Scrolls the list by `pages` page heights, in steps of a fifth of a page each frame, and waits for it to settle. */
+/**
+ * Scrolls the list past `pages` pages, in steps of a fifth of a row each frame, and waits for it to settle. A row is a
+ * page in one column and a pair in two (Continuous facing), so the same count is the same pages arriving in either.
+ */
 async function scrollPages(page: Page, pages: number): Promise<void> {
   await page.locator('.m-page-list').evaluate(
     (element, count) =>
       new Promise<void>((resolve) => {
-        const slot = element.querySelector<HTMLElement>('[data-page="1"]');
         const first = element.querySelector<HTMLElement>('[data-page="0"]');
-        const pitch = slot !== null && first !== null ? slot.offsetTop - first.offsetTop : element.clientHeight;
-        const target = element.scrollTop + pitch * count;
+        const second = element.querySelector<HTMLElement>('[data-page="1"]');
+        const paired = first !== null && second !== null && second.offsetTop === first.offsetTop;
+        const below = element.querySelector<HTMLElement>(`[data-page="${paired ? '2' : '1'}"]`);
+        const pitch = below !== null && first !== null ? below.offsetTop - first.offsetTop : element.clientHeight;
+        const target = element.scrollTop + pitch * (paired ? count / 2 : count);
         const step = (): void => {
           element.scrollTop = Math.min(target, element.scrollTop + pitch / 5);
           if (element.scrollTop >= target - 1) resolve();
@@ -80,18 +89,22 @@ async function scrollPages(page: Page, pages: number): Promise<void> {
 test.describe('a long document scrolled from cold (item 61)', () => {
   test.setTimeout(180_000);
 
-  test('a page ARRIVING renders that page’s slot, and no slot of a page that is not arriving or leaving', async ({ page }) => {
-    await page.setViewportSize({ width: 1600, height: 900 });
-    await opened(page);
-    await startCounting(page);
-    await scrollPages(page, 3);
-    const counts = await stopCounting(page);
-    const rendered = pagesRendered(counts, 'slot', 0);
-    console.log(JSON.stringify({ commits: counts.commits, slots: rendersOf(counts, 'slot', 0), rendered: rendered.slice(0, 40) }));    // THE POSITIVE CONTROL: the pages the scroll brought on screen rendered, so the counter saw the scroll.
-    expect(rendered.some(([at]) => at >= 3)).toBe(true);
-    // A PAGE FAR BELOW, which nothing about the scroll reaches, rendered not once.
-    expect(rendered.filter(([at]) => at >= 12)).toStrictEqual([]);
-  });
+  // IN BOTH SCROLLING LAYOUTS: Continuous facing lays the same slots out two to a row (ADR-0284), and must render as few.
+  for (const layout of ['continuous', 'facing'] as const) {
+    test(`a page ARRIVING renders that page’s slot, and no slot of a page that is not arriving or leaving: ${layout}`, async ({ page }) => {
+      await page.setViewportSize({ width: 1600, height: 900 });
+      await opened(page, layout);
+      await startCounting(page);
+      await scrollPages(page, 3);
+      const counts = await stopCounting(page);
+      const rendered = pagesRendered(counts, 'slot', 0);
+      console.log(JSON.stringify({ layout, commits: counts.commits, slots: rendersOf(counts, 'slot', 0), rendered: rendered.slice(0, 40) }));
+      // THE POSITIVE CONTROL: the pages the scroll brought on screen rendered, so the counter saw the scroll.
+      expect(rendered.some(([at]) => at >= 3)).toBe(true);
+      // A PAGE FAR BELOW, which nothing about the scroll reaches, rendered not once.
+      expect(rendered.filter(([at]) => at >= 12)).toStrictEqual([]);
+    });
+  }
 
   test('CONTROL: a change every page depends on, the zoom, still renders every slot', async ({ page }) => {
     await page.setViewportSize({ width: 1600, height: 900 });
