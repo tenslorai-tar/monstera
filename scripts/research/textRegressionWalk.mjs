@@ -22,7 +22,7 @@
  *
  * Nothing a person wrote is read: both pages are made from words in this file.
  *
- *   node scripts/research/textRegressionWalk.mjs
+ *   node scripts/research/textRegressionWalk.mjs [--app-root <checkout>]
  */
 import { readFile, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
@@ -120,7 +120,9 @@ async function everydayPage() {
   return document.save({ useObjectStreams: false });
 }
 
-const walk = await startWalk('text-regression');
+// `--app-root <checkout>` launches another checkout's built app, a release's worktree for a before-and-after.
+const rootAt = process.argv.indexOf('--app-root');
+const walk = await startWalk('text-regression', rootAt === -1 ? {} : { appRoot: process.argv[rootAt + 1] });
 const { page, output, open, section, step, finish } = walk;
 const { editor, panel, ensureEditText, openAt, pressAway, problems, chooseFont, savedCopy } = textSteps(walk);
 
@@ -438,6 +440,14 @@ await step('7b. every family the font picker lists is drawn in itself, not in th
 });
 
 await step(`8. ${INSTALLED} chosen with nothing typed: not refused, and the words unchanged`, async () => {
+  // A FRESH COPY OF THE PAGE, as step 10's: step 7's paragraph, set in a wider face, grew a line over the small print
+  // below it, which is the owner's kept behaviour (ADR-0271 11.1), so on that tab the small print lies under it and is
+  // not the block a press reaches (2026-11-02, in 1.1.2610.0 as on main).
+  const fresh = join(output, 'everyday-font-only.pdf');
+  await writeFile(fresh, await readFile(everyday));
+  await open(fresh);
+  await section('Edit');
+  await ensureEditText();
   await openBlock(EVERYDAY.below.slice(0, 15));
   await page.keyboard.press('Control+A');
   const samples = await chooseFont(INSTALLED);
@@ -475,8 +485,12 @@ await step('10. a block with a line just below: the open editor keeps the pageâ€
   const outline = await openBlock('Every walk step');
   const shown = await editor().boundingBox();
   // THE LINE SPACING THE EDITOR DRAWS AT, and the page's at the scale it is drawn: the paragraph's baselines are 14.4
-  // points apart on a 792-point page.
-  const lineHeight = await editor().evaluate((root) => Number.parseFloat(root.ownerDocument.defaultView?.getComputedStyle(root).lineHeight ?? ''));
+  // points apart on a 792-point page. Read from the paragraph, which the rebuilt editor sets it on (`paint.ts`); the
+  // editor's own root carries none, and reading it there gave `normal`, no number (2026-11-02, in 1.1.2610.0 as on main).
+  const lineHeight = await editor()
+    .locator('[data-kit-paragraph]')
+    .first()
+    .evaluate((paragraph) => Number.parseFloat(paragraph.ownerDocument.defaultView?.getComputedStyle(paragraph).lineHeight ?? ''));
   const paper = await page.locator('canvas.m-page:visible').first().boundingBox();
   if (below === null || shown === null || paper === null) throw new Error('no box for the editor, the line below or the page');
   const pitch = (14.4 * paper.height) / 792;
