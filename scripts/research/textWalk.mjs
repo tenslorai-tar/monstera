@@ -3,7 +3,7 @@
  * The text walk (CLOUD-BUNDLE, the text spec's ACCEPTANCE WALK): editing words in the running app with a real mouse and
  * keyboard on Windows, each step screenshotted and recorded by `liveWalk.mjs`.
  *
- *   node scripts/research/textWalk.mjs [path/to/sample5.pdf] [path/to/Handwritten table.pdf]
+ *   node scripts/research/textWalk.mjs [path/to/sample5.pdf] [path/to/Handwritten table.pdf] [--app-root <checkout>]
  *
  * The documents default to `_review/test-files/sample5.pdf` and `Desktop\Handwritten table.pdf`. Each is copied before
  * anything opens it, and the copies are what the app writes to. What a step writes is read back from the SAVED FILE by
@@ -39,15 +39,20 @@ refuseStaleBuild(root, [['packages/kernel/src/scanTableFixture.ts', 'packages/ke
 const { buildPrintedScanPdf } = await import('../../packages/kernel/dist/scanTableFixture.js');
 if (bindNativeEngine() === null) throw new Error('the MuPDF shim is not built here, so the walk cannot make its printed scan: node scripts/provision/mupdf.mjs');
 
-const sample = process.argv[2] ?? join(root, '_review/test-files/sample5.pdf');
-const handwritten = process.argv[3] ?? join(homedir(), 'Desktop', 'Handwritten table.pdf');
+// `--app-root <checkout>` launches another checkout's built app, a worktree of a release for a before-and-after, while
+// the walk, its fixtures and its output stay here; the documents are the arguments that are not that option.
+const rootAt = process.argv.indexOf('--app-root');
+const appRoot = rootAt === -1 ? undefined : process.argv[rootAt + 1];
+const positional = process.argv.slice(2).filter((_, at, all) => all[at] !== '--app-root' && all[at - 1] !== '--app-root');
+const sample = positional[0] ?? join(root, '_review/test-files/sample5.pdf');
+const handwritten = positional[1] ?? join(homedir(), 'Desktop', 'Handwritten table.pdf');
 if (!existsSync(sample)) throw new Error(`No document at ${sample}. Pass the path to sample5.pdf.`);
 
 // AN EDIT IS WRITTEN BEFORE ITS EDITOR CLOSES: measured 2026-10-12 on the 13 KB sample, the editor stays up, marked busy,
 // for 3 to 4.5 s after a click away, so the default 5 s wait on an expectation is too short and 30 s is what a step gets.
 const expect = defaultExpect.configure({ timeout: 30_000 });
 
-const walk = await startWalk('text');
+const walk = await startWalk('text', appRoot === undefined ? {} : { appRoot });
 const { app, page, output, copyOf, open, saveTo, command, section, step, finish } = walk;
 const document = await copyOf(sample);
 
@@ -304,6 +309,8 @@ await step('6. saved, closed and reopened: the words are there, editable, findab
   await page.keyboard.press('Enter');
   // THE JOINT'S LAST LEG: the saved file, read by a second reader, carries the Edit text edit as well as the Add text.
   expect(words[0] ?? '', 'the saved file does not carry the Edit text edit').toContain(JOINED);
+  expect(words.some((text) => text.includes('Added by the walk')), 'the saved file does not carry step 4’s Add text').toBe(true);
+  expect(words.some((text) => text.includes('line two')), 'the saved file does not carry step 4’s second line').toBe(true);
   return {
     editedSaved: (words[0] ?? '').includes(JOINED),
     addedTextSaved: words.some((text) => text.includes('Added by the walk')),
@@ -320,11 +327,16 @@ await step('7. the font picker: the document’s fonts, Recent and this computer
   const groups = await panel().getByRole('listbox').getByRole('group').evaluateAll((each) => each.map((node) => node.getAttribute('aria-labelledby')));
   // JUST FONTS (N12): every option reads as its name and nothing else, on this computer's real list, with ONE exception
   // the owner allowed on 2026-10-27: the closest match the editor chose may carry "Monstera’s choice" after its name.
-  // Step 19 reads back the Times New Roman step 15 picks from it.
+  // Step 19 reads back the Times New Roman step 15 picks from it. AS ON THE PAGE is no font and names none: the last
+  // choice, the owner's of 2026-10-26 (f62334e1), which puts each letter back in its own page face, so it is told apart
+  // by its own mark and must be there, once.
+  const asOnPage = await panel().locator('[role="option"][data-font-as-on-page]').count();
+  expect(asOnPage, 'the picker offers As on the page once').toBe(1);
   const described = await panel()
     .getByRole('option')
     .evaluateAll((each) =>
       each
+        .filter((node) => !node.hasAttribute('data-font-as-on-page'))
         .filter((node) => {
           const name = node.getAttribute('data-font-choice') ?? '';
           return node.textContent !== name && node.textContent !== `${name}Monstera’s choice`;
