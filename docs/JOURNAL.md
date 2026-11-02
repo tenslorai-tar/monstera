@@ -1007,6 +1007,66 @@ segmentation fault under an 8 GB heap on this 12 GB machine and passed under 4 G
 was the sixty-fifth, which is true of that code; it was recorded from a reviewer's note without reading the line. The
 follow-up commit closes CCCCCCCCC-5's case, CCCCCCCCC-13 and CCCCCCCCC-16, and changes nothing for -17.
 
+### 1. Fixes classified
+
+Every fix in the range states its mechanism (-1 to -10). One repair was a workaround and is recorded as withdrawn: the
+widening of the launch check to established connections (-8), which named a symptom of the socket's state rather than
+the process answering. The release correction (-7) was not kept because nothing showed the order it was written for.
+
+### 2. The easy shape
+
+-1 was the hand's timing (a person's double click, slow enough that the report came first) where a quick one is not;
+-2 the easy gesture (a double click let go, never held); -5 the easy load (a page selected, never a long scroll of
+pages arriving); the walk's 180-degree presses first used a space, the narrowest letter, which its own rounding missed.
+
+### 2a. How things are proven
+
+-4's correction before each frame is proven by a measurement taken locally, not a case: stated in -4. Nothing else
+changed how a claim is proven.
+
+### 3. Would CI have caught it?
+
+CI caught -1 on both legs, which is how the range began. -2, -3 and -5 have cases CI runs now. -4 and the first move's
+hold (`ebb23945`) are walk-only (-4, open). -14, -19 and -20 are this desktop's and CI is green on them.
+
+### 4. Non-vacuous proofs
+
+Each new case was run against the old code and went red: the highlighter's double click, the held drag, the click's
+caret, the arriving page's selection, and cloud-33's merged bound with its letters read unbounded. -7's case did not
+separate and was dropped; -9 found an inherited assertion that could not fail.
+
+### 4a. Instruments' resolution
+
+`frameTimes.mjs`' `select` scenario resolves about 10 ms and not 0.5 (-11); its `arrive` scenario was not
+resolution-tested (-12); its CPU profiles resolved a 5 ms-a-page cost and its removal. The walk's frame recorder was
+blind to the application's own frame callbacks until -6.
+
+### 4b. Searches with a positive control
+
+The launch check's netstat search found nothing in three launches and read as a refusal (-8); the profile's component
+lookups were each checked against the bundle's code at the row found, since a nearest-row lookup reports some function
+when its subject is absent.
+
+### 4c. Derived extents
+
+`profileRows` lists 300 rows a way, a literal raised from 40 so that an absent component is told from a small one.
+Nothing new derives a count from the set it governs.
+
+### 5. Executed or asserted
+
+Executed: -1 to -9, the merges' cases, and every figure here. Asserted from reading: -15, -16, -18, and the three
+reviewers' readings of the modified proofs.
+
+### 6. Architecture before or underneath
+
+ADR-0280's corrections preceded the build they govern; ADR-0281 came with cloud-36's merge before its use. Nothing in
+this range changed architecture under a feature.
+
+### 7. Documents against the code
+
+Two comments this author wrote stated evidence a faulty instrument had produced (-6), and one stated a release order no
+case showed (-7); both corrected before the merge. FEATURES row 149's open list was reconciled at cloud-36's merge.
+
 ---
 
 ## 2026-10-31 — OPEN: a refusal's sentence stayed after the caret moved, once, on Windows CI (NEXT-UPDATE item 54)
