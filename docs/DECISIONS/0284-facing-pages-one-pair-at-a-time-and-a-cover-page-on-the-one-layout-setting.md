@@ -1,7 +1,8 @@
 # ADR-0284 — Facing pages one pair at a time, and a cover page, on the one layout setting
 
-- **Status:** Proposed 2026-11-02, built on this design in the same branch: it registers into existing seams (the
-  settings registry, the command registry's checked commands, the page list's layout) and changes no architecture.
+- **Status:** Accepted 2026-11-02 by the owner (below). Proposed 2026-11-02, built on this design in the same branch: it
+  registers into existing seams (the settings registry, the command registry's checked commands, the page list's
+  layout) and changes no architecture.
 - **Date:** 2026-11-02
 - **Requested by:** a user, relayed by the owner (item 57): *facing, continuous and continuous facing views.*
 - **Relates:** FEATURES row 282 (`viewing.page-layout`, built 2026-09-28), row 56 (continuous scroll), row 65 (Split
@@ -69,3 +70,9 @@ shows one pair at a time, and no cover page.
   already express as checked commands.
 - **The cover page as a fifth and sixth layout.** It applies to two layouts and to nothing else, so it is a choice beside
   them, not a copy of each.
+
+## Accepted by the owner, 2026-11-02
+
+The owner accepted this design as built at `73c3d91b` (work/cloud-43-page-layouts), with its placement: the choices in
+Tools › Display and the View menu were right, since the ribbon has no View tab. Decision 10's right-to-left pairing is
+the next item, built on its own (work/cloud-45-rtl-pairs), and nothing above changes until it lands.
