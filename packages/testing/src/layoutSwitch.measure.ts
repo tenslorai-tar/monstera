@@ -425,7 +425,7 @@ for (const kind of ['ordinary', 'dense'] as const) {
         for (const to of LAYOUTS) {
           // A FRESH PAGE A WINDOW: the shim's bridge registers its function once a page, and each window opens the
           // document from the layout it switches from.
-          const context = await browser.newContext({ baseURL });
+          const context = await browser.newContext(baseURL === undefined ? {} : { baseURL });
           const page = await context.newPage();
           try {
             await opened(page, kind, from.value);
