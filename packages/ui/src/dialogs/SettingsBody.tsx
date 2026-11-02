@@ -11,7 +11,7 @@ import {
   SECRET_SETTING_IDS,
   type SecretSettingId,
   choiceReadsImages,
-  defaultModel,
+  modelFor,
   servesVision,
 } from '@monstera/contract';
 import { type MessageKey, channels } from '@monstera/shared';
@@ -747,7 +747,8 @@ function ModelRow({
   const models = list?.models ?? [];
   const readsImages = choiceReadsImages(provider);
   const stored = chosen[provider];
-  const selected = stored ?? defaultModel(models, { vision: readsImages })?.id ?? '';
+  // THE CONTRACT'S ONE ANSWER (`modelFor`), which the Assistant and Translate take too.
+  const selected = modelFor(chosen, provider, models) ?? '';
   // *NOT OFFERED* IS SAID ONLY OF A LIST THE PROVIDER GAVE. A stored model is the person's choice, and a list that is
   // this build's own, or is still being asked for, or could not be read, is not evidence the provider stopped offering
   // it — it was the saved choice called *not offered now* on every launch, before anything had asked.

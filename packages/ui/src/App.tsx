@@ -243,7 +243,7 @@ import { accessibilityCheckCommand } from './commands/accessibilityCheck.js';
 import { placeBarcode, readBarcodesCommand } from './commands/barcodes.js';
 import { cloudStorageCommand, saveBackCommand } from './commands/cloudStorage.js';
 import { aiSetupCommand } from './commands/aiSetup.js';
-import { AI_SETUP_AT_START_SETTING } from './settings/ai.js';
+import { AI_MODELS_SETTING, AI_SETUP_AT_START_SETTING } from './settings/ai.js';
 import { compareDocumentsCommand } from './commands/compareDocuments.js';
 import { translatePageCommand } from './commands/translatePage.js';
 import { COMMAND_PROBLEM_DIALOG_ID } from './dialogs/commandProblem.js';
@@ -4294,6 +4294,8 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
           track,
           storedSecrets: () => storedSecrets,
           selectedText: () => selectionStore.current()?.text ?? '',
+          // THE SETTING'S OWN SCHEMA, so the type is the declaration's and not a cast of `get`'s `unknown`.
+          chosenModels: () => AI_MODELS_SETTING.schema.safeParse(settings.get(AI_MODELS_SETTING.id)).data ?? {},
         }),
         // THE TWO REPORTS ARE ONE TOOL'S (ADR-0183, ADR-0189): each command opens it in the document panel at its own section.
         inspectPageStructureCommand({ show: showReadingOrder }),

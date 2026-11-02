@@ -289,3 +289,18 @@ export function defaultModel(
 ): AiModel | undefined {
   return models.find((model) => !use.vision || servesVision(model));
 }
+
+/**
+ * The model a provider is asked with (ADR-0117): the one the person chose for it, or else {@link defaultModel} of its
+ * list for what that provider's choice must take ({@link choiceReadsImages}). ONE answer for every asker — the Assistant,
+ * the Settings row and Translate — where each had spelt it, and Translate had spelt it as the list's first model, so a
+ * person's choice of Claude Haiku 4.5 was never what it sent (the full walk of 2026-11-02). `undefined` when nothing was
+ * chosen and the list offers nothing the choice can take.
+ */
+export function modelFor(
+  chosen: Readonly<Partial<Record<AiProviderId, string>>>,
+  provider: AiProviderId,
+  models: readonly AiModel[],
+): string | undefined {
+  return chosen[provider] ?? defaultModel(models, { vision: choiceReadsImages(provider) })?.id;
+}

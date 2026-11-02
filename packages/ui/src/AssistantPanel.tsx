@@ -24,7 +24,7 @@ import {
   type WebSearchAbsence,
   choiceReadsImages,
   citationsIn,
-  defaultModel,
+  modelFor,
   servesVision,
   webSearchOf,
 } from '@monstera/contract';
@@ -471,8 +471,9 @@ export function AssistantPanel({
   // WHERE THE CHOICE READS IMAGES: the contract's rule, which the Settings row takes too (ADR-0117 Decision 4).
   const readsImages = choiceReadsImages(provider);
   const stored = chosenModels[provider];
-  // THE PERSON'S CHOICE, or the contract's one default for this use — the rule `main` takes for the recogniser.
-  const model = stored ?? defaultModel(models, { vision: readsImages })?.id ?? '';
+  // THE PERSON'S CHOICE, or the contract's one default for this use (`modelFor`) — the rule `main` takes for the recogniser.
+  // HELD BY ITS OWN INPUTS, so the callbacks below that list `model` keep the memoization the compiler can prove.
+  const model = useMemo(() => modelFor(chosenModels, provider, models) ?? '', [chosenModels, provider, models]);
   const setProvider = (next: AiProviderId): void => {
     settings.set(AI_PROVIDER_SETTING.id, next);
   };

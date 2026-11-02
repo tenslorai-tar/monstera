@@ -1,4 +1,4 @@
-import { MAX_ANSWER_TEXT, MAX_TRANSLATE_TEXT, blockEditOf, channels, createClient } from '@monstera/contract';
+import { type AiProviderId, MAX_ANSWER_TEXT, MAX_TRANSLATE_TEXT, blockEditOf, channels, createClient } from '@monstera/contract';
 import { asDocId, asDocVersion, err, ok, type MessageKey } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -57,6 +57,8 @@ async function run(options: {
   readonly sequences?: Readonly<Record<string, readonly unknown[]>>;
   /** Cancels the task after this many `step`s, as the status bar's cancel does mid-run. */
   readonly cancelAfterSteps?: number;
+  /** The model a person chose for each provider in Settings or the Assistant (`ai.models`, ADR-0117). */
+  readonly chosen?: Readonly<Partial<Record<AiProviderId, string>>>;
 }): Promise<Run> {
   const sent: { id: string; params: unknown }[] = [];
   const asked: { id: string; props: unknown }[] = [];
@@ -115,6 +117,7 @@ async function run(options: {
     track: () => task,
     storedSecrets: () => options.stored ?? ['ai.openai-key'],
     selectedText: () => options.selected ?? '',
+    chosenModels: () => options.chosen ?? {},
   }).run(CONTEXT);
   return { sent, asked, said, applied };
 }
@@ -141,6 +144,33 @@ describe('translatePageCommand', () => {
     ]);
     expect(said).toStrictEqual([{ kind: 'done', message: TOAST_PAGE_TRANSLATED }]);
     expect(applied).toHaveLength(1);
+  });
+
+  // THE FULL WALK OF 2026-11-02: Translate sent the provider's FIRST listed model, whatever the person had chosen in
+  // Settings, so a walk that chose Haiku 4.5 would have sent whichever model Anthropic lists first.
+  describe('the model is the person’s choice, or the contract’s one default (ADR-0117)', () => {
+    const models = {
+      source: 'fetched',
+      models: [
+        { id: 'first-model', label: 'First', capabilities: { vision: false, streaming: null } },
+        { id: 'second-model', label: 'Second', capabilities: { vision: true, streaming: null } },
+      ],
+    };
+    const modelSent = (sent: Run['sent']): unknown => (sent.find((call) => call.id === 'ai.translatePage')?.params as { model?: string } | undefined)?.model;
+
+    it('sends the model chosen for the provider, not the list’s first', async () => {
+      const { sent } = await run({ answers: { 'ai.models': models }, chosen: { openai: 'second-model' } });
+      expect(modelSent(sent)).toBe('second-model');
+    });
+
+    it('with no choice, sends the default: the first listed a use can take, which for Anthropic reads images', async () => {
+      const anthropic = { language: 'fr', provider: 'anthropic', what: { scope: 'page' } };
+      const { sent } = await run({ answers: { 'ai.models': models }, dialog: anthropic, stored: ['ai.anthropic-key'] });
+      expect(modelSent(sent)).toBe('second-model');
+      // CONTROL: a provider whose choice need not read images takes the list's first, so the case above is the rule's.
+      const openai = await run({ answers: { 'ai.models': models } });
+      expect(modelSent(openai.sent)).toBe('first-model');
+    });
   });
 
   it('writes the translation of a page whose text is in a Type 3 font with editTextOperators, shrunk the same way (ADR-0181)', async () => {

@@ -6,6 +6,7 @@ import {
   MAX_ANSWER_TEXT,
   MAX_TRANSLATE_TEXT,
   type TranslationLanguage,
+  modelFor,
   translationPieces,
 } from '@monstera/contract';
 import type { DocId, DocVersion, MessageKey } from '@monstera/shared';
@@ -70,6 +71,11 @@ export interface TranslatePageDeps extends DocumentCommandDeps {
    * the next line's first.
    */
   readonly selectedText: () => string;
+  /**
+   * The model a person chose for each provider (`ai.models`, ADR-0117), read when the command runs. Required, so the
+   * command cannot fall back to a list's first model, which is what it sent until 2026-11-02.
+   */
+  readonly chosenModels: () => Readonly<Partial<Record<AiProviderId, string>>>;
 }
 
 /**
@@ -124,7 +130,7 @@ export function translatePageCommand(deps: TranslatePageDeps): UiCommand {
       const task = deps.track(answer.what.scope === 'pages' ? TRANSLATE_PAGES_PROGRESS : TRANSLATE_PAGE_PROGRESS, pages.length);
       try {
         const listed = await deps.client['ai.models']({ provider: answer.provider });
-        const model = listed.ok ? listed.value.models[0]?.id : undefined;
+        const model = listed.ok ? modelFor(deps.chosenModels(), answer.provider, listed.value.models) : undefined;
         if (model === undefined) {
           deps.toast('problem', TOAST_TRANSLATE_NO_MODEL);
           return;
