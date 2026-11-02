@@ -924,6 +924,40 @@ control. After that, the rest of the list above, in its order.
 **Added at 14:46:** main's walk run again alone (free memory 1.83 GB) passed 30 of 30, FLICKER with it. So the fault
 appeared in one of main's two walks today, and its frequency is still to be measured before a case can be written.
 
+**Added at 20:30, resumed after the network came back.** Walked since, on main's development build and on 1.1.2610.0's:
+- **The text layer** (`textLayerWalk.mjs`, now 46 steps with 90 and 270, Split view, Shift+click, Shift+Arrow, three-line
+  Copy and Ask AI, and the selection's six menu items): main 46 of 46; 1.1.2610.0 12 of 46, every difference an
+  improvement on main (turned pages, the double click's trailing space, Copy's line joins, the saved highlight's place).
+  FLICKER's two frames were within 0.25 px of a letter's middle, below what the instrument resolves (004854af).
+  **Split view, in both builds:** both halves share one zoom, a landscape page overflows its half, and Fit page and Fit
+  width do nothing there. Reported, not fixed.
+- **Edit text** (`textWalk.mjs`): main 26 of 28; 1.1.2610.0 21 of 28. A picture page's offer to recognise its words
+  could not be pressed in Edit text, in both builds, and is fixed with a case (4fe0a2be). Open on main: 9a, a word typed
+  on a recognised printed scan is drawn in a small mono face over the picture's words and its write did not settle in
+  120 s; and L2, one underline read back absent on one run of two.
+- **The regression walk** (`textRegressionWalk.mjs`): main 16 of 16. Its first run of Bold on and off found that **a
+  space typed at the end of any block was refused** (*set-text 0*), in both builds: the layout dropped white space after
+  a paragraph's last word, so the edit laid out as the old line and wrote nothing. Fixed with a kernel case that fails
+  without it (92eeff51). The walk then sat two hours on the app's own close question; it now writes its report first and
+  names a held close (6afb7a5a).
+- **Release-bar answers on an ordinary-font page:** edit text, yes; a different font for new text, yes; Bold added and
+  removed while typing, yes, the bold word saved in a bold Arimo and the rest left in Helvetica; nothing refused, yes,
+  after 92eeff51; untouched text not broken, yes on these pages. Selection's smoothness is item 8's.
+- **cloud-33's deep forms** (`deepFormsWalk.mjs`, 4f682735): the page shows in 22.7 s on main against 40.4 s; Edit text
+  reads it with its note on main and does not in 1.1.2610.0; a copy zoomed in gives the page's words. A redraw at 400 %
+  took over 30 s, left for item 8.
+- **The computer's clipboard:** one run of that walk printed text the person had copied into its own report; the report and logs
+  were deleted the same hour, and the walk now marks the clipboard first.
+
+Free memory before each launch stayed between 2.15 and 3.36 GB, under 3.5 GB throughout, the rest held by the owner's
+browsers. **Resume at:** the forms walk's result, then the AI panel, files saved by 1.1.2610.0, the three themes, every done
+tool, and the corpus; **stop and tell the owner before items 8 and 9.**
+
+**Added at 21:10: forms.** `formsWalk.mjs` on main 28 of 28; 1.1.2610.0 26 of 28 (A8.4's Calibri for a field, and
+Flatten of the selected fields, which passed in one of its runs). Main's first runs read 21 of 28 on two waits of the
+walk's own (a7d3e8db). **For item 8, the same in both builds:** a placed field is selected 1.2 to 5.6 s after the press;
+four arrow nudges are written by about 0.9 s and the field stands still until it moves all 4 px at once, at 1.3 s to 6.9 s.
+
 ---
 
 ## 2026-11-02 — Cloud runs 31 to 37 merged; Edit text's open items seen closed
