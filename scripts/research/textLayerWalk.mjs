@@ -5,8 +5,9 @@
  * done in the running app with a real mouse and keyboard, each step screenshotted and recorded by `liveWalk.mjs`.
  *
  * Every expectation is a letter's place as the engine reads it, stated from the fixture's own font metrics: the page is
- * set in the standard Times, whose widths `textLetters.test.ts` holds MuPDF to within 0.005 pt. So a step that lands on
- * the browser's layout of the substitute face, or on a whole point, lands visibly away from what is asserted.
+ * set in the standard Times, whose widths and MuPDF's letters for this page agreed to 0.004 pt (2026-11-02, on Windows, the
+ * letters read for the walk's first line through the kernel's own `readPageTextWithLetters` and `withLetters`). So a step that
+ * lands on the browser's layout of the substitute face, or on a whole point, lands visibly away from what is asserted.
  *
  * ## The same walk, two builds
  *
@@ -55,6 +56,8 @@ const LINES = [
   { text: 'Recieve the notise promptly.', baseline: 652 },
 ];
 const ROTATIONS = /** @type {const} */ ([0, 90, 180, 270]);
+/** How near a letter's middle, on screen, the FLICKER step cannot tell this walk's caret from the application's. */
+const RESOLUTION_PX = 0.25;
 /** The angled page's one line, turned 20 degrees about its start. */
 const ANGLE = 20;
 const ANGLED = { x: 72, y: 400 };
@@ -366,8 +369,22 @@ await step('FLICKER: a slow drag recorded frame by frame — no frame shows a ch
     }
     return best;
   };
+  // HOW FAR, ON SCREEN, A FRAME'S POINTER IS FROM THE NEAREST LETTER'S MIDDLE: where a caret changes sides.
+  const fromMiddle = (/** @type {number} */ x) => {
+    const along = (x - box.x) / scale - X0;
+    let nearest = Number.POSITIVE_INFINITY;
+    for (let letter = 0; letter < at.length - 1; letter += 1) nearest = Math.min(nearest, Math.abs(along - ((at[letter] ?? 0) + (at[letter + 1] ?? 0)) / 2));
+    return nearest * scale;
+  };
   const moving = frames.filter((frame, index) => index > 0 && frame.x !== 0 && frame.focus !== null && !frame.collapsed);
-  const off = moving.filter((frame) => frame.focus !== caretFor(frame.x));
+  // NOT JUDGED WITHIN THE INSTRUMENT'S RESOLUTION of a middle: this step turns a pointer's pixel into points through the
+  // layer's box, and the application through the page's own geometry, and the two differ there. Measured 2026-11-02 in
+  // the development app on Windows (this step's drag at 300 moves, four times, 1,180 frames): the engine's letters and these
+  // places agreed to 0.004 pt, and every frame on which the two carets differed had its pointer 0.004 to 0.090 pt (under
+  // 0.07 px) before a middle, with the painted band on the application's caret. The browser's own letters, which this
+  // step exists to catch, stand a letter away across most of a line, so they still show outside the margin.
+  const judged = moving.filter((frame) => fromMiddle(frame.x) > RESOLUTION_PX);
+  const off = judged.filter((frame) => frame.focus !== caretFor(frame.x));
   // EVERY FRAME ON THE ENGINE'S CARET: each is read after the move it follows was handled, so a frame one letter off is
   // the browser's own choice for that move, drawn before the correction landed.
   const elsewhere = off;
@@ -376,12 +393,14 @@ await step('FLICKER: a slow drag recorded frame by frame — no frame shows a ch
     ...elsewhere.map((frame) => `frame ${String(moving.indexOf(frame))}: caret ${String(frame.focus)}, the engine's ${String(caretFor(frame.x))}`),
     ...unpainted.map((frame) => `frame ${String(moving.indexOf(frame))}: nothing painted, caret ${String(frame.focus)}`),
   ];
+  // A MARGIN THAT TOOK MOST FRAMES would leave the step judging nothing, and read as a pass.
+  if (judged.length < moving.length / 2) throw new Error(`only ${String(judged.length)} of ${String(moving.length)} frames stood further than ${String(RESOLUTION_PX)} px from a letter's middle, too few to judge`);
   if (elsewhere.length > 0 || unpainted.length > 0) {
     throw new Error(
-      `${String(elsewhere.length)} of ${String(moving.length)} frames holding a selection showed a caret more than a letter from the engine's (${where.join('; ')}), and ${String(unpainted.length)} showed nothing painted`,
+      `${String(elsewhere.length)} of ${String(judged.length)} frames judged (of ${String(moving.length)} holding a selection) showed a caret other than the engine's (${where.join('; ')}), and ${String(unpainted.length)} showed nothing painted`,
     );
   }
-  return { frames: moving.length, oneLetterBehind: off.length, elsewhere: elsewhere.length };
+  return { frames: moving.length, judged: judged.length, withinResolution: moving.length - judged.length, elsewhere: elsewhere.length };
 });
 
 await step('THEMES: a run selected is painted in light, dark and high contrast', async () => {
