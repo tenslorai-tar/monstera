@@ -925,6 +925,11 @@ pursued here: the cloud's part 6 group Q reworks long-document scrolling and mea
 than run 33's own (58 to 161 ms against 65 to 115, timed by a probe of the read alone). The limit is left unchanged, so
 the case fails locally on a slow or loaded machine for a reason that is not a defect.
 
+**Correction, 2026-11-02, later the same day:** *passes on CI's runners* is wrong. It passed on the branch's runs of
+`a3cd11e9`, and on main's own push run for that sha (CI 41405089417, Ubuntu) it read **106.3 ms** and failed, the only
+failed test of that job. So the case is speed-dependent on CI's runners too, and can turn main red with no change to the
+code it covers.
+
 ---
 
 ## 2026-11-02 — Stage audit of `0d48e788..069d00cf` — findings CCCCCCCCC-1 to CCCCCCCCC-20
