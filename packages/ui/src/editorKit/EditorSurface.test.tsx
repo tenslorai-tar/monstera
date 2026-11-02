@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { act, render } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { pointOf, positionOf } from './dom.js';
 import { EditorSurface } from './EditorSurface.js';
@@ -126,21 +126,17 @@ describe('the kit’s editable surface', () => {
 
   it('a keystroke in one line fits no untouched line again: a kept line’s fit is its own, at its own look (item 2)', () => {
     const { root } = surface({ paragraphs: MODEL.paragraphs, wraps: [[], []], widths: [[60], [50]] });
-    const reads = { count: 0 };
-    const measure = Range.prototype.getBoundingClientRect;
-    Range.prototype.getBoundingClientRect = function counted(this: Range): DOMRect {
-      reads.count += 1;
-      return measure.call(this);
-    };
+    // A SPY THAT CALLS THROUGH, so the measure the fit reads is the one it always reads, and only the count is added.
+    const reads = vi.spyOn(Range.prototype, 'getBoundingClientRect');
     try {
       act(() => {
         input(root, 'insertText', 'X', { paragraph: 0, offset: 1 });
       });
       // THE SECOND LINE IS STILL AS DRAWN, so a re-fit would have measured it.
       expect(root.querySelectorAll('[data-kit-paragraph]')[1]?.classList.contains('m-kit__paragraph--as-drawn')).toBe(true);
-      expect(reads.count).toBe(0);
+      expect(reads).not.toHaveBeenCalled();
     } finally {
-      Range.prototype.getBoundingClientRect = measure;
+      reads.mockRestore();
     }
   });
 
@@ -148,17 +144,12 @@ describe('the kit’s editable surface', () => {
     const store = createEditorStore({ model: MODEL, selection: caret({ paragraph: 0, offset: 0 }) });
     const drawn = { paragraphs: MODEL.paragraphs, wraps: [[], []], widths: [[60], [50]] };
     const view = render(<EditorSurface drawn={drawn} editable label="Words" look={LOOK} store={store} />);
-    const reads = { count: 0 };
-    const measure = Range.prototype.getBoundingClientRect;
-    Range.prototype.getBoundingClientRect = function counted(this: Range): DOMRect {
-      reads.count += 1;
-      return measure.call(this);
-    };
+    const reads = vi.spyOn(Range.prototype, 'getBoundingClientRect');
     try {
       view.rerender(<EditorSurface drawn={drawn} editable label="Words" look={{ ...LOOK, zoom: 3 }} store={store} />);
-      expect(reads.count).toBeGreaterThan(0);
+      expect(reads).toHaveBeenCalled();
     } finally {
-      Range.prototype.getBoundingClientRect = measure;
+      reads.mockRestore();
     }
   });
 
