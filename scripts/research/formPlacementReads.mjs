@@ -17,10 +17,14 @@ import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { LINE_END_MARKS, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { bindNativeEngine } from '../lib/nativeEngine.mjs';
 import { pdfiumLibrary } from '../provision/pdfium.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+// THE KERNEL AS BUILT FROM ITS SOURCES, and the native engine it binds: a figure read from an older build would be
+// printed under this one's name.
+refuseStaleBuild(root, LINE_END_MARKS, 2);
 /** @type {typeof import('@cantoo/pdf-lib')} */
 const pdfLib = createRequire(import.meta.url)('@cantoo/pdf-lib');
 const { openPdfium, pdfiumWriter, textRuns } = await import('../../packages/kernel/dist/pdfiumFfi.js');
