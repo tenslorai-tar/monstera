@@ -191,6 +191,7 @@ async function joined(): Promise<{
       layers: () => {
         throw new Error('unused');
       },
+      documentInformation: () => Promise.reject(new Error('this case reads no document information')),
       fonts: () => {
         throw new Error('unused');
       },

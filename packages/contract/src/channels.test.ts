@@ -1,4 +1,4 @@
-import { asDocId, asDocVersion, asFileHandle, ok } from '@monstera/shared';
+import { asDocId, asDocVersion, asFileHandle, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import { createClient, wrapHandlers } from './boundary.js';
@@ -348,6 +348,7 @@ const handlers: ContractHandlers = {
         truncated: false,
       }),
     ),
+  'document.information': () => Promise.resolve(err({ code: 'engine-unavailable' as const })),
   // ONE WHOLE AND ONE PARTIAL, so a boundary that dropped the flag is not a boundary that carried it.
   'document.fonts': () =>
     Promise.resolve(

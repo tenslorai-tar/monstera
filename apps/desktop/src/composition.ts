@@ -100,6 +100,7 @@ import {
   type HostPageImage,
   type HostFormFieldsReader,
   type HostFontsReader,
+  type HostDocumentInformationReader,
   type HostPageMarksReader,
   type HostLayersReader,
   type HostPageFillsReader,
@@ -182,6 +183,7 @@ import {
   remoteMupdfFlatFields,
   remoteMupdfFormFields,
   remoteMupdfFonts,
+  remoteMupdfDocumentInformation,
   remoteMupdfPageMarks,
   remoteMupdfLayers,
   remoteMupdfSignatures,
@@ -1594,6 +1596,12 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
       return engineHost.fonts(session);
     },
+    // THE DOCUMENT'S OWN INFORMATION (ADR-0283), a read like the fonts.
+    documentInformation: (docId, sessions) => {
+      const session = sessions.mupdf;
+      if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+      return engineHost.documentInformation(session);
+    },
     // WHERE THE PAGE STAMPS ARE (ADR-0246), a read like the fonts.
     pageMarks: (docId, sessions) => {
       const session = sessions.mupdf;
@@ -2588,6 +2596,8 @@ function engineSessionOpener(
   readonly layers: HostLayersReader;
   /** Every font the document names, from whichever host is live (B2.8). */
   readonly fonts: HostFontsReader;
+  /** The document's own information, from whichever host is live (ADR-0283). */
+  readonly documentInformation: HostDocumentInformationReader;
   /** Where each kind of page stamp is, from whichever host is live (ADR-0246). */
   readonly pageMarks: HostPageMarksReader;
   /** Whether the MuPDF host starts on this computer — its engine loaded, as a document's first use loads it. */
@@ -2822,6 +2832,7 @@ function engineSessionOpener(
     ocr: remoteMupdfOcr(client, remote),
     layers: remoteMupdfLayers(client, remote),
     fonts: remoteMupdfFonts(client, remote),
+    documentInformation: remoteMupdfDocumentInformation(client, remote),
     pageMarks: remoteMupdfPageMarks(client, remote),
     signatures: remoteMupdfSignatures(client, remote),
     signaturesKept: remoteMupdfSignaturesKept(client, remote),
@@ -3040,6 +3051,18 @@ function engineSessionOpener(
       );
     }
     return layers(session);
+  };
+
+  /** The document-information reader's half of the same registration (ADR-0283). See {@link pageText}. */
+  const readDocumentInformationThroughHost: HostDocumentInformationReader = (session) => {
+    const read = bound?.documentInformation ?? null;
+    if (read === null) {
+      throw new Error(
+        'A document-information read reached the engine with no host reader registered. A session was resolved for ' +
+          'this document, so one was issued by a host — the supervisor and the host connection have diverged.',
+      );
+    }
+    return read(session);
   };
 
   /** The font reader's half of the same registration. See {@link pageText}. */
@@ -3825,6 +3848,7 @@ function engineSessionOpener(
     ocr: recogniseThroughHost,
     layers: readLayersThroughHost,
     fonts: readFontsThroughHost,
+    documentInformation: readDocumentInformationThroughHost,
     pageMarks: readPageMarksThroughHost,
     signatures: readSignaturesThroughHost,
     signaturesKept: readSignaturesKeptThroughHost,

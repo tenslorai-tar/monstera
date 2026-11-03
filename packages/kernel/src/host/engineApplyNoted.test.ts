@@ -55,6 +55,7 @@ function hostAnswering(drawn: DrawnBoxes) {
       ocr: refuse('recognise a page'),
       destinations: refuse('read the outline'),
       layers: refuse('read the layers'),
+      documentInformation: () => Promise.reject(new Error('this case reads no document information')),
       fonts: refuse('read the fonts'),
       pageMarks: refuse('read the stamps'),
       annotations: refuse('list annotations'),

@@ -545,6 +545,8 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'document.destinations': 'needs an engine session',
   'document.layers': 'needs an engine session',
   'document.fonts': 'needs an engine session',
+  // SIX VALUES AND A FEW FACTS, each bounded by `MAX_DOCUMENT_INFORMATION_TEXT`, whatever the document weighs (ADR-0283).
+  'document.information': 'needs an engine session',
   'document.pageMarks': 'needs an engine session',
   'document.annotations': 'needs an engine session',
   'document.formFields': 'needs an engine session',

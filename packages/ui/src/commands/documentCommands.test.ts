@@ -19,6 +19,7 @@ import {
   TAB_ORDER_TIP,
   TOAST_FORM_RESET,
   TOAST_ACTIVE_CONTENT_REMOVED,
+  TOAST_DOCUMENT_PROPERTIES_SET,
   TOAST_FIELDS_FLATTENED,
   TOAST_FORM_FLATTENED,
   TOAST_TAB_ORDER_SET,
@@ -124,6 +125,7 @@ import {
   applyRedactionsCommand,
   redactMatchesCommand,
   sanitizeDocumentCommand,
+  documentPropertiesCommand,
   flattenFormCommand,
   resetFormCommand,
   tabOrderCommand,
@@ -6625,6 +6627,107 @@ describe('protectDocumentCommand', () => {
       expect(shown).toStrictEqual([
         { id: 'dialog.signatures', props: { signatures: [], unreadable: false } },
       ]);
+    });
+  });
+
+  describe('documentPropertiesCommand (ADR-0283)', () => {
+    const READ = {
+      fields: { title: 'Old', author: 'Ada', subject: '', keywords: '', created: null, modified: null },
+      has: { info: true, xmp: false },
+      creator: null,
+      producer: null,
+      format: 'PDF-1.7',
+      encryption: 'None',
+      permissions: { print: true, copy: true, edit: true, annotate: true },
+      pageCount: 1,
+      firstPage: { width: 612, height: 792 },
+    };
+
+    function answering(read: unknown = ok({ version: asDocVersion(1), information: READ })): {
+      readonly client: ContractClient;
+      readonly sent: { id: string; params: unknown }[];
+    } {
+      const sent: { id: string; params: unknown }[] = [];
+      const client = createClient(channels, (id, params) => {
+        sent.push({ id, params });
+        if (id === 'document.information') return Promise.resolve(read);
+        if (id === 'document.fonts') return Promise.resolve(ok({ version: asDocVersion(1), fonts: [{ name: 'Arial', partial: true }], truncated: false }));
+        return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
+      });
+      return { client, sent };
+    }
+
+    it('opens the window over main’s reading and the fonts, and dispatches EXACTLY the six it answered', async () => {
+      const { client, sent } = answering();
+      const asked: unknown[] = [];
+      const said: unknown[] = [];
+      const edited = { ...READ.fields, title: 'New', modified: '2026-11-01T12:00:00Z' };
+      await documentPropertiesCommand({
+        client,
+        toast: (_kind, message) => said.push(message),
+        stamp,
+        signatures,
+        onApplied: () => undefined,
+        ask: (id, props) => {
+          asked.push({ id, props });
+          return Promise.resolve({ fields: edited });
+        },
+      }).run(CONTEXT);
+
+      expect(asked).toStrictEqual([
+        // THE SIZE IS THE OPEN DOCUMENT'S, as the context's own entry for it states (20 bytes in `CONTEXT`).
+        { id: 'dialog.document-properties', props: { information: READ, fonts: [{ name: 'Arial', partial: true }], fontsTruncated: false, bytes: 20 } },
+      ]);
+      expect(sent.filter((each) => each.id === 'document.execute')).toStrictEqual([
+        { id: 'document.execute', params: { docId: DOC, command: { kind: 'setDocumentInformation', fields: edited } } },
+      ]);
+      expect(said).toStrictEqual([TOAST_DOCUMENT_PROPERTIES_SET]);
+    });
+
+    it('CONTROL: the size moves with an unsaved edit: the window is given the document’s length as it stands now', async () => {
+      const { client } = answering();
+      const sizes: unknown[] = [];
+      const ask = (_id: string, props: unknown): Promise<undefined> => {
+        sizes.push((props as { readonly bytes: number }).bytes);
+        return Promise.resolve(undefined);
+      };
+      const edited: CommandContext = {
+        ...CONTEXT,
+        version: asDocVersion(2),
+        dirty: true,
+        openDocuments: CONTEXT.openDocuments.map((open) => (open.docId === DOC ? { ...open, version: asDocVersion(2), byteLength: 4096 } : open)),
+      };
+      for (const context of [CONTEXT, edited]) {
+        await documentPropertiesCommand({ client, toast: () => undefined, stamp, signatures, onApplied: () => undefined, ask }).run(context);
+      }
+      expect(sizes).toStrictEqual([20, 4096]);
+    });
+
+    it('CONTROL: the six answered unchanged, or the window dismissed, dispatch nothing', async () => {
+      for (const answer of [{ fields: READ.fields }, undefined]) {
+        const { client, sent } = answering();
+        await documentPropertiesCommand({ client, toast: () => undefined, stamp, signatures, onApplied: () => undefined, ask: () => Promise.resolve(answer) }).run(
+          CONTEXT,
+        );
+        expect(sent.map((each) => each.id).sort()).toStrictEqual(['document.fonts', 'document.information']);
+      }
+    });
+
+    it('says a refused read and opens no window', async () => {
+      const { client } = answering(err({ code: 'engine-unavailable' }));
+      const asked: unknown[] = [];
+      await documentPropertiesCommand({
+        client,
+        toast: () => undefined,
+        stamp,
+        signatures,
+        onApplied: () => undefined,
+        ask: (id) => {
+          asked.push(id);
+          return Promise.resolve(undefined);
+        },
+      }).run(CONTEXT);
+      expect(asked).toStrictEqual(['dialog.command-problem']);
     });
   });
 

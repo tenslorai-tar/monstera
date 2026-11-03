@@ -69,6 +69,12 @@ export {
 } from './layers.js';
 export { readDocumentFonts } from './documentFonts.js';
 export {
+  applySetDocumentInformation,
+  captureSetDocumentInformation,
+  invertSetDocumentInformation,
+  readDocumentInformation,
+} from './documentInformation.js';
+export {
   applyDeletePages,
   applyDuplicatePage,
   applyMovePage,

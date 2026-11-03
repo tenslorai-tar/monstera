@@ -83,6 +83,7 @@ import { REIMPORT_EXTERNAL_EDIT_DIALOG } from '../dialogs/reimportExternalEdit.j
 import { REPLACE_PAGE_DIALOG } from '../dialogs/replacePage.js';
 import { RESIZE_PAGES_DIALOG } from '../dialogs/resizePages.js';
 import { SANITIZE_DOCUMENT_DIALOG } from '../dialogs/sanitizeDocument.js';
+import { DOCUMENT_PROPERTIES_DIALOG } from '../dialogs/documentProperties.js';
 import { SAVE_PROBLEM_DIALOG } from '../dialogs/saveProblem.js';
 import { SCAN_OUTCOME_DIALOG } from '../dialogs/scanOutcome.js';
 import { SECURITY_UPDATE_DIALOG } from '../dialogs/securityUpdate.js';
@@ -164,6 +165,7 @@ export const APPLICATION_DIALOGS: readonly RegisteredDialog[] = [
   APPLY_REDACTIONS_DIALOG,
   REDACT_MATCHES_DIALOG,
   SANITIZE_DOCUMENT_DIALOG,
+  DOCUMENT_PROPERTIES_DIALOG,
   SIGN_DOCUMENT_DIALOG,
   SIGNATURE_DIALOG,
   SIGNATURE_PROBLEM_DIALOG,

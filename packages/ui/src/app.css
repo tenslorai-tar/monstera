@@ -4841,6 +4841,14 @@ optgroup {
   gap: var(--space-16);
 }
 
+/* Document properties: its fields, the dates' note and its facts stacked as About's are; the facts take the pattern's
+   grid (`.m-dialog-facts`), and a fact's own note (the size's) sits under its value. */
+.m-document-properties {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
 /* ADR-0002: the brand's height and the width its own ratio gives it — never stretched. */
 .m-about__logo {
   align-self: flex-start;

@@ -611,6 +611,7 @@ export interface CommandPrior {
    * on.
    */
   readonly sanitizeDocument: never;
+  readonly setDocumentInformation: never;
 
   /**
    * A signature has no prior state to record: the prior state is the unsigned

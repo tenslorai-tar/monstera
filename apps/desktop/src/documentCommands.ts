@@ -71,6 +71,7 @@ import {
   type PdfaLevel,
   type ChangedPages,
   answeredChangedPages,
+  type DocumentInformation,
 } from '@monstera/contract';
 // DECLARATIONS, not specs. This reads `spec.writer` and calls nothing on it, so
 // importing the spec table would bind the MuPDF native library **in main** —
@@ -2319,6 +2320,9 @@ export type DocumentFontsReader = (docId: DocId, sessions: DocumentSessions) => 
 /** Reads where each kind of page stamp is (ADR-0246). Injected for {@link DocumentPageText}'s reason. */
 export type DocumentPageMarksReader = (docId: DocId, sessions: DocumentSessions) => Promise<PageMarksRead>;
 
+/** Reads the document's own information (ADR-0283). Injected for {@link DocumentPageText}'s reason. */
+export type DocumentInformationReader = (docId: DocId, sessions: DocumentSessions) => Promise<DocumentInformation>;
+
 /** The fonts, stamped with the version the lane read them at, and whether the walk stopped at its bound. */
 export interface DocumentFonts {
   readonly version: DocVersion;
@@ -2572,6 +2576,8 @@ export interface DocumentCommandsParts {
   readonly pageRuns: DocumentPageRunsReader;
   readonly layers: DocumentLayersReader;
   readonly fonts: DocumentFontsReader;
+  /** The document's own information (ADR-0283). */
+  readonly documentInformation: DocumentInformationReader;
   /** Where each kind of page stamp is (ADR-0246). */
   readonly pageMarks: DocumentPageMarksReader;
   /**
@@ -2890,6 +2896,7 @@ export class DocumentCommands {
   readonly #pageRuns: DocumentPageRunsReader;
   readonly #layers: DocumentLayersReader;
   readonly #fonts: DocumentFontsReader;
+  readonly #documentInformation: DocumentInformationReader;
   readonly #pageMarks: DocumentPageMarksReader;
   readonly #signatures: (session: MupdfSession) => Promise<readonly ReadSignature[]>;
   readonly #signaturesKept: (session: MupdfSession) => Promise<NextSave>;
@@ -2998,6 +3005,7 @@ export class DocumentCommands {
     this.#pageRuns = parts.pageRuns;
     this.#layers = parts.layers;
     this.#fonts = parts.fonts;
+    this.#documentInformation = parts.documentInformation;
     this.#pageMarks = parts.pageMarks;
     this.#signatures = parts.signatures;
     this.#signaturesKept = parts.signaturesKept;
@@ -3591,6 +3599,21 @@ export class DocumentCommands {
     });
 
     return { version, fonts: value.fonts, truncated: value.truncated };
+  }
+
+  /** The document's own information (ADR-0283), inside the document's lane: `fonts`' guards in `fonts`' order. */
+  async documentInformation(docId: DocId): Promise<{ readonly version: DocVersion; readonly information: DocumentInformation }> {
+    const { version, value } = await this.#documents.read(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      return this.#documentInformation(docId, sessions);
+    });
+
+    return { version, information: value };
   }
 
   /** Where each kind of page stamp is (ADR-0246), inside the document's lane: `fonts`' guards in `fonts`' order. */

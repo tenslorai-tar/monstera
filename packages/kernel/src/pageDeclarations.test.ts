@@ -112,6 +112,13 @@ const CHECKED: Readonly<Record<string, { readonly command: CommandOfKind<Command
   addAnnotation: { command: MARK },
   removeAnnotation: { command: { kind: 'removeAnnotation', page: 1, indices: [0], version: VERSION }, prepare: MARK },
   setPageTransition: { command: { kind: 'setPageTransition', pages: [1], style: 'blinds', durationSeconds: 2 } },
+  // THE DOCUMENT'S OWN INFORMATION (ADR-0283): the trailer and the catalogue, and no page.
+  setDocumentInformation: {
+    command: {
+      kind: 'setDocumentInformation',
+      fields: { title: 'A title', author: 'An author', subject: '', keywords: '', created: null, modified: '2026-11-01T12:00:00Z' },
+    },
+  },
   // THE SHAPE ON PAGE 1 moved where it is drawn (ADR-0264): one page's content is spliced, and no other page's.
   editDrawnObject: {
     command: {

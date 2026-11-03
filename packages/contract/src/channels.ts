@@ -92,6 +92,7 @@ import {
   MAX_IMPORT_SKIPS,
   importSkippedSchema,
   renderableCommandSchema,
+  documentInformationSchema,
 } from './commands.js';
 import {
   MAX_LIBRARY_ENTRIES,
@@ -5424,6 +5425,18 @@ export const channels = {
     'Where each kind of page stamp is, and the settings Monstera recorded on its own.',
     z.object({ docId: docIdSchema }),
     z.object({ version: docVersionSchema, marks: pageMarksSchema }),
+    ['document-not-open', 'document-busy', 'document-poisoned', 'engine-unavailable'],
+  ),
+
+  /**
+   * What File › Document properties shows (ADR-0283): the six editable values as the document states them, which of
+   * the Info dictionary and the XMP packet it has, and the read-only facts. A READ, `document.fonts`' path; the edit is
+   * the command `setDocumentInformation`, sent through `document.execute`.
+   */
+  'document.information': channel(
+    'The document’s own information, for the properties window.',
+    z.object({ docId: docIdSchema }).strict(),
+    z.object({ version: docVersionSchema, information: documentInformationSchema }),
     ['document-not-open', 'document-busy', 'document-poisoned', 'engine-unavailable'],
   ),
 

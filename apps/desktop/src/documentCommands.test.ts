@@ -124,6 +124,7 @@ import {
   localMupdfExecution,
   openCopy,
   readDocumentFonts,
+  readDocumentInformation,
   readPageMarksOf,
   applyWatermarkPages,
 } from '@monstera/kernel/engine';
@@ -170,6 +171,7 @@ import {
   type PickDirectory,
   type DocumentLayersReader,
   type DocumentFontsReader,
+  type DocumentInformationReader,
   type DocumentPageMarksReader,
   type DocumentPageLinksReader,
   type DocumentWordBoxesReader,
@@ -858,6 +860,12 @@ const localFonts: DocumentFontsReader = (id, sessions) => {
   return readDocumentFonts(held);
 };
 
+const localDocumentInformation: DocumentInformationReader = (id, sessions) => {
+  const held = sessions.mupdf;
+  if (held === undefined) throw new MissingSessionError(id, 'mupdf');
+  return readDocumentInformation(held);
+};
+
 const localPageMarks: DocumentPageMarksReader = (id, sessions) => {
   const held = sessions.mupdf;
   if (held === undefined) throw new MissingSessionError(id, 'mupdf');
@@ -941,6 +949,7 @@ const INERT = {
   ocr: noOcr,
   layers: noLayers,
   fonts: noFonts,
+  documentInformation: () => Promise.reject(new Error('INERT: this case reads no document information')),
   pageMarks: noPageMarks,
   signatures: () => Promise.reject(new Error('this case does not read signatures')),
   // EVERY SAVE ASKS, since item 6 — the answer also says whether the save is a removal's — so the inert answer is the
@@ -1049,6 +1058,7 @@ const LOCAL_READS = {
   destinations: localDestinations,
   layers: localLayers,
   fonts: localFonts,
+  documentInformation: localDocumentInformation,
   pageMarks: localPageMarks,
   annotations: localAnnotations,
   annotationCopy: localAnnotationCopy,

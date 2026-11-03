@@ -298,6 +298,7 @@ function joined(
       layers: () => {
         throw new Error('the lifecycle half must not read the layers');
       },
+      documentInformation: () => Promise.reject(new Error('this case reads no document information')),
       fonts: () => {
         throw new Error('the lifecycle half must not read the fonts');
       },
@@ -754,6 +755,7 @@ describe('remoteMupdfLifecycle', () => {
         layers: () => {
           throw new Error('the byte-size case must not read the layers');
         },
+        documentInformation: () => Promise.reject(new Error('this case reads no document information')),
         fonts: () => {
           throw new Error('the byte-size case must not read the fonts');
         },

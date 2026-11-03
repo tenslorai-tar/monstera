@@ -540,6 +540,29 @@ describe('CommandBus — a removal is recorded on the DOCUMENT', () => {
     }
   });
 
+  it('DOCUMENT PROPERTIES (ADR-0283): undo restores the checkpoint, which holds the old title in both copies', async () => {
+    const titled = await PDFDocument.create({ updateMetadata: false });
+    titled.addPage([200, 200]);
+    titled.setTitle('Old title');
+    const session = await mupdfWriter.open(await titled.save({ useObjectStreams: false }));
+    const bus = new CommandBus({ mupdf: localMupdfWriter });
+    const context = contextStub(true);
+    const restoring = restoreStub();
+    const fields = { title: 'New title', author: '', subject: '', keywords: '', created: null, modified: null };
+    try {
+      await bus.execute({ mupdf: session }, context, { kind: 'setDocumentInformation', fields }, showingInputs(session));
+      // THE EDIT LANDED, so the undo below has something to take back.
+      expect((await PDFDocument.load(await mupdfWriter.serialise(session), { updateMetadata: false })).getTitle()).toBe('New title');
+      await bus.undo({ mupdf: session }, context, restoring.restore, showingInputs(session));
+      expect(restoring.calls()).toHaveLength(1);
+      const restored = context.written().at(-1)?.bytes.path;
+      if (restored === undefined) throw new Error('the undo restored no checkpoint');
+      expect((await PDFDocument.load(await readFile(restored), { updateMetadata: false })).getTitle()).toBe('Old title');
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
   it('UNDO records nothing and REDO records it again: an undone removal still left the file holding what it removed', async () => {
     const bus = new CommandBus({ mupdf: localMupdfWriter });
     const session = await mupdfWriter.open(flat);

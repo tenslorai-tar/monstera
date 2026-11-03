@@ -668,6 +668,7 @@ export function createContractHandlers(deps: {
     'document.pageWordBoxes': pageWordBoxesHandler(deps.commands),
     'document.destinations': destinationsHandler(deps.commands),
     'document.fonts': fontsHandler(deps.commands),
+    'document.information': documentInformationHandler(deps.commands),
     'document.pageMarks': pageMarksHandler(deps.commands),
     'document.layers': layersHandler(deps.commands),
     'document.signatures': signaturesHandler(deps.commands),
@@ -3318,6 +3319,22 @@ function fontsHandler(commands: DocumentCommands): ContractHandlers['document.fo
     try {
       const read = await commands.fonts(docId);
       return ok({ version: read.version, fonts: read.fonts.map((font) => ({ ...font })), truncated: read.truncated });
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      if (thrown instanceof MissingSessionError) return err({ code: 'engine-unavailable' });
+      throw thrown;
+    }
+  };
+}
+
+/** The document's own information (ADR-0283). `fontsHandler`'s codes: a read that needs a session. */
+function documentInformationHandler(commands: DocumentCommands): ContractHandlers['document.information'] {
+  return async ({ docId }): Promise<Awaited<ReturnType<ContractHandlers['document.information']>>> => {
+    try {
+      const read = await commands.documentInformation(docId);
+      return ok({ version: read.version, information: read.information });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });

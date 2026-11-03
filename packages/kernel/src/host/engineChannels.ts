@@ -33,6 +33,8 @@ import {
   applyRedactionsSchema,
   markMatchesForRedactionSchema,
   sanitizeDocumentSchema,
+  setDocumentInformationSchema,
+  documentInformationSchema,
   addLinkSchema,
   setLinkOutlineSchema,
   editLinkSchema,
@@ -1235,6 +1237,7 @@ const mupdfCommandSchema = z.discriminatedUnion('kind', [
   applyRedactionsSchema,
   markMatchesForRedactionSchema,
   sanitizeDocumentSchema,
+  setDocumentInformationSchema,
   // THE SECOND ASSET-BEARING KIND, and `.omit` for `placeImage`'s reason: two
   // hand-kept shapes for one command would be a second opinion about what that
   // command is, and the derivation runs in the direction 4c allows — a field
@@ -3217,6 +3220,17 @@ export const engineChannels = {
     'Reads where each kind of page stamp is, from a session this host holds.',
     z.object({ session: sessionSchema }).strict(),
     pageMarksSchema,
+    ['no-such-session'],
+  ),
+
+  /**
+   * The document's own information (ADR-0283): the six it states, which copies it has, and the read-only facts. IN A
+   * FILE, `engine/fonts`' route: eight texts of up to 4,096 characters each can pass a frame once escaped.
+   */
+  'engine/document-information': fileAnswered(
+    'Reads the document’s own information from a session this host holds.',
+    z.object({ session: sessionSchema }).strict(),
+    documentInformationSchema,
     ['no-such-session'],
   ),
 

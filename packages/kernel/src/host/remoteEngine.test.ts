@@ -375,6 +375,7 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
       },
       destinations: readDestinations,
       layers: readLayers,
+      documentInformation: () => Promise.reject(new Error('this case reads no document information')),
       fonts: readDocumentFonts,
       pageMarks: readPageMarksOf,
       // THE REAL READERS, so the parts assembled here are the production ones —
@@ -1026,6 +1027,7 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         layers: () => {
           throw new Error('unused');
         },
+        documentInformation: () => Promise.reject(new Error('this case reads no document information')),
         fonts: () => {
           throw new Error('unused');
         },
@@ -1221,6 +1223,7 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         layers: () => {
           throw new Error('the rotation-refusal case must not read the layers');
         },
+        documentInformation: () => Promise.reject(new Error('this case reads no document information')),
         fonts: () => {
           throw new Error('the rotation-refusal case must not read the fonts');
         },

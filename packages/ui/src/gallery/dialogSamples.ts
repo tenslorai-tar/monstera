@@ -539,6 +539,77 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'opened', props: { page: 2 } },
     { state: 'filled', props: { page: 2 }, steps: [type('Find', 'account number')] },
   ],
+  // ADR-0283: a document that states everything, one that states nothing and is encrypted, and a date typed wrong.
+  'dialog.document-properties': [
+    {
+      state: 'opened',
+      props: {
+        information: {
+          fields: {
+            title: 'Quarterly report',
+            author: 'Lin Wei',
+            subject: 'Numbers for the board',
+            keywords: 'q3, money',
+            created: '2026-10-01T09:30:00+01:00',
+            modified: '2026-10-28T16:05:00Z',
+          },
+          has: { info: true, xmp: true },
+          creator: 'A word processor',
+          producer: 'A PDF library',
+          format: 'PDF-1.7',
+          encryption: 'None',
+          permissions: { print: true, copy: true, edit: true, annotate: true },
+          pageCount: 12,
+          firstPage: { width: 595.28, height: 841.89 },
+        },
+        fonts: [
+          { name: 'Arial', partial: true },
+          { name: 'Times New Roman', partial: false },
+        ],
+        fontsTruncated: false,
+        bytes: 2_516_582,
+      },
+    },
+    {
+      state: 'empty',
+      props: {
+        information: {
+          fields: { title: '', author: '', subject: '', keywords: '', created: null, modified: null },
+          has: { info: false, xmp: false },
+          creator: null,
+          producer: null,
+          format: 'PDF-1.4',
+          encryption: 'Standard V2 R3 128-bit RC4',
+          permissions: { print: true, copy: false, edit: false, annotate: true },
+          pageCount: 1,
+          firstPage: { width: 612, height: 792 },
+        },
+        fonts: [],
+        fontsTruncated: false,
+        bytes: 1_638,
+      },
+    },
+    {
+      state: 'refused',
+      props: {
+        information: {
+          fields: { title: 'Report', author: '', subject: '', keywords: '', created: null, modified: null },
+          has: { info: true, xmp: false },
+          creator: null,
+          producer: null,
+          format: 'PDF-1.7',
+          encryption: 'None',
+          permissions: { print: true, copy: true, edit: true, annotate: true },
+          pageCount: 3,
+          firstPage: { width: 595.28, height: 841.89 },
+        },
+        fonts: [],
+        fontsTruncated: false,
+        bytes: 40_960,
+      },
+      steps: [type('Created', 'the first of May')],
+    },
+  ],
   'dialog.sanitize-document': [
     { state: 'opened', props: {} },
     // Every part unticked, so the dialog says something must be chosen.
