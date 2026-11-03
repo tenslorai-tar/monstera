@@ -326,6 +326,7 @@ export function DialogHost({
         }}
         title={entry.title}
         closeLabel={closeLabel}
+        name={open.id}
       >
         {/* The entry mounts itself. `declareDialog` built this closure where the
             schema and the component were still the same type, so nothing is cast

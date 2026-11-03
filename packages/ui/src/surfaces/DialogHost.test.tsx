@@ -268,6 +268,18 @@ describe('DialogHost', () => {
     expect(dialog.contains(body)).toBe(true);
   });
 
+  // THE FULL WALK OF 2026-11-03 tells a problem dialog from a question by the registry's id, and the window said no id.
+  it('names the open dialog by its registry id, as data-dialog', async () => {
+    const first = render(<Harness id="dialog.rename" props={{ name: 'chapter one' }} />);
+    screen.getByRole('button', { name: 'Open' }).click();
+    expect((await screen.findByRole('dialog', { name: 'Rename document' })).getAttribute('data-dialog')).toBe('dialog.rename');
+    first.unmount();
+    // CONTROL: another dialog names its own id, so the attribute is the open dialog's and not a constant.
+    render(<Harness id="dialog.pick" props={{ limit: 3 }} />);
+    screen.getByRole('button', { name: 'Open' }).click();
+    expect((await screen.findByRole('dialog')).getAttribute('data-dialog')).toBe('dialog.pick');
+  });
+
   it('draws NO PART of a dialog whose body has not arrived, then the whole of it at once', async () => {
     // The chrome used to be drawn over an empty body and then grow: an unfinished screen a person saw, and the frame
     // CI's high-contrast Donate baseline photographed (214 × 92 against 626 × 254, on 6b7a6bd9).

@@ -103,6 +103,11 @@ export interface DialogProps {
   initialFocus?: RefObject<HTMLElement | null>;
   /** A second class on the popup, for a dialog placed differently from the centred default. */
   popupClassName?: string;
+  /**
+   * The registry's id of the dialog shown, written on the popup as `data-dialog`, so what reads the window — a walk of
+   * every tool, a rendered test — knows which dialog is open by the registry's own name rather than by its words.
+   */
+  name?: string;
   children: ReactNode;
 }
 
@@ -139,6 +144,7 @@ export function Dialog({
   closeLabel,
   initialFocus,
   popupClassName,
+  name,
   children,
 }: DialogProps): ReactElement {
   // Only the title is resolved here. `closeLabel` travels to `IconButton` as a
@@ -195,6 +201,7 @@ export function Dialog({
         <BaseDialog.Backdrop className="m-dialog__backdrop" />
         <BaseDialog.Popup
           className={popupClassName === undefined ? 'm-dialog' : `m-dialog ${popupClassName}`}
+          data-dialog={name}
           initialFocus={initialFocus ?? (() => openingField(popup.current) ?? popup.current)}
           ref={attachPopup}
         >
