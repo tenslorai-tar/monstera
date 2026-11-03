@@ -32,11 +32,12 @@ import { execFileSync } from 'node:child_process';
 import { copyFile, writeFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { PDFDocument, PDFString, StandardFonts } from '@cantoo/pdf-lib';
+import { PDFDocument, PDFString, StandardFonts, rgb } from '@cantoo/pdf-lib';
 import { expect } from '@playwright/test';
 import { zipSync } from 'fflate';
 
 import { appRootOption, root, startWalk } from './liveWalk.mjs';
+import { editTextOpening } from './textWalkSteps.mjs';
 
 /** @typedef {{ title: string, group: string, id: string, shows: string }} ListedCommand */
 
@@ -72,6 +73,9 @@ const AWAY_FROM = /** @type {Readonly<Record<string, readonly string[]>>} */ ({
   'view.page-layout-continuous': ['view.page-layout-facing'],
   // THE COVER PAGE APPLIES TO THE TWO FACING LAYOUTS AND NOTHING ELSE (ADR-0284 Decision 3), so it is walked in one.
   'view.cover-page': ['view.page-layout-facing'],
+  'view.leave-focus': ['view.layout-focus'],
+  // PAGE 2 ON SHOW, so there is a page above it to move it past.
+  'document.move-page-earlier': ['view.page-next'],
   'view.actual-size': ['view.zoom-in'],
   'view.page-first': ['view.page-last'],
   'view.page-previous': ['view.page-last'],
@@ -96,6 +100,50 @@ const PUT_BACK = /** @type {Readonly<Record<string, readonly string[]>>} */ ({
   'view.page-layout-single': ['view.page-layout-continuous'],
   'view.cover-page': ['view.cover-page', 'view.page-layout-continuous'],
 });
+
+/**
+ * Commands a hand reaches from a surface other than the palette, by the state that surface needs: the third full run
+ * of 2026-11-03 "passed" 73 rows the palette did not offer, which is a row recorded and not walked. Each is run where it
+ * is placed, after the state that draws it:
+ * - `selection`: words selected, then the selection's own menu. The palette cannot offer these: focusing its field
+ *   collapses the page's selection, and `TextSelectionStore` reads it again on every `selectionchange`;
+ * - `annotation`: the walk document's comment selected with Select annotations, then the palette, else its menu;
+ * - `field`: Edit fields on and the name field selected (both fields for an arrange), then the palette, else its menu;
+ * - `page`: the page's own menu, after a comment was copied;
+ * - `format`: a text block open in Edit text, then the Properties panel's button, since the palette would take the
+ *   focus out of the editor and close it over the words (`keepsFocus`, ADR-0180);
+ * - `tab`: a second document open, then the first tab's menu;
+ * - `start`: no document open, then the start screen's card;
+ * - `key`: words selected, then the command's own chord;
+ * - `object`: Edit shapes on and one of page 1's overlapping shapes selected, then the palette, else its menu.
+ */
+const SELECTION_MENU = ['text.copy', 'text.highlight', 'text.underline', 'text.strikeout', 'text.comment', 'text.redact', 'text.search'];
+const ON_A_COMMENT = ['annotate.copy-selection', 'annotate.delete-selection', 'annotate.edit-selection', 'annotate.properties', 'annotate.reply-selection', ...['down', 'left', 'right', 'up'].flatMap((way) => [`annotate.nudge-${way}`, `annotate.nudge-${way}-far`])];
+const ARRANGE = ['align-left', 'align-right', 'align-top', 'align-bottom', 'centre-horizontally', 'centre-vertically', 'same-width', 'same-height', 'same-size', 'distribute-horizontally', 'distribute-vertically'].map((name) => `forms.arrange.${name}`);
+const ON_A_FIELD = ['forms.field-properties', 'forms.copy-fields', 'forms.paste-fields', 'forms.duplicate-field', 'forms.copy-to-pages', ...ARRANGE];
+const FORMATS = ['bold', 'italic', 'underline', 'strike', 'superscript', 'subscript', 'align-left', 'align-center', 'align-right', 'align-justify', 'bullets', 'numbering', 'indent-more', 'indent-less'].map((name) => `text.format.${name}`);
+const START_CARDS = ['annotate', 'forms', 'ocr', 'split-merge', 'encrypt-sign', 'export'].map((name) => `start.${name}`);
+const VIA = /** @type {Readonly<Record<string, 'selection' | 'annotation' | 'field' | 'page' | 'format' | 'tab' | 'start' | 'key' | 'object'>>} */ ({
+  ...Object.fromEntries(SELECTION_MENU.map((id) => [id, 'selection'])),
+  ...Object.fromEntries(ON_A_COMMENT.map((id) => [id, 'annotation'])),
+  ...Object.fromEntries(ON_A_FIELD.map((id) => [id, 'field'])),
+  ...Object.fromEntries(FORMATS.map((id) => [id, 'format'])),
+  ...Object.fromEntries(START_CARDS.map((id) => [id, 'start'])),
+  'annotate.paste': 'page',
+  'document.open-side-by-side': 'tab',
+  'document.close-others': 'tab',
+  'edit.copy': 'key',
+  'edit.cut': 'key',
+  'edit.object-forward': 'object',
+  'edit.object-backward': 'object',
+});
+/** The chord each `key` route presses, which is the command's own `shortcut` (Edit › Copy, Ctrl+C; Edit › Cut, Ctrl+X). */
+const CHORD = /** @type {Readonly<Record<string, string>>} */ ({ 'edit.copy': 'Control+C', 'edit.cut': 'Control+X' });
+/**
+ * The state a `key` route presses its chord in, where it is not words selected: Cut takes a selected comment, since the
+ * page's own words cannot be cut.
+ */
+const KEY_STATE = /** @type {Readonly<Record<string, 'annotation'>>} */ ({ 'edit.cut': 'annotation' });
 
 /**
  * Commands whose dialog runs ANOTHER registered command, and the question that command asks when it runs: Convert a
@@ -126,6 +174,14 @@ const NOT_HERE = /** @type {Readonly<Record<string, string>>} */ ({
   'ai.setup': 'checks and stores a provider’s key, which is the owner’s to type; the stored-key rows are aiKeyWalk.mjs’',
   'edit.translate-page': 'translates through a provider, which needs the owner’s key and sends the page off this computer',
   'ai.summarise-comments': 'asks a provider, which needs the owner’s key and sends the comments off this computer',
+  ...Object.fromEntries(
+    ['ai.ask-selection', 'ai.explain-selection', 'ai.summarise-selection', 'ai.translate-selection'].map((id) => [id, 'asks a provider about the selected words, which needs the owner’s key and sends them off this computer']),
+  ),
+  'ai.draft-reply': 'asks a provider to draft a reply to a comment, which needs the owner’s key and sends the comment off this computer',
+  'annotate.claude-region': 'sends a box of the page to Claude to recognise, which needs the owner’s key and sends the picture off this computer',
+  'tools.cloud-region': 'sends a box of the page to Azure to recognise, which needs the owner’s Azure account',
+  // READ 2026-11-03: drawn only when the update check has found an update, and the check is dormant at launch.
+  'app.update-available': 'is drawn only when the update check has found an update, and the check is dormant at launch by the owner’s decision',
   'cloud.save-back': 'saves to a cloud document, which needs the owner’s cloud account',
   'document.sign-document': 'signs with a certificate file and its password, which the walk’s profile holds none of',
 });
@@ -138,10 +194,20 @@ const at = (/** @type {string} */ flag) => {
 const from = Number(at('--from') ?? '0');
 const only = at('--only')?.split(',');
 
+/** The walk document's comment on page 1, in PDF points from the page's bottom left: clear of the words, top right. */
+const COMMENT_RECT = /** @type {const} */ ([520, 740, 540, 760]);
+/** Page 1's two shapes, 120 by 60 points, each at its bottom left; the second is drawn over the first. */
+const SHAPES = /** @type {const} */ ([
+  [72, 380, rgb(0.8, 0.3, 0.3)],
+  [140, 400, rgb(0.3, 0.4, 0.8)],
+]);
+/** A point of page 1 inside one shape and outside the other: the first's lower left, the second's upper right. */
+const SHAPE_POINT = /** @type {const} */ ({ 'edit.object-forward': [90, 395], 'edit.object-backward': [240, 450] });
+
 /**
  * The walk's own document: three pages of ordinary words in a standard font, a text field and a tick box, none of them
- * required. A form with required fields answers a correct save with a warning toast, and the walk's first trial read
- * that as Save failing (2026-11-03).
+ * required, a ruled table on page 2 and a comment on page 1. A form with required fields answers a correct save with a
+ * warning toast, and the walk's first trial read that as Save failing (2026-11-03).
  */
 async function walkDocument() {
   const document = await PDFDocument.create();
@@ -154,6 +220,9 @@ async function walkDocument() {
       page.drawText(line, { x: 72, y: 680 - at * 16, size: 12, font }),
     );
     if (number === 1) {
+      // TWO SHAPES, THE SECOND OVER THE FIRST: Bring forward and Send backward are offered only where an object overlaps
+      // the selected one on that side (`objectCommands.ts`), and the walk's first document had none.
+      for (const [x, y, colour] of SHAPES) page.drawRectangle({ x, y, width: 120, height: 60, color: colour });
       page.drawText('Name:', { x: 72, y: 560, size: 12, font });
       form.createTextField('name').addToPage(page, { x: 120, y: 552, width: 200, height: 20 });
       form.createCheckBox('agreed').addToPage(page, { x: 72, y: 520, width: 14, height: 14 });
@@ -172,12 +241,19 @@ async function walkDocument() {
     // Select all selects on the page on show. With none, the export was empty and the import answered rightly that
     // there was nothing in it; on page 3, Select all had nothing to select on page 1 (2026-11-03).
     if (number === 1) {
+      // WITH AN APPEARANCE OF ITS OWN, a filled square, as most documents' notes carry: the page raster draws a note's
+      // appearance and nothing else (`'sticky-note': null` in `annotationTypes.tsx`), and without one the note was on no
+      // pixel the walk could press (2026-11-03, recorded as a finding of its own).
+      const look = document.context.register(
+        document.context.flateStream('1 0.85 0.2 rg 0 0 20 20 re f 0.4 0.3 0 RG 1 w 0.5 0.5 19 19 re S', { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 20, 20] }),
+      );
       const note = document.context.obj({
         Type: 'Annot',
         Subtype: 'Text',
-        Rect: [520, 740, 540, 760],
+        Rect: [...COMMENT_RECT],
         Contents: PDFString.of("The walk's comment"),
         T: PDFString.of('Walk'),
+        AP: { N: look },
       });
       page.node.addAnnot(document.context.register(note));
     }
@@ -203,6 +279,14 @@ await app.evaluate(({ shell, webContents }) => {
   const g = /** @type {any} */ (globalThis);
   g.__walkExternal = [];
   g.__walkPrinted = 0;
+  // EVERY RENDERER ENDING, with Electron's own reason and exit code: a reload seen from the page says only that the page
+  // was replaced, and main reloads it on this event (`main.ts`).
+  g.__walkEndings = [];
+  for (const contents of webContents.getAllWebContents()) {
+    contents.on('render-process-gone', (/** @type {unknown} */ _event, /** @type {{ reason: string, exitCode: number }} */ details) => {
+      g.__walkEndings.push({ reason: details.reason, exitCode: details.exitCode });
+    });
+  }
   shell.openExternal = async (/** @type {string} */ url) => {
     g.__walkExternal.push(url);
   };
@@ -224,6 +308,19 @@ await app.evaluate(({ shell, webContents }) => {
   }
 });
 const externals = () => app.evaluate(() => /** @type {any} */ (globalThis).__walkExternal.length);
+const endings = () => app.evaluate(() => /** @type {any} */ (globalThis).__walkEndings);
+
+/**
+ * Why the window loaded again, from the two things that load it: main reloads it when its renderer ENDS (`main.ts`),
+ * and gives its renderer back after a minute with no document open and no input (ADR-0252, `memoryRelease.ts`). The
+ * second is designed, and in a walk it means a step sat idle on the start screen, which is the walk's to explain.
+ */
+async function whyReloaded() {
+  const ended = await endings();
+  return ended.length > 0
+    ? `its renderer ended, ${JSON.stringify(ended)}`
+    : 'no renderer ended, so the window gave its renderer back after a minute with no document open (ADR-0252): the step sat idle on the start screen';
+}
 const prints = () => app.evaluate(() => /** @type {any} */ (globalThis).__walkPrinted);
 
 /** The open dialog's registry id, or none. */
@@ -242,8 +339,9 @@ const openDialog = () =>
  * whose toasts say the same words are two entries; its kind and words are read again on every change, since a toast's
  * words can arrive after its element.
  */
-await page.evaluate(() => {
+const recordToasts = () => {
   const g = /** @type {any} */ (globalThis);
+  if (g.__walkToasts !== undefined) return;
   g.__walkToasts = [];
   const at = new WeakMap();
   const record = () => {
@@ -254,8 +352,21 @@ await page.evaluate(() => {
       else g.__walkToasts[at.get(toast)] = seen;
     }
   };
-  record();
-  new g.MutationObserver(record).observe(g.document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['class'] });
+  const watch = () => {
+    record();
+    new g.MutationObserver(record).observe(g.document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['class'] });
+  };
+  if (g.document.body === null) g.document.addEventListener('DOMContentLoaded', watch, { once: true });
+  else watch();
+};
+// ON EVERY LOAD OF THE PAGE, and on this one: main reloads the window when its renderer ends (`main.ts`), and a
+// recorder installed once was gone after one, so every step after it failed on the recorder (2026-11-03).
+await page.addInitScript(recordToasts);
+await page.evaluate(recordToasts);
+/** How many times the page has loaded since the walk began: a step that sees it move saw the window reload. */
+let loads = 0;
+page.on('load', () => {
+  loads += 1;
 });
 
 /** How many toasts the page has shown so far: a step's own are the ones after this count. */
@@ -294,7 +405,11 @@ async function closeAll() {
   await dismissModals();
   for (let tab = 0; tab < 12; tab += 1) {
     if ((await page.locator('.m-status-name').count()) === 0) return;
-    await page.keyboard.press('Control+W');
+    // THE TAB'S OWN CLOSE BUTTON, as a hand closes it: Ctrl+W pressed while Add comment's editor held the focus closed
+    // nothing, and the next step opened its document beside the last one (2026-11-03).
+    const close = page.locator('.m-tab-close').first();
+    if ((await close.count()) > 0) await close.click();
+    else await page.keyboard.press('Control+W');
     for (let asked = 0; asked < 3; asked += 1) {
       const id = await openDialog();
       if (id === null) break;
@@ -534,6 +649,114 @@ async function run(id) {
 }
 
 /**
+ * A press, left or right, at the middle of the walk document's comment where the page shows it.
+ * @param {'left' | 'right'} button
+ */
+async function pressAtComment(button) {
+  // FROM THE NOTE'S OWN RECT on page 1: the annotation layer draws an element only for a kind with a renderer of its own
+  // (a pending redaction), so a note has no element to aim at.
+  await pressAtPoint((COMMENT_RECT[0] + COMMENT_RECT[2]) / 2, (COMMENT_RECT[1] + COMMENT_RECT[3]) / 2, button);
+}
+
+/**
+ * A press inside the one shape `id` selects ({@link SHAPE_POINT}).
+ * @param {string} id
+ * @param {'left' | 'right'} button
+ */
+async function pressOnPage(id, button) {
+  const point = SHAPE_POINT[/** @type {keyof typeof SHAPE_POINT} */ (id)];
+  await pressAtPoint(point[0], point[1], button);
+}
+
+/**
+ * A press at a point of page 1 given in PDF points from its bottom left, through the page's drawn size.
+ * @param {number} x
+ * @param {number} y
+ * @param {'left' | 'right'} button
+ */
+async function pressAtPoint(x, y, button) {
+  const pageBox = await page.locator('canvas.m-page:visible').first().boundingBox();
+  if (pageBox === null) throw new Error('page 1 is not drawn');
+  const scale = pageBox.width / 612;
+  await page.mouse.click(pageBox.x + x * scale, pageBox.y + (792 - y) * scale, { button });
+}
+
+/**
+ * A menu opened on `target` by a right press, and its item of `title` pressed: `false` where the menu holds no such item.
+ * @param {import('playwright').Locator} target
+ * @param {string} title
+ */
+async function fromMenu(target, title) {
+  await target.click({ button: 'right' });
+  return pickFromMenu(title);
+}
+
+/**
+ * The open menu's item of `title` pressed, or `false` and the menu closed where it holds none.
+ * @param {string} title
+ */
+async function pickFromMenu(title) {
+  const item = page.getByRole('menu').getByRole('menuitem', { name: title, exact: true });
+  await item.first().waitFor({ state: 'visible', timeout: 3000 }).catch(() => undefined);
+  if ((await item.count()) === 0) {
+    await page.keyboard.press('Escape');
+    return false;
+  }
+  await item.first().click();
+  return true;
+}
+
+/**
+ * The command run from the surface `VIA` names for it, in the state `prepare` made, or `false` where that surface does
+ * not draw it. The palette is tried first for a comment and a field, whose selection is the shell's and outlives the
+ * palette's focus; the others are not run from it (`VIA`'s note says why).
+ * @param {{ id: string, title: string }} command
+ */
+async function ranFromSurface(command) {
+  const via = VIA[command.id];
+  if (via === undefined) return false;
+  if ((via === 'annotation' || via === 'field' || via === 'object') && (await ranFromPalette(command.title, command.id))) return true;
+  switch (via) {
+    case 'selection':
+      return fromMenu(page.locator('[data-text-layer="0"]:visible [data-text-line]').first(), command.title);
+    case 'annotation': {
+      await pressAtComment('right');
+      return pickFromMenu(command.title);
+    }
+    case 'field':
+      return fromMenu(page.locator('[data-field-box][aria-pressed="true"]:visible').first(), command.title);
+    case 'page': {
+      // AT A POINT OF THE PAGE, low and clear of its words, as a hand presses: the layers over the canvas take the press,
+      // so a click aimed at the canvas element waited for an element nothing lets through.
+      const pageBox = await page.locator('canvas.m-page:visible').first().boundingBox();
+      if (pageBox === null) return false;
+      await page.mouse.click(pageBox.x + 120, pageBox.y + 520, { button: 'right' });
+      return pickFromMenu(command.title);
+    }
+    case 'tab':
+      return fromMenu(page.locator('.m-tab').first(), command.title);
+    case 'start': {
+      const card = page.locator('.m-start-card', { hasText: command.title }).first();
+      if ((await card.count()) === 0) return false;
+      await card.click();
+      return true;
+    }
+    case 'format': {
+      const button = page.locator('[data-text-properties]').getByRole('button', { name: command.title, exact: true }).first();
+      if ((await button.count()) === 0) return false;
+      await button.click();
+      return true;
+    }
+    case 'key':
+      await page.keyboard.press(CHORD[command.id] ?? '');
+      return true;
+    case 'object':
+      await pressOnPage(command.id, 'right');
+      return pickFromMenu(command.title);
+  }
+}
+
+/**
  * What a command needs before it has anything to do, made as a hand makes it. Without it the command answers rightly
  * that there is nothing to do, and the walk's first full run read those answers as failures (2026-11-03).
  * @param {string} id
@@ -572,6 +795,50 @@ async function prepare(id) {
   if (id === 'view.go-forward') {
     await run('view.page-last');
     await run('view.go-back');
+    return;
+  }
+  const via = KEY_STATE[id] ?? VIA[id];
+  if (via === 'selection' || via === 'key') {
+    await selectWords();
+    return;
+  }
+  if (via === 'annotation' || via === 'page') {
+    await run('annotate.select');
+    // AT THE COMMENT'S PLACE ON THE PAGE, as a hand presses: the annotation layer draws it and takes no press
+    // (`.m-annotation-layer { pointer-events: none }`), so a click on its element waited for an element that never takes one.
+    await pressAtComment('left');
+    await page.waitForTimeout(500);
+    if (via === 'page') await run('annotate.copy-selection');
+    return;
+  }
+  if (via === 'field') {
+    await run('forms.edit-fields');
+    const boxes = page.locator('[data-field-box]:visible');
+    await expect(boxes.first()).toBeVisible({ timeout: 30_000 });
+    await boxes.nth(0).click();
+    // AN ARRANGE TAKES THE FIRST FIELD AND THE OTHERS, so a second is added to the selection as a hand adds it.
+    if (ARRANGE.includes(id)) await boxes.nth(1).click({ modifiers: ['Shift'] });
+    if (id === 'forms.paste-fields') await run('forms.copy-fields');
+    await page.waitForTimeout(500);
+    return;
+  }
+  if (via === 'format') {
+    await run('text.edit');
+    await editTextOpening(page).openWords(page.locator('[data-text-block]').first());
+    return;
+  }
+  if (via === 'tab') {
+    await open(second);
+    return;
+  }
+  if (via === 'object') {
+    await run('edit.objects-shapes');
+    await pressOnPage(id, 'left');
+    await page.waitForTimeout(800);
+    return;
+  }
+  if (via === 'start') {
+    await closeAll();
     return;
   }
   // A COMMAND THAT SETS A STATE starts from another one, or it is run where its state already holds and rightly
@@ -677,6 +944,7 @@ for (const command of commands) {
   await step(
     `${command.id}: ${command.title}`,
     async () => {
+      const loadsAtStart = loads;
       await closeAll();
       const copy = join(output, `doc-${command.id}.pdf`);
       await copyFile(source, copy);
@@ -694,13 +962,19 @@ for (const command of commands) {
       page.on('pageerror', onError);
       let context = 'as opened';
       let start = await settledFingerprint();
-      let ran = await ranFromPalette(command.title, command.id);
+      let ran = VIA[command.id] === undefined ? await ranFromPalette(command.title, command.id) : await ranFromSurface(command);
+      if (VIA[command.id] !== undefined && !ran) {
+        throw new Error(`its ${String(VIA[command.id])} surface did not draw it, in the state that surface needs`);
+      }
       if (!ran && (await selectWords())) {
         context = 'with words selected';
         start = await settledFingerprint();
         ran = await ranFromPalette(command.title, command.id);
       }
-      if (!ran) return { notWalked: { [command.id]: 'the palette offered no command of this title, as the document opened or with words selected' } };
+      // NOT OFFERED IS A FAILURE, never a row recorded as not walked: the third full run "passed" 73 rows this way.
+      // A command a hand reaches elsewhere has its surface in `VIA`, and one the walk cannot reach has its reason in
+      // `NOT_HERE`.
+      if (!ran) throw new Error('the palette offered no command of this title, as the document opened or with words selected, and no other surface is named for it');
       /** @type {string[]} */
       const met = [];
       await answerQuestions(met);
@@ -716,6 +990,7 @@ for (const command of commands) {
         await tasksEnded();
       }
       page.off('pageerror', onError);
+      if (loads !== loadsAtStart) throw new Error(`the window reloaded during this step: ${await whyReloaded()}`);
       const toast = await toastAfter(before.toasts);
       const end = await settledFingerprint();
       const changed = end !== start;
@@ -751,11 +1026,16 @@ for (const command of commands) {
         const kept = join(output, `kept-${command.id}.pdf`);
         await saveTo(kept);
         await ranFromPalette('Save a copy…', 'document.save-copy');
+        // ITS QUESTIONS ANSWERED as every command's are: a copy of a document with unapplied redaction marks asks first,
+        // and unanswered, nothing was written, the copy did not open, and the start screen sat idle until the window gave
+        // its renderer back (ADR-0252), which read as a reload (2026-11-03).
+        await answerQuestions([]);
         await expect.poll(async () => readFileSync(kept, { flag: 'r' }).byteLength > 0, { timeout: 30_000 }).toBe(true).catch(() => undefined);
         await closeAll();
         const back = await reopen(kept);
         await page.locator('canvas.m-page:visible').first().waitFor({ state: 'visible', timeout: 30_000 }).catch(() => undefined);
         reopened = back && (await page.locator('canvas.m-page:visible').count()) > 0 ? 'saved and opened again' : 'saved, and the copy did not open';
+        if (loads !== loadsAtStart) throw new Error(`${reopened}; the window reloaded while the copy was saved and opened again: ${await whyReloaded()}`);
         if (reopened !== 'saved and opened again') throw new Error(reopened);
       }
       return { context, dialogs: met, toast, changed, opened, printed, reopened };
