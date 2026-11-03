@@ -147,3 +147,28 @@ differing by 255 levels. Everything else in this ADR stands.
 
 The owner accepted the correction above on 2026-11-01, as written: the three clauses replace Decision 6's pixel clause.
 Its figures are still the Linux build's; the shipped Windows build is measured at merge, as before.
+
+## Correction, 2026-11-03: the shipped Windows build, measured at merge
+
+`scripts/research/textToCurves.mjs` on the same six fixtures, 2026-11-03, with `.tools/ghostscript/10.08.0`'s
+`gswin64c.exe`, whose SHA-256 (`ae1befbb…`) and `gsdll64.dll`'s (`ce99e646…`) equal those in the packed layout
+(`release/msix/test/layout/resources/native/ghostscript/`, read with `sha256sum` the same day). Uncontained, as the
+instrument's header says it is: the contained conversion is the product's, and is walked in the application.
+
+| fixture | time | size before → after | pixels past 192 at 300 dpi | past 128 |
+|---|---|---|---|---|
+| ordinary page | 554 ms | 1,592 → 123,691 bytes | 0 | 0.008% |
+| dense page | 1,642 ms | 3,682 → 946,459 bytes | 32 | 0.283% |
+| Type 3 heading | 499 ms | 51,734 → 85,234 bytes | 0 | 0.006% |
+| a form | 438 ms | 3,975 → 6,188 bytes | 6 | 0.004% |
+| annotations | 513 ms | 1,386 → 7,415 bytes | 1 | 0.003% |
+| attachment, layer, title, tags | 426 ms | 1,572 → 9,089 bytes | 2 | 0.003% |
+
+Every kept-and-lost row reads as the Linux build's did, and so do the sizes and the counts past 192: the same set, 0, 0,
+1, 2, 6 and 32, on the same fixtures. At most 0.1% of the pixels past 64 sit inside a letter. So the restated tolerance
+holds on the shipped build with the margins measured on Linux.
+
+**The times do not carry over.** They are 3.6 to 6.6 times the Linux build's: 426 to 1,642 ms against 65 to 461 ms. Each
+reading is one run and includes starting the process, so this says the Windows figure is the one to quote, not why it
+is slower. *What was measured*'s time column is the Linux build's and is superseded by this table.
+`node scripts/proofs/textToCurves.proof.mjs --require-ghostscript` passed its 8 cases with the same binary that day.
