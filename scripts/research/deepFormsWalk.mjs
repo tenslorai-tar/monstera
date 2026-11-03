@@ -15,8 +15,12 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { expect } from '@playwright/test';
 
-import { appRootOption, startWalk } from './liveWalk.mjs';
+import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
+import { appRootOption, root, startWalk } from './liveWalk.mjs';
 import { textSteps } from './textWalkSteps.mjs';
+
+// THE FIXTURE IS THE KERNEL'S BUILD, so a stale one is refused rather than walked under this build's name.
+refuseStaleBuild(root, [['packages/kernel/src/formGraphFixture.ts', 'packages/kernel/dist/formGraphFixture.js', 'tsc']], 1);
 
 // LITERAL SPECIFIER, so `proof:electronimports` can read what this loads.
 const { formGraph } = await import('../../packages/kernel/dist/formGraphFixture.js');

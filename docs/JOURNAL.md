@@ -975,6 +975,16 @@ proposed before cloud-43's build and accepted by the owner after it; ADR-0285, f
 before its build. **Item 7:** no document claimed Translate used the first model; one test name said it and now says the
 default, which is the same model only where the default is the first.
 
+**Correction, 2026-11-03, the same night: two faults of the range that this audit missed, both mine, both already red
+on CI.** `4f682735` moved `formGraph` into the kernel's source with its own `document.save()`, which
+`pdfLibSession.test.ts` refuses anywhere in the kernel's source outside that module (CI's unit tests on three jobs); and
+`deepFormsWalk.mjs` imports the kernel's build without `refuseStaleBuild` (`buildFreshness.proof.mjs` on both Guards
+legs). Fixed in `af4f73d9` and the commit after it. **The answer above to item 3 was given from what the range was
+about, and not from a run** — the board of `work/2026-11-02-walk`, pushed hours before this audit, read *NOT GREEN:
+Guards=failure, CI=failure*, and nobody had read it. That is AAAA-29's exact shape: *the subject of a change does not
+tell you where its checks run*. The rule it costs is the one CLAUDE.md already states, *answer it from a RUN*, and the
+board is now read before an audit's item 3 is written.
+
 ---
 
 ## 2026-11-02 — The full walk of main at `808e897c`: where it stands (paused, not finished)
