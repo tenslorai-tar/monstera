@@ -203,8 +203,13 @@ function readSelection() {
 /** The painted selection's polygons on page `index`, each as its points on the window. @param {number} index @param {'selection' | 'matches'} surface */
 function painted(index, surface = 'selection') {
   return page.evaluate(
-    ({ at, which }) => {
+    async ({ at, which }) => {
       const w = /** @type {any} */ (globalThis);
+      // AFTER THE FRAME THE LAYER PAINTS IN: a selection is painted inside the next animation frame (ADR-0280,
+      // `settleBeforePaint`), so a read straight after a press raced it. Measured 2026-11-03: the merged build's Shift+click
+      // on the page turned 90 read 0 shapes with the selection right and the paint on the screenshot. Two frames, so the
+      // read is after the one the paint was scheduled in; a selection that never paints still reads none.
+      await new Promise((resolve) => w.requestAnimationFrame(() => w.requestAnimationFrame(resolve)));
       const svg = [...w.document.querySelectorAll(`[data-text-layer="${String(at)}"] .m-text-layer__${which}`)].find(
         (/** @type {any} */ each) => each.closest('[data-text-layer]').getBoundingClientRect().width > 0,
       );
