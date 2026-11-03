@@ -621,6 +621,8 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
         tick('Attached files'),
         tick('Actions that submit or fetch data'),
         tick('Form fields and comments, flattened into the page'),
+        // ADR-0283's fifth part, ticked at the start like the rest: left ticked, nothing was refused.
+        tick('Document information: title, author, subject, keywords, dates and the programs that made it'),
       ],
     },
   ],
