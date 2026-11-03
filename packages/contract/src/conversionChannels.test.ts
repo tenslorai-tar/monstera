@@ -13,8 +13,9 @@ describe('every conversion channel is named work', () => {
     expect(unregisteredConversions(channels, CONVERSION_CHANNELS)).toStrictEqual([]);
   });
 
-  it('the list is not empty and holds the sixteen, so the pass above is not a pass over nothing', () => {
-    expect(CONVERSION_CHANNELS).toHaveLength(16);
+  it('the list is not empty and holds the eighteen, so the pass above is not a pass over nothing', () => {
+    // SIXTEEN UNTIL 2026-11-01, when text to curves' notice and copy joined it (ADR-0282).
+    expect(CONVERSION_CHANNELS).toHaveLength(18);
   });
 
   const withWork = { params: z.object({ docId: z.string(), work: z.string() }) };

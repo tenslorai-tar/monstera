@@ -7,6 +7,7 @@ import { type ComposePageSize, ComposeRefused, type ComposedSource } from '../co
 import { splitCsv } from '../csvSplit.js';
 import type { ComposedImages, ImportImage } from '../imageCompose.js';
 import { pictureSize } from '../pictureSize.js';
+import type { KeptCensus } from '../keptCensus.js';
 import type { PdfaPreparation } from '../pdfaPreparation.js';
 import type { ScannedSignature } from '../signatureScan.js';
 import {
@@ -97,6 +98,19 @@ export type PdfaPreparer = (
 ) => Promise<({ readonly kind: 'prepared'; readonly bytes: number } & PdfaPreparation) | { readonly kind: 'unreadable' | 'missing' }>;
 
 /**
+ * How this process counts what a document holds (ADR-0282 Decision 4) — `keptCensusOf` over the shim in the host, a
+ * fake in a proof — and, where `into` is a name, writes it there unencrypted. `optimize`'s shape: the area and
+ * validated names, `missing` the transport's and `unreadable` the document's.
+ */
+export type KeptCounter = (
+  area: HostArea,
+  from: string,
+  into: string | null,
+  // `ImageOptimizer`'s rule: required, `undefined` where the document opens with none.
+  password: string | undefined,
+) => Promise<({ readonly kind: 'counted'; readonly bytes: number | null } & KeptCensus) | { readonly kind: 'unreadable' | 'missing' }>;
+
+/**
  * How this process makes a scanned signature PDF a picture — `signatureFromScan` in the host, a fake in a proof. It
  * takes the bytes, since what it opens is a document in memory rather than a path.
  */
@@ -110,6 +124,8 @@ export interface ComposeHandlerParts {
   readonly keepInlineImages: InlineImageKeeper | null;
   /** How this process prepares a PDF/A copy, or `null` without the native library — `optimize`'s rule. */
   readonly preparePdfa: PdfaPreparer | null;
+  /** How this process counts what a document holds, or `null` without the native library — `optimize`'s rule. */
+  readonly countKept: KeptCounter | null;
   /**
    * How this process rewrites images, or `null` where it was started without the native library
    * — every packaged build until packaging resolves the library's path, and any run whose launcher
@@ -148,6 +164,7 @@ export function createComposeHandlers({
   composeCsv,
   composeImages,
   composeMarkdown,
+  countKept,
   faces,
   files,
   keepInlineImages,
@@ -404,6 +421,23 @@ export function createComposeHandlers({
               leftOutMore: answer.leftOutMore,
             },
           };
+      }
+    },
+
+    // `engine/optimize`'s three decisions, over the census (ADR-0282 Decision 4).
+    'engine/count-kept': async ({ session, from, password, into }) => {
+      const held = areas.lookup(session);
+      if (held === undefined) return gone;
+      if (countKept === null) return { ok: true, value: { kind: 'unavailable' } };
+
+      const answer = await countKept(held, from, into, password ?? undefined);
+      switch (answer.kind) {
+        case 'missing':
+          return { ok: false, error: { code: 'asset-missing' } };
+        case 'unreadable':
+          return { ok: true, value: { kind: 'unreadable' } };
+        case 'counted':
+          return { ok: true, value: { kind: 'counted', kept: { ...answer.kept }, fonts: answer.fonts, bytes: answer.bytes } };
       }
     },
 

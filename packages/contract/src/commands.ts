@@ -254,6 +254,37 @@ export type PdfaLeftOutKind = (typeof PDFA_LEFT_OUT_KINDS)[number];
 export const MAX_PDFA_LEFT_OUT = 1024;
 
 /**
+ * What *Convert text to curves* counts in the document before and in the copy after, so that anything the converter
+ * drops is said by name and number (ADR-0282 Decision 4): Ghostscript announces none of its removals. `marks` are the
+ * annotations a person made, links and form widgets apart; `link-targets` the links that still go somewhere. Fonts are
+ * counted apart from these, because removing them is what the command is for.
+ */
+export const KEPT_KINDS = ['pages', 'marks', 'links', 'link-targets', 'bookmarks', 'attachments', 'layers', 'fields', 'tags', 'title'] as const;
+export type KeptKind = (typeof KEPT_KINDS)[number];
+
+/** One count per {@link KEPT_KINDS} entry: the compose host's wire and the renderer's channel take this one schema. */
+export const keptCountsSchema = z
+  .object({
+    pages: z.number().int().nonnegative(),
+    marks: z.number().int().nonnegative(),
+    links: z.number().int().nonnegative(),
+    'link-targets': z.number().int().nonnegative(),
+    bookmarks: z.number().int().nonnegative(),
+    attachments: z.number().int().nonnegative(),
+    layers: z.number().int().nonnegative(),
+    fields: z.number().int().nonnegative(),
+    tags: z.number().int().nonnegative(),
+    title: z.number().int().nonnegative(),
+  } satisfies Record<KeptKind, z.ZodNumber>)
+  .strict();
+
+/** A count that fell between a document and its copy: the most there can be is one per kind. */
+export const keptLossesSchema = z
+  .array(z.object({ kind: z.enum(KEPT_KINDS), before: z.number().int().nonnegative(), after: z.number().int().nonnegative() }).strict())
+  .max(KEPT_KINDS.length)
+  .readonly();
+
+/**
  * The most blank pages one insert adds. A bound so a typed count cannot ask the engine for a million pages; a hundred is
  * more than any document's run of blank pages, and more is a second insert.
  */

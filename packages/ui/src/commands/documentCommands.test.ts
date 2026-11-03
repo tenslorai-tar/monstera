@@ -113,6 +113,7 @@ import {
   printCommand,
   emailCommand,
   exportPdfaCommand,
+  convertTextToCurvesCommand,
   optimizeCommand,
   closeOthersCommand,
   openSideBySideCommand,
@@ -3884,6 +3885,122 @@ describe('delete pages — the mutation-dialog gate', () => {
 
         expect(asked).toStrictEqual(spoken);
       }
+    });
+  });
+
+  describe('convert text to curves (ADR-0282)', () => {
+    const LOST = [{ kind: 'fields', before: 3, after: 0 }] as const;
+
+    function curvesDeps(
+      answers: Parameters<typeof recording>[0],
+      answer: (id: string) => unknown,
+      opened: unknown[] = [],
+    ): { readonly command: ReturnType<typeof convertTextToCurvesCommand>; readonly sent: ReturnType<typeof recording>['sent']; readonly asked: unknown[] } {
+      const { client, sent } = recording(answers);
+      const asked: unknown[] = [];
+      const command = convertTextToCurvesCommand({
+        track: UNTRACKED,
+        settleMarks: NOTHING_MARKED,
+        client,
+        toast: () => undefined,
+        stamp,
+        signatures,
+        onApplied: () => undefined,
+        openCopy: (written) => {
+          opened.push(written);
+          return Promise.resolve();
+        },
+        ask: (id, props) => {
+          asked.push({ id, props });
+          return Promise.resolve(answer(id));
+        },
+      });
+      return { command, sent, asked };
+    }
+
+    it('counts first, asks with the counts, dispatches EXACTLY the conversion, reports, and opens the copy when asked', async () => {
+      const opened: unknown[] = [];
+      const { command, sent, asked } = curvesDeps(
+        {
+          'document.curvesNotice': { kind: 'counted', fields: 3, tags: 0 },
+          'document.convertTextToCurves': { kind: 'copied', bytes: 900, before: 100, lost: LOST, compared: true, fontsLeft: 0, written: WRITTEN },
+        },
+        (id) => (id === 'dialog.text-to-curves' ? { confirmed: true } : id === 'dialog.curves-result' ? { open: true } : undefined),
+        opened,
+      );
+
+      await command.run(CONTEXT);
+
+      expect(namedWorkSetAside(sent)).toStrictEqual([
+        { id: 'document.curvesNotice', params: { docId: DOC } },
+        { id: 'document.convertTextToCurves', params: { docId: DOC } },
+      ]);
+      expect(asked).toStrictEqual([
+        { id: 'dialog.text-to-curves', props: { fields: 3, tags: 0 } },
+        { id: 'dialog.curves-result', props: { bytes: 900, before: 100, lost: LOST, compared: true, fontsLeft: 0 } },
+      ]);
+      expect(opened).toStrictEqual([WRITTEN]);
+    });
+
+    it('CONTROL: a dismissed question converts nothing, and a closed report opens nothing', async () => {
+      const dismissed = curvesDeps({ 'document.curvesNotice': { kind: 'counted', fields: 0, tags: 0 } }, () => undefined);
+      await dismissed.command.run(CONTEXT);
+      expect(namedWorkSetAside(dismissed.sent)).toStrictEqual([{ id: 'document.curvesNotice', params: { docId: DOC } }]);
+
+      const opened: unknown[] = [];
+      const closed = curvesDeps(
+        {
+          'document.curvesNotice': { kind: 'counted', fields: 0, tags: 0 },
+          'document.convertTextToCurves': { kind: 'copied', bytes: 9, before: 9, lost: [], compared: true, fontsLeft: 0, written: WRITTEN },
+        },
+        (id) => (id === 'dialog.text-to-curves' ? { confirmed: true } : undefined),
+        opened,
+      );
+      await closed.command.run(CONTEXT);
+      expect(opened).toStrictEqual([]);
+    });
+
+    it('says so for no converter, no copy, a refused and an unwritable destination, and nothing for a dismissed picker', async () => {
+      for (const [answered, spoken] of [
+        [{ kind: 'unavailable' }, [{ id: 'dialog.save-problem', props: { outcome: 'curves-unavailable' } }]],
+        [{ kind: 'failed' }, [{ id: 'dialog.save-problem', props: { outcome: 'curves-failed' } }]],
+        [{ kind: 'write-failed' }, [{ id: 'dialog.save-problem', props: { outcome: 'write-failed' } }]],
+        [{ kind: 'refused', openElsewhere: 1 }, [{ id: 'dialog.save-problem', props: { outcome: 'contested' } }]],
+        [{ kind: 'cancelled' }, []],
+      ] as const) {
+        const { command, asked } = curvesDeps(
+          { 'document.curvesNotice': { kind: 'counted', fields: 0, tags: 0 }, 'document.convertTextToCurves': answered },
+          (id) => (id === 'dialog.text-to-curves' ? { confirmed: true } : undefined),
+        );
+        await command.run(CONTEXT);
+        expect(asked.slice(1)).toStrictEqual(spoken);
+      }
+    });
+
+    it('says the converter is not here BEFORE asking anything, where the notice cannot be counted', async () => {
+      const { command, sent, asked } = curvesDeps({ 'document.curvesNotice': { kind: 'unavailable' } }, () => ({ confirmed: true }));
+      await command.run(CONTEXT);
+      expect(asked).toStrictEqual([{ id: 'dialog.save-problem', props: { outcome: 'curves-unavailable' } }]);
+      expect(namedWorkSetAside(sent)).toStrictEqual([{ id: 'document.curvesNotice', params: { docId: DOC } }]);
+    });
+
+    it('is placed on the ribbon’s Tools section beside PDF/A, in the Convert group', () => {
+      const { command } = curvesDeps({}, () => undefined);
+      const pdfa = exportPdfaCommand({
+        track: UNTRACKED,
+        settleMarks: NOTHING_MARKED,
+        recogniseFirst: NOTHING_RECOGNISED,
+        client: recording({}).client,
+        toast: () => undefined,
+        stamp,
+        signatures,
+        onApplied: () => undefined,
+        ask: () => Promise.resolve(undefined),
+      });
+      const [placed] = command.placements;
+      const [beside] = pdfa.placements;
+      expect(placed).toMatchObject({ surface: 'ribbon', section: 'tools', group: beside && 'group' in beside ? beside.group : null });
+      expect(placed && 'order' in placed && beside && 'order' in beside ? placed.order - beside.order : null).toBe(1);
     });
   });
 

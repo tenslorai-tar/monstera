@@ -1166,6 +1166,28 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     },
   ],
   'dialog.pdfa-level': [{ state: 'opened', props: {} }],
+  // ADR-0282: the question with neither fields nor tags, and with both; the report kept, lost and uncounted.
+  'dialog.text-to-curves': [
+    { state: 'opened', props: { fields: 0, tags: 0 } },
+    { state: 'form', props: { fields: 3, tags: 12 } },
+  ],
+  'dialog.curves-result': [
+    { state: 'opened', props: { bytes: 126_976, before: 1_638, lost: [], compared: true, fontsLeft: 0 } },
+    {
+      state: 'lost',
+      props: {
+        bytes: 6_246,
+        before: 4_096,
+        lost: [
+          { kind: 'fields', before: 3, after: 0 },
+          { kind: 'tags', before: 12, after: 0 },
+        ],
+        compared: true,
+        fontsLeft: 0,
+      },
+    },
+    { state: 'uncounted', props: { bytes: 968_704, before: 3_789, lost: [], compared: false, fontsLeft: 1 } },
+  ],
   'dialog.optimize': [
     { state: 'opened', props: { setting: 'medium', measured: null } },
     { state: 'measured', props: { setting: 'medium', measured: { before: 8_400_000, after: 3_150_000 } } },

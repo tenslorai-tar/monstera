@@ -564,6 +564,30 @@ export const PDFA_LEVEL_1B = messageKey('dialog.pdfa-level.1b');
 export const PDFA_LEVEL_1B_NOTE = messageKey('dialog.pdfa-level.1b-note');
 export const PDFA_LEVEL_3B = messageKey('dialog.pdfa-level.3b');
 export const PDFA_LEVEL_3B_NOTE = messageKey('dialog.pdfa-level.3b-note');
+export const TEXT_TO_CURVES_COMMAND_TITLE = messageKey('command.convert-text-to-curves.title');
+export const TEXT_TO_CURVES_TITLE = messageKey('dialog.text-to-curves.title');
+export const TEXT_TO_CURVES_SAVES = messageKey('dialog.text-to-curves.saves');
+export const TEXT_TO_CURVES_LOSES = messageKey('dialog.text-to-curves.loses');
+export const TEXT_TO_CURVES_FIELDS = messageKey('dialog.text-to-curves.fields');
+export const TEXT_TO_CURVES_TAGS = messageKey('dialog.text-to-curves.tags');
+export const TEXT_TO_CURVES_APPLY = messageKey('dialog.text-to-curves.apply');
+export const CURVES_RESULT_TITLE = messageKey('dialog.curves-result.title');
+export const CURVES_RESULT_SIZE = messageKey('dialog.curves-result.size');
+export const CURVES_RESULT_KEPT_ALL = messageKey('dialog.curves-result.kept-all');
+export const CURVES_RESULT_LOST = messageKey('dialog.curves-result.lost');
+export const CURVES_RESULT_UNCOMPARED = messageKey('dialog.curves-result.uncompared');
+export const CURVES_RESULT_FONTS_LEFT = messageKey('dialog.curves-result.fonts-left');
+export const CURVES_RESULT_OPEN = messageKey('dialog.curves-result.open');
+export const CURVES_LOST_PAGES = messageKey('dialog.curves-result.lost-pages');
+export const CURVES_LOST_MARKS = messageKey('dialog.curves-result.lost-marks');
+export const CURVES_LOST_LINKS = messageKey('dialog.curves-result.lost-links');
+export const CURVES_LOST_LINK_TARGETS = messageKey('dialog.curves-result.lost-link-targets');
+export const CURVES_LOST_BOOKMARKS = messageKey('dialog.curves-result.lost-bookmarks');
+export const CURVES_LOST_ATTACHMENTS = messageKey('dialog.curves-result.lost-attachments');
+export const CURVES_LOST_LAYERS = messageKey('dialog.curves-result.lost-layers');
+export const CURVES_LOST_FIELDS = messageKey('dialog.curves-result.lost-fields');
+export const CURVES_LOST_TAGS = messageKey('dialog.curves-result.lost-tags');
+export const CURVES_LOST_TITLE = messageKey('dialog.curves-result.lost-title');
 export const PRINT_COMMAND_TITLE = messageKey('command.print.title');
 export const EMAIL_COMMAND_TITLE = messageKey('command.email.title');
 export const PRINT_TITLE = messageKey('dialog.print.title');
@@ -2297,6 +2321,7 @@ export const TOAST_EXCEL_SAVED_TABLES_LEFT_OUT = messageKey('toast.excel-saved-t
 export const TOAST_PDFA_SAVED = messageKey('toast.pdfa-saved');
 export const TOAST_PDFA_1B_SAVED = messageKey('toast.pdfa-1b-saved');
 export const TOAST_PDFA_3B_SAVED = messageKey('toast.pdfa-3b-saved');
+export const TOAST_CURVES_SAVED = messageKey('toast.curves-saved');
 export const TOAST_FORM_DATA_SAVED = messageKey('toast.form-data-saved');
 export const TOAST_COMMENTS_SAVED = messageKey('toast.comments-saved');
 export const TOAST_SIGNED_COPY_SAVED = messageKey('toast.signed-copy-saved');
@@ -3350,6 +3375,7 @@ export const EXPORTING_POWERPOINT = messageKey('status.task.exporting-powerpoint
 export const EXPORTING_EXCEL = messageKey('status.task.exporting-excel');
 export const EXPORTING_TEXT = messageKey('status.task.exporting-text');
 export const EXPORTING_PDFA = messageKey('status.task.exporting-pdfa');
+export const CONVERTING_TO_CURVES = messageKey('status.task.converting-to-curves');
 export const EXPORTING_PAGE_IMAGES = messageKey('status.task.exporting-page-images');
 export const EXPORTING_FORM_DATA = messageKey('status.task.exporting-form-data');
 export const EXPORTING_ANNOTATIONS = messageKey('status.task.exporting-annotations');
@@ -3377,6 +3403,7 @@ export const RIBBON_EXPORT_WORD = messageKey('ribbon.export-word');
 export const RIBBON_EXPORT_POWERPOINT = messageKey('ribbon.export-powerpoint');
 export const RIBBON_EXPORT_EXCEL = messageKey('ribbon.export-excel');
 export const RIBBON_EXPORT_PDFA = messageKey('ribbon.export-pdfa');
+export const RIBBON_TEXT_TO_CURVES = messageKey('ribbon.text-to-curves');
 export const RIBBON_OPTIMIZE = messageKey('ribbon.optimize');
 export const RIBBON_SNAPSHOT = messageKey('ribbon.snapshot');
 export const RIBBON_STRIKEOUT = messageKey('ribbon.strikeout');
@@ -3478,6 +3505,8 @@ export const SAVE_NO_TABLES_NO_TEXT = messageKey('dialog.save-problem.no-tables-
 export const SAVE_REVIEW_CHANGED = messageKey('dialog.save-problem.review-changed');
 export const SAVE_PDFA_UNAVAILABLE = messageKey('dialog.save-problem.pdfa-unavailable');
 export const SAVE_PDFA_FAILED = messageKey('dialog.save-problem.pdfa-failed');
+export const SAVE_CURVES_UNAVAILABLE = messageKey('dialog.save-problem.curves-unavailable');
+export const SAVE_CURVES_FAILED = messageKey('dialog.save-problem.curves-failed');
 export const SAVE_OPTIMIZE_UNAVAILABLE = messageKey('dialog.save-problem.optimize-unavailable');
 export const SAVE_OPTIMIZE_UNREADABLE = messageKey('dialog.save-problem.optimize-unreadable');
 export const SAVE_OPTIMIZE_CHANGED = messageKey('dialog.save-problem.optimize-changed');
@@ -5401,6 +5430,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TOAST_PDFA_SAVED]: 'Saved as PDF/A-2b.',
   [TOAST_PDFA_1B_SAVED]: 'Saved as PDF/A-1b.',
   [TOAST_PDFA_3B_SAVED]: 'Saved as PDF/A-3b.',
+  [TOAST_CURVES_SAVED]: 'Saved a copy with text as curves.',
   [TOAST_FORM_DATA_SAVED]: 'Form data saved',
   [TOAST_COMMENTS_SAVED]: 'Comments saved',
   [TOAST_SIGNED_COPY_SAVED]: 'Signed copy saved',
@@ -6353,6 +6383,39 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [PDFA_LEVEL_1B_NOTE]: 'The oldest level, for systems that ask for it. Cannot keep transparency.',
   [PDFA_LEVEL_3B]: 'PDF/A-3b',
   [PDFA_LEVEL_3B_NOTE]: 'Like 2b, and may also carry attached files.',
+  // ADR-0282 Decision 3's words, the owner's answers of 2026-11-01: what the copy is, what it can no longer do, and that
+  // the document stays as it is; the fields and tags lines shown only where the document has them.
+  [TEXT_TO_CURVES_COMMAND_TITLE]: 'Convert text to curves…',
+  [TEXT_TO_CURVES_TITLE]: 'Convert text to curves',
+  [TEXT_TO_CURVES_SAVES]:
+    'Monstera will save a copy of this document where every letter is drawn as a shape. The copy looks the same and prints the same on any computer.',
+  [TEXT_TO_CURVES_LOSES]:
+    'In the copy, the text can no longer be searched, selected, copied, edited or read aloud, and the file may be larger. Your document stays as it is.',
+  [TEXT_TO_CURVES_FIELDS]:
+    'Its form fields become part of the page: what they show now is kept, and they can no longer be filled.',
+  [TEXT_TO_CURVES_TAGS]: 'Its reading order and tags are removed.',
+  [TEXT_TO_CURVES_APPLY]: 'Save a copy…',
+  [CURVES_RESULT_TITLE]: 'Copy saved with text as curves',
+  // THE SIZE IS STATED, NEVER CAPPED (Decision 7): a page in fonts that are not embedded grew 77 and 257 times.
+  [CURVES_RESULT_SIZE]: 'The copy is {after}. The document is {before}.',
+  [CURVES_RESULT_KEPT_ALL]: 'Everything else the document holds was kept.',
+  [CURVES_RESULT_LOST]: 'The copy did not keep everything:',
+  [CURVES_RESULT_UNCOMPARED]: 'Monstera could not count what the copy kept, so it cannot say whether anything else was left out.',
+  [CURVES_RESULT_FONTS_LEFT]:
+    '{count, plural, one {One font could not be turned into shapes and is still in the copy.} other {# fonts could not be turned into shapes and are still in the copy.}}',
+  [CURVES_RESULT_OPEN]: 'Open the copy',
+  // BY KIND AND COUNT (Decision 4): what the copy kept of what the document had, never the converter's words.
+  [CURVES_LOST_PAGES]: '{after} of {before, plural, one {one page} other {# pages}} kept.',
+  [CURVES_LOST_MARKS]: '{after} of {before, plural, one {one comment or mark} other {# comments and marks}} kept.',
+  [CURVES_LOST_LINKS]: '{after} of {before, plural, one {one link} other {# links}} kept.',
+  [CURVES_LOST_LINK_TARGETS]: '{after} of {before, plural, one {one link} other {# links}} still go somewhere.',
+  [CURVES_LOST_BOOKMARKS]: '{after} of {before, plural, one {one bookmark} other {# bookmarks}} kept.',
+  [CURVES_LOST_ATTACHMENTS]: '{after} of {before, plural, one {one attached file} other {# attached files}} kept.',
+  [CURVES_LOST_LAYERS]: '{after} of {before, plural, one {one layer} other {# layers}} kept.',
+  [CURVES_LOST_FIELDS]:
+    '{after} of {before, plural, one {one form field} other {# form fields}} kept. What they showed is part of the page.',
+  [CURVES_LOST_TAGS]: '{after} of {before, plural, one {one tag} other {# tags}} for screen readers kept.',
+  [CURVES_LOST_TITLE]: 'The document’s title.',
   [PRINT_COMMAND_TITLE]: 'Print…',
   [EMAIL_COMMAND_TITLE]: 'Email…',
   [PRINT_TITLE]: 'Print',
@@ -7174,6 +7237,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EXPORTING_EXCEL]: 'Exporting tables to Excel',
   [EXPORTING_TEXT]: 'Exporting the text',
   [EXPORTING_PDFA]: 'Exporting to PDF/A',
+  [CONVERTING_TO_CURVES]: 'Converting text to curves',
   [EXPORTING_PAGE_IMAGES]: 'Exporting pages as pictures',
   [EXPORTING_FORM_DATA]: 'Exporting form data',
   [EXPORTING_ANNOTATIONS]: 'Exporting comments',
@@ -7202,6 +7266,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [RIBBON_EXPORT_POWERPOINT]: 'PowerPoint',
   [RIBBON_EXPORT_EXCEL]: 'Excel',
   [RIBBON_EXPORT_PDFA]: 'PDF/A',
+  [RIBBON_TEXT_TO_CURVES]: 'Text to curves',
   // WHAT IT DOES, not what it is called elsewhere: *Save a smaller copy* is the
   // sentence, and the one word for it is the one people search for.
   [RIBBON_OPTIMIZE]: 'Compress',
@@ -7472,6 +7537,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SAVE_NO_TABLES]: 'No tables with ruled lines were found in this document, so no file was written.',
   [SAVE_PDFA_UNAVAILABLE]: 'PDF/A export needs a component that is not installed with this copy of Monstera, so no file was written.',
   [SAVE_PDFA_FAILED]: 'This document could not be converted to PDF/A, so no file was written. Save a copy… still works.',
+  [SAVE_CURVES_UNAVAILABLE]:
+    'Converting text to curves needs a component that is not installed with this copy of Monstera, so no file was written.',
+  [SAVE_CURVES_FAILED]: 'This document could not be converted to curves, so no file was written. Save a copy… still works.',
   [SAVE_OPTIMIZE_UNAVAILABLE]: 'Saving a smaller copy needs a component that is not installed with this copy of Monstera, so no file was written.',
   [SAVE_OPTIMIZE_UNREADABLE]: 'This document could not be read to make a smaller copy — a password-protected document is one reason — so no file was written.',
   [SAVE_OPTIMIZE_CHANGED]: 'The document changed after its size was checked, so no file was written. Check the size again.',

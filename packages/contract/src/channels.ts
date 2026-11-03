@@ -44,6 +44,7 @@ import {
   PDFA_LEVELS,
   PDFA_LEFT_OUT_KINDS,
   MAX_PDFA_LEFT_OUT,
+  keptLossesSchema,
   MAX_IMPORT_IMAGES,
   MAX_IMPORT_IMAGE_BYTES,
   MAX_WORKBOOK_ROW,
@@ -3499,6 +3500,52 @@ export const channels = {
         tagsDropped: z.boolean(),
         ...WRITTEN,
       }),
+      z.object({ kind: z.literal('cancelled') }),
+      z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
+      z.object({ kind: z.literal('write-failed') }),
+      z.object({ kind: z.literal('unavailable') }),
+      z.object({ kind: z.literal('failed') }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
+   * What the person reads before *Convert text to curves* (ADR-0282 Decision 3): how many form fields and structure
+   * elements the document has, so the dialog says what becomes of them only where there are any. `unavailable` where
+   * the converter or the census cannot run, and the command then says so before any dialog. NAMED WORK, because the
+   * count may wait for the compose host to start, and anything a person waits on past half a second shows as running.
+   */
+  'document.curvesNotice': channel(
+    'Counts the form fields and tags a curves copy would turn into page content and remove, for the dialog before it.',
+    z.object({ docId: docIdSchema, ...NAMED_WORK }).strict(),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('counted'), fields: z.number().int().nonnegative(), tags: z.number().int().nonnegative() }).strict(),
+      z.object({ kind: z.literal('unavailable') }).strict(),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
+   * Saves a copy of the document whose every letter is a shape, to a file the person picks (ADR-0282): never the
+   * document itself. `copied` carries both sizes, because the size is stated and never capped (Decision 7), and every
+   * count that fell between the document and the copy (Decision 4); `compared` is false where either could not be
+   * counted, so an empty `lost` is never read as nothing lost; `fontsLeft` is what the converter left as fonts.
+   */
+  'document.convertTextToCurves': channel(
+    'Saves a copy of the document with every letter drawn as a shape, to a file the person picks, saying what it lost.',
+    z.object({ docId: docIdSchema, ...NAMED_WORK }).strict(),
+    z.discriminatedUnion('kind', [
+      z
+        .object({
+          kind: z.literal('copied'),
+          bytes: z.number().int().nonnegative(),
+          before: z.number().int().nonnegative(),
+          lost: keptLossesSchema,
+          compared: z.boolean(),
+          fontsLeft: z.number().int().nonnegative(),
+          ...WRITTEN,
+        })
+        .strict(),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
       z.object({ kind: z.literal('write-failed') }),

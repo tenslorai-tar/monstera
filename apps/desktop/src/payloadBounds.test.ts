@@ -431,6 +431,10 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'document.email': 'needs an engine session and the Windows Share sheet',
   // The PDF/A export's ask is a `DocId`; the document is converted and streamed in main.
   'document.exportPdfa': 'needs an engine session, a save dialog and the contained converter',
+  // TEXT TO CURVES' TWO (ADR-0282): the ask is a `DocId`; the answers are counts, at most one loss per kind, and the
+  // copy is streamed to disk in main, never sent to the renderer.
+  'document.curvesNotice': 'needs an engine session and the compose host with the native library',
+  'document.convertTextToCurves': 'needs an engine session, a save dialog, the contained converter and the compose host',
   // THE ANSWER IS A KIND AND UP TO THREE INTEGERS — two sizes and a version — whatever the
   // document's size; the copy stays in the compose host's area and is streamed to disk by main,
   // never sent to the renderer (ADR-0087).

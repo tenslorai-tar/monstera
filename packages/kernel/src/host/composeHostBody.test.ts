@@ -24,6 +24,7 @@ import { signatureFromScan } from '../signatureScan.js';
 import {
   type ImageOptimizer,
   type InlineImageKeeper,
+  type KeptCounter,
   type PdfaPreparer,
   type SignatureScanner,
   createComposeHandlers,
@@ -159,6 +160,14 @@ function start(
             calls.push(`pdfa:${area.snapshotDirectory}|${from}->${area.outputDirectory}|${into}|password:${password ?? 'none'}`);
             return preparer === null ? Promise.reject(new Error('unreachable')) : preparer(area, from, into, password);
           },
+    // `optimize`'s recording, for the same reason: what the request named is what the census is handed.
+    countKept:
+      counter === null
+        ? null
+        : (area, from, into, password) => {
+            calls.push(`count:${area.snapshotDirectory}|${from}->${into === null ? 'none' : `${area.outputDirectory}|${into}`}|password:${password ?? 'none'}`);
+            return counter === null ? Promise.reject(new Error('unreachable')) : counter(area, from, into, password);
+          },
     // `optimize`'s recording, for the same reason: what the request named is what the keeper is handed.
     keepInlineImages:
       keeper === null
@@ -262,6 +271,14 @@ const PREPARED = {
   leftOutMore: 5,
 } as const;
 let preparer: PdfaPreparer | null = () => Promise.resolve(PREPARED);
+/** The census's answer: every count different, so a field read into the wrong key is seen. */
+const COUNTED = {
+  kind: 'counted',
+  kept: { pages: 1, marks: 2, links: 3, 'link-targets': 4, bookmarks: 5, attachments: 6, layers: 7, fields: 8, tags: 9, title: 1 },
+  fonts: 11,
+  bytes: 4321,
+} as const;
+let counter: KeptCounter | null = () => Promise.resolve(COUNTED);
 /** The scanned-signature reader every `start` binds: the real one, over the shim the test setup binds; `null` is none. */
 let scanner: SignatureScanner | null = signatureFromScan;
 
@@ -342,6 +359,7 @@ describe('the compose host channel set', () => {
         'engine/csv-split',
         'engine/keep-inline-images',
         'engine/prepare-pdfa',
+        'engine/count-kept',
         'engine/open',
         'engine/optimize',
         'engine/probe-containment',
@@ -865,6 +883,47 @@ describe('the compose host — Optimize, MuPDF’s native image rewriter (ADR-00
     expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: true, value: { kind: 'unavailable' } } });
     expect(none.calls).toStrictEqual([]);
     preparer = () => Promise.resolve(PREPARED);
+  });
+
+  it('COUNT-KEPT hands the census the area, the name and the password, and answers each count under its own kind', async () => {
+    const { session, calls } = await openArea(emptyFiles());
+    stream.feed(request('c1', 'engine/count-kept', { session, from: IN, password: 'sample-only-0171', into: OUT }));
+    await stream.whenSent(2);
+    expect(answerIn(stream.sent[1])).toStrictEqual(
+      expect.objectContaining({ body: { ok: true, value: { kind: 'counted', kept: COUNTED.kept, fonts: 11, bytes: 4321 } } }),
+    );
+    expect(calls).toStrictEqual([`count:C:\\snap|${IN}->C:\\out|${OUT}|password:sample-only-0171`]);
+  });
+
+  it('COUNT-KEPT with no copy asked for hands the census no name to write (control: the case above names one)', async () => {
+    counter = () => Promise.resolve({ ...COUNTED, bytes: null });
+    const { session, calls } = await openArea(emptyFiles());
+    stream.feed(request('c1', 'engine/count-kept', { session, from: IN, password: null, into: null }));
+    await stream.whenSent(2);
+    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: true, value: { kind: 'counted', bytes: null } } });
+    expect(calls).toStrictEqual([`count:C:\\snap|${IN}->none|password:none`]);
+    counter = () => Promise.resolve(COUNTED);
+  });
+
+  it('COUNT-KEPT: a missing source is the transport’s, an unopenable one the document’s, no library calls nothing', async () => {
+    for (const [answer, expected] of [
+      [{ kind: 'missing' }, { ok: false, error: { code: 'asset-missing' } }],
+      [{ kind: 'unreadable' }, { ok: true, value: { kind: 'unreadable' } }],
+    ] as const) {
+      counter = () => Promise.resolve(answer);
+      const { session } = await openArea(emptyFiles());
+      stream.feed(request('c1', 'engine/count-kept', { session, from: IN, password: null, into: null }));
+      await stream.whenSent(2);
+      expect(answerIn(stream.sent[1])).toMatchObject({ body: expected });
+    }
+
+    counter = null;
+    const none = await openArea(emptyFiles());
+    stream.feed(request('c2', 'engine/count-kept', { session: none.session, from: IN, password: null, into: null }));
+    await stream.whenSent(2);
+    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: true, value: { kind: 'unavailable' } } });
+    expect(none.calls).toStrictEqual([]);
+    counter = () => Promise.resolve(COUNTED);
   });
 
   it('KEEP-INLINE-IMAGES takes one page or all, and refuses any other scope a command never makes', () => {

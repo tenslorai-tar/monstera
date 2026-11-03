@@ -19,6 +19,8 @@ import {
   SAVE_OPTIMIZE_UNAVAILABLE,
   SAVE_OPTIMIZE_UNREADABLE,
   SAVE_PDFA_FAILED,
+  SAVE_CURVES_UNAVAILABLE,
+  SAVE_CURVES_FAILED,
   SAVE_PDFA_UNAVAILABLE,
   SAVE_PRINT_FAILED,
   SAVE_PRINT_UNAVAILABLE,
@@ -55,6 +57,8 @@ type SaveProblem =
   | 'email-failed'
   | 'pdfa-unavailable'
   | 'pdfa-failed'
+  | 'curves-unavailable'
+  | 'curves-failed'
   | 'optimize-unavailable'
   | 'optimize-unreadable'
   | 'optimize-changed';
@@ -111,6 +115,9 @@ const MESSAGE: Readonly<Record<SaveProblem, MessageKey>> = {
   // A PDF/A EXPORT's two, layout text's reason: no converter here, and one that made no PDF/A.
   'pdfa-unavailable': SAVE_PDFA_UNAVAILABLE,
   'pdfa-failed': SAVE_PDFA_FAILED,
+  // TEXT TO CURVES' two (ADR-0282), PDF/A's reason: the same converter, not here, or one that made no copy.
+  'curves-unavailable': SAVE_CURVES_UNAVAILABLE,
+  'curves-failed': SAVE_CURVES_FAILED,
   // OPTIMIZE's three (ADR-0087): no native library here, MuPDF could not open the document, and
   // a document that moved after its sizes were shown.
   'optimize-unavailable': SAVE_OPTIMIZE_UNAVAILABLE,

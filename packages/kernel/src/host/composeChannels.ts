@@ -4,6 +4,7 @@ import {
   COMPOSE_REFUSALS,
   MAX_PDFA_LEFT_OUT,
   PDFA_LEFT_OUT_KINDS,
+  keptCountsSchema,
   MAX_BOXED_CHARACTERS,
   MAX_COMPOSE_SKIPS,
   composeSkipSchema,
@@ -282,6 +283,40 @@ export const composeChannels = {
             )
             .max(MAX_PDFA_LEFT_OUT),
           leftOutMore: z.number().int().nonnegative(),
+        })
+        .strict(),
+      z.object({ kind: z.literal('unreadable') }).strict(),
+      z.object({ kind: z.literal('unavailable') }).strict(),
+    ]),
+    ['no-such-session', 'asset-missing'],
+  ),
+
+  /**
+   * What a document in the area holds that a person would miss, counted, and how many font dictionaries it carries
+   * (ADR-0282 Decision 4, `keptCensus.ts`): read from the document before *Convert text to curves* and from its copy
+   * after, because the converter announces none of its removals. Where `into` is named it also writes the document
+   * there UNENCRYPTED, `engine/prepare-pdfa`'s reason: the converter cannot open a document that needs a password, and
+   * the password is never put on its command line. `unreadable` and `unavailable` are `engine/optimize`'s answers.
+   */
+  'engine/count-kept': channel(
+    'Counts what a document from the area holds that a person would miss, and its fonts; writes it unencrypted where asked.',
+    z
+      .object({
+        session: sessionSchema,
+        from: outputNameSchema,
+        // `engine/optimize`'s field and reason.
+        password: documentPasswordSchema.nullable(),
+        into: outputNameSchema.nullable(),
+      })
+      .strict(),
+    z.discriminatedUnion('kind', [
+      z
+        .object({
+          kind: z.literal('counted'),
+          kept: keptCountsSchema,
+          fonts: z.number().int().nonnegative(),
+          /** The unencrypted copy's size, `null` where none was asked for. */
+          bytes: z.number().int().positive().nullable(),
         })
         .strict(),
       z.object({ kind: z.literal('unreadable') }).strict(),

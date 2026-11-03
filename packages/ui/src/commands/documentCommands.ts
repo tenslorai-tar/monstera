@@ -34,7 +34,15 @@ import {
   withTargetVersion,
   type FormPath,
 } from '@monstera/contract';
-import { type DocId, type DocVersion, type Failure, type MessageKey, lineText, paragraphsOfLines } from '@monstera/shared';
+import {
+  type DocId,
+  type DocVersion,
+  type Failure,
+  type FileHandle,
+  type MessageKey,
+  lineText,
+  paragraphsOfLines,
+} from '@monstera/shared';
 
 import type { z } from 'zod';
 
@@ -114,6 +122,12 @@ import { withWorkProgress } from './workProgress.js';
 import { PDFA_LEVEL_DIALOG_ID, PDFA_LEVEL_OF, PDFA_LEVEL_RESULT } from '../dialogs/pdfaLevel.js';
 import { fontListOf } from '../fontList.js';
 import { PDFA_REMOVALS_DIALOG_ID } from '../dialogs/pdfaRemovals.js';
+import {
+  CURVES_RESULT_DIALOG_ID,
+  CURVES_RESULT_RESULT,
+  TEXT_TO_CURVES_DIALOG_ID,
+  TEXT_TO_CURVES_RESULT,
+} from '../dialogs/textToCurves.js';
 import { OCR_OUTCOME_DIALOG_ID, type RecognisedWalk } from '../dialogs/ocrOutcome.js';
 import type { ScanReader } from '../dialogs/scanReader.js';
 import { PRINT_DIALOG_ID, type PrintAnswer } from '../dialogs/print.js';
@@ -333,6 +347,10 @@ import {
   EXPORTING_FORM_DATA,
   EXPORTING_PAGE_IMAGES,
   EXPORTING_PDFA,
+  CONVERTING_TO_CURVES,
+  TEXT_TO_CURVES_COMMAND_TITLE,
+  RIBBON_TEXT_TO_CURVES,
+  TOAST_CURVES_SAVED,
   EXPORTING_POWERPOINT,
   EXPORTING_TEXT,
   EXPORTING_WORD,
@@ -3829,6 +3847,84 @@ export function exportPdfaCommand(
         case 'unavailable':
         case 'failed':
           void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: outcome.kind === 'unavailable' ? 'pdfa-unavailable' : 'pdfa-failed' });
+          return;
+        case 'write-failed':
+        case 'refused':
+          void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: outcome.kind === 'write-failed' ? 'write-failed' : 'contested' });
+      }
+    },
+  };
+}
+
+/** What a curves command needs beyond an export's: how the written copy is opened in a tab, by its handle. */
+export interface OpensTheCopy {
+  readonly openCopy: (written: FileHandle) => Promise<unknown>;
+}
+
+/**
+ * Saves a copy whose every letter is a shape — *Convert text to curves*
+ * ([ADR-0282](../../../../docs/DECISIONS/0282-text-to-curves-saves-a-new-copy-whose-letters-are-shapes.md)).
+ *
+ * The count first, so the question says what becomes of fields and tags only where there are any (Decision 3); then the
+ * question; then main's save dialog and conversion, the document never written; then the toast, and the report with
+ * both sizes and anything lost, from which the copy opens in a tab. Each wait past half a second shows as running.
+ */
+export function convertTextToCurvesCommand(
+  deps: DocumentCommandDeps & WritesAFile & SettlesMarksFirst & ConvertsInMain & OpensTheCopy,
+): UiCommand {
+  return {
+    id: 'document.convert-text-to-curves',
+    feedback: TOASTS,
+    icon: 'PenTool',
+    title: TEXT_TO_CURVES_COMMAND_TITLE,
+    ribbonTitle: RIBBON_TEXT_TO_CURVES,
+    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CONVERT, order: 131, size: 'small' }],
+    when: hasPages,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined) return;
+      const docId = context.docId;
+      if (!(await deps.settleMarks(docId, 'export'))) return;
+
+      const notice = await withWorkProgress(deps, CONVERTING_TO_CURVES, (work) => deps.client['document.curvesNotice']({ docId, work }));
+      if (!notice.ok) {
+        reportProblem(deps, notice.error);
+        return;
+      }
+      if (notice.value.kind === 'unavailable') {
+        void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: 'curves-unavailable' });
+        return;
+      }
+      const confirmed = TEXT_TO_CURVES_RESULT.safeParse(
+        await deps.ask(TEXT_TO_CURVES_DIALOG_ID, { fields: notice.value.fields, tags: notice.value.tags }),
+      );
+      if (!confirmed.success) return;
+
+      const answer = await withWorkProgress(deps, CONVERTING_TO_CURVES, (work) => deps.client['document.convertTextToCurves']({ docId, work }));
+      if (!answer.ok) {
+        reportProblem(deps, answer.error);
+        return;
+      }
+      const outcome = answer.value;
+      switch (outcome.kind) {
+        case 'cancelled':
+          return;
+        case 'copied': {
+          confirmWritten(deps, TOAST_CURVES_SAVED, outcome.written);
+          const report = CURVES_RESULT_RESULT.safeParse(
+            await deps.ask(CURVES_RESULT_DIALOG_ID, {
+              bytes: outcome.bytes,
+              before: outcome.before,
+              lost: outcome.lost,
+              compared: outcome.compared,
+              fontsLeft: outcome.fontsLeft,
+            }),
+          );
+          if (report.success) await deps.openCopy(outcome.written);
+          return;
+        }
+        case 'unavailable':
+        case 'failed':
+          void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: outcome.kind === 'unavailable' ? 'curves-unavailable' : 'curves-failed' });
           return;
         case 'write-failed':
         case 'refused':

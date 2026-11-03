@@ -172,6 +172,8 @@ import {
   writeDocumentCopy,
   writeDocumentSplit,
   writeStreamedDocument,
+  type KeptLoss,
+  lostBetween,
   clearBackups as clearStoredBackups,
   listStoredBackups,
   storedBackupPath,
@@ -236,6 +238,7 @@ import {
 } from './officeConversion.js';
 import { type WorkHandle, type WorkProgress, WorkInProgress } from './workInProgress.js';
 import { type PdfaLeftOut, type PdfaSource, PdfaFailedError } from './pdfaConversion.js';
+import { type CountedKept, type CurvesSource, CurvesFailedError, type KeptCounter } from './textToCurves.js';
 import type { HeldPicture } from './heldPicture.js';
 import { type SignaturePictureSource, pickSignaturePicture } from './signaturePicture.js';
 import type { PersonalLibrary } from './personalLibrary.js';
@@ -2700,6 +2703,16 @@ export interface DocumentCommandsParts {
    */
   readonly pdfa: PdfaSource | null;
   /**
+   * *Convert text to curves*, the same contained Ghostscript (ADR-0282) — or `null` where none can run, and the command
+   * then answers `unavailable` before any dialog.
+   */
+  readonly curves: CurvesSource | null;
+  /**
+   * How a document is counted for what it holds (ADR-0282 Decision 4), the compose host's census — or `null` where there
+   * is no compose host, and a curves copy is then written and said to be uncompared.
+   */
+  readonly countKept: KeptCounter | null;
+  /**
    * Office import through the contained `x2t` (ADR-0120) — or `null` where none can run, and the
    * import is refused as unavailable before any dialog. Required for `compose`'s reason.
    */
@@ -2835,6 +2848,28 @@ export type ExportPdfaOutcome =
   | { readonly kind: 'unavailable' }
   | { readonly kind: 'failed' };
 
+/** What *Convert text to curves* did (ADR-0282): a copy's outcomes, with its size and what it lost; or no converter; or no copy. */
+export type CurvesOutcome =
+  | {
+      readonly kind: 'copied';
+      /** The copy's size, and the document's as a save would write it: the size is stated, never capped (Decision 7). */
+      readonly bytes: number;
+      readonly before: number;
+      /** Every count that fell between the document and the copy (Decision 4). */
+      readonly lost: readonly KeptLoss[];
+      /** Whether both were counted: where either could not be, the person is told the copy could not be compared. */
+      readonly compared: boolean;
+      /** Font dictionaries the copy still carries: said, where the converter left any. */
+      readonly fontsLeft: number;
+      readonly destination: string;
+    }
+  | Exclude<CopyOutcome, { readonly kind: 'copied' }>
+  | { readonly kind: 'unavailable' }
+  | { readonly kind: 'failed' };
+
+/** What the person is told before a curves copy runs (ADR-0282 Decision 3): whether it has fields, and tags. */
+export type CurvesNotice = { readonly kind: 'counted'; readonly fields: number; readonly tags: number } | { readonly kind: 'unavailable' };
+
 export class DocumentCommands {
   readonly #documents: DocumentService;
   readonly #bus: CommandBus;
@@ -2920,6 +2955,8 @@ export class DocumentCommands {
   readonly #pickContact: (sourceName: string) => Promise<string | null>;
   readonly #layoutText: LayoutTextSource | null;
   readonly #pdfa: PdfaSource | null;
+  readonly #curves: CurvesSource | null;
+  readonly #countKept: KeptCounter | null;
   readonly #officeImport: OfficeImport | null;
   readonly #optimizer: OptimizeSource | null;
   readonly #print: PrintDestination | null;
@@ -3010,6 +3047,8 @@ export class DocumentCommands {
     this.#pickContact = parts.pickContact;
     this.#layoutText = parts.layoutText;
     this.#pdfa = parts.pdfa;
+    this.#curves = parts.curves;
+    this.#countKept = parts.countKept;
     this.#officeImport = parts.officeImport;
     this.#optimizer = parts.optimizer;
     this.#print = parts.print;
@@ -5565,6 +5604,99 @@ export class DocumentCommands {
     });
 
     return value;
+  }
+
+  /**
+   * What the person reads before a curves copy (ADR-0282 Decision 3): whether the document has form fields and tags, so
+   * the dialog says what becomes of them only where they exist. Counted from the bytes a save would write, by the
+   * compose host's census, so the dialog and the loss report read one count.
+   */
+  async curvesNotice(docId: DocId, work: string): Promise<CurvesNotice> {
+    if (this.#documents.nameOf(docId) === undefined) throw new DocumentNotOpenError(docId, 'convert text to curves');
+    const count = this.#countKept;
+    if (count === null || this.#curves === null) return { kind: 'unavailable' };
+    this.#work.begin(work, 'runs-to-the-end');
+    const { value } = await this.#documents.run(docId, async (): Promise<CurvesNotice> => {
+      const counted = await count({ bytes: await this.#currentBytes(docId) }, this.#engine.opensWith(docId), false);
+      if (counted.kind !== 'counted') return { kind: 'unavailable' };
+      await counted.discard();
+      return { kind: 'counted', fields: counted.census.kept.fields, tags: counted.census.kept.tags };
+    });
+    return value;
+  }
+
+  /**
+   * Saves a copy of the document whose every letter is a shape, to a file the person picks — ADR-0282, Ghostscript's
+   * `pdfwrite -dNoOutputFonts` contained as PDF/A runs it.
+   *
+   * ## The document is never written
+   *
+   * Only the picked destination is: `writeStreamedDocument`'s check refuses a path any open document reaches, the
+   * document's own file among them, so a copy can never replace what it was made from. The session is only read.
+   *
+   * ## What was lost is counted on both sides
+   *
+   * The census before is taken from the flush the converter reads; the census after from the file just written,
+   * copied into the compose host file to file. Every count that fell is the outcome's, and where either side could not
+   * be counted the outcome says so instead of reporting nothing lost.
+   */
+  async convertTextToCurves(docId: DocId, work: string): Promise<CurvesOutcome | undefined> {
+    const name = this.#documents.nameOf(docId);
+    if (name === undefined) throw new DocumentNotOpenError(docId, 'convert text to curves');
+
+    const curves = this.#curves;
+    if (curves === null) return { kind: 'unavailable' };
+
+    const destination = await this.#copy.pick(suffixed(name, '(curves)'));
+    if (destination === null) return undefined;
+    this.#work.begin(work, 'runs-to-the-end');
+
+    const { value } = await this.#documents.run(docId, async (): Promise<CurvesOutcome> => {
+      const pdf = await this.#currentBytes(docId);
+      // A HOLDER AND NOT A LOCAL, `writeStreamedDocument`'s reason: the census is recorded from a closure, which
+      // control-flow analysis cannot see, so a local would read as its initial `null` below.
+      const seen: { before: CountedKept | null } = { before: null };
+      try {
+        const outcome = await writeStreamedDocument(
+          this.#save.deps,
+          this.#copy.checkTarget,
+          async () => {
+            const converted = await curves(pdf, this.#engine.opensWith(docId));
+            seen.before = converted.before;
+            return converted.output;
+          },
+          destination,
+        );
+        if (outcome.kind !== 'copied') return outcome;
+        const after = await this.#countWritten(outcome.destination);
+        const counted = seen.before;
+        return {
+          kind: 'copied',
+          bytes: outcome.bytes,
+          before: pdf.length,
+          lost: counted === null || after === null ? [] : lostBetween(counted.kept, after.kept),
+          compared: counted !== null && after !== null,
+          fontsLeft: after?.fonts ?? 0,
+          destination: outcome.destination,
+        };
+      } catch (thrown) {
+        if (thrown instanceof CurvesFailedError) return { kind: 'failed' };
+        throw thrown;
+      }
+    });
+
+    return value;
+  }
+
+  /** The census of a file this command wrote, or `null` where it could not be counted: said to the person, never guessed. */
+  async #countWritten(path: string): Promise<CountedKept | null> {
+    const count = this.#countKept;
+    if (count === null) return null;
+    // THE COPY OPENS WITH NO PASSWORD: Ghostscript writes it unencrypted, from an unencrypted input.
+    const counted = await count({ file: path }, undefined, false);
+    if (counted.kind !== 'counted') return null;
+    await counted.discard();
+    return counted.census;
   }
 
   /**

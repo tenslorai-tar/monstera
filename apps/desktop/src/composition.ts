@@ -325,6 +325,7 @@ import type { AttachmentReaders } from './askAttachments.js';
 import { createLayoutTextSource } from './layoutText.js';
 import { type WorkbookComposer, createOfficeSource } from './officeConversion.js';
 import { type PdfaPreparer, createPdfaSource } from './pdfaConversion.js';
+import { type KeptCounter, createCurvesSource } from './textToCurves.js';
 import { createAssistant } from './assistant.js';
 import type { PrintDestination } from './printing.js';
 import type { ShareDestination } from './sharing.js';
@@ -2122,6 +2123,13 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       pdfaPlatform === null
         ? null
         : createPdfaSource(pdfaPlatform, failures, composeHost?.preparePdfa ?? (() => Promise.resolve({ kind: 'unavailable' } as const))),
+    // TEXT TO CURVES, the same contained Ghostscript on PDF/A's own platform (ADR-0282 Decision 5); counted before and
+    // after by the compose host, and converted uncounted, said as such, where there is none.
+    curves:
+      pdfaPlatform === null
+        ? null
+        : createCurvesSource(pdfaPlatform, failures, composeHost?.countKept ?? (() => Promise.resolve({ kind: 'unavailable' } as const))),
+    countKept: composeHost === null ? null : composeHost.countKept,
     // OFFICE IMPORT, the contained x2t — `null` where it cannot run, for layout text's reason (ADR-0120).
     // A WORKBOOK IN PARTS through the compose host (decision C), which alone reads the file's sheets.
     officeImport: officeImport === null || officeConvert === null ? null : { source: officeImport.source, convert: officeConvert },
@@ -4231,6 +4239,7 @@ function composeHostBinding(
   readonly composeImages: NonNullable<ComposeImages>;
   readonly optimize: OptimizeSource;
   readonly preparePdfa: PdfaPreparer;
+  readonly countKept: KeptCounter;
   readonly keepInlineImages: PdfiumInputKeeper;
   readonly workbooks: WorkbookComposer;
   /** Where a CSV in the area is cut into parts (`engine/csv-split`, the owner's O10). */
@@ -4586,6 +4595,42 @@ function composeHostBinding(
       return { kind: 'prepared', path, leftOut: answer.value.leftOut, leftOutMore: answer.value.leftOutMore, discard };
     },
 
+    // WHAT A DOCUMENT HOLDS, COUNTED (ADR-0282 Decision 4): the flush, or a file main wrote copied FILE TO FILE, into the
+    // area; the census; and where asked the unencrypted copy LEFT where it was written for the converter, `preparePdfa`'s
+    // size check first. The input goes whatever the call answered.
+    countKept: async (source, opensWith, unencrypted) => {
+      const built = await ensure();
+      const area = { snapshotDirectory: built.paths.snapshot, outputDirectory: built.paths.output };
+      const from = areas.mintName();
+      const into = unencrypted ? areas.mintName() : null;
+      const path = into === null ? null : join(area.outputDirectory, into);
+      const discard = (): Promise<void> => (path === null ? Promise.resolve() : removeWorkingFile(path, failures));
+
+      const placed = join(area.snapshotDirectory, from);
+      if ('bytes' in source) await writeFile(placed, source.bytes);
+      else await copyFile(source.file, placed);
+      const answer = await built.client['engine/count-kept']({
+        session: built.session,
+        from,
+        password: opensWith?.reveal() ?? null,
+        into,
+      }).finally(() => rm(placed, { force: true }));
+
+      if (!answer.ok) {
+        await discard();
+        throw new Error(`the compose host could not count the document: ${answer.error.code}`);
+      }
+      if (answer.value.kind !== 'counted') return { kind: answer.value.kind };
+      if (path !== null) {
+        const written = (await stat(path)).size;
+        if (written !== answer.value.bytes) {
+          await discard();
+          throw new Error(`the compose host reported ${String(answer.value.bytes)} bytes and the copy holds ${String(written)}`);
+        }
+      }
+      return { kind: 'counted', census: { kept: answer.value.kept, fonts: answer.value.fonts }, path, discard };
+    },
+
     // INLINE IMAGES KEPT through a PDFium edit (ADR-0126): the image into this host's area, the rewrite, and — only
     // when something was rewritten — the document copied FILE TO FILE into PDFium's snapshot directory, so `main` never
     // holds it beside the image it already holds (ADR-0121). Anything short of a rewrite answers `false` and the edit
@@ -4797,6 +4842,7 @@ function composeHostBinding(
     composeImages: counted(calls.composeImages),
     optimize: counted(calls.optimize),
     preparePdfa: counted(calls.preparePdfa),
+    countKept: counted(calls.countKept),
     keepInlineImages: counted(calls.keepInlineImages),
     csvSplit: counted(calls.csvSplit),
     workbooks: {

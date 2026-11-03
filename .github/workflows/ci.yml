@@ -421,6 +421,13 @@ jobs:
           node scripts/ci/annotate.mjs scripts/proofs/editFidelity.proof.mjs
           --require-pdfium
 
+      # ADR-0282's proof: no font left, the pages within the tolerance, the original's bytes unchanged, the loss report
+      # true, each with its control. GHOSTSCRIPT IS NOT PROVISIONED ON EITHER LEG, so this step reports UNVERIFIABLE and
+      # exits 0 here, and is NOT a pass: it is run with a Ghostscript by hand (`--gs`) or on a machine that provisioned
+      # one (`scripts/provision/ghostscript.mjs`). The census, the command and the dialogs have their own cases above.
+      - name: Prove text to curves keeps the look and says what it lost
+        run: node scripts/ci/annotate.mjs scripts/proofs/textToCurves.proof.mjs
+
       # ADR-0126. PDFium's content generator drops an inline image when an edit
       # regenerates its page; the shim's rewrite keeps it. Five picture shapes,
       # each run through the real rewrite and the real PDFium edit, save and

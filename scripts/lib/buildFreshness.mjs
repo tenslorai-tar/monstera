@@ -311,6 +311,18 @@ export const COMPOSE_HOST_LIVE = [
 export const NATIVE_ENGINE = [['packages/kernel/src/mupdfRaw.ts', 'packages/kernel/dist/mupdfRaw.js', 'tsc']];
 
 /**
+ * What `textToCurves.proof.mjs` runs (ADR-0282): the census the command counts with, the converter's fixed command
+ * line, and the native engine both draw and read pages on.
+ *
+ * @type {BuildEdge[]}
+ */
+export const TEXT_TO_CURVES = [
+  ['packages/kernel/src/keptCensus.ts', 'packages/kernel/dist/keptCensus.js', 'tsc'],
+  ['apps/desktop/src/textToCurves.ts', 'apps/desktop/dist/textToCurves.js', 'tsc'],
+  ['packages/kernel/src/mupdfRaw.ts', 'packages/kernel/dist/mupdfRaw.js', 'tsc'],
+];
+
+/**
  * What `type3Edit.proof.mjs` runs (ADR-0176): PDFium's reading and MuPDF's operator writer, which reaches the
  * numbering, the fonts, the ToUnicode reader and the refusals beneath it. The kernel's whole `src`, so a module the
  * writer imports two steps down is dated too; the contract's encoder; and the native engine MuPDF runs on.
@@ -693,6 +705,9 @@ export const ARTEFACT_EDGES = {
   // The fidelity proof drives the same built adapter, and reads pixels rather
   // than text: it is the guard that an edit does not silently redraw the page.
   'proof:editfidelity': PDFIUM_ADAPTER,
+  // ADR-0282's proof, the pairs it declares at its own guard call: the census, the converter's command line and the
+  // engine. Missing on its first push, and named by `buildFreshness.proof.mjs`' anchor on Guards (run 41342201551).
+  'proof:texttocurves': TEXT_TO_CURVES,
   // THE ENGINE'S OBJECT MODEL TOO, on this and the two below, since ADR-0124 moved them onto `dist/mupdfRaw.js`:
   // every one of them imported it directly with only the parser declared, so a change to the binding alone left the
   // guard quiet about the file every page read goes through.

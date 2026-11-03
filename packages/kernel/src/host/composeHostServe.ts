@@ -9,12 +9,13 @@ import { type FaceSource, faceSourceOf, fontFoldersOf } from '../fontCatalogue.j
 import { readCatalogueApart } from '../fontCatalogueApart.js';
 import { composeImages } from '../imageCompose.js';
 import { Document, MupdfOpenRefused, PDFDocument, keepInlineImages, rewriteImages } from '../mupdfRaw.js';
+import { keptCensusOf } from '../keptCensus.js';
 import { prepareForPdfa } from '../pdfaPreparation.js';
 import { savedBuffer } from '../saveDepth.js';
 import { signatureFromScan } from '../signatureScan.js';
 import { cryptoBytes } from '../token.js';
 import { composeChannels } from './composeChannels.js';
-import { type ImageOptimizer, type InlineImageKeeper, type PdfaPreparer, createComposeHandlers } from './composeHandlers.js';
+import { type ImageOptimizer, type InlineImageKeeper, type KeptCounter, type PdfaPreparer, createComposeHandlers } from './composeHandlers.js';
 import { probeContainment } from './containment.js';
 import type { HostArea } from './engineHandlers.js';
 import { sessionFileAnswers } from './fileAnswers.js';
@@ -135,6 +136,40 @@ const preparePdfaIn: PdfaPreparer | null =
         }
       };
 
+/**
+ * The census over one area (ADR-0282 Decision 4), `preparePdfa`'s opening: MuPDF failing to OPEN the document, or
+ * refusing its password, is the document's answer. Where `into` is named the document is written there with its
+ * encryption off and nothing else changed, `preparePdfaIn`'s write without the preparation.
+ */
+const countKeptIn: KeptCounter | null =
+  shimPath === null
+    ? null
+    : async (area, from, into, password) => {
+        const input = join(area.snapshotDirectory, from);
+        if (!existsSync(input)) return { kind: 'missing' };
+        let document: Document;
+        try {
+          document = Document.openDocument(await readFile(input), 'application/pdf');
+        } catch {
+          return { kind: 'unreadable' };
+        }
+        try {
+          if (!(document instanceof PDFDocument) || document.authenticatePassword(password ?? '') === 0) return { kind: 'unreadable' };
+          const census = keptCensusOf(document);
+          if (into === null) return { kind: 'counted', ...census, bytes: null };
+          const saved = savedBuffer(document, 'encrypt=none');
+          try {
+            const output = join(area.outputDirectory, into);
+            await writeFile(output, saved.asUint8Array());
+            return { kind: 'counted', ...census, bytes: (await stat(output)).size };
+          } finally {
+            saved.destroy();
+          }
+        } finally {
+          document.destroy();
+        }
+      };
+
 // AREAS, NOT SESSIONS. This host holds no parse between calls, and it holds the
 // granted directories anyway (ADR-0048 Decision 2): a call that carried its own
 // directories would be a channel through which a confused main could redirect
@@ -144,6 +179,7 @@ const areas = createHostSessions<HostArea>(cryptoBytes);
 const handlers = createComposeHandlers({
   keepInlineImages: keepInlineImagesIn,
   preparePdfa: preparePdfaIn,
+  countKept: countKeptIn,
   optimize,
   // DRAWN WITH THE BOUND LIBRARY, so it is there exactly when Optimize is.
   signatureFromScan: shimPath === null ? null : signatureFromScan,

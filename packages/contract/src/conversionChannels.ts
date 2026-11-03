@@ -21,6 +21,8 @@ export const CONVERSION_CHANNELS = [
   'document.exportPowerPoint',
   'document.exportExcel',
   'document.exportPdfa',
+  'document.curvesNotice',
+  'document.convertTextToCurves',
   'document.exportAnnotations',
 ] as const satisfies readonly ChannelId[];
 
