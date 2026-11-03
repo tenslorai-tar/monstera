@@ -164,6 +164,7 @@ import {
   remotePdfiumRenderPage,
   remotePdfiumPageRuns,
   remotePdfiumTextRuns,
+  remotePdfiumTextRunsOfPages,
   remotePdfiumWriter,
   remoteMupdfGeometry,
   remoteMupdfDestinations,
@@ -1819,14 +1820,17 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       // as it is (ADR-0264 Decision 5). A Type 3 font inside a form is not named by its descriptor: that read is the
       // page's (ADR-0256).
       const placed = asItIs ? null : await formPagesOf(docId, sessions, page);
-      // ONE PLACEMENT AT A TIME, never all at once: a document's calls reach its host in a serial lane, and the host's
-      // in-flight limit (`ENGINE_HOST_MAX_IN_FLIGHT`, 32) is a backstop that assumes it. A page draws up to
-      // `MAX_FORM_PLACEMENTS` placements, so reading them together ended the PDFium host on any page with more than 32.
+      // EVERY PLACEMENT IN ONE READ of the image opened once (`engine/text-runs-pages`): read one call each, 200 placements
+      // took 4.4 s, an image placed, opened and answered for every one (finding -27). One call, never many at once: the
+      // host's in-flight limit (`ENGINE_HOST_MAX_IN_FLIGHT`, 32) assumes a document's calls arrive in its serial lane, and
+      // reading the placements as calls in parallel ended the PDFium host on any page with more than 32.
       const placements: { form: FormPath; blocks: ReturnType<typeof blocksOf>; truncated: boolean }[] = [];
-      if (placed !== null) {
+      if (placed !== null && placed.paths.length > 0) {
+        // NO CLIPS for a form's page (ADR-0281 Decision 6), which the channel reads none with.
+        const reads = await pdfiumHost.textRunsOfPages(placed.image, placed.paths.map((_, at) => at));
         for (const [at, form] of placed.paths.entries()) {
-          // NO CLIPS for a form's page (ADR-0281 Decision 6).
-          const read = await pdfiumHost.textRuns(placed.image, at, false, null);
+          const read = reads[at];
+          if (read === undefined) throw new Error(`the read of the form placements answered no page ${String(at)}`);
           placements.push({ form, blocks: blocksOf(read.runs, read.markers), truncated: read.truncated });
         }
       }
@@ -3867,6 +3871,7 @@ export type UnlockOutcome =
 
 /** One page's text runs, over the second host's wire. */
 type PdfiumTextRuns = ReturnType<typeof remotePdfiumTextRuns>;
+type PdfiumTextRunsOfPages = ReturnType<typeof remotePdfiumTextRunsOfPages>;
 
 /** One page's objects, over the same wire. */
 type PdfiumPageObjects = ReturnType<typeof remotePdfiumPageObjects>;
@@ -3929,6 +3934,8 @@ function pdfiumHostBinding(
 ): {
   readonly writer: RegisteredWriter<'pdfium'>;
   readonly textRuns: PdfiumTextRuns;
+  /** Many pages' runs from one image opened once: a page's form placements (`engine/text-runs-pages`). */
+  readonly textRunsOfPages: PdfiumTextRunsOfPages;
   readonly pageObjects: PdfiumPageObjects;
   readonly renderPage: PdfiumRenderPage;
   readonly pageRuns: PdfiumPageRuns;
@@ -3944,6 +3951,7 @@ function pdfiumHostBinding(
     readonly connection: EngineHostConnection;
     readonly writer: RegisteredWriter<'pdfium'>;
     readonly textRuns: PdfiumTextRuns;
+    readonly textRunsOfPages: PdfiumTextRunsOfPages;
   readonly pageObjects: PdfiumPageObjects;
   readonly renderPage: PdfiumRenderPage;
   readonly pageRuns: PdfiumPageRuns;
@@ -4084,6 +4092,7 @@ function pdfiumHostBinding(
       connection: live.value,
       writer: remotePdfiumWriter(client, held, transfer, keep),
       textRuns: remotePdfiumTextRuns(client, held, transfer),
+      textRunsOfPages: remotePdfiumTextRunsOfPages(client, held, transfer),
       pageObjects: remotePdfiumPageObjects(client, held, transfer),
       renderPage: remotePdfiumRenderPage(client, held, transfer),
       pageRuns: remotePdfiumPageRuns(client, held, transfer),
@@ -4174,6 +4183,7 @@ function pdfiumHostBinding(
     },
     starts: (asker) => counting(() => hostStarts(ensure, failures, asker)),
     textRuns: (image, page, unpack, clips) => counting(async () => (await ensure()).textRuns(image, page, unpack, clips)),
+    textRunsOfPages: (image, pages) => counting(async () => (await ensure()).textRunsOfPages(image, pages)),
     pageObjects: (image, page) => counting(async () => (await ensure()).pageObjects(image, page)),
     renderPage: (image, page, width, height, withoutText) =>
       counting(async () => (await ensure()).renderPage(image, page, width, height, withoutText)),

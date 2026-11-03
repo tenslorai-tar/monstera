@@ -342,6 +342,7 @@ export {
   remotePdfiumPageRuns,
   remotePdfiumRenderPage,
   remotePdfiumTextRuns,
+  remotePdfiumTextRunsOfPages,
   remotePdfiumWriter,
 } from './host/remotePdfium.js';
 // A TYPE ONLY: the shape of `editTextOperators`' pre-read, which `main` resolves through the PDFium host (ADR-0176).

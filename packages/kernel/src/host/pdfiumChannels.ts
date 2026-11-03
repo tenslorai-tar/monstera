@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import {
+  MAX_FORM_PLACEMENTS,
   MAX_PAGE_COORDINATE,
   channel,
   fileAnswered,
@@ -772,6 +773,37 @@ const textRunShape = basePdfiumChannels['engine/text-runs'].result.shape.runs.el
 /** The PDFium host's channel map. */
 export const pdfiumChannels = {
   ...basePdfiumChannels,
+
+  /**
+   * MANY PAGES' TEXT RUNS FROM ONE IMAGE OPENED ONCE: `engine/text-runs`' read, page by page, by the same reader, for the
+   * pages of a page's form placements (ADR-0269), which are read with no clips and nothing unpacked. One call each took
+   * 4.4 s over 200 placements (finding -27, 2026-11-01): every call wrote the image into the host's area, opened it and
+   * answered in a file of its own, and one open is 80-117 ms of the same reading in-process (measured 2026-11-02).
+   *
+   * EACH PAGE'S ANSWER IS `engine/text-runs`' OWN, read from that channel's schema rather than restated (B3a), fitted as
+   * that channel fits it; and the pages are fitted to ONE answer's file in order: where they would not all fit, the answer
+   * carries the pages up to where they did, at least one, and the caller asks again for the rest. A page is never cut to
+   * make room for the next, and nothing is dropped unsaid.
+   */
+  'engine/text-runs-pages': fileAnswered(
+    'Answers several pages’ text runs from one image opened once, in the order asked: as many as fit one answer.',
+    z
+      .object({
+        session: sessionSchema,
+        ...byteImageWire.read,
+        pages: z.array(z.number().int().nonnegative()).min(1).max(MAX_FORM_PLACEMENTS).readonly(),
+      })
+      .strict(),
+    z
+      .object({
+        /** The first pages asked for, in order, each answered as `engine/text-runs` answers one; never empty. */
+        pages: z.array(basePdfiumChannels['engine/text-runs'].result).min(1).max(MAX_FORM_PLACEMENTS),
+      })
+      .strict(),
+    // `engine/text-runs`' three, for its reasons: the session forgotten, the file gone, and the engine refusing these bytes,
+    // which is not the host being sick.
+    ['no-such-session', 'asset-missing', 'engine-refused'],
+  ),
 
   /**
    * PDFium's **third** read: one page's own content, for the editable PowerPoint export

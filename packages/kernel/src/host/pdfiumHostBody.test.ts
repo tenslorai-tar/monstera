@@ -854,6 +854,33 @@ describe('the PDFium host body', () => {
     expect(calls).toStrictEqual(['text-runs:3:7']);
   });
 
+  it('answers SEVERAL pages’ text runs from the image read once, each by the same reader, in the order asked', async () => {
+    stream = stubStream();
+    const files = emptyFiles();
+    const { session, calls } = await openArea(files);
+    files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([7]));
+    // EVERY READ OF THE IMAGE'S FILE, counted where the surface looks it up.
+    let reads = 0;
+    const get = files.read.get.bind(files.read);
+    files.read.get = (key: string) => {
+      if (key === `${AREA.snapshotDirectory}|${IN}`) reads += 1;
+      return get(key);
+    };
+
+    stream.feed(request('t1', 'engine/text-runs-pages', { session, from: IN, password: null, pages: [4, 0, 2] }, ANSWER));
+    await stream.whenSent(2);
+
+    const written = files.written.get(`${AREA.outputDirectory}|${ANSWER}`);
+    const answer = JSON.parse(new TextDecoder().decode(written)) as { ok: boolean; value: { pages: { runs: unknown; unaddressable: number }[] } };
+    expect(answer.ok).toBe(true);
+    // ONE ANSWER A PAGE, each the one-page read's own, so a reader of either gets the same thing for a page.
+    expect(answer.value.pages).toHaveLength(3);
+    expect(answer.value.pages.every((page) => JSON.stringify(page.runs) === JSON.stringify(RUNS) && page.unaddressable === 7)).toBe(true);
+    // EACH PAGE REACHED THE READER, in the order asked, with the image read once for all three.
+    expect(calls).toStrictEqual(['text-runs:4:7', 'text-runs:0:7', 'text-runs:2:7']);
+    expect(reads).toBe(1);
+  });
+
   it('rasterises a page into the granted OUTPUT directory, not onto the pipe', async () => {
     stream = stubStream();
     const files = emptyFiles();

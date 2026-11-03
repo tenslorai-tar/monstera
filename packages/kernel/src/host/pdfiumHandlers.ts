@@ -448,6 +448,33 @@ export function createPdfiumHandlers({
       }
     },
 
+    // `engine/text-runs` OVER SEVERAL PAGES of one image opened once, by the same reader and the same bound a page, and
+    // the pages fitted to one answer in order: the caller asks again from the first page left out.
+    'engine/text-runs-pages': async ({ session, from, password, pages }) => {
+      const held = areas.lookup(session);
+      if (held === undefined) return gone;
+      let image: ImageSession;
+      try {
+        image = await imageFor(held, from, password);
+      } catch {
+        return failed('asset-missing');
+      }
+      try {
+        const answers = [];
+        for (const page of pages) {
+          const found = await textRuns(image, page, false, null);
+          const { kept, truncated } = boundedToAnswer(found.runs);
+          answers.push({ runs: kept, truncated: found.truncated || truncated, unaddressable: found.unaddressable, box: found.box, markers: [...found.markers] });
+        }
+        // AT LEAST THE FIRST PAGE, which alone fits by its own bound: a page is never cut for the next.
+        const { kept } = itemsThatFit(answers, answers.length);
+        return { ok: true, value: { pages: kept.length === 0 ? answers.slice(0, 1) : kept } };
+      } catch {
+        // `engine/text-runs`' reason, a page this document does not have or cannot load: the document's, not the host's.
+        return failed('engine-refused');
+      }
+    },
+
     // THE SECOND READ, and it is `engine/text-runs` with a different walk —
     // written out rather than shared, because the two differ in every line that
     // matters (which reader, which bound, which field name) and what they share
