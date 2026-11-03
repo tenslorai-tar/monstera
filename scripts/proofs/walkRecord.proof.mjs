@@ -8,17 +8,18 @@
  * Usage: node scripts/proofs/walkRecord.proof.mjs
  */
 
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { repoRoot } from '../lib/gitScope.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
-import { commandIds, refusals, rowsFrom } from '../release/walkRecord.mjs';
+import { commandIds, countsFor, programDigest, refusals, rowsFrom } from '../release/walkRecord.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 11 });
+const roster = createRoster(failures, { cases: 17 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -95,6 +96,55 @@ function main() {
   // A FAILED STEP OUTWEIGHS A PASSED ONE: a row is passed only when every step that covers it passed.
   const mixed = rowsFrom(COMMANDS, [report([OPEN_SAVE, { name: 'save again', outcome: 'failed', covers: ['document.save'] }])]);
   check('a row one step passed and another failed is failed', mixed.find((row) => row.id === 'document.save')?.result === 'failed', JSON.stringify(mixed));
+
+  // THE BUILD, NOT THE COMMIT (the correction of 2026-11-03): a row walked at an EARLIER commit on the same bytes counts,
+  // and a row walked on other bytes does not, whatever commit it names.
+  /** @param {string} commit @param {string} digest @param {string} folder @param {WalkReport['steps']} steps @returns {WalkReport} */
+  const reportAt = (commit, digest, folder, steps) => ({ walk: 'every-tool', folder, build: { commit, clean: true, digest }, steps });
+  const earlier = { ...recordOf(WALKED), rows: rowsFrom(COMMANDS, [reportAt('f'.repeat(40), DIGEST, '2026-11-02T00-00-00', WALKED)]) };
+  check(
+    'CONTROL: a row walked at an earlier commit on the same build is kept',
+    refusals(earlier, COMMIT, DIGEST, COMMANDS).length === 0,
+    JSON.stringify(refusals(earlier, COMMIT, DIGEST, COMMANDS)),
+  );
+  const otherBytes = { ...recordOf(WALKED), rows: rowsFrom(COMMANDS, [reportAt(COMMIT, 'e'.repeat(64), '2026-11-03T00-00-00', WALKED)]) };
+  const refusedBytes = refusals(otherBytes, COMMIT, DIGEST, COMMANDS);
+  check(
+    'a row walked on another build is refused, naming it, though the record names this commit and digest',
+    refusedBytes.some((said) => said.includes('walked on another build') && said.includes('document.open')),
+    JSON.stringify(refusedBytes),
+  );
+
+  // THE NEWEST RUN DECIDES A ROW, in both directions: reports are given newest first.
+  const olderFail = reportAt(COMMIT, DIGEST, '2026-11-03T01-00-00', [{ ...OPEN_SAVE, outcome: 'failed' }, ZOOM_SAID]);
+  const newerPass = reportAt(COMMIT, DIGEST, '2026-11-03T02-00-00', WALKED);
+  const recovered = rowsFrom(COMMANDS, [newerPass, olderFail]).find((row) => row.id === 'document.save');
+  check('a newer pass outweighs an older failure of the same row', recovered?.result === 'passed', JSON.stringify(recovered));
+  const broken = rowsFrom(COMMANDS, [olderFail, newerPass].map((each, at) => ({ ...each, folder: at === 0 ? '2026-11-03T03-00-00' : each.folder }))).find((row) => row.id === 'document.save');
+  check('and a newer failure outweighs an older pass', broken?.result === 'failed', JSON.stringify(broken));
+
+  // A WALK PROGRAM THAT CHANGED: the report counts only while its program's digest is the program's now. The real walk
+  // script is the control, read through its own imports, so the digest is one this repository's files produce.
+  const script = 'scripts/research/everyToolWalk.mjs';
+  const now = programDigest(repoRoot(), script);
+  const current = { commit: COMMIT, clean: true, digest: DIGEST, walker: { script, digest: now } };
+  check(
+    'a report whose walk program has changed is not counted, and one whose program is unchanged is',
+    countsFor(repoRoot(), current, DIGEST) && !countsFor(repoRoot(), { ...current, walker: { script, digest: '0'.repeat(64) } }, DIGEST),
+    `unchanged ${String(countsFor(repoRoot(), current, DIGEST))}`,
+  );
+  // THE DIGEST FOLLOWS THE IMPORTS: a change to a module the script takes, and not to the script, moves it.
+  const scratch = mkdtempSync(join(tmpdir(), 'walk-program-'));
+  try {
+    writeFileSync(join(scratch, 'entry.mjs'), "import { a } from './liveWalk.mjs';\nexport const b = a;\n");
+    writeFileSync(join(scratch, 'liveWalk.mjs'), 'export const a = 1;\n');
+    const before = programDigest(scratch, 'entry.mjs');
+    writeFileSync(join(scratch, 'liveWalk.mjs'), 'export const a = 2;\n');
+    const after = programDigest(scratch, 'entry.mjs');
+    check('the program digest moves when a module the walk imports changes, the script itself unchanged', before !== after, `${before} then ${after}`);
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
 
   // THE ROWS ARE THE REGISTRY'S: read from the checklist the registry generates, with its own positive control.
   const ids = commandIds(readFileSync(join(repoRoot(), 'docs', 'manual-test-checklist.md'), 'utf8'));

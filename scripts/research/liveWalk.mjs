@@ -23,7 +23,7 @@
  * for the person reading the report, never an artefact the repository keeps (B8, B10).
  */
 import { copyFile, mkdir, writeFile } from 'node:fs/promises';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect } from '@playwright/test';
 import { _electron } from 'playwright';
@@ -176,7 +176,9 @@ export async function launchApp(walk, options = {}) {
   // WHICH BUILD THIS WALK RUNS, read before the app starts (ADR-0285 Decision 2): this checkout's commit, whether the
   // app's sources are that commit's, and the built bytes' digest. Only a walk of this checkout's own build says it; a
   // walk of another worktree or of a packaged executable is a comparison, never this build's record.
-  const build = options.appRoot === undefined && options.executable === undefined ? walkBuild(root, gitIn(root)) : undefined;
+  // AND WHICH PROGRAM WALKS IT, by the script node was asked to run, from the checkout (the correction of 2026-11-03).
+  const script = relative(root, process.argv[1] ?? '').split(sep).join('/');
+  const build = options.appRoot === undefined && options.executable === undefined ? walkBuild(root, gitIn(root), script) : undefined;
   const stamp = new Date().toISOString().replaceAll(':', '-').slice(0, 19);
   const output = join(root, '_review', 'walks', walk, stamp);
   await mkdir(output, { recursive: true });

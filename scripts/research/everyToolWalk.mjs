@@ -32,12 +32,17 @@ import { execFileSync } from 'node:child_process';
 import { copyFile, writeFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { PDFDocument, PDFString, StandardFonts, rgb } from '@cantoo/pdf-lib';
 import { expect } from '@playwright/test';
 import { zipSync } from 'fflate';
 
-import { appRootOption, root, startWalk } from './liveWalk.mjs';
+import { EFFECTS, outputsOf, readPdf, respondedWhy, scannedPageDocument } from './everyToolEffects.mjs';
+import { WALK_WINDOW, appRootOption, root, startWalk } from './liveWalk.mjs';
 import { editTextOpening } from './textWalkSteps.mjs';
+import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
+import { bindNativeEngine } from '../lib/nativeEngine.mjs';
+import { pdfiumLibrary } from '../provision/pdfium.mjs';
 
 /** @typedef {{ title: string, group: string, id: string, shows: string }} ListedCommand */
 
@@ -85,24 +90,6 @@ const AWAY_FROM = /** @type {Readonly<Record<string, readonly string[]>>} */ ({
   'view.show-properties': ['ai.open-assistant'],
 });
 
-/**
- * What puts the WINDOW back after a command that changes it, because a view setting belongs to the window and outlives
- * the tab: in the full run of 2026-11-03 the steps after Show grid and Dim pages ran on a dimmed page under a grid, and
- * the loupe's step saw nothing it could judge. A switch is pressed again; a choice goes back to its setting's fallback
- * (`appearance.ts` system, `layout.ts` ribbon, `viewing.ts` continuous).
- */
-const SWITCHES = ['view.toggle-dark-page', 'view.toggle-grid', 'view.toggle-rulers', 'view.toggle-loupe', 'view.toggle-field-highlight', 'view.toggle-quick-toolbar', 'view.toggle-context-panel', 'view.toggle-panel', 'view.toggle-split', 'view.cover-page'];
-const PUT_BACK = /** @type {Readonly<Record<string, readonly string[]>>} */ ({
-  ...Object.fromEntries(SWITCHES.map((id) => [id, [id]])),
-  'view.theme-dark': ['view.theme-system'],
-  'view.theme-light': ['view.theme-system'],
-  'view.layout-studio': ['view.layout-ribbon'],
-  'view.layout-focus': ['view.layout-ribbon'],
-  'view.page-layout-facing': ['view.page-layout-continuous'],
-  'view.page-layout-pair': ['view.page-layout-continuous'],
-  'view.page-layout-single': ['view.page-layout-continuous'],
-  'view.cover-page': ['view.cover-page', 'view.page-layout-continuous'],
-});
 
 /**
  * Commands a hand reaches from a surface other than the palette, by the state that surface needs: the third full run
@@ -274,9 +261,48 @@ function installedRunning() {
 const installedAtStart = installedRunning();
 
 const walk = await startWalk('every-tool', appRootOption(process.argv));
-const { app, page, output, open, saveTo, step, finish } = walk;
+const { app, page, output, open, saveTo, step, finish, sizeWindow } = walk;
+
+/**
+ * EVERY SETTING AT ITS DEFAULT, from the registry's own list (`settings/all.ts`) of the built app this walk runs, never a
+ * list kept here: a hand-kept list of what to put back agrees with any omission, and the four full runs of 2026-11-03
+ * each tripped on the next thing a step had left (Show grid, the cover page's layout, the ribbon's section). The walk's
+ * own one, the detailed request log, is the one value it sets.
+ */
+const walkedRoot = appRootOption(process.argv).appRoot ?? root;
+refuseStaleBuild(walkedRoot, [['packages/ui/src/settings/all.ts', 'packages/ui/dist/settings/all.js', 'tsc']], 1);
+/** @type {{ ALL_SETTINGS: readonly { id: string, fallback: unknown, secret?: boolean }[] }} */
+const settingsList = await import(pathToFileURL(join(walkedRoot, 'packages/ui/dist/settings/all.js')).href);
+const DEFAULTS = Object.fromEntries([...settingsList.ALL_SETTINGS.filter((setting) => setting.secret !== true).map((setting) => [setting.id, setting.fallback]), ['advanced.log-detail', 'detailed']]);
+if (Object.keys(DEFAULTS).length < 10 || !('appearance.ribbon-section' in DEFAULTS)) throw new Error('the settings list read holds no ribbon section, so it cannot see');
 const source = join(output, 'walk-document.pdf');
 await writeFile(source, await walkDocument());
+/**
+ * THE SCANNED DOCUMENT, for the commands that exist for a scan: the walk's document has words on every page, so a scan
+ * conversion had nothing to change, and the step passed while the document did not change (the reviewer, 2026-11-03).
+ * Its page is a picture of printed words drawn by PDFium in this process, from the kernel as built.
+ */
+refuseStaleBuild(root, [['packages/kernel/src/pdfiumFfi.ts', 'packages/kernel/dist/pdfiumFfi.js', 'tsc']], 1);
+// A LITERAL SPECIFIER, so `proof:electronimports` can read what this loads.
+const pdfiumFfi = await import('../../packages/kernel/dist/pdfiumFfi.js');
+pdfiumFfi.openPdfium(pdfiumLibrary(root));
+bindNativeEngine(root);
+const scanned = join(output, 'walk-scan.pdf');
+await writeFile(
+  scanned,
+  await scannedPageDocument(async (pdf, width, height) => {
+    const session = await pdfiumFfi.pdfiumWriter.open(pdf);
+    try {
+      return await pdfiumFfi.renderPageBitmap(session, 0, width, height);
+    } finally {
+      await pdfiumFfi.pdfiumWriter.close(session);
+    }
+  }),
+);
+/** The commands a scan is the input for, and so the document each starts from. */
+const ON_A_SCAN = new Set(['document.convert-scan', 'document.ocr', 'document.straighten-scans', 'document.deskew-pages', 'document.enhance-scans']);
+/** How many rows end at each depth: the report's two totals, beside failed and not walked. */
+const depths = { effect: 0, responded: 0 };
 const second = join(root, '_review', 'test-files', 'sample5.pdf');
 
 // NOTHING LEAVES THIS COMPUTER: an external page and a print are recorded where main would ask for them.
@@ -548,8 +574,18 @@ async function answerQuestions(met) {
     const dialog = page.locator(DIALOG).last();
     // WHAT A HAND TYPES FIRST: a question whose primary waits for a word or a choice (a password, a language) is
     // answered by filling it, with a test value of the walk's own; a field with a value is left as the dialog set it.
+    /** @type {import('playwright').Locator[]} */
+    const filled = [];
     for (const field of await dialog.locator('input[type="text"]:not([disabled]), input[type="password"]:not([disabled]), input:not([type]):not([disabled])').all()) {
-      if ((await field.inputValue().catch(() => 'x')) === '') await field.fill('walk-test-1').catch(() => undefined);
+      if ((await field.inputValue().catch(() => 'x')) === '') {
+        await field.fill('walk-test-1').catch(() => undefined);
+        filled.push(field);
+      }
+    }
+    // A FIELD THAT WANTS A NUMBER says so beside it, as a hand reads it, and gets one: Crop pages' four edges took the
+    // walk's word, said it was not a number, and cropped nothing (the effect trial of 2026-11-03).
+    if (filled.length > 0 && (await dialog.locator('.m-dialog-row__problem, [role="alert"]').count()) > 0) {
+      for (const field of filled) await field.fill('36').catch(() => undefined);
     }
     for (const choice of await dialog.locator('select:not([disabled])').all()) {
       if ((await choice.inputValue().catch(() => 'x')) === '') {
@@ -927,6 +963,102 @@ async function pointerOverPage() {
   if (box !== null) await page.mouse.move(box.x + box.width / 3, box.y + box.height / 5, { steps: 6 });
 }
 
+/**
+ * How a hand uses each tool once it is on, on page 1's blank band right of the shapes and below the fields (in PDF
+ * points: 330 to 540 across, 200 to 320 up), or across the first paragraph's words for a tool that marks words.
+ * @type {Readonly<Record<string, 'drag' | 'click' | 'poly' | 'ink' | 'words'>>}
+ */
+const GESTURES = {
+  ...Object.fromEntries(
+    ['rectangle', 'ellipse', 'line', 'arrow', 'highlight-area', 'redact', 'text-box', 'callout', 'cloud', 'measure-distance', 'link-address', 'link-page'].map((name) => [`annotate.${name}`, 'drag']),
+  ),
+  ...Object.fromEntries(['text', 'checkbox', 'radio', 'dropdown', 'listbox', 'button', 'signature', 'date'].map((name) => [`forms.field-${name}`, 'drag'])),
+  ...Object.fromEntries(['sticky-note', 'stamp', 'typewriter', 'caret'].map((name) => [`annotate.${name}`, 'click'])),
+  ...Object.fromEntries(['polygon', 'polyline', 'measure-area', 'measure-perimeter'].map((name) => [`annotate.${name}`, 'poly'])),
+  'annotate.ink': 'ink',
+  ...Object.fromEntries(['highlight', 'underline', 'strikeout', 'redact-text'].map((name) => [`annotate.${name}`, 'words'])),
+};
+
+/** A point of page 1 in the window, from PDF points. @param {number} x @param {number} y */
+async function pagePoint(x, y) {
+  const box = await page.locator('canvas.m-page:visible').first().boundingBox();
+  if (box === null) throw new Error('page 1 is not drawn');
+  const scale = box.width / 612;
+  return { x: box.x + x * scale, y: box.y + (792 - y) * scale };
+}
+
+/**
+ * The gesture a tool takes, made the way a hand makes it: pressed, moved in steps, released. A tool that opens words of
+ * its own to type in is given one and ended with Escape, its own way out.
+ * @param {'drag' | 'click' | 'poly' | 'ink' | 'words'} gesture
+ */
+async function useTool(gesture) {
+  /** @param {readonly (readonly [number, number])[]} points */
+  const stroke = async (points) => {
+    const [first, ...rest] = points;
+    if (first === undefined) return;
+    const start = await pagePoint(first[0], first[1]);
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.down();
+    for (const [x, y] of rest) {
+      const to = await pagePoint(x, y);
+      await page.mouse.move(to.x, to.y, { steps: 8 });
+    }
+    await page.mouse.up();
+  };
+  if (gesture === 'drag') await stroke([[340, 310], [500, 220]]);
+  if (gesture === 'ink') await stroke([[340, 300], [380, 240], [430, 300], [480, 240], [520, 300]]);
+  if (gesture === 'words') await stroke([[74, 684], [290, 684]]);
+  if (gesture === 'click') {
+    const at = await pagePoint(420, 260);
+    await page.mouse.click(at.x, at.y);
+  }
+  if (gesture === 'poly') {
+    for (const [x, y] of /** @type {const} */ ([[340, 300], [500, 300], [420, 220]])) {
+      const at = await pagePoint(x, y);
+      await page.mouse.click(at.x, at.y);
+      await page.waitForTimeout(250);
+    }
+    const last = await pagePoint(420, 220);
+    await page.mouse.dblclick(last.x, last.y);
+  }
+  await page.waitForTimeout(800);
+  // WORDS OF ITS OWN, where the tool opened some: a text box, a typewriter line, a note's words.
+  const typing = await page.evaluate(() => {
+    const active = /** @type {{ document: { activeElement: { tagName: string, isContentEditable: boolean } | null } }} */ (/** @type {unknown} */ (globalThis)).document.activeElement;
+    return active !== null && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT' || active.isContentEditable);
+  });
+  if (typing) {
+    await page.keyboard.type('walk');
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(800);
+  }
+}
+
+/**
+ * THE ONE START EVERY STEP HAS, set BEFORE it rather than undone after it (the reviewer, 2026-11-03): every setting at
+ * its default through the app's own `settings.save`, then the window loaded again, so the renderer reads those settings
+ * and holds no palette, dialog, armed tool or panel a step left; then the window at the walk's size and no document
+ * open. The step's fresh copy of the document is opened after this.
+ */
+async function knownStart() {
+  // EVERY TAB CLOSED FIRST: main holds the documents, so a window loaded again shows the ones still open (the trial of
+  // 2026-11-03 found the control's document on show after the reload).
+  await dismissModals();
+  await closeAll();
+  const saved = await page.evaluate(
+    (values) => /** @type {{ invoke: (channel: string, params: unknown) => Promise<{ ok?: boolean }> }} */ (Reflect.get(globalThis, 'monstera')).invoke('settings.save', { values }),
+    DEFAULTS,
+  );
+  if (saved.ok !== true) throw new Error(`the settings could not be put at their defaults: ${JSON.stringify(saved).slice(0, 200)}`);
+  await page.reload();
+  await page.waitForLoadState('domcontentloaded');
+  await sizeWindow(WALK_WINDOW);
+  // NOTHING OPEN, and the start screen drawn, which is what a fresh window shows.
+  await expect(page.getByRole('button', { name: /^Open PDF/u }).first()).toBeVisible({ timeout: 30_000 });
+  await closeAll();
+}
+
 const commands = listedCommands().filter((command, index) => index >= from && (only === undefined || only.includes(command.id)));
 process.stdout.write(`${String(commands.length)} commands to walk from the registry's checklist\n`);
 
@@ -960,6 +1092,38 @@ if (!controlled) {
   process.exit(1);
 }
 
+// THE KNOWN START'S CONTROL: a step that leaves a setting changed (the grid on, the ribbon on Organize) and the palette
+// open does not change what the next step starts from. Its own control is the leak SEEN first, with no known start
+// between, so the comparison is not two readings that agree because neither can see a grid.
+let started = false;
+await step('CONTROL: a step that leaves a setting changed and the palette open does not change the next step’s start', async () => {
+  await knownStart();
+  const copy = join(output, 'doc-start-control.pdf');
+  await copyFile(source, copy);
+  await open(copy);
+  const clean = await settledFingerprint();
+  await run('view.toggle-grid');
+  await closeAll();
+  await open(copy);
+  const leaked = await settledFingerprint();
+  if (leaked === clean) throw new Error('with the grid left on the next document opened the same, so the fingerprint cannot see a leak');
+  // AND THE LEAK THAT COST 36 ROWS: the ribbon on Organize, whose page grid draws no page canvas, so the open after the
+  // known start waits for one and times out if the section held. With the palette open over it.
+  await page.locator('[data-ribbon-section="organize"]').click();
+  await page.keyboard.press('Control+K');
+  await expect(page.locator('.m-palette-query')).toBeVisible();
+  await knownStart();
+  await open(copy);
+  const restarted = await settledFingerprint();
+  if (restarted !== clean) throw new Error(`after the known start the document opened differently: ${differing(clean, restarted)}`);
+  started = true;
+  return { leakedIn: differing(clean, leaked) };
+});
+if (!started) {
+  await finish();
+  process.exit(1);
+}
+
 for (const command of commands) {
   const reason = NOT_HERE[command.id];
   if (reason !== undefined) {
@@ -969,10 +1133,14 @@ for (const command of commands) {
   await step(
     `${command.id}: ${command.title}`,
     async () => {
+      // THE KNOWN START, and the load it makes counted before the step's own: a reload after it is the step's.
+      await knownStart();
       const loadsAtStart = loads;
-      await closeAll();
       const copy = join(output, `doc-${command.id}.pdf`);
-      await copyFile(source, copy);
+      await copyFile(ON_A_SCAN.has(command.id) ? scanned : source, copy);
+      // THE DOCUMENT AS THE STEP BEGINS, read before the app has it: what an effect is compared against.
+      const began = await readPdf(copy);
+      if (began === null) throw new Error('the walk could not read its own fresh copy, so no effect can be judged');
       await open(copy);
       // THE TOOL IS THE WINDOW'S, NOT THE DOCUMENT'S, so a tool the step before armed is still armed in a fresh tab:
       // Add a date field's tool turned the redaction step's word selection into a new field (2026-11-03). Each step
@@ -1005,6 +1173,12 @@ for (const command of commands) {
       await answerQuestions(met);
       // A COMMAND THAT DRAWS UNDER THE POINTER (the loupe) shows nothing until the pointer is over the page, as a hand's is.
       if (command.id === 'view.toggle-loupe') await pointerOverPage();
+      // A TOOL USED, as a hand uses it once it is on: a tool that is only switched on leaves nothing to read back.
+      const gesture = GESTURES[command.id];
+      if (gesture !== undefined) {
+        await useTool(gesture);
+        await answerQuestions(met);
+      }
       await page.waitForTimeout(1500);
       await tasksEnded();
       // A QUESTION THAT OPENED LATE, after the answering had stopped looking: Convert text to curves' dialog, behind a
@@ -1047,8 +1221,8 @@ for (const command of commands) {
       }
       // SAVED AND OPENED AGAIN, where it changed the document.
       let reopened = 'unchanged';
+      const kept = join(output, `kept-${command.id}.pdf`);
       if (await unsaved()) {
-        const kept = join(output, `kept-${command.id}.pdf`);
         await saveTo(kept);
         await ranFromPalette('Save a copy…', 'document.save-copy');
         // ITS QUESTIONS ANSWERED as every command's are: a copy of a document with unapplied redaction marks asks first,
@@ -1063,26 +1237,21 @@ for (const command of commands) {
         if (loads !== loadsAtStart) throw new Error(`${reopened}; the window reloaded while the copy was saved and opened again: ${await whyReloaded()}`);
         if (reopened !== 'saved and opened again') throw new Error(reopened);
       }
-      return { context, dialogs: met, toast, changed, opened, printed, reopened };
+      // THE EFFECT, read from the files the step left, where the command has a check (`everyToolEffects.mjs`): the saved
+      // copy against the copy it began as, and what its export wrote.
+      const check = EFFECTS[command.id];
+      if (check === undefined) {
+        depths.responded += 1;
+        return { context, dialogs: met, toast, changed, opened, printed, reopened, depth: 'responded', why: respondedWhy(command.id) };
+      }
+      const after = reopened === 'saved and opened again' ? await readPdf(kept) : null;
+      const wrong = await check({ before: began, after, outputs: outputsOf(output, command.id), read: readPdf });
+      if (wrong !== null) throw new Error(`EFFECT: ${wrong} (${context})`);
+      depths.effect += 1;
+      return { context, dialogs: met, toast, changed, opened, printed, reopened, depth: 'effect' };
     },
     { covers: [command.id] },
   );
-  // THE WINDOW PUT BACK, after the step and outside it, so its result stays the command's own; a put-back that fails
-  // is a step of its own, and names what the next steps would otherwise run under.
-  const back = PUT_BACK[command.id];
-  // A START CARD CHOOSES A RIBBON SECTION, which is a remembered setting (`appearance.ribbon-section`): after Split & merge
-  // the fourth full run of 2026-11-03 opened every later document in Organize, whose middle is the page grid. A hand
-  // puts it back on the rail, since no command sets a section.
-  const card = VIA[command.id] === 'start';
-  if (back !== undefined || card) {
-    try {
-      await dismissModals();
-      for (const each of back ?? []) await run(each);
-      if (card) await page.locator('[data-ribbon-section="home"]').click({ timeout: 10_000 });
-    } catch (error) {
-      await step(`${command.id}: the window was not put back`, () => Promise.reject(error));
-    }
-  }
 }
 
 // THE WALK STARTED NOTHING OUTSIDE ITSELF: a route to Windows the recorders above miss would open a file in whatever
@@ -1092,6 +1261,10 @@ await step('the walk started no installed Monstera: every file it wrote stayed i
   if (now > installedAtStart) throw new Error(`${String(now - installedAtStart)} installed Monstera process(es) started during the walk`);
   return { installedAtStart, now };
 });
+
+// THE TWO DEPTHS, printed beside the verdict: a pass that is EFFECT read the command's result from its files, and one that
+// is RESPONDED showed what it declares and left the document whole, which is all it shows.
+process.stdout.write(`DEPTH effect checked ${String(depths.effect)}, responded only ${String(depths.responded)}\n`);
 
 await closeAll();
 await finish();

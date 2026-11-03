@@ -26,7 +26,7 @@ import { editTextOpening, textSteps } from './textWalkSteps.mjs';
 
 /** @type {typeof import('@cantoo/pdf-lib')} */
 const pdfLib = createRequire(import.meta.url)('@cantoo/pdf-lib');
-const { PDFDocument, PDFName, PDFString, StandardFonts, rgb } = pdfLib;
+const { PDFDocument, PDFName, StandardFonts, rgb } = pdfLib;
 
 const at = process.argv.indexOf('--only');
 const ONLY = at === -1 ? undefined : new Set((process.argv[at + 1] ?? '').split(','));
@@ -98,7 +98,8 @@ const slots = () =>
 async function arrangedAs(layout, cover, direction) {
   const shown = await slots();
   const [a, b, c] = shown;
-  const before = direction === 'R2L' ? (/** @type {{ left: number }} */ x, /** @type {{ left: number }} */ y) => x.left > y.left : (x, y) => x.left < y.left;
+  /** Whether `x` comes before `y` in the book's reading order. @param {{ left: number }} x @param {{ left: number }} y */
+  const before = (x, y) => (direction === 'R2L' ? x.left > y.left : x.left < y.left);
   if (a === undefined) return 'no page is shown';
   switch (layout) {
     case 'single':
@@ -116,7 +117,6 @@ async function arrangedAs(layout, cover, direction) {
       }
       return a.top === b.top && before(a, b) && c.top > a.top && c.left === a.left ? null : `not pairs in reading order: ${JSON.stringify(shown.slice(0, 3))}`;
   }
-  return 'unknown layout';
 }
 
 /** @type {readonly { layout: 'single' | 'continuous' | 'pair' | 'facing', title: string }[]} */

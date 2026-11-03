@@ -14,7 +14,7 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
+import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /** Every built folder whose files the pack stages: the shell's, and each workspace package's. @param {string} root */
@@ -76,13 +76,55 @@ export function commandIds(checklist) {
 /** The app's own sources and manifests, whose state decides which build a walk ran. */
 const APP_SOURCES = ['apps', 'packages', 'package.json', 'package-lock.json'];
 
+/** A relative module a script takes: a static `from '...'` or a literal `import('...')` that starts with a dot. */
+const RELATIVE_IMPORT = /(?:\bfrom\s*|\bimport\s*\(\s*)'(\.\.?\/[^']+)'/gu;
+
 /**
- * The build a walk runs on (ADR-0285 Decision 2): the commit, whether the app's sources were exactly that commit's, and
- * the built bytes' digest. `liveWalk.mjs` writes it into every report it makes from this checkout.
+ * A walk PROGRAM's digest (the correction of 2026-11-03): SHA-256 over its script and every script it takes by a
+ * relative import, followed through those imports, each by its path from the checkout and its bytes. A change to any of
+ * them is a change to what the walk does, so the walk's rows are walked again. Modules under a package's `dist/` are the
+ * build's, which the build digest binds, and are not followed.
+ * @param {string} root
+ * @param {string} script the walk's entry, from the checkout
+ */
+export function programDigest(root, script) {
+  /** @type {Set<string>} */
+  const seen = new Set();
+  const pending = [join(root, script)];
+  while (pending.length > 0) {
+    const file = pending.pop();
+    if (file === undefined || seen.has(file)) continue;
+    seen.add(file);
+    for (const match of readFileSync(file, 'utf8').matchAll(RELATIVE_IMPORT)) {
+      const target = join(dirname(file), match[1] ?? '');
+      if (!target.split(sep).includes('dist') && /\.m?js$/u.test(target) && existsSync(target)) pending.push(target);
+    }
+  }
+  // A PROGRAM OF ONE FILE THAT TAKES NOTHING is possible; a walk taking no `liveWalk.mjs` is not, and is a broken read.
+  if (![...seen].some((file) => file.endsWith(`${sep}liveWalk.mjs`))) throw new Error(`${script} takes no liveWalk.mjs through its imports, so this read cannot see them`);
+  const hash = createHash('sha256');
+  for (const file of [...seen].sort()) hash.update(`${relative(root, file).split(sep).join('/')}\0${createHash('sha256').update(readFileSync(file)).digest('hex')}\n`);
+  return hash.digest('hex');
+}
+
+/**
+ * The build a walk runs on (ADR-0285 Decision 2): the commit, whether the app's sources were exactly that commit's, the
+ * built bytes' digest, and the walk program's own (the correction of 2026-11-03). `liveWalk.mjs` writes it into every
+ * report it makes from this checkout.
+ * @param {string} root
+ * @param {(args: readonly string[]) => string} git
+ * @param {string} script the walk's entry, from the checkout
+ */
+export function walkBuild(root, git, script) {
+  return { ...builtAt(root, git), walker: { script, digest: programDigest(root, script) } };
+}
+
+/**
+ * The checkout's build: its commit, whether the app's sources are exactly that commit's, and the built bytes' digest.
  * @param {string} root
  * @param {(args: readonly string[]) => string} git
  */
-export function walkBuild(root, git) {
+export function builtAt(root, git) {
   return {
     commit: git(['rev-parse', 'HEAD']).trim(),
     clean: git(['status', '--porcelain', '--', ...APP_SOURCES]).trim() === '',
@@ -92,38 +134,33 @@ export function walkBuild(root, git) {
 
 /**
  * @typedef {{ name: string, outcome: 'passed' | 'failed', covers?: readonly string[], notWalked?: Readonly<Record<string, string>> }} WalkStep
- * @typedef {{ walk: string, folder: string, build?: { commit: string, clean: boolean, digest: string }, steps: readonly WalkStep[] }} WalkReport
- * @typedef {{ id: string, result: 'passed' | 'failed' | 'not walked', reason?: string, evidence: string[] }} WalkRow
+ * @typedef {{ commit: string, clean: boolean, digest: string, walker?: { script: string, digest: string } }} WalkedBuild
+ * @typedef {{ walk: string, folder: string, build?: WalkedBuild, steps: readonly WalkStep[] }} WalkReport
+ * @typedef {{ commit: string, digest: string, report: string }} WalkedOn
+ * @typedef {{ id: string, result: 'passed' | 'failed' | 'not walked', reason?: string, evidence: string[], walkedOn?: WalkedOn }} WalkRow
  */
 
 /**
- * One row per command from the reports a walk of THIS build wrote (Decision 4): passed when every step that covers it
- * passed, failed when any failed, *not walked* only where a step said why, and *not walked* with no reason where nothing
- * reached it, which the refusal below refuses.
+ * One row per command from the reports of THIS build (Decision 4), each from the NEWEST report that walked it (the
+ * correction of 2026-11-03): passed when every step of that report that covers it passed, failed when any failed, *not
+ * walked* only where a step said why, and *not walked* with no reason where nothing reached it, which the refusal below
+ * refuses. A row names the commit and the digest it was walked on.
  * @param {readonly string[]} commands
- * @param {readonly WalkReport[]} reports
+ * @param {readonly WalkReport[]} reports newest first
  * @returns {WalkRow[]}
  */
 export function rowsFrom(commands, reports) {
   return commands.map((id) => {
-    /** @type {string[]} */
-    const evidence = [];
-    let failed = false;
-    /** @type {string | undefined} */
-    let reason;
-    for (const report of reports) {
-      for (const step of report.steps) {
-        if (step.covers?.includes(id) === true) {
-          evidence.push(`${report.walk}/${report.folder}: ${step.name}`);
-          if (step.outcome !== 'passed') failed = true;
-        }
-        const said = step.notWalked?.[id];
-        if (said !== undefined && said.trim() !== '') reason ??= said;
-      }
-    }
-    if (failed) return { id, result: 'failed', evidence };
-    if (evidence.length > 0) return { id, result: 'passed', evidence };
-    return reason === undefined ? { id, result: 'not walked', evidence } : { id, result: 'not walked', reason, evidence };
+    const report = reports.find((each) => each.steps.some((step) => step.covers?.includes(id) === true || (step.notWalked?.[id] ?? '').trim() !== ''));
+    if (report === undefined) return { id, result: 'not walked', evidence: [] };
+    /** @type {WalkedOn} */
+    const walkedOn = { commit: report.build?.commit ?? '', digest: report.build?.digest ?? '', report: `${report.walk}/${report.folder}` };
+    const covering = report.steps.filter((step) => step.covers?.includes(id) === true);
+    const evidence = covering.map((step) => `${report.walk}/${report.folder}: ${step.name}`);
+    if (covering.some((step) => step.outcome !== 'passed')) return { id, result: 'failed', evidence, walkedOn };
+    if (covering.length > 0) return { id, result: 'passed', evidence, walkedOn };
+    const reason = report.steps.map((step) => step.notWalked?.[id]).find((said) => (said ?? '').trim() !== '');
+    return reason === undefined ? { id, result: 'not walked', evidence, walkedOn } : { id, result: 'not walked', reason, evidence, walkedOn };
   });
 }
 
@@ -156,6 +193,10 @@ export function refusals(record, commit, digest, commands) {
   if (failed.length > 0) said.push(`${String(failed.length)} row(s) failed: ${failed.join(', ')}`);
   const unreached = record.rows.filter((row) => row.result === 'not walked' && (row.reason ?? '').trim() === '').map((row) => row.id);
   if (unreached.length > 0) said.push(`${String(unreached.length)} row(s) were reached by no step and say no reason: ${unreached.join(', ')}`);
+  // EACH ROW'S OWN BUILD, not only the record's: a row walked on other bytes is not a walk of these (the correction of
+  // 2026-11-03), whatever commit it was walked at.
+  const elsewhere = record.rows.filter((row) => row.walkedOn !== undefined && row.walkedOn.digest !== digest).map((row) => row.id);
+  if (elsewhere.length > 0) said.push(`${String(elsewhere.length)} row(s) were walked on another build: ${elsewhere.join(', ')}`);
   return said;
 }
 
@@ -185,10 +226,24 @@ export function refuseUnwalked(root, commit) {
 }
 
 /**
- * Each walk's LATEST report of this build: a walk run again after a fix replaces its earlier run, and a report of another
- * commit, of a dirty tree, or of another digest is not this build's (Decision 2).
+ * Whether a report is of `digest`'s build and of its walk's program as it is now (the correction of 2026-11-03): clean,
+ * the same built bytes at whatever commit, and a walk program whose digest is unchanged. A report written before reports
+ * carried their program is not counted, since nothing says which program walked it.
  * @param {string} root
- * @param {{ commit: string, digest: string }} build
+ * @param {WalkedBuild | undefined} of
+ * @param {string} digest
+ */
+export function countsFor(root, of, digest) {
+  if (of === undefined || !of.clean || of.digest !== digest || of.walker === undefined) return false;
+  if (!existsSync(join(root, of.walker.script))) return false;
+  return programDigest(root, of.walker.script) === of.walker.digest;
+}
+
+/**
+ * Every report of this build and of its walk program now, NEWEST FIRST across every walk, so each row takes the newest
+ * run that walked it (the correction of 2026-11-03).
+ * @param {string} root
+ * @param {{ digest: string }} build
  * @returns {WalkReport[]}
  */
 export function reportsOf(root, build) {
@@ -196,20 +251,17 @@ export function reportsOf(root, build) {
   if (!existsSync(walks)) return [];
   /** @type {WalkReport[]} */
   const kept = [];
-  for (const walk of readdirSync(walks).sort()) {
-    const runs = readdirSync(join(walks, walk)).sort().reverse();
-    for (const folder of runs) {
+  for (const walk of readdirSync(walks)) {
+    for (const folder of readdirSync(join(walks, walk))) {
       const path = join(walks, walk, folder, 'report.json');
       if (!existsSync(path)) continue;
       /** @type {WalkReport} */
       const report = { ...JSON.parse(readFileSync(path, 'utf8')), folder };
-      const of = report.build;
-      if (of === undefined || !of.clean || of.commit !== build.commit || of.digest !== build.digest) continue;
-      kept.push(report);
-      break;
+      if (countsFor(root, report.build, build.digest)) kept.push(report);
     }
   }
-  return kept;
+  // THE FOLDER IS THE RUN'S START, an ISO time (`liveWalk.mjs`), so its order is the runs' order.
+  return kept.sort((a, b) => (a.folder < b.folder ? 1 : a.folder > b.folder ? -1 : 0));
 }
 
 /** `git` in the checkout, its standard output. @param {string} root @returns {(args: readonly string[]) => string} */
@@ -221,7 +273,7 @@ export const gitIn = (root) => (args) => execFileSync('git', [...args], { cwd: r
  * @param {string} root
  */
 export function writeRecord(root) {
-  const build = walkBuild(root, gitIn(root));
+  const build = builtAt(root, gitIn(root));
   if (!build.clean) throw new Error(`the app's sources differ from ${build.commit}: commit them, build, and walk again`);
   const commands = commandIds(readFileSync(join(root, 'docs', 'manual-test-checklist.md'), 'utf8'));
   const reports = reportsOf(root, build);
