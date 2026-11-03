@@ -47,8 +47,15 @@ export const PLAIN_NODE_EXTENSIONS = ['mjs', 'js', 'cjs'];
  * nothing loads. Their packages ship some with no extension at all
  * (`LICENSE`, `COPYING`); those are committed with `.txt` appended rather than
  * this scan learning to pass an extensionless file, which would admit anything.
+ *
+ * `html` is a page a research instrument serves to a browser
+ * (`scripts/research/drawCost/index.html`), which Node never loads: a browser
+ * reads it, and the code it runs is the `.mjs` beside it that it names by
+ * `src`, which this scan and the lint rule read as code. What this leaves out is
+ * stated rather than implied: a script written INLINE in a page is browser code
+ * no scan here reads, so an instrument's page names its script by `src`.
  */
-export const SCAN_DATA_EXTENSIONS = ['json', 'asc', 'txt', 'md'];
+export const SCAN_DATA_EXTENSIONS = ['json', 'asc', 'txt', 'md', 'html'];
 
 /**
  * The ending of a TypeScript DECLARATION under `scripts/`: types the scripts' type check reads, which nothing executes.
