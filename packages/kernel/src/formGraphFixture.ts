@@ -1,5 +1,7 @@
 import { PDFDocument, PDFName, type PDFRef, StandardFonts } from '@cantoo/pdf-lib';
 
+import { wholeFile } from './pdfLibSession.js';
+
 /**
  * A page whose forms nest `levels` deep, form k showing one word and drawing form k+1 `draws` times, the page drawing
  * the first `placed` times: `placed × (draws^levels - 1) / (draws - 1)` placements of text, from a file of a few KB.
@@ -26,5 +28,5 @@ export async function formGraph(levels: number, draws: number, placed: number, x
   page.node.setXObject(PDFName.of('G'), next);
   const content = Array.from({ length: placed }, (_, at) => `q 1 0 0 1 ${String(x + at)} 400 cm /G Do Q`).join('\n');
   page.node.addContentStream(document.context.register(document.context.stream(content)));
-  return document.save({ useObjectStreams: false });
+  return wholeFile(document, { useObjectStreams: false });
 }
