@@ -80,6 +80,17 @@ describe('DocumentPropertiesBody', () => {
     expect(value?.textContent).toContain('Includes changes that are not saved yet, so it can differ from the size File Explorer shows.');
   });
 
+  // THE MERGED WALK OF 2026-11-03: the dialog's baseline showed "2026-10-01 09:30:00 +01:0", the offset's last digit cut
+  // off by a field of the browser's twenty characters, in all three looks.
+  it('gives each date the long field a timestamp takes (ADR-0157), so its zone is not cut off', () => {
+    shown();
+    const kind = (label: string): string | undefined => screen.getByLabelText(label).closest('.m-field')?.className;
+    expect(kind('Created')).toBe('m-field m-field--long');
+    expect(kind('Modified')).toBe('m-field m-field--long');
+    // CONTROL: the title is a name, and keeps the browser's width, so the case is not every field made long.
+    expect(kind('Title')).toBe('m-field');
+  });
+
   it('draws its facts in the dialogs’ shared grid, never the browser’s own list', () => {
     shown();
     expect(screen.getByText('Size now').closest('dl')?.className).toBe('m-dialog-facts');

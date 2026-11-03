@@ -98,6 +98,8 @@ export default function DocumentPropertiesBody({
           onValueChange={setCreated}
           placeholder={DOCUMENT_PROPERTIES_DATE_HINT}
           invalid={createdDate === undefined}
+          // A TIMESTAMP, with its zone: past the browser's twenty characters (ADR-0157).
+          runsLong
         />
       </DialogRow>
       <DialogRow label={DOCUMENT_PROPERTIES_MODIFIED} problem={modifiedDate === undefined ? _(DOCUMENT_PROPERTIES_BAD_DATE) : undefined}>
@@ -108,6 +110,7 @@ export default function DocumentPropertiesBody({
           onValueChange={setModified}
           placeholder={DOCUMENT_PROPERTIES_DATE_HINT}
           invalid={modifiedDate === undefined}
+          runsLong
         />
       </DialogRow>
       <p className="m-dialog-section__note">{_(DOCUMENT_PROPERTIES_DATES_NOTE)}</p>
