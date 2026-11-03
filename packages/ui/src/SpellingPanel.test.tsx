@@ -56,7 +56,7 @@ function drawn(lines: readonly string[]): { readonly sent: unknown[]; readonly s
           }),
         );
       case 'document.viewModel':
-        return Promise.resolve(ok({ version: asDocVersion(1), pageCount: 1, rotations: [0] }));
+        return Promise.resolve(ok({ version: asDocVersion(1), pageCount: 1, rotations: [0], direction: 'L2R' as const }));
       case 'document.annotations':
         return Promise.resolve(ok({ version: asDocVersion(1), annotations: [], next: null, truncated: false }));
       case 'document.formFields':

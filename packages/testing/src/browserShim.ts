@@ -569,6 +569,8 @@ export interface BrowserShimOptions {
   readonly viewModels?: readonly {
     readonly pageCount: number;
     readonly rotations: readonly number[];
+    /** The document's reading order; a model that says none answers `L2R`, as a document with no `/Direction` reads. */
+    readonly direction?: 'L2R' | 'R2L';
   }[];
 
   /**
@@ -2306,7 +2308,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       // shim behaviour no product code could produce and a test would then be
       // written around.
       const model = viewModels.length > 1 ? (viewModels.shift() ?? FLAT) : (viewModels[0] ?? FLAT);
-      return Promise.resolve(ok({ version: asDocVersion(current), ...model }));
+      return Promise.resolve(ok({ version: asDocVersion(current), direction: 'L2R' as const, ...model }));
     },
 
     /**

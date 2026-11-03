@@ -254,7 +254,7 @@ function sourcesClient(): { readonly client: ContractClient; readonly executed: 
       const { docId } = params as { readonly docId: string };
       const pageCount = counts[docId];
       if (pageCount === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
-      return Promise.resolve(ok({ version: asDocVersion(1), pageCount, rotations: [0] }));
+      return Promise.resolve(ok({ version: asDocVersion(1), pageCount, rotations: [0], direction: 'L2R' as const }));
     }
     executed.push(params);
     return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
@@ -3374,7 +3374,7 @@ describe('delete pages — the mutation-dialog gate', () => {
 
   it('CONTROL: a REFUSED import shows no tab, and a dismissed one sends nothing', async () => {
     const refusing = createClient(channels, (id, params) => {
-      if (id === 'document.viewModel') return Promise.resolve(ok({ version: asDocVersion(1), pageCount: 4, rotations: [0] }));
+      if (id === 'document.viewModel') return Promise.resolve(ok({ version: asDocVersion(1), pageCount: 4, rotations: [0], direction: 'L2R' as const }));
       void params;
       return Promise.resolve(err({ code: 'document-busy' }));
     });

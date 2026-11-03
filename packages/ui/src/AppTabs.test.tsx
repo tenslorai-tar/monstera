@@ -126,6 +126,7 @@ function client(): { readonly client: ContractClient; readonly sent: Sent[] } {
           version: asDocVersion(1),
           pageCount: PAGES[docId] ?? 1,
           rotations: [],
+          direction: 'L2R' as const,
         }),
       );
     }
@@ -291,7 +292,7 @@ describe('the Organize grid, driven through App (ADR-0104)', () => {
         return Promise.resolve(ok({ version: asDocVersion(version), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
       }
       if (id === 'document.viewModel') {
-        return Promise.resolve(ok({ version: asDocVersion(version), pageCount: PAGES[FIRST] ?? 1, rotations: [] }));
+        return Promise.resolve(ok({ version: asDocVersion(version), pageCount: PAGES[FIRST] ?? 1, rotations: [], direction: 'L2R' as const }));
       }
       return (answers.client as unknown as Record<string, (p: unknown) => Promise<unknown>>)[id]?.(params) ?? Promise.reject(new Error(id));
     });

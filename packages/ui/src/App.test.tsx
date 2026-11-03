@@ -399,7 +399,7 @@ const OPEN_DOCUMENT_ANSWERS = {
   // TWO PAGES AND ONE OF THEM TURNED. An all-zero model is what a dropped array
   // and a flat document produce alike, so a fixture of zeros would make "the
   // renderer used the model" and "the renderer ignored it" the same observation.
-  'document.viewModel': { version: asDocVersion(1), pageCount: 2, rotations: [90] },
+  'document.viewModel': { version: asDocVersion(1), pageCount: 2, rotations: [90], direction: 'L2R' },
   // NO REDACTION MARKS: a save, a close or an export reads the list first and asks only where it names one (item N1).
   'document.annotations': { version: asDocVersion(1), annotations: [], next: null, truncated: false },
   // THE SCROLLER ASKS FOR EVERY VISIBLE PAGE'S SELECTABLE TEXT, so a fixture

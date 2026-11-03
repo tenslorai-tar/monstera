@@ -5810,7 +5810,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [PAGE_LAYOUT_OPTION_TITLES.pair]: 'Facing',
   [PAGE_LAYOUT_OPTION_TITLES.facing]: 'Continuous facing',
   [COVER_PAGE_TITLE]: 'Show cover page',
-  [COVER_PAGE_DESCRIPTION]: 'In the facing layouts, the first page stands alone on the right, so pages 2 and 3 face each other as in a printed book.',
+  [COVER_PAGE_DESCRIPTION]: 'In the facing layouts, the first page stands alone, so pages 2 and 3 face each other as in a printed book.',
   [GRID_DESCRIPTION]: 'A grid over the page, for lining marks up.',
   [GRID_SIZE_TITLE]: 'Grid size',
   [GRID_SIZE_DESCRIPTION]:

@@ -247,6 +247,7 @@ function viewDrawing(): DocumentView {
 function clientAnswering(
   lines: readonly { text: string; box: { x0: number; y0: number; x1: number; y1: number } }[] = [],
   kind: 'text' | 'image-only' | 'empty' = 'text',
+  direction: 'L2R' | 'R2L' = 'L2R',
 ): { client: ContractClient; asked: unknown[]; textAsked: unknown[] } {
   const asked: unknown[] = [];
   const textAsked: unknown[] = [];
@@ -259,7 +260,7 @@ function clientAnswering(
     asked.push(params);
     const pages = (params as { pages: readonly number[] }).pages;
     return Promise.resolve(
-      ok({ version: VERSION, pageCount: 5, rotations: pages.map(() => 0) }),
+      ok({ version: VERSION, pageCount: 5, rotations: pages.map(() => 0), direction }),
     );
   });
   return { client, asked, textAsked };
@@ -1078,7 +1079,7 @@ describe('PageList', () => {
       asked.push(params);
       const pages = (params as { pages: readonly number[] }).pages;
       return Promise.resolve(
-        ok({ version: answering, pageCount: 5, rotations: pages.map(() => turns.get(answering) ?? 0) }),
+        ok({ version: answering, pageCount: 5, rotations: pages.map(() => turns.get(answering) ?? 0), direction: 'L2R' as const }),
       );
     });
     const props = {
@@ -1573,10 +1574,16 @@ describe('PageList', () => {
     /** The props every layout case shares, at five pages and scale 1. */
     const layoutProps = (
       layout: PageLayout,
-      extra: { onWentTo?: () => void; onShownZoom?: (z: number) => void; mode?: ZoomMode; coverPage?: boolean } = {},
+      extra: {
+        onWentTo?: () => void;
+        onShownZoom?: (z: number) => void;
+        mode?: ZoomMode;
+        coverPage?: boolean;
+        direction?: 'L2R' | 'R2L';
+      } = {},
     ) => ({
       startAt: FIRST_PAGE.kernel,
-      client: clientAnswering().client,
+      client: clientAnswering([], 'text', extra.direction).client,
       view: viewDrawing(),
       pageCount: 5,
       docId: DOC,
@@ -1611,6 +1618,14 @@ describe('PageList', () => {
       if (scroller === null) throw new Error('no scroller');
       return scroller;
     };
+    /** Each shown slot as `page@row:column`, its grid cell from its style (1-based, as CSS counts); `page@-` with none. */
+    const cells = (container: HTMLElement): string[] =>
+      [...container.querySelectorAll<HTMLElement>('.m-page-slot')]
+        .filter((slot) => !slot.hidden)
+        .map((slot) => {
+          const { gridRow, gridColumn } = slot.style;
+          return gridColumn === '' ? `${String(slot.dataset['page'])}@-` : `${String(slot.dataset['page'])}@${gridRow}:${gridColumn}`;
+        });
 
     it('SINGLE PAGE shows one page, and a request chooses which — CONTROL: continuous shows every page', async () => {
       const wentTo = vi.fn();
@@ -1711,27 +1726,80 @@ describe('PageList', () => {
         expect(shownPages(container)).toStrictEqual([1, 2]);
       });
 
-      it('and in Continuous facing: every page shown, the grid marked so page 1 stands in the right column', async () => {
+      it('and in Continuous facing: every page shown, page 1 alone in the right column and 2–3 on the row below', async () => {
         const { container } = render(<PageList {...layoutProps('facing', { coverPage: true })} goTo={undefined} />);
         await settle();
         expect(shownPages(container)).toStrictEqual([0, 1, 2, 3, 4]);
-        expect(scrollerOf(container).classList.contains('m-page-list--cover')).toBe(true);
+        expect(cells(container)).toStrictEqual(['0@1:2', '1@2:1', '2@2:2', '3@3:1', '4@3:2']);
       });
 
       it('a STORED “facing” from today opens as Continuous facing: the two-column grid with every page in it', async () => {
         const { container } = render(<PageList {...layoutProps('facing')} goTo={undefined} />);
         await settle();
         expect(scrollerOf(container).classList.contains('m-page-list--facing')).toBe(true);
-        expect(scrollerOf(container).classList.contains('m-page-list--cover')).toBe(false);
         expect(shownPages(container)).toStrictEqual([0, 1, 2, 3, 4]);
+        expect(cells(container)).toStrictEqual(['0@1:1', '1@1:2', '2@2:1', '3@2:2', '4@3:1']);
       });
 
       it('CONTROL: Continuous is one column with every page, as today, and the cover page changes nothing in it', async () => {
         const { container } = render(<PageList {...layoutProps('continuous', { coverPage: true })} goTo={undefined} />);
         await settle();
         expect(scrollerOf(container).classList.contains('m-page-list--facing')).toBe(false);
-        expect(scrollerOf(container).classList.contains('m-page-list--cover')).toBe(false);
         expect(shownPages(container)).toStrictEqual([0, 1, 2, 3, 4]);
+        expect(cells(container)).toStrictEqual(['0@-', '1@-', '2@-', '3@-', '4@-']);
+      });
+    });
+
+    describe('A RIGHT-TO-LEFT DOCUMENT (/ViewerPreferences /Direction /R2L, ADR-0284 Decision 10)', () => {
+      const rtl = { direction: 'R2L' as const };
+
+      it('pairs right to left in Continuous facing: page 1 on the right of the first row, page 2 on its left', async () => {
+        const { container } = render(<PageList {...layoutProps('facing', rtl)} goTo={undefined} />);
+        await settle();
+        expect(cells(container)).toStrictEqual(['0@1:2', '1@1:1', '2@2:2', '3@2:1', '4@3:2']);
+      });
+
+      it('and with the cover page, the cover stands alone on the LEFT and 2–3 face each other with 2 on the right', async () => {
+        const { container } = render(<PageList {...layoutProps('facing', { ...rtl, coverPage: true })} goTo={undefined} />);
+        await settle();
+        expect(cells(container)).toStrictEqual(['0@1:1', '1@2:2', '2@2:1', '3@3:2', '4@3:1']);
+      });
+
+      it('in Facing, one pair right to left, and a wheel past its edge turns to the next pair in reading order', async () => {
+        const { container } = render(<PageList {...layoutProps('pair', rtl)} goTo={undefined} />);
+        await settle();
+        expect(cells(container)).toStrictEqual(['0@1:2', '1@1:1']);
+        fireEvent.wheel(scrollerOf(container), { deltaY: 100 });
+        expect(cells(container)).toStrictEqual(['2@1:2', '3@1:1']);
+      });
+
+      it('in Facing with the cover page, the cover alone on the left, then 2–3 with 2 on the right', async () => {
+        const { container } = render(<PageList {...layoutProps('pair', { ...rtl, coverPage: true })} goTo={undefined} />);
+        await settle();
+        expect(cells(container)).toStrictEqual(['0@1:1']);
+        fireEvent.wheel(scrollerOf(container), { deltaY: 100 });
+        expect(cells(container)).toStrictEqual(['1@1:2', '2@1:1']);
+      });
+
+      it('a search hit on page 4 lands on its pair, read right to left', async () => {
+        const props = layoutProps('pair', rtl);
+        const { container, rerender } = render(<PageList {...props} goTo={undefined} />);
+        await settle();
+        await act(async () => {
+          rerender(<PageList {...props} goTo={3} />);
+          await Promise.resolve();
+        });
+        expect(cells(container)).toStrictEqual(['2@1:2', '3@1:1']);
+      });
+
+      it('CONTROL: Continuous and Single page are unchanged by the direction: one column, no cell named', async () => {
+        const continuous = render(<PageList {...layoutProps('continuous', rtl)} goTo={undefined} />);
+        await settle();
+        expect(cells(continuous.container)).toStrictEqual(['0@-', '1@-', '2@-', '3@-', '4@-']);
+        continuous.unmount();
+        const single = render(<PageList {...layoutProps('single', rtl)} goTo={undefined} />);
+        await settle();
+        expect(cells(single.container)).toStrictEqual(['0@-']);
       });
     });
 

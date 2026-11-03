@@ -145,7 +145,7 @@ function client(options: {
       case 'document.readRange':
         return Promise.resolve(ok({ kind: 'bytes' as const, bytes: new Uint8Array(8) }));
       case 'document.viewModel':
-        return Promise.resolve(ok({ version: asDocVersion(1), pageCount: 1, rotations: [] }));
+        return Promise.resolve(ok({ version: asDocVersion(1), pageCount: 1, rotations: [], direction: 'L2R' as const }));
       case 'document.pageTextLayer':
         return Promise.resolve(
           ok({ version: asDocVersion(1), lines: [], truncated: false, kind: 'empty' as const }),

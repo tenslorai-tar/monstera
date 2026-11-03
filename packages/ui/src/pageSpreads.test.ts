@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { facesPages, spreadPages, spreadStart, stepSpread } from './pageSpreads.js';
+import { facesPages, spreadPages, spreadPlace, spreadStart, stepSpread, type ReadingDirection } from './pageSpreads.js';
 
 /** Every pair of a document of `count` pages, in order, as a reader turns through them from the first. */
 function pairs(count: number, cover: boolean): number[][] {
@@ -42,5 +42,35 @@ describe('which pages face each other (ADR-0284)', () => {
 
   it('CONTROL: only the two facing layouts pair pages', () => {
     expect([facesPages('continuous'), facesPages('single'), facesPages('pair'), facesPages('facing')]).toStrictEqual([false, false, true, true]);
+  });
+});
+
+/** Each page's place, as `row:column`, for a document of `count` pages. */
+function places(count: number, cover: boolean, direction: ReadingDirection): string[] {
+  return Array.from({ length: count }, (_, page) => {
+    const { row, column } = spreadPlace(page, cover, direction);
+    return `${String(row)}:${String(column)}`;
+  });
+}
+
+describe('which side each page stands on (ADR-0284 Decision 10)', () => {
+  it('a RIGHT-TO-LEFT book puts the earlier page of each pair on the right', () => {
+    expect(places(5, false, 'R2L')).toStrictEqual(['0:2', '0:1', '1:2', '1:1', '2:2']);
+  });
+
+  it('and its cover page stands alone on the LEFT, so pages 2 and 3 face each other with 2 on the right', () => {
+    expect(places(5, true, 'R2L')).toStrictEqual(['0:1', '1:2', '1:1', '2:2', '2:1']);
+  });
+
+  it('CONTROL: a left-to-right book stands as the grid stood it before: 1–2 left to right, and its cover alone on the right', () => {
+    expect(places(5, false, 'L2R')).toStrictEqual(['0:1', '0:2', '1:1', '1:2', '2:1']);
+    expect(places(5, true, 'L2R')).toStrictEqual(['0:2', '1:1', '1:2', '2:1', '2:2']);
+  });
+
+  it('CONTROL: the PAIRS are the same in both directions; only the sides differ', () => {
+    for (const cover of [false, true]) {
+      const rows = (direction: ReadingDirection): number[] => Array.from({ length: 7 }, (_, page) => spreadPlace(page, cover, direction).row);
+      expect(rows('R2L')).toStrictEqual(rows('L2R'));
+    }
   });
 });

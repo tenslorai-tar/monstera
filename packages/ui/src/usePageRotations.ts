@@ -2,6 +2,8 @@ import type { ContractClient } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import type { ReadingDirection } from './pageSpreads.js';
+
 /**
  * What is known about each visible page's rotation, AT THIS VERSION.
  *
@@ -55,7 +57,12 @@ export function usePageRotations(
     readonly map: ReadonlyMap<number, number | undefined>;
     /** The answers of the versions before this one, newest first: what a page plan turns from (ADR-0261). */
     readonly earlier: readonly { readonly key: string; readonly map: ReadonlyMap<number, number | undefined> }[];
-  }>({ key: '', map: EMPTY, earlier: [] });
+    /**
+     * The document's reading order from the last answer that was drawn with, of any version: a property of the document,
+     * not of a page, which a command almost never moves, so a new version keeps the last one until its own answer lands.
+     */
+    readonly direction: ReadingDirection | undefined;
+  }>({ key: '', map: EMPTY, earlier: [], direction: undefined });
   const current = answered.key === key ? answered.map : EMPTY;
 
   useEffect(() => {
@@ -86,7 +93,7 @@ export function usePageRotations(
         // A NEW VERSION KEEPS THE LAST ONES' ANSWERS, a few deep: a page plan draws the view of an earlier version,
         // and turns each page from the rotation the model gave for THAT version.
         const earlier = same || previous.key === '' ? previous.earlier : [{ key: previous.key, map: previous.map }, ...previous.earlier].slice(0, KEPT_VERSIONS);
-        return { key, map: next, earlier };
+        return { key, map: next, earlier, direction: usable ? answer.value.direction : previous.direction };
       });
     };
     void read();
@@ -105,7 +112,8 @@ export function usePageRotations(
     },
     [answered, docId],
   );
-  return useMemo(() => ({ now: current, at }), [at, current]);
+  const direction = answered.direction ?? 'L2R';
+  return useMemo(() => ({ now: current, at, direction }), [at, current, direction]);
 }
 
 /**
@@ -115,6 +123,12 @@ export function usePageRotations(
 export interface PageRotations {
   readonly now: ReadonlyMap<number, number | undefined>;
   readonly at: (version: DocVersion) => ReadonlyMap<number, number | undefined> | undefined;
+  /**
+   * The document's reading order, from the same answers (ADR-0284 Decision 10). `L2R` until an answer says otherwise. A
+   * page draws only once an answer has come, so a right-to-left book is first shown its own way, except where that
+   * answer was refused or late: the page then draws, and pairs left to right, until an answer this version can use.
+   */
+  readonly direction: ReadingDirection;
 }
 
 /** How many earlier versions' answers are kept: the plans a person can stack before the page draws one. */

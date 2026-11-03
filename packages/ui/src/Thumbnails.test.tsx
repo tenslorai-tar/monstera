@@ -83,7 +83,7 @@ function clientAnswering(turns: Readonly<Record<number, number>>): {
     const pages = (params as { pages: readonly number[] }).pages;
     const version = latestVersion;
     return Promise.resolve(
-      ok({ version, pageCount: 4, rotations: pages.map(() => turns[version] ?? 0) }),
+      ok({ version, pageCount: 4, rotations: pages.map(() => turns[version] ?? 0), direction: 'L2R' as const }),
     );
   });
   return { client, asked };

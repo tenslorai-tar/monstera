@@ -75,7 +75,7 @@ function clientFor(lines: ReadonlyMap<DocId, string>): { client: ContractClient;
     const docId = (params as { docId: DocId }).docId;
     if (id === 'document.annotations') return Promise.resolve(ok({ version: VERSION, next: null, truncated: false, annotations: [] }));
     if (id === 'document.viewModel') {
-      return Promise.resolve(ok({ version: VERSION, pageCount: 1, rotations: [0] }));
+      return Promise.resolve(ok({ version: VERSION, pageCount: 1, rotations: [0], direction: 'L2R' as const }));
     }
     // NO ENGINE BOXES here: the words are placed by the estimate, which is this surface's concern only in that a mark exists.
     if (id === 'document.pageWordBoxes') return Promise.resolve(ok({ version: VERSION, lines: [], truncated: false }));

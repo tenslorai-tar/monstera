@@ -61,6 +61,43 @@ async function declaring(page: number, value: number): Promise<MupdfSession> {
   return session;
 }
 
+/**
+ * A session whose catalog says how its pages are read: `/ViewerPreferences /Direction` set to `value` (a name, or a
+ * string where the value is malformed), the dictionary written as an indirect object when `indirect` is set.
+ */
+async function reading(value: { readonly name: string } | { readonly text: string }, indirect = false): Promise<MupdfSession> {
+  const session = await mupdfWriter.open(flat);
+  await withDocument(session, (document) => {
+    const preferences = document.newDictionary();
+    preferences.put('Direction', 'name' in value ? document.newName(value.name) : document.newString(value.text));
+    document.getTrailer().get('Root').put('ViewerPreferences', indirect ? document.addObject(preferences) : preferences);
+  });
+  return session;
+}
+
+describe('the reading direction (ADR-0284 Decision 10)', () => {
+  it('reads /Direction /R2L from the catalog, and through an indirect /ViewerPreferences too', async () => {
+    for (const indirect of [false, true]) {
+      const session = await reading({ name: 'R2L' }, indirect);
+      try {
+        expect((await readPageGeometry(session, [])).direction).toBe('R2L');
+      } finally {
+        await mupdfWriter.close(session);
+      }
+    }
+  });
+
+  it('CONTROL: /L2R, no /Direction, an unknown name and a malformed string are all L2R, as every document read before', async () => {
+    const plain = await mupdfWriter.open(flat);
+    const sessions = [plain, await reading({ name: 'L2R' }), await reading({ name: 'TopDown' }), await reading({ text: 'R2L' })];
+    try {
+      for (const session of sessions) expect((await readPageGeometry(session, [])).direction).toBe('L2R');
+    } finally {
+      for (const session of sessions) await mupdfWriter.close(session);
+    }
+  });
+});
+
 describe('readPageGeometry', () => {
   it('reports one rotation per page, and a flat document is all zeros', async () => {
     const session = await mupdfWriter.open(flat);
@@ -71,6 +108,7 @@ describe('readPageGeometry', () => {
         rotations: [0, 0, 0],
         sizes: [UPRIGHT, UPRIGHT, UPRIGHT],
         boxes: [LETTER, LETTER, LETTER],
+        direction: 'L2R',
       });
       // THE ANCHOR, and it is not implied by the line above. The consumer reads
       // `rotations` positionally against what it asked for, so a shorter array
@@ -96,6 +134,7 @@ describe('readPageGeometry', () => {
         sizes: [TURNED, TURNED, TURNED],
         // THE BOX IS USER SPACE, unturned: a quarter turn changes how it is shown, not where it is.
         boxes: [LETTER, LETTER, LETTER],
+        direction: 'L2R',
       });
     } finally {
       await mupdfWriter.close(session);
@@ -131,6 +170,7 @@ describe('readPageGeometry', () => {
         rotations: [0, 0, 90],
         sizes: [UPRIGHT, UPRIGHT, TURNED],
         boxes: [LETTER, LETTER, LETTER],
+        direction: 'L2R',
       });
     } finally {
       await mupdfWriter.close(session);
@@ -149,6 +189,7 @@ describe('readPageGeometry', () => {
         rotations: [90, 0],
         sizes: [TURNED, UPRIGHT],
         boxes: [LETTER, LETTER],
+        direction: 'L2R',
       });
     } finally {
       await mupdfWriter.close(session);
@@ -187,6 +228,7 @@ describe('readPageGeometry', () => {
         rotations: [180, 90, 90],
         sizes: [UPRIGHT, TURNED, TURNED],
         boxes: [LETTER, LETTER, LETTER],
+        direction: 'L2R',
       });
     } finally {
       await mupdfWriter.close(session);

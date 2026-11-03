@@ -585,7 +585,7 @@ describe('browser shim', () => {
 
       expect(await shim.client['document.viewModel']({ docId: DOC, pages: ASKED })).toStrictEqual({
         ok: true,
-        value: { version: 3, pageCount: 1, rotations: [0] },
+        value: { version: 3, direction: 'L2R', pageCount: 1, rotations: [0] },
       });
     });
 
@@ -601,11 +601,11 @@ describe('browser shim', () => {
 
       expect(first).toStrictEqual({
         ok: true,
-        value: { version: 3, pageCount: 2, rotations: [0, 0] },
+        value: { version: 3, direction: 'L2R', pageCount: 2, rotations: [0, 0] },
       });
       expect(second).toStrictEqual({
         ok: true,
-        value: { version: 3, pageCount: 2, rotations: [90, 0] },
+        value: { version: 3, direction: 'L2R', pageCount: 2, rotations: [90, 0] },
       });
       // THE THIRD READ IS THE CASE. A queue that emptied into the default would
       // answer an upright single page here, so a renderer reading the model a

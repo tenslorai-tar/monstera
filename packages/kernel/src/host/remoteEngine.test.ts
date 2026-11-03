@@ -802,6 +802,22 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
     }
   });
 
+  it('the READING ORDER crosses: a session whose catalog says /R2L answers R2L through the host (ADR-0284 Decision 10)', async () => {
+    const { session, token, geometry } = await joined();
+    try {
+      // CONTROL FIRST, through the same host: this file's document says nothing, which reads left to right.
+      expect((await geometry(token, [0])).direction).toBe('L2R');
+      await withDocument(session, (document) => {
+        const preferences = document.newDictionary();
+        preferences.put('Direction', document.newName('R2L'));
+        document.getTrailer().get('Root').put('ViewerPreferences', preferences);
+      });
+      expect((await geometry(token, [0])).direction).toBe('R2L');
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
   it('CONTROL: a session the host has forgotten is a declared miss, not an empty geometry', async () => {
     const { session, sessions, geometry } = await joined();
     try {
@@ -1158,6 +1174,7 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
             rotations: pages.map((page) => (page === 0 ? 45 : 90)),
             sizes: pages.map(() => ({ width: 612, height: 792 })),
             boxes: pages.map(() => ({ x0: 0, y0: 0, x1: 612, y1: 792 })),
+            direction: 'L2R',
           }),
         pageText: () => {
           throw new Error('the rotation-refusal case must not read page text');
@@ -1295,6 +1312,7 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         rotations: [90],
         sizes: [{ width: 612, height: 792 }],
         boxes: [{ x0: 0, y0: 0, x1: 612, y1: 792 }],
+        direction: 'L2R',
       });
       expect(incidents).toHaveLength(1);
     } finally {

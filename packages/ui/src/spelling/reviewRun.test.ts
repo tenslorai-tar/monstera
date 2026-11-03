@@ -156,6 +156,7 @@ function harness(script: Script): {
             version: version(),
             pageCount: script.pages.length,
             rotations: (params['pages'] as number[]).map(() => script.shown?.rotation ?? 0),
+            direction: 'L2R' as const,
           }),
         );
       case 'document.annotations':
