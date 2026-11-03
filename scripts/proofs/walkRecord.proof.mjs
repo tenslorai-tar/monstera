@@ -1,0 +1,125 @@
+// @ts-check
+/**
+ * Proves the pack's walk gate (`scripts/release/walkRecord.mjs`, ADR-0285) over written-down records and reports, so it
+ * runs on every platform and needs no build: a pack is refused from a commit with no record, with a failed row, with a
+ * row nothing reached, with a record of another commit, and with a build whose digest differs; and allowed from a commit
+ * whose walk passed. The allowed case is the control that the refusals are not a refusal of everything.
+ *
+ * Usage: node scripts/proofs/walkRecord.proof.mjs
+ */
+
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+import { repoRoot } from '../lib/gitScope.mjs';
+import { createRoster } from '../lib/passRoster.mjs';
+import { formatError } from '../lib/reportError.mjs';
+import { commandIds, refusals, rowsFrom } from '../release/walkRecord.mjs';
+
+/** @type {string[]} */
+const failures = [];
+const roster = createRoster(failures, { cases: 11 });
+
+/** @param {string} label @param {boolean} condition @param {string} detail */
+function check(label, condition, detail) {
+  const mark = roster.mark();
+  if (!condition) failures.push(`${label}\n      ${detail}`);
+  roster.record(mark, label);
+}
+
+const COMMIT = 'a'.repeat(40);
+const DIGEST = 'b'.repeat(64);
+const COMMANDS = ['document.open', 'document.save', 'view.zoom-in'];
+
+/** @typedef {import('../release/walkRecord.mjs').WalkReport} WalkReport */
+/** @typedef {import('../release/walkRecord.mjs').WalkRecord} WalkRecord */
+
+/** A walk report of this build, with its steps. @param {WalkReport['steps']} steps @returns {WalkReport} */
+const report = (steps) => ({ walk: 'every-tool', folder: '2026-11-03T00-00-00', build: { commit: COMMIT, clean: true, digest: DIGEST }, steps });
+
+/** The record a walk of `steps` writes. @param {WalkReport['steps']} steps @returns {WalkRecord} */
+const recordOf = (steps) => ({
+  commit: COMMIT,
+  build: DIGEST,
+  commands: COMMANDS.length,
+  rows: rowsFrom(COMMANDS, [report(steps)]),
+  written: '2026-11-03T00:00:00.000Z',
+  reports: ['every-tool/2026-11-03T00-00-00'],
+});
+
+/** @typedef {import('../release/walkRecord.mjs').WalkStep} WalkStep */
+
+/** @type {WalkStep} */
+const OPEN_SAVE = { name: 'open and save', outcome: 'passed', covers: ['document.open', 'document.save'] };
+/** @type {WalkStep} */
+const ZOOM_SAID = { name: 'zoom', outcome: 'passed', notWalked: { 'view.zoom-in': 'needs the owner’s second display' } };
+/** Every command walked and passed, one of them said not walked with its reason. */
+const WALKED = [OPEN_SAVE, ZOOM_SAID];
+
+function main() {
+  check(
+    'CONTROL: a commit whose full walk passed, or said why a row was not walked, is allowed',
+    refusals(recordOf(WALKED), COMMIT, DIGEST, COMMANDS).length === 0,
+    JSON.stringify(refusals(recordOf(WALKED), COMMIT, DIGEST, COMMANDS)),
+  );
+
+  const none = refusals(undefined, COMMIT, DIGEST, COMMANDS);
+  check('a commit with no record is refused', none.length === 1 && none[0]?.includes('no full walk') === true, JSON.stringify(none));
+
+  const failed = refusals(recordOf([{ ...OPEN_SAVE, outcome: 'failed' }, ZOOM_SAID]), COMMIT, DIGEST, COMMANDS);
+  check('a record with a failed row is refused, naming the row', failed.some((said) => said.includes('failed: document.open, document.save')), JSON.stringify(failed));
+
+  const unreached = refusals(recordOf([OPEN_SAVE]), COMMIT, DIGEST, COMMANDS);
+  check(
+    'a row no step reached and no step explained is refused, naming it',
+    unreached.some((said) => said.includes('reached by no step') && said.includes('view.zoom-in')),
+    JSON.stringify(unreached),
+  );
+
+  const blank = refusals(recordOf([OPEN_SAVE, { name: 'zoom', outcome: 'passed', notWalked: { 'view.zoom-in': '  ' } }]), COMMIT, DIGEST, COMMANDS);
+  check('a reason of only white space is no reason', blank.some((said) => said.includes('view.zoom-in')), JSON.stringify(blank));
+
+  const other = refusals(recordOf(WALKED), 'c'.repeat(40), DIGEST, COMMANDS);
+  check('a record of another commit is refused', other.some((said) => said.includes('not cccc')), JSON.stringify(other));
+
+  const rebuilt = refusals(recordOf(WALKED), COMMIT, 'd'.repeat(64), COMMANDS);
+  check('a build whose bytes differ from the walked build is refused', rebuilt.some((said) => said.includes('digest')), JSON.stringify(rebuilt));
+
+  const grown = refusals(recordOf(WALKED), COMMIT, DIGEST, [...COMMANDS, 'document.new-command']);
+  check(
+    'a command the registry gained after the walk is refused as a row the record lacks',
+    grown.some((said) => said.includes('document.new-command')),
+    JSON.stringify(grown),
+  );
+
+  // A FAILED STEP OUTWEIGHS A PASSED ONE: a row is passed only when every step that covers it passed.
+  const mixed = rowsFrom(COMMANDS, [report([OPEN_SAVE, { name: 'save again', outcome: 'failed', covers: ['document.save'] }])]);
+  check('a row one step passed and another failed is failed', mixed.find((row) => row.id === 'document.save')?.result === 'failed', JSON.stringify(mixed));
+
+  // THE ROWS ARE THE REGISTRY'S: read from the checklist the registry generates, with its own positive control.
+  const ids = commandIds(readFileSync(join(repoRoot(), 'docs', 'manual-test-checklist.md'), 'utf8'));
+  check('the checklist names every command once, document.save among them, and more than two hundred', ids.length > 200 && new Set(ids).size === ids.length, `${String(ids.length)} ids`);
+
+  // THE PACK ASKS IT, after its own clean build: a gate no pack calls refuses nothing, and these cases would stay green.
+  const pack = readFileSync(join(repoRoot(), 'scripts', 'release', 'packageMsix.mjs'), 'utf8');
+  const built = pack.indexOf("execFileSync('npm run build'");
+  const asked = pack.indexOf('refuseUnwalked(REPO_ROOT, commit)');
+  const staged = pack.indexOf("step('runtime')");
+  check(
+    'the pack refuses through this gate after its clean build and before it stages anything',
+    built > 0 && asked > built && staged > asked,
+    `npm run build at ${String(built)}, refuseUnwalked at ${String(asked)}, staging at ${String(staged)}`,
+  );
+
+  process.stdout.write(
+    failures.length > 0 ? `${String(failures.length)} walk-record failure(s):\n\n  - ${failures.join('\n\n  - ')}\n\n` : roster.format('walk-record case'),
+  );
+  return failures.length > 0 ? 1 : 0;
+}
+
+try {
+  process.exit(main());
+} catch (error) {
+  process.stderr.write(`${formatError(error)}\n`);
+  process.exit(1);
+}

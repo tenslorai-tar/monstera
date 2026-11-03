@@ -653,9 +653,15 @@ These were given directly and bind every agent on this project.
   registries, and compared with the live release. A fix made after the walk means
   the rows it can reach are walked again on the new sha before packing.
 
-  **The pack is to refuse a sha with no passing walk record, and that refusal is
-  not built yet** (2026-11-02): until it lands, this rule is the only thing
-  holding it, which is the state this file's escape-guard section warns about.
+  **The pack refuses it** ([ADR-0285](docs/DECISIONS/0285-an-msix-is-packed-only-from-a-build-a-full-walk-passed.md)):
+  after its own clean build, `packageMsix.mjs` asks `walkRecord.mjs`, which
+  refuses unless a record for that commit exists, every row (one per command the
+  registry generates) passed or says why it was not walked, and the build just
+  made has the walked build's digest. The walk writes the record
+  (`node scripts/release/walkRecord.mjs --write`), from the reports `liveWalk.mjs`
+  stamps with the commit and the digest; two clean builds of one commit are
+  byte-identical, measured, which is what makes the bytes comparable.
+  `npm run proof:walkrecord` holds the refusals and their control.
 
 - **Never write *any* file through a tool that resolves escape sequences.** Not
   a shell heredoc, not `printf`, not `sed`, not an inline `node -e` or

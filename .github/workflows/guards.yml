@@ -181,6 +181,12 @@ jobs:
       - name: Prove a child process is one created after its parent, not one naming a reused id
         run: node scripts/ci/annotate.mjs scripts/lib/childProcesses.proof.mjs
 
+      # The pack's walk gate (ADR-0285), over written-down records and reports,
+      # so it needs no build: a commit no full walk passed is refused, and the
+      # pack asks the gate after its own clean build.
+      - name: Prove an MSIX is packed only from a build a full walk passed
+        run: node scripts/ci/annotate.mjs scripts/proofs/walkRecord.proof.mjs
+
       # A fourth instrument about CI's own legibility. Actions serves LOGS only
       # to authenticated callers, so a proof that fails on a runner is opaque to
       # everyone but the owner — measured, when `proof:rendererpolicy` failed on

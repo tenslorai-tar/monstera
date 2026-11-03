@@ -30,6 +30,7 @@ import { _electron } from 'playwright';
 import { developmentEnvironment } from '../lib/launchEnvironment.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
 import { PALETTE_DRIVER, SHELL_LAUNCH, refuseStaleBuild } from '../lib/buildFreshness.mjs';
+import { gitIn, walkBuild } from '../release/walkRecord.mjs';
 
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -128,6 +129,8 @@ export async function boxSettled(page, read) {
  * @property {string} [problem]
  * @property {string} screenshot
  * @property {Record<string, unknown>} [facts] what the step measured, when it measured anything
+ * @property {string[]} [covers] the commands the step walks, by their registry ids
+ * @property {Record<string, string>} [notWalked] each command the step could not walk, and why
  */
 
 /**
@@ -144,10 +147,10 @@ export async function boxSettled(page, read) {
  *   data, for a walk that starts the app again over what a previous run left (a crash report); a fresh folder when absent.
  */
 export async function startWalk(walk, options = {}) {
-  const { app, output, runCommand } = await launchApp(walk, options);
+  const { app, output, runCommand, build } = await launchApp(walk, options);
   const page = await app.firstWindow();
   await page.waitForLoadState('domcontentloaded');
-  return walkOn(walk, app, page, output, runCommand);
+  return walkOn(walk, app, page, output, runCommand, build);
 }
 
 /**
@@ -170,6 +173,10 @@ export async function launchApp(walk, options = {}) {
   refuseStaleBuild(root, PALETTE_DRIVER, 1);
   // A LITERAL SPECIFIER, so `proof:electronimports` can read what this loads.
   const { runCommand } = await import('../../packages/testing/dist/palette.js');
+  // WHICH BUILD THIS WALK RUNS, read before the app starts (ADR-0285 Decision 2): this checkout's commit, whether the
+  // app's sources are that commit's, and the built bytes' digest. Only a walk of this checkout's own build says it; a
+  // walk of another worktree or of a packaged executable is a comparison, never this build's record.
+  const build = options.appRoot === undefined && options.executable === undefined ? walkBuild(root, gitIn(root)) : undefined;
   const stamp = new Date().toISOString().replaceAll(':', '-').slice(0, 19);
   const output = join(root, '_review', 'walks', walk, stamp);
   await mkdir(output, { recursive: true });
@@ -196,7 +203,7 @@ export async function launchApp(walk, options = {}) {
           env: environment,
         },
   );
-  return { app, output, appData, runCommand };
+  return { app, output, appData, runCommand, build };
 }
 
 /**
@@ -207,8 +214,9 @@ export async function launchApp(walk, options = {}) {
  * @param {import('playwright').Page} page
  * @param {string} output
  * @param {Awaited<ReturnType<typeof launchApp>>['runCommand']} runCommand
+ * @param {Awaited<ReturnType<typeof launchApp>>['build']} build the build this walk runs, when it is this checkout's
  */
-async function walkOn(walk, app, page, output, runCommand) {
+async function walkOn(walk, app, page, output, runCommand, build) {
 
   /**
    * Sizes the WINDOW's content area to `size`, and answers what the page then measures.
@@ -351,23 +359,30 @@ async function walkOn(walk, app, page, output, runCommand) {
    * One step: `work` runs, a screenshot is taken whatever happened, and the outcome is recorded. A step's `work` may
    * answer facts it measured, which go into the record beside it.
    *
+   * `covers` names the commands the step walks, by their registry ids, and a step's facts may carry `notWalked`, each
+   * command it could not walk and why: the full walk's record takes its rows from both (ADR-0285 Decision 4).
+   *
    * @param {string} name
    * @param {() => Promise<Record<string, unknown> | void>} work
+   * @param {{ covers?: readonly string[] }} [options]
    */
-  const step = async (name, work) => {
+  const step = async (name, work, options = {}) => {
     counter += 1;
     const screenshot = `${String(counter).padStart(2, '0')}-${name.replaceAll(/[^a-z0-9]+/giu, '-').toLowerCase().slice(0, 60)}.png`;
+    const covers = options.covers === undefined ? {} : { covers: [...options.covers] };
     /** @type {StepRecord} */
     let record;
     try {
       const facts = await work();
-      record = { name, outcome: 'passed', screenshot, ...(facts === undefined ? {} : { facts }) };
+      const said = facts?.['notWalked'];
+      const notWalked = typeof said === 'object' && said !== null ? { notWalked: /** @type {Record<string, string>} */ (said) } : {};
+      record = { name, outcome: 'passed', screenshot, ...covers, ...notWalked, ...(facts === undefined ? {} : { facts }) };
     } catch (error) {
       // WHAT WAS OPEN, WORDED, BEFORE THE ESCAPE BELOW PUTS IT DOWN: the screenshot is taken after it, so a dialog that
       // blocked the step is otherwise in neither the record nor the picture.
       const open = await page.locator('[role=dialog]').allInnerTexts().catch(() => /** @type {string[]} */ ([]));
       const blocked = open.length === 0 ? '' : `\n[a dialog was open: ${open.map((text) => text.replaceAll(/\s+/gu, ' ').slice(0, 200)).join(' | ')}]`;
-      record = { name, outcome: 'failed', problem: (error instanceof Error ? error.message.slice(0, 2000) : String(error)) + blocked, screenshot };
+      record = { name, outcome: 'failed', problem: (error instanceof Error ? error.message.slice(0, 2000) : String(error)) + blocked, screenshot, ...covers };
       // A DIALOG LEFT OPEN by a failed step would take the next step's presses, so it is put down.
       await page.keyboard.press('Escape').catch(() => undefined);
     }
@@ -387,7 +402,7 @@ async function walkOn(walk, app, page, output, runCommand) {
    */
   const finish = async () => {
     const passed = steps.filter((each) => each.outcome === 'passed').length;
-    await writeFile(join(output, 'report.json'), `${JSON.stringify({ walk, steps }, null, 2)}\n`);
+    await writeFile(join(output, 'report.json'), `${JSON.stringify({ walk, build, steps }, null, 2)}\n`);
     const closing = Date.now();
     const shell = app.process();
     // ENDED IS THE PROCESS'S OWN WORD, never the close call's: a close that threw was read as closed until a development
@@ -411,7 +426,7 @@ async function walkOn(walk, app, page, output, runCommand) {
     if (settled === 'held') {
       const asked = await page.locator('[role=dialog], [role=alertdialog]').allInnerTexts().catch(() => /** @type {string[]} */ ([]));
       const held = asked.map((text) => text.replaceAll(/\s+/gu, ' ').slice(0, 200)).join(' | ') || 'no dialog on screen';
-      await writeFile(join(output, 'report.json'), `${JSON.stringify({ walk, steps, closeHeld: held }, null, 2)}\n`);
+      await writeFile(join(output, 'report.json'), `${JSON.stringify({ walk, build, steps, closeHeld: held }, null, 2)}\n`);
       process.stdout.write(`\nCLOSE HELD by the app for ${String(CLOSE_HELD_MS / 1000)} s, so the process was ended: ${held}\n`);
       app.process().kill();
     }

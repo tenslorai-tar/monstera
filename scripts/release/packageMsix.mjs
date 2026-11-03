@@ -35,6 +35,12 @@
  * only resolves. So before packing, the staged `Monstera.exe` is started and must reach a window whose renderer mounts
  * (`startCheck.mjs`); a stage the start changed is refused too, since whatever it wrote would be packed.
  *
+ * ## Nothing ships that a full walk did not pass
+ *
+ * After its own clean build, the pack refuses unless a full walk of this commit's build is recorded, every row passed
+ * or says why it was not walked, and the digest of what it built is the walked build's (`walkRecord.mjs`,
+ * [ADR-0285](../../docs/DECISIONS/0285-an-msix-is-packed-only-from-a-build-a-full-walk-passed.md)).
+ *
  * ## The source ships with it
  *
  * The version's tag (the contract's `releaseTag`, which About opens) is refused before staging when it names another
@@ -65,6 +71,7 @@ import { Data, NtExecutable, NtExecutableResource, Resource } from 'resedit';
 
 import { STORE_ASSETS, writeStoreAssets } from '../brand/storeAssets.mjs';
 import { SHELL_LAUNCH, refuseStaleBuild } from '../lib/buildFreshness.mjs';
+import { refuseUnwalked } from './walkRecord.mjs';
 import { isMain } from '../lib/isMain.mjs';
 import { loadTypeScript } from '../lib/loadTypeScript.mjs';
 import { applicationIcon, carriesIcon } from '../lib/peIcons.mjs';
@@ -687,6 +694,12 @@ async function main() {
   execFileSync('npm run clean --workspaces --if-present', { cwd: REPO_ROOT, stdio: 'inherit', shell: 'cmd.exe' });
   execFileSync('npm run build', { cwd: REPO_ROOT, stdio: 'inherit', shell: 'cmd.exe', env: heap });
   refuseStaleBuild(REPO_ROOT, SHELL_LAUNCH, 7);
+
+  // A FULL WALK OF THIS BUILD, or no package (the owner's rule of 2026-11-02, ADR-0285): a record for this commit whose
+  // every row passed or says why it was not walked, of a build whose bytes are the ones just built. Asked after the clean
+  // build, so the digest is of what is staged next, and before an hour of staging.
+  step('the full walk’s record');
+  refuseUnwalked(REPO_ROOT, commit);
 
   // THE VERSION'S TAG (ADR-0276), named by the contract's one rule, which About opens too — read from the build just
   // made, since the contract is compiled code. Refused here, before an hour of staging, when it names another commit.
