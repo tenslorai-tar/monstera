@@ -80,6 +80,9 @@ const AWAY_FROM = /** @type {Readonly<Record<string, readonly string[]>>} */ ({
   'view.page-first': ['view.page-last'],
   'view.page-previous': ['view.page-last'],
   'view.go-back': ['view.page-last'],
+  // THE OTHER TAB OF ITS PANEL ON SHOW: Properties is the panel's first tab, and the fourth full run of 2026-11-03 ran
+  // it straight after a step that had shown it.
+  'view.show-properties': ['ai.open-assistant'],
 });
 
 /**
@@ -226,6 +229,8 @@ async function walkDocument() {
       page.drawText('Name:', { x: 72, y: 560, size: 12, font });
       form.createTextField('name').addToPage(page, { x: 120, y: 552, width: 200, height: 20 });
       form.createCheckBox('agreed').addToPage(page, { x: 72, y: 520, width: 14, height: 14 });
+      // A THIRD FIELD, because the two that spread fields evenly are offered for three or more (`DISTRIBUTE_AT_LEAST`).
+      form.createTextField('city').addToPage(page, { x: 360, y: 516, width: 120, height: 20 });
     }
     // A RULED TABLE on page 2, three rows of two: what Export tables to Excel looks for, and answered rightly that the
     // walk's first document had none (2026-11-03).
@@ -818,6 +823,7 @@ async function prepare(id) {
     await boxes.nth(0).click();
     // AN ARRANGE TAKES THE FIRST FIELD AND THE OTHERS, so a second is added to the selection as a hand adds it.
     if (ARRANGE.includes(id)) await boxes.nth(1).click({ modifiers: ['Shift'] });
+    if (id.startsWith('forms.arrange.distribute-')) await boxes.nth(2).click({ modifiers: ['Shift'] });
     if (id === 'forms.paste-fields') await run('forms.copy-fields');
     await page.waitForTimeout(500);
     return;
@@ -1045,10 +1051,15 @@ for (const command of commands) {
   // THE WINDOW PUT BACK, after the step and outside it, so its result stays the command's own; a put-back that fails
   // is a step of its own, and names what the next steps would otherwise run under.
   const back = PUT_BACK[command.id];
-  if (back !== undefined) {
+  // A START CARD CHOOSES A RIBBON SECTION, which is a remembered setting (`appearance.ribbon-section`): after Split & merge
+  // the fourth full run of 2026-11-03 opened every later document in Organize, whose middle is the page grid. A hand
+  // puts it back on the rail, since no command sets a section.
+  const card = VIA[command.id] === 'start';
+  if (back !== undefined || card) {
     try {
       await dismissModals();
-      for (const each of back) await run(each);
+      for (const each of back ?? []) await run(each);
+      if (card) await page.locator('[data-ribbon-section="home"]').click({ timeout: 10_000 });
     } catch (error) {
       await step(`${command.id}: the window was not put back`, () => Promise.reject(error));
     }
