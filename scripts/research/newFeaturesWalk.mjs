@@ -753,6 +753,167 @@ if (runs('forms')) {
   await closeAll();
 }
 
+// ——————————————————————————————————————————————— corpus ———————————————————————————————————————————————
+
+/**
+ * The owner's corpus, read through its one reader (`corpus.mjs`), which names each document only by its number in sorted
+ * order and an id from its bytes. A copy is written into the walk's own folder, which git ignores, and opened from
+ * there: the owner's file is never opened, and its name is never printed.
+ * @param {number} number one-based
+ */
+async function corpusCopy(number) {
+  const { openCorpus } = await import('../lib/corpus.mjs');
+  const corpus = openCorpus({ required: true });
+  if (!corpus.available) throw new Error('MONSTERA_CORPUS names no corpus here');
+  const document = corpus.documents[number - 1];
+  if (document === undefined) throw new Error(`the corpus has no document ${String(number)}`);
+  const path = join(output, `corpus-${String(number)}.pdf`);
+  await writeFile(path, document.bytes);
+  return { path, id: document.id };
+}
+
+/** The find bar's count for `words` across the document, as it says it: a number, or 0 for "Nothing … matches". */
+async function matchesOf(/** @type {string} */ words) {
+  await page.keyboard.press('Control+F');
+  await page.locator('[data-find-input]').fill(words);
+  await page.getByRole('button', { name: 'Search all pages', exact: true }).click();
+  const said = page.locator('.m-find-bar').getByText(/in this document/u).first();
+  await expect(said).toBeVisible({ timeout: 60_000 });
+  const text = await said.innerText();
+  await page.keyboard.press('Escape');
+  return /Nothing/u.test(text) ? 0 : Number.parseInt(text.replaceAll(/\D/gu, ''), 10);
+}
+
+if (runs('corpus')) {
+  await step('corpus (48): an Add text line on an owner’s document is saved, found as a phrase, and written as one run', async () => {
+    const { path, id } = await corpusCopy(3);
+    await open(path);
+    const PHRASE = 'walked phrase seven four';
+    if ((await matchesOf(PHRASE)) !== 0) throw new Error('the document already holds the phrase, so finding it proves nothing');
+    await command('Add text');
+    const surface = page.locator('[data-document-layer="active"] .m-page-slot').first().locator('[data-text-add-surface]');
+    await surface.scrollIntoViewIfNeeded();
+    const box = await surface.boundingBox();
+    if (box === null) throw new Error('no add surface');
+    // A PLACE WITH NO WORDS, read from the page's own text layer: the band low on the page that no line crosses.
+    const lines = await page.locator('[data-text-layer="0"]:visible [data-text-line]').evaluateAll((all) => all.map((line) => line.getBoundingClientRect()).map((rect) => [rect.top, rect.bottom]));
+    let y = box.y + box.height * 0.9;
+    for (let tries = 0; tries < 20 && lines.some(([top = 0, bottom = 0]) => y > top - 14 && y < bottom + 14); tries += 1) y -= box.height * 0.03;
+    await page.mouse.click(box.x + box.width * 0.2, y);
+    await expect(page.locator('[data-kit-surface]')).toBeFocused({ timeout: 10_000 });
+    await page.keyboard.type(PHRASE);
+    await page.keyboard.press('Escape');
+    await expect(page.locator('[data-kit-surface]')).toHaveCount(0, { timeout: 60_000 });
+    const kept = join(output, 'corpus-48-saved.pdf');
+    await saveTo(kept);
+    await command('Save a copy…');
+    await expect.poll(() => statSync(kept, { throwIfNoEntry: false })?.size ?? 0, { timeout: 60_000 }).toBeGreaterThan(0);
+    await closeAll();
+    await open(kept);
+    const found = await matchesOf(PHRASE);
+    if (found !== 1) throw new Error(`reopened, the phrase is found ${String(found)} times`);
+    // ONE RUN, as a second reader takes it: pdf.js gives the phrase in one text item.
+    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    const task = pdfjs.getDocument({ data: new Uint8Array(readFileSync(kept)), verbosity: 0 });
+    const loaded = await task.promise;
+    const content = await (await loaded.getPage(1)).getTextContent();
+    const whole = content.items.some((item) => 'str' in item && item.str.includes(PHRASE));
+    await task.destroy();
+    if (!whole) throw new Error('a second reader does not find the phrase in one piece');
+    return { document: 3, id, found, oneRun: whole };
+  });
+  await closeAll();
+
+  await step('corpus (49): on the drawn-font document, every “ft” is still found after a colour change, saved and reopened', async () => {
+    const { path, id } = await corpusCopy(4);
+    await open(path);
+    const before = await matchesOf('ft');
+    if (before === 0) throw new Error('the document shows no “ft” to keep');
+    // THE FIRST HIT'S PAGE, by the find bar's first match, and on it the text layer's first line holding the pair.
+    await page.keyboard.press('Control+F');
+    await page.locator('[data-find-input]').fill('ft');
+    await page.getByRole('button', { name: 'Search all pages', exact: true }).click();
+    await page.locator('.m-find-match').first().click({ timeout: 30_000 });
+    await page.keyboard.press('Escape');
+    // THE HIT'S OWN PAGE, as the status bar names it: another page's line holding the pair may also be on screen.
+    const hitPage = Number(await page.locator('[data-goto-input]').first().inputValue()) - 1;
+    const line = page.locator(`[data-text-layer="${String(hitPage)}"] [data-text-line]`, { hasText: 'ft' }).first();
+    await expect(line).toBeVisible({ timeout: 30_000 });
+    await line.scrollIntoViewIfNeeded();
+    const at = await line.boundingBox();
+    if (at === null) throw new Error('the line holding the pair is not drawn');
+    // THE KEYS BACK ON THE PAGE, then Edit text ON, confirmed by its button: run while the find bar held the focus, the
+    // command left the tool off (2026-11-03).
+    await page.locator('.m-page-list:visible').first().focus();
+    await section('Edit');
+    await text.ensureEditText();
+    await expect(page.getByRole('button', { name: 'Edit text', exact: true }).first()).toHaveAttribute('aria-pressed', 'true', { timeout: 10_000 });
+    const blocks = page.locator(`[data-text-edit-layer="${String(hitPage)}"] [data-text-block]`);
+    await expect(blocks.first()).toBeVisible({ timeout: 60_000 });
+    // THE BLOCK HOLDING THE LINE'S START, by the outlines' own boxes, the line read again where Edit text left it.
+    const again = await line.boundingBox();
+    const where = again ?? at;
+    const point = { x: where.x + Math.min(20, where.width / 2), y: where.y + where.height / 2 };
+    const holding = await blocks.evaluateAll(
+      (all, p) => all.findIndex((block) => {
+        const box = block.getBoundingClientRect();
+        return p.x >= box.left && p.x <= box.right && p.y >= box.top && p.y <= box.bottom;
+      }),
+      point,
+    );
+    if (holding === -1) throw new Error('no Edit text outline holds the line found');
+    const opening = editTextOpening(page);
+    await opening.openAt(point.x, point.y);
+    await page.keyboard.press('Control+A');
+    // A COLOUR OF THE PROPERTIES PANEL'S OWN, as a hand picks one.
+    const swatch = text.panel().getByRole('group', { name: 'Text colour' }).getByRole('button', { name: 'Red', exact: true }).first();
+    await swatch.click({ timeout: 10_000 });
+    expect(await text.problems()).toStrictEqual([]);
+    await text.pressAway();
+    // THE CHANGE WAS WRITTEN: an edit that wrote nothing keeps every pair too, and would pass what follows.
+    await expect(page.getByText('Unsaved changes', { exact: true }).first()).toBeVisible({ timeout: 30_000 });
+    const kept = join(output, 'corpus-49-saved.pdf');
+    await saveTo(kept);
+    await command('Save a copy…');
+    await expect.poll(() => statSync(kept, { throwIfNoEntry: false })?.size ?? 0, { timeout: 60_000 }).toBeGreaterThan(0);
+    await closeAll();
+    await open(kept);
+    const after = await matchesOf('ft');
+    if (after !== before) throw new Error(`“ft” was found ${String(before)} times before and ${String(after)} after`);
+    return { document: 4, id, before, after };
+  });
+  await closeAll();
+
+  await step('corpus (40): on a page that fills a shape before its drawn-font lines, each line opens in its own font', async () => {
+    const { path, id } = await corpusCopy(4);
+    await open(path);
+    await section('Edit');
+    await text.ensureEditText();
+    const blocks = page.locator('[data-text-edit-layer="0"] [data-text-block]');
+    await expect(blocks.first()).toBeAttached({ timeout: 60_000 });
+    const opening = editTextOpening(page);
+    /** @type {string[]} */
+    const fonts = [];
+    const count = Math.min(await blocks.count(), 6);
+    for (let at = 0; at < count; at += 1) {
+      if ((await opening.editor().count()) > 0) {
+        await page.keyboard.press('Escape');
+        await expect(opening.frame()).toHaveCount(0, { timeout: 10_000 });
+      }
+      await opening.openBlock(blocks.nth(at));
+      const font = await text.panel().getByRole('button', { name: /^Font:/u }).first().getAttribute('aria-label').catch(() => null);
+      fonts.push((font ?? (await text.panel().getByRole('button', { name: /^Font:/u }).first().innerText())).replace(/^Font:\s*/u, ''));
+    }
+    await page.keyboard.press('Escape');
+    if (fonts.some((font) => font.trim() === '')) throw new Error(`a block opened with no font named: ${String(fonts.length)} blocks`);
+    const distinct = new Set(fonts).size;
+    // THE NAMES ARE THE OWNER'S DOCUMENT'S, so only their count and agreement are recorded.
+    if (distinct < 2) throw new Error(`${String(fonts.length)} blocks opened in ${String(distinct)} font: the lines do not each take their own`);
+    return { document: 4, id, page: 1, blocks: fonts.length, distinctFonts: distinct };
+  });
+  await closeAll();
+}
+
 // ———————————————————————————————————————————— placements ————————————————————————————————————————————
 
 if (runs('placements')) {
