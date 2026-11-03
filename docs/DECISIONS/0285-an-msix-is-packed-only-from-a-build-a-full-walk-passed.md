@@ -66,3 +66,33 @@ differs.
 - **The record in git:** committing it changes the commit it describes.
 - **Counting walk steps instead of registry rows:** a walk's steps are whatever the walk's author wrote; a command no
   step reaches would be absent from the count and the record would agree with it.
+
+## Correction, 2026-11-03: a row's evidence is the BUILD it was walked on, not the commit
+
+**Decision 6 and the code disagreed** (the reviewer, 2026-11-03). Decision 6 says the rows a fix can reach are walked
+again; `reportsOf` took only reports of the commit being recorded, so every commit threw every earlier pass away,
+including a commit that changes only a walk program or a document and leaves every built file as it was. The full walk
+then has to run again for a change that cannot have reached any row.
+
+The bytes were always the binding (Decision 3); the commit was standing in for them. So:
+
+1. **A report counts when its build is the build being recorded**: clean, and its digest equal to this checkout's, at
+   whatever commit it was walked. A commit that changes no built file keeps every row. Each row names the commit and the
+   digest it was walked on, and the pack refuses a row walked on any digest but the one it stages.
+2. **A row takes the NEWEST report that walked it.** Every report counted toward every row before, which was harmless
+   while one commit's reports were one run; across commits an older run's failure would outweigh a newer pass, and a
+   later run of a few steps would replace a full run's rows.
+3. **A report counts only while its walk's program is unchanged.** Each report carries the SHA-256 of its walk's
+   program: its script and every script it takes by a relative import, read through those imports. A change to any of
+   them changes the program's digest, and that walk's rows are walked again.
+
+**What is not done, and why.** Decision 6's *the rows a fix can reach*, for a commit that changes the build, is not
+derived: a command's behaviour is its `run`, which closes over the whole composition, and nothing here can say which
+commands a change to the built app reaches. A list of reached rows written by a person agrees with any omission
+(`CLAUDE.md` item 4c: the failure feared makes the set smaller). So a commit that changes the digest walks every row,
+which is the owner's rule as first written. Equally, a change to one step of a walk program walks that walk's every row,
+since the shared part and one step's part are one file.
+
+Controls (`proof:walkrecord`): a row walked on another digest is refused; a row walked at an earlier commit on the same
+digest is accepted; a row whose walk program has changed is refused; a newer pass outweighs an older failure of the same
+row, and a newer failure an older pass.
