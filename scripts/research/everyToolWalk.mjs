@@ -328,13 +328,29 @@ async function whyReloaded() {
 }
 const prints = () => app.evaluate(() => /** @type {any} */ (globalThis).__walkPrinted);
 
-/** The open dialog's registry id, or none. */
-const openDialog = () =>
-  page
-    .locator('[data-dialog]')
-    .last()
-    .getAttribute('data-dialog', { timeout: 500 })
-    .catch(() => null);
+/**
+ * EVERY DIALOG BY THE BOX BOTH BUILDS DRAW, never by `data-dialog`: that id was written on the popup on 2026-11-03
+ * (235585f4), so 1.1.2610.0 carries none, and a walk keyed on it met no dialog there. It answered nothing, and the first
+ * "Save changes?" left its backdrop over the window, so every click after it timed out (the release walk, 2026-11-03).
+ * The palette is the same primitive and is the walk's own furniture.
+ */
+const DIALOG = '.m-dialog:not(.m-palette)';
+
+/**
+ * The open dialog's registry id, or `title:` and its title where the build names none. A `-problem` dialog is known by
+ * its id alone, so on a build with no ids a problem dialog reads as a dialog met, not as a failure.
+ */
+const openDialog = async () => {
+  const dialog = page.locator(DIALOG).last();
+  // UP TO HALF A SECOND FOR ONE TO APPEAR: read 2 ms after a tab's close, "Save changes?" was not drawn yet, the close
+  // loop pressed the tab again under its backdrop, and the click waited out its 30 s (the release trial, 2026-11-03).
+  await dialog.waitFor({ state: 'attached', timeout: 500 }).catch(() => undefined);
+  if ((await dialog.count()) === 0) return null;
+  const id = await dialog.getAttribute('data-dialog', { timeout: 500 }).catch(() => null);
+  if (id !== null) return id;
+  const title = await dialog.locator('.m-dialog__title').first().innerText({ timeout: 500 }).catch(() => '');
+  return `title:${title.trim()}`;
+};
 
 /** Every toast on screen, by kind and words. */
 /**
@@ -418,7 +434,9 @@ async function closeAll() {
     for (let asked = 0; asked < 3; asked += 1) {
       const id = await openDialog();
       if (id === null) break;
-      if (id === 'dialog.close-unsaved') await page.locator('[data-dialog]').last().getByRole('button', { name: 'Don’t save' }).click();
+      // BY THE BUTTON A HAND PRESSES, which both builds draw; the release names no dialog (`DIALOG`).
+      const dontSave = page.locator(DIALOG).last().getByRole('button', { name: 'Don’t save' });
+      if ((await dontSave.count()) > 0) await dontSave.click();
       else await page.keyboard.press('Escape');
       await page.waitForTimeout(200);
     }
@@ -469,7 +487,7 @@ async function ranFromPalette(title, id) {
  * mutations cannot, since opening the palette and typing in it make hundreds (the walk's first trial, 2026-11-03).
  */
 function fingerprint() {
-  return page.evaluate(() => {
+  return page.evaluate((dialogs) => {
     const d = /** @type {any} */ (globalThis).document;
     const texts = (/** @type {string} */ selector) =>
       [...d.querySelectorAll(selector)].map((/** @type {any} */ each) => (each.getAttribute('aria-label') ?? each.textContent ?? '').trim()).sort();
@@ -482,7 +500,7 @@ function fingerprint() {
       marks: d.querySelectorAll('[data-annotation], [data-annotation-overlay] *').length,
       fields: d.querySelectorAll('[data-form-field], [data-field-box]').length,
       selected: String(/** @type {any} */ (globalThis).getSelection?.() ?? ''),
-      dialogs: texts('[data-dialog]'),
+      dialogs: texts(dialogs),
       panels: texts('[role="tabpanel"]:not([hidden])').length,
       // WHICH PANE HOLDS THE FOCUS, by its own `data-pane`: F6 and Shift+F6 move nothing else (`paneCommands.ts`).
       pane: d.activeElement?.closest('[data-pane]')?.getAttribute('data-pane') ?? '',
@@ -500,7 +518,7 @@ function fingerprint() {
         ),
       ].sort(),
     });
-  });
+  }, DIALOG);
 }
 
 /**
@@ -527,7 +545,7 @@ async function answerQuestions(met) {
     if (id === null) return;
     met.push(id);
     if (/-problem$/u.test(id)) return;
-    const dialog = page.locator('[data-dialog]').last();
+    const dialog = page.locator(DIALOG).last();
     // WHAT A HAND TYPES FIRST: a question whose primary waits for a word or a choice (a password, a language) is
     // answered by filling it, with a test value of the walk's own; a field with a value is left as the dialog set it.
     for (const field of await dialog.locator('input[type="text"]:not([disabled]), input[type="password"]:not([disabled]), input:not([type]):not([disabled])').all()) {
@@ -892,8 +910,9 @@ async function reopen(path) {
   const name = path.split(/[\\/]/u).at(-1) ?? '';
   for (let tries = 0; tries < 60; tries += 1) {
     if ((await page.locator(`.m-status-name[title="${name}"]`).count()) > 0) return true;
-    if ((await openDialog()) === 'dialog.document-password') {
-      const asked = page.locator('[data-dialog]').last();
+    // A QUESTION WITH A PASSWORD FIELD, as a hand sees it: the release names no dialog (`DIALOG`).
+    const asked = page.locator(DIALOG).last();
+    if ((await asked.locator('input[type="password"]').count()) > 0) {
       await asked.locator('input[type="password"]').first().fill('walk-test-1');
       await asked.locator('.m-button--primary').last().click();
     }
@@ -1005,7 +1024,7 @@ for (const command of commands) {
       const problem = met.find((id) => /-problem$/u.test(id));
       if (problem !== undefined) {
         // THE DIALOG'S OWN WORDS, so the failure says what the app said rather than only which dialog said it.
-        const said = await page.locator('[data-dialog]').last().innerText().catch(() => '');
+        const said = await page.locator(DIALOG).last().innerText().catch(() => '');
         throw new Error(`${problem} was shown (${context}): ${said.replaceAll(/\s+/gu, ' ').slice(0, 240)}`);
       }
       if (toast?.kind === 'problem') throw new Error(`a problem toast was shown (${context}): ${toast.text.slice(0, 200)}`);
