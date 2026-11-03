@@ -70,6 +70,8 @@ const AWAY_FROM = /** @type {Readonly<Record<string, readonly string[]>>} */ ({
   'view.theme-dark': ['view.theme-light'],
   'view.layout-ribbon': ['view.layout-studio'],
   'view.page-layout-continuous': ['view.page-layout-facing'],
+  // THE COVER PAGE APPLIES TO THE TWO FACING LAYOUTS AND NOTHING ELSE (ADR-0284 Decision 3), so it is walked in one.
+  'view.cover-page': ['view.page-layout-facing'],
   'view.actual-size': ['view.zoom-in'],
   'view.page-first': ['view.page-last'],
   'view.page-previous': ['view.page-last'],
@@ -92,6 +94,7 @@ const PUT_BACK = /** @type {Readonly<Record<string, readonly string[]>>} */ ({
   'view.page-layout-facing': ['view.page-layout-continuous'],
   'view.page-layout-pair': ['view.page-layout-continuous'],
   'view.page-layout-single': ['view.page-layout-continuous'],
+  'view.cover-page': ['view.cover-page', 'view.page-layout-continuous'],
 });
 
 /**
@@ -232,19 +235,40 @@ const openDialog = () =>
     .catch(() => null);
 
 /** Every toast on screen, by kind and words. */
-const toastsNow = () =>
-  page.locator('.m-toast').evaluateAll((all) =>
-    all.map((toast) => `${toast.classList.contains('m-toast--problem') ? 'problem' : toast.classList.contains('m-toast--done') ? 'done' : 'other'}|${(toast.textContent ?? '').trim()}`),
-  );
+/**
+ * EVERY TOAST AS IT APPEARS, in order, kept by an observer in the page: a done toast is timed, and one read at the end
+ * of a step can already be gone. Export a searchable copy wrote its file and said so, and the walk, answering the
+ * recognition's outcome dialog after it, read no toast (2026-11-03). Each toast ELEMENT is one entry, so two steps
+ * whose toasts say the same words are two entries; its kind and words are read again on every change, since a toast's
+ * words can arrive after its element.
+ */
+await page.evaluate(() => {
+  const g = /** @type {any} */ (globalThis);
+  g.__walkToasts = [];
+  const at = new WeakMap();
+  const record = () => {
+    for (const toast of g.document.querySelectorAll('.m-toast')) {
+      const kind = toast.classList.contains('m-toast--problem') ? 'problem' : toast.classList.contains('m-toast--done') ? 'done' : 'other';
+      const seen = `${kind}|${(toast.textContent ?? '').trim()}`;
+      if (!at.has(toast)) at.set(toast, g.__walkToasts.push(seen) - 1);
+      else g.__walkToasts[at.get(toast)] = seen;
+    }
+  };
+  record();
+  new g.MutationObserver(record).observe(g.document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['class'] });
+});
+
+/** How many toasts the page has shown so far: a step's own are the ones after this count. */
+const toastsNow = () => page.evaluate(() => /** @type {string[]} */ (/** @type {any} */ (globalThis).__walkToasts).length);
 
 /**
  * The kind of toast this command put up, and its words, or none. ONLY THE TOASTS THAT CAME AFTER IT: a problem toast is
  * not timed and stays until it is dismissed, so one step's "Nothing is marked for redaction" failed every step after it
  * in the walk's first full run (2026-11-03).
- * @param {readonly string[]} before
+ * @param {number} before
  */
 const toastAfter = async (before) => {
-  const added = (await toastsNow()).filter((each) => !before.includes(each));
+  const added = (await page.evaluate(() => /** @type {string[]} */ (/** @type {any} */ (globalThis).__walkToasts))).slice(before);
   const problem = added.find((each) => each.startsWith('problem|'));
   if (problem !== undefined) return { kind: 'problem', text: problem.slice(8) };
   const done = added.find((each) => each.startsWith('done|'));
