@@ -82,6 +82,23 @@ describe('restoreVersionCommand', () => {
     expect(opened).toStrictEqual([{ docId: COPY, version: 1, byteLength: 90, name: 'report previous version.pdf' }]);
   });
 
+  it('DECLARES WHAT ITS SUCCESS SHOWS: a restore opens a tab and says nothing, so its feedback is on screen (ADR-0141)', async () => {
+    const { toasts, opened, deps } = harness(
+      {
+        'document.listBackups': ok({ kind: 'listed', versions: VERSIONS }),
+        'document.restoreBackup': ok({ kind: 'opened', docId: COPY, version: asDocVersion(1), byteLength: 90, name: 'report previous version.pdf' }),
+      },
+      { id: '1.pdf' },
+    );
+    const restore = command(deps);
+    await restore.run(CONTEXT);
+    // THE SUCCESS PATH OPENED A TAB AND RAISED NO TOAST, which is what makes a declared toast false: the walk of
+    // 2026-11-03 waited for one that never comes. CONTROL: the tab is there, so the silence is not a run that did nothing.
+    expect(opened).toHaveLength(1);
+    expect(toasts).toStrictEqual([]);
+    expect(restore.feedback).toStrictEqual({ kind: 'visible' });
+  });
+
   it('CONTROL: with no version kept it says so and asks nothing; a closed dialog restores nothing; a version already gone says so', async () => {
     const none = harness({ 'document.listBackups': ok({ kind: 'listed', versions: [] }) }, undefined);
     await command(none.deps).run(CONTEXT);

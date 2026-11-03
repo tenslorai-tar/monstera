@@ -9,7 +9,7 @@ import {
   TOAST_RESTORE_GONE,
   TOAST_RESTORE_NONE,
 } from '../messages/en.js';
-import { TOASTS, type UiCommand } from '../registries/commands.js';
+import { type UiCommand, VISIBLE } from '../registries/commands.js';
 import { type DocumentCommandDeps, hasDocument, reportProblem } from './documentCommands.js';
 import type { OpenedDocument } from './importMarkdown.js';
 import type { ShowToast } from '../toasts.js';
@@ -29,7 +29,9 @@ export function restoreVersionCommand(
 ): UiCommand {
   return {
     id: 'document.restore-version',
-    feedback: TOASTS,
+    // THE VERSION OPENS AS ITS OWN TAB, in front, and that is what a person waits on; a toast is only the answer when
+    // there is no version to choose.
+    feedback: VISIBLE,
     icon: 'RotateCcw',
     title: RESTORE_VERSION_COMMAND_TITLE,
     // FILE › BESIDE SAVE A COPY: the other thing a person does with the file's own history.
