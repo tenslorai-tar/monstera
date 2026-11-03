@@ -892,6 +892,91 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-11-03 — Stage audit of `069d00cf..f7e2adf7` — findings DDDDDDDDD-1 to DDDDDDDDD-17
+
+The first full walk of main (`work/2026-11-02-walk`), its merge onto `work/2026-11-02-merges`, and the merges of
+cloud-40 to cloud-46 onto that branch; recorded in the commit that fixes the last of those merges' faults, which carried
+the range past one batch (201 files). `npm run audit:scope` at `f7e2adf7`: 63 commits, 200 files; 11 proofs added, 97
+modified, none removed; 16 source files added, 65 changed, none removed.
+
+**Method.** The 97 modified proofs were read by three read-only reviewers, in three groups, every removed line of the
+range diff and of `git log -p` where a file changed in more than one commit, for a check loosened under a correction's
+name; **they reported none**. Their doubtful items are DDDDDDDDD-8 to -11, each then measured by this author. The rest
+was read by this author.
+
+### Faults, fixed in the range, each with a case that fails without it
+
+- **DDDDDDDDD-1** (high, fixed `92eeff51`) — a space typed at the end of any block was refused (*set-text 0*), in
+  1.1.2610.0 too: `layOutParagraph` dropped the white space after a paragraph's last word, the edit laid out as the old
+  line, and both writers answer an edit that writes nothing with that refusal. Root cause: the paragraph's own end now
+  keeps it, uncounted. Its kernel case covers the operator writer; the PDFium writer is covered by the regression
+  walk's step 15 only, which no CI job runs.
+- **DDDDDDDDD-2** (medium, fixed `4fe0a2be`) — a picture page's offer to recognise its words could not be pressed in
+  Edit text, in both builds: the layer over the page took the press.
+- **DDDDDDDDD-3** (high, fixed `3bf02dc8`) — Translate sent the provider's first listed model whatever the person had
+  chosen, in both builds; the rule was spelt three times and Translate was a fourth caller that spelt it otherwise (B3a).
+  Now one named answer, `modelFor`. Found before any live call was made.
+- **DDDDDDDDD-4** (high, fixed `d2431841`, `4ff6462d` and this commit) — **three semantic conflicts between a branch
+  and main that git merged without a conflict**: cloud-40 called `pageRuns` without the clips main had since added
+  (TS2554); cloud-43's case set `hasSelection`, which main had removed (TS2353); and `AppSelectionRenders.test.tsx`,
+  which reached main after cloud-45 branched, answered a view model without the reading direction cloud-45 made
+  required. The last **passed all four of its tests** and failed its run on five unhandled rejections: the case ran
+  against a view model the app refuses. The merge checks read only failed tests at first; they now name unhandled errors.
+
+### The walk's own instruments, each blind first (items 4a and 4b)
+
+- **DDDDDDDDD-5** (medium, fixed in the range) — six instruments of the walk gave the reassuring answer for the wrong
+  reason, each found by a screenshot or a probe and not by the instrument: the walk's `finish` waited for ever on the
+  app's own close question, and then read a close that threw as closed (`6afb7a5a`, `a7d3e8db`); `savedWords` tripled
+  the gaps between PDF.js's word items (`28b3e03a`); step 14's Bold lookup also matched the font picker; the deep forms
+  walk's sentence read missed Edit text's own notes, its zoom read compared the slider's scale with a percent, and its
+  copy waited for a non-empty clipboard, which held what the person had copied and was then printed into a report
+  (deleted the same hour; the walk now marks the clipboard first); and `boxSettled` read a nudged field as settled before
+  it moved. **The general form, five times in one day:** an instrument whose failure reads as *nothing changed* or
+  *nothing said* passes in exactly the state the defect produces.
+
+### Doubtful in the proofs, measured
+
+- **DDDDDDDDD-8** (low, recorded) — `808e897c` removed `formText.test.ts`' 100 ms stopwatch on the reviewer's ruling; the
+  count assertion that stands bounds the placements the reader KEEPS, not those it visits. A reader that walked all
+  65,535 and trimmed afterwards would pass it. The walk itself stays bounded by the neighbouring case's 1,000 ms over
+  the same walk, so the gap is one reader's, and stated here so it is not read as covered.
+- **DDDDDDDDD-9** (low, recorded, item 2a) — `fonts.proof.mjs` (`19c1d876`) moved its rebuild cases off the network
+  after ftp.gnu.org timed a CI run out, so it no longer reaches the download-then-pin route. CI still runs that route in
+  `fonts.mjs`' provisioning step, but only on a cache miss, and the cache is keyed on `fonts.mjs`: the pinned download is
+  verified only on a run where that file changed.
+- **DDDDDDDDD-10** (low, recorded) — `plainNodeScope.mjs` (`c8b3a9ed`) reads `.html` as data, so a script written inline
+  in a page is not scanned for Electron imports. Measured: the one HTML page under `scripts/` carries none, and loads
+  `page.mjs` by `src`, which is scanned. A limit of the scan, true today and not watched.
+- **DDDDDDDDD-11** (low, open) — the same proof restores `globalThis.fetch` inline rather than in a `finally`, so a throw
+  between the stub and the restore leaves later cases stubbed.
+- `hasSelection`'s removal (`0282c46b`) rested on its message's *no production command reads it*: measured at
+  `0282c46b^`, the field had one writer (`App.tsx:5048`) and its declaration, and no reader.
+
+### Open, carried to the merged walk
+
+- **DDDDDDDDD-12** (medium) — once in three live runs, an Open press after Settings opened nothing; three rehearsals of
+  that order without a key opened every time. Not explained.
+- **DDDDDDDDD-13** (medium, for item 8) — a placed field is selected 1.2 to 5.6 s after the press, and four arrow nudges
+  are written by about 0.9 s while the field stands still and then moves all 4 px at once, at 1.3 to 6.9 s: in both builds.
+- **DDDDDDDDD-14** (medium) — Split view, in both builds: both halves share one zoom, a landscape page overflows its
+  half, and Fit page and Fit width do nothing there.
+- **DDDDDDDDD-15** (medium) — the text walk's 9a: a word typed on a recognised printed scan is drawn in a small mono face
+  over the picture's words, and its write did not settle in 120 s; L2: one underline read back absent in one run of two.
+- **DDDDDDDDD-16** (low, item 8) — **seven cases that fail only under load**, each passing alone: `formFieldScale`'s
+  2,000-field form (5.7 and 6.5 s), `pageLinks`' 4,200 links (5.3 s), `formText`'s bounded read (1,942 ms against
+  1,000), `SettingsBody`'s key removal (5.4 to 6.3 s, with and without the change in hand), and four App and AppClose
+  cases at vitest's 20 s, in runs of 138 to 446 files. No limit was changed.
+- **DDDDDDDDD-17** (low) — `aiTranslateWalk.mjs` has not passed and has made no translation call; it asserts nothing yet.
+
+**Item 3, would CI have caught it:** DDDDDDDDD-1's and -3's kernel and UI cases run in CI; the walks (-2's rendered case
+aside) do not, and nothing in CI holds the app's own close question or the live AI path. **Item 6:** ADR-0284 was
+proposed before cloud-43's build and accepted by the owner after it; ADR-0285, for the pack's walk gate, is written
+before its build. **Item 7:** no document claimed Translate used the first model; one test name said it and now says the
+default, which is the same model only where the default is the first.
+
+---
+
 ## 2026-11-02 — The full walk of main at `808e897c`: where it stands (paused, not finished)
 
 The reviewer's full walk of everything since 1.1.2610.0 (133 commits, runs 26 to 30 and cloud-18 to cloud-37), on

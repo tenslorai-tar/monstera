@@ -85,7 +85,7 @@ function answeringClient(): ContractClient {
   };
   const answers: Readonly<Record<string, () => unknown>> = {
     'document.openSeveral': document,
-    'document.viewModel': () => ({ version: asDocVersion(1), pageCount: 1, rotations: [0] }),
+    'document.viewModel': () => ({ version: asDocVersion(1), pageCount: 1, rotations: [0], direction: 'L2R' as const }),
     'document.readRange': () => ({ kind: 'bytes' as const, bytes: new Uint8Array(8) }),
     'document.pageTextLayer': () => ({ version: asDocVersion(1), lines: [], truncated: false, kind: 'empty' as const }),
     'window.closeListening': () => ({ acknowledged: true }),

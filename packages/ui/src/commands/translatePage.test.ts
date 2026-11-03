@@ -123,7 +123,7 @@ async function run(options: {
 }
 
 describe('translatePageCommand', () => {
-  it('asks, translates with the provider’s first model, and writes the answer as ONE editTextBlock', async () => {
+  it('asks, translates with the provider’s default model, and writes the answer as ONE editTextBlock', async () => {
     const { sent, said, applied } = await run({});
     expect(sent).toStrictEqual([
       { id: 'ai.models', params: { provider: 'openai' } },
