@@ -61,6 +61,40 @@ function listedCommands() {
 }
 
 /**
+ * What a state-setting command is run after, so its state does not hold already: each is the registered command a
+ * person would have used to get somewhere else first.
+ */
+const AWAY_FROM = /** @type {Readonly<Record<string, readonly string[]>>} */ ({
+  'view.theme-system': ['view.theme-dark'],
+  'view.theme-light': ['view.theme-dark'],
+  'view.theme-dark': ['view.theme-light'],
+  'view.layout-ribbon': ['view.layout-studio'],
+  'view.page-layout-continuous': ['view.page-layout-facing'],
+  'view.actual-size': ['view.zoom-in'],
+  'view.page-first': ['view.page-last'],
+  'view.page-previous': ['view.page-last'],
+  'view.go-back': ['view.page-last'],
+});
+
+/**
+ * What puts the WINDOW back after a command that changes it, because a view setting belongs to the window and outlives
+ * the tab: in the full run of 2026-11-03 the steps after Show grid and Dim pages ran on a dimmed page under a grid, and
+ * the loupe's step saw nothing it could judge. A switch is pressed again; a choice goes back to its setting's fallback
+ * (`appearance.ts` system, `layout.ts` ribbon, `viewing.ts` continuous).
+ */
+const SWITCHES = ['view.toggle-dark-page', 'view.toggle-grid', 'view.toggle-rulers', 'view.toggle-loupe', 'view.toggle-field-highlight', 'view.toggle-quick-toolbar', 'view.toggle-context-panel', 'view.toggle-panel', 'view.toggle-split', 'view.cover-page'];
+const PUT_BACK = /** @type {Readonly<Record<string, readonly string[]>>} */ ({
+  ...Object.fromEntries(SWITCHES.map((id) => [id, [id]])),
+  'view.theme-dark': ['view.theme-system'],
+  'view.theme-light': ['view.theme-system'],
+  'view.layout-studio': ['view.layout-ribbon'],
+  'view.layout-focus': ['view.layout-ribbon'],
+  'view.page-layout-facing': ['view.page-layout-continuous'],
+  'view.page-layout-pair': ['view.page-layout-continuous'],
+  'view.page-layout-single': ['view.page-layout-continuous'],
+});
+
+/**
  * Commands whose dialog runs ANOTHER registered command, and the question that command asks when it runs: Convert a
  * scan's first row runs Make scanned pages searchable (`CONVERT_SCAN_TARGETS.searchable`), which answers with a result
  * dialog. The question is what ties the two: a walk that took this entry without seeing it would be judging a command
@@ -131,13 +165,14 @@ async function walkDocument() {
         cells.forEach((cell, column) => page.drawText(cell, { x: left + column * width + 6, y: top - row * height - 17, size: 11, font })),
       );
     }
-    // A COMMENT on page 3: what Export comments writes and Import comments takes back. With none, the export was empty
-    // and the import answered rightly that there was nothing in it (2026-11-03).
-    if (number === 3) {
+    // A COMMENT on page 1, clear of the words: what Export comments writes and Import comments takes back, and what
+    // Select all selects on the page on show. With none, the export was empty and the import answered rightly that
+    // there was nothing in it; on page 3, Select all had nothing to select on page 1 (2026-11-03).
+    if (number === 1) {
       const note = document.context.obj({
         Type: 'Annot',
         Subtype: 'Text',
-        Rect: [72, 600, 92, 620],
+        Rect: [520, 740, 540, 760],
         Contents: PDFString.of("The walk's comment"),
         T: PDFString.of('Walk'),
       });
@@ -219,8 +254,20 @@ const toastAfter = async (before) => {
 
 const unsaved = async () => (await page.getByText('Unsaved changes', { exact: true }).count()) > 0;
 
+/**
+ * Dismisses any modal left open, whether or not it is a registry dialog: the command palette is the Dialog primitive
+ * with no id, and the step after Command palette could not reach Open PDF beneath it (2026-11-03).
+ */
+async function dismissModals() {
+  for (let modal = 0; modal < 4 && (await page.locator('.m-dialog').count()) > 0; modal += 1) {
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(300);
+  }
+}
+
 /** Every tab closed, a close question answered "Don't save": the next step starts with nothing open. */
 async function closeAll() {
+  await dismissModals();
   for (let tab = 0; tab < 12; tab += 1) {
     if ((await page.locator('.m-status-name').count()) === 0) return;
     await page.keyboard.press('Control+W');
@@ -293,6 +340,8 @@ function fingerprint() {
       selected: String(/** @type {any} */ (globalThis).getSelection?.() ?? ''),
       dialogs: texts('[data-dialog]'),
       panels: texts('[role="tabpanel"]:not([hidden])').length,
+      // WHICH PANE HOLDS THE FOCUS, by its own `data-pane`: F6 and Shift+F6 move nothing else (`paneCommands.ts`).
+      pane: d.activeElement?.closest('[data-pane]')?.getAttribute('data-pane') ?? '',
       // WHAT IS DRAWN, by kind: every class of every element with a size, so a part that comes or goes with no button
       // pressed and no word changed (the rulers, a panel, a bar) is seen; the walk's second trial read Show rulers as
       // nothing shown. The palette, toasts and tooltips are a step's own furniture, and left out.
@@ -311,13 +360,25 @@ function fingerprint() {
 }
 
 /**
+ * Returns once no task is running, up to two minutes. A command that runs as a task says it is working and answers
+ * when it ends, so its answer is waited for rather than read while it runs: PDF/A's export was read at "Exporting to
+ * PDF/A…" (2026-11-03). One rule for the step and for the dialogs, so neither reads a running task as an answer.
+ */
+async function tasksEnded() {
+  for (let waited = 0; waited < 120 && (await page.locator('.m-toast--task').count()) > 0; waited += 1) await page.waitForTimeout(1000);
+}
+
+/**
  * Answers what the command asks, as a hand does, until nothing more is asked: the primary button, else a danger one,
- * else Escape. Records every dialog met, and a `-problem` one as the failure it is.
+ * else the first row's button, else Escape. Records every dialog met, and a `-problem` one as the failure it is.
  * @param {string[]} met
  */
 async function answerQuestions(met) {
   for (let round = 0; round < 6; round += 1) {
     await page.waitForTimeout(700);
+    // A QUESTION ASKED AGAIN AFTER A TASK: Save a smaller copy measures, then asks once more with the size it measured.
+    // Read while the measuring ran, no dialog was open and the walk stopped answering (2026-11-03).
+    await tasksEnded();
     const id = await openDialog();
     if (id === null) return;
     met.push(id);
@@ -489,6 +550,29 @@ async function prepare(id) {
     await run('view.go-back');
     return;
   }
+  // A COMMAND THAT SETS A STATE starts from another one, or it is run where its state already holds and rightly
+  // changes nothing: the full run of 2026-11-03 asked for page 1 on page 1, the Ribbon in the Ribbon, 100% at 100%.
+  const away = AWAY_FROM[id];
+  if (away !== undefined) {
+    for (const each of away) await run(each);
+    return;
+  }
+  if (id === 'view.reset-float-bar') {
+    // MOVED BY ITS GRIP, as a hand moves it, so there is a position to reset.
+    const grip = await page.locator('.m-quick-toolbar__grip').first().boundingBox().catch(() => null);
+    if (grip === null) throw new Error('no Float bar grip was drawn, so there was no position to move and reset');
+    await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(grip.x + 300, grip.y + 120, { steps: 10 });
+    await page.mouse.up();
+    await page.waitForTimeout(500);
+    return;
+  }
+  if (id === 'document.clear-recent') {
+    // THE RECENT FILES ARE DRAWN ON THE START SCREEN, so that is where clearing them is seen.
+    await closeAll();
+    return;
+  }
   if (id === 'document.restore-version') {
     // A VERSION IS KEPT EACH TIME A FILE IS SAVED OVER, so an edit is saved over the walk's copy first.
     if (rotate !== undefined) await run(rotate.id);
@@ -599,9 +683,14 @@ for (const command of commands) {
       // A COMMAND THAT DRAWS UNDER THE POINTER (the loupe) shows nothing until the pointer is over the page, as a hand's is.
       if (command.id === 'view.toggle-loupe') await pointerOverPage();
       await page.waitForTimeout(1500);
-      // A COMMAND THAT RUNS AS A TASK says it is working and answers when it ends: its answer is waited for, up to two
-      // minutes, rather than read while it runs (PDF/A's export was read at "Exporting to PDF/A…", 2026-11-03).
-      for (let waited = 0; waited < 120 && (await page.locator('.m-toast--task').count()) > 0; waited += 1) await page.waitForTimeout(1000);
+      await tasksEnded();
+      // A QUESTION THAT OPENED LATE, after the answering had stopped looking: Convert text to curves' dialog, behind a
+      // PDF/A export still finishing, opened after the first 700 ms and was judged as nothing shown (2026-11-03).
+      for (let late = 0; late < 3 && (await openDialog()) !== null && !met.some((id) => /-problem$/u.test(id)); late += 1) {
+        await answerQuestions(met);
+        await page.waitForTimeout(1500);
+        await tasksEnded();
+      }
       page.off('pageerror', onError);
       const toast = await toastAfter(before.toasts);
       const end = await settledFingerprint();
@@ -649,6 +738,17 @@ for (const command of commands) {
     },
     { covers: [command.id] },
   );
+  // THE WINDOW PUT BACK, after the step and outside it, so its result stays the command's own; a put-back that fails
+  // is a step of its own, and names what the next steps would otherwise run under.
+  const back = PUT_BACK[command.id];
+  if (back !== undefined) {
+    try {
+      await dismissModals();
+      for (const each of back) await run(each);
+    } catch (error) {
+      await step(`${command.id}: the window was not put back`, () => Promise.reject(error));
+    }
+  }
 }
 
 // THE WALK STARTED NOTHING OUTSIDE ITSELF: a route to Windows the recorders above miss would open a file in whatever
