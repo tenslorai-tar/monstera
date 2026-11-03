@@ -985,6 +985,65 @@ Guards=failure, CI=failure*, and nobody had read it. That is AAAA-29's exact sha
 tell you where its checks run*. The rule it costs is the one CLAUDE.md already states, *answer it from a RUN*, and the
 board is now read before an audit's item 3 is written.
 
+**Correction, 2026-11-03: the checklist, item by item.** The entry above answered several items in prose and named no
+item headings, which `check:docs` refuses (RRRR-1, `unansweredAuditItems`) and which failed both Guards legs of
+`bbb29f5e`. The answers, each explicitly:
+
+#### 1. Root cause or workaround
+
+Every fix in the range states its mechanism in its commit: DDDDDDDDD-1 (white space dropped at a paragraph's end),
+-2 (the layer stacked over the note), -3 (a fourth caller's spelling of the model rule), -4 (three semantic conflicts),
+-5 (each instrument's blind state). None is an override, a raised limit or a loosened check; DDDDDDDDD-16's seven
+load-sensitive cases were recorded and no limit was changed.
+
+#### 2. Verified against the easy shape only
+
+DDDDDDDDD-1's kernel case covers the operator writer only; the PDFium writer's shape is covered by the regression walk's
+step 15, which no CI job runs. The merges' tests were run as `vitest related` per merge, not the whole suite.
+
+#### 2a. Has a change to how something is proven moved coverage
+
+Yes, and stated: DDDDDDDDD-8 (the stopwatch removed, the count bounding kept placements, not visits), -9 (the fonts
+proof off the network) and -10 (HTML pages read as data).
+
+#### 3. Would CI have caught it
+
+Answered wrongly in the entry and corrected above: CI had caught both af4f73d9's and 5e04735b's faults; the walks do not
+run in CI, and nothing there holds the app's close question or the live AI path.
+
+#### 4. Are the proofs non-vacuous
+
+The 97 modified proofs were read by three reviewers for loosened checks, and none was found. DDDDDDDDD-1's and -3's cases
+were run red on the code before their fixes.
+
+#### 4a. Has every instrument passed a resolution test
+
+No new measuring instrument decides a figure in this range beyond the walks' timings, which are recorded, not judged;
+the FLICKER step's resolution margin (`004854af`) is the one resolution stated.
+
+#### 4b. Is the instrument a search, with a positive control
+
+DDDDDDDDD-5's six instruments were each blind first. The deep forms walk's note read now has its expected note as its
+control; the record's command read has `document.save` as its own.
+
+#### 4c. Does a check derive its extent from the set it governs
+
+`walkRecord.mjs` takes its rows from the checklist the registry generates, and the danger there is a SHRINK (a command
+left out), so the count is compared with the registry's, and a command the record lacks is refused.
+
+#### 5. Executed or asserted
+
+DDDDDDDDD-17: `aiTranslateWalk.mjs` asserts nothing yet. DDDDDDDDD-12 is a single observation.
+
+#### 6. Did architecture change before the feature
+
+ADR-0284 was proposed before cloud-43's build; ADR-0285 was committed before its gate.
+
+#### 7. Do the documents still match the code
+
+One test name changed to say the default model; CLAUDE.md's MSIX rule says the refusal is built in the commit that
+built it.
+
 ---
 
 ## 2026-11-02 — The full walk of main at `808e897c`: where it stands (paused, not finished)
