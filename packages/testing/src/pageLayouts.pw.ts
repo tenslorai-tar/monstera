@@ -4,6 +4,7 @@ import { type Page, expect, test } from '@playwright/test';
 
 import type { ShimFormField } from './browserShim.js';
 import { bridge } from './pageBridge.js';
+import { installRenderCounter, rendersOf, startCounting, stopCounting } from './renderCounter.js';
 
 /**
  * The page layouts in a real browser (ADR-0284): where the cover page stands, the View menu's control, selecting text and
@@ -127,6 +128,28 @@ test.describe('page layouts (ADR-0284)', () => {
     await expect.poll(async () => (await slots(page)).map((each) => each.page)).toStrictEqual([2, 3]);
     const after = await slots(page);
     expect(after[0]?.left ?? 0).toBeGreaterThan(after[1]?.left ?? 0);
+  });
+
+  test('a switch to Single page and back RENDERS NO PAGE SLOT, whose pages keep their size, and still hides and shows them', async ({ page }) => {
+    await installRenderCounter(page, { slot: '.m-page-list [data-page]' });
+    await opened(page, {});
+    expect((await slots(page)).length).toBe(PAGES);
+    for (const [name, shown] of [
+      ['Single page', 1],
+      ['Continuous', PAGES],
+    ] as const) {
+      await page.getByRole('menubar').getByRole('menuitem', { name: 'View', exact: true }).click();
+      await startCounting(page);
+      await page.getByRole('menuitemcheckbox', { name, exact: true }).click();
+      // CONTROL: the switch happened, and the slots out of the layout are out of it, which the list writes.
+      await expect.poll(async () => (await slots(page)).length).toBe(shown);
+      await page.waitForTimeout(300);
+      const counts = await stopCounting(page);
+      // THE CASE: no slot rendered for a switch that only hides or shows slots (39 a switch before, measured).
+      expect(rendersOf(counts, 'slot', -1) + rendersOf(counts, 'slot', 0)).toBe(0);
+      // AND THE COUNTER COUNTED: the list itself committed, so a walk that entered nothing would not pass as quiet.
+      expect(counts.commits).toBeGreaterThan(0);
+    }
   });
 
   test('the View menu’s Facing shows one pair, and Next page moves to the next pair', async ({ page }) => {
