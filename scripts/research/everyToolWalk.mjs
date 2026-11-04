@@ -1322,6 +1322,11 @@ for (const command of commands) {
         await page.waitForTimeout(1500);
         await tasksEnded();
       }
+      // EVERY WRITE THE STEP MADE, LANDED, before anything is judged: a command's write is counted in flight until main
+      // answers (`inFlight.ts`), and Bates numbering's took 3.4 to 4.2 s and Headers and footers' 6.2 s on their first use,
+      // so a step judged at its fixed moment read the document unchanged and saved no copy (the clean build's walk of
+      // 2026-11-04, failing in one run and passing in the next).
+      await writesIdle(page);
       // THE ANSWER THE COMMAND DECLARES, waited for: a command that answers with a toast and runs no task notice is a
       // request in flight until it does, and read at a fixed moment Import comments from JSON's 4.5 s request was judged
       // as nothing shown while it was still running (the final walk of 2026-11-04). The toasts are recorded as they come
