@@ -30,8 +30,9 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, relative } from 'node:path';
 
 import { repoRoot } from '../lib/gitScope.mjs';
 import { workspaceAliases, workspacePackages } from '../lib/workspaceAliases.mjs';
@@ -74,6 +75,43 @@ function run(bin, args) {
     ok: result.status === 0,
     output: `${result.stdout ?? ''}${result.stderr ?? ''}`,
   };
+}
+
+/**
+ * A vitest run's JSON results, read: each file's span, and each case that did not pass with its duration. `null`
+ * where the file is missing or unreadable, which the case that requires it reports.
+ * @param {string} path
+ * @returns {{ files: { name: string, ms: number }[], failed: { name: string, ms: number, message: string }[] } | null}
+ */
+function readRun(path) {
+  try {
+    /** @type {{ testResults?: { name: string, startTime?: number, endTime?: number, assertionResults?: { fullName?: string, title?: string, status?: string, duration?: number, failureMessages?: string[] }[] }[] }} */
+    const parsed = JSON.parse(readFileSync(path, 'utf8'));
+    const tests = parsed.testResults ?? [];
+    return {
+      files: tests.map((file) => ({ name: relative(ROOT, file.name).replaceAll('\\', '/'), ms: (file.endTime ?? 0) - (file.startTime ?? 0) })),
+      failed: tests.flatMap((file) =>
+        (file.assertionResults ?? [])
+          .filter((each) => each.status === 'failed')
+          .map((each) => ({
+            name: `${relative(ROOT, file.name).replaceAll('\\', '/')} > ${each.fullName ?? each.title ?? ''}`,
+            ms: Math.round(each.duration ?? 0),
+            message: (each.failureMessages?.[0] ?? '').split('\n')[0] ?? '',
+          })),
+      ),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** What a failed run says about itself: its failed cases and durations, then its six slowest files. @param {NonNullable<ReturnType<typeof readRun>>} results */
+function describeRun(results) {
+  const slowest = [...results.files].sort((a, b) => b.ms - a.ms).slice(0, 6);
+  return (
+    `Failed: ${results.failed.map((each) => `${each.name} (${String(each.ms)} ms: ${each.message.slice(0, 120)})`).join('; ') || 'none'}.\n      ` +
+    `Slowest files: ${slowest.map((each) => `${each.name} ${String(each.ms)} ms`).join(', ')}.`
+  );
 }
 
 const VITEST = join('node_modules', 'vitest', 'vitest.mjs');
@@ -162,12 +200,24 @@ try {
       'utf8',
     );
 
-    const fixed = run(VITEST, ['run']);
+    // THE RUN'S OWN RESULTS, kept beside its output: main's CI at c5737c5b failed this case on windows-latest with two
+    // cases past their limits (a composition case that takes 118 ms here, and a synchronous cleanup hook), and the
+    // 1,600 characters of tail this kept could not say what was slow, or whether the whole run was (2026-11-04). The
+    // failure now names each failed case with its duration and the slowest files, so its next occurrence is evidence.
+    const report = join(mkdtempSync(join(tmpdir(), 'monstera-test-resolution-')), 'rerun.json');
+    const fixed = run(VITEST, ['run', '--reporter=default', '--reporter=json', `--outputFile.json=${report}`]);
+    const results = readRun(report);
+    check(
+      'the rerun wrote its own results, naming the suite\'s files, so a failure below can say what was slow',
+      results !== null && results.files.length >= 100,
+      `read ${results === null ? 'nothing' : `${String(results.files.length)} files`} from ${report}`,
+    );
     check(
       'the suite passes with a poisoned dist — nothing resolved through build output',
       fixed.ok && !fixed.output.includes(POISON_MARKER),
-      `exit ok=${fixed.ok}. Tail:\n${fixed.output.slice(-1600)}`,
+      `exit ok=${fixed.ok}. ${results === null ? '' : `${describeRun(results)}\n`}Tail:\n${fixed.output.slice(-1600)}`,
     );
+    rmSync(dirname(report), { recursive: true, force: true });
 
     // The control. Same poison, same suite, aliases pointed where they pointed
     // before the fix. This must FAIL, and must fail by loading the poison
