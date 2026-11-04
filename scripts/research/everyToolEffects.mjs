@@ -225,6 +225,12 @@ export const SCANNED_WORDS = 'MONSTERA SCANNED PAGE';
  * @type {Readonly<Record<string, string>>}
  */
 export const LINK_TYPED = { 'annotate.link-address': 'https://example.org/walk', 'annotate.link-page': '2' };
+/**
+ * A word a tool's words are typed as where the walk's own words would not separate anything: "walk" is on every page of
+ * the walk's document already.
+ * @type {Readonly<Record<string, string>>}
+ */
+export const TYPED_WORD = { 'text.add': 'Quillfeather' };
 
 /**
  * @typedef {{ before: Reading, prepared: Reading | null, after: Reading | null, outputs: string[], read: (path: string) => Promise<Reading | null> }} EffectContext
@@ -519,6 +525,10 @@ export const EFFECTS = {
   'annotate.measure-distance': addsMark('Line'),
   'annotate.sticky-note': addsMark('Text'),
   'annotate.stamp': addsMark('Stamp'),
+  'annotate.eraser': saved((before, after) => ((after.marks['Text'] ?? 0) < (before.marks['Text'] ?? 0) ? null : `the note is still there: ${JSON.stringify(after.marks)}`)),
+  // A PICTURE PLACED, as a mark carrying it or drawn on the page.
+  'annotate.image': saved((before, after) => (allMarks(after) > allMarks(before) || after.images > before.images ? null : `no new mark and no new picture: ${JSON.stringify(after.marks)}`)),
+  'text.add': saved((before, after) => (after.texts.join(' ').includes(TYPED_WORD['text.add'] ?? '') && !before.texts.join(' ').includes(TYPED_WORD['text.add'] ?? '') ? null : `the typed word is not on any page: ${JSON.stringify((after.texts[0] ?? '').slice(0, 160))}`)),
   // A LINK THAT GOES WHERE IT WAS TOLD, read the way a reader follows it: the address or page the walk typed (`LINK_TYPED`).
   'annotate.link-address': saved((before, after) => (after.links.filter((each) => each === `uri:${LINK_TYPED['annotate.link-address']}`).length > before.links.filter((each) => each === `uri:${LINK_TYPED['annotate.link-address']}`).length ? null : `no new link to the typed address: ${JSON.stringify(after.links)}`)),
   'annotate.link-page': saved((before, after) => (after.links.filter((each) => each === `page:${LINK_TYPED['annotate.link-page']}`).length > before.links.filter((each) => each === `page:${LINK_TYPED['annotate.link-page']}`).length ? null : `no new link to the typed page: ${JSON.stringify(after.links)}`)),

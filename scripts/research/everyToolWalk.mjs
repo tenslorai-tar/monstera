@@ -37,7 +37,7 @@ import { PDFDocument, PDFString, StandardFonts, rgb } from '@cantoo/pdf-lib';
 import { expect } from '@playwright/test';
 import { zipSync } from 'fflate';
 
-import { ADDED_FIRST, EFFECTS, LINK_TYPED, outputsOf, readPdf, respondedWhy, scannedPageDocument } from './everyToolEffects.mjs';
+import { ADDED_FIRST, EFFECTS, LINK_TYPED, TYPED_WORD, outputsOf, readPdf, respondedWhy, scannedPageDocument } from './everyToolEffects.mjs';
 import { WALK_WINDOW, appRootOption, root, startWalk } from './liveWalk.mjs';
 import { editTextOpening } from './textWalkSteps.mjs';
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
@@ -980,7 +980,7 @@ async function pointerOverPage() {
 /**
  * How a hand uses each tool once it is on, on page 1's blank band right of the shapes and below the fields (in PDF
  * points: 330 to 540 across, 200 to 320 up), or across the first paragraph's words for a tool that marks words.
- * @type {Readonly<Record<string, 'drag' | 'click' | 'poly' | 'ink' | 'words'>>}
+ * @type {Readonly<Record<string, 'drag' | 'click' | 'poly' | 'ink' | 'words' | 'note'>>}
  */
 const GESTURES = {
   ...Object.fromEntries(
@@ -991,8 +991,15 @@ const GESTURES = {
   ...Object.fromEntries(['sticky-note', 'typewriter', 'caret'].map((name) => [`annotate.${name}`, 'click'])),
   ...Object.fromEntries(['polygon', 'polyline', 'measure-area', 'measure-perimeter'].map((name) => [`annotate.${name}`, 'poly'])),
   'annotate.ink': 'ink',
+  // THE ERASER PRESSED ON THE WALK'S NOTE, which it takes away; a picture drawn as a box; added text placed by a press.
+  'annotate.eraser': 'note',
+  'annotate.image': 'drag',
+  'text.add': 'click',
   ...Object.fromEntries(['highlight', 'underline', 'strikeout', 'redact-text'].map((name) => [`annotate.${name}`, 'words'])),
 };
+
+/** The tools whose gesture always opens words to type in. */
+const OPENS_WORDS = new Set(['text.add', 'annotate.text-box', 'annotate.callout', 'annotate.typewriter', 'annotate.link-address', 'annotate.link-page']);
 
 /** A point of page 1 in the window, from PDF points. @param {number} x @param {number} y */
 async function pagePoint(x, y) {
@@ -1006,7 +1013,7 @@ async function pagePoint(x, y) {
  * The gesture a tool takes, made the way a hand makes it: pressed, moved in steps, released. A tool that opens words of
  * its own to type in is given one and ended with Escape, its own way out — except a link's line, which answers only an
  * address or a page its rule passes and is ended with Enter: the walk's word and Escape placed no link (2026-11-04).
- * @param {'drag' | 'click' | 'poly' | 'ink' | 'words'} gesture
+ * @param {'drag' | 'click' | 'poly' | 'ink' | 'words' | 'note'} gesture
  * @param {string} id the command that switched the tool on
  */
 async function useTool(gesture, id) {
@@ -1023,9 +1030,17 @@ async function useTool(gesture, id) {
     }
     await page.mouse.up();
   };
+  // ADD TEXT'S SURFACE, which is what its press lands on, arrives after the tool is on: absent 1.5 s after a first Add
+  // text, present 1.5 s after a later one (trial of 2026-11-04), and a press before it fell on Edit text's layer and
+  // placed nothing. Waited for, as `textAdd.pw.ts` waits; the delay is a finding of its own, not the walk's to hide.
+  if (id === 'text.add') await expect(page.locator('[data-text-add-surface]').first()).toBeVisible({ timeout: 30_000 });
   if (gesture === 'drag') await stroke([[340, 310], [500, 220]]);
   if (gesture === 'ink') await stroke([[340, 300], [380, 240], [430, 300], [480, 240], [520, 300]]);
   if (gesture === 'words') await stroke([[74, 684], [290, 684]]);
+  if (gesture === 'note') {
+    const at = await pagePoint((COMMENT_RECT[0] + COMMENT_RECT[2]) / 2, (COMMENT_RECT[1] + COMMENT_RECT[3]) / 2);
+    await page.mouse.click(at.x, at.y);
+  }
   if (gesture === 'click') {
     const at = await pagePoint(420, 260);
     await page.mouse.click(at.x, at.y);
@@ -1040,16 +1055,27 @@ async function useTool(gesture, id) {
     await page.mouse.dblclick(last.x, last.y);
   }
   await page.waitForTimeout(800);
-  // WORDS OF ITS OWN, where the tool opened some: a text box, a typewriter line, a note's words.
-  const typing = await page.evaluate(() => {
-    const active = /** @type {{ document: { activeElement: { tagName: string, isContentEditable: boolean } | null } }} */ (/** @type {unknown} */ (globalThis)).document.activeElement;
-    return active !== null && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT' || active.isContentEditable);
-  });
+  // WORDS OF ITS OWN, where the tool opened some: a text box, a typewriter line, a note's words. A tool that always opens
+  // words is waited for, up to 5 s, as `textAdd.pw.ts` waits for its editor's focus: Add text's first use prepares its
+  // faces first (1.7 s in the log of 2026-11-04), and read once at 800 ms it had opened nothing yet, so nothing was typed.
+  const focused = () =>
+    page.evaluate(() => {
+      const active = /** @type {{ document: { activeElement: { tagName: string, isContentEditable: boolean } | null } }} */ (/** @type {unknown} */ (globalThis)).document.activeElement;
+      return active !== null && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT' || active.isContentEditable);
+    });
+  let typing = await focused();
+  for (let waited = 0; !typing && OPENS_WORDS.has(id) && waited < 5000; waited += 250) {
+    await page.waitForTimeout(250);
+    typing = await focused();
+  }
   if (typing) {
     const typed = LINK_TYPED[id];
-    await page.keyboard.type(typed ?? 'walk');
+    await page.keyboard.type(typed ?? TYPED_WORD[id] ?? 'walk');
     await page.keyboard.press(typed === undefined ? 'Escape' : 'Enter');
     await page.waitForTimeout(800);
+    // THE EDITOR CLOSED, which is when its words are written: Add text's finish embeds a face and took longer than the
+    // walk's 800 ms, so the save that followed found nothing unsaved (2026-11-04). Waited as corpus 48's check waits.
+    await expect(page.locator('[data-kit-surface]')).toHaveCount(0, { timeout: 60_000 });
   }
 }
 
