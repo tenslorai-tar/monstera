@@ -283,6 +283,22 @@ function fitWords(spans: readonly HTMLElement[], starts: ReadonlyMap<HTMLElement
     }),
   }));
   if (groups.some(({ word, spans: own }) => own.reduce((sum, span) => sum + span.textContent.length, 0) !== word.to - word.from)) return false;
+  // THE SPACES BETWEEN TWO PLACES, fitted to the gap the page draws there: no place covers a space, so it kept the
+  // stand-in's own width, and the next place's margin put that place right while the space's END stood off — Courier's
+  // stand-in draws a space 0.05 em narrower, and a caret at the end of one stood 0.60 pt short at 12 pt (Chromium 151,
+  // `editTextCaret.pw.ts`' end side, 2026-11-04). A gap the page draws as nothing or less is left to the margin.
+  const placedSpans = new Set(groups.flatMap(({ spans: own }) => own));
+  const gaps = groups.slice(1).flatMap((after, at) => {
+    const before = groups[at];
+    if (before === undefined) return [];
+    const width = after.word.x0 - before.word.x1;
+    const own = spans.filter((span) => {
+      const from = starts.get(span) ?? -1;
+      return !placedSpans.has(span) && span.textContent.length > 0 && from >= before.word.to && from + span.textContent.length <= after.word.from;
+    });
+    const letters = own.reduce((sum, span) => sum + span.textContent.length, 0);
+    return width > 0 && letters > 0 && letters === after.word.from - before.word.to ? [{ spans: own, width, letters }] : [];
+  });
   const rangeOf = (own: readonly HTMLElement[]): Range | undefined => {
     const first = own[0]?.firstChild;
     const last = own.at(-1)?.firstChild;
@@ -299,8 +315,21 @@ function fitWords(spans: readonly HTMLElement[], starts: ReadonlyMap<HTMLElement
     const range = rangeOf(own);
     return range === undefined ? 0 : along.length(range.getBoundingClientRect());
   });
+  const gapNaturals = gaps.map(({ spans: own }) => {
+    const range = rangeOf(own);
+    return range === undefined ? 0 : along.length(range.getBoundingClientRect());
+  });
   // NO LAYOUT, NOTHING TO FIT: a document with no layout engine measures every range as nothing.
   if (naturals.some((natural) => !(natural > 0))) return false;
+  for (const [at, { spans: own, width, letters }] of gaps.entries()) {
+    const natural = gapNaturals[at] ?? 0;
+    if (!(natural > 0)) continue;
+    const extra = (width * zoom - natural) / letters;
+    for (const span of own) {
+      const mine = span.dataset['kitSpacing'] ?? '';
+      span.style.letterSpacing = mine === '' ? `${String(extra)}px` : `calc(${mine} + ${String(extra)}px)`;
+    }
+  }
   // EACH PLACE AS WIDE AS THE PAGE DRAWS IT.
   for (const [at, { word, spans: own }] of groups.entries()) {
     const extra = ((word.x1 - word.x0) * zoom - (naturals[at] ?? 0)) / (word.to - word.from);

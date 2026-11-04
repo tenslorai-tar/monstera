@@ -6745,6 +6745,11 @@ optgroup {
 .m-kit__paragraph--as-drawn {
   white-space: pre;
   overflow-wrap: normal;
+  /* NO KERNING OF THE STAND-IN'S OWN: the page places each letter (`fitDrawnLines`), its own kerning in those places, and
+     the browser kerned across the letters' spans as well, so a letter's END stood off by the pair's kern while the next
+     letter's margin put its start right: a caret pressed after Times' "W" of "Wa" stood 1.94 pt short at 24 pt, and
+     0.023 pt with this (Chromium 151, `editTextCaret.pw.ts`' end side, 2026-11-04). Inherited, so every span takes it. */
+  font-kerning: none;
 }
 
 .m-kit__paragraph--as-drawn,

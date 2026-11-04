@@ -20,6 +20,13 @@ import { LOOKS, bridgeUnder } from './pageBridge.js';
  * THE CASE FAILS ON THE CODE BEFORE THE FIX: that code placed a line by its words, which is exactly what the words with
  * no edges give, and `CONTROL: by words alone` shows it misses the tolerance (1.25 pt in Times, 0.44 pt in Helvetica). On a
  * page turned a quarter it also measured the line across its letters, 9 to 11 pt off whatever the face (`alongLine`).
+ *
+ * CORRECTED 2026-11-04: most of those 1.25 and 0.44 pt were the BROWSER'S KERNING, not the stand-in's letter widths.
+ * The stand-ins here are the page's faces' metric twins, and with the as-drawn paragraph's kerning off (`app.css`) a line
+ * placed by its words alone stands within 0.03 pt in Times and Helvetica. Where the stand-in is NOT the page's face — a
+ * drawn font, or any font the browser cannot be given — its letter widths do differ, and the letter edges still decide:
+ * `CONTROL: by words alone` now draws Helvetica's letters in the serif stand-in, which is that case. Both sides of every
+ * boundary are read since that day (`caretShares`), and the end side is where the kerning and Courier's spaces stood off.
  */
 
 const ID = asDocId('00000000-0000-4000-8000-0000000000e7');
@@ -38,7 +45,11 @@ interface Opened {
   readonly right: number;
 }
 
-async function open(page: Page, face: Face, options: { readonly widths: boolean; readonly turn: 0 | 90; readonly edges: boolean }): Promise<Opened> {
+async function open(
+  page: Page,
+  face: Face,
+  options: { readonly widths: boolean; readonly turn: 0 | 90; readonly edges: boolean; readonly css?: string; readonly serifStandIn?: boolean },
+): Promise<Opened> {
   const pdf = await PDFDocument.create();
   const font = await pdf.embedFont(StandardFonts[face]);
   const drawn = pdf.addPage([612, 792]);
@@ -65,7 +76,8 @@ async function open(page: Page, face: Face, options: { readonly widths: boolean;
     return { from, to, x0: pen[from] ?? LEFT, x1: pen[to] ?? right, ...(options.edges ? { edges: pen.slice(from, to + 1) } : {}) };
   });
   const box = { x0: LEFT, y0: BASELINE - 3, x1: right, y1: BASELINE + 9 };
-  const kind = { serif: face === 'TimesRoman', mono: face === 'Courier' };
+  // THE STAND-IN THE STYLE NAMES: the page's face's metric twin, or, asked for, a serif face over letters that are not.
+  const kind = { serif: options.serifStandIn ?? face === 'TimesRoman', mono: face === 'Courier' };
   const style = { size: SIZE, colour: { r: 0, g: 0, b: 0 }, ...kind, italic: false, bold: false } as const;
   await page.setViewportSize({ width: 1800, height: 1100 });
   await bridgeUnder(page, LOOKS[0], {
@@ -82,6 +94,8 @@ async function open(page: Page, face: Face, options: { readonly widths: boolean;
     ],
   });
   await page.goto('/');
+  // A CONTROL'S STYLE, in before the editor opens, so the line is fitted under it.
+  if (options.css !== undefined) await page.addStyleTag({ content: options.css });
   await page.getByRole('button', { name: /^Open PDF/u }).first().click();
   await expect(page.locator('canvas[data-page-canvas="0"]')).toBeVisible({ timeout: 20_000 });
   await page.keyboard.press('Control+K');
@@ -91,38 +105,50 @@ async function open(page: Page, face: Face, options: { readonly widths: boolean;
   return { pen, right };
 }
 
+/** A caret at a unit boundary: the boundary's offset in the line, and where it stands as a share of the frame. */
+interface CaretAt {
+  readonly at: number;
+  readonly share: number;
+}
+
 /**
  * Where the caret stands at each unit boundary of the first paragraph, as a share of the frame along the line: 0 at the
  * frame's start and 1 at its end. Along the frame's width on an upright page, and down its height on one turned a
  * quarter clockwise, where the line runs downward.
+ *
+ * BOTH SIDES OF A BOUNDARY BETWEEN TWO TEXT NODES: the start of the node after it and the end of the node before it. A
+ * press can leave the caret at either, and the two stood 1.94 pt apart after Times' "W" at 24 pt, where the browser kerned
+ * across the letters' spans and the next letter's margin put its start right (2026-11-04). Read at the starts only, as
+ * this did until then, the case passed with that caret off.
  */
-async function caretShares(page: Page, turn: 0 | 90): Promise<number[]> {
+async function caretShares(page: Page, turn: 0 | 90): Promise<CaretAt[]> {
   return page.locator(SURFACE).evaluate((root, turned) => {
     const frame = root.closest('[data-kit-frame]') ?? root;
     const area = frame.getBoundingClientRect();
     const nodes: Text[] = [];
     const walker = root.ownerDocument.createTreeWalker(root.querySelector('[data-kit-paragraph]') ?? root, NodeFilter.SHOW_TEXT);
     for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) if (node instanceof Text) nodes.push(node);
-    const shares: number[] = [];
-    for (const [at, node] of nodes.entries()) {
-      // EACH UNIT'S START in the node holding it, and the line's end in the last.
-      const last = at === nodes.length - 1;
-      for (let unit = 0; unit < node.data.length + (last ? 1 : 0); unit += 1) {
+    const carets: { at: number; share: number }[] = [];
+    let offset = 0;
+    for (const node of nodes) {
+      // EVERY UNIT BOUNDARY IN THE NODE, its start and its end among them.
+      for (let unit = 0; unit <= node.data.length; unit += 1) {
         const range = root.ownerDocument.createRange();
         range.setStart(node, unit);
         range.collapse(true);
         const rect = range.getClientRects()[0] ?? range.getBoundingClientRect();
-        shares.push(turned ? (rect.top - area.top) / area.height : (rect.left - area.left) / area.width);
+        carets.push({ at: offset + unit, share: turned ? (rect.top - area.top) / area.height : (rect.left - area.left) / area.width });
       }
+      offset += node.data.length;
     }
-    return shares;
+    return carets;
   }, turn === 90);
 }
 
-/** The worst distance, in points, between a caret and the pen at each boundary. */
-function worst(shares: readonly number[], opened: Opened): { readonly at: number; readonly by: number } {
+/** The worst distance, in points, between a caret and the pen at its boundary. */
+function worst(carets: readonly CaretAt[], opened: Opened): { readonly at: number; readonly by: number } {
   let found = { at: -1, by: 0 };
-  for (const [at, share] of shares.entries()) {
+  for (const { at, share } of carets) {
     const caret = LEFT + share * (opened.right - LEFT);
     const by = Math.abs(caret - (opened.pen[at] ?? Number.NaN));
     if (!(by <= found.by)) found = { at, by };
@@ -130,38 +156,48 @@ function worst(shares: readonly number[], opened: Opened): { readonly at: number
   return found;
 }
 
-const FACES: readonly { readonly face: Face; readonly widths: boolean }[] = [
+const FACES: readonly { readonly face: Face; readonly widths: boolean; readonly serifStandIn?: boolean }[] = [
   { face: 'TimesRoman', widths: true },
   { face: 'TimesRoman', widths: false },
   { face: 'Helvetica', widths: true },
+  // HELVETICA'S LETTERS IN THE SERIF STAND-IN: a stand-in that is not the page's face, as for a drawn font.
+  { face: 'Helvetica', widths: true, serifStandIn: true },
   { face: 'Courier', widths: true },
 ];
 
-for (const { face, widths } of FACES) {
+for (const { face, widths, serifStandIn } of FACES) {
   for (const turn of [0, 90] as const) {
-    test(`a caret at the start, the middle and the end of the letters stands on the page’s letters: ${face}, ${widths ? 'with' : 'without'} /Widths, turned ${String(turn)}`, async ({ page }) => {
-      const opened = await open(page, face, { widths, turn, edges: true });
-      const shares = await caretShares(page, turn);
-      // EVERY BOUNDARY, the line's start and end among them.
-      expect(shares).toHaveLength(TEXT.length + 1);
-      const off = worst(shares, opened);
+    test(`a caret at the start, the middle and the end of the letters stands on the page’s letters: ${face}${serifStandIn === true ? ' in a serif stand-in' : ''}, ${widths ? 'with' : 'without'} /Widths, turned ${String(turn)}`, async ({ page }) => {
+      const opened = await open(page, face, { widths, turn, edges: true, ...(serifStandIn === undefined ? {} : { serifStandIn }) });
+      const carets = await caretShares(page, turn);
+      // EVERY BOUNDARY, the line's start and end among them, and each letter on both sides: a node of its own per letter.
+      expect(new Set(carets.map(({ at }) => at)).size).toBe(TEXT.length + 1);
+      expect(carets.length).toBeGreaterThan(TEXT.length + 1);
+      const off = worst(carets, opened);
       expect(off.by, `the caret before “${TEXT.slice(off.at, off.at + 1)}” (offset ${String(off.at)})`).toBeLessThanOrEqual(TOLERANCE);
     });
   }
 }
 
-// NOT COURIER: a fixed-pitch stand-in gives every letter the page's own width, so by words alone its caret is already
-// within 0.021 pt (measured 2026-11-02). Its upright case passes on the code before the fix as well; its turned case does
-// not, for the rotation `alongLine` answers.
-for (const { face, widths } of FACES.filter((each) => each.face !== 'Courier')) {
-  for (const turn of [0, 90] as const) {
-    test(`CONTROL: by words alone, as before the fix, a caret inside a word stands off the page’s letters: ${face}, ${widths ? 'with' : 'without'} /Widths, turned ${String(turn)}`, async ({ page }) => {
-      const opened = await open(page, face, { widths, turn, edges: false });
-      const off = worst(await caretShares(page, turn), opened);
-      expect(off.by).toBeGreaterThan(TOLERANCE);
-    });
-  }
+// ONLY A STAND-IN THAT IS NOT THE PAGE'S FACE: the metric twins place every letter within 0.03 pt by words alone once the
+// browser no longer kerns them (measured 2026-11-04), and a fixed-pitch one scales every letter alike. Upright and turned.
+for (const turn of [0, 90] as const) {
+  test(`CONTROL: by words alone, as before the fix, a caret inside a word stands off the page’s letters: Helvetica in a serif stand-in, turned ${String(turn)}`, async ({ page }) => {
+    const opened = await open(page, 'Helvetica', { widths: true, turn, edges: false, serifStandIn: true });
+    const off = worst(await caretShares(page, turn), opened);
+    expect(off.by).toBeGreaterThan(TOLERANCE);
+  });
 }
+
+// THE BROWSER'S KERNING PUT BACK, the code before the fix of 2026-11-04 (`app.css`' as-drawn paragraph): with it, the end
+// of Times' "W" of "Waving" stood 0.97 pt short at this size while the start of its "a" stood right, so this case proves
+// the end side is read. Upright only, the turn being `alongLine`'s and not the kerning's.
+test('CONTROL: with the browser kerning the line, a caret at the end of a kerned letter stands off the page’s letters: TimesRoman', async ({ page }) => {
+  const opened = await open(page, 'TimesRoman', { widths: true, turn: 0, edges: true, css: '.m-kit__paragraph--as-drawn { font-kerning: normal; }' });
+  const off = worst(await caretShares(page, 0), opened);
+  expect(off.by).toBeGreaterThan(TOLERANCE);
+  expect(off.at, 'the boundary after the kerned “W”').toBe(1);
+});
 
 /**
  * WHAT OPENING A BLOCK AND TYPING IN IT COST, when asked for (`CARET_TIMING=edges|words`): a block of 24 lines of 12 pt
