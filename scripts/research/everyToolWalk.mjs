@@ -38,7 +38,7 @@ import { expect } from '@playwright/test';
 import { zipSync } from 'fflate';
 
 import { ADDED_FIRST, EFFECTS, FIELD_TYPED, LINK_TYPED, TYPED_WORD, outputsOf, readPdf, respondedWhy, scannedPageDocument } from './everyToolEffects.mjs';
-import { WALK_WINDOW, appRootOption, root, startWalk } from './liveWalk.mjs';
+import { WALK_WINDOW, appRootOption, root, startWalk, writesIdle } from './liveWalk.mjs';
 import { editTextOpening } from './textWalkSteps.mjs';
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { bindNativeEngine } from '../lib/nativeEngine.mjs';
@@ -1149,7 +1149,9 @@ async function typeWhereOpened(id) {
  */
 async function knownStart() {
   // EVERY TAB CLOSED FIRST: main holds the documents, so a window loaded again shows the ones still open (the trial of
-  // 2026-11-03 found the control's document on show after the reload).
+  // 2026-11-03 found the control's document on show after the reload). AFTER ANY WRITE STILL LANDING: the step before's
+  // edit wrote after it was judged, and its tab's close button then waited 30 s (the final walk of 2026-11-04).
+  await writesIdle(page);
   await dismissModals();
   await closeAll();
   const saved = await page.evaluate(
@@ -1305,7 +1307,11 @@ for (const command of commands) {
       // their format (`editTextHandWalk.pw.ts`): left open, nothing reached the document (the effect trial of 2026-11-04).
       if ((KEY_STATE[command.id] ?? VIA[command.id]) === 'format') {
         await page.keyboard.press('Escape');
-        await page.waitForTimeout(800);
+        // THE EDITOR CLOSED AND ITS WRITE LANDED, never a fixed 800 ms: on a loaded machine the finish's write took 1.5 to
+        // 3.7 s, the step was judged before it, and the next step's start found that tab unsaved (the final walk of
+        // 2026-11-04: Align centre, Justify, Align right and Bullets in a row).
+        await expect(page.locator('[data-kit-surface]')).toHaveCount(0, { timeout: 60_000 });
+        await writesIdle(page);
       }
       await page.waitForTimeout(1500);
       await tasksEnded();
@@ -1315,6 +1321,15 @@ for (const command of commands) {
         await answerQuestions(met);
         await page.waitForTimeout(1500);
         await tasksEnded();
+      }
+      // THE ANSWER THE COMMAND DECLARES, waited for: a command that answers with a toast and runs no task notice is a
+      // request in flight until it does, and read at a fixed moment Import comments from JSON's 4.5 s request was judged
+      // as nothing shown while it was still running (the final walk of 2026-11-04). The toasts are recorded as they come
+      // (`recordToasts`), so this waits on the answer, bounded, never on a longer pause.
+      if (command.shows === 'a toast') {
+        for (let waited = 0; waited < 60 && !['done', 'problem'].includes((await toastAfter(before.toasts))?.kind ?? ''); waited += 1) {
+          await page.waitForTimeout(250);
+        }
       }
       page.off('pageerror', onError);
       if (loads !== loadsAtStart) throw new Error(`the window reloaded during this step: ${await whyReloaded()}`);
