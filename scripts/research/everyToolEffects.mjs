@@ -39,6 +39,7 @@ import { unzipSync, strFromU8 } from 'fflate';
  *   contentBytes: number[],
  *   images: number,
  *   links: string[],
+ *   rects: Record<string, number[][]>,
  * }} Reading
  */
 
@@ -85,6 +86,8 @@ export async function readPdf(path) {
   let images = 0;
   /** @type {string[]} */
   const links = [];
+  /** @type {Record<string, number[][]>} */
+  const rects = {};
   const pageRefs = document.getPages().map((page) => page.ref);
   for (const page of document.getPages()) {
     const annots = page.node.lookup(PDFName.of('Annots'));
@@ -94,6 +97,9 @@ export async function readPdf(path) {
         if (!(annot instanceof PDFDict)) continue;
         const subtype = String(annot.get(PDFName.of('Subtype')) ?? '/None').replace('/', '');
         marks[subtype] = (marks[subtype] ?? 0) + 1;
+        // WHERE EACH MARK STANDS, its /Rect as numbers, by kind, in page order: what a move is read by.
+        const rect = annot.lookup(PDFName.of('Rect'));
+        if (rect instanceof PDFArray) rects[subtype] = [...(rects[subtype] ?? []), rect.asArray().map((each) => Number(String(each)))];
         // WHERE A LINK GOES, as a reader follows it: a web address from its action, or the 1-based page its
         // destination's first entry names, whether the destination is the link's own or its GoTo action's.
         if (subtype === 'Link') {
@@ -161,6 +167,7 @@ export async function readPdf(path) {
     contentBytes,
     images,
     links,
+    rects,
   };
 }
 
@@ -213,6 +220,28 @@ export const ADDED_FIRST = {
  */
 const removes = (added) => ({ before, prepared, after }) => {
   if (prepared === null) return 'the state before the removal was not saved and read';
+  return removed(added, before, prepared, after);
+};
+
+/**
+ * The walk document's one note (`Text`, the comment the walk selects), moved by exactly `dx`, `dy` points along the
+ * page's axes: a nudge is 1 point, or 10 (`annotationCommands.ts`' `NUDGE` and `NUDGE_FAR`).
+ * @param {number} dx @param {number} dy @returns {EffectCheck}
+ */
+const movesNote = (dx, dy) =>
+  saved((before, after) => {
+    const [was] = before.rects['Text'] ?? [];
+    const [now] = after.rects['Text'] ?? [];
+    if (was === undefined || now === undefined) return 'the note is not on the page before and after';
+    const moved = [(now[0] ?? 0) - (was[0] ?? 0), (now[1] ?? 0) - (was[1] ?? 0)];
+    return Math.abs((moved[0] ?? 0) - dx) < 0.01 && Math.abs((moved[1] ?? 0) - dy) < 0.01 ? null : `the note moved ${JSON.stringify(moved.map((n) => Number(n.toFixed(2))))}, not [${String(dx)}, ${String(dy)}]`;
+  });
+
+/**
+ * {@link removes} once the prepared state is read.
+ * @param {(before: Reading, prepared: Reading) => string | null} added @param {Reading} before @param {Reading} prepared @param {Reading | null} after
+ */
+const removed = (added, before, prepared, after) => {
   const put = added(before, prepared);
   if (put !== null) return `the add given first placed nothing to remove: ${put}`;
   if (after === null) return 'no saved copy was read after the removal';
@@ -315,6 +344,24 @@ export const EFFECTS = {
   'document.new-from-images': pdfOut((made) => (made.images > 0 ? null : 'the new document holds no picture')),
   'document.insert-image': saved((before, after) => (after.pages > before.pages && after.images > before.images ? null : `pages ${String(before.pages)} to ${String(after.pages)}, pictures ${String(before.images)} to ${String(after.images)}`)),
   'document.append-markdown': saved((before, after) => (after.pages > before.pages && after.texts.slice(before.pages).join(' ').includes('ordinary') ? null : `pages ${String(before.pages)} to ${String(after.pages)}, and no new page holds the Markdown’s words`)),
+  ...Object.fromEntries(
+    /** @type {const} */ ([['left', -1, 0], ['right', 1, 0], ['up', 0, 1], ['down', 0, -1]]).flatMap(([way, dx, dy]) =>
+      /** @type {const} */ ([['', 1], ['-far', 10]]).map(([far, step]) => [`annotate.nudge-${way}${far}`, movesNote(dx * step, dy * step)]),
+    ),
+  ),
+  'document.delete-pages': saved((before, after) => (after.pages < before.pages ? null : `pages ${String(before.pages)} to ${String(after.pages)}`)),
+  // THE PARTS BESIDE THE DOCUMENT (`doc-<id> 1.pdf` and on, `outputsOf`), every page in exactly one.
+  'document.split': async ({ before, outputs, read }) => {
+    const parts = outputs.filter((path) => /\s\d+\.pdf$/u.test(path));
+    if (parts.length < 2) return `${String(parts.length)} part(s) were written`;
+    let pages = 0;
+    for (const part of parts) {
+      const reading = await read(part);
+      if (reading === null || reading.pages === 0) return `a part cannot be read or holds no page: ${part}`;
+      pages += reading.pages;
+    }
+    return pages === before.pages ? null : `the parts hold ${String(pages)} pages, the document ${String(before.pages)}`;
+  },
   // UNDO OF THE ROTATION THE WALK GIVES FIRST (`prepare`): the prepared state is turned, and the document after the undo
   // is the fresh copy's turn again, saved or left clean (no saved copy is then the effect, not its absence).
   'document.undo': ({ before, prepared, after }) => {
@@ -423,8 +470,10 @@ export const EFFECTS = {
  */
 export function outputsOf(output, id) {
   const stem = `out-${id}`;
+  // AND THE PARTS A COMMAND WRITES BESIDE THE DOCUMENT, by its name and a number (`doc-<id> 1.pdf`): Split's.
+  const beside = new RegExp(`^doc-${id.replaceAll('.', '\\.')} \\d+\\.pdf$`, 'u');
   return readdirSync(output)
-    .filter((name) => name.startsWith(stem))
+    .filter((name) => name.startsWith(stem) || beside.test(name))
     .map((name) => join(output, name))
     .filter((path) => statSync(path).isFile());
 }
