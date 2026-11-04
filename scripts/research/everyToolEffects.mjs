@@ -237,6 +237,47 @@ const movesNote = (dx, dy) =>
     return Math.abs((moved[0] ?? 0) - dx) < 0.01 && Math.abs((moved[1] ?? 0) - dy) < 0.01 ? null : `the note moved ${JSON.stringify(moved.map((n) => Number(n.toFixed(2))))}, not [${String(dx)}, ${String(dy)}]`;
   });
 
+/** A widget's rectangle as its corners in order. @param {number[]} r */
+const box = (r) => {
+  const [a = 0, b = 0, c = 0, d = 0] = r;
+  return { x0: Math.min(a, c), y0: Math.min(b, d), x1: Math.max(a, c), y1: Math.max(b, d) };
+};
+
+/** How many pairs of the page's fields agree on `of`, to a hundredth of a point. @param {Reading} reading @param {(r: ReturnType<typeof box>) => number[]} of */
+const pairsAgreeing = (reading, of) => {
+  const values = (reading.rects['Widget'] ?? []).map((r) => of(box(r)));
+  let pairs = 0;
+  for (let i = 0; i < values.length; i += 1) for (let j = i + 1; j < values.length; j += 1) if ((values[i] ?? []).every((v, at) => Math.abs(v - ((values[j] ?? [])[at] ?? Number.NaN)) < 0.01)) pairs += 1;
+  return pairs;
+};
+
+/**
+ * A field arrangement (`forms/arrange.ts`): some field moved or changed size, and more pairs of the page's fields agree on
+ * what the arrangement makes equal than before.
+ * @param {(r: ReturnType<typeof box>) => number[]} of @returns {EffectCheck}
+ */
+const arranges = (of) =>
+  saved((before, after) => {
+    if (JSON.stringify(after.rects['Widget'] ?? []) === JSON.stringify(before.rects['Widget'] ?? [])) return 'no field moved or changed size';
+    const [was, now] = [pairsAgreeing(before, of), pairsAgreeing(after, of)];
+    return now > was ? null : `${String(now)} pair(s) of fields agree after, ${String(was)} before`;
+  });
+
+/**
+ * A distribution: some field moved, and three of the page's fields, in order along `axis`, stand at equal gaps.
+ * @param {'x' | 'y'} axis @returns {EffectCheck}
+ */
+const distributes = (axis) =>
+  saved((before, after) => {
+    if (JSON.stringify(after.rects['Widget'] ?? []) === JSON.stringify(before.rects['Widget'] ?? [])) return 'no field moved';
+    const spans = (after.rects['Widget'] ?? []).map(box).map((r) => (axis === 'x' ? [r.x0, r.x1] : [r.y0, r.y1])).sort((a, b) => (a[0] ?? 0) - (b[0] ?? 0));
+    for (let i = 0; i + 2 < spans.length; i += 1) {
+      const [a, b, c] = [spans[i] ?? [], spans[i + 1] ?? [], spans[i + 2] ?? []];
+      if (Math.abs((b[0] ?? 0) - (a[1] ?? 0) - ((c[0] ?? 0) - (b[1] ?? 0))) < 0.01) return null;
+    }
+    return `no three fields stand at equal gaps along ${axis}: ${JSON.stringify(spans)}`;
+  });
+
 /**
  * {@link removes} once the prepared state is read.
  * @param {(before: Reading, prepared: Reading) => string | null} added @param {Reading} before @param {Reading} prepared @param {Reading | null} after
@@ -349,6 +390,17 @@ export const EFFECTS = {
       /** @type {const} */ ([['', 1], ['-far', 10]]).map(([far, step]) => [`annotate.nudge-${way}${far}`, movesNote(dx * step, dy * step)]),
     ),
   ),
+  'forms.arrange.align-left': arranges((r) => [r.x0]),
+  'forms.arrange.align-right': arranges((r) => [r.x1]),
+  'forms.arrange.align-top': arranges((r) => [r.y1]),
+  'forms.arrange.align-bottom': arranges((r) => [r.y0]),
+  'forms.arrange.centre-horizontally': arranges((r) => [(r.x0 + r.x1) / 2]),
+  'forms.arrange.centre-vertically': arranges((r) => [(r.y0 + r.y1) / 2]),
+  'forms.arrange.same-width': arranges((r) => [r.x1 - r.x0]),
+  'forms.arrange.same-height': arranges((r) => [r.y1 - r.y0]),
+  'forms.arrange.same-size': arranges((r) => [r.x1 - r.x0, r.y1 - r.y0]),
+  'forms.arrange.distribute-horizontally': distributes('x'),
+  'forms.arrange.distribute-vertically': distributes('y'),
   'document.delete-pages': saved((before, after) => (after.pages < before.pages ? null : `pages ${String(before.pages)} to ${String(after.pages)}`)),
   // THE PARTS BESIDE THE DOCUMENT (`doc-<id> 1.pdf` and on, `outputsOf`), every page in exactly one.
   'document.split': async ({ before, outputs, read }) => {
