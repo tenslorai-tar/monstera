@@ -29,15 +29,15 @@
  * closes the window, or needs the owner's account or key, is not walked and its row says so, by name.
  */
 import { execFileSync } from 'node:child_process';
-import { copyFile, writeFile } from 'node:fs/promises';
+import { copyFile, readFile, writeFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { PDFDocument, PDFString, StandardFonts, rgb } from '@cantoo/pdf-lib';
+import { PDFDocument, PDFName, PDFString, StandardFonts, rgb } from '@cantoo/pdf-lib';
 import { expect } from '@playwright/test';
 import { zipSync } from 'fflate';
 
-import { ADDED_FIRST, EFFECTS, LINK_TYPED, TYPED_WORD, outputsOf, readPdf, respondedWhy, scannedPageDocument } from './everyToolEffects.mjs';
+import { ADDED_FIRST, EFFECTS, FIELD_TYPED, LINK_TYPED, TYPED_WORD, outputsOf, readPdf, respondedWhy, scannedPageDocument } from './everyToolEffects.mjs';
 import { WALK_WINDOW, appRootOption, root, startWalk } from './liveWalk.mjs';
 import { editTextOpening } from './textWalkSteps.mjs';
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
@@ -253,6 +253,34 @@ async function walkDocument() {
   return document.save({ useObjectStreams: false });
 }
 
+/**
+ * The walk's document with two bookmarks, to pages 1 and 2: what Table of contents lists, and on the walk's own document
+ * it answered rightly that there were no bookmarks to make a contents page from (the final walk of 2026-11-04). A
+ * document of its own, so no other step starts from bookmarks it did not have.
+ * @param {Uint8Array} bytes
+ */
+async function bookmarkedDocument(bytes) {
+  const document = await PDFDocument.load(bytes);
+  const outlines = document.context.nextRef();
+  const items = [1, 2].map(() => document.context.nextRef());
+  for (const [at, ref] of items.entries()) {
+    const page = document.getPage(at);
+    document.context.assign(
+      ref,
+      document.context.obj({
+        Title: PDFString.of(`Part ${String(at + 1)} of the walk`),
+        Parent: outlines,
+        ...(at > 0 ? { Prev: items[at - 1] } : {}),
+        ...(at < items.length - 1 ? { Next: items[at + 1] } : {}),
+        Dest: [page.ref, 'XYZ', null, null, null],
+      }),
+    );
+  }
+  document.context.assign(outlines, document.context.obj({ Type: 'Outlines', First: items[0], Last: items.at(-1), Count: items.length }));
+  document.catalog.set(PDFName.of('Outlines'), outlines);
+  return document.save({ useObjectStreams: false });
+}
+
 /** How many processes of an INSTALLED Monstera run now: the executable a package puts under WindowsApps. */
 function installedRunning() {
   const listed = execFileSync('powershell', ['-NoProfile', '-Command', "(Get-CimInstance Win32_Process -Filter \"Name='Monstera.exe'\" | Measure-Object).Count"], { encoding: 'utf8' });
@@ -277,6 +305,8 @@ const DEFAULTS = Object.fromEntries([...settingsList.ALL_SETTINGS.filter((settin
 if (Object.keys(DEFAULTS).length < 10 || !('appearance.ribbon-section' in DEFAULTS)) throw new Error('the settings list read holds no ribbon section, so it cannot see');
 const source = join(output, 'walk-document.pdf');
 await writeFile(source, await walkDocument());
+const bookmarked = join(output, 'walk-bookmarked.pdf');
+await writeFile(bookmarked, await bookmarkedDocument(await readFile(source)));
 /**
  * THE SCANNED DOCUMENT, for the commands that exist for a scan: the walk's document has words on every page, so a scan
  * conversion had nothing to change, and the step passed while the document did not change (the reviewer, 2026-11-03).
@@ -301,6 +331,10 @@ await writeFile(
 );
 /** The commands a scan is the input for, and so the document each starts from. */
 const ON_A_SCAN = new Set(['document.convert-scan', 'document.ocr', 'document.straighten-scans', 'document.deskew-pages', 'document.enhance-scans']);
+/** The command the step on show is walking, which its questions are answered for (`FIELD_TYPED`). */
+let commandOnShow = '';
+/** The commands walked on the bookmarked copy (`bookmarkedDocument`). */
+const ON_BOOKMARKS = new Set(['document.generate-toc']);
 /** The commands whose effect is judged against the state `prepare` made, which is saved and read before they run. */
 const READ_PREPARED = new Set([...Object.keys(ADDED_FIRST), 'document.undo', 'document.redo']);
 /** How many rows end at each depth: the report's two totals, beside failed and not walked. */
@@ -453,7 +487,9 @@ async function dismissModals() {
 async function closeAll() {
   await dismissModals();
   for (let tab = 0; tab < 12; tab += 1) {
-    if ((await page.locator('.m-status-name').count()) === 0) return;
+    // BY THE TABS, never the status bar: a tab whose document is not shown (a password question dismissed) names nothing
+    // there, so the walk took the window for empty, kept that tab, and failed every step after it (2026-11-04).
+    if ((await page.locator('.m-tab-close').count()) === 0 && (await page.locator('.m-status-name').count()) === 0) return;
     // THE TAB'S OWN CLOSE BUTTON, as a hand closes it: Ctrl+W pressed while Add comment's editor held the focus closed
     // nothing, and the next step opened its document beside the last one (2026-11-03).
     const close = page.locator('.m-tab-close').first();
@@ -576,18 +612,30 @@ async function answerQuestions(met) {
     const dialog = page.locator(DIALOG).last();
     // WHAT A HAND TYPES FIRST: a question whose primary waits for a word or a choice (a password, a language) is
     // answered by filling it, with a test value of the walk's own; a field with a value is left as the dialog set it.
+    const problems = dialog.locator('.m-dialog-row__problem, [role="alert"]');
+    // THE QUESTION'S OWN LINES BEFORE ANYTHING IS TYPED (*A watermark needs some text*), which a word answers, and are
+    // not a refusal of it.
+    const asking = new Set(await problems.allInnerTexts().catch(() => []));
     /** @type {import('playwright').Locator[]} */
     const filled = [];
+    const word = FIELD_TYPED[commandOnShow] ?? 'walk-test-1';
     for (const field of await dialog.locator('input[type="text"]:not([disabled]), input[type="password"]:not([disabled]), input:not([type]):not([disabled])').all()) {
       if ((await field.inputValue().catch(() => 'x')) === '') {
-        await field.fill('walk-test-1').catch(() => undefined);
+        await field.fill(word).catch(() => undefined);
         filled.push(field);
       }
     }
-    // A FIELD THAT WANTS A NUMBER says so beside it, as a hand reads it, and gets one: Crop pages' four edges took the
-    // walk's word, said it was not a number, and cropped nothing (the effect trial of 2026-11-03).
-    if (filled.length > 0 && (await dialog.locator('.m-dialog-row__problem, [role="alert"]').count()) > 0) {
-      for (const field of filled) await field.fill('36').catch(() => undefined);
+    // A WORD THE QUESTION REFUSES IS TAKEN BACK, as a hand deletes it: a field it says is wrong was one to leave empty, as
+    // Merge's pages to take, where empty is every page. Retyping such a field as a number put a page 36 into a document
+    // of 5, and retyped Password and permissions' two passwords, so its copy did not open with the walk's own value (the
+    // final walk of 2026-11-04). A password is never taken back: an empty one is no answer. ONLY A LINE THE WORD BROUGHT:
+    // read against the lines before it, Watermark's *needs some text* took back the very word that answered it.
+    await page.waitForTimeout(300);
+    const refused = (await problems.allInnerTexts().catch(() => [])).filter((text) => !asking.has(text));
+    if (filled.length > 0 && refused.length > 0) {
+      for (const field of filled) {
+        if ((await field.getAttribute('type').catch(() => null)) !== 'password') await field.fill('').catch(() => undefined);
+      }
     }
     for (const choice of await dialog.locator('select:not([disabled])').all()) {
       if ((await choice.inputValue().catch(() => 'x')) === '') {
@@ -985,8 +1033,11 @@ async function pointerOverPage() {
 const GESTURES = {
   ...Object.fromEntries(
     // STAMP IS DRAWN AS A BOX (`stampTool.ts`, `MINIMUM_BOX`): a press placed nothing and opened no chooser (2026-11-04).
-    ['rectangle', 'ellipse', 'line', 'arrow', 'highlight-area', 'redact', 'text-box', 'callout', 'cloud', 'measure-distance', 'link-address', 'link-page', 'stamp'].map((name) => [`annotate.${name}`, 'drag']),
+    ['rectangle', 'ellipse', 'line', 'arrow', 'highlight-area', 'redact', 'text-box', 'callout', 'measure-distance', 'link-address', 'link-page', 'stamp'].map((name) => [`annotate.${name}`, 'drag']),
   ),
+  // A CLOUD IS DRAWN BY ITS CORNERS, as its own hint says (*Click each corner, then click the first one again*): dragged
+  // as a box, it drew nothing (the final walk of 2026-11-04).
+  'annotate.cloud': 'poly',
   ...Object.fromEntries(['text', 'checkbox', 'radio', 'dropdown', 'listbox', 'button', 'signature', 'date'].map((name) => [`forms.field-${name}`, 'drag'])),
   ...Object.fromEntries(['sticky-note', 'typewriter', 'caret'].map((name) => [`annotate.${name}`, 'click'])),
   ...Object.fromEntries(['polygon', 'polyline', 'measure-area', 'measure-perimeter'].map((name) => [`annotate.${name}`, 'poly'])),
@@ -1179,9 +1230,10 @@ for (const command of commands) {
     async () => {
       // THE KNOWN START, and the load it makes counted before the step's own: a reload after it is the step's.
       await knownStart();
+      commandOnShow = command.id;
       const loadsAtStart = loads;
       const copy = join(output, `doc-${command.id}.pdf`);
-      await copyFile(ON_A_SCAN.has(command.id) ? scanned : source, copy);
+      await copyFile(ON_A_SCAN.has(command.id) ? scanned : ON_BOOKMARKS.has(command.id) ? bookmarked : source, copy);
       // THE DOCUMENT AS THE STEP BEGINS, read before the app has it: what an effect is compared against.
       const began = await readPdf(copy);
       if (began === null) throw new Error('the walk could not read its own fresh copy, so no effect can be judged');

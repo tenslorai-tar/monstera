@@ -225,6 +225,14 @@ export const SCANNED_WORDS = 'MONSTERA SCANNED PAGE';
  * @type {Readonly<Record<string, string>>}
  */
 export const LINK_TYPED = { 'annotate.link-address': 'https://example.org/walk', 'annotate.link-page': '2' };
+
+/**
+ * What a hand types into the empty fields of a command's question where an empty one is valid and does nothing, so the
+ * walk's word would be refused and taken back and nothing done: Crop pages' four margins, where empty is zero; and where
+ * a field takes pages, the pages: Replace pages' pages to take from the second document.
+ * @type {Readonly<Record<string, string>>}
+ */
+export const FIELD_TYPED = { 'document.crop-pages': '36', 'document.replace-page': '1' };
 /**
  * A word a tool's words are typed as where the walk's own words would not separate anything: "walk" is on every page of
  * the walk's document already.
@@ -412,7 +420,14 @@ export const EFFECTS = {
   'document.merge': saved((before, after) => (after.pages > before.pages ? null : `nothing was merged in: ${String(after.pages)} pages`)),
   'document.move-page-earlier': saved((before, after) => (after.texts[0] === before.texts[1] && after.texts[1] === before.texts[0] ? null : 'page 2 is not before page 1')),
   'document.move-page-later': saved((before, after) => (after.texts[1] === before.texts[0] ? null : 'page 1 did not move after page 2')),
-  'document.replace-page': saved((before, after) => (after.pages === before.pages && after.texts[0] !== before.texts[0] ? null : 'page 1 holds the same words, so it was not replaced')),
+  // PAGE 1 HOLDS THE SECOND DOCUMENT'S WORDS: the pages it is replaced by are as many as the dialog takes, all of the
+  // second document's when its page field is left empty, so the count is not the reading (7 of 3 − 1 + 5, 2026-11-04).
+  'document.replace-page': saved((before, after) =>
+    // BY THE WALK'S OWN HEADING IN FULL: the second document's page 1 begins *Page 1 of 5*, which `HEADING_WORDS` matches.
+    after.texts[0] !== before.texts[0] && !(after.texts[0] ?? '').includes("Page 1 of the walk's") && after.texts.some((words) => words.includes("Page 2 of the walk's"))
+      ? null
+      : 'page 1 holds the same words, so it was not replaced',
+  ),
   'document.crop-pages': saved((before, after) => (after.boxes[0] !== before.boxes[0] ? null : `page 1's crop box is unchanged: ${before.boxes[0] ?? ''}`)),
   'document.resize-pages': saved((before, after) => (after.media[0] !== before.media[0] ? null : `page 1's size is unchanged: ${before.media[0] ?? ''}`)),
   'document.page-transition': saved((before, after) => (after.transitions > before.transitions ? null : 'no page carries a transition')),
@@ -544,7 +559,16 @@ export const EFFECTS = {
   'annotate.highlight': addsMark('Highlight'),
   'annotate.underline': addsMark('Underline'),
   'annotate.strikeout': addsMark('StrikeOut'),
-  'annotate.redact-text': addsMark('Redact'),
+  // THE MARKED WORDS GONE AND THE REST OF THE LINE KEPT, or the mark kept: a save with a mark pending asks first, and the
+  // walk answers its primary, Apply, which burns the mark in (`pendingRedactions.ts`); the copy then holds no Redact, and
+  // read for one it failed while the words it marked were gone (the final walk of 2026-11-04).
+  'annotate.redact-text': saved((before, after) => {
+    if ((after.marks['Redact'] ?? 0) > (before.marks['Redact'] ?? 0)) return null;
+    const page = after.texts[0] ?? '';
+    return !page.includes(WALK_WORDS) && page.includes('a person runs it') && (before.texts[0] ?? '').includes(WALK_WORDS)
+      ? null
+      : `the marked words are neither marked nor removed: ${JSON.stringify(after.marks)}`;
+  }),
   // MARKS FROM THE SELECTION
   'text.highlight': addsMark('Highlight'),
   'text.underline': addsMark('Underline'),
@@ -556,7 +580,13 @@ export const EFFECTS = {
   'annotate.paste': saved((before, after) => (allMarks(after) > allMarks(before) ? null : 'no comment was pasted')),
   // THE DOCUMENT AS A WHOLE
   'document.protect': saved((_before, after) => (after.encrypted ? null : 'the saved copy is not encrypted')),
-  'document.generate-toc': saved((before, after) => (after.outline || after.pages > before.pages ? null : 'neither a page of contents nor bookmarks were written')),
+  // A PAGE THAT LISTS THE BOOKMARKS, walked on a copy that has them (`bookmarkedDocument`): an outline is no reading, since
+  // the copy had one before the command ran, and only the inserted page carries their titles as words.
+  'document.generate-toc': saved((before, after) =>
+    after.pages > before.pages && after.texts.some((words) => words.includes('Part 1 of the walk')) && !before.texts.some((words) => words.includes('Part 1 of the walk'))
+      ? null
+      : `no page listing the bookmarks was inserted: ${String(after.pages)} pages`,
+  ),
   // EXPORTS, by what the written file holds
   'document.export-word': officeHolds('docx', /^word\/document\.xml$/u, 'Every tool'),
   'document.export-powerpoint': officeHolds('pptx', /^ppt\/slides\/slide\d+\.xml$/u, 'Every tool'),
@@ -591,7 +621,9 @@ export const EFFECTS = {
 export function outputsOf(output, id) {
   const stem = `out-${id}`;
   // AND THE PARTS A COMMAND WRITES BESIDE THE DOCUMENT, by its name and a number (`doc-<id> 1.pdf`): Split's.
-  const beside = new RegExp(`^doc-${id.replaceAll('.', '\\.')} \\d+\\.pdf$`, 'u');
+  // OF ANY KIND: Export pages as images writes its pictures there too (`doc-<id> 1.png`), and a PDF-only pattern read
+  // them as no picture written (the final walk of 2026-11-04).
+  const beside = new RegExp(`^doc-${id.replaceAll('.', '\\.')} \\d+\\.[a-z]+$`, 'u');
   return readdirSync(output)
     .filter((name) => name.startsWith(stem) || beside.test(name))
     .map((name) => join(output, name))
