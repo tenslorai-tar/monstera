@@ -11,6 +11,23 @@ import type { Position, Selection } from './model.js';
 /** The attribute every paragraph element of a surface carries, its place in the model. */
 export const PARAGRAPH_ATTRIBUTE = 'data-kit-paragraph';
 
+/**
+ * Makes `parent`'s children exactly `wanted`, in order, WITHOUT TAKING OUT A CHILD THAT STAYS. A node taken out of the
+ * document loses its layout, and putting it back lays it out again from nothing: `replaceChildren` with every paragraph
+ * laid each one out again on every keystroke, 36 to 39 ms of a 44 ms paint in a block of 24 lines whose letters each
+ * stand in a span of their own (Chromium 151, `editTextCaret.pw.ts`' timing, 2026-11-04). So a child that leaves is
+ * removed, and only a child not already standing at its place is inserted there. The ones that left are gone before
+ * anything is inserted, so a kept child is moved only where the kept children's own order changed.
+ */
+export function placeChildren(parent: Element, wanted: readonly Element[]): void {
+  const staying = new Set<Element>(wanted);
+  for (const child of Array.from(parent.children)) if (!staying.has(child)) child.remove();
+  for (const [at, node] of wanted.entries()) {
+    const there = parent.children[at];
+    if (there !== node) parent.insertBefore(node, there ?? null);
+  }
+}
+
 /** The paragraph element holding `node`, inside `root`, or `undefined` where it is in none. */
 function paragraphElementOf(root: HTMLElement, node: Node): HTMLElement | undefined {
   for (let at: Node | null = node; at !== null && at !== root; at = at.parentNode) {

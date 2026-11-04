@@ -97,6 +97,25 @@ describe('the kit’s editable surface', () => {
     expect(firstAfter).not.toBe(first);
   });
 
+  it('takes out of the surface only the paragraph that changed, so a kept one keeps its layout', () => {
+    // THE CONTROL is the surface before this: it put every paragraph back (`replaceChildren`), the SAME nodes, so the
+    // case above passed while each keystroke laid all of them out again. Only what was TAKEN OUT tells the two apart.
+    const { root } = surface();
+    const [first, second] = Array.from(root.querySelectorAll('[data-kit-paragraph]'));
+    const watcher = new MutationObserver(() => undefined);
+    watcher.observe(root, { childList: true });
+    act(() => {
+      input(root, 'insertText', 'X', { paragraph: 0, offset: 1 });
+    });
+    const records = watcher.takeRecords();
+    watcher.disconnect();
+    const removed = records.flatMap((record) => Array.from(record.removedNodes));
+    const added = records.flatMap((record) => Array.from(record.addedNodes));
+    expect(removed).toStrictEqual([first]);
+    expect(added).toHaveLength(1);
+    expect(added).not.toContain(second);
+  });
+
   it('draws a new look (the faces arrived, the zoom moved) on THE SAME NODES, so a press in flight keeps its target', () => {
     // THE CONTROL is the surface before this: a new look built every paragraph again, and a press landing as the fonts
     // loaded hit a detached node, was judged outside the editor and finished it (`restyleParagraph`).

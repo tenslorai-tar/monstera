@@ -1,7 +1,7 @@
 import type React from 'react';
 import { type ReactElement, useEffect, useLayoutEffect, useRef } from 'react';
 
-import { readSelection, selectionOfRange, writeSelection } from './dom.js';
+import { placeChildren, readSelection, selectionOfRange, writeSelection } from './dom.js';
 import {
   type Edited,
   type Model,
@@ -159,8 +159,8 @@ export function EditorSurface({ store, look, drawn, label, className, style, edi
       const moved = new Set<number>();
       for (let pass = 0; pass <= model.paragraphs.length; pass += 1) {
         const elements = lay(model.paragraphs, moved);
-        const children = Array.from(element.children);
-        if (children.length !== elements.length || children.some((child, at) => child !== elements[at])) element.replaceChildren(...elements);
+        // ONLY THE PARAGRAPHS THAT CHANGED are taken out and put in: a kept one taken out is laid out again (`placeChildren`).
+        placeChildren(element, elements);
         // EACH LINE AS WIDE AS THE PAGE DRAWS IT, now it is laid out: its letters over the page's (`fitDrawnLines`). ONLY A
         // LINE NEW OR RESTYLED SINCE ITS LAST FIT: a kept line's fit reads its own letters at its own look, so fitting it
         // again changes nothing, and every keystroke re-fitted every untouched line of the block — 100 to 160 ms a
