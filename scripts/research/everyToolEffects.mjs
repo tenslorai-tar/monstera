@@ -229,10 +229,11 @@ export const LINK_TYPED = { 'annotate.link-address': 'https://example.org/walk',
 /**
  * What a hand types into the empty fields of a command's question where an empty one is valid and does nothing, so the
  * walk's word would be refused and taken back and nothing done: Crop pages' four margins, where empty is zero; and where
- * a field takes pages, the pages: Replace pages' pages to take from the second document.
+ * a field takes pages, the pages: Replace pages' pages to take from the second document; and where it takes words to find,
+ * a word the walk's document has.
  * @type {Readonly<Record<string, string>>}
  */
-export const FIELD_TYPED = { 'document.crop-pages': '36', 'document.replace-page': '1' };
+export const FIELD_TYPED = { 'document.crop-pages': '36', 'document.replace-page': '1', 'document.redact-matches': 'tool' };
 /**
  * A word a tool's words are typed as where the walk's own words would not separate anything: "walk" is on every page of
  * the walk's document already.
@@ -350,6 +351,23 @@ const removed = (added, before, prepared, after) => {
 
 /** A check that needs the saved copy: `null` where it is fine, else what is wrong. @param {(before: Reading, after: Reading) => string | null} check @returns {EffectCheck} */
 const saved = (check) => ({ before, after }) => (after === null ? 'no saved copy was read: the command left the document unchanged, or the copy could not be read' : check(before, after));
+
+/**
+ * A redaction mark, read by what it did: a Redact kept, or the marked words `gone` from page 1 while `kept` stays. A
+ * save with a mark pending asks first, and the walk answers its primary, Apply, which burns the mark in
+ * (`pendingRedactions.ts`); the copy then holds no Redact, and read for one the three marking commands failed while the
+ * words they marked were gone (the final walk of 2026-11-04).
+ * @param {string} gone @param {string} kept
+ * @returns {EffectCheck}
+ */
+const burnedOrMarked = (gone, kept) =>
+  saved((before, after) => {
+    if ((after.marks['Redact'] ?? 0) > (before.marks['Redact'] ?? 0)) return null;
+    const page = after.texts[0] ?? '';
+    return (before.texts[0] ?? '').includes(gone) && !page.includes(gone) && page.includes(kept)
+      ? null
+      : `the marked words are neither marked nor removed: ${JSON.stringify(after.marks)}`;
+  });
 
 /** A mark of one of `kinds` more in the saved copy than in the document. @param {...string} kinds */
 const addsMark = (...kinds) =>
@@ -511,7 +529,15 @@ export const EFFECTS = {
   'document.page-background': saved((before, after) => ((after.contentBytes[0] ?? 0) !== (before.contentBytes[0] ?? 0) ? null : "page 1's drawing is unchanged")),
   // THE WORDS THE WALK MARKS, the start of page 1's heading (`selectWords` drags across its first line's first 160 px).
   'document.apply-redactions': saved((before, after) => ((before.texts[0] ?? '').includes(HEADING_WORDS) && !(after.texts[0] ?? '').includes(HEADING_WORDS) ? null : 'the marked words are still on page 1')),
-  'document.redact-matches': addsMark('Redact'),
+  // EVERY "tool" MARKED, then burned in by the save's Apply as Mark text for redaction's is, or kept as marks: the walk
+  // searches for a word its document has (`FIELD_TYPED`); its own test word matched nothing and marked nothing (the final
+  // walk of 2026-11-04).
+  'document.redact-matches': saved((before, after) => {
+    if ((after.marks['Redact'] ?? 0) > (before.marks['Redact'] ?? 0)) return null;
+    return allWords(before).includes(' tool ') && !allWords(after).includes(' tool ') && allWords(after).includes('Every')
+      ? null
+      : `the matches are neither marked nor removed: ${JSON.stringify(after.marks)}`;
+  }),
   'document.convert-scan': saved((_before, after) => (allWords(after).includes(SCANNED_WORDS) ? null : 'the scanned page’s words are not text in the saved copy')),
   'document.ocr': saved((_before, after) => (allWords(after).includes(SCANNED_WORDS) ? null : 'the scanned page’s words are not text in the saved copy')),
   // FORMS
@@ -559,21 +585,14 @@ export const EFFECTS = {
   'annotate.highlight': addsMark('Highlight'),
   'annotate.underline': addsMark('Underline'),
   'annotate.strikeout': addsMark('StrikeOut'),
-  // THE MARKED WORDS GONE AND THE REST OF THE LINE KEPT, or the mark kept: a save with a mark pending asks first, and the
-  // walk answers its primary, Apply, which burns the mark in (`pendingRedactions.ts`); the copy then holds no Redact, and
-  // read for one it failed while the words it marked were gone (the final walk of 2026-11-04).
-  'annotate.redact-text': saved((before, after) => {
-    if ((after.marks['Redact'] ?? 0) > (before.marks['Redact'] ?? 0)) return null;
-    const page = after.texts[0] ?? '';
-    return !page.includes(WALK_WORDS) && page.includes('a person runs it') && (before.texts[0] ?? '').includes(WALK_WORDS)
-      ? null
-      : `the marked words are neither marked nor removed: ${JSON.stringify(after.marks)}`;
-  }),
+  // THE MARKED WORDS GONE AND THE REST OF THE LINE KEPT: the tool's gesture marks the first paragraph's opening words.
+  'annotate.redact-text': burnedOrMarked(WALK_WORDS, 'a person runs it'),
   // MARKS FROM THE SELECTION
   'text.highlight': addsMark('Highlight'),
   'text.underline': addsMark('Underline'),
   'text.strikeout': addsMark('StrikeOut'),
-  'text.redact': addsMark('Redact'),
+  // THE SELECTION THE WALK MAKES, the first line's words dragged over: the heading's opening, the paragraph kept.
+  'text.redact': burnedOrMarked("Page 1 of the walk's", WALK_WORDS),
   'text.comment': saved((before, after) => (allMarks(after) > allMarks(before) ? null : 'no comment was added')),
   'annotate.delete-selection': saved((before, after) => (allMarks(after) < allMarks(before) ? null : 'the comment is still in the file')),
   'edit.cut': saved((before, after) => (allMarks(after) < allMarks(before) ? null : 'the comment is still in the file')),

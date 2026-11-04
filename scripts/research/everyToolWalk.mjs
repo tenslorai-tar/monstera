@@ -818,8 +818,12 @@ async function ranFromSurface(command) {
   if (via === undefined) return false;
   if ((via === 'annotation' || via === 'field' || via === 'object') && (await ranFromPalette(command.title, command.id))) return true;
   switch (via) {
-    case 'selection':
-      return fromMenu(page.locator('[data-text-layer="0"]:visible [data-text-line]').first(), command.title);
+    case 'selection': {
+      const chosen = await fromMenu(page.locator('[data-text-layer="0"]:visible [data-text-line]').first(), command.title);
+      // A CARD FOR WORDS, where the item opens one (Add comment): typed into as a hand types, as a tool's is.
+      if (chosen && OPENS_WORDS.has(command.id)) await typeWhereOpened(command.id);
+      return chosen;
+    }
     case 'annotation': {
       await pressAtComment('right');
       return pickFromMenu(command.title);
@@ -863,6 +867,12 @@ async function ranFromSurface(command) {
  * @param {string} id
  */
 async function prepare(id) {
+  // THE PAGES PANEL IS THE ONE THE KNOWN START SHOWS, so another is shown first, as a hand that wants the pages back has
+  // one: shown over itself it rightly changed nothing (the final walk of 2026-11-04).
+  if (id === 'view.show-pages') {
+    await run('view.show-bookmarks');
+    return;
+  }
   if ((id === 'document.undo' || id === 'document.redo') && rotate !== undefined) {
     await run(rotate.id);
     if (id === 'document.redo') await run('document.undo');
@@ -1042,7 +1052,7 @@ const GESTURES = {
 };
 
 /** The tools whose gesture always opens words to type in. */
-const OPENS_WORDS = new Set(['text.add', 'annotate.text-box', 'annotate.callout', 'annotate.typewriter', 'annotate.link-address', 'annotate.link-page']);
+const OPENS_WORDS = new Set(['text.add', 'annotate.text-box', 'annotate.callout', 'annotate.typewriter', 'annotate.link-address', 'annotate.link-page', 'text.comment']);
 
 /** A point of page 1 in the window, from PDF points. @param {number} x @param {number} y */
 async function pagePoint(x, y) {
@@ -1098,9 +1108,18 @@ async function useTool(gesture, id) {
     await page.mouse.dblclick(last.x, last.y);
   }
   await page.waitForTimeout(800);
-  // WORDS OF ITS OWN, where the tool opened some: a text box, a typewriter line, a note's words. A tool that always opens
-  // words is waited for, up to 5 s, as `textAdd.pw.ts` waits for its editor's focus: Add text's first use prepares its
-  // faces first (1.7 s in the log of 2026-11-04), and read once at 800 ms it had opened nothing yet, so nothing was typed.
+  await typeWhereOpened(id);
+}
+
+/**
+ * WORDS OF ITS OWN, where the command opened some: a text box, a typewriter line, a note's words, the card a selection's
+ * Add comment opens (the final walk of 2026-11-04, where the menu's card was typed into by nothing and no comment made).
+ * A command that always opens words is waited for, up to 5 s, as `textAdd.pw.ts` waits for its editor's focus: Add
+ * text's first use prepares its faces first (1.7 s in the log of 2026-11-04), and read once at 800 ms it had opened
+ * nothing yet, so nothing was typed.
+ * @param {string} id
+ */
+async function typeWhereOpened(id) {
   const focused = () =>
     page.evaluate(() => {
       const active = /** @type {{ document: { activeElement: { tagName: string, isContentEditable: boolean } | null } }} */ (/** @type {unknown} */ (globalThis)).document.activeElement;
