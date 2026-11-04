@@ -892,6 +892,93 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-11-04 — The merged build walked against 1.1.2610.0, its faults fixed, and measured
+
+The owner's order of 2026-11-02 (merge cloud-38 to 50, walk every tool against
+1.1.2610.0, fix every fault with a case and a control, pack 1.1.2611.0 through
+the walk-record gate) and the reviewer's steps of 2026-11-03, a to h. The
+release is `d468a575`, checked out apart and launched by `--app-root`.
+
+**The walk.** `everyToolWalk.mjs` walks one row per command the registry
+generates. Its fifth run on `c8a2682a` passed 284 of 284 rows, 263 commands
+walked and 19 recorded as not walked, each with its reason. The same walk on
+1.1.2610.0 passed 276 of 288: the 12 failures are the 11 commands the release
+does not have (grep of its `packages/ui/src` finds none of them) and their
+put-backs. No regression was found. Since `25e248ba` every step starts from one
+known state (the registered defaults saved, the window reloaded and sized),
+with a control step that shows a leaked setting is put back, and each command
+is read by its effect where a reading exists: **135 of 282** commands at
+`136e022d`. The rest carry their reason on the row; 53 say no reading of their
+result is written yet.
+
+**Convert a scan.** The walk document had no scanned page, so the step tested
+nothing. With an image-only page (`scannedPageDocument`), both Convert a scan
+and Recognise text make the words text in the saved and reopened copy. Not an
+app fault.
+
+**The gate.** ADR-0285 (`2b73f591`, `bbb29f5e`): the pack refuses a build no
+full walk passed. Its correction (`a38a6408`): a row's evidence is the build it
+was walked on, read by the build's digest, so a commit that changes no built
+byte keeps its rows. `proof:walkrecord` holds 18 cases, among them a report
+that names no walk program, which is never counted (`d5cddad1`).
+
+**The new features' checks.** `textToCurves.proof.mjs --require-ghostscript`
+8 of 8, and ADR-0282 corrected with what the shipped Windows Ghostscript reads
+(`cd4e1ff1`). The memory, recovery and deadline harnesses 7, 10 and 10, each
+finding exactly one host. `newFeaturesWalk.mjs`: layouts 21 of 21 (a pair's
+link layer takes a press 218 ms after the pair shows, recorded); Document
+properties 5 of 5 (Explorer reads the new title; the creation date is the entry
+below); Convert text to curves 4 of 4 (the copy holds 0 selectable letters
+against 25; the report names 2 fields and 2 tags; a password document keeps
+all); long forms 3 of 3 (the status bar shows 16 facts, 9 at 900 px); the three
+corpus items pass; 200 placements add 359 and 314 ms to Edit text's outlines of
+a page, under 500. The nine AI commands answered on Haiku 4.5 with the owner's
+key, 10 of 10 steps (`aiCommandsWalk.mjs`, `0f68fa75`), and the key was removed
+afterwards.
+
+**Faults fixed, each with a case and a control.**
+
+| commit | the fault, by its mechanism | measured |
+|---|---|---|
+| `4554eafa` | Document properties' date field was too short for a timestamp, so the zone was cut off | — |
+| `f7c8136d` | a caret at a letter's END stood off the page's letter: the browser kerned the stand-in across the letters' spans, and the spaces between places kept the stand-in's width | Times "Wa" 1.94 pt at 24 pt; Courier's space 0.60 pt |
+| `af96d9c6` | the PDFium host opened the image once per form placement | the host call 1.06–1.23 s to 0.16–0.38 s |
+| `85860db9` | each keystroke in Edit text took every paragraph out of the editor and put it back, so all of them were laid out again | a keystroke 49–55 ms (worst 66–72) to 13–17 ms (worst 32–35); 1.1.2610.0 316–392 ms |
+| `675d1fec` | Add text's surface was drawn only once the page's blocks were read, so a press in the first 2.7–5.8 s placed nothing while the tool showed armed | the press is held and opens its box where it landed |
+
+Instrument faults fixed on the way, none of them in the app: the walk found a
+dialog by an attribute the release does not draw (`559a63db`); the AI walk took
+*Unsaved changes* as a translation finished (`0f68fa75`); `appMemory.mjs` asked
+netstat which process holds the debugging port, which stops listing it once a
+client connects, and now takes the one answer `frameTimes.mjs` found, in
+`answeringBrowser.mjs` (`8d94d4ab`).
+
+**Smoothness and memory against 1.1.2610.0**, one instrument for both builds,
+each with its control first. The machine: four threads, about 5.4 GB free.
+
+| reading | this build | 1.1.2610.0 |
+|---|---|---|
+| scroll, drag, menu, draw (`frameTimes.mjs`, the scan fixture) | level | level |
+| dragging a panel edge, frames dropped, six runs | 16–46 | 15–29 |
+| memory with one document of 201 MiB: main, renderer, host | 360, 352, 420 MiB | 355, 413, 415 MiB |
+| a 37-page cold scroll: worst frame, page renders | 83–100 ms, 164–168 | 133–183 ms, 66,900–69,300 |
+| opening a dense block in Edit text: long tasks | 788–950 and 376–497 ms | 1274, 452 and 347–414 ms |
+| Add text's first use on a document, to its surface | 2.7–5.8 s | 2.8–4.0 s |
+
+The panel-edge figure is below resolution: the ranges overlap and every
+thread's cost is level. Draw cost (`drawCost.mjs`, the same PDF.js 6.2.108 in
+both): a dense page at full scale draws in 17 ms in Chromium and 13.5 ms in
+Electron, and in Electron a worker's hand-over costs 36 ms, more than the draw.
+
+**Recorded, not fixed.** Opening a dense block is still over the 300 ms the
+editor's budget allows: the profile names `Range.getBoundingClientRect`
+(356 ms) and `alongLine`'s walk of computed styles (160 ms) across three full
+fits as the faces arrive. A batched fit and a cached walk were measured inside
+the spread (788–1017 ms) and are not committed. The first read of a page's
+blocks, 2.7–5.8 s, is what Add text and Edit text wait on.
+
+---
+
 ## 2026-11-04 — A save gives the file a new Windows creation date: a known behaviour, kept
 
 Found by the full walk of 2026-11-03: after a save, Windows' *Date created* for
