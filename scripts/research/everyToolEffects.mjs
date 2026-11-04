@@ -38,6 +38,7 @@ import { unzipSync, strFromU8 } from 'fflate';
  *   title: string,
  *   contentBytes: number[],
  *   images: number,
+ *   links: string[],
  * }} Reading
  */
 
@@ -82,6 +83,9 @@ export async function readPdf(path) {
   const tabs = [];
   const contentBytes = [];
   let images = 0;
+  /** @type {string[]} */
+  const links = [];
+  const pageRefs = document.getPages().map((page) => page.ref);
   for (const page of document.getPages()) {
     const annots = page.node.lookup(PDFName.of('Annots'));
     if (annots instanceof PDFArray) {
@@ -90,6 +94,18 @@ export async function readPdf(path) {
         if (!(annot instanceof PDFDict)) continue;
         const subtype = String(annot.get(PDFName.of('Subtype')) ?? '/None').replace('/', '');
         marks[subtype] = (marks[subtype] ?? 0) + 1;
+        // WHERE A LINK GOES, as a reader follows it: a web address from its action, or the 1-based page its
+        // destination's first entry names, whether the destination is the link's own or its GoTo action's.
+        if (subtype === 'Link') {
+          const action = annot.lookup(PDFName.of('A'));
+          const uri = action instanceof PDFDict ? action.lookup(PDFName.of('URI')) : undefined;
+          const dest = annot.lookup(PDFName.of('Dest')) ?? (action instanceof PDFDict ? action.lookup(PDFName.of('D')) : undefined);
+          const first = dest instanceof PDFArray ? dest.get(0) : undefined;
+          const pageAt = first instanceof PDFRef ? pageRefs.findIndex((ref) => ref === first || ref.toString() === first.toString()) : -1;
+          if (uri !== undefined) links.push(`uri:${/** @type {{ decodeText?: () => string }} */ (uri).decodeText?.() ?? String(uri)}`);
+          else if (pageAt >= 0) links.push(`page:${String(pageAt + 1)}`);
+          else links.push('unknown');
+        }
       }
     }
     if (page.node.get(PDFName.of('Trans')) !== undefined) transitions += 1;
@@ -144,6 +160,7 @@ export async function readPdf(path) {
     title: document.getTitle() ?? '',
     contentBytes,
     images,
+    links,
   };
 }
 
@@ -164,6 +181,12 @@ export const WALK_WORDS = 'Every tool is run on these words';
 export const HEADING_WORDS = 'Page 1 of';
 /** The words on the walk's scanned page, drawn into its picture and nowhere as text (`scannedPageDocument`). */
 export const SCANNED_WORDS = 'MONSTERA SCANNED PAGE';
+/**
+ * What the walk types into each link tool's line: a web address, and page 2 rather than 1, so a link that went to the
+ * page it sits on by default is not read as the one typed.
+ * @type {Readonly<Record<string, string>>}
+ */
+export const LINK_TYPED = { 'annotate.link-address': 'https://example.org/walk', 'annotate.link-page': '2' };
 
 /**
  * @typedef {{ before: Reading, after: Reading | null, outputs: string[], read: (path: string) => Promise<Reading | null> }} EffectContext
@@ -284,6 +307,10 @@ export const EFFECTS = {
   'annotate.cloud': addsMark('Polygon', 'Square', 'Circle'),
   'annotate.measure-distance': addsMark('Line'),
   'annotate.sticky-note': addsMark('Text'),
+  'annotate.stamp': addsMark('Stamp'),
+  // A LINK THAT GOES WHERE IT WAS TOLD, read the way a reader follows it: the address or page the walk typed (`LINK_TYPED`).
+  'annotate.link-address': saved((before, after) => (after.links.filter((each) => each === `uri:${LINK_TYPED['annotate.link-address']}`).length > before.links.filter((each) => each === `uri:${LINK_TYPED['annotate.link-address']}`).length ? null : `no new link to the typed address: ${JSON.stringify(after.links)}`)),
+  'annotate.link-page': saved((before, after) => (after.links.filter((each) => each === `page:${LINK_TYPED['annotate.link-page']}`).length > before.links.filter((each) => each === `page:${LINK_TYPED['annotate.link-page']}`).length ? null : `no new link to the typed page: ${JSON.stringify(after.links)}`)),
   'annotate.typewriter': addsMark('FreeText'),
   'annotate.caret': addsMark('Caret'),
   'annotate.polygon': addsMark('Polygon'),
@@ -352,8 +379,6 @@ export function outputsOf(output, id) {
  */
 export function respondedWhy(id) {
   if (id.startsWith('view.') || id.startsWith('app.') || id.startsWith('log.')) return 'a change to the window, judged by the window changing and not by which part of it';
-  // OPEN, 2026-11-03: the walk's drag and press with these on placed nothing, and why is not yet read.
-  if (['annotate.stamp', 'annotate.link-address', 'annotate.link-page'].includes(id)) return 'the walk’s gesture placed nothing with it on, and why is not yet read: open';
   if (id.startsWith('annotate.') || id.startsWith('text.format.') || id.startsWith('forms.arrange.')) return 'a tool or a change the walk makes with no gesture that leaves a mark it reads back';
   if (id.startsWith('document.import-')) return 'an import of the file its own export wrote, whose values are already the document’s';
   if (id.startsWith('start.') || id.startsWith('ai.') || id.startsWith('cloud.') || id.startsWith('tools.')) return 'a card or a panel that opens on screen, judged by its opening';

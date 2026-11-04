@@ -37,7 +37,7 @@ import { PDFDocument, PDFString, StandardFonts, rgb } from '@cantoo/pdf-lib';
 import { expect } from '@playwright/test';
 import { zipSync } from 'fflate';
 
-import { EFFECTS, outputsOf, readPdf, respondedWhy, scannedPageDocument } from './everyToolEffects.mjs';
+import { EFFECTS, LINK_TYPED, outputsOf, readPdf, respondedWhy, scannedPageDocument } from './everyToolEffects.mjs';
 import { WALK_WINDOW, appRootOption, root, startWalk } from './liveWalk.mjs';
 import { editTextOpening } from './textWalkSteps.mjs';
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
@@ -970,10 +970,11 @@ async function pointerOverPage() {
  */
 const GESTURES = {
   ...Object.fromEntries(
-    ['rectangle', 'ellipse', 'line', 'arrow', 'highlight-area', 'redact', 'text-box', 'callout', 'cloud', 'measure-distance', 'link-address', 'link-page'].map((name) => [`annotate.${name}`, 'drag']),
+    // STAMP IS DRAWN AS A BOX (`stampTool.ts`, `MINIMUM_BOX`): a press placed nothing and opened no chooser (2026-11-04).
+    ['rectangle', 'ellipse', 'line', 'arrow', 'highlight-area', 'redact', 'text-box', 'callout', 'cloud', 'measure-distance', 'link-address', 'link-page', 'stamp'].map((name) => [`annotate.${name}`, 'drag']),
   ),
   ...Object.fromEntries(['text', 'checkbox', 'radio', 'dropdown', 'listbox', 'button', 'signature', 'date'].map((name) => [`forms.field-${name}`, 'drag'])),
-  ...Object.fromEntries(['sticky-note', 'stamp', 'typewriter', 'caret'].map((name) => [`annotate.${name}`, 'click'])),
+  ...Object.fromEntries(['sticky-note', 'typewriter', 'caret'].map((name) => [`annotate.${name}`, 'click'])),
   ...Object.fromEntries(['polygon', 'polyline', 'measure-area', 'measure-perimeter'].map((name) => [`annotate.${name}`, 'poly'])),
   'annotate.ink': 'ink',
   ...Object.fromEntries(['highlight', 'underline', 'strikeout', 'redact-text'].map((name) => [`annotate.${name}`, 'words'])),
@@ -989,10 +990,12 @@ async function pagePoint(x, y) {
 
 /**
  * The gesture a tool takes, made the way a hand makes it: pressed, moved in steps, released. A tool that opens words of
- * its own to type in is given one and ended with Escape, its own way out.
+ * its own to type in is given one and ended with Escape, its own way out — except a link's line, which answers only an
+ * address or a page its rule passes and is ended with Enter: the walk's word and Escape placed no link (2026-11-04).
  * @param {'drag' | 'click' | 'poly' | 'ink' | 'words'} gesture
+ * @param {string} id the command that switched the tool on
  */
-async function useTool(gesture) {
+async function useTool(gesture, id) {
   /** @param {readonly (readonly [number, number])[]} points */
   const stroke = async (points) => {
     const [first, ...rest] = points;
@@ -1029,8 +1032,9 @@ async function useTool(gesture) {
     return active !== null && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT' || active.isContentEditable);
   });
   if (typing) {
-    await page.keyboard.type('walk');
-    await page.keyboard.press('Escape');
+    const typed = LINK_TYPED[id];
+    await page.keyboard.type(typed ?? 'walk');
+    await page.keyboard.press(typed === undefined ? 'Escape' : 'Enter');
     await page.waitForTimeout(800);
   }
 }
@@ -1176,7 +1180,7 @@ for (const command of commands) {
       // A TOOL USED, as a hand uses it once it is on: a tool that is only switched on leaves nothing to read back.
       const gesture = GESTURES[command.id];
       if (gesture !== undefined) {
-        await useTool(gesture);
+        await useTool(gesture, command.id);
         await answerQuestions(met);
       }
       await page.waitForTimeout(1500);
