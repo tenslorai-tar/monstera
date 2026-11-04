@@ -40,6 +40,7 @@ import { unzipSync, strFromU8 } from 'fflate';
  *   images: number,
  *   links: string[],
  *   rects: Record<string, number[][]>,
+ *   fonts: string[],
  * }} Reading
  */
 
@@ -168,7 +169,37 @@ export async function readPdf(path) {
     images,
     links,
     rects,
+    fonts: fontsOf(document.getPages()[0]?.node.Resources()),
   };
+}
+
+/**
+ * The base font names page 1 draws with, from its resources and its forms' resources, a level deep.
+ * @param {PDFDict | undefined} resources
+ * @returns {string[]}
+ */
+function fontsOf(resources) {
+  /** @type {string[]} */
+  const names = [];
+  const read = (/** @type {PDFDict | undefined} */ from, /** @type {number} */ depth) => {
+    const fonts = from?.lookup(PDFName.of('Font'));
+    if (fonts instanceof PDFDict) {
+      for (const [, ref] of fonts.entries()) {
+        const font = ref instanceof PDFRef ? fonts.context.lookup(ref) : ref;
+        if (font instanceof PDFDict) names.push(String(font.get(PDFName.of('BaseFont')) ?? '').replace('/', ''));
+      }
+    }
+    const xobjects = from?.lookup(PDFName.of('XObject'));
+    if (depth > 0 && xobjects instanceof PDFDict) {
+      for (const [, ref] of xobjects.entries()) {
+        const object = ref instanceof PDFRef ? xobjects.context.lookup(ref) : ref;
+        const inner = /** @type {{ dict?: PDFDict }} */ (object)?.dict?.lookup(PDFName.of('Resources'));
+        if (inner instanceof PDFDict) read(inner, depth - 1);
+      }
+    }
+  };
+  read(resources, 1);
+  return names;
 }
 
 /** How many marks of the given kinds. @param {Reading} reading @param {readonly string[]} kinds */
@@ -236,6 +267,19 @@ const movesNote = (dx, dy) =>
     const moved = [(now[0] ?? 0) - (was[0] ?? 0), (now[1] ?? 0) - (was[1] ?? 0)];
     return Math.abs((moved[0] ?? 0) - dx) < 0.01 && Math.abs((moved[1] ?? 0) - dy) < 0.01 ? null : `the note moved ${JSON.stringify(moved.map((n) => Number(n.toFixed(2))))}, not [${String(dx)}, ${String(dy)}]`;
   });
+
+/** Page 1's words, spaces aside. @param {Reading} reading */
+const wordsOfPage1 = (reading) => (reading.texts[0] ?? '').replaceAll(/\s+/gu, '');
+
+/**
+ * A change to how page 1 draws its words that leaves the words themselves as they were.
+ * @param {import('./everyToolEffects.mjs').EffectContext} context
+ */
+function redrawnKeepingWords({ before, after }) {
+  if (after === null) return 'no saved copy was read: the command left the document unchanged, or the copy could not be read';
+  if (wordsOfPage1(after) !== wordsOfPage1(before)) return `page 1’s words changed: ${JSON.stringify((after.texts[0] ?? '').slice(0, 120))}`;
+  return (after.contentBytes[0] ?? 0) !== (before.contentBytes[0] ?? 0) ? null : 'page 1 draws as it did';
+}
 
 /** A widget's rectangle as its corners in order. @param {number[]} r */
 const box = (r) => {
@@ -390,6 +434,18 @@ export const EFFECTS = {
       /** @type {const} */ ([['', 1], ['-far', 10]]).map(([far, step]) => [`annotate.nudge-${way}${far}`, movesNote(dx * step, dy * step)]),
     ),
   ),
+  // A FORMAT OF THE CHOSEN WORDS of page 1's first block (the walk's `prepare` chooses them): a face of the kind the
+  // format names appears, or, for a format with no face of its own, page 1 draws differently with its words unchanged.
+  // BOLD BY ITS NAME OR ITS NAMED WEIGHT: the face the edit embeds is a variable font's instance, named by its weight
+  // ("Arimo-Regular-wght700", the trial of 2026-11-04), not "Bold".
+  'text.format.bold': saved((before, after) => {
+    const bold = (/** @type {string} */ f) => /Bold|wght[6-9]00/u.test(f);
+    return after.fonts.some(bold) && !before.fonts.some(bold) ? null : `no bold face: ${JSON.stringify(after.fonts)}`;
+  }),
+  'text.format.italic': saved((before, after) => (after.fonts.some((f) => /Italic|Oblique/u.test(f)) && !before.fonts.some((f) => /Italic|Oblique/u.test(f)) ? null : `no italic face: ${JSON.stringify(after.fonts)}`)),
+  ...Object.fromEntries(['underline', 'strike', 'subscript', 'superscript', 'align-center', 'align-right', 'align-justify', 'indent-more'].map((name) => [`text.format.${name}`, redrawnKeepingWords])),
+  'text.format.bullets': saved((before, after) => (/[•‣◦▪•]/u.test(after.texts[0] ?? '') && !/[•‣◦▪]/u.test(before.texts[0] ?? '') ? null : `no bullet on page 1: ${JSON.stringify((after.texts[0] ?? '').slice(0, 120))}`)),
+  'text.format.numbering': saved((before, after) => ((after.texts[0] ?? '').replace(before.texts[0] ?? '', '') !== '' && /(^|\s)1[.)]/u.test(after.texts[0] ?? '') ? null : `no number on page 1: ${JSON.stringify((after.texts[0] ?? '').slice(0, 120))}`)),
   'forms.arrange.align-left': arranges((r) => [r.x0]),
   'forms.arrange.align-right': arranges((r) => [r.x1]),
   'forms.arrange.align-top': arranges((r) => [r.y1]),
@@ -536,6 +592,7 @@ export function outputsOf(output, id) {
  */
 export function respondedWhy(id) {
   if (id.startsWith('view.') || id.startsWith('app.') || id.startsWith('log.')) return 'a change to the window, judged by the window changing and not by which part of it';
+  if (id === 'text.format.align-left' || id === 'text.format.indent-less') return 'the walk’s first block is already left-aligned and unindented, so it rightly changes nothing there to read';
   if (id.startsWith('annotate.') || id.startsWith('text.format.') || id.startsWith('forms.arrange.')) return 'a tool or a change the walk makes with no gesture that leaves a mark it reads back';
   if (id.startsWith('document.import-')) return 'an import of the file its own export wrote, whose values are already the document’s';
   if (id.startsWith('start.') || id.startsWith('ai.') || id.startsWith('cloud.') || id.startsWith('tools.')) return 'a card or a panel that opens on screen, judged by its opening';

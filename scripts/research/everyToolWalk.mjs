@@ -895,6 +895,10 @@ async function prepare(id) {
   if (via === 'format') {
     await run('text.edit');
     await editTextOpening(page).openWords(page.locator('[data-text-block]').first());
+    // THE BLOCK'S WORDS CHOSEN, as a hand chooses them before it formats: with only a caret, a format has nothing of
+    // the page's to apply to (the effect reading of 2026-11-04).
+    await page.keyboard.press('Control+A');
+    await page.waitForTimeout(300);
     return;
   }
   if (via === 'tab') {
@@ -1205,6 +1209,12 @@ for (const command of commands) {
       if (gesture !== undefined) {
         await useTool(gesture, command.id);
         await answerQuestions(met);
+      }
+      // A FORMAT IS IN THE EDITOR UNTIL THE EDIT IS FINISHED, and Escape finishes it, one command carrying the words and
+      // their format (`editTextHandWalk.pw.ts`): left open, nothing reached the document (the effect trial of 2026-11-04).
+      if ((KEY_STATE[command.id] ?? VIA[command.id]) === 'format') {
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(800);
       }
       await page.waitForTimeout(1500);
       await tasksEnded();
