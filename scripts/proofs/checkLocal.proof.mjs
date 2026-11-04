@@ -88,7 +88,7 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 74 });
+const roster = createRoster(failures, { cases: 76 });
 
 /**
  * Records, and prints nothing — `roster.format` emits the case list at the end.
@@ -1167,14 +1167,19 @@ try {
       // Absolute paths captured BEFORE the chdir, and the chdir is here for the
       // reason it is in the kill case: a survivor holding the fixture as its
       // cwd cannot be removed on Windows.
+      // THE COUNTER IS REPLACED WHOLE, never truncated and rewritten: `writeFileSync` empties the file before it
+      // writes, so a read between the two saw nothing, and a kill landing between them left the file empty for good.
+      // Main's Guards at c72cb97d on ubuntu-latest (2026-11-04) read the ordinary survivor as "advancing before the
+      // kill false, ticks after it null then null": one torn read, on which the cleanup gave up, and the kill that
+      // followed at once inside the same write. Written aside and renamed over, a reader sees the last whole value.
       writeFileSync(
         join(root, 'scripts', 'grandchild.mjs'),
-        "import { writeFileSync } from 'node:fs';\n" +
+        "import { renameSync, writeFileSync } from 'node:fs';\n" +
           "import { tmpdir } from 'node:os';\n" +
           `writeFileSync('${pidPath}', String(process.pid), 'utf8');\n` +
           'process.chdir(tmpdir());\n' +
           'let n = 0;\n' +
-          `setInterval(() => { n += 1; writeFileSync('${marker}', String(n), 'utf8'); }, 100);\n` +
+          `setInterval(() => { n += 1; writeFileSync('${marker}.next', String(n), 'utf8'); renameSync('${marker}.next', '${marker}'); }, 100);\n` +
           `setTimeout(() => process.exit(0), ${String(TEARDOWN_FIXTURE_MS)});\n`,
         'utf8',
       );
@@ -1359,17 +1364,39 @@ try {
      * @param {ReturnType<typeof probeGrandchild>} probe
      */
     const seenAdvancing = (probe) => {
-      const before = probe.tick();
-      if (before === null) return false;
+      // AN EMPTY READ IS NO READING here as in `probeGrandchild`'s own loops: this one gave up on a first read that
+      // was empty, while every other reader in this file polled past it, and that is the read the c72cb97d failure
+      // took (the grandchild's writer above).
+      let before = probe.tick();
       let waited = 0;
       while (waited < CLEANUP_ADVANCE_BUDGET_MS) {
         sleepSync(SETUP_POLL_MS);
         waited += SETUP_POLL_MS;
         const now = probe.tick();
-        if (now !== null && now > before) return true;
+        if (now === null) continue;
+        if (before === null) before = now;
+        else if (now > before) return true;
       }
       return false;
     };
+
+    // A FIRST READ THAT IS EMPTY does not read a living counter as dead, and a counter that never moves is still not
+    // read as alive: the second is the control that the first is not a reader answering yes to everything.
+    /** @param {readonly (number | null)[]} readings @returns {ReturnType<typeof probeGrandchild>} */
+    const scripted = (readings) => {
+      let at = 0;
+      return { sawAdvance: true, stillAdvancing: true, pid: null, tick: () => readings[Math.min(at++, readings.length - 1)] ?? null };
+    };
+    check(
+      'a survivor whose first reading is empty is still seen advancing, as every other reader here sees it',
+      seenAdvancing(scripted([null, 5, 6])),
+      'the cleanup gave up on an empty first read, which a write in progress gives, and called a living survivor dead',
+    );
+    check(
+      'CONTROL: a counter that never moves past an empty first reading is not seen advancing',
+      !seenAdvancing(scripted([null, 5, 5])),
+      'a reader that answers yes for a still counter would pass the case above for the wrong reason',
+    );
 
     /** @type {string[]} */
     const stopped = [];
