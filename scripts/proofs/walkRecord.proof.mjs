@@ -16,10 +16,11 @@ import { repoRoot } from '../lib/gitScope.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { commandIds, countsFor, programDigest, refusals, rowsFrom } from '../release/walkRecord.mjs';
+import { stepTable, walkingRow } from '../research/walkSteps.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 18 });
+const roster = createRoster(failures, { cases: 22 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -57,7 +58,7 @@ const ZOOM_SAID = { name: 'zoom', outcome: 'passed', notWalked: { 'view.zoom-in'
 /** Every command walked and passed, one of them said not walked with its reason. */
 const WALKED = [OPEN_SAVE, ZOOM_SAID];
 
-function main() {
+async function main() {
   check(
     'CONTROL: a commit whose full walk passed, or said why a row was not walked, is allowed',
     refusals(recordOf(WALKED), COMMIT, DIGEST, COMMANDS).length === 0,
@@ -150,6 +151,27 @@ function main() {
     rmSync(scratch, { recursive: true, force: true });
   }
 
+  // A STEP TABLE ANSWERS ONLY ITS OWN ROW (the correction of 2026-11-04): its own command's entry while that row is
+  // walked; another command's, a listing, or a read outside any row throws. The first is the control that the guard does
+  // not refuse everything.
+  const table = stepTable('TRIAL', { 'document.open': 'own', 'document.save': 'other' });
+  /** @param {() => unknown} read */
+  const throws = (read) => {
+    try {
+      read();
+      return false;
+    } catch {
+      return true;
+    }
+  };
+  const own = await walkingRow('document.open', async () => table['document.open']);
+  check('CONTROL: a step table answers the row being walked with that row\'s own entry', own === 'own', String(own));
+  const across = await walkingRow('document.open', async () => throws(() => table['document.save']));
+  check('a step table read for another row\'s command in a row throws', across, 'read across rows without throwing');
+  const listed = await walkingRow('document.open', async () => throws(() => Object.keys(table)));
+  check('a step table listed in a row throws, since a listing reads every row\'s entry', listed, 'listed without throwing');
+  check('a step table read outside any row throws', throws(() => table['document.open']), 'read outside a row without throwing');
+
   // THE ROWS ARE THE REGISTRY'S: read from the checklist the registry generates, with its own positive control.
   const ids = commandIds(readFileSync(join(repoRoot(), 'docs', 'manual-test-checklist.md'), 'utf8'));
   check('the checklist names every command once, document.save among them, and more than two hundred', ids.length > 200 && new Set(ids).size === ids.length, `${String(ids.length)} ids`);
@@ -172,7 +194,7 @@ function main() {
 }
 
 try {
-  process.exit(main());
+  process.exit(await main());
 } catch (error) {
   process.stderr.write(`${formatError(error)}\n`);
   process.exit(1);
