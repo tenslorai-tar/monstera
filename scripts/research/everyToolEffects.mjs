@@ -463,6 +463,8 @@ export const EFFECTS = {
   'forms.arrange.same-size': arranges((r) => [r.x1 - r.x0, r.y1 - r.y0]),
   'forms.arrange.distribute-horizontally': distributes('x'),
   'forms.arrange.distribute-vertically': distributes('y'),
+  // THE COPY, written where its picker was answered: the document's pages and page 1's words.
+  'document.save-copy': pdfOut((copy, before) => (copy.pages === before.pages && wordsOfPage1(copy) === wordsOfPage1(before) ? null : `the copy holds ${String(copy.pages)} pages against ${String(before.pages)}, or other words on page 1`)),
   'document.delete-pages': saved((before, after) => (after.pages < before.pages ? null : `pages ${String(before.pages)} to ${String(after.pages)}`)),
   // THE PARTS BESIDE THE DOCUMENT (`doc-<id> 1.pdf` and on, `outputsOf`), every page in exactly one.
   'document.split': async ({ before, outputs, read }) => {
