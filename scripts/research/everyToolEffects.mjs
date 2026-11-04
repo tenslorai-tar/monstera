@@ -189,9 +189,36 @@ export const SCANNED_WORDS = 'MONSTERA SCANNED PAGE';
 export const LINK_TYPED = { 'annotate.link-address': 'https://example.org/walk', 'annotate.link-page': '2' };
 
 /**
- * @typedef {{ before: Reading, after: Reading | null, outputs: string[], read: (path: string) => Promise<Reading | null> }} EffectContext
+ * @typedef {{ before: Reading, prepared: Reading | null, after: Reading | null, outputs: string[], read: (path: string) => Promise<Reading | null> }} EffectContext
  * @typedef {(context: EffectContext) => Promise<string | null> | string | null} EffectCheck
  */
+
+/**
+ * The command each command that takes something away is given first, as a hand gives it (the walk's `prepare`), and
+ * whose state is saved and read before the command runs (`prepared`): a removal judged against the fresh copy alone
+ * passes where the add placed nothing, since both leave the page as it began.
+ * @type {Readonly<Record<string, string>>}
+ */
+export const ADDED_FIRST = {
+  'document.remove-watermark': 'document.watermark-pages',
+  'document.remove-bates': 'document.bates-number',
+  'document.remove-header-footer': 'document.header-footer',
+};
+
+/**
+ * A removal: the prepared state carries what `added` says it adds, and the saved copy draws page 1's words as the fresh
+ * copy did and less than the prepared state did.
+ * @param {(before: Reading, prepared: Reading) => string | null} added
+ * @returns {EffectCheck}
+ */
+const removes = (added) => ({ before, prepared, after }) => {
+  if (prepared === null) return 'the state before the removal was not saved and read';
+  const put = added(before, prepared);
+  if (put !== null) return `the add given first placed nothing to remove: ${put}`;
+  if (after === null) return 'no saved copy was read after the removal';
+  if ((after.texts[0] ?? '') !== (before.texts[0] ?? '')) return `page 1’s words are not the fresh copy’s: ${JSON.stringify((after.texts[0] ?? '').slice(0, 120))}`;
+  return (after.contentBytes[0] ?? 0) < (prepared.contentBytes[0] ?? 0) ? null : 'page 1 draws no less than with the mark on it';
+};
 
 /** A check that needs the saved copy: `null` where it is fine, else what is wrong. @param {(before: Reading, after: Reading) => string | null} check @returns {EffectCheck} */
 const saved = (check) => ({ before, after }) => (after === null ? 'no saved copy was read: the command left the document unchanged, or the copy could not be read' : check(before, after));
@@ -274,6 +301,35 @@ export const EFFECTS = {
   'document.header-footer': saved((before, after) => ((after.texts[0] ?? '').length > (before.texts[0] ?? '').length ? null : 'page 1 holds no new words')),
   'document.bates-number': saved((before, after) => (/\d{3,}/u.test(after.texts[0] ?? '') && !/\d{3,}/u.test(before.texts[0] ?? '') ? null : 'page 1 holds no number of three or more digits')),
   'document.watermark-pages': saved((before, after) => ((after.contentBytes[0] ?? 0) > (before.contentBytes[0] ?? 0) || (after.texts[0] ?? '').length > (before.texts[0] ?? '').length ? null : 'page 1 draws nothing more')),
+  'document.remove-header-footer': removes((before, prepared) => ((prepared.texts[0] ?? '').length > (before.texts[0] ?? '').length ? null : 'page 1 held no new words')),
+  'document.remove-bates': removes((before, prepared) => (/\d{3,}/u.test(prepared.texts[0] ?? '') && !/\d{3,}/u.test(before.texts[0] ?? '') ? null : 'page 1 held no Bates number')),
+  'document.remove-watermark': removes((before, prepared) =>
+    (prepared.contentBytes[0] ?? 0) > (before.contentBytes[0] ?? 0) || (prepared.texts[0] ?? '').length > (before.texts[0] ?? '').length ? null : 'page 1 drew nothing more',
+  ),
+  // A DOCUMENT MADE FROM THE WALK'S OWN FILE (the walk's `MARKDOWN`, `TABLE`, `WORD` and `PICTURE`), read for its words or
+  // its picture: the new document is the PDF the command wrote where its save picker was answered, and the trial of
+  // 2026-11-04 read no unsaved tab, the file being already written.
+  'document.new-from-markdown': pdfOut((made) => (made.texts.join(' ').includes('ordinary') ? null : `the new document holds not the Markdown’s words: ${JSON.stringify(made.texts.join(' ').slice(0, 120))}`)),
+  'document.new-from-csv': pdfOut((made) => (made.texts.join(' ').includes('Pens') ? null : `the new document holds not the table’s rows: ${JSON.stringify(made.texts.join(' ').slice(0, 120))}`)),
+  'document.new-from-office': pdfOut((made) => (made.texts.join(' ').includes('A letter the walk wrote') ? null : `the new document holds not the letter’s words: ${JSON.stringify(made.texts.join(' ').slice(0, 120))}`)),
+  'document.new-from-images': pdfOut((made) => (made.images > 0 ? null : 'the new document holds no picture')),
+  'document.insert-image': saved((before, after) => (after.pages > before.pages && after.images > before.images ? null : `pages ${String(before.pages)} to ${String(after.pages)}, pictures ${String(before.images)} to ${String(after.images)}`)),
+  'document.append-markdown': saved((before, after) => (after.pages > before.pages && after.texts.slice(before.pages).join(' ').includes('ordinary') ? null : `pages ${String(before.pages)} to ${String(after.pages)}, and no new page holds the Markdown’s words`)),
+  // UNDO OF THE ROTATION THE WALK GIVES FIRST (`prepare`): the prepared state is turned, and the document after the undo
+  // is the fresh copy's turn again, saved or left clean (no saved copy is then the effect, not its absence).
+  'document.undo': ({ before, prepared, after }) => {
+    if (prepared === null) return 'the turned state before the undo was not saved and read';
+    if (JSON.stringify(prepared.rotations) === JSON.stringify(before.rotations)) return 'the rotation given first turned nothing, so the undo had nothing to undo';
+    if (after === null) return null;
+    return JSON.stringify(after.rotations) === JSON.stringify(before.rotations) ? null : `the pages are still turned: ${JSON.stringify(after.rotations)}`;
+  },
+  // REDO OF THAT ROTATION, undone first: the prepared state is the fresh copy's turn, and the saved copy is turned again.
+  'document.redo': ({ before, prepared, after }) => {
+    if (prepared === null) return 'the undone state before the redo was not saved and read';
+    if (JSON.stringify(prepared.rotations) !== JSON.stringify(before.rotations)) return 'the undo given first left the pages turned';
+    if (after === null) return 'no saved copy was read after the redo';
+    return JSON.stringify(after.rotations) !== JSON.stringify(before.rotations) ? null : 'the redo turned no page';
+  },
   'document.page-background': saved((before, after) => ((after.contentBytes[0] ?? 0) !== (before.contentBytes[0] ?? 0) ? null : "page 1's drawing is unchanged")),
   // THE WORDS THE WALK MARKS, the start of page 1's heading (`selectWords` drags across its first line's first 160 px).
   'document.apply-redactions': saved((before, after) => ((before.texts[0] ?? '').includes(HEADING_WORDS) && !(after.texts[0] ?? '').includes(HEADING_WORDS) ? null : 'the marked words are still on page 1')),

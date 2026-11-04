@@ -30,14 +30,14 @@
  */
 import { execFileSync } from 'node:child_process';
 import { copyFile, writeFile } from 'node:fs/promises';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { PDFDocument, PDFString, StandardFonts, rgb } from '@cantoo/pdf-lib';
 import { expect } from '@playwright/test';
 import { zipSync } from 'fflate';
 
-import { EFFECTS, LINK_TYPED, outputsOf, readPdf, respondedWhy, scannedPageDocument } from './everyToolEffects.mjs';
+import { ADDED_FIRST, EFFECTS, LINK_TYPED, outputsOf, readPdf, respondedWhy, scannedPageDocument } from './everyToolEffects.mjs';
 import { WALK_WINDOW, appRootOption, root, startWalk } from './liveWalk.mjs';
 import { editTextOpening } from './textWalkSteps.mjs';
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
@@ -301,6 +301,8 @@ await writeFile(
 );
 /** The commands a scan is the input for, and so the document each starts from. */
 const ON_A_SCAN = new Set(['document.convert-scan', 'document.ocr', 'document.straighten-scans', 'document.deskew-pages', 'document.enhance-scans']);
+/** The commands whose effect is judged against the state `prepare` made, which is saved and read before they run. */
+const READ_PREPARED = new Set([...Object.keys(ADDED_FIRST), 'document.undo', 'document.redo']);
 /** How many rows end at each depth: the report's two totals, beside failed and not walked. */
 const depths = { effect: 0, responded: 0 };
 const second = join(root, '_review', 'test-files', 'sample5.pdf');
@@ -826,6 +828,14 @@ async function prepare(id) {
     if (id === 'document.redo') await run('document.undo');
     return;
   }
+  // WHAT A REMOVAL TAKES AWAY, put there first by its own add (`ADDED_FIRST`).
+  const added = ADDED_FIRST[id];
+  if (added !== undefined) {
+    await answerPickers(added);
+    await run(added);
+    await answerPickers(id);
+    return;
+  }
   // AN IMPORT TAKES THE FILE ITS OWN EXPORT WRITES, which the pickers then hand it (`answerPickers`).
   const exported = id.replace('.import-', '.export-');
   if (exported !== id && commandsById.has(exported)) {
@@ -1152,6 +1162,19 @@ for (const command of commands) {
       await run(command.id === 'view.select-text' ? 'annotate.select' : 'view.select-text');
       await answerPickers(command.id);
       await prepare(command.id);
+      // THE STATE `prepare` MADE, saved as a copy and read, for a command judged against it (`READ_PREPARED`): the tab
+      // keeps its unsaved change, so the command then runs on exactly that state.
+      let prepared = null;
+      if (READ_PREPARED.has(command.id)) {
+        const path = join(output, `prepared-${command.id}.pdf`);
+        await saveTo(path);
+        await ranFromPalette('Save a copy…', 'document.save-copy');
+        await answerQuestions([]);
+        await expect.poll(() => existsSync(path) && readFileSync(path).byteLength > 0, { timeout: 30_000 }).toBe(true);
+        prepared = await readPdf(path);
+        if (prepared === null) throw new Error('the state prepared for this command was saved and could not be read');
+        await answerPickers(command.id);
+      }
       const before = { externals: await externals(), prints: await prints(), toasts: await toastsNow() };
       /** @type {string[]} */
       const errors = [];
@@ -1249,7 +1272,7 @@ for (const command of commands) {
         return { context, dialogs: met, toast, changed, opened, printed, reopened, depth: 'responded', why: respondedWhy(command.id) };
       }
       const after = reopened === 'saved and opened again' ? await readPdf(kept) : null;
-      const wrong = await check({ before: began, after, outputs: outputsOf(output, command.id), read: readPdf });
+      const wrong = await check({ before: began, prepared, after, outputs: outputsOf(output, command.id), read: readPdf });
       if (wrong !== null) throw new Error(`EFFECT: ${wrong} (${context})`);
       depths.effect += 1;
       return { context, dialogs: met, toast, changed, opened, printed, reopened, depth: 'effect' };
