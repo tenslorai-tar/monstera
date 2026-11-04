@@ -39,7 +39,7 @@
  * the size of the window, so the size is part of what is measured.
  *
  * Usage: node scripts/research/appMemory.mjs --build package|dev [--document <absolute .pdf>] [--variant <name>]
- *   [--single] [--no-read]
+ *   [--single] [--no-read] [--app-root <another checkout>, with --build dev]
  * Without `--document`, the scan-shaped fixture (`scripts/perf/largeFixture.mjs`) is generated and measured.
  */
 
@@ -55,10 +55,17 @@ import { buildScanFixture } from '../perf/largeFixture.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
 import { developmentEnvironment } from '../lib/launchEnvironment.mjs';
 import { byRole, processTreeMemory } from '../lib/processMemory.mjs';
+import { requireLaunchedBrowser } from './answeringBrowser.mjs';
+import { appRootOption } from './liveWalk.mjs';
 import { maximise } from './maximiseWindow.mjs';
 import { variantCss, variantSwitches } from './surfaceVariants.mjs';
 
 const ROOT = repoRoot();
+/**
+ * The checkout whose built app a `--build dev` run launches: this one, or with `--app-root` another (a release's
+ * worktree), so a before-and-after is read by ONE instrument. The fixture stays in this checkout.
+ */
+const APP_ROOT = appRootOption(process.argv).appRoot ?? ROOT;
 const PORT = 9341;
 let ending = false;
 
@@ -71,7 +78,8 @@ function option(name) {
 const build = option('build');
 if (build !== 'package' && build !== 'dev') throw new Error('--build is package or dev');
 /** What `npm start` hands a development shell (`launchEnvironment.mjs`); nothing for the package, which finds its own. */
-const DEVELOPMENT_ENV = build === 'dev' ? await developmentEnvironment(ROOT) : {};
+if (APP_ROOT !== ROOT && build !== 'dev') throw new Error('--app-root launches another checkout\'s development build: it needs --build dev.');
+const DEVELOPMENT_ENV = build === 'dev' ? await developmentEnvironment(APP_ROOT) : {};
 const variant = option('variant') ?? 'none';
 const css = variantCss(variant);
 const SWITCHES = variantSwitches(variant);
@@ -101,7 +109,7 @@ function launch(documents) {
   const [command, args] =
     build === 'package'
       ? [join(ROOT, 'release', 'msix', 'test', 'layout', 'Monstera.exe'), common]
-      : [electronBinaryPath(ROOT), [resolve(ROOT, 'apps', 'desktop'), ...common]];
+      : [electronBinaryPath(APP_ROOT), [resolve(APP_ROOT, 'apps', 'desktop'), ...common]];
   const child = spawn(command, args, { stdio: ['ignore', 'ignore', 'ignore'], env: { ...process.env, ...DEVELOPMENT_ENV } });
   child.on('exit', (code) => {
     if (!ending) console.error(`THE APPLICATION EXITED early, code ${String(code)}`);
@@ -187,7 +195,8 @@ async function run(label, documents) {
       }
     }
     if (browser === undefined) throw new Error(`${label}: the application never opened its debugging port`);
-    if (!portListeners().includes(/** @type {number} */ (child.pid))) throw new Error(`${label}: the port answers from another process`);
+    // THE BROWSER NAMES ITS OWN PROCESS, never netstat, which stops listing the socket once connected (`answeringBrowser.mjs`).
+    await requireLaunchedBrowser(browser, child, label);
     /** @type {any} */
     let page;
     for (let i = 0; i < 120 && page === undefined; i += 1) {

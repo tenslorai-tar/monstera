@@ -65,6 +65,7 @@
  * Usage: node scripts/research/frameTimes.mjs --build package|dev --document <absolute .pdf> [--large]
  *   [--variant none|no-blur|no-gradients|no-thumbnails] [--scenarios scroll,drag,menu,draw,open,switch,select,arrive]
  *   [--then-open <absolute .pdf>|large] [--select-spin <ms>] [--select-rounds <n>] [--select-profile] [--arrive-profile]
+ *   [--app-root <another checkout>, with --build dev]
  * The `select` scenario selects the first page's text whole and lets it go, thirty times a round in five rounds, each
  * beside a control round that selects nothing, and reports what one selection costs each thread.
  * `--large` generates the scan-shaped fixture (`scripts/perf/largeFixture.mjs`) and measures that instead.
@@ -81,10 +82,17 @@ import { repoRoot } from '../lib/gitScope.mjs';
 import { buildScanFixture } from '../perf/largeFixture.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
 import { developmentEnvironment } from '../lib/launchEnvironment.mjs';
+import { requireLaunchedBrowser } from './answeringBrowser.mjs';
+import { appRootOption } from './liveWalk.mjs';
 import { maximise } from './maximiseWindow.mjs';
 import { variantCss, variantSwitches } from './surfaceVariants.mjs';
 
 const ROOT = repoRoot();
+/**
+ * The checkout whose built app a `--build dev` run launches: this one, or with `--app-root` another (a release's
+ * worktree), so a before-and-after is read by ONE instrument. Fixtures and output stay in this checkout.
+ */
+const APP_ROOT = appRootOption(process.argv).appRoot ?? ROOT;
 const PORT = 9339;
 /** Set by the teardown, so an exit it caused is not reported as the application's own. */
 let ending = false;
@@ -125,7 +133,8 @@ function monsteraPids() {
     .filter((pid) => Number.isInteger(pid) && pid > 0);
 }
 /** What `npm start` hands a development shell (`launchEnvironment.mjs`); nothing for the package, which finds its own. */
-const DEVELOPMENT_ENV = build === 'dev' ? await developmentEnvironment(ROOT) : {};
+if (APP_ROOT !== ROOT && build !== 'dev') throw new Error('--app-root launches another checkout\'s development build: it needs --build dev.');
+const DEVELOPMENT_ENV = build === 'dev' ? await developmentEnvironment(APP_ROOT) : {};
 const variant = option('variant') ?? 'none';
 const scenarios = (option('scenarios') ?? 'scroll,drag,menu,draw').split(',');
 const large = process.argv.includes('--large');
@@ -376,7 +385,7 @@ function commandFor(rest) {
   }
   return build === 'package'
     ? [join(ROOT, 'release', 'msix', 'test', 'layout', 'Monstera.exe'), rest]
-    : [electronBinaryPath(ROOT), [resolve(ROOT, 'apps', 'desktop'), ...rest]];
+    : [electronBinaryPath(APP_ROOT), [resolve(APP_ROOT, 'apps', 'desktop'), ...rest]];
 }
 
 /**
@@ -854,15 +863,8 @@ try {
     }
     appPid = listener;
   } else {
-    // THE BROWSER THIS RUN IS CONNECTED TO NAMES ITS OWN PROCESS, which is the question netstat was asked to answer and
-    // could not: once connected, the port's listening socket was not listed, and the browser's end of the connection
-    // read CLOSED (three of eleven launches of the development build on 2026-11-01, netstat's lines printed by this
-    // check), so a check of the port named nobody while the launched process was the one answering.
-    const info = await (await browser.newBrowserCDPSession()).send('SystemInfo.getProcessInfo');
-    const answering = /** @type {{ type: string, id: number }[]} */ (info.processInfo).find((each) => each.type === 'browser')?.id;
-    if (answering !== child.pid) {
-      throw new Error(`the browser answering is PID ${String(answering)}, not the launched ${String(child.pid)} (exit code ${String(child.exitCode)})`);
-    }
+    // THE BROWSER NAMES ITS OWN PROCESS, never netstat, which stops listing the socket once connected (`answeringBrowser.mjs`).
+    await requireLaunchedBrowser(browser, child);
     appPid = child.pid;
   }
   // THE PAGE THAT SHOWS THE DOCUMENT, looked for again on each attempt: the first run that connected early found its
