@@ -107,6 +107,18 @@ export async function writesIdle(page) {
 }
 
 /**
+ * Waits until NOTHING is in flight, of either kind the renderer counts (`inFlight.ts`): no write, and no work of main's
+ * under a progress notice. What a walk waits on before it reads any state, since a reading taken while either is landing
+ * reads the state before it: the full walk judged Bates numbering before its 4.2 s write landed (2026-11-04).
+ *
+ * @param {import('playwright').Page} page
+ */
+export async function nothingInFlight(page) {
+  await writesLanded(page, await writesDone(page, 'writes'), 0, 'writes');
+  await writesLanded(page, await writesDone(page, 'works'), 0, 'works');
+}
+
+/**
  * Waits until a box stops moving: two reads 100 ms apart that agree. For a scroll or a wheel, whose end has no event.
  *
  * @param {() => Promise<{ x: number; y: number; width: number; height: number } | null>} read

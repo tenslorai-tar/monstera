@@ -38,7 +38,7 @@ import { expect } from '@playwright/test';
 import { zipSync } from 'fflate';
 
 import { ADDED_FIRST, EFFECTS, FIELD_TYPED, LINK_TYPED, TYPED_WORD, outputsOf, readPdf, respondedWhy, scannedPageDocument } from './everyToolEffects.mjs';
-import { WALK_WINDOW, appRootOption, root, startWalk, writesIdle } from './liveWalk.mjs';
+import { WALK_WINDOW, appRootOption, nothingInFlight, root, startWalk } from './liveWalk.mjs';
 import { editTextOpening } from './textWalkSteps.mjs';
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { bindNativeEngine } from '../lib/nativeEngine.mjs';
@@ -473,7 +473,31 @@ const toastAfter = async (before) => {
   return added.length > 0 ? { kind: 'other', text: (added[0] ?? '').replace(/^[a-z]+\|/u, '') } : null;
 };
 
-const unsaved = async () => (await page.getByText('Unsaved changes', { exact: true }).count()) > 0;
+/** Whether the document holds changes not saved, read once nothing is in flight: a write landing later is a change. */
+const unsaved = async () => {
+  await nothingInFlight(page);
+  return (await page.getByText('Unsaved changes', { exact: true }).count()) > 0;
+};
+
+/**
+ * The document on show saved as a copy at `path`, as a hand saves one, once nothing is in flight: a copy saved while a
+ * write is landing misses it. Its questions answered as every command's are (a copy with unapplied redaction marks asks
+ * first), and the file waited for until it holds bytes. The ONE way the walk saves a copy, for the state `prepare` made
+ * and for the step's own result.
+ * @param {string} path
+ * @returns {Promise<boolean>} whether a copy with bytes was written within 30 s
+ */
+async function saveCopy(path) {
+  await nothingInFlight(page);
+  await saveTo(path);
+  await ranFromPalette('Save a copy…', 'document.save-copy');
+  await answerQuestions([]);
+  return expect
+    .poll(() => existsSync(path) && readFileSync(path).byteLength > 0, { timeout: 30_000 })
+    .toBe(true)
+    .then(() => true)
+    .catch(() => false);
+}
 
 /**
  * Dismisses any modal left open, whether or not it is a registry dialog: the command palette is the Dialog primitive
@@ -651,9 +675,11 @@ async function answerQuestions(met) {
  * The fingerprint once the window has stopped changing: two readings half a second apart that agree, within 15 s. A
  * document just opened is still drawing its pages and its text layer, and a reading taken then changes by itself: the
  * walk's control failed so once in two runs after the restart of 2026-11-03, where it blamed the palette for the
- * document settling. A step's "before" read that early would let a command that did nothing pass as a change.
+ * document settling. A step's "before" read that early would let a command that did nothing pass as a change. AND
+ * NOTHING IN FLIGHT FIRST (`nothingInFlight`): a write still landing changes the window after both readings agree.
  */
 async function settledFingerprint() {
+  await nothingInFlight(page);
   let last = await fingerprint();
   for (let tries = 0; tries < 30; tries += 1) {
     await page.waitForTimeout(500);
@@ -1151,7 +1177,7 @@ async function knownStart() {
   // EVERY TAB CLOSED FIRST: main holds the documents, so a window loaded again shows the ones still open (the trial of
   // 2026-11-03 found the control's document on show after the reload). AFTER ANY WRITE STILL LANDING: the step before's
   // edit wrote after it was judged, and its tab's close button then waited 30 s (the final walk of 2026-11-04).
-  await writesIdle(page);
+  await nothingInFlight(page);
   await dismissModals();
   await closeAll();
   const saved = await page.evaluate(
@@ -1264,10 +1290,7 @@ for (const command of commands) {
       let prepared = null;
       if (READ_PREPARED.has(command.id)) {
         const path = join(output, `prepared-${command.id}.pdf`);
-        await saveTo(path);
-        await ranFromPalette('Save a copy…', 'document.save-copy');
-        await answerQuestions([]);
-        await expect.poll(() => existsSync(path) && readFileSync(path).byteLength > 0, { timeout: 30_000 }).toBe(true);
+        if (!(await saveCopy(path))) throw new Error('the state prepared for this command was not saved within 30 s');
         prepared = await readPdf(path);
         if (prepared === null) throw new Error('the state prepared for this command was saved and could not be read');
         await answerPickers(command.id);
@@ -1311,7 +1334,7 @@ for (const command of commands) {
         // 3.7 s, the step was judged before it, and the next step's start found that tab unsaved (the final walk of
         // 2026-11-04: Align centre, Justify, Align right and Bullets in a row).
         await expect(page.locator('[data-kit-surface]')).toHaveCount(0, { timeout: 60_000 });
-        await writesIdle(page);
+        await nothingInFlight(page);
       }
       await page.waitForTimeout(1500);
       await tasksEnded();
@@ -1325,8 +1348,8 @@ for (const command of commands) {
       // EVERY WRITE THE STEP MADE, LANDED, before anything is judged: a command's write is counted in flight until main
       // answers (`inFlight.ts`), and Bates numbering's took 3.4 to 4.2 s and Headers and footers' 6.2 s on their first use,
       // so a step judged at its fixed moment read the document unchanged and saved no copy (the clean build's walk of
-      // 2026-11-04, failing in one run and passing in the next).
-      await writesIdle(page);
+      // 2026-11-04, failing in one run and passing in the next). Every reader below waits the same way on its own.
+      await nothingInFlight(page);
       // THE ANSWER THE COMMAND DECLARES, waited for: a command that answers with a toast and runs no task notice is a
       // request in flight until it does, and read at a fixed moment Import comments from JSON's 4.5 s request was judged
       // as nothing shown while it was still running (the final walk of 2026-11-04). The toasts are recorded as they come
@@ -1371,13 +1394,10 @@ for (const command of commands) {
       let reopened = 'unchanged';
       const kept = join(output, `kept-${command.id}.pdf`);
       if (await unsaved()) {
-        await saveTo(kept);
-        await ranFromPalette('Save a copy…', 'document.save-copy');
-        // ITS QUESTIONS ANSWERED as every command's are: a copy of a document with unapplied redaction marks asks first,
-        // and unanswered, nothing was written, the copy did not open, and the start screen sat idle until the window gave
-        // its renderer back (ADR-0252), which read as a reload (2026-11-03).
-        await answerQuestions([]);
-        await expect.poll(async () => readFileSync(kept, { flag: 'r' }).byteLength > 0, { timeout: 30_000 }).toBe(true).catch(() => undefined);
+        // ITS QUESTIONS ANSWERED as every command's are (`saveCopy`): a copy of a document with unapplied redaction marks
+        // asks first, and unanswered, nothing was written, the copy did not open, and the start screen sat idle until the
+        // window gave its renderer back (ADR-0252), which read as a reload (2026-11-03).
+        await saveCopy(kept);
         await closeAll();
         const back = await reopen(kept);
         await page.locator('canvas.m-page:visible').first().waitFor({ state: 'visible', timeout: 30_000 }).catch(() => undefined);
