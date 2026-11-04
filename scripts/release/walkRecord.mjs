@@ -17,6 +17,8 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSy
 import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { isMain } from '../lib/isMain.mjs';
+
 /** Every built folder whose files the pack stages: the shell's, and each workspace package's. @param {string} root */
 export function builtFolders(root) {
   const packages = join(root, 'packages');
@@ -293,7 +295,7 @@ export function writeRecord(root) {
 
 const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..', '..');
 
-if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.argv[1]) {
+if (isMain(import.meta.url)) {
   if (process.argv.includes('--digest')) {
     const { digest, files } = buildDigest(ROOT);
     process.stdout.write(`${digest} over ${String(files)} files\n`);

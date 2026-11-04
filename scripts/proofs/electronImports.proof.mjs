@@ -807,6 +807,17 @@ try {
           'answers those paths and no other.',
       },
     ],
+    [
+      'scripts/research/everyToolWalk.mjs',
+      {
+        sites: 1,
+        reason:
+          'the settings registry of the BUILD the walk runs, packages/ui/dist/settings/all.js under ' +
+          'this checkout or the one --app-root names (a release, for the comparison), so the defaults put ' +
+          'back are that build\'s own: pure data, no Electron, and computed because which checkout is the ' +
+          'walk\'s argument.',
+      },
+    ],
   ]);
 
   /** @type {Map<string, number>} */

@@ -43,3 +43,15 @@ export function isMain(moduleUrl) {
   if (entry === undefined) return false;
   return moduleUrl === pathToFileURL(entry).href;
 }
+
+/**
+ * The entry script the process was started with, as node was given it, or `undefined` where there is none (`node
+ * --eval`, an embedder): the one other read of `process.argv[1]`, beside {@link isMain}, for a caller that must NAME the
+ * program running rather than ask whether it is that program — `liveWalk.mjs`, which digests the walk that runs (ADR-0285's
+ * correction). A second read in a caller is what `mainGuards.mjs` refuses.
+ *
+ * @returns {string | undefined}
+ */
+export function entryScript() {
+  return process.argv[1];
+}

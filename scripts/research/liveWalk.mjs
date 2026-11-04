@@ -27,6 +27,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 import { fileURLToPath } from 'node:url';
 import { expect } from '@playwright/test';
 import { _electron } from 'playwright';
+import { entryScript } from '../lib/isMain.mjs';
 import { developmentEnvironment } from '../lib/launchEnvironment.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
 import { PALETTE_DRIVER, SHELL_LAUNCH, refuseStaleBuild } from '../lib/buildFreshness.mjs';
@@ -177,7 +178,7 @@ export async function launchApp(walk, options = {}) {
   // app's sources are that commit's, and the built bytes' digest. Only a walk of this checkout's own build says it; a
   // walk of another worktree or of a packaged executable is a comparison, never this build's record.
   // AND WHICH PROGRAM WALKS IT, by the script node was asked to run, from the checkout (the correction of 2026-11-03).
-  const script = relative(root, process.argv[1] ?? '').split(sep).join('/');
+  const script = relative(root, entryScript() ?? '').split(sep).join('/');
   // A PROGRAM OUTSIDE THE CHECKOUT (a trial in a scratch folder) names the build and no program: its imports are not the
   // checkout's to follow, and a report naming no program is never counted (`countsFor`), so it can run and cannot pass
   // a row. It refused to start at all from 2026-11-03, when the program digest arrived, which stopped every trial.

@@ -315,6 +315,9 @@ await writeFile(bookmarked, await bookmarkedDocument(await readFile(source)));
 refuseStaleBuild(root, [['packages/kernel/src/pdfiumFfi.ts', 'packages/kernel/dist/pdfiumFfi.js', 'tsc']], 1);
 // A LITERAL SPECIFIER, so `proof:electronimports` can read what this loads.
 const pdfiumFfi = await import('../../packages/kernel/dist/pdfiumFfi.js');
+// THE PALETTE'S ONE DRIVER, from its build, which `startWalk` has already found fresh (`PALETTE_DRIVER`).
+/** @type {{ runCommandIfOffered: (page: import('playwright').Page, title: string, id: string) => Promise<boolean> }} */
+const paletteDriver = await import('../../packages/testing/dist/palette.js');
 pdfiumFfi.openPdfium(pdfiumLibrary(root));
 bindNativeEngine(root);
 const scanned = join(output, 'walk-scan.pdf');
@@ -528,20 +531,9 @@ async function selectWords() {
  * @param {string} id
  */
 async function ranFromPalette(title, id) {
-  await page.keyboard.press('Control+K');
-  await page.locator('.m-palette-query').fill(title);
-  // BY ITS ID, which the palette writes into each option's element id with every other character an underscore: two
-  // commands share some titles (Translate), and a title alone picked neither (the walk's first trial, 2026-11-03).
-  const choice = page.locator(`[role="option"][id$="-${id.replaceAll(/[^A-Za-z0-9_-]/gu, '_')}"]`);
-  if ((await choice.count().catch(() => 0)) !== 1) {
-    await page.waitForTimeout(400);
-    if ((await choice.count().catch(() => 0)) !== 1) {
-      await page.keyboard.press('Escape');
-      return false;
-    }
-  }
-  await choice.click();
-  return true;
+  // THE ONE DRIVER (`palette.ts`, B3a), BY ITS ID: two commands share some titles (Translate), and a title alone picked
+  // neither (the walk's first trial, 2026-11-03).
+  return paletteDriver.runCommandIfOffered(page, title, id);
 }
 
 /**
@@ -1166,8 +1158,10 @@ await step('CONTROL: the window fingerprint sees a change and sees none where th
   await copyFile(source, copy);
   await open(copy);
   const first = await settledFingerprint();
+  // TYPED AND NOTHING RUN, as `palette.test.ts` allows a case about the palette's own field: keys, not the driver's fill.
   await page.keyboard.press('Control+K');
-  await page.locator('.m-palette-query').fill('Zoom in');
+  await expect(page.locator('.m-palette-query')).toBeFocused();
+  await page.keyboard.type('Zoom in');
   await page.keyboard.press('Escape');
   await page.waitForTimeout(500);
   const second = await settledFingerprint();
