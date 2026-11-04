@@ -96,3 +96,33 @@ since the shared part and one step's part are one file.
 Controls (`proof:walkrecord`): a row walked on another digest is refused; a row walked at an earlier commit on the same
 digest is accepted; a row whose walk program has changed is refused; a newer pass outweighs an older failure of the same
 row, and a newer failure an older pass.
+
+## Correction, 2026-11-04: a change to one step of a walk re-walks that step, derived from the program
+
+**The last sentence above is withdrawn** (the reviewer, 2026-11-04). Every fix to `everyToolWalk.mjs` re-walked all 285
+rows, about 1½ hours, including fixes that sit inside one step's own entry and cannot alter how any other row is read:
+`a66aae9e`'s search word for Mark matches, or the panel shown before Pages. Which rows a walk change reaches is now
+**derived from the program, never written by a person**, since a label someone writes agrees with any mistake.
+
+1. **A walk's per-step code is what it declares per step, and everything else is shared.** A table of per-command
+   entries is declared through `stepTable(name, { '<command id>': entry, … })` (`scripts/research/walkSteps.mjs`). The
+   record parses the walk program (its script and every script it takes by a relative import, as before) and takes
+   each such entry, with its own comment, as the code of the step whose command it names. Everything outside those
+   entries is **shared**: the known start, closing tabs, answering questions and pickers, reading toasts, settling, the
+   fingerprint, every helper an entry calls, an entry added by a spread or a computed key, and any table not declared
+   this way. **So a helper used by two steps is shared**, and nothing is ever neither.
+2. **What makes the split sound and not claimed: a step table answers only its own row.** `stepTable` returns a guard
+   that, while a row is walked, answers a read of that row's command id and throws on any other: another command's
+   entry, a listing of the table's keys, a read outside any row. An entry therefore cannot change how another row is
+   walked, and every full walk proves it, because a table read across rows fails the walk the moment it happens rather
+   than passing on an entry the record attributed to someone else.
+3. **A report carries the digests of the program it walked**: the shared code's, and each step's (its entries across
+   every table, an absent entry being a value of its own). `liveWalk.mjs` reads them as the walk starts, by the same
+   function the record uses.
+4. **A row keeps an earlier pass only when the app's build digest, the shared digest and its own step's digest are all
+   unchanged.** Any change to the shared code, or to the built app, walks every row again, as before. A row covered by a
+   step that covers several commands keeps it only while every one of their digests is unchanged.
+
+Controls (`proof:walkrecord`): a step whose own entry changed is refused until it is walked again; a step whose entries
+did not change keeps its pass when another step's did; a change to the shared code refuses every kept row; a change to a
+helper two entries call refuses both, as shared code; and a step table read for another row's command throws.
