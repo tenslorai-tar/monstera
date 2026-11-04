@@ -892,6 +892,56 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-11-04 — The final walk of 1.1.2611.0, the walk's own faults, and the packages
+
+**Six full walks after the entry below, and every failure in them was the walk's.** The app was right each time; the
+walk read it wrongly or too early. Each fault is in its commit with its mechanism:
+
+| run | result | the walk's fault | fixed in |
+|---|---|---|---|
+| `b5cc0aa7` | stopped at 159, 49 failed | retyped Password and permissions' passwords as 36; counted tabs by the status bar, so a tab whose password question was dismissed stayed and every later step failed; six readings | `3c470b77` |
+| `b4e5e688` | 281 of 285 | four readings (a search word, a menu's card, a burned-in redaction, the panel the start already shows) | `a66aae9e` |
+| `a66aae9e` | stopped at 272, 5 failed | judged a toast and an edit's write at fixed moments while Windows Explorer held 81% of the processor and the app's requests ran 2 to 10 times their earlier times | `476fb069` |
+| `476fb069` | **285 of 285** | — but on a build made up all day, digest `f6e62c82…`; the pack's clean build is `e03dd5aa…`, and the pack refused all 282 rows | — |
+| `c5737c5b`, clean | stopped at 23, 2 failed | judged before Bates numbering's write landed (3.4 to 4.2 s on first use) | `58cb7ed9` |
+| `c72cb97d`, clean | **285 of 285**, 135 read by their effect | — | — |
+
+**Two clean builds of one commit agree**: `e03dd5aa…` over 8,267 files, none differing, read again on 2026-11-04.
+What the folder walked all day held besides is not known: it was gone once the pack built clean, and a report keeps
+the build's digest and not its file list, which the step-scoped record will carry.
+
+**The rule the walk now follows** (`c72cb97d`, by the owner's word of 2026-11-04 that it applies to everything the
+walk checks): nothing is read while anything is in flight. `nothingInFlight` (`liveWalk.mjs`) waits for no write and no
+work of main's in flight, and it lives inside every reader: the fingerprint, the unsaved check, the one copy save, the
+known start, the format step and the judgement. A command that declares a toast is judged once its toast has come.
+
+**The record and the packages.** The walk of `c72cb97d` wrote the record: 282 commands, 263 passed, 0 failed, 19 not
+walked, each with its reason. Guards and CI were green on `c72cb97d`, and `main` was moved to it. Packed through the
+gate, never installed, to `_review/test-builds`:
+
+| package | bytes | SHA-256 |
+|---|---|---|
+| `Monstera-PDF-Editor_1.1.2611.0_x64_test.msix` | 401,603,166 | `79e99ca3e5d490792d5387ed4a11abe80bf1fdbae22ded98c9c690d509feea58` |
+| `Monstera-PDF-Editor_1.1.2611.0_x64_store.msix` | 401,603,156 | `e808833b4e29094553b3afc6d25c02894af16ecc9b7c409148ac8099ac75a6a4` |
+
+Tag `v1.1.2611.0` names `c72cb97d`.
+
+**Recorded, not fixed.**
+
+- `main`'s own CI on `c5737c5b` failed in *Prove the tests read source, not a stale build* on Windows: in its second run
+  of the suite, against a poisoned build, `nodeEditWatch.test.ts`' cleanup hook passed its 10 s and a
+  `compositionHost.test.ts` case its 5 s. The ordinary unit run passed 706 of 706, and the same commit passed that step
+  on the branch. The mechanism is not established; a watcher's directory handle on Windows closing slowly is the lead.
+- A password question dismissed shows the document's *could not be displayed* surface with Try again, which asks again.
+  It is deliberate (`useDocumentView.ts`) and 1.1.2610.0 does the same; whether it should read as the document needing
+  its password is the owner's to decide.
+- The renderer's list of uncounted write channels (`inFlight.ts`) names neither `document.importAnnotations` nor
+  `document.importFormData`, which are not counted either: the comment is behind the code.
+- The step-scoped walk record (ADR-0285's correction of 2026-11-04): the guard exists (`walkSteps.mjs`, four cases in
+  `proof:walkrecord`); the record's reading of the tables and the walk's use of them follow, after these packages.
+
+---
+
 ## 2026-11-04 — The merged build walked against 1.1.2610.0, its faults fixed, and measured
 
 The owner's order of 2026-11-02 (merge cloud-38 to 50, walk every tool against
