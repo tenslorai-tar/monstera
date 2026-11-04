@@ -80,15 +80,26 @@ import {
  * The truncation flag comes back from the reader rather than being computed
  * here, because only the walk knows there was more — `engine/annotations`' rule
  * on a second engine.
+ *
+ * ## PAGES, not a page: one call is one open of the image
+ *
+ * The reader opens the image, reads, and closes it. It took one page until 2026-11-04, and `engine/text-runs-pages` called
+ * it once a page, so 200 form placements were 200 opens of the image, 1.06 to 1.23 s in the host against 175 ms for the
+ * same reads from one open (the 200-placement page, measured 2026-11-04). The file was read once, which is what the
+ * channel's case counted; the document was not. Taking the pages, a reader is asked once per channel call, and a handler
+ * that loops over pages has no reader to loop with. Each page's answer is in the order asked.
  */
 export type HostTextRunsReader = (
   image: ImageSession,
-  page: number,
-  /** Read the page with its forms' content moved onto it in memory, as an edit sent with `unpack` writes it (ADR-0232). */
+  pages: readonly number[],
+  /** Read the pages with their forms' content moved onto them in memory, as an edit sent with `unpack` writes it (ADR-0232). */
   unpack: boolean,
-  /** Which clip each text object is drawn through, from the engine host (ADR-0281); `null` where none is known. */
+  /** Which clip each text object is drawn through, from the engine host (ADR-0281), for a read of ONE page; `null` otherwise. */
   clips: TextClips,
-) => Promise<{
+) => Promise<readonly HostPageTextRuns[]>;
+
+/** One page's text runs as {@link HostTextRunsReader} answers them. */
+export type HostPageTextRuns = Readonly<{
   /** `pdfiumFfi.ts`' own type, named by an erased import so no binding loads here. */
   readonly runs: readonly TextRun[];
   readonly truncated: boolean;
@@ -416,7 +427,8 @@ export function createPdfiumHandlers({
         return failed('asset-missing');
       }
       try {
-        const found = await textRuns(image, page, unpack === true, clips);
+        const [found] = await textRuns(image, [page], unpack === true, clips);
+        if (found === undefined) return failed('engine-refused');
         // BOUNDED WHERE THE WALK IS and forwarded rather than re-derived: a
         // handler computing `truncated` from the array's length alone would answer
         // *you asked for that many* every time. The bound applied again here is
@@ -448,7 +460,7 @@ export function createPdfiumHandlers({
       }
     },
 
-    // `engine/text-runs` OVER SEVERAL PAGES of one image opened once, by the same reader and the same bound a page, and
+    // `engine/text-runs` OVER SEVERAL PAGES of one image opened once (one reader call), by the same bound a page, and
     // the pages fitted to one answer in order: the caller asks again from the first page left out.
     'engine/text-runs-pages': async ({ session, from, password, pages }) => {
       const held = areas.lookup(session);
@@ -461,8 +473,10 @@ export function createPdfiumHandlers({
       }
       try {
         const answers = [];
-        for (const page of pages) {
-          const found = await textRuns(image, page, false, null);
+        // EVERY PAGE FROM ONE OPEN of the image (`HostTextRunsReader`), never one open a page.
+        const read = await textRuns(image, pages, false, null);
+        if (read.length !== pages.length) return failed('engine-refused');
+        for (const found of read) {
           const { kept, truncated } = boundedToAnswer(found.runs);
           answers.push({ runs: kept, truncated: found.truncated || truncated, unaddressable: found.unaddressable, box: found.box, markers: [...found.markers] });
         }

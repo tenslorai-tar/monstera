@@ -247,9 +247,10 @@ function start(files: Files, applied: ByteImage = new Uint8Array([9, 9, 9]), dra
         negative: { kind: 'refused', code: 'EACCES' },
         loopback: { kind: 'refused', code: 'ETIMEDOUT' },
       }),
-    textRuns: (image, page) => {
-      calls.push(`text-runs:${String(page)}:${seen(image)}`);
-      return Promise.resolve({
+    // ONE CALL FOR ALL ITS PAGES, recorded as one, so a handler asking once a page is seen as several opens.
+    textRuns: (image, pages) => {
+      calls.push(`text-runs:${pages.join(',')}:${seen(image)}`);
+      return Promise.resolve(pages.map(() => ({
         runs: RUNS,
         truncated: false,
         // NON-ZERO IN THE FIXTURE, deliberately: the handler forwards this and a
@@ -262,7 +263,7 @@ function start(files: Files, applied: ByteImage = new Uint8Array([9, 9, 9]), dra
         box: { x0: 3, y0: 5, x1: 611, y1: 787 },
         // A BULLET NOTHING ELSE PRODUCES, for the same reason: a handler that dropped the field answers none.
         markers: [{ x0: 76, y0: 618, x1: 81, y1: 623 }],
-      });
+      })));
     },
     // ADR-0210: one page's own content. The blob is a value nothing else here produces, and the answer carries a frame,
     // a picture header and an opaque place, so a handler that dropped any of them fails a case.
@@ -876,8 +877,9 @@ describe('the PDFium host body', () => {
     // ONE ANSWER A PAGE, each the one-page read's own, so a reader of either gets the same thing for a page.
     expect(answer.value.pages).toHaveLength(3);
     expect(answer.value.pages.every((page) => JSON.stringify(page.runs) === JSON.stringify(RUNS) && page.unaddressable === 7)).toBe(true);
-    // EACH PAGE REACHED THE READER, in the order asked, with the image read once for all three.
-    expect(calls).toStrictEqual(['text-runs:4:7', 'text-runs:0:7', 'text-runs:2:7']);
+    // EACH PAGE REACHED THE READER, in the order asked, in ONE call — one open of the image — with its file read once.
+    // Asked once a page, as until 2026-11-04, this read three calls: 200 opens on the 200-placement page, 1.06 to 1.23 s.
+    expect(calls).toStrictEqual(['text-runs:4,0,2:7']);
     expect(reads).toBe(1);
   });
 

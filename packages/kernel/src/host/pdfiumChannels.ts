@@ -780,6 +780,10 @@ export const pdfiumChannels = {
    * 4.4 s over 200 placements (finding -27, 2026-11-01): every call wrote the image into the host's area, opened it and
    * answered in a file of its own, and one open is 80-117 ms of the same reading in-process (measured 2026-11-02).
    *
+   * OPENED ONCE IS THE READER'S SHAPE, since 2026-11-04 (`HostTextRunsReader` takes the pages). Until then this channel
+   * placed and read the image's FILE once and the handler asked the one-page reader once a page, each call an open of the
+   * document: 1.06 to 1.23 s over 200 placements in the host, against 175 ms for the same reads from one open.
+   *
    * EACH PAGE'S ANSWER IS `engine/text-runs`' OWN, read from that channel's schema rather than restated (B3a), fitted as
    * that channel fits it; and the pages are fitted to ONE answer's file in order: where they would not all fit, the answer
    * carries the pages up to where they did, at least one, and the caller asks again for the rest. A page is never cut to

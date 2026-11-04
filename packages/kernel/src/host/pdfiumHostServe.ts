@@ -67,16 +67,21 @@ const handlers = createPdfiumHandlers({
   // refused by the call that wanted it — `engine-refused` — rather than at a
   // moment when there is no document to speak of.
   // EACH READ OPENS THROUGH `onImage`, the one opener that takes the key the frame carried (ADR-0171's addendum).
-  textRuns: (image, page, unpack, clips) =>
+  // EVERY PAGE ASKED FROM ONE OPEN (`HostTextRunsReader`): opened once a page, 200 form placements cost 1.06 to 1.23 s.
+  textRuns: (image, pages, unpack, clips) =>
     onImage(image, async (session) => {
-      // UNPACKED IN THIS PROCESS'S MEMORY ONLY (ADR-0232): the session is never serialised from a read, and the promotion is
-      // the one an edit sent with `unpack` makes, so the indices answered here are the ones that edit writes.
-      await unpackedIfAsked(session, page, unpack);
-      const found = await textRuns(session, page, clips);
-      const { kept, truncated } = boundedToAnswer(found.runs);
-      // `unaddressable` FORWARDED UNCLIPPED: it counts characters the walk could not place, which the run bound has
-      // nothing to do with.
-      return { runs: kept, truncated, unaddressable: found.unaddressable, box: found.box, markers: found.markers };
+      const answers = [];
+      for (const page of pages) {
+        // UNPACKED IN THIS PROCESS'S MEMORY ONLY (ADR-0232): the session is never serialised from a read, and the promotion
+        // is the one an edit sent with `unpack` makes, so the indices answered here are the ones that edit writes.
+        await unpackedIfAsked(session, page, unpack);
+        const found = await textRuns(session, page, clips);
+        const { kept, truncated } = boundedToAnswer(found.runs);
+        // `unaddressable` FORWARDED UNCLIPPED: it counts characters the walk could not place, which the run bound has
+        // nothing to do with.
+        answers.push({ runs: kept, truncated, unaddressable: found.unaddressable, box: found.box, markers: found.markers });
+      }
+      return answers;
     }),
   // THE BITMAP'S OWN BYTES, unconverted. `renderPageBitmap` answers BGRA
   // because that is what PDFium produces and what main's encoder takes; a
