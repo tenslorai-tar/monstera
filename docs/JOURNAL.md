@@ -892,6 +892,22 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-11-04 — A save gives the file a new Windows creation date: a known behaviour, kept
+
+Found by the full walk of 2026-11-03: after a save, Windows' *Date created* for
+the file is the time of the save. The mechanism is the safe save itself. `main`
+writes the new bytes to a new file beside the old one and renames it into place,
+so the file on disk afterwards is a file made at that moment, and Windows dates
+it by that. 1.1.2610.0 behaves the same, so it is not a regression.
+
+**Kept as it is for this update, by the owner's decision of 2026-11-04.** The
+safe save comes first. Carrying the old date over needs a native Windows call
+(copying the creation time onto the new file) in `main`, the process that saves,
+and the rules keep native code out of `main` (invariant 20). It is revisited if
+users ask. The PDF's own dates, shown in Document properties, are not affected.
+
+---
+
 ## 2026-11-03 — Stage audit of `069d00cf..f7e2adf7` — findings DDDDDDDDD-1 to DDDDDDDDD-17
 
 The first full walk of main (`work/2026-11-02-walk`), its merge onto `work/2026-11-02-merges`, and the merges of
