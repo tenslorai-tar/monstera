@@ -67,9 +67,9 @@ type Commit = (text: string) => Promise<BlockCommit>;
 type Props = Partial<Omit<EditTextLayerProps, 'onCommit'>>;
 
 /** The layer over `blocks`, its writes answered by `commit`, and a way to hand it the read after a write. */
-function layer(blocks: PageBlocks, commit: Commit = () => Promise.resolve('written'), props: Props = {}) {
+function layer(blocks: PageBlocks | undefined, commit: Commit = () => Promise.resolve('written'), props: Props = {}) {
   const onCommit = vi.fn((_block: TextBlock, text: string) => commit(text));
-  const tree = (now: PageBlocks) => (
+  const tree = (now: PageBlocks | undefined, more: Props = {}) => (
     <I18nProvider i18n={i18n}>
       <EditTextLayer
         blockFaces={() => Promise.resolve(NO_BLOCK_FACES)}
@@ -80,6 +80,7 @@ function layer(blocks: PageBlocks, commit: Commit = () => Promise.resolve('writt
         page={0}
         paperAt={() => undefined}
         {...props}
+        {...more}
       />
     </I18nProvider>
   );
@@ -87,10 +88,10 @@ function layer(blocks: PageBlocks, commit: Commit = () => Promise.resolve('writt
   const outline = (at: number) => must(view.container.querySelector<HTMLElement>(`[data-text-block="${String(at)}"]`), `outline ${String(at)}`);
   const frame = () => view.container.querySelector<HTMLElement>('[data-kit-frame]');
   const surface = () => must(view.container.querySelector<HTMLElement>('[data-kit-surface]'), 'surface');
-  /** Hands the layer the read that follows, as `EditTextPage` does once the page has it. */
-  const show = async (next: PageBlocks) => {
+  /** Hands the layer the read that follows, as `EditTextPage` does once the page has it, and any props that changed. */
+  const show = async (next: PageBlocks | undefined, more: Props = {}) => {
     await act(async () => {
-      view.rerender(tree(next));
+      view.rerender(tree(next, more));
       await Promise.resolve();
     });
   };
@@ -340,6 +341,33 @@ describe('Add text takes the style of the words nearby (the owner’s B4.3)', ()
   it('CONTROL: on a page with no words the box starts in 12 point black Arial, so the cases above are the nearby style', async () => {
     const insert = await addOn(read(5, []));
     expect(insert).toMatchObject({ size: 12, base: { family: 'Arial', bold: false, italic: false, colour: { r: 0, g: 0, b: 0 } }, text: 'A new note' });
+  });
+
+  it('a press before the page’s blocks are read is held, and opens the box WHERE IT WAS once they are', async () => {
+    // THE CONTROL is the layer before this: no surface until the blocks were read, so the press placed nothing — the
+    // first read of a document took 2.7 to 5.8 s. WHERE: the nearby style below holds only at the press's own place,
+    // inside the paragraph's band; a box opened anywhere else starts in 12 point Arial (the case above).
+    const onInsert = vi.fn((_insert: PageInsert, _read: BlocksRead) => Promise.resolve<BlockCommit>('written'));
+    const made = layer(undefined, () => Promise.resolve('written'), { adding: true, onInsert });
+    const surface = must(made.view.container.querySelector<HTMLElement>('[data-text-add-surface]'), 'add surface before the read');
+    expect(surface.getAttribute('aria-busy')).toBe('true');
+    fireEvent.click(surface, { clientX: 100, clientY: 200, detail: 1 });
+    expect(made.view.container.querySelector('[data-kit-surface]')).toBeNull();
+    await made.show(read(5, [styled()]));
+    act(() => {
+      typeAt(made.surface(), 'A new note', { paragraph: 0, offset: 0 });
+    });
+    await escape(made.surface());
+    expect(onInsert).toHaveBeenCalledTimes(1);
+    expect(onInsert.mock.calls[0]?.[0]).toMatchObject({ size: 11, base: { family: 'Times New Roman', bold: true }, text: 'A new note' });
+  });
+
+  it('a press held before the read is dropped when Add text is put down, so no box opens later', async () => {
+    const made = layer(undefined, () => Promise.resolve('written'), { adding: true });
+    fireEvent.click(must(made.view.container.querySelector<HTMLElement>('[data-text-add-surface]'), 'add surface'), { clientX: 100, clientY: 200, detail: 1 });
+    await made.show(undefined, { adding: false });
+    await made.show(read(5, [styled()]), { adding: true });
+    expect(made.view.container.querySelector('[data-kit-surface]')).toBeNull();
   });
 });
 

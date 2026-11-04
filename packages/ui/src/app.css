@@ -6627,6 +6627,11 @@ optgroup {
   pointer-events: auto;
 }
 
+/* THE PAGE'S BLOCKS NOT YET READ, or a press held until they are: the box comes, so the pointer says the app is working. */
+.m-text-add-surface[aria-busy='true'] {
+  cursor: progress;
+}
+
 .m-text-add-surface:focus-visible {
   outline: 2px solid var(--accent-on-paper, var(--accent));
   outline-offset: -2px;
