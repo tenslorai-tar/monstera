@@ -200,6 +200,30 @@ test('CONTROL: with the browser kerning the line, a caret at the end of a kerned
 });
 
 /**
+ * Starts a sampled CPU profile of the page; the function returned stops it and prints each function's own time, the 30
+ * largest, as `TIMING profile <what>`.
+ */
+async function startProfile(page: Page): Promise<(what: string) => Promise<void>> {
+  const session = await page.context().newCDPSession(page);
+  await session.send('Profiler.enable');
+  await session.send('Profiler.setSamplingInterval', { interval: 200 });
+  await session.send('Profiler.start');
+  return async (what) => {
+    const { profile } = await session.send('Profiler.stop');
+    const self = new Map<string, number>();
+    const nodes = new Map(profile.nodes.map((node) => [node.id, node]));
+    for (const [at, id] of (profile.samples ?? []).entries()) {
+      const node = nodes.get(id);
+      if (node === undefined) continue;
+      const key = `${node.callFrame.functionName || '(anonymous)'} ${node.callFrame.url.split('/').at(-1) ?? ''}:${String(node.callFrame.lineNumber)}`;
+      self.set(key, (self.get(key) ?? 0) + (profile.timeDeltas?.[at] ?? 0) / 1000);
+    }
+    const top = [...self.entries()].sort((a, b) => b[1] - a[1]).slice(0, 30);
+    console.log(`TIMING profile ${what}\n${top.map(([name, ms]) => `${ms.toFixed(1).padStart(8)} ms  ${name}`).join('\n')}`);
+  };
+}
+
+/**
  * WHAT OPENING A BLOCK AND TYPING IN IT COST, when asked for (`CARET_TIMING=edges|words`): a block of 24 lines of 12 pt
  * Helvetica, every word carrying its letter edges or none (the code before the fix reads none, and its contract refuses
  * a key it does not know, so a run of it is measured with `words`). Opening is the Enter on the box to the first frame
@@ -248,6 +272,18 @@ test('TIMING of opening a dense block and typing in it, when asked for', async (
   await page.keyboard.type('Edit text on the page');
   await page.keyboard.press('Enter');
   const outline = page.locator('[data-text-edit-layer="0"] [data-text-block="0"]');
+  // THE MAIN THREAD FROM THE PRESS ON THE BLOCK until the keys, as long tasks (over 50 ms, Chromium's `longtask` entries):
+  // the editor lays its lines out and fits them to the page's as it opens and again as its faces arrive, which the
+  // open's own figure below, from the Enter to the focus, cannot see.
+  await page.evaluate(() => {
+    const record = window as unknown as { openTasks: number[] };
+    record.openTasks = [];
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) record.openTasks.push(entry.duration);
+    }).observe({ type: 'longtask' });
+  });
+  // A CPU PROFILE OF THE OPEN, when asked for (`CARET_PROFILE=open`): from the press on the block to the keys.
+  const stopOpen = process.env['CARET_PROFILE'] === 'open' ? await startProfile(page) : undefined;
   await outline.click();
   await page.waitForTimeout(500);
   // THE OPEN, from the Enter's own time to the first frame after the editor has the focus.
@@ -272,6 +308,9 @@ test('TIMING of opening a dense block and typing in it, when asked for', async (
   }, SURFACE);
   await page.keyboard.press('Enter');
   const opening = await page.evaluate(() => (window as unknown as { opening: Promise<number> }).opening);
+  await page.waitForTimeout(1500);
+  await stopOpen?.('open');
+  const openTasks = await page.evaluate(() => (window as unknown as { openTasks: number[] }).openTasks);
   // EACH KEYSTROKE in an untouched line: the first turns it from as-drawn to drawn, the rest type into it.
   await page.keyboard.press('Control+Home');
   await page.evaluate((surface) => {
@@ -305,31 +344,16 @@ test('TIMING of opening a dense block and typing in it, when asked for', async (
     }, spin);
   }
   // A CPU PROFILE OF THE STROKES, when asked for (`CARET_PROFILE=1`), read against an unminified build for the names.
-  const session = process.env['CARET_PROFILE'] === '1' ? await page.context().newCDPSession(page) : undefined;
-  if (session !== undefined) {
-    await session.send('Profiler.enable');
-    await session.send('Profiler.setSamplingInterval', { interval: 200 });
-    await session.send('Profiler.start');
-  }
+  const stopStrokes = process.env['CARET_PROFILE'] === '1' ? await startProfile(page) : undefined;
   for (let key = 0; key < 10; key += 1) {
     await page.keyboard.type('x');
     await page.waitForTimeout(120);
   }
-  if (session !== undefined) {
-    const { profile } = await session.send('Profiler.stop');
-    const self = new Map<string, number>();
-    const nodes = new Map(profile.nodes.map((node) => [node.id, node]));
-    for (const [at, id] of (profile.samples ?? []).entries()) {
-      const node = nodes.get(id);
-      if (node === undefined) continue;
-      const key = `${node.callFrame.functionName || '(anonymous)'} ${node.callFrame.url.split('/').at(-1) ?? ''}:${String(node.callFrame.lineNumber)}`;
-      self.set(key, (self.get(key) ?? 0) + (profile.timeDeltas?.[at] ?? 0) / 1000);
-    }
-    const top = [...self.entries()].sort((a, b) => b[1] - a[1]).slice(0, 30);
-    console.log(`TIMING profile\n${top.map(([name, ms]) => `${ms.toFixed(1).padStart(8)} ms  ${name}`).join('\n')}`);
-  }
+  await stopStrokes?.('strokes');
   const strokes = await page.evaluate(() => (window as unknown as { strokes: number[] }).strokes);
-  console.log(`TIMING ${String(mode)} ${JSON.stringify({ openMs: Math.round(opening), strokes: strokes.map(Math.round), worstStroke: Math.round(Math.max(...strokes)) })}`);
+  console.log(
+    `TIMING ${String(mode)} ${JSON.stringify({ openMs: Math.round(opening), afterOpenLongTasks: openTasks.map(Math.round), strokes: strokes.map(Math.round), worstStroke: Math.round(Math.max(...strokes)) })}`,
+  );
   expect(strokes).toHaveLength(10);
 });
 
