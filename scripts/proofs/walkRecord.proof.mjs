@@ -19,7 +19,7 @@ import { commandIds, countsFor, programDigest, refusals, rowsFrom } from '../rel
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 17 });
+const roster = createRoster(failures, { cases: 18 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -133,6 +133,10 @@ function main() {
     countsFor(repoRoot(), current, DIGEST) && !countsFor(repoRoot(), { ...current, walker: { script, digest: '0'.repeat(64) } }, DIGEST),
     `unchanged ${String(countsFor(repoRoot(), current, DIGEST))}`,
   );
+  // A REPORT NAMING NO PROGRAM, as a trial run from outside the checkout writes (`liveWalk.mjs`), is never counted, on
+  // this very build: it may run, and it cannot pass a row.
+  const { walker: _walker, ...programless } = current;
+  check('a report that names no walk program is not counted, on the same build', !countsFor(repoRoot(), programless, DIGEST), JSON.stringify(programless));
   // THE DIGEST FOLLOWS THE IMPORTS: a change to a module the script takes, and not to the script, moves it.
   const scratch = mkdtempSync(join(tmpdir(), 'walk-program-'));
   try {

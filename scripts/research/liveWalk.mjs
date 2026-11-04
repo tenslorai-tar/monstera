@@ -23,14 +23,14 @@
  * for the person reading the report, never an artefact the repository keeps (B8, B10).
  */
 import { copyFile, mkdir, writeFile } from 'node:fs/promises';
-import { basename, dirname, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect } from '@playwright/test';
 import { _electron } from 'playwright';
 import { developmentEnvironment } from '../lib/launchEnvironment.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
 import { PALETTE_DRIVER, SHELL_LAUNCH, refuseStaleBuild } from '../lib/buildFreshness.mjs';
-import { gitIn, walkBuild } from '../release/walkRecord.mjs';
+import { builtAt, gitIn, walkBuild } from '../release/walkRecord.mjs';
 
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -178,7 +178,12 @@ export async function launchApp(walk, options = {}) {
   // walk of another worktree or of a packaged executable is a comparison, never this build's record.
   // AND WHICH PROGRAM WALKS IT, by the script node was asked to run, from the checkout (the correction of 2026-11-03).
   const script = relative(root, process.argv[1] ?? '').split(sep).join('/');
-  const build = options.appRoot === undefined && options.executable === undefined ? walkBuild(root, gitIn(root), script) : undefined;
+  // A PROGRAM OUTSIDE THE CHECKOUT (a trial in a scratch folder) names the build and no program: its imports are not the
+  // checkout's to follow, and a report naming no program is never counted (`countsFor`), so it can run and cannot pass
+  // a row. It refused to start at all from 2026-11-03, when the program digest arrived, which stopped every trial.
+  const outside = script.startsWith('../') || isAbsolute(script);
+  const build =
+    options.appRoot === undefined && options.executable === undefined ? (outside ? builtAt(root, gitIn(root)) : walkBuild(root, gitIn(root), script)) : undefined;
   const stamp = new Date().toISOString().replaceAll(':', '-').slice(0, 19);
   const output = join(root, '_review', 'walks', walk, stamp);
   await mkdir(output, { recursive: true });
