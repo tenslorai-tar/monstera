@@ -81,6 +81,34 @@ function layer(commit: (text: string, formatting: unknown) => Promise<BlockCommi
   return { view, onCommit, onLeave, outline, frame, surface };
 }
 
+describe('a page whose text the read could not give', () => {
+  const noted = (unreadable: boolean, blocks: PageBlocks | undefined) =>
+    render(
+      <I18nProvider i18n={i18n}>
+        <EditTextLayer
+          blocks={blocks}
+          unreadable={unreadable}
+          geometry={{ ...GEOMETRY, crop: [...GEOMETRY.crop] }}
+          onCommit={() => Promise.resolve('written')}
+          onLeave={() => undefined}
+          page={0}
+          paperAt={() => undefined}
+          blockFaces={() => Promise.resolve(NO_BLOCK_FACES)}
+        />
+      </I18nProvider>,
+    ).container.textContent;
+
+  it('says so in the owner’s words, and makes no claim about other pages', () => {
+    const said = noted(true, undefined);
+    expect(said).toContain('This page’s text is not readable, so it can’t be edited here.');
+    expect(said).not.toContain('Other pages');
+  });
+
+  it('CONTROL: a page that was read says nothing of the kind', () => {
+    expect(noted(false, BLOCKS)).not.toContain('not readable');
+  });
+});
+
 /** Types `text` at a model position, as the browser's input would arrive. */
 function typeAt(surface: HTMLElement, text: string, at: { paragraph: number; offset: number }): void {
   surface.focus();

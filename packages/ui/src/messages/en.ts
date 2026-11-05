@@ -4677,7 +4677,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TEXT_EDIT_BLOCK_LABEL]: 'Edit “{words}”',
   [TEXT_EDIT_EDITOR_LABEL]: 'Text being edited. Press Esc when you are done.',
   [TEXT_EDIT_NONE]: 'This page has no text that can be edited.',
-  [TEXT_EDIT_UNREADABLE]: 'This page’s text could not be read, so it cannot be edited here. Other pages can.',
+  [TEXT_EDIT_UNREADABLE]: 'This page’s text is not readable, so it can’t be edited here.',
   [TEXT_EDIT_TRUNCATED]: 'This page has more text than can be outlined at once; some of it is not outlined.',
   [TEXT_EDIT_FORMS_DEEPER]: 'Some text on this page is placed too many layers deep to outline, so it is not outlined.',
   [TEXT_EDIT_FORMS_MORE]: 'This page repeats its drawings more often than can be outlined at once, so some of its text is not outlined.',
