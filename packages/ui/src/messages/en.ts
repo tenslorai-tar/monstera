@@ -6990,8 +6990,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // describe, and it does.
   // THE BOOKMARKS ARE NAMED because a person sees them and there is no keeping them: a title of one can spell what a
   // mark removes, and the owner chose removal with no option (2026-10-05, ADR-0163).
+  // THE DRAWINGS ARE NAMED because the burn-in removes any drawing that reaches into a mark WHOLE, so a person sees
+  // more go than they marked; and a colour gradient is named because MuPDF's burn-in has no rule that removes one, so
+  // "the marked content is removed" was untrue of it (pageRedact.ts' header, measured 2026-11-05).
   [APPLY_REDACTIONS_WARNS]:
-    'The marked content is removed from the document, not covered over, with any comments and form fields under the marks. The document’s bookmarks, author, subject and other properties are removed too. The only way back is Undo, in this session.',
+    'The marked text, pictures and drawings are removed from the document, not covered over, with any comments and form fields under the marks. A drawing that reaches into a mark is removed whole. A colour gradient under a mark is covered, not removed. The document’s bookmarks, author, subject and other properties are removed too. The only way back is Undo, in this session.',
   [APPLY_REDACTIONS_SCOPE]: 'Apply to',
   [APPLY_REDACTIONS_SCOPE_PAGE]: 'Page {page}',
   [APPLY_REDACTIONS_SCOPE_ALL]: 'Every page',

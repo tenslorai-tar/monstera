@@ -23,7 +23,8 @@ import { glyphLinesOf, heldToTheirLines } from './redactionQuads.js';
  * | `REDACT_IMAGE_NONE` | **0 — never used here.** It leaves the covered image pixels in the file, under a black box |
  * | `REDACT_IMAGE_REMOVE` | 1 |
  * | `REDACT_IMAGE_PIXELS` | 2 |
- * | `REDACT_LINE_ART_REMOVE_IF_COVERED` | 1 |
+ * | `REDACT_LINE_ART_REMOVE_IF_COVERED` | 1 — **not used, see below** |
+ * | `REDACT_LINE_ART_REMOVE_IF_TOUCHED` | 2 |
  * | `REDACT_TEXT_REMOVE` | 0 |
  *
  * ## The two that are NOT choices, and why they are not
@@ -32,10 +33,26 @@ import { glyphLinesOf, heldToTheirLines } from './redactionQuads.js';
  * command is for: a redaction that draws a box over text a reader can still
  * select. Offering it would be offering the defect.
  *
- * **Line art is always removed if covered.** MuPDF's third option —
- * `REMOVE_IF_TOUCHED` — deletes a path that merely crosses the mark, which
- * takes away content nobody marked; and `NONE` leaves drawn content under the
- * cover. The middle one is the only one that means *this region*.
+ * **Line art is always removed if TOUCHED, because *if covered* left marked drawings in the file.** MuPDF decides
+ * both from one box per subpath, `fz_bound_path`, and that box is an OVER-approximation: it holds every Bézier
+ * control point, and for a stroke whose join is a mitre (the PDF default) it grows by the miter limit times the
+ * line width on every side (`adjust_rect_for_stroke` in source/fitz/path.c, MuPDF 1.28.0; 16 points for a 1.6 point
+ * line at the default limit of 10). *If covered* removes a subpath only when one mark CONTAINS that box
+ * (`rect_touches_redactions(...) == 2` in source/pdf/pdf-clean.c), so a mark drawn round the visible ink of a drawn
+ * signature never contained it, and the curve stayed in the saved file under the black box. Found by a live run on
+ * 2026-11-05 and measured the same day by `redactionLineArt.test.ts`: a mark containing the grown box (x 84 to 286,
+ * y 32 to 108 for that line) removed it and one a point smaller on each side did not; every mitre-joined stroke that
+ * was not level survived, whatever its cap, while round and bevel joins, fills and a level line were removed.
+ *
+ * *If touched* removes a subpath whose box meets any mark, and since the ink lies inside the box, **no drawn ink
+ * under a mark can stay**. A box that is too big now errs the other way, and that is the price, pinned by cases
+ * there: a drawing that crosses the mark's edge goes whole (MuPDF cannot cut a path), a mitre-joined line whose ink
+ * is within the growth of the mark goes too, and so does a filled shape the mark lies inside, such as a background.
+ * Removing what was not marked is visible on the page and Undo brings it back; keeping what was marked is invisible,
+ * and is the one failure this command exists to prevent. `NONE` leaves every drawing under the cover.
+ *
+ * **What no option reaches: a gradient painted with `sh`.** MuPDF's culler answers *keep* for a shading whatever
+ * `line_art` says, so one under a mark survives; pinned as a case, and the dialog does not claim it is removed.
  *
  * Both are written as constants with the reason beside them rather than as
  * payload fields nobody would know how to set (B5 over a settings page).
@@ -47,8 +64,8 @@ const IMAGE_METHOD: Readonly<Record<PdfRedactImages, number>> = {
   pixels: 2,
 };
 
-/** `REDACT_LINE_ART_REMOVE_IF_COVERED`. See the header. */
-const LINE_ART_REMOVE_IF_COVERED = 1;
+/** `REDACT_LINE_ART_REMOVE_IF_TOUCHED`. See the header for why not `REMOVE_IF_COVERED`. */
+const LINE_ART_REMOVE_IF_TOUCHED = 2;
 
 /** `REDACT_TEXT_REMOVE`. See the header — the other value is the defect. */
 const TEXT_REMOVE = 0;
@@ -490,7 +507,7 @@ export const applyApplyRedactions: Apply<'mupdf', 'applyRedactions'> = (session,
       page.applyRedactions(
         command.cover === 'solid',
         IMAGE_METHOD[command.images],
-        LINE_ART_REMOVE_IF_COVERED,
+        LINE_ART_REMOVE_IF_TOUCHED,
         TEXT_REMOVE,
       );
       pageObject.delete('Thumb');
