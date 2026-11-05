@@ -4076,7 +4076,14 @@ optgroup {
    * the pair fitted and the bar went (`fitStability.pw.ts`). The full-page grid keeps its gutter for the same reason.
    */
   scrollbar-gutter: stable;
-  padding-block: var(--space-16);
+  /*
+   * ONE PROPERTY FOR THE LIST'S PADDING, which `PageList` reads as well: a fit is measured as the box less this, never
+   * less the padding the list has at the moment, because Fit page in Continuous takes the padding away
+   * (`.m-page-list--fit-page`) and a fit measured from the box it changes answers twice (63% and then 67%, measured
+   * 2026-11-05, `fitStability.pw.ts`).
+   */
+  --m-list-padding-block: var(--space-16);
+  padding-block: var(--m-list-padding-block);
   grid-area: list;
   /*
    * ITS OWN LAYER, so the compositor scrolls it. Without one Chromium scrolls it on the main thread and repaints its

@@ -818,8 +818,17 @@ export function PageList({
    * box and `scrollbar-gutter` reserves none for it. Measured 2026-11-05 (`fitStability.pw.ts`): two A4 pages in
    * Facing at Fit width flipped 68% and 70% every frame through the vertical bar, and one A4 page in Single page at
    * Fit page, from 100% in a pane narrower than the page, answered 45% and then 47% through the horizontal one.
+   *
+   * **AND NO PADDING THE MODE CHANGES**: the height is less the list's normal padding (`--m-list-padding-block`, the one
+   * property the stylesheet pads it by), never the padding it has now, because Fit page in Continuous takes the padding
+   * away, and a fit measured less the padding it had answered 63% and then 67% once it was gone (2026-11-05).
    */
   const [viewport, setViewport] = useState<Box | undefined>(undefined);
+  /**
+   * The scroller's whole height inside its borders: Fit page in Continuous centres each page in it, since that layout
+   * has no padding. Read from the same border box, so it moves exactly when the viewport does.
+   */
+  const [frameHeight, setFrameHeight] = useState<number | undefined>(undefined);
   /**
    * The gap between two pages side by side, READ from the stylesheet — the token is `app.css`' to set, and a number
    * here would be a second opinion about it. Only facing pages use it: a fit there spans two pages and this.
@@ -835,24 +844,19 @@ export function PageList({
       const style = getComputedStyle(element);
       if (entry !== undefined && border !== undefined) {
         const along = (name: string): number => Number.parseFloat(style.getPropertyValue(name)) || 0;
-        const height =
-          border.blockSize -
-          along('border-top-width') -
-          along('border-bottom-width') -
-          along('padding-top') -
-          along('padding-bottom');
+        const frame = border.blockSize - along('border-top-width') - along('border-bottom-width');
+        const height = frame - 2 * along('--m-list-padding-block');
         const width = entry.contentRect.width;
         // THE SAME BOX IS NOT A NEW ONE: an equal answer must not render the list again.
         setViewport((was) => (was?.width === width && was.height === height ? was : { width, height }));
+        setFrameHeight(frame);
       }
       const gap = Number.parseFloat(style.columnGap);
       setSpreadGap(Number.isFinite(gap) ? gap : 0);
     });
-    // THE CONTENT BOX IS OBSERVED, because everything the answer reads moves it: the window or a panel, and the padding
-    // the stylesheet takes away at Fit page in Continuous (`.m-page-list--fit-page`), which leaves the border box as it
-    // was. Observing the border box alone missed that, and the fit's room stayed 32 px short (measured 2026-11-05,
-    // `fitPage.pw.ts`). A scrollbar coming or going also notifies, and answers the same box, which changes nothing.
-    seen.observe(element);
+    // THE BORDER BOX IS OBSERVED, which is all the answer reads now: a scrollbar coming or going and the padding Fit
+    // page takes away both leave it as it was, and what moves it (the window, a panel) is what moves the fit.
+    seen.observe(element, { box: 'border-box' });
     return (): void => {
       seen.disconnect();
     };
@@ -1496,8 +1500,8 @@ export function PageList({
                     '--m-grid-minor': `${String(grid.minor ?? grid.major)}px`,
                   }),
               //
-              // FIT PAGE'S ROOM: the scroller's own measured height, each page's share of it.
-              ...(fitOnePage && viewport !== undefined ? { '--m-fit-room': `${String(viewport.height)}px` } : {}),
+              // FIT PAGE'S ROOM: the scroller's whole height inside its borders, which this layout does not pad.
+              ...(fitOnePage && frameHeight !== undefined ? { '--m-fit-room': `${String(frameHeight)}px` } : {}),
             } as React.CSSProperties)
       }
       // ALWAYS NAMED, since it is a focusable region (2026-09-26): *Document pages* alone, and in the split view each
