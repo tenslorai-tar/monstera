@@ -75,3 +75,48 @@ edge and a line 8 points clear of it went too.
 - Cut geometry is flattened to within 0.01 point, and a cut path is larger in the file.
 - The pass reads each marked page's content once more before the burn-in; its time is measured and reported.
 - The shim now reads an internal MuPDF header, held by decision 6.
+
+## Note, 2026-11-06: the speed figure is accepted, and decisions 3, 4 and 7 as built
+
+**The owner's ruling, 2026-11-06:** the speed target is met by option (a) as built, and option (b), cutting a
+stroke's centre line, is not to be built.
+
+**The figures the ruling rests on**, from `scripts/research/redactCutTiming.mjs`, 21 rounds, on this branch's build at
+bc324628, in the Linux cloud container, 2026-11-05. Each side is the median time of the calls `applyApplyRedactions`
+makes on one marked page; *today* is `applyRedactions` with line art *remove if covered*, as on d594f808:
+
+| page | today | with the cut | today's spread |
+|---|---|---|---|
+| forty lines of text, three marks, sixty drawings no mark touches | 2.16 ms | 2.50 ms | 2.01 to 2.28 ms |
+| 4,000 drawn paths, one mark over a corner (126 paths cut) | 5.51 ms | 26.27 ms | |
+| one curved signature under one mark | 0.01 ms | 0.98 ms | |
+
+On a page with no drawing under a mark the cut adds 0.34 ms, just beyond today's spread of 0.27 ms. On 4,000 paths it
+adds about 21 ms, and the page's content grows from 132,274 to 402,373 bytes, because each cut path is written
+flattened.
+
+**Decision 3 as built.** Each edge a→b closes into the quadrilateral (a, b, (X, b.y), (X, a.y)), with X right of all
+the ink, not into a triangle to one point. The quadrilaterals have the scanline winding MuPDF fills by, whether or not
+the edges close up. Closing to one point left 7% of a dashed stroke's ink between its dashes, because MuPDF's stroker
+sends a dash's two cap edges twice (measured 2026-11-05; `mz_fan_cut` in the shim).
+
+**Decision 4 as built.** A stroke's cut outline is filled with the stroke's own paint where its fill and stroke alpha
+and overprint agree; that draws the stroker's own pixels. Painted through a clip, the edge pixels differed by up to 81
+of 255 (measured 2026-11-05). The clip and one synthetic wide stroke are the route only where alpha or overprint differ.
+A clip cut to nothing is written as an empty clip, not left out. The hairline threshold is a stroke under **1 point**
+on the page, not 0.1.
+
+**Decision 7, read in the saved file** (`redactionLineArt.test.ts`, 2026-11-06):
+
+- A **tiling pattern**: its cell stays whole in the file; the fill and the stroke it paints are cut, and nothing is
+  painted inside the mark.
+- A **soft mask**: its group stays whole in the file, the part drawn under the mark included; the fill it masks is cut,
+  and nothing is painted inside the mark.
+- **Type 3 glyphs**: the glyph procedures stay in the file; every glyph shown under the mark goes, and one across the
+  mark's edge goes whole, as a letter does.
+- **OPEN, reported to the owner, not fixed:** a glyph whose ink reaches past its advance, shown beside the mark, still
+  paints inside it. MuPDF judges a glyph by its advance box (origin to advance width, descender to ascender), never by
+  its ink (`source/pdf/pdf-op-filter.c`, the culler's `FZ_CULL_GLYPH` call). Measured on a Type 3 glyph that advances
+  20 points and draws 60: 2,214 pixels painted inside the mark at 2×, whatever its FontBBox says, and none once its
+  advance reaches the mark. That code path is the same for every font type; it was measured only for Type 3. The cut
+  does not touch text, so d594f808 behaves the same.
