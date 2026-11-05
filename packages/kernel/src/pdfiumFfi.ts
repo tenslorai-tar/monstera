@@ -1010,6 +1010,31 @@ interface WalkedRun {
   top: number;
 }
 
+/** A character's loose box on the page. */
+export interface LooseBox {
+  readonly left: number;
+  readonly right: number;
+  readonly bottom: number;
+  readonly top: number;
+}
+
+/**
+ * How far past a drawn space the next character starts, and that space's width, ALONG THE LINE, whichever way the line
+ * runs: the axis the two characters are further apart on, in the direction from the space to the character. Measured as
+ * `next.left - space.right` this was a large negative number on a line drawn right to left, as a page under /Rotate 180
+ * draws one, and it differed from one letter to the next by that letter's width: {@link restoreDroppedSpaces} read those
+ * differences as dropped spaces, so a paragraph opened with two spaces at the same words in every line, and an edit
+ * wrote them (the owner's video of 2026-11-05; the same page with no /Rotate read one).
+ */
+export function gapAfterSpace(space: LooseBox, next: LooseBox): { readonly gap: number; readonly width: number } {
+  const across = (next.left + next.right - space.left - space.right) / 2;
+  const up = (next.bottom + next.top - space.bottom - space.top) / 2;
+  if (Math.abs(across) >= Math.abs(up)) {
+    return { gap: across >= 0 ? next.left - space.right : space.left - next.right, width: space.right - space.left };
+  }
+  return { gap: up >= 0 ? next.bottom - space.top : space.bottom - next.top, width: space.top - space.bottom };
+}
+
 /**
  * Puts back the spaces a text page dropped: PDFium's reads a space that follows a drawn space as nothing — measured
  * 2026-10-14 on PDFium 155, one Helvetica object `(a  b)` reads `a b`, and `(make help  # See)` in Courier reads
@@ -1111,7 +1136,7 @@ function walkRuns(
     let unaddressable = 0;
     let unaddressableInk = 0;
     /** Each run's last drawn character, where it was a space: where its loose box ends and how wide it is. */
-    const lastSpace = new Map<WalkedRun, { readonly right: number; readonly width: number } | undefined>();
+    const lastSpace = new Map<WalkedRun, LooseBox | undefined>();
     /** Every drawn character that followed a drawn space in its run: where in the run's text, and the gap between. */
     const afterSpace: { readonly run: WalkedRun; readonly at: number; readonly gap: number; readonly width: number }[] = [];
     /** The run the last DRAWN character joined, for a generated space to follow. */
@@ -1205,10 +1230,11 @@ function walkRuns(
       if (hasLoose) {
         ends.set(index, Math.max(ends.get(index) ?? Number.NEGATIVE_INFINITY, loose['right'] ?? Number.NEGATIVE_INFINITY));
         const space = lastSpace.get(held);
+        const here = { left: loose['left'] ?? 0, right: loose['right'] ?? 0, bottom: loose['bottom'] ?? 0, top: loose['top'] ?? 0 };
         if (actual === undefined && space !== undefined && character !== ' ') {
-          afterSpace.push({ run: held, at: held.text.length - 1, gap: (loose['left'] ?? 0) - space.right, width: space.width });
+          afterSpace.push({ run: held, at: held.text.length - 1, ...gapAfterSpace(space, here) });
         }
-        lastSpace.set(held, character === ' ' ? { right: loose['right'] ?? 0, width: (loose['right'] ?? 0) - (loose['left'] ?? 0) } : undefined);
+        lastSpace.set(held, character === ' ' ? here : undefined);
       }
       // WHERE EACH DRAWN CHARACTER SITS, for the export's reading order of right-to-left text: PDFium's own order of
       // such text differs by producer, and the places do not.

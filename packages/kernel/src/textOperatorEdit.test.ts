@@ -17,6 +17,7 @@ import * as STANDARD from './standardFontTables.js';
 import { BlockUnchangedError, EditRefusedError, TextNotWritableError } from './textEditRefusals.js';
 import { applyEditTextOperators, readingHolds } from './textOperatorEdit.js';
 import { joinedContent, showOperators, textObjectCount } from './textOperators.js';
+import { pageWithCffSubset } from './type1cSubsetForTests.js';
 
 /** The Chromium print committed as Part B's starting material (`scripts/research/chromiumType3Fixture.mjs`). */
 const CHROMIUM = fileURLToPath(new URL('../../testing/fixtures/text-edit/chromium-type3.pdf', import.meta.url));
@@ -192,6 +193,42 @@ describe('applyEditTextOperators', () => {
       // CONTROL: one word changed is written, so the answer above is not a writer that writes nothing (the first case
       // reads the written words back; this asserts only that the same input with a change is not refused).
       await expect(applyEditTextOperators(session, command(runs.runs[0]?.index ?? 0, 'Monstera fixture reading.'), runs)).resolves.toBeDefined();
+    });
+  });
+
+  describe('a page whose font is an embedded subset with no ToUnicode (item 5, 2026-11-05)', () => {
+    const edited = async (words: string, typed: string) => {
+      const session = await mupdfWriter.open(await pageWithCffSubset(words));
+      try {
+        const content = await withDocument(session, (document) => joinedContent(pageContentStreams(document.findPage(0))));
+        const runs: PageRuns = {
+          textObjects: [0],
+          runs: [{ index: 0, members: [0], text: words, left: 0, right: 0, bottom: 0, top: 0 }],
+        };
+        await applyEditTextOperators(session, command(0, typed), runs);
+        return await withDocument(session, (document) => {
+          const after = new TextDecoder('latin1').decode(joinedContent(pageContentStreams(document.findPage(0))));
+          return { after, fonts: [...pageFonts(document.findPage(0), STANDARD).keys()], before: new TextDecoder('latin1').decode(content) };
+        });
+      } finally {
+        await mupdfWriter.close(session);
+      }
+    };
+
+    it('one space at the end is written in the page’s own font, and adds no font', async () => {
+      const { after, fonts } = await edited('ab ba', 'ab ba ');
+      expect(fonts).toStrictEqual(['F1']);
+      expect(after).toContain('/F1');
+    });
+
+    it('a word of letters the subset holds stays in it', async () => {
+      const { fonts } = await edited('ab ba', 'ba ab');
+      expect(fonts).toStrictEqual(['F1']);
+    });
+
+    it('CONTROL: a letter the subset lacks is not written in it, so the two above are the subset’s doing', async () => {
+      // NO FACES ARE BOUND HERE, so the writer says what it needs rather than choosing one.
+      await expect(edited('ab ba', 'ab bz')).rejects.toBeInstanceOf(TextNotWritableError);
     });
   });
 

@@ -29,7 +29,7 @@
  */
 import { existsSync } from 'node:fs';
 
-import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
+import { PDFDocument, PDFName, StandardFonts, degrees } from '@cantoo/pdf-lib';
 
 import { TEXT_SPACES, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
@@ -59,12 +59,41 @@ const CASES = [
   'a second edit of the reopened words keeps both runs, so the next save writes them again',
   'CONTROL: the same words drawn unmarked read back each run of spaces one space short',
   'CONTROL: an edit with single spaces writes no mark',
+  'a page turned by /Rotate 180, its text turned back, reads each drawn space as one',
+  'CONTROL: the same words on an unturned page read the same, so the turned reading is compared with something',
 ];
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 6 });
-if (CASES.length !== 6) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 6`);
+const roster = createRoster(failures, { cases: 8 });
+if (CASES.length !== 8) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 8`);
+
+/** Words as the owner's page draws them, ordinary prose with its drawn spaces, in lines of one font. */
+const PROSE = [
+  'Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et',
+  'dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip',
+  'ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore',
+  'eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia',
+  'deserunt mollit anim id est laborum.',
+];
+
+/**
+ * Those lines at Helvetica 10, each a show operator after a move, on a Letter page: turned by /Rotate 180 with the text
+ * drawn at 180 so it stands upright, as the page that found this is, or plain. @param {boolean} turned
+ */
+async function prose(turned) {
+  const made = await PDFDocument.create({ updateMetadata: false });
+  const font = await made.embedFont(StandardFonts.Helvetica);
+  const sheet = made.addPage([612, 792]);
+  const name = sheet.node.newFontDictionary('F', font.ref);
+  const start = turned ? `-1 0 0 -1 534 96 Tm` : `1 0 0 1 78 696 Tm`;
+  const shows = PROSE.map((line) => `(${line}) '`).join('\n');
+  const text = `BT\n${name.toString()} 10 Tf\n12 TL\n${start}\n${shows}\nET`;
+  sheet.node.set(PDFName.of('Contents'), made.context.register(made.context.flateStream(text)));
+  if (turned) sheet.setRotation(degrees(180));
+  await font.embed();
+  return new Uint8Array(await made.save({ useObjectStreams: false }));
+}
 
 /** @param {number} at @param {boolean} held @param {string} detail */
 function check(at, held, detail) {
@@ -182,6 +211,23 @@ async function run(pdfium, kernel) {
   const single = await edit(original, ORIGINAL.replace('now', 'later'));
   const none = marks(single);
   check(5, none.length === 0 && (await editorWords(single)) === ORIGINAL.replace('now', 'later'), `marks ${JSON.stringify(none)}`);
+
+  /** Every run's words on page 0, turned or not, as the walk reads them. @param {Uint8Array} bytes */
+  const allWords = async (bytes) => {
+    const session = await pdfium.pdfiumWriter.open(bytes);
+    try {
+      return (await pdfium.textRuns(session, 0)).runs.map((/** @type {any} */ each) => String(each.text)).join('\n');
+    } finally {
+      await pdfium.pdfiumWriter.close(session);
+    }
+  };
+  const turnedWords = await allWords(await prose(true));
+  const plainWords = await allWords(await prose(false));
+  const doubled = (/** @type {string} */ words) => (words.match(/ {2}/gu) ?? []).length;
+  // THE WORDS WERE READ AT ALL, by a word from each line: a page read as nothing holds no double space either.
+  const hasWords = (/** @type {string} */ words) => ['magna', 'commodo', 'fugiat', 'laborum'].every((word) => words.includes(word));
+  check(6, hasWords(turnedWords) && doubled(turnedWords) === 0, `${String(doubled(turnedWords))} double spaces in ${String(turnedWords.length)} characters`);
+  check(7, hasWords(plainWords) && doubled(plainWords) === 0, `${String(doubled(plainWords))} double spaces in ${String(plainWords.length)} characters`);
 }
 
 const library = pdfiumLibrary(ROOT);

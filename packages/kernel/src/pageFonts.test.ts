@@ -9,6 +9,7 @@ import { pageContentStreams } from './pageContent.js';
 import { pageFonts } from './pageFonts.js';
 import * as STANDARD from './standardFontTables.js';
 import { codesFor } from './toUnicode.js';
+import { pageWithCffSubset } from './type1cSubsetForTests.js';
 
 /** The Chromium print committed as Part B's starting material (`scripts/research/chromiumType3Fixture.mjs`). */
 const CHROMIUM = fileURLToPath(new URL('../../testing/fixtures/text-edit/chromium-type3.pdf', import.meta.url));
@@ -92,6 +93,47 @@ describe('pageFonts reads one font object once', () => {
     } finally {
       await mupdfWriter.close(session);
     }
+  });
+});
+
+describe('an embedded subset with no ToUnicode', () => {
+  const fontsOf = async (image: Uint8Array) => {
+    const session = await mupdfWriter.open(image);
+    try {
+      return await withDocument(session, (document) => pageFonts(document.findPage(0), STANDARD));
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  };
+
+  it('a CFF program: reads each code through its encoding, and draws only what the program holds', async () => {
+    const font = (await fontsOf(await pageWithCffSubset('ab ba'))).get('F1');
+    expect(font?.toUnicode?.text.get(97)).toBe('a');
+    expect(font?.draws(97)).toBe(true);
+    expect(font?.draws(32)).toBe(true);
+    // NAMED BY THE ENCODING AND NOT IN THE PROGRAM: a word in it would draw nothing (ADR-0176's narrowing).
+    expect(font?.toUnicode?.text.get(122)).toBe('z');
+    expect(font?.draws(122)).toBe(false);
+  });
+
+  it('CONTROL: a TrueType subset stays with no known characters, since its glyph numbers can hold nothing', async () => {
+    const doc = await PDFDocument.create({ updateMetadata: false });
+    const page = doc.addPage([300, 300]);
+    const context = doc.context;
+    const truetype = context.obj({
+      Type: 'Font',
+      Subtype: 'TrueType',
+      BaseFont: 'ABCDEF+Arial',
+      FirstChar: 32,
+      LastChar: 98,
+      Widths: new Array<number>(67).fill(500),
+      Encoding: 'WinAnsiEncoding',
+      FontDescriptor: context.register(context.obj({ Type: 'FontDescriptor', FontName: 'ABCDEF+Arial', Flags: 32, FontFile2: context.register(context.flateStream('not read')) })),
+    });
+    page.node.set(PDFName.of('Resources'), context.obj({ Font: context.obj({ F1: context.register(truetype) }) }));
+    page.node.set(PDFName.of('Contents'), context.register(context.flateStream('BT /F1 10 Tf (a) Tj ET')));
+    const font = (await fontsOf(await doc.save({ useObjectStreams: false }))).get('F1');
+    expect(font?.toUnicode).toBeNull();
   });
 });
 

@@ -1,6 +1,29 @@
 import { describe, expect, it } from 'vitest';
 
-import { orientationOf } from './pdfiumFfi.js';
+import { gapAfterSpace, orientationOf } from './pdfiumFfi.js';
+
+describe('gapAfterSpace reads along the line, whichever way it runs', () => {
+  const space = { left: 100, right: 103, bottom: 10, top: 20 };
+
+  it('left to right: the next character starts at the space’s right', () => {
+    expect(gapAfterSpace(space, { left: 103, right: 108, bottom: 10, top: 20 })).toStrictEqual({ gap: 0, width: 3 });
+    // A SPACE LEFT OUT LEAVES ITS ADVANCE BEHIND, which is what the reading exists to see.
+    expect(gapAfterSpace(space, { left: 106, right: 111, bottom: 10, top: 20 })).toStrictEqual({ gap: 3, width: 3 });
+  });
+
+  it('right to left, a page under /Rotate 180: the gap does not depend on how wide the next letter is', () => {
+    const narrow = gapAfterSpace(space, { left: 98, right: 100, bottom: 10, top: 20 });
+    const wide = gapAfterSpace(space, { left: 91, right: 100, bottom: 10, top: 20 });
+    expect(narrow).toStrictEqual({ gap: 0, width: 3 });
+    expect(wide).toStrictEqual(narrow);
+  });
+
+  it('up the page: the gap and the width are along the height', () => {
+    const upright = { left: 10, right: 20, bottom: 100, top: 103 };
+    expect(gapAfterSpace(upright, { left: 10, right: 20, bottom: 103, top: 108 })).toStrictEqual({ gap: 0, width: 3 });
+    expect(gapAfterSpace(upright, { left: 10, right: 20, bottom: 95, top: 100 })).toStrictEqual({ gap: 0, width: 3 });
+  });
+});
 
 /**
  * How a text matrix sets text. Since [ADR-0273](../../../docs/DECISIONS/0273-text-set-at-an-angle-is-edited-in-its-own-frame.md)

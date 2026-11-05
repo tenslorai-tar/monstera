@@ -20,7 +20,9 @@ import { type ToUnicode, readToUnicode } from './toUnicode.js';
  * ## A font the file does not carry, with no ToUnicode, is read through its encoding where pdf-lib holds its table
  *
  * ISO 32000-1 §9.10.2: the WinAnsi encoding, or Symbol's and ZapfDingbats' own (ADR-0176's correction of 2026-10-25). An
- * embedded font, or one in any other encoding, with no ToUnicode has no known characters, as before.
+ * embedded Type 1 or CFF program with no ToUnicode is read through the same encoding, each code asked of the program
+ * ({@link namedGlyphs}). An embedded TrueType program, or any font in another encoding, with no ToUnicode has no known
+ * characters, as before.
  */
 
 /** One font resource of a page. */
@@ -129,6 +131,36 @@ function simpleWidths(font: PDFObject, scale: number): (code: number) => number 
   };
 }
 
+/** A font program as MuPDF loads it, or `undefined` where it cannot. */
+function loadedProgram(stream: PDFObject): Font | undefined {
+  try {
+    return new Font('embedded', bufferBytes(stream.readStream()));
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * WHICH OF ITS ENCODING'S CODES AN EMBEDDED TYPE 1 OR CFF PROGRAM CAN DRAW, for a simple font with no ToUnicode. Such a
+ * program names its glyphs, and a subset holds exactly the ones its producer kept, so asking it for a character's glyph
+ * says whether the code draws. A TrueType subset is not asked: it keeps a glyph's number with nothing in it, so the same
+ * lookup answers yes for a letter that draws nothing (ADR-0176's narrowing, documents 6 and 8, 0 pixels changed).
+ * `undefined` where there is no such program, or MuPDF cannot load it.
+ */
+function namedGlyphs(descriptor: PDFObject, characterOf: (code: number) => string | undefined): ((code: number) => boolean) | undefined {
+  const type1 = descriptor.get('FontFile');
+  const compact = descriptor.get('FontFile3');
+  const compactSubtype = compact.isNull() ? null : nameOf(resolved(compact).get('Subtype'));
+  const stream = !type1.isNull() ? type1 : compactSubtype === 'Type1C' ? compact : null;
+  if (stream === null) return undefined;
+  const font = loadedProgram(stream);
+  if (font === undefined) return undefined;
+  return (code) => {
+    const point = characterOf(code)?.codePointAt(0);
+    return point !== undefined && font.encodeCharacter(point) > 0;
+  };
+}
+
 /**
  * AN EMBEDDED PROGRAM'S OWN ADVANCES, for a simple font that states no `/Widths` (ADR-0270's addition of 2026-11-01): the
  * glyph each code's character names in the program, by MuPDF's own lookup (`encodeCharacter`), and that glyph's advance
@@ -139,14 +171,10 @@ function simpleWidths(font: PDFObject, scale: number): (code: number) => number 
 function programWidths(descriptor: PDFObject, characterOf: (code: number) => string | undefined): ((code: number) => number | null) | undefined {
   const stream = ['FontFile2', 'FontFile', 'FontFile3'].map((key) => descriptor.get(key)).find((each) => !each.isNull());
   if (stream === undefined) return undefined;
-  let font: Font;
-  try {
-    font = new Font('embedded', bufferBytes(stream.readStream()));
-  } catch {
-    // A PROGRAM MUPDF CANNOT LOAD is one it draws in a substitute, so its letters stand by no advance of the program's:
-    // `undefined` sends the font to the closest normal font's widths, as one not embedded is.
-    return undefined;
-  }
+  // A PROGRAM MUPDF CANNOT LOAD is one it draws in a substitute, so its letters stand by no advance of the program's:
+  // `undefined` sends the font to the closest normal font's widths, as one not embedded is.
+  const font = loadedProgram(stream);
+  if (font === undefined) return undefined;
   const advances = new Map<number, number | null>();
   return (code) => {
     if (advances.has(code)) return advances.get(code) ?? null;
@@ -287,10 +315,22 @@ function read(resource: string, font: PDFObject, standard: StandardFontTables): 
     if (fromProgram !== undefined) width = fromProgram;
   }
   const closest = unstated && fromProgram === undefined && encoded?.measured !== true;
+  // AN EMBEDDED TYPE 1 OR CFF SUBSET WITH NO TOUNICODE: its encoding says each code's character and its program says
+  // which it holds, so its own letters stay in it. Without this the page's Helvetica was no font at all to the writer,
+  // and every line an edit touched was set in another face (the owner's video of 2026-11-05, measured on that page).
+  let readThrough: ToUnicode | null = null;
+  if (own === null && carried && simple && descriptor.isDictionary()) {
+    const through = encodedAs(font, nameOf(font.get('BaseFont')), standard);
+    const holds = through === null ? undefined : namedGlyphs(descriptor, (code) => through.toUnicode.text.get(code));
+    if (through !== null && holds !== undefined) {
+      readThrough = through.toUnicode;
+      draws = holds;
+    }
+  }
   return {
     resource,
     subtype,
-    toUnicode: own ?? encoded?.toUnicode ?? null,
+    toUnicode: own ?? encoded?.toUnicode ?? readThrough,
     codeBytes: subtype === 'Type0' ? 2 : 1,
     width,
     draws,
