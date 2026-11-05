@@ -1756,19 +1756,22 @@ MZ_EXPORT int mz_text_letters(fz_stext_page *page, unsigned char *out, int capac
  *
  *   - its ink, as directed edges: a fill's own flattened contours, a stroke's
  *     outline from MuPDF's own stroker (fz_flatten_stroke_path into a capturing
- *     rasteriser, the one internal interface this uses, from draw-imp.h);
- *   - each edge a->b closed into the triangle (P, a, b) with one point P, which
- *     keeps the winding number of every point, so the triangles together fill
- *     exactly the ink under either fill rule;
- *   - each triangle clipped (Sutherland-Hodgman) to the convex pieces of the
- *     area outside each mark: outside edge i and inside edges 0..i-1 of the
+ *     rasteriser, the one internal interface this uses, from draw-imp.h, whose
+ *     declarations scripts/provision/drawImpPin.proof.mjs pins);
+ *   - each edge a->b closed into the quadrilateral (a, b, (X, b.y), (X, a.y)),
+ *     X right of all the ink, which keeps the scanline winding number of every
+ *     point, so the quadrilaterals together fill exactly the ink under either
+ *     fill rule (mz_fan_cut says why not a triangle to one point);
+ *   - each quadrilateral clipped (Sutherland-Hodgman) to the convex pieces of
+ *     the area outside each mark: outside edge i and inside edges 0..i-1 of the
  *     mark's convex quadrilateral, for i = 0..3. Disjoint, and together the
  *     whole plane less the mark.
  *
- *   A fill keeps its operator and rule. A stroke's cut outline becomes a clip,
- *   painted by one synthetic wide stroke lying away from every mark, so the
- *   stroke's own colour, pattern, alpha and blend mode paint it and no colour
- *   state is tracked. A stroke under 1 point wide (on the page) is cut on its
+ *   A fill keeps its operator and rule. A stroke's cut outline is filled with
+ *   the stroke's own paint where the fill and stroke alpha and overprint agree,
+ *   which draws the stroker's own pixels; otherwise it becomes a clip, painted
+ *   by one synthetic wide stroke lying away from every mark, which keeps the
+ *   stroke's alpha and overprint. A stroke under 1 point wide (on the page) is cut on its
  *   centre line instead and stays a stroke, its dash phase carried along: an
  *   outline would not keep the minimum width a viewer gives a thin stroke. A
  *   clip path is cut when its boundary enters a mark, and an unpainted path (n)
@@ -2773,7 +2776,7 @@ static void mz_emit_stroke_paint(fz_context *ctx, mz_cut_processor *p, const mz_
         return;
 
     /*
-     * FILLED WITH THE STROKE'S OWN PAINT where a fill paints as the stroke does: the triangles' shared edges cancel, so
+     * FILLED WITH THE STROKE'S OWN PAINT where a fill paints as the stroke does: the quadrilaterals' added edges cancel, so
      * the rasteriser sees the stroker's own edges and draws the same pixels. Measured 2026-11-05: painted through a clip
      * instead, a stroke's edge pixels differed by up to 81 of 255 from the original's.
      */

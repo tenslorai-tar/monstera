@@ -40,6 +40,7 @@
     "provision:mupdf": "node scripts/provision/mupdf.mjs",
     "proof:shim": "node scripts/provision/mupdf.proof.mjs",
     "proof:mupdfbinding": "node scripts/provision/mupdfGlue.proof.mjs",
+    "proof:drawimppin": "node scripts/provision/drawImpPin.proof.mjs",
     "guard:staged": "node scripts/hooks/guardFiles.mjs --staged",
     "guard:tree": "node scripts/hooks/guardFiles.mjs --tree",
     "scan:secrets": "node scripts/hooks/scanSecrets.mjs",
