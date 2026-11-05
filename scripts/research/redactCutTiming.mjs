@@ -88,6 +88,7 @@ async function pages() {
 function once(bytes, marks, cut, check = false) {
   const document = mupdf.PDFDocument.openDocument(bytes, 'application/pdf');
   try {
+    if (!(document instanceof mupdf.PDFDocument)) throw new Error('the page is not a PDF');
     const loaded = document.loadPage(0);
     for (const rect of marks) {
       const annotation = loaded.createAnnotation('Redact');
