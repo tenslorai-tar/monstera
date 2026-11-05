@@ -9,6 +9,7 @@ import type {
   SerialiseOptions,
 } from './engineSeam.js';
 import { DocumentLocked } from './engineSeam.js';
+import { openPdfFile } from './mupdfOpen.js';
 import { savedBuffer, savedWithoutOutline } from './saveDepth.js';
 import { signatureValues } from './signatureFields.js';
 import { DOCUMENT_ACCESS_VALUES } from '@monstera/contract/host';
@@ -464,10 +465,10 @@ export function heldPasswordOf(session: MupdfSession): string | undefined {
  */
 export function unprotectedImage(image: ByteImage, password: string | undefined): Promise<ByteImage> {
   return promised(() => {
-    const document = mupdf.PDFDocument.openDocument(image, 'application/pdf');
+    const { document, access } = openPdfFile(image, password);
     try {
       if (!(document instanceof mupdf.PDFDocument)) throw new Error('Opened document is not a PDF, so no PDF writer may act on it.');
-      if (document.authenticatePassword(password ?? '') === 0) throw new DocumentLocked(password === undefined ? 'needs-password' : 'wrong-password');
+      if (access === 0) throw new DocumentLocked(password === undefined ? 'needs-password' : 'wrong-password');
       return bufferBytes(savedBuffer(document, 'garbage,encrypt=none'));
     } finally {
       document.destroy();
@@ -543,12 +544,12 @@ export async function appendedUnderKey(
 
 /** `image` opened with `password`, refused as {@link mupdfWriter}'s open refuses one. */
 function openedWith(image: ByteImage, password: string | undefined): mupdf.PDFDocument {
-  const document = mupdf.PDFDocument.openDocument(image, 'application/pdf');
+  const { document, access } = openPdfFile(image, password);
   if (!(document instanceof mupdf.PDFDocument)) {
     document.destroy();
     throw new Error('Opened document is not a PDF, so no PDF writer may act on it.');
   }
-  if (document.authenticatePassword(password ?? '') === 0) {
+  if (access === 0) {
     document.destroy();
     throw new DocumentLocked(password === undefined ? 'needs-password' : 'wrong-password');
   }
@@ -682,7 +683,9 @@ export const mupdfWriter: EngineWriter<MupdfSession> = {
   // the same way.
   open(image: ByteImage, password?: string): Promise<MupdfSession> {
     return promised(() => {
-      const document = mupdf.PDFDocument.openDocument(image, 'application/pdf');
+      // THE CHAIN'S ONE RULE (`mupdfOpen.ts`), which makes the one password attempt the comment below describes.
+      const opened = openPdfFile(image, password);
+      const { document } = opened;
       if (!(document instanceof mupdf.PDFDocument)) {
         // `openDocument` is typed as returning the base Document. A non-PDF
         // that parsed would otherwise reach page-tree code assuming PDF objects.
@@ -702,7 +705,7 @@ export const mupdfWriter: EngineWriter<MupdfSession> = {
       // include `0` on purpose — a refusal produces no session, so no caller
       // can ever hold that value — and declaring the call as it would make the
       // one branch that must exist look like dead code.
-      const access: number = document.authenticatePassword(password ?? '');
+      const access: number = opened.access;
       if (access === 0) {
         // Destroyed rather than kept: after a refused attempt the crypt holds
         // a key derived from the wrong password, and the next attempt arrives

@@ -1,0 +1,125 @@
+import { PDFDocument as PdfLibDocument, StandardFonts } from '@cantoo/pdf-lib';
+import { describe, expect, it } from 'vitest';
+
+import { openPdfFile, startxrefBroken } from './mupdfOpen.js';
+import * as mupdf from './mupdfRaw.js';
+import { mupdfWriter, withDocument } from './mupdfWriter.js';
+import { signatureFromScan } from './signatureScan.js';
+
+const latin1 = (text: string): Uint8Array => Uint8Array.from(text, (character) => character.charCodeAt(0));
+
+async function twoPages(): Promise<{ readonly bytes: Uint8Array; readonly root: string; readonly size: number }> {
+  const doc = await PdfLibDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  for (const words of ['First page words', 'Second page words']) doc.addPage([300, 200]).drawText(words, { x: 20, y: 150, size: 14, font });
+  const bytes = await doc.save({ useObjectStreams: false });
+  const text = new TextDecoder('latin1').decode(bytes);
+  const root = /\/Root (\d+ \d+ R)/u.exec(text)?.[1];
+  const size = Number(/\/Size (\d+)/u.exec(text)?.[1]);
+  if (root === undefined || !Number.isFinite(size)) throw new Error('the fixture has no trailer to read');
+  return { bytes, root, size };
+}
+
+/** The file with a last section appended whose /Prev is the section's own offset, as a table. */
+async function selfPointingTable(): Promise<Uint8Array> {
+  const { bytes, root, size } = await twoPages();
+  const at = bytes.length;
+  const tail = `xref\n0 1\n0000000000 65535 f \ntrailer\n<</Size ${String(size)}/Root ${root}/Prev ${String(at)}>>\nstartxref\n${String(at)}\n%%EOF\n`;
+  return Uint8Array.from([...bytes, ...latin1(tail)]);
+}
+
+/** The same as an XRef stream, the shape the file that found this has: one entry, uncompressed. */
+async function selfPointingStream(): Promise<Uint8Array> {
+  const { bytes, root, size } = await twoPages();
+  const at = bytes.length;
+  // ONE FIELD WIDTH EACH, an entry saying object 0 is free.
+  const entry = '\u0000\u0000\u0000';
+  const tail = `${String(size)} 0 obj\n<</Type/XRef/Root ${root}/Size ${String(size + 1)}/Prev ${String(at)}/W[1 1 1]/Index[0 1]/Length 3>>\nstream\n${entry}\nendstream\nendobj\nstartxref\n${String(at)}\n%%EOF\n`;
+  return Uint8Array.from([...bytes, ...latin1(tail)]);
+}
+
+const pagesWithoutRecovery = (image: Uint8Array): number => {
+  const document = mupdf.PDFDocument.openDocument(image, 'application/pdf');
+  try {
+    return document.countPages();
+  } finally {
+    document.destroy();
+  }
+};
+
+describe.each([
+  ['an XRef stream', selfPointingStream],
+  ['a table', selfPointingTable],
+])('a last cross-reference section whose /Prev names itself, as %s', (_shape, fixture) => {
+  it('MuPDF alone reads no pages from it, which is what this file is for', async () => {
+    // CONTROL: the fault as it comes. If MuPDF ever follows such a chain itself, this goes red and the recovery can go.
+    expect(pagesWithoutRecovery(await fixture())).toBe(0);
+  });
+
+  it('opens with its pages and its words, through the writer every document opens by', async () => {
+    const session = await mupdfWriter.open(await fixture());
+    try {
+      const words = await withDocument(session, (document) => {
+        expect(document.countPages()).toBe(2);
+        return document.loadPage(1).toStructuredText().asText();
+      });
+      expect(words).toContain('Second page words');
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('survives a save and a reopen', async () => {
+    const session = await mupdfWriter.open(await fixture());
+    let saved: Uint8Array;
+    try {
+      saved = await mupdfWriter.serialise(session);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+    // THE SAVED FILE READS WITHOUT ANY RECOVERY: the chain it carries is MuPDF's own.
+    expect(pagesWithoutRecovery(saved)).toBe(2);
+  });
+
+  it('is drawn by the other reader that takes a file as it is', async () => {
+    expect(signatureFromScan(await fixture()).kind).not.toBe('unreadable');
+  });
+});
+
+describe('what the recovery leaves alone', () => {
+  it('a sound file is opened from its own bytes, its chain intact', async () => {
+    const { bytes } = await twoPages();
+    const { document } = openPdfFile(bytes, undefined);
+    try {
+      expect(document.countPages()).toBe(2);
+      // A REBUILD WOULD SAY SO, and would cost the file its incremental save.
+      expect(document instanceof mupdf.PDFDocument && document.wasRepaired()).toBe(false);
+    } finally {
+      document.destroy();
+    }
+  });
+
+  it('the broken file is opened from a rebuild, and says so', async () => {
+    const { document } = openPdfFile(await selfPointingStream(), undefined);
+    try {
+      expect(document instanceof mupdf.PDFDocument && document.wasRepaired()).toBe(true);
+    } finally {
+      document.destroy();
+    }
+  });
+
+  it('the rebuild is asked of a copy: the bytes it was given are unchanged', async () => {
+    const image = await selfPointingStream();
+    const before = Uint8Array.from(image);
+    const document = openPdfFile(image, undefined).document;
+    document.destroy();
+    expect(image).toStrictEqual(before);
+  });
+
+  it('only the LAST startxref is broken, keeping the file its length', () => {
+    const image = latin1('a startxref\n11\n%%EOF\nb startxref\n2345\n%%EOF\n');
+    const broken = startxrefBroken(image);
+    expect(new TextDecoder('latin1').decode(broken ?? new Uint8Array())).toBe('a startxref\n11\n%%EOF\nb startxref\n0000\n%%EOF\n');
+    expect(startxrefBroken(latin1('no such keyword here'))).toBeNull();
+  });
+});

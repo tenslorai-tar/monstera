@@ -1,6 +1,7 @@
 import * as mupdf from './mupdfRaw.js';
 
 import { MAX_SCAN_SIDE } from './host/composeChannels.js';
+import { type OpenedPdf, openPdfFile } from './mupdfOpen.js';
 import { scaleWithinPixelBound } from './pageSnapshot.js';
 
 /**
@@ -414,16 +415,17 @@ function drawScale(width: number, height: number): number {
  * with no ink is `blank`. Anything that fails after the page is drawn is a fault in this build and throws.
  */
 export function signatureFromScan(bytes: Uint8Array): ScannedSignature {
-  let document: mupdf.Document;
+  let opened: OpenedPdf;
   try {
-    document = mupdf.Document.openDocument(bytes, 'application/pdf');
+    opened = openPdfFile(bytes, undefined);
   } catch {
     return { kind: 'unreadable' };
   }
+  const { document } = opened;
   try {
-    // THE ONE ATTEMPT, with no password: `mupdfWriter.ts`' reason for never asking `needsPassword`, which is this
-    // same call. A document with no `/Encrypt` answers it with access.
-    if (document instanceof mupdf.PDFDocument && document.authenticatePassword('') === 0) return { kind: 'locked' };
+    // THE ONE ATTEMPT, with no password, made by the opening: `mupdfWriter.ts`' reason for never asking `needsPassword`,
+    // which is this same call. A document with no `/Encrypt` answers it with access.
+    if (opened.access === 0) return { kind: 'locked' };
     let pages: number;
     try {
       pages = document.countPages();

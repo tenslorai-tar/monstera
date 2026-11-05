@@ -8,7 +8,8 @@ import { composerApart } from '../composeApart.js';
 import { type FaceSource, faceSourceOf, fontFoldersOf } from '../fontCatalogue.js';
 import { readCatalogueApart } from '../fontCatalogueApart.js';
 import { composeImages } from '../imageCompose.js';
-import { Document, MupdfOpenRefused, PDFDocument, keepInlineImages, rewriteImages } from '../mupdfRaw.js';
+import { type OpenedPdf, openPdfFile } from '../mupdfOpen.js';
+import { MupdfOpenRefused, PDFDocument, keepInlineImages, rewriteImages } from '../mupdfRaw.js';
 import { keptCensusOf } from '../keptCensus.js';
 import { prepareForPdfa } from '../pdfaPreparation.js';
 import { savedBuffer } from '../saveDepth.js';
@@ -114,14 +115,15 @@ const preparePdfaIn: PdfaPreparer | null =
     : async (area, from, into, password) => {
         const input = join(area.snapshotDirectory, from);
         if (!existsSync(input)) return { kind: 'missing' };
-        let document: Document;
+        let opened: OpenedPdf;
         try {
-          document = Document.openDocument(await readFile(input), 'application/pdf');
+          opened = openPdfFile(await readFile(input), password);
         } catch {
           return { kind: 'unreadable' };
         }
+        const { document } = opened;
         try {
-          if (!(document instanceof PDFDocument) || document.authenticatePassword(password ?? '') === 0) return { kind: 'unreadable' };
+          if (!(document instanceof PDFDocument) || opened.access === 0) return { kind: 'unreadable' };
           const preparation = prepareForPdfa(document);
           const saved = savedBuffer(document, 'garbage,encrypt=none');
           try {
@@ -147,14 +149,15 @@ const countKeptIn: KeptCounter | null =
     : async (area, from, into, password) => {
         const input = join(area.snapshotDirectory, from);
         if (!existsSync(input)) return { kind: 'missing' };
-        let document: Document;
+        let opened: OpenedPdf;
         try {
-          document = Document.openDocument(await readFile(input), 'application/pdf');
+          opened = openPdfFile(await readFile(input), password);
         } catch {
           return { kind: 'unreadable' };
         }
+        const { document } = opened;
         try {
-          if (!(document instanceof PDFDocument) || document.authenticatePassword(password ?? '') === 0) return { kind: 'unreadable' };
+          if (!(document instanceof PDFDocument) || opened.access === 0) return { kind: 'unreadable' };
           const census = keptCensusOf(document);
           if (into === null) return { kind: 'counted', ...census, bytes: null };
           const saved = savedBuffer(document, 'encrypt=none');
