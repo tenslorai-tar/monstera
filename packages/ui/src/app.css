@@ -4109,9 +4109,12 @@ optgroup {
 
 /* SET INLINE BY `PageList`, so each has a fallback here, as `--m-grid` does: before the pane is measured there is no room
    to centre in, and a margin of 0 is what that is. Without one the whole declaration is invalid wherever either is
-   absent, and `definedTokens.mjs` reads stylesheets alone, so it reports both. */
+   absent, and `definedTokens.mjs` reads stylesheets alone, so it reports both.
+   NEVER BELOW ZERO: a page taller than the pane made the margin negative, and a negative top margin on the first page
+   puts its top above the scroller's content origin, where no scroll position reaches it (measured 2026-11-05: a page
+   1,275 pt tall at a fit held at 50% stood 107 px above the pane's top, `fitStability.pw.ts`). */
 .m-page-list--fit-page .m-page-slot {
-  margin-block: calc((var(--m-fit-room, 0px) - var(--m-slot-h, 0px)) / 2);
+  margin-block: max(0px, calc((var(--m-fit-room, 0px) - var(--m-slot-h, 0px)) / 2));
   scroll-snap-align: center;
   scroll-snap-stop: always;
 }

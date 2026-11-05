@@ -20,6 +20,7 @@ Zoom changes how large the pages look on screen. It never changes the document.
 ## Good to know
 
 - **Fit width** and **Fit page** keep fitting as you resize the window.
+- A very large page can fit below 50%. Zoom in from there goes to 50%; zoom out stays where it is.
 - In a document with pages of different sizes, fitting uses the first page Monstera measures.
 - Pages are redrawn sharply a moment after you stop zooming.
 - Zoomed far in, a page is drawn only where you are looking, in pieces, so a very large page does not fill the memory. **Draw pages in pieces above** in **Settings**, on the **Rendering** page, sets the zoom where that starts.

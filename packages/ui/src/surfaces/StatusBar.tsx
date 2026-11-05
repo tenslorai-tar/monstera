@@ -22,7 +22,7 @@ import type { CommandContext, CommandRegistry } from '../registries/commands.js'
 import { useRunCommand } from '../registries/useRunCommand.js';
 import { CommandIconButton } from './CommandIconButton.js';
 import type { SavedState } from '../savedState.js';
-import { ZOOM_STEPS, type ZoomMode } from '../zoom.js';
+import { sliderLeast, ZOOM_STEPS, type ZoomMode } from '../zoom.js';
 import { statusBarModel, type OrderedEntry } from './projections.js';
 import { SURFACE_PLACEMENTS, useLiveContext } from '../commandAnswers.js';
 import { type DocumentFact, FACT_ORDER, factsThatFit } from './statusFacts.js';
@@ -33,9 +33,11 @@ import { type DocumentFact, FACT_ORDER, factsThatFit } from './statusFacts.js';
  */
 const NAME_MIN_EM = 6;
 
-/** The slider's ends: the zoom ladder's, so the slider offers no scale the ladder refuses. */
-const SLIDER_MIN = ZOOM_STEPS[0];
-const SLIDER_MAX = ZOOM_STEPS[ZOOM_STEPS.length - 1] ?? SLIDER_MIN;
+/**
+ * The slider's top: the zoom ladder's. Its bottom is `sliderLeast`'s: the ladder's, or a fit's own below it, so the
+ * thumb stands where the page is rather than pinned at 50% while the figure beside it says 32%.
+ */
+const SLIDER_MAX = ZOOM_STEPS[ZOOM_STEPS.length - 1] ?? 4;
 /** Five percent a step: fine enough to aim, coarse enough that an arrow key visibly moves it. */
 const SLIDER_STEP = 0.05;
 
@@ -321,12 +323,12 @@ export function StatusBar({
             className="m-status-zoom-slider"
             type="range"
             aria-label={i18n._(STATUS_ZOOM_SLIDER)}
-            min={SLIDER_MIN}
+            min={sliderLeast(zoom)}
             max={SLIDER_MAX}
             step={SLIDER_STEP}
             // THE SCALE SHOWN, which for a fit is what the scroller resolved; moving the slider leaves
             // the fit for that scale, as the zoom buttons do.
-            value={Math.min(SLIDER_MAX, Math.max(SLIDER_MIN, zoom))}
+            value={Math.min(SLIDER_MAX, Math.max(sliderLeast(zoom), zoom))}
             onChange={(event) => {
               const scale = Number(event.target.value);
               if (!Number.isFinite(scale)) return;

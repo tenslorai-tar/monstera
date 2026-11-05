@@ -93,13 +93,15 @@ export function startingZoomMode(choice: StartingZoom): ZoomMode {
 }
 
 /**
- * The scale a fit cannot go below or above.
+ * The ladder's ends, which the ± controls and the slider stay between.
  *
- * A fit is arithmetic on two measurements, and either can be degenerate — a
- * scroller laid out at zero width during a mount, a page whose box has not
- * arrived. Clamping to the ladder's own ends means a fit can never produce a
- * scale the ± controls could not also reach, so there is no state the reader
- * can be in that they cannot step out of.
+ * **A FIT IS CLAMPED ONLY AT THE TOP.** It was clamped at the bottom too, so that a fit could never be a scale the
+ * controls could not reach, and that made both fits do nothing on a page that needs less than 50%: the owner's video of
+ * 1.1.2611.0 (2026-11-05), a page 1,276 pt wide, where both buttons stayed at 50% in the facing layouts and Fit page ran
+ * off the bottom of the pane in every layout (`fitStability.pw.ts`, red on d594f808). Reaching was never the problem:
+ * `+` from any scale below the ladder steps to its first member, so a reader at a fit of 32% steps out of it as from
+ * any other. A degenerate measurement is not what the bottom clamp guarded either — `resolveZoom` answers `undefined`
+ * for a box of zero, before any clamp.
  */
 const MIN_SCALE = ZOOM_STEPS[0];
 const MAX_SCALE = ZOOM_STEPS[ZOOM_STEPS.length - 1] ?? 4;
@@ -108,9 +110,10 @@ const MAX_SCALE = ZOOM_STEPS[ZOOM_STEPS.length - 1] ?? 4;
  * How much of the scroller's box a page may not use.
  *
  * The slot carries margin either side, and a fit computed against the raw
- * width lands a page whose edges sit exactly on the scrollbar — which then
- * appears, which narrows the box, which is a layout loop rather than a fit.
- * Reserving the gutter up front makes the answer stable in one pass.
+ * width lands a page whose edges sit exactly on the scrollbar. The scrollbar's
+ * own room is kept by the scroller whether or not it shows (`scrollbar-gutter`
+ * in `app.css`), so its coming and going no longer changes the box a fit is
+ * measured from; this keeps the page off its edge.
  */
 const GUTTER_PX = 32;
 
@@ -141,7 +144,12 @@ export function resolveZoom(mode: ZoomMode, viewport?: Box, page?: Box): number 
 
   const byWidth = usableWidth / page.width;
   const scale = mode.kind === 'fit-width' ? byWidth : Math.min(byWidth, usableHeight / page.height);
-  return Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale));
+  return Math.min(MAX_SCALE, scale);
+}
+
+/** The least scale the slider offers while `shown` is on screen: the ladder's, or a fit's own below it. */
+export function sliderLeast(shown: number): number {
+  return Math.min(MIN_SCALE, shown);
 }
 
 /**
@@ -170,8 +178,8 @@ const FIXED_STEP_POINTS: Readonly<Record<Exclude<ZoomStep, 'ladder'>, number>> =
  * mode's own scale for a fit — where there is none.
  *
  * **The step is an argument, never a default**: there is no function that steps by the ladder without being asked
- * to, so a caller cannot forget the reader's choice (B5). Both kinds stay within the ladder's ends, which is where a
- * fit is clamped too, so there is no scale one control reaches and another cannot step out of.
+ * to, so a caller cannot forget the reader's choice (B5). Both kinds stay within the ladder's ends. A fit may be below
+ * the least (see {@link MIN_SCALE}); `in` from there lands on the least, and `out` holds, as at the end itself.
  *
  * @returns a function of the shown scale, which is what `onZoom` takes
  */
