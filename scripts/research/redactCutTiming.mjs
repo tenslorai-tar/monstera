@@ -23,9 +23,6 @@
  * median against today's spread. Nothing here is a pass or a fail: it is the figure the report gives.
  */
 
-import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
-
 import { PDFDocument, PDFName, StandardFonts } from '@cantoo/pdf-lib';
 
 import { repoRoot } from '../lib/gitScope.mjs';
@@ -33,9 +30,8 @@ import { bindNativeEngine } from '../lib/nativeEngine.mjs';
 
 const ROOT = repoRoot();
 if (bindNativeEngine(ROOT) === null) throw new Error('the MuPDF shim is not built here');
-/** @param {string} relative */
-const built = (relative) => import(pathToFileURL(join(ROOT, relative)).href);
-const mupdf = await built('packages/kernel/dist/mupdfRaw.js');
+// A LITERAL SPECIFIER, the one `nativeEngine.mjs` binds, so the import scans can read what this loads.
+const mupdf = await import('../../packages/kernel/dist/mupdfRaw.js');
 
 const argument = process.argv.indexOf('--rounds');
 const ROUNDS = argument > 0 ? Number(process.argv[argument + 1]) : 15;
