@@ -1,5 +1,7 @@
 import { PDFDocument, PDFName } from '@cantoo/pdf-lib';
 
+import { wholeFile } from './pdfLibSession.js';
+
 /**
  * A page whose one font is an embedded CFF subset holding space, `a` and `b` and no ToUnicode, named WinAnsi: the shape a
  * page-description printer writes, and the shape that left the writer with no font on the page (item 5 of 2026-11-05).
@@ -66,5 +68,5 @@ export async function pageWithCffSubset(words: string): Promise<Uint8Array> {
   });
   page.node.set(PDFName.of('Resources'), context.obj({ Font: context.obj({ F1: context.register(font) }) }));
   page.node.set(PDFName.of('Contents'), context.register(context.flateStream(`BT /F1 10 Tf 50 200 Td (${words}) Tj ET`)));
-  return doc.save({ useObjectStreams: false });
+  return wholeFile(doc, { useObjectStreams: false });
 }
