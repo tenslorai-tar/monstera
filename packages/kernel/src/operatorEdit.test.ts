@@ -1008,6 +1008,21 @@ describe('editOperators on paragraphs (ADR-0179)', () => {
     expect(held.object).toBeLessThan(held.clipEnds);
   });
 
+  describe('one more space in a wrapped block (the owner’s video of 2026-11-05, set-text 0)', () => {
+    const content = bytes(['BT /F1 10 Tf 1 0 0 1 72 100 Tm (aaa bbb) Tj ET', 'BT /F1 10 Tf 1 0 0 1 72 88 Tm (cccccccccccc) Tj ET'].join('\n'));
+    const page: PageRuns = { textObjects: [0, 1], runs: [inked(0, 'aaa bbb', 72, 107), inked(1, 'cccccccccccc', 72, 132)] };
+    const edit = (text: string) => editOperators(content, fonts, page, [{ lines: [[0], [1]], soft: [true, false], text }]);
+
+    it('where the line wraps lays out as the page already is, so the plan writes nothing', () => {
+      const result = edit('aaa bbb  cccccccccccc');
+      expect(result.ok ? 'written' : result.error.reason).toBe('unchanged');
+    });
+
+    it('CONTROL: between two words on a line it is written, so the rule that closes on it is never asked', () => {
+      expect(edit('aaa  bbb cccccccccccc').ok).toBe(true);
+    });
+  });
+
   it('JUSTIFIES a wrapped line by widening its spaces, capped, and leaves the paragraph’s last line alone (ADR-0228)', () => {
     // `aaa bbb` (35 wide) over `cccccccccccc` (60 wide), one paragraph: the measure is 60, so the first line has 25 to
     // spare over its one space, which the cap holds to 0.6 of the size, 6.

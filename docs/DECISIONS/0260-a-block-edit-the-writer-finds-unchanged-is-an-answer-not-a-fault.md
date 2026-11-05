@@ -75,3 +75,18 @@ page's own words is `BlockUnchangedError` whatever else was sent, and words that
 paragraph's second kernel case is accordingly a mark that sets nothing answering `BlockUnchangedError`; the refusal side
 is proven on the rule (`blockAsShown.test.ts`) and in the editor (`documentCommands.test.ts`), since a correct plan
 writes every difference in words and leaves no writer-level input that reaches it.
+
+## Correction, 2026-11-06
+
+**The last clause above was false: a correct plan does not write every difference in words, and one input does reach
+the refusal.** A space typed at the end of a wrapped line. `layOutParagraph` keeps no white space after a wrapped line's
+last word, so the block lays out as it already is, the plan writes nothing, and the sent words differ from the shown ones
+by that space. The person read *"couldn't write that text"* for one space: the owner's video of 2026-11-05 on 1.1.2611.0,
+then reproduced on that commit, on 1.1.2610.0 and on `work/2026-11-05`, none of which an earlier check reached, because
+each put the caret at the paragraph's end, which ADR-0260's sibling fix (92eeff51) had already closed.
+
+`sentAsShown` now reads a run of spaces as one space. Nothing typed is lost that the page could show. A space removed, a
+new character or a line break is still a difference, each with its own control in `blockAsShown.test.ts`, and
+`operatorEdit.test.ts` holds both ends: the input that reaches the question, and a space between two words on a line,
+which is written and does not. Measured in the real app on the owner's paragraph: one space at each of 68 caret places,
+none refused.

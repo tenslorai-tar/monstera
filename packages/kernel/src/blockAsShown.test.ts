@@ -21,6 +21,16 @@ describe('sentAsShown (ADR-0260)', () => {
     expect(sentAsShown([{ lines: [[9]], soft: [false], text: 'Joe (walked)' }], shown)).toBe(false);
   });
 
+  it('is true for one more space where the line wraps, which the layout keeps nowhere (the owner’s video of 2026-11-05)', () => {
+    expect(sentAsShown([{ lines: [[4], [7]], soft: [true, false], text: 'Names  Hours' }], shown)).toBe(true);
+    // CONTROL: a new character there is a difference, so what is forgiven is spaces and not whatever sits at a wrap.
+    expect(sentAsShown([{ lines: [[4], [7]], soft: [true, false], text: 'Names x Hours' }], shown)).toBe(false);
+  });
+
+  it('CONTROL: a line break typed at the wrap is not spaces, and stays a difference', () => {
+    expect(sentAsShown([{ lines: [[4], [7]], soft: [true, false], text: 'Names \nHours' }], shown)).toBe(false);
+  });
+
   it('reads a hard line end as a paragraph, not as the space a soft wrap is', () => {
     // CONTROL for the join: the same runs ending in a hard line are a new paragraph, so the soft-wrap words are not them.
     expect(sentAsShown([{ lines: [[4], [7]], soft: [false, false], text: 'Names Hours' }], shown)).toBe(false);
