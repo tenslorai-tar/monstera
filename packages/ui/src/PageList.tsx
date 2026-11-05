@@ -810,6 +810,14 @@ export function PageList({
    *
    * `undefined` until the first observation, which `resolveZoom` treats as *no
    * answer yet* rather than as a box of zero.
+   *
+   * **A BOX NO SCROLLBAR CHANGES**, because a fit is measured from it and changes what overflows: a box that lost a
+   * scrollbar's room when the fit made the pages overflow is a fit that changes its own box. The width is the content
+   * box's, which the stylesheet keeps clear of the vertical bar whether or not it shows (`scrollbar-gutter`). The
+   * height is the border box's less its borders and padding, because a horizontal bar takes its room from the content
+   * box and `scrollbar-gutter` reserves none for it. Measured 2026-11-05 (`fitStability.pw.ts`): two A4 pages in
+   * Facing at Fit width flipped 68% and 70% every frame through the vertical bar, and one A4 page in Single page at
+   * Fit page, from 100% in a pane narrower than the page, answered 45% and then 47% through the horizontal one.
    */
   const [viewport, setViewport] = useState<Box | undefined>(undefined);
   /**
@@ -822,12 +830,27 @@ export function PageList({
     const element = scroller.current;
     if (element === null) return;
     const seen = new ResizeObserver((entries) => {
-      const box = entries[entries.length - 1]?.contentRect;
-      if (box !== undefined) setViewport({ width: box.width, height: box.height });
-      const gap = Number.parseFloat(getComputedStyle(element).columnGap);
+      const entry = entries[entries.length - 1];
+      const border = entry?.borderBoxSize[0];
+      const style = getComputedStyle(element);
+      if (entry !== undefined && border !== undefined) {
+        const along = (name: string): number => Number.parseFloat(style.getPropertyValue(name)) || 0;
+        const height =
+          border.blockSize -
+          along('border-top-width') -
+          along('border-bottom-width') -
+          along('padding-top') -
+          along('padding-bottom');
+        const width = entry.contentRect.width;
+        // THE SAME BOX IS NOT A NEW ONE: an equal answer must not render the list again.
+        setViewport((was) => (was?.width === width && was.height === height ? was : { width, height }));
+      }
+      const gap = Number.parseFloat(style.columnGap);
       setSpreadGap(Number.isFinite(gap) ? gap : 0);
     });
-    seen.observe(element);
+    // THE BORDER BOX IS OBSERVED, which a scrollbar coming or going never changes: what moves it (the window, a panel,
+    // a sidebar) is what moves the fit.
+    seen.observe(element, { box: 'border-box' });
     return (): void => {
       seen.disconnect();
     };

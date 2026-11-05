@@ -4068,6 +4068,14 @@ optgroup {
   box-sizing: border-box;
   block-size: 100%;
   overflow-y: auto;
+  /*
+   * THE SCROLLBAR'S ROOM IS KEPT whether or not the pages overflow, so the box a fit is measured from (`PageList`'s
+   * ResizeObserver) does not change when the bar comes or goes. Without it a fit can change its own box: measured
+   * 2026-11-05 in Chromium 151 with classic scrollbars, two A4 pages in Facing at Fit width, windows 868 to 876 high,
+   * flipped 68% and 70% every frame — at 70% the pair overflowed, the 14 px bar narrowed the box, the fit fell to 68%,
+   * the pair fitted and the bar went (`fitStability.pw.ts`). The full-page grid keeps its gutter for the same reason.
+   */
+  scrollbar-gutter: stable;
   padding-block: var(--space-16);
   grid-area: list;
   /*
