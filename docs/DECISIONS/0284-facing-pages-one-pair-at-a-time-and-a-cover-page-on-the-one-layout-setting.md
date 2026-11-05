@@ -97,3 +97,12 @@ A right-to-left document now pairs right to left. Decision 10's *not built here*
 - Measured on Linux, Chromium 151: opening the six-page fixture in Continuous facing took a median of 499.8 ms against
   501.5 ms before, 16 rounds each in turn; the timer separates a 100 ms hold. The catalog lookup itself is 0.02 to
   0.03 ms an answer.
+
+## Correction, 2026-11-05 — the five commands moved to Home › Display
+
+The owner moved them on 2026-11-05, so the Tools section has fewer items. Decision 5's *They sit in Tools › Display*
+and the acceptance's *the choices in Tools › Display … were right* are superseded: the four layouts and *Show cover
+page* sit in **Home › Display**, after Compare, as small tools drawn in two columns (three and two, ADR-0194). The View
+menu's entries stay. Because a section's menu in the menu bar is its ribbon section (ADR-0107), they also leave the
+menu bar's Tools menu; Home has no menu there, so the View menu is where the menu bar reaches them.
+`pageLayoutCommands.test.ts` holds the placement.
