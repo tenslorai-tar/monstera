@@ -1734,3 +1734,1706 @@ MZ_EXPORT int mz_text_letters(fz_stext_page *page, unsigned char *out, int capac
     *written = (int)w.used;
     return MZ_OK;
 }
+
+/*
+ * ============================================================================
+ * CUTTING DRAWINGS AT A REDACTION MARK'S EDGE (ADR-0286)
+ * ============================================================================
+ *
+ * MuPDF's burn-in keeps or drops a whole subpath, judged by fz_bound_path's box,
+ * which over-reaches: with "remove if covered" a drawn signature under a mark
+ * stayed in the file, and with "remove if touched" a background and a line 8
+ * points clear of the mark went too. This pass runs before the burn-in and
+ * leaves nothing drawn inside a mark and everything outside as it was.
+ *
+ * HOW. The page's content goes through pdf_filter_page_contents with the filter
+ * list [MuPDF's sanitize filter, this one]. The sanitize filter instances every
+ * form the page draws and runs the same list over it, with the form's placement
+ * and /Matrix in the transform this filter is given, so forms are cut in their
+ * own instance and in page space. This filter holds each path until it is
+ * painted. A path whose ink meets no mark is passed on unchanged. A path whose
+ * ink meets one is replaced:
+ *
+ *   - its ink, as directed edges: a fill's own flattened contours, a stroke's
+ *     outline from MuPDF's own stroker (fz_flatten_stroke_path into a capturing
+ *     rasteriser, the one internal interface this uses, from draw-imp.h);
+ *   - each edge a->b closed into the triangle (P, a, b) with one point P, which
+ *     keeps the winding number of every point, so the triangles together fill
+ *     exactly the ink under either fill rule;
+ *   - each triangle clipped (Sutherland-Hodgman) to the convex pieces of the
+ *     area outside each mark: outside edge i and inside edges 0..i-1 of the
+ *     mark's convex quadrilateral, for i = 0..3. Disjoint, and together the
+ *     whole plane less the mark.
+ *
+ *   A fill keeps its operator and rule. A stroke's cut outline becomes a clip,
+ *   painted by one synthetic wide stroke lying away from every mark, so the
+ *   stroke's own colour, pattern, alpha and blend mode paint it and no colour
+ *   state is tracked. A stroke under 1 point wide (on the page) is cut on its
+ *   centre line instead and stays a stroke, its dash phase carried along: an
+ *   outline would not keep the minimum width a viewer gives a thin stroke. A
+ *   clip path is cut when its boundary enters a mark, and an unpainted path (n)
+ *   that enters one is dropped: it paints nothing.
+ *
+ * Nothing of the original geometry inside a mark is written. A mark is its
+ * /QuadPoints where it has them (a text mark, slanted on turned text), read in
+ * user space as MuPDF's own culler reads them, else its /Rect.
+ */
+#include "../source/fitz/draw-imp.h"
+
+/* A stroke narrower than this on the page is cut on its centre line. */
+#define MZ_CUT_HAIRLINE 1.0f
+/* Flattening tolerance on the page, in points. */
+#define MZ_CUT_FLATNESS 0.01f
+/* A clipped piece smaller than this (square points) is nothing. */
+#define MZ_CUT_AREA_EPS 1e-9
+#define MZ_CUT_ERR_DEPTH 64
+
+typedef struct
+{
+    fz_point v[4]; /* convex, counter-clockwise in user space */
+    fz_rect box;
+} mz_mark;
+
+typedef struct
+{
+    mz_mark *marks;
+    int count;
+    int cut;  /* paths replaced */
+    int clip_cut; /* of which clip paths, at the page's own level */
+} mz_cut_options;
+
+typedef struct
+{
+    fz_point *v;
+    int n, cap;
+} mz_poly;
+
+typedef struct
+{
+    mz_poly *p;
+    int n, cap;
+} mz_polys;
+
+typedef struct
+{
+    float x0, y0, x1, y1;
+} mz_edge;
+
+typedef struct
+{
+    mz_edge *e;
+    int n, cap;
+} mz_edges;
+
+static void mz_poly_push(fz_context *ctx, mz_poly *p, fz_point pt)
+{
+    if (p->n == p->cap)
+    {
+        int cap = p->cap ? p->cap * 2 : 8;
+        p->v = fz_realloc_array(ctx, p->v, cap, fz_point);
+        p->cap = cap;
+    }
+    p->v[p->n++] = pt;
+}
+
+static void mz_poly_free(fz_context *ctx, mz_poly *p)
+{
+    fz_free(ctx, p->v);
+    p->v = NULL;
+    p->n = p->cap = 0;
+}
+
+/* Takes ownership of `p`'s points. */
+static void mz_polys_push(fz_context *ctx, mz_polys *ps, mz_poly *p)
+{
+    if (ps->n == ps->cap)
+    {
+        int cap = ps->cap ? ps->cap * 2 : 16;
+        ps->p = fz_realloc_array(ctx, ps->p, cap, mz_poly);
+        ps->cap = cap;
+    }
+    ps->p[ps->n++] = *p;
+    p->v = NULL;
+    p->n = p->cap = 0;
+}
+
+static void mz_polys_free(fz_context *ctx, mz_polys *ps)
+{
+    int i;
+    for (i = 0; i < ps->n; i++)
+        fz_free(ctx, ps->p[i].v);
+    fz_free(ctx, ps->p);
+    ps->p = NULL;
+    ps->n = ps->cap = 0;
+}
+
+static void mz_edges_push(fz_context *ctx, mz_edges *es, float x0, float y0, float x1, float y1)
+{
+    if (x0 == x1 && y0 == y1)
+        return;
+    if (es->n == es->cap)
+    {
+        int cap = es->cap ? es->cap * 2 : 64;
+        es->e = fz_realloc_array(ctx, es->e, cap, mz_edge);
+        es->cap = cap;
+    }
+    es->e[es->n].x0 = x0;
+    es->e[es->n].y0 = y0;
+    es->e[es->n].x1 = x1;
+    es->e[es->n].y1 = y1;
+    es->n++;
+}
+
+/* ---- the capturing rasteriser: MuPDF's stroker and filler write the ink's edges here ---- */
+
+typedef struct
+{
+    fz_rasterizer super;
+    mz_edges *out;
+} mz_capture;
+
+static void mz_capture_insert(fz_context *ctx, fz_rasterizer *r, float x0, float y0, float x1, float y1, int rev)
+{
+    /* THE PLAIN RASTERISER IGNORES `rev` (fz_insert_gel): the direction of x0,y0 -> x1,y1 is the winding. */
+    (void)rev;
+    mz_edges_push(ctx, ((mz_capture *)r)->out, x0, y0, x1, y1);
+}
+
+static void mz_capture_rect(fz_context *ctx, fz_rasterizer *r, float x0, float y0, float x1, float y1)
+{
+    /* THE CYCLE fz_insert_gel_rect's two vertical edges belong to: up the right side, down the left. */
+    mz_edges *out = ((mz_capture *)r)->out;
+    mz_edges_push(ctx, out, x0, y0, x1, y0);
+    mz_edges_push(ctx, out, x1, y0, x1, y1);
+    mz_edges_push(ctx, out, x1, y1, x0, y1);
+    mz_edges_push(ctx, out, x0, y1, x0, y0);
+}
+
+static int mz_capture_reset(fz_context *ctx, fz_rasterizer *r)
+{
+    (void)ctx;
+    (void)r;
+    return 0; /* one pass */
+}
+
+static void mz_capture_nothing(fz_context *ctx, fz_rasterizer *r)
+{
+    (void)ctx;
+    (void)r;
+}
+
+static void mz_capture_drop(fz_context *ctx, fz_rasterizer *r)
+{
+    fz_free(ctx, r);
+}
+
+static int mz_capture_is_rect(fz_context *ctx, fz_rasterizer *r)
+{
+    (void)ctx;
+    (void)r;
+    return 0;
+}
+
+static const fz_rasterizer_fns mz_capture_fns = {
+    mz_capture_drop,
+    mz_capture_reset,
+    mz_capture_nothing, /* postindex */
+    mz_capture_insert,
+    mz_capture_rect,
+    mz_capture_nothing, /* gap */
+    NULL,               /* convert: never asked to make pixels */
+    mz_capture_is_rect,
+    0,
+};
+
+static fz_rasterizer *mz_new_capture(fz_context *ctx, mz_edges *out)
+{
+    mz_capture *c = fz_new_rasterizer_of_size(ctx, sizeof(mz_capture), &mz_capture_fns);
+    c->out = out;
+    /* NO ANTI-ALIASING SCALE: the edges are wanted in the coordinates they were computed in. */
+    c->super.aa.hscale = 1;
+    c->super.aa.vscale = 1;
+    c->super.aa.scale = 1;
+    c->super.aa.bits = 0;
+    c->super.aa.text_bits = 0;
+    c->super.aa.min_line_width = 0;
+    return &c->super;
+}
+
+/* ---- geometry ---- */
+
+static double mz_cross(fz_point a, fz_point b, fz_point p)
+{
+    return ((double)b.x - a.x) * ((double)p.y - a.y) - ((double)b.y - a.y) * ((double)p.x - a.x);
+}
+
+static double mz_poly_area(const mz_poly *p)
+{
+    double s = 0;
+    int i;
+    for (i = 0; i < p->n; i++)
+    {
+        fz_point a = p->v[i], b = p->v[(i + 1) % p->n];
+        s += (double)a.x * b.y - (double)b.x * a.y;
+    }
+    return s / 2;
+}
+
+static fz_rect mz_poly_box(const mz_poly *p)
+{
+    fz_rect r = fz_empty_rect;
+    int i;
+    for (i = 0; i < p->n; i++)
+        r = fz_include_point_in_rect(r, p->v[i]);
+    return r;
+}
+
+static int mz_boxes_meet(fz_rect a, fz_rect b)
+{
+    return a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+}
+
+/*
+ * One Sutherland-Hodgman step: the part of `in` on the kept side of the line a->b, into `out` (emptied first).
+ * keep_left: the side where mz_cross(a, b, p) >= 0, which is a counter-clockwise polygon's inside.
+ */
+static void mz_clip_half(fz_context *ctx, const mz_poly *in, mz_poly *out, fz_point a, fz_point b, int keep_left)
+{
+    int i;
+    out->n = 0;
+    for (i = 0; i < in->n; i++)
+    {
+        fz_point s = in->v[i], e = in->v[(i + 1) % in->n];
+        double ds = mz_cross(a, b, s), de = mz_cross(a, b, e);
+        int s_in, e_in;
+        if (!keep_left)
+        {
+            ds = -ds;
+            de = -de;
+        }
+        s_in = ds >= 0;
+        e_in = de >= 0;
+        if (s_in)
+            mz_poly_push(ctx, out, s);
+        if (s_in != e_in)
+        {
+            double t = ds / (ds - de);
+            fz_point m;
+            m.x = (float)(s.x + (e.x - s.x) * t);
+            m.y = (float)(s.y + (e.y - s.y) * t);
+            mz_poly_push(ctx, out, m);
+        }
+    }
+}
+
+/* `list` with every mark's inside taken out of each polygon; `list` is replaced. */
+static void mz_cut_polys(fz_context *ctx, mz_polys *list, const mz_cut_options *marks)
+{
+    int k;
+    mz_poly a = { 0 }, b = { 0 };
+
+    fz_var(a);
+    fz_var(b);
+
+    fz_try(ctx)
+    {
+        for (k = 0; k < marks->count; k++)
+        {
+            const mz_mark *m = &marks->marks[k];
+            mz_polys next = { 0 };
+            int i;
+
+            fz_try(ctx)
+            {
+                for (i = 0; i < list->n; i++)
+                {
+                    mz_poly *p = &list->p[i];
+                    int side;
+                    if (!mz_boxes_meet(mz_poly_box(p), m->box))
+                    {
+                        mz_polys_push(ctx, &next, p);
+                        continue;
+                    }
+                    for (side = 0; side < 4; side++)
+                    {
+                        int j;
+                        mz_clip_half(ctx, p, &a, m->v[side], m->v[(side + 1) % 4], 0);
+                        for (j = 0; j < side && a.n >= 3; j++)
+                        {
+                            mz_poly swap;
+                            mz_clip_half(ctx, &a, &b, m->v[j], m->v[(j + 1) % 4], 1);
+                            swap = a;
+                            a = b;
+                            b = swap;
+                        }
+                        if (a.n >= 3 && fabs(mz_poly_area(&a)) > MZ_CUT_AREA_EPS)
+                        {
+                            mz_poly copy = { 0 };
+                            int q;
+                            for (q = 0; q < a.n; q++)
+                                mz_poly_push(ctx, &copy, a.v[q]);
+                            mz_polys_push(ctx, &next, &copy);
+                        }
+                    }
+                }
+            }
+            fz_catch(ctx)
+            {
+                mz_polys_free(ctx, &next);
+                fz_rethrow(ctx);
+            }
+            mz_polys_free(ctx, list);
+            *list = next;
+        }
+    }
+    fz_always(ctx)
+    {
+        mz_poly_free(ctx, &a);
+        mz_poly_free(ctx, &b);
+    }
+    fz_catch(ctx)
+        fz_rethrow(ctx);
+}
+
+/* The part of the segment p0->p1 inside a convex counter-clockwise mark, as parameters t0 < t1; 0 where none. */
+static int mz_segment_in_mark(const mz_mark *m, fz_point p0, fz_point p1, double *t0, double *t1)
+{
+    double lo = 0, hi = 1;
+    int i;
+    for (i = 0; i < 4; i++)
+    {
+        double d0 = mz_cross(m->v[i], m->v[(i + 1) % 4], p0);
+        double d1 = mz_cross(m->v[i], m->v[(i + 1) % 4], p1);
+        if (d0 <= 0 && d1 <= 0)
+            return 0;
+        if (d0 < 0 || d1 < 0)
+        {
+            double t = d0 / (d0 - d1);
+            if (d0 < 0)
+                lo = fmax(lo, t);
+            else
+                hi = fmin(hi, t);
+        }
+    }
+    if (hi - lo <= 1e-9)
+        return 0;
+    *t0 = lo;
+    *t1 = hi;
+    return 1;
+}
+
+/* The winding number of the edge set around `p`, by a ray to the right. */
+static int mz_winding(const mz_edges *es, fz_point p)
+{
+    int w = 0, i;
+    for (i = 0; i < es->n; i++)
+    {
+        const mz_edge *e = &es->e[i];
+        if ((e->y0 <= p.y) != (e->y1 <= p.y))
+        {
+            double x = e->x0 + (p.y - e->y0) * (double)(e->x1 - e->x0) / (e->y1 - e->y0);
+            if (x > p.x)
+                w += e->y1 > e->y0 ? 1 : -1;
+        }
+    }
+    return w;
+}
+
+/*
+ * Whether the ink an edge set fills meets any mark: an edge crosses into one, or a mark's centre lies inside the ink.
+ * `boundary_only` asks only the first, which is what a clip path's data is about.
+ */
+static int mz_ink_meets_marks(const mz_edges *es, const mz_cut_options *marks, int evenodd, int boundary_only)
+{
+    int k, i;
+    fz_rect box = fz_empty_rect;
+    for (i = 0; i < es->n; i++)
+    {
+        box = fz_include_point_in_rect(box, fz_make_point(es->e[i].x0, es->e[i].y0));
+        box = fz_include_point_in_rect(box, fz_make_point(es->e[i].x1, es->e[i].y1));
+    }
+    for (k = 0; k < marks->count; k++)
+    {
+        const mz_mark *m = &marks->marks[k];
+        fz_point c;
+        int w;
+        if (!mz_boxes_meet(box, m->box))
+            continue;
+        for (i = 0; i < es->n; i++)
+        {
+            double t0, t1;
+            if (mz_segment_in_mark(m, fz_make_point(es->e[i].x0, es->e[i].y0), fz_make_point(es->e[i].x1, es->e[i].y1), &t0, &t1))
+                return 1;
+        }
+        if (boundary_only)
+            continue;
+        c.x = (m->v[0].x + m->v[1].x + m->v[2].x + m->v[3].x) / 4;
+        c.y = (m->v[0].y + m->v[1].y + m->v[2].y + m->v[3].y) / 4;
+        w = mz_winding(es, c);
+        if (evenodd ? (w & 1) : (w != 0))
+            return 1;
+    }
+    return 0;
+}
+
+/*
+ * The ink of an edge set as closed polygons, cut by the marks.
+ *
+ * EACH EDGE a->b BECOMES THE QUADRILATERAL (a, b, (X, b.y), (X, a.y)), X right of all the ink. Its winding number at a
+ * point is that edge's crossing of the point's rightward ray, so the quadrilaterals together have the scanline winding
+ * MuPDF's rasteriser fills by, whether or not the edges close up: MuPDF's stroker does not close them (it sends a dash's
+ * two cap edges twice, measured 2026-11-05, and the rasteriser ignores the horizontal edges that would balance them).
+ * The edges added are level, which a scanline rasteriser takes as nothing, or upright on x = X, where they cancel exactly,
+ * so no sliver is drawn: closing each edge to one point instead left 7% of ink in the gaps between dashes. A level edge
+ * itself is left out, having no crossing.
+ */
+static void mz_fan_cut(fz_context *ctx, const mz_edges *es, const mz_cut_options *marks, mz_polys *out)
+{
+    float far = -1e30f;
+    int i;
+    for (i = 0; i < es->n; i++)
+        far = fmaxf(far, fmaxf(es->e[i].x0, es->e[i].x1));
+    far += 1;
+    for (i = 0; i < es->n; i++)
+    {
+        mz_poly t = { 0 };
+        const mz_edge *e = &es->e[i];
+        if (e->y0 == e->y1)
+            continue;
+        mz_poly_push(ctx, &t, fz_make_point(e->x0, e->y0));
+        mz_poly_push(ctx, &t, fz_make_point(e->x1, e->y1));
+        mz_poly_push(ctx, &t, fz_make_point(far, e->y1));
+        mz_poly_push(ctx, &t, fz_make_point(far, e->y0));
+        mz_polys_push(ctx, out, &t);
+    }
+    mz_cut_polys(ctx, out, marks);
+}
+
+/* ---- the filter ---- */
+
+/*
+ * THE STROKE'S PAINT, as the operators that set it: what a cut stroke is filled with, so its outline rasterises as the
+ * stroke did. Names and numbers only, which is all the output processor writes (pdf-op-buffer.c), and a name the stroke
+ * used is in the resources the sanitize filter keeps.
+ */
+enum { MZ_PAINT_GRAY, MZ_PAINT_RGB, MZ_PAINT_CMYK, MZ_PAINT_SPACE, MZ_PAINT_PATTERN, MZ_PAINT_SHADE };
+
+typedef struct
+{
+    int kind;
+    char space[64];
+    char pattern[64];
+    int n;
+    float color[FZ_MAX_COLORS];
+} mz_paint;
+
+typedef struct
+{
+    fz_matrix ctm;
+    float linewidth, miterlimit, phase;
+    int cap, join;
+    pdf_obj *dash;
+    mz_paint stroke_paint;
+    float fill_alpha, stroke_alpha;
+    int fill_overprint, stroke_overprint;
+} mz_cut_gstate;
+
+typedef struct
+{
+    pdf_processor super;
+    pdf_document *doc;
+    mz_cut_options *options;
+    fz_matrix base; /* this stream's space to the page's user space */
+    int top_level;  /* the page's own stream, not a form instance */
+    mz_cut_gstate *gs;
+    int gs_n, gs_cap;
+    fz_path *path;
+    int clip; /* 0 none, 1 W, 2 W* */
+} mz_cut_processor;
+
+static mz_cut_gstate *mz_gs(mz_cut_processor *p)
+{
+    return &p->gs[p->gs_n - 1];
+}
+
+static fz_matrix mz_total(mz_cut_processor *p)
+{
+    return fz_concat(mz_gs(p)->ctm, p->base);
+}
+
+static void mz_cut_q(fz_context *ctx, pdf_processor *proc)
+{
+    mz_cut_processor *p = (mz_cut_processor *)proc;
+    if (p->gs_n == p->gs_cap)
+    {
+        int cap = p->gs_cap * 2;
+        p->gs = fz_realloc_array(ctx, p->gs, cap, mz_cut_gstate);
+        p->gs_cap = cap;
+    }
+    p->gs[p->gs_n] = p->gs[p->gs_n - 1];
+    pdf_keep_obj(ctx, p->gs[p->gs_n].dash);
+    p->gs_n++;
+    if (proc->chain->op_q)
+        proc->chain->op_q(ctx, proc->chain);
+}
+
+static void mz_cut_Q(fz_context *ctx, pdf_processor *proc)
+{
+    mz_cut_processor *p = (mz_cut_processor *)proc;
+    if (p->gs_n > 1)
+    {
+        pdf_drop_obj(ctx, mz_gs(p)->dash);
+        p->gs_n--;
+    }
+    if (proc->chain->op_Q)
+        proc->chain->op_Q(ctx, proc->chain);
+}
+
+static void mz_cut_cm(fz_context *ctx, pdf_processor *proc, float a, float b, float c, float d, float e, float f)
+{
+    mz_cut_processor *p = (mz_cut_processor *)proc;
+    mz_gs(p)->ctm = fz_concat(fz_make_matrix(a, b, c, d, e, f), mz_gs(p)->ctm);
+    if (proc->chain->op_cm)
+        proc->chain->op_cm(ctx, proc->chain, a, b, c, d, e, f);
+}
+
+static void mz_cut_w(fz_context *ctx, pdf_processor *proc, float v)
+{
+    mz_gs((mz_cut_processor *)proc)->linewidth = v;
+    if (proc->chain->op_w)
+        proc->chain->op_w(ctx, proc->chain, v);
+}
+
+static void mz_cut_J(fz_context *ctx, pdf_processor *proc, int v)
+{
+    mz_gs((mz_cut_processor *)proc)->cap = v;
+    if (proc->chain->op_J)
+        proc->chain->op_J(ctx, proc->chain, v);
+}
+
+static void mz_cut_j(fz_context *ctx, pdf_processor *proc, int v)
+{
+    mz_gs((mz_cut_processor *)proc)->join = v;
+    if (proc->chain->op_j)
+        proc->chain->op_j(ctx, proc->chain, v);
+}
+
+static void mz_cut_M(fz_context *ctx, pdf_processor *proc, float v)
+{
+    mz_gs((mz_cut_processor *)proc)->miterlimit = v;
+    if (proc->chain->op_M)
+        proc->chain->op_M(ctx, proc->chain, v);
+}
+
+static void mz_cut_d(fz_context *ctx, pdf_processor *proc, pdf_obj *array, float phase)
+{
+    mz_cut_gstate *g = mz_gs((mz_cut_processor *)proc);
+    pdf_drop_obj(ctx, g->dash);
+    g->dash = pdf_keep_obj(ctx, array);
+    g->phase = phase;
+    if (proc->chain->op_d)
+        proc->chain->op_d(ctx, proc->chain, array, phase);
+}
+
+static void mz_paint_name(char *dst, const char *name)
+{
+    size_t n = name ? strlen(name) : 0;
+    if (n > 63)
+        n = 63;
+    if (n)
+        memcpy(dst, name, n);
+    dst[n] = 0;
+}
+
+static void mz_paint_numbers(mz_paint *paint, int n, const float *color)
+{
+    int i;
+    if (n > FZ_MAX_COLORS)
+        n = FZ_MAX_COLORS;
+    paint->n = n < 0 ? 0 : n;
+    for (i = 0; i < paint->n; i++)
+        paint->color[i] = color[i];
+}
+
+static void mz_cut_CS(fz_context *ctx, pdf_processor *proc, const char *name, fz_colorspace *cs)
+{
+    mz_paint *paint = &mz_gs((mz_cut_processor *)proc)->stroke_paint;
+    paint->kind = MZ_PAINT_SPACE;
+    mz_paint_name(paint->space, name);
+    paint->n = 0;
+    if (proc->chain->op_CS)
+        proc->chain->op_CS(ctx, proc->chain, name, cs);
+}
+
+static void mz_cut_SC_color(fz_context *ctx, pdf_processor *proc, int n, float *color)
+{
+    mz_paint *paint = &mz_gs((mz_cut_processor *)proc)->stroke_paint;
+    if (paint->kind == MZ_PAINT_PATTERN || paint->kind == MZ_PAINT_SHADE)
+        paint->kind = MZ_PAINT_SPACE;
+    mz_paint_numbers(paint, n, color);
+    if (proc->chain->op_SC_color)
+        proc->chain->op_SC_color(ctx, proc->chain, n, color);
+}
+
+static void mz_cut_SC_pattern(fz_context *ctx, pdf_processor *proc, const char *name, pdf_pattern *pat, int n, float *color)
+{
+    mz_paint *paint = &mz_gs((mz_cut_processor *)proc)->stroke_paint;
+    paint->kind = MZ_PAINT_PATTERN;
+    mz_paint_name(paint->pattern, name);
+    mz_paint_numbers(paint, n, color);
+    if (proc->chain->op_SC_pattern)
+        proc->chain->op_SC_pattern(ctx, proc->chain, name, pat, n, color);
+}
+
+static void mz_cut_SC_shade(fz_context *ctx, pdf_processor *proc, const char *name, fz_shade *shade)
+{
+    mz_paint *paint = &mz_gs((mz_cut_processor *)proc)->stroke_paint;
+    paint->kind = MZ_PAINT_SHADE;
+    mz_paint_name(paint->pattern, name);
+    paint->n = 0;
+    if (proc->chain->op_SC_shade)
+        proc->chain->op_SC_shade(ctx, proc->chain, name, shade);
+}
+
+static void mz_cut_G(fz_context *ctx, pdf_processor *proc, float g)
+{
+    mz_paint *paint = &mz_gs((mz_cut_processor *)proc)->stroke_paint;
+    paint->kind = MZ_PAINT_GRAY;
+    paint->n = 1;
+    paint->color[0] = g;
+    if (proc->chain->op_G)
+        proc->chain->op_G(ctx, proc->chain, g);
+}
+
+static void mz_cut_RG(fz_context *ctx, pdf_processor *proc, float r, float g, float b)
+{
+    mz_paint *paint = &mz_gs((mz_cut_processor *)proc)->stroke_paint;
+    paint->kind = MZ_PAINT_RGB;
+    paint->n = 3;
+    paint->color[0] = r;
+    paint->color[1] = g;
+    paint->color[2] = b;
+    if (proc->chain->op_RG)
+        proc->chain->op_RG(ctx, proc->chain, r, g, b);
+}
+
+static void mz_cut_K(fz_context *ctx, pdf_processor *proc, float c, float m, float y, float k)
+{
+    mz_paint *paint = &mz_gs((mz_cut_processor *)proc)->stroke_paint;
+    paint->kind = MZ_PAINT_CMYK;
+    paint->n = 4;
+    paint->color[0] = c;
+    paint->color[1] = m;
+    paint->color[2] = y;
+    paint->color[3] = k;
+    if (proc->chain->op_K)
+        proc->chain->op_K(ctx, proc->chain, c, m, y, k);
+}
+
+static void mz_cut_gs_ca(fz_context *ctx, pdf_processor *proc, float alpha)
+{
+    mz_gs((mz_cut_processor *)proc)->fill_alpha = alpha;
+    if (proc->chain->op_gs_ca)
+        proc->chain->op_gs_ca(ctx, proc->chain, alpha);
+}
+
+static void mz_cut_gs_CA(fz_context *ctx, pdf_processor *proc, float alpha)
+{
+    mz_gs((mz_cut_processor *)proc)->stroke_alpha = alpha;
+    if (proc->chain->op_gs_CA)
+        proc->chain->op_gs_CA(ctx, proc->chain, alpha);
+}
+
+static void mz_cut_gs_op(fz_context *ctx, pdf_processor *proc, int b)
+{
+    mz_gs((mz_cut_processor *)proc)->fill_overprint = b;
+    if (proc->chain->op_gs_op)
+        proc->chain->op_gs_op(ctx, proc->chain, b);
+}
+
+static void mz_cut_gs_OP(fz_context *ctx, pdf_processor *proc, int b)
+{
+    mz_cut_gstate *g = mz_gs((mz_cut_processor *)proc);
+    /* `OP` alone sets both, as ISO 32000 says of an ExtGState with no `op`; an `op` after it then sets the fill's. */
+    g->stroke_overprint = b;
+    g->fill_overprint = b;
+    if (proc->chain->op_gs_OP)
+        proc->chain->op_gs_OP(ctx, proc->chain, b);
+}
+
+/* The stroke's paint, set as the fill's. */
+static void mz_emit_fill_paint(fz_context *ctx, pdf_processor *chain, const mz_paint *paint)
+{
+    float none[1] = { 0 };
+    switch (paint->kind)
+    {
+    case MZ_PAINT_GRAY:
+        chain->op_g(ctx, chain, paint->n > 0 ? paint->color[0] : 0);
+        break;
+    case MZ_PAINT_RGB:
+        chain->op_rg(ctx, chain, paint->color[0], paint->color[1], paint->color[2]);
+        break;
+    case MZ_PAINT_CMYK:
+        chain->op_k(ctx, chain, paint->color[0], paint->color[1], paint->color[2], paint->color[3]);
+        break;
+    case MZ_PAINT_SPACE:
+        chain->op_cs(ctx, chain, paint->space, NULL);
+        if (paint->n > 0)
+            chain->op_sc_color(ctx, chain, paint->n, (float *)paint->color);
+        break;
+    case MZ_PAINT_PATTERN:
+        chain->op_cs(ctx, chain, paint->space, NULL);
+        chain->op_sc_pattern(ctx, chain, paint->pattern, NULL, paint->n, paint->n > 0 ? (float *)paint->color : none);
+        break;
+    case MZ_PAINT_SHADE:
+        chain->op_cs(ctx, chain, paint->space, NULL);
+        chain->op_sc_shade(ctx, chain, paint->pattern, NULL);
+        break;
+    default:
+        break;
+    }
+}
+
+static void mz_cut_m(fz_context *ctx, pdf_processor *proc, float x, float y)
+{
+    fz_moveto(ctx, ((mz_cut_processor *)proc)->path, x, y);
+}
+
+static void mz_cut_l(fz_context *ctx, pdf_processor *proc, float x, float y)
+{
+    fz_lineto(ctx, ((mz_cut_processor *)proc)->path, x, y);
+}
+
+static void mz_cut_c(fz_context *ctx, pdf_processor *proc, float x1, float y1, float x2, float y2, float x3, float y3)
+{
+    fz_curveto(ctx, ((mz_cut_processor *)proc)->path, x1, y1, x2, y2, x3, y3);
+}
+
+static void mz_cut_v(fz_context *ctx, pdf_processor *proc, float x2, float y2, float x3, float y3)
+{
+    fz_curvetov(ctx, ((mz_cut_processor *)proc)->path, x2, y2, x3, y3);
+}
+
+static void mz_cut_y(fz_context *ctx, pdf_processor *proc, float x1, float y1, float x3, float y3)
+{
+    fz_curvetoy(ctx, ((mz_cut_processor *)proc)->path, x1, y1, x3, y3);
+}
+
+static void mz_cut_h(fz_context *ctx, pdf_processor *proc)
+{
+    fz_closepath(ctx, ((mz_cut_processor *)proc)->path);
+}
+
+static void mz_cut_re(fz_context *ctx, pdf_processor *proc, float x, float y, float w, float h)
+{
+    fz_rectto(ctx, ((mz_cut_processor *)proc)->path, x, y, x + w, y + h);
+}
+
+static void mz_cut_W(fz_context *ctx, pdf_processor *proc)
+{
+    (void)ctx;
+    ((mz_cut_processor *)proc)->clip = 1;
+}
+
+static void mz_cut_Wstar(fz_context *ctx, pdf_processor *proc)
+{
+    (void)ctx;
+    ((mz_cut_processor *)proc)->clip = 2;
+}
+
+/* ---- replaying the original path, unchanged ---- */
+
+static void mz_replay_moveto(fz_context *ctx, void *arg, float x, float y)
+{
+    pdf_processor *c = arg;
+    if (c->op_m)
+        c->op_m(ctx, c, x, y);
+}
+
+static void mz_replay_lineto(fz_context *ctx, void *arg, float x, float y)
+{
+    pdf_processor *c = arg;
+    if (c->op_l)
+        c->op_l(ctx, c, x, y);
+}
+
+static void mz_replay_curveto(fz_context *ctx, void *arg, float x1, float y1, float x2, float y2, float x3, float y3)
+{
+    pdf_processor *c = arg;
+    if (c->op_c)
+        c->op_c(ctx, c, x1, y1, x2, y2, x3, y3);
+}
+
+static void mz_replay_closepath(fz_context *ctx, void *arg)
+{
+    pdf_processor *c = arg;
+    if (c->op_h)
+        c->op_h(ctx, c);
+}
+
+static void mz_replay_curvetov(fz_context *ctx, void *arg, float x2, float y2, float x3, float y3)
+{
+    pdf_processor *c = arg;
+    if (c->op_v)
+        c->op_v(ctx, c, x2, y2, x3, y3);
+}
+
+static void mz_replay_curvetoy(fz_context *ctx, void *arg, float x1, float y1, float x3, float y3)
+{
+    pdf_processor *c = arg;
+    if (c->op_y)
+        c->op_y(ctx, c, x1, y1, x3, y3);
+}
+
+static void mz_replay_rectto(fz_context *ctx, void *arg, float x1, float y1, float x2, float y2)
+{
+    pdf_processor *c = arg;
+    if (c->op_re)
+        c->op_re(ctx, c, x1, y1, x2 - x1, y2 - y1);
+}
+
+static const fz_path_walker mz_replay_walker = {
+    mz_replay_moveto, mz_replay_lineto, mz_replay_curveto, mz_replay_closepath,
+    NULL, mz_replay_curvetov, mz_replay_curvetoy, mz_replay_rectto,
+};
+
+/* ---- the centre line of a thin stroke, flattened, in page space ---- */
+
+typedef struct
+{
+    fz_context *ctx;
+    fz_matrix ctm;
+    mz_polys *lines; /* each a polyline; closed ones repeat their first point */
+    mz_poly cur;
+    fz_point start, last;
+    int open;
+} mz_flat;
+
+static void mz_flat_end(mz_flat *f)
+{
+    if (f->open && f->cur.n >= 2)
+        mz_polys_push(f->ctx, f->lines, &f->cur);
+    else
+        mz_poly_free(f->ctx, &f->cur);
+    f->open = 0;
+}
+
+static void mz_flat_point(mz_flat *f, float x, float y)
+{
+    fz_point p = fz_transform_point(fz_make_point(x, y), f->ctm);
+    mz_poly_push(f->ctx, &f->cur, p);
+    f->last = fz_make_point(x, y);
+}
+
+static void mz_flat_moveto(fz_context *ctx, void *arg, float x, float y)
+{
+    mz_flat *f = arg;
+    (void)ctx;
+    mz_flat_end(f);
+    f->open = 1;
+    f->start = fz_make_point(x, y);
+    mz_flat_point(f, x, y);
+}
+
+static void mz_flat_lineto(fz_context *ctx, void *arg, float x, float y)
+{
+    (void)ctx;
+    mz_flat_point(arg, x, y);
+}
+
+static void mz_flat_curveto(fz_context *ctx, void *arg, float x1, float y1, float x2, float y2, float x3, float y3)
+{
+    mz_flat *f = arg;
+    fz_point a = f->last;
+    fz_point p0 = fz_transform_point(a, f->ctm), p3 = fz_transform_point(fz_make_point(x3, y3), f->ctm);
+    fz_point p1 = fz_transform_point(fz_make_point(x1, y1), f->ctm), p2 = fz_transform_point(fz_make_point(x2, y2), f->ctm);
+    double reach = hypot(p1.x - p0.x, p1.y - p0.y) + hypot(p2.x - p1.x, p2.y - p1.y) + hypot(p3.x - p2.x, p3.y - p2.y);
+    int n = (int)ceil(sqrt(reach / MZ_CUT_FLATNESS)), i;
+    (void)ctx;
+    if (n < 1)
+        n = 1;
+    if (n > 256)
+        n = 256;
+    for (i = 1; i <= n; i++)
+    {
+        double t = (double)i / n, u = 1 - t;
+        double x = u * u * u * a.x + 3 * u * u * t * x1 + 3 * u * t * t * x2 + t * t * t * x3;
+        double y = u * u * u * a.y + 3 * u * u * t * y1 + 3 * u * t * t * y2 + t * t * t * y3;
+        mz_flat_point(f, (float)x, (float)y);
+    }
+}
+
+static void mz_flat_closepath(fz_context *ctx, void *arg)
+{
+    mz_flat *f = arg;
+    (void)ctx;
+    mz_flat_point(f, f->start.x, f->start.y);
+}
+
+static void mz_flat_curvetov(fz_context *ctx, void *arg, float x2, float y2, float x3, float y3)
+{
+    mz_flat *f = arg;
+    mz_flat_curveto(ctx, arg, f->last.x, f->last.y, x2, y2, x3, y3);
+}
+
+static void mz_flat_curvetoy(fz_context *ctx, void *arg, float x1, float y1, float x3, float y3)
+{
+    mz_flat_curveto(ctx, arg, x1, y1, x3, y3, x3, y3);
+}
+
+static void mz_flat_rectto(fz_context *ctx, void *arg, float x1, float y1, float x2, float y2)
+{
+    mz_flat_moveto(ctx, arg, x1, y1);
+    mz_flat_lineto(ctx, arg, x2, y1);
+    mz_flat_lineto(ctx, arg, x2, y2);
+    mz_flat_lineto(ctx, arg, x1, y2);
+    mz_flat_closepath(ctx, arg);
+}
+
+static const fz_path_walker mz_flat_walker = {
+    mz_flat_moveto, mz_flat_lineto, mz_flat_curveto, mz_flat_closepath,
+    NULL, mz_flat_curvetov, mz_flat_curvetoy, mz_flat_rectto,
+};
+
+/* A point outside every mark: left of the leftmost and below the lowest. */
+static fz_point mz_outside_point(const mz_cut_options *marks)
+{
+    fz_point q = fz_make_point(0, 0);
+    int k;
+    for (k = 0; k < marks->count; k++)
+    {
+        if (k == 0 || marks->marks[k].box.x0 < q.x)
+            q.x = marks->marks[k].box.x0;
+        if (k == 0 || marks->marks[k].box.y0 < q.y)
+            q.y = marks->marks[k].box.y0;
+    }
+    q.x -= 10;
+    q.y -= 10;
+    return q;
+}
+
+/* ---- writing ---- */
+
+static void mz_emit_polys(fz_context *ctx, pdf_processor *chain, const mz_polys *ps, fz_matrix to_stream)
+{
+    int i, j;
+    for (i = 0; i < ps->n; i++)
+    {
+        const mz_poly *p = &ps->p[i];
+        for (j = 0; j < p->n; j++)
+        {
+            fz_point q = fz_transform_point(p->v[j], to_stream);
+            if (j == 0)
+                chain->op_m(ctx, chain, q.x, q.y);
+            else
+                chain->op_l(ctx, chain, q.x, q.y);
+        }
+        chain->op_h(ctx, chain);
+    }
+}
+
+/* The least a unit vector in this matrix's space is scaled by. */
+static double mz_least_expansion(fz_matrix m)
+{
+    double a = m.a, b = m.b, c = m.c, d = m.d;
+    double s = a * a + b * b + c * c + d * d;
+    double det = fabs(a * d - b * c);
+    double disc = sqrt(fmax(0, s * s - 4 * det * det));
+    return sqrt(fmax(0, (s - disc) / 2));
+}
+
+static int mz_segment_meets_marks(const mz_cut_options *marks, fz_point a, fz_point b)
+{
+    int k;
+    for (k = 0; k < marks->count; k++)
+    {
+        double t0, t1;
+        if (mz_segment_in_mark(&marks->marks[k], a, b, &t0, &t1))
+            return 1;
+    }
+    return 0;
+}
+
+/*
+ * Paints `ps` (page space) with the stroke's own paint: they become the clip, and one synthetic stroke, wide enough
+ * to cover their box and lying along a line that meets no mark, paints inside it.
+ */
+static void mz_emit_stroke_paint(fz_context *ctx, mz_cut_processor *p, const mz_polys *ps, fz_matrix to_stream)
+{
+    pdf_processor *chain = p->super.chain;
+    fz_rect box = fz_empty_rect;
+    fz_point a, b;
+    double reach, width;
+    int i, tries;
+    pdf_obj *none = NULL;
+
+    for (i = 0; i < ps->n; i++)
+        box = fz_union_rect(box, mz_poly_box(&ps->p[i]));
+    if (fz_is_empty_rect(box))
+        return;
+
+    /*
+     * FILLED WITH THE STROKE'S OWN PAINT where a fill paints as the stroke does: the triangles' shared edges cancel, so
+     * the rasteriser sees the stroker's own edges and draws the same pixels. Measured 2026-11-05: painted through a clip
+     * instead, a stroke's edge pixels differed by up to 81 of 255 from the original's.
+     */
+    {
+        mz_cut_gstate *g = mz_gs(p);
+        if (g->fill_alpha == g->stroke_alpha && g->fill_overprint == g->stroke_overprint)
+        {
+            chain->op_q(ctx, chain);
+            mz_emit_fill_paint(ctx, chain, &g->stroke_paint);
+            mz_emit_polys(ctx, chain, ps, to_stream);
+            chain->op_f(ctx, chain);
+            chain->op_Q(ctx, chain);
+            return;
+        }
+    }
+    /* OTHERWISE THROUGH A CLIP, which keeps the stroke's own alpha and overprint. */
+    reach = (box.y1 - box.y0) + 2;
+    /* A LEVEL LINE BELOW THE BOX, moved further down until it meets no mark: synthetic, outside every mark. */
+    for (tries = 0;; tries++)
+    {
+        double off = 1 + tries * (reach + 1);
+        a = fz_make_point(box.x0 - (float)(reach + off) - 1, (float)(box.y0 - off));
+        b = fz_make_point(box.x1 + (float)(reach + off) + 1, (float)(box.y0 - off));
+        if (!mz_segment_meets_marks(p->options, a, b) || tries > MZ_CUT_ERR_DEPTH)
+        {
+            width = 2 * (off + (box.y1 - box.y0) + 1);
+            break;
+        }
+    }
+
+    fz_var(none);
+    fz_try(ctx)
+    {
+        double least = mz_least_expansion(to_stream);
+        fz_point sa = fz_transform_point(a, to_stream), sb = fz_transform_point(b, to_stream);
+        /* WIDTH IN THE STREAM'S SPACE: the page's width over the inverse's least scale is never thinner on the page. */
+        double stream_width = least > 1e-12 ? width / least : width;
+        none = pdf_new_array(ctx, p->doc, 0);
+        chain->op_q(ctx, chain);
+        mz_emit_polys(ctx, chain, ps, to_stream);
+        chain->op_W(ctx, chain);
+        chain->op_n(ctx, chain);
+        chain->op_d(ctx, chain, none, 0);
+        chain->op_J(ctx, chain, 0);
+        chain->op_w(ctx, chain, (float)stream_width);
+        chain->op_m(ctx, chain, sa.x, sa.y);
+        chain->op_l(ctx, chain, sb.x, sb.y);
+        chain->op_S(ctx, chain);
+        chain->op_Q(ctx, chain);
+    }
+    fz_always(ctx)
+        pdf_drop_obj(ctx, none);
+    fz_catch(ctx)
+        fz_rethrow(ctx);
+}
+
+static fz_stroke_state *mz_stroke_state(fz_context *ctx, mz_cut_gstate *g)
+{
+    int n = g->dash ? pdf_array_len(ctx, g->dash) : 0, i;
+    fz_stroke_state *s = fz_new_stroke_state_with_dash_len(ctx, n);
+    s->linewidth = g->linewidth;
+    s->miterlimit = g->miterlimit;
+    s->start_cap = s->end_cap = s->dash_cap = (fz_linecap)g->cap;
+    s->linejoin = (fz_linejoin)g->join;
+    s->dash_phase = g->phase;
+    s->dash_len = n;
+    for (i = 0; i < n; i++)
+        s->dash_list[i] = pdf_array_get_real(ctx, g->dash, i);
+    return s;
+}
+
+/* A thin stroke, cut on its centre line: the polylines outside every mark, each a stroke of its own dash phase. */
+static void mz_emit_thin_stroke(fz_context *ctx, mz_cut_processor *p, fz_matrix total, fz_matrix to_stream)
+{
+    pdf_processor *chain = p->super.chain;
+    mz_polys lines = { 0 };
+    mz_flat f = { 0 };
+    mz_cut_gstate *g = mz_gs(p);
+    int dashed = g->dash && pdf_array_len(ctx, g->dash) > 0;
+    int i, j, k;
+
+    fz_var(lines);
+    fz_try(ctx)
+    {
+        f.ctx = ctx;
+        f.ctm = total;
+        f.lines = &lines;
+        fz_walk_path(ctx, p->path, &mz_flat_walker, &f);
+        mz_flat_end(&f);
+
+        for (i = 0; i < lines.n; i++)
+        {
+            const mz_poly *pl = &lines.p[i];
+            double along = 0;
+            int drawing = 0;
+            double piece_start = 0;
+            for (j = 0; j + 1 < pl->n; j++)
+            {
+                fz_point a = pl->v[j], b = pl->v[j + 1];
+                double len = hypot(b.x - a.x, b.y - a.y);
+                /* THE PARTS OF THIS SEGMENT INSIDE ANY MARK, merged, as parameter intervals in [0, 1]. */
+                double lo[64], hi[64];
+                int n = 0, s;
+                double t = 0;
+                for (k = 0; k < p->options->count && n < 64; k++)
+                {
+                    double t0, t1;
+                    if (mz_segment_in_mark(&p->options->marks[k], a, b, &t0, &t1))
+                    {
+                        lo[n] = t0;
+                        hi[n] = t1;
+                        n++;
+                    }
+                }
+                /* sort the intervals by start */
+                for (s = 1; s < n; s++)
+                {
+                    double l = lo[s], h = hi[s];
+                    int r = s - 1;
+                    while (r >= 0 && lo[r] > l)
+                    {
+                        lo[r + 1] = lo[r];
+                        hi[r + 1] = hi[r];
+                        r--;
+                    }
+                    lo[r + 1] = l;
+                    hi[r + 1] = h;
+                }
+                for (s = 0; s <= n; s++)
+                {
+                    double end = s < n ? lo[s] : 1;
+                    if (end > t)
+                    {
+                        fz_point from = fz_make_point((float)(a.x + (b.x - a.x) * t), (float)(a.y + (b.y - a.y) * t));
+                        fz_point to = fz_make_point((float)(a.x + (b.x - a.x) * end), (float)(a.y + (b.y - a.y) * end));
+                        fz_point sf = fz_transform_point(from, to_stream), st = fz_transform_point(to, to_stream);
+                        if (!drawing)
+                        {
+                            piece_start = along + len * t;
+                            if (dashed)
+                            {
+                                /* THE DASH CONTINUES where this piece starts along the original subpath. */
+                                chain->op_q(ctx, chain);
+                                chain->op_d(ctx, chain, g->dash, (float)(g->phase + piece_start / fmax(1e-12, mz_least_expansion(total))));
+                            }
+                            chain->op_m(ctx, chain, sf.x, sf.y);
+                            drawing = 1;
+                        }
+                        chain->op_l(ctx, chain, st.x, st.y);
+                    }
+                    if (s < n)
+                    {
+                        if (drawing && hi[s] > lo[s])
+                        {
+                            if (dashed)
+                            {
+                                chain->op_S(ctx, chain);
+                                chain->op_Q(ctx, chain);
+                            }
+                            drawing = 0;
+                        }
+                        if (hi[s] > t)
+                            t = hi[s];
+                    }
+                }
+                along += len;
+            }
+            if (drawing && dashed)
+            {
+                chain->op_S(ctx, chain);
+                chain->op_Q(ctx, chain);
+            }
+            (void)piece_start;
+        }
+        if (!dashed)
+            chain->op_S(ctx, chain);
+    }
+    fz_always(ctx)
+    {
+        mz_flat_end(&f);
+        mz_poly_free(ctx, &f.cur);
+        mz_polys_free(ctx, &lines);
+    }
+    fz_catch(ctx)
+        fz_rethrow(ctx);
+}
+
+/* The ink a fill of the current path paints, as edges in page space. */
+static void mz_fill_edges(fz_context *ctx, mz_cut_processor *p, fz_matrix total, mz_edges *out)
+{
+    fz_rasterizer *r = mz_new_capture(ctx, out);
+    fz_try(ctx)
+        fz_flatten_fill_path(ctx, r, p->path, total, MZ_CUT_FLATNESS, fz_infinite_irect, NULL);
+    fz_always(ctx)
+        fz_drop_rasterizer(ctx, r);
+    fz_catch(ctx)
+        fz_rethrow(ctx);
+}
+
+/* The ink a stroke of the current path paints, through MuPDF's own stroker, as edges in page space. */
+static void mz_stroke_edges(fz_context *ctx, mz_cut_processor *p, fz_matrix total, mz_edges *out)
+{
+    fz_stroke_state *s = mz_stroke_state(ctx, mz_gs(p));
+    fz_rasterizer *r = NULL;
+    fz_var(r);
+    fz_try(ctx)
+    {
+        r = mz_new_capture(ctx, out);
+        fz_flatten_stroke_path(ctx, r, p->path, s, total, MZ_CUT_FLATNESS, s->linewidth, fz_infinite_irect, NULL);
+    }
+    fz_always(ctx)
+    {
+        if (r)
+            fz_drop_rasterizer(ctx, r);
+        fz_drop_stroke_state(ctx, s);
+    }
+    fz_catch(ctx)
+        fz_rethrow(ctx);
+}
+
+static void mz_replay(fz_context *ctx, mz_cut_processor *p)
+{
+    fz_walk_path(ctx, p->path, &mz_replay_walker, p->super.chain);
+}
+
+typedef void (mz_paint_fn)(fz_context *ctx, pdf_processor *proc);
+
+/*
+ * The paint operator: `fill` 0 none, 1 non-zero, 2 even-odd; `stroke` 0 or 1; `close` closes the path first (s, b, b*).
+ * `original` is the operator to pass on when nothing is cut.
+ */
+static void mz_cut_paint(fz_context *ctx, pdf_processor *proc, int fill, int stroke, int close, mz_paint_fn *original)
+{
+    mz_cut_processor *p = (mz_cut_processor *)proc;
+    pdf_processor *chain = proc->chain;
+    fz_matrix total = mz_total(p);
+    fz_matrix to_stream = fz_invert_matrix(total);
+    mz_edges fill_e = { 0 }, stroke_e = { 0 };
+    mz_polys fill_p = { 0 }, stroke_p = { 0 }, clip_p = { 0 };
+    int fill_cut = 0, stroke_cut = 0, clip_cut = 0, thin = 0;
+    int clip = p->clip;
+    fz_rect reach;
+    int k, near = 0;
+
+    fz_var(fill_e);
+    fz_var(stroke_e);
+    fz_var(fill_p);
+    fz_var(stroke_p);
+    fz_var(clip_p);
+
+    p->clip = 0;
+    fz_try(ctx)
+    {
+        if (close)
+            fz_closepath(ctx, p->path);
+
+        /* THE CHEAP QUESTION FIRST: MuPDF's own over-reaching box. Nothing near a mark is passed on untouched. */
+        {
+            fz_stroke_state *s = stroke ? mz_stroke_state(ctx, mz_gs(p)) : NULL;
+            fz_try(ctx)
+                reach = fz_bound_path(ctx, p->path, s, total);
+            fz_always(ctx)
+                fz_drop_stroke_state(ctx, s);
+            fz_catch(ctx)
+                fz_rethrow(ctx);
+        }
+        for (k = 0; k < p->options->count; k++)
+            if (mz_boxes_meet(reach, p->options->marks[k].box))
+                near = 1;
+
+        if (near && fz_matrix_expansion(total) > 1e-9)
+        {
+            if (fill || clip)
+                mz_fill_edges(ctx, p, total, &fill_e);
+            if (fill && mz_ink_meets_marks(&fill_e, p->options, fill == 2, 0))
+                fill_cut = 1;
+            if (clip && mz_ink_meets_marks(&fill_e, p->options, clip == 2, 1))
+                clip_cut = 1;
+            if (stroke)
+            {
+                thin = mz_gs(p)->linewidth * fz_matrix_expansion(total) < MZ_CUT_HAIRLINE;
+                if (thin)
+                {
+                    /* THE CENTRE LINE is the thin stroke's data: cut where it enters a mark. */
+                    mz_polys lines = { 0 };
+                    mz_flat f = { 0 };
+                    int i, j;
+                    fz_try(ctx)
+                    {
+                        f.ctx = ctx;
+                        f.ctm = total;
+                        f.lines = &lines;
+                        fz_walk_path(ctx, p->path, &mz_flat_walker, &f);
+                        mz_flat_end(&f);
+                        for (i = 0; i < lines.n && !stroke_cut; i++)
+                            for (j = 0; j + 1 < lines.p[i].n && !stroke_cut; j++)
+                                if (mz_segment_meets_marks(p->options, lines.p[i].v[j], lines.p[i].v[j + 1]))
+                                    stroke_cut = 1;
+                    }
+                    fz_always(ctx)
+                    {
+                        mz_poly_free(ctx, &f.cur);
+                        mz_polys_free(ctx, &lines);
+                    }
+                    fz_catch(ctx)
+                        fz_rethrow(ctx);
+                }
+                else
+                {
+                    mz_stroke_edges(ctx, p, total, &stroke_e);
+                    if (mz_ink_meets_marks(&stroke_e, p->options, 0, 0))
+                        stroke_cut = 1;
+                }
+            }
+        }
+
+        if (!fill_cut && !stroke_cut && !clip_cut)
+        {
+            /* UNCHANGED: the path as it came, its clip, its operator. */
+            mz_replay(ctx, p);
+            if (clip == 1)
+                chain->op_W(ctx, chain);
+            else if (clip == 2)
+                chain->op_Wstar(ctx, chain);
+            if (original)
+                original(ctx, chain);
+        }
+        else
+        {
+            p->options->cut++;
+            /* THE FILL, then THE STROKE, then THE CLIP: the order a fill-and-stroke paints in, and a clip applies after. */
+            if (fill)
+            {
+                if (fill_cut)
+                {
+                    mz_fan_cut(ctx, &fill_e, p->options, &fill_p);
+                    mz_emit_polys(ctx, chain, &fill_p, to_stream);
+                }
+                else
+                    mz_replay(ctx, p);
+                if (fill == 2)
+                    chain->op_fstar(ctx, chain);
+                else
+                    chain->op_f(ctx, chain);
+            }
+            if (stroke)
+            {
+                if (!stroke_cut)
+                {
+                    mz_replay(ctx, p);
+                    chain->op_S(ctx, chain);
+                }
+                else if (thin)
+                    mz_emit_thin_stroke(ctx, p, total, to_stream);
+                else
+                {
+                    mz_fan_cut(ctx, &stroke_e, p->options, &stroke_p);
+                    mz_emit_stroke_paint(ctx, p, &stroke_p, to_stream);
+                }
+            }
+            if (clip)
+            {
+                if (clip_cut)
+                {
+                    mz_fan_cut(ctx, &fill_e, p->options, &clip_p);
+                    mz_emit_polys(ctx, chain, &clip_p, to_stream);
+                    if (clip_p.n == 0)
+                    {
+                        /* A CLIP CUT TO NOTHING IS AN EMPTY CLIP, never none: a W with no path is not written, and
+                         * whatever it clipped would then paint everywhere. A rectangle of no area, at a point outside
+                         * every mark. */
+                        fz_point q = fz_transform_point(mz_outside_point(p->options), to_stream);
+                        chain->op_re(ctx, chain, q.x, q.y, 0, 0);
+                    }
+                    if (p->top_level)
+                        p->options->clip_cut++;
+                }
+                else
+                    mz_replay(ctx, p);
+                if (clip == 2)
+                    chain->op_Wstar(ctx, chain);
+                else
+                    chain->op_W(ctx, chain);
+                chain->op_n(ctx, chain);
+            }
+            /* AN UNPAINTED PATH THAT ENTERS A MARK (n) paints nothing, and is dropped. */
+        }
+    }
+    fz_always(ctx)
+    {
+        fz_free(ctx, fill_e.e);
+        fz_free(ctx, stroke_e.e);
+        mz_polys_free(ctx, &fill_p);
+        mz_polys_free(ctx, &stroke_p);
+        mz_polys_free(ctx, &clip_p);
+        fz_drop_path(ctx, p->path);
+        p->path = NULL;
+        p->path = fz_new_path(ctx);
+    }
+    fz_catch(ctx)
+        fz_rethrow(ctx);
+}
+
+static void mz_op_S(fz_context *ctx, pdf_processor *c) { c->op_S(ctx, c); }
+static void mz_op_f(fz_context *ctx, pdf_processor *c) { c->op_f(ctx, c); }
+static void mz_op_fstar(fz_context *ctx, pdf_processor *c) { c->op_fstar(ctx, c); }
+static void mz_op_B(fz_context *ctx, pdf_processor *c) { c->op_B(ctx, c); }
+static void mz_op_Bstar(fz_context *ctx, pdf_processor *c) { c->op_Bstar(ctx, c); }
+static void mz_op_n(fz_context *ctx, pdf_processor *c) { c->op_n(ctx, c); }
+
+static void mz_cut_S(fz_context *ctx, pdf_processor *proc) { mz_cut_paint(ctx, proc, 0, 1, 0, mz_op_S); }
+static void mz_cut_s(fz_context *ctx, pdf_processor *proc) { mz_cut_paint(ctx, proc, 0, 1, 1, mz_op_S); }
+static void mz_cut_f(fz_context *ctx, pdf_processor *proc) { mz_cut_paint(ctx, proc, 1, 0, 0, mz_op_f); }
+static void mz_cut_fstar(fz_context *ctx, pdf_processor *proc) { mz_cut_paint(ctx, proc, 2, 0, 0, mz_op_fstar); }
+static void mz_cut_B(fz_context *ctx, pdf_processor *proc) { mz_cut_paint(ctx, proc, 1, 1, 0, mz_op_B); }
+static void mz_cut_Bstar(fz_context *ctx, pdf_processor *proc) { mz_cut_paint(ctx, proc, 2, 1, 0, mz_op_Bstar); }
+static void mz_cut_b(fz_context *ctx, pdf_processor *proc) { mz_cut_paint(ctx, proc, 1, 1, 1, mz_op_B); }
+static void mz_cut_bstar(fz_context *ctx, pdf_processor *proc) { mz_cut_paint(ctx, proc, 2, 1, 1, mz_op_Bstar); }
+
+static void mz_cut_n(fz_context *ctx, pdf_processor *proc)
+{
+    mz_cut_processor *p = (mz_cut_processor *)proc;
+    if (p->clip)
+    {
+        mz_cut_paint(ctx, proc, 0, 0, 0, mz_op_n);
+        return;
+    }
+    /* NO CLIP AND NO PAINT: passed on as it came unless it enters a mark, in which case it is dropped. */
+    {
+        fz_matrix total = mz_total(p);
+        mz_edges e = { 0 };
+        int meets = 0;
+        fz_var(e);
+        fz_try(ctx)
+        {
+            mz_fill_edges(ctx, p, total, &e);
+            meets = mz_ink_meets_marks(&e, p->options, 0, 1);
+            if (!meets)
+            {
+                mz_replay(ctx, p);
+                proc->chain->op_n(ctx, proc->chain);
+            }
+            else
+                p->options->cut++;
+        }
+        fz_always(ctx)
+        {
+            fz_free(ctx, e.e);
+            fz_drop_path(ctx, p->path);
+            p->path = NULL;
+            p->path = fz_new_path(ctx);
+        }
+        fz_catch(ctx)
+            fz_rethrow(ctx);
+    }
+}
+
+static void mz_cut_F(fz_context *ctx, pdf_processor *proc) { mz_cut_f(ctx, proc); }
+
+static void mz_cut_drop(fz_context *ctx, pdf_processor *proc)
+{
+    mz_cut_processor *p = (mz_cut_processor *)proc;
+    int i;
+    for (i = 0; i < p->gs_n; i++)
+        pdf_drop_obj(ctx, p->gs[i].dash);
+    fz_free(ctx, p->gs);
+    fz_drop_path(ctx, p->path);
+    pdf_drop_document(ctx, p->doc);
+}
+
+static pdf_processor *mz_new_cut_filter(fz_context *ctx, pdf_document *doc, pdf_processor *chain, int struct_parents,
+    fz_matrix transform, pdf_filter_options *global, void *options)
+{
+    mz_cut_processor *p = pdf_new_processor(ctx, sizeof *p);
+    (void)struct_parents;
+    (void)global;
+    p->super.drop_processor = mz_cut_drop;
+    p->super.op_q = mz_cut_q;
+    p->super.op_Q = mz_cut_Q;
+    p->super.op_cm = mz_cut_cm;
+    p->super.op_w = mz_cut_w;
+    p->super.op_J = mz_cut_J;
+    p->super.op_j = mz_cut_j;
+    p->super.op_M = mz_cut_M;
+    p->super.op_d = mz_cut_d;
+    p->super.op_m = mz_cut_m;
+    p->super.op_l = mz_cut_l;
+    p->super.op_c = mz_cut_c;
+    p->super.op_v = mz_cut_v;
+    p->super.op_y = mz_cut_y;
+    p->super.op_h = mz_cut_h;
+    p->super.op_re = mz_cut_re;
+    p->super.op_S = mz_cut_S;
+    p->super.op_s = mz_cut_s;
+    p->super.op_F = mz_cut_F;
+    p->super.op_f = mz_cut_f;
+    p->super.op_fstar = mz_cut_fstar;
+    p->super.op_B = mz_cut_B;
+    p->super.op_Bstar = mz_cut_Bstar;
+    p->super.op_b = mz_cut_b;
+    p->super.op_bstar = mz_cut_bstar;
+    p->super.op_n = mz_cut_n;
+    p->super.op_W = mz_cut_W;
+    p->super.op_Wstar = mz_cut_Wstar;
+    p->super.op_CS = mz_cut_CS;
+    p->super.op_SC_color = mz_cut_SC_color;
+    p->super.op_SC_pattern = mz_cut_SC_pattern;
+    p->super.op_SC_shade = mz_cut_SC_shade;
+    p->super.op_G = mz_cut_G;
+    p->super.op_RG = mz_cut_RG;
+    p->super.op_K = mz_cut_K;
+    p->super.op_gs_ca = mz_cut_gs_ca;
+    p->super.op_gs_CA = mz_cut_gs_CA;
+    p->super.op_gs_op = mz_cut_gs_op;
+    p->super.op_gs_OP = mz_cut_gs_OP;
+    p->super.chain = chain;
+    p->super.requirements = chain->requirements;
+    p->options = options;
+    p->base = transform;
+    p->top_level = fz_is_identity(transform);
+    fz_try(ctx)
+    {
+        p->doc = pdf_keep_document(ctx, doc);
+        p->gs = fz_malloc_array(ctx, 8, mz_cut_gstate);
+        p->gs_cap = 8;
+        p->gs_n = 1;
+        p->gs[0].ctm = fz_identity;
+        p->gs[0].linewidth = 1;
+        p->gs[0].miterlimit = 10;
+        p->gs[0].phase = 0;
+        p->gs[0].cap = 0;
+        p->gs[0].join = 0;
+        p->gs[0].dash = NULL;
+        memset(&p->gs[0].stroke_paint, 0, sizeof p->gs[0].stroke_paint);
+        p->gs[0].stroke_paint.kind = MZ_PAINT_GRAY;
+        p->gs[0].stroke_paint.n = 1;
+        p->gs[0].fill_alpha = 1;
+        p->gs[0].stroke_alpha = 1;
+        p->gs[0].fill_overprint = 0;
+        p->gs[0].stroke_overprint = 0;
+        p->path = fz_new_path(ctx);
+    }
+    fz_catch(ctx)
+    {
+        pdf_drop_processor(ctx, &p->super);
+        fz_rethrow(ctx);
+    }
+    return &p->super;
+}
+
+/* A mark's quad, counter-clockwise, its box beside it. */
+static void mz_mark_from_points(mz_mark *m, fz_point a, fz_point b, fz_point c, fz_point d)
+{
+    fz_point v[4];
+    fz_point centre;
+    int i, j;
+    v[0] = a;
+    v[1] = b;
+    v[2] = c;
+    v[3] = d;
+    centre.x = (a.x + b.x + c.x + d.x) / 4;
+    centre.y = (a.y + b.y + c.y + d.y) / 4;
+    /* SORTED BY ANGLE ROUND THE CENTRE: a quad's corner order is the writer's, a convex polygon's is not. */
+    for (i = 1; i < 4; i++)
+    {
+        fz_point t = v[i];
+        double ta = atan2(t.y - centre.y, t.x - centre.x);
+        j = i - 1;
+        while (j >= 0 && atan2(v[j].y - centre.y, v[j].x - centre.x) > ta)
+        {
+            v[j + 1] = v[j];
+            j--;
+        }
+        v[j + 1] = t;
+    }
+    m->box = fz_empty_rect;
+    for (i = 0; i < 4; i++)
+    {
+        m->v[i] = v[i];
+        m->box = fz_include_point_in_rect(m->box, v[i]);
+    }
+}
+
+/*
+ * Cuts every drawing on `page` at its redaction marks' edges (ADR-0286). `cut_out` is how many paths were replaced.
+ * A page with no /Redact is left alone.
+ */
+MZ_EXPORT int mz_cut_line_art(pdf_page *page, int *cut_out)
+{
+    fz_context *ctx = mzg_context();
+    mz_cut_options options = { 0 };
+    pdf_sanitize_filter_options sanitize;
+    pdf_filter_factory list[3];
+    pdf_filter_options filter;
+    pdf_annot *annot;
+    int cap = 0;
+
+    if (cut_out)
+        *cut_out = 0;
+    if (ctx == NULL || page == NULL || cut_out == NULL)
+        return MZ_ERR;
+
+    fz_var(options);
+
+    fz_try(ctx)
+    {
+        for (annot = pdf_first_annot(ctx, page); annot; annot = pdf_next_annot(ctx, annot))
+        {
+            pdf_obj *obj = pdf_annot_obj(ctx, annot);
+            pdf_obj *qp;
+            int n, i;
+            if (pdf_dict_get(ctx, obj, PDF_NAME(Subtype)) != PDF_NAME(Redact))
+                continue;
+            qp = pdf_dict_get(ctx, obj, PDF_NAME(QuadPoints));
+            n = pdf_array_len(ctx, qp) / 8;
+            for (i = 0; i < (n > 0 ? n : 1); i++)
+            {
+                if (options.count == cap)
+                {
+                    cap = cap ? cap * 2 : 8;
+                    options.marks = fz_realloc_array(ctx, options.marks, cap, mz_mark);
+                }
+                if (n > 0)
+                {
+                    /* IN USER SPACE, read raw, as MuPDF's own culler reads them (pdf_annot_quad_point turns them). */
+                    fz_quad q = pdf_to_quad(ctx, qp, i * 8);
+                    mz_mark_from_points(&options.marks[options.count], q.ul, q.ur, q.lr, q.ll);
+                }
+                else
+                {
+                    fz_rect r = pdf_dict_get_rect(ctx, obj, PDF_NAME(Rect));
+                    mz_mark_from_points(&options.marks[options.count], fz_make_point(r.x0, r.y0),
+                        fz_make_point(r.x1, r.y0), fz_make_point(r.x1, r.y1), fz_make_point(r.x0, r.y1));
+                }
+                if (!fz_is_empty_rect(options.marks[options.count].box))
+                    options.count++;
+            }
+        }
+
+        if (options.count > 0)
+        {
+            memset(&sanitize, 0, sizeof sanitize);
+            memset(&filter, 0, sizeof filter);
+            list[0].filter = pdf_new_sanitize_filter;
+            list[0].options = &sanitize;
+            list[1].filter = mz_new_cut_filter;
+            list[1].options = &options;
+            list[2].filter = NULL;
+            list[2].options = NULL;
+            filter.recurse = 0;
+            filter.instance_forms = 1;
+            filter.ascii = 1;
+            filter.filters = list;
+            pdf_filter_page_contents(ctx, page->doc, page, &filter);
+        }
+        *cut_out = options.cut;
+    }
+    fz_always(ctx)
+        fz_free(ctx, options.marks);
+    fz_catch(ctx)
+        return MZ_ERR;
+    return MZ_OK;
+}

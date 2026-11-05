@@ -1,5 +1,6 @@
 import { MAX_REDACT_MATCHES_PER_PAGE, type PdfRedactImages } from '@monstera/contract/host';
 import type * as mupdf from './mupdfRaw.js';
+import { cutLineArt } from './mupdfRaw.js';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, MupdfSession } from './engineSeam.js';
@@ -23,7 +24,7 @@ import { glyphLinesOf, heldToTheirLines } from './redactionQuads.js';
  * | `REDACT_IMAGE_NONE` | **0 — never used here.** It leaves the covered image pixels in the file, under a black box |
  * | `REDACT_IMAGE_REMOVE` | 1 |
  * | `REDACT_IMAGE_PIXELS` | 2 |
- * | `REDACT_LINE_ART_REMOVE_IF_COVERED` | 1 |
+ * | `REDACT_LINE_ART_NONE` | 0 — used, because the drawings are already cut (below) |
  * | `REDACT_TEXT_REMOVE` | 0 |
  *
  * ## The two that are NOT choices, and why they are not
@@ -32,10 +33,18 @@ import { glyphLinesOf, heldToTheirLines } from './redactionQuads.js';
  * command is for: a redaction that draws a box over text a reader can still
  * select. Offering it would be offering the defect.
  *
- * **Line art is always removed if covered.** MuPDF's third option —
- * `REMOVE_IF_TOUCHED` — deletes a path that merely crosses the mark, which
- * takes away content nobody marked; and `NONE` leaves drawn content under the
- * cover. The middle one is the only one that means *this region*.
+ * **Drawings are cut at the mark's edge first, and MuPDF then leaves line art alone**
+ * ([ADR-0286](../../../docs/DECISIONS/0286-a-burn-in-cuts-drawings-at-the-marks-edge-before-mupdf-removes-the-rest.md)).
+ * MuPDF can only keep or drop a whole subpath, judged by `fz_bound_path`'s box, which holds every control point and
+ * grows a mitre-joined stroke by the miter limit times its width: *remove if covered* kept a drawn signature under the
+ * mark in the saved file (measured 2026-11-05, 11 of 19 shapes), and *remove if touched* took a background, a line
+ * crossing the mark's edge and a line 8 points clear of it. So `cutLineArt` (the shim's `mz_cut_line_art`) cuts every
+ * fill, stroke, clip path and unpainted path whose ink meets a mark, through MuPDF's own content filter and stroker,
+ * before the burn-in; nothing drawn is left inside a mark and nothing outside changes. After it, *remove if covered*
+ * could only add removal, and it judges a text mark by its quads' bounding box, so it would take what was kept beside a
+ * slanted quad: `NONE`.
+ *
+ * **Not cut** (the ADR's decision 7): tiling-pattern cells, soft masks, Type 3 glyph drawings and `sh` gradients.
  *
  * Both are written as constants with the reason beside them rather than as
  * payload fields nobody would know how to set (B5 over a settings page).
@@ -47,8 +56,8 @@ const IMAGE_METHOD: Readonly<Record<PdfRedactImages, number>> = {
   pixels: 2,
 };
 
-/** `REDACT_LINE_ART_REMOVE_IF_COVERED`. See the header. */
-const LINE_ART_REMOVE_IF_COVERED = 1;
+/** `REDACT_LINE_ART_NONE`: the drawings are cut before the burn-in. See the header. */
+const LINE_ART_NONE = 0;
 
 /** `REDACT_TEXT_REMOVE`. See the header — the other value is the defect. */
 const TEXT_REMOVE = 0;
@@ -487,12 +496,11 @@ export const applyApplyRedactions: Apply<'mupdf', 'applyRedactions'> = (session,
       removeCoveredObjects(document, page, deleted);
       const pageObject = page.getObject();
       const before = contentReads(pageObject);
-      page.applyRedactions(
-        command.cover === 'solid',
-        IMAGE_METHOD[command.images],
-        LINE_ART_REMOVE_IF_COVERED,
-        TEXT_REMOVE,
-      );
+      // AFTER `before`, which names the forms the page drew as it was: the cut draws its own instance of each, and the
+      // originals are what `removeOtherCopies` must find no longer drawn. Its instances are unreferenced after the
+      // burn-in's own, and this save collects them.
+      cutLineArt(page);
+      page.applyRedactions(command.cover === 'solid', IMAGE_METHOD[command.images], LINE_ART_NONE, TEXT_REMOVE);
       pageObject.delete('Thumb');
       pageObject.delete('Metadata');
       burnedPages.push({ page: pageObject, before, after: contentReads(pageObject) });

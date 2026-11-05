@@ -5485,6 +5485,7 @@ export function openMupdfShim(libraryPath: string): void {
 		keepInlineImages: library.func("int mz_keep_inline_images(void *c, void *d, int number, _Out_ int *converted, _Out_ int *left)") as unknown as MzNative,
 		saveKept: library.func("int mz_save_kept(void *c, void *d, const char *path)") as unknown as MzNative,
 		textLetters: library.func("int mz_text_letters(intptr_t page, void *out, int capacity, int max_lines, int max_chars, _Out_ int *written, _Out_ int *walked)") as unknown as MzNative,
+		cutLineArt: library.func("int mz_cut_line_art(intptr_t page, _Out_ int *cut)") as unknown as MzNative,
 	}
 }
 
@@ -5516,6 +5517,22 @@ interface MzApi {
 	readonly keepInlineImages: MzNative
 	readonly saveKept: MzNative
 	readonly textLetters: MzNative
+	readonly cutLineArt: MzNative
+}
+
+/**
+ * The shim's `mz_cut_line_art` (ADR-0286): every drawing on the page cut at its redaction marks' edges, through MuPDF's
+ * own content filter and stroker, before the burn-in. Answers how many paths were replaced; a page with no mark is left
+ * alone and answers 0.
+ */
+export function cutLineArt(page: PDFPage): number {
+	const api = mzApi
+	if (api === undefined)
+		throw new Error("the MuPDF shim is not bound in this process")
+	const cut: number[] = [ 0 ]
+	if (api.cutLineArt(page.pointer, cut) !== 0)
+		throw new MupdfNativeError("cut the page's drawings at its redaction marks", "the pass failed")
+	return cut[0] ?? 0
 }
 
 /**
