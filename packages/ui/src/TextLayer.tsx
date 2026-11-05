@@ -2,6 +2,7 @@ import { type LineMatch, findInLines, toPdf, viewportPoint } from '@monstera/sha
 import { type ReactElement, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 
 import { exactCaretOf, holdAnchorAtPress, withinClickWobble } from './pressAnchor.js';
+import { layoutOrder } from './textLayerOrder.js';
 import type { OverlayPage } from './annotations/annotationSpace.js';
 import { engineBoxOnScreen, overlayTransform } from './annotations/annotationSpace.js';
 import { type HighlightPainter, type SearchHighlight, sharedPainter } from './searchHighlight.js';
@@ -1015,6 +1016,7 @@ export function TextLayer({
   // EACH LINE'S LETTERS ON SCREEN (`letterRun`), once per page and zoom: where a line with letters is laid out
   // (`linePlacement`) and what every rule here reads (`RUNS`, set from these after layout).
   const runs = useMemo(() => lines.map((line) => letterRun(line.letters, line.text.length, geometry)), [geometry, lines]);
+  const layout = useMemo(() => layoutOrder(lines), [lines]);
 
   // THIS LAYER'S CONVERSION, registered against its element for `readTextSelection`. The same
   // transform the lines below are placed with, so a point read off the layer maps back through
@@ -1069,8 +1071,9 @@ export function TextLayer({
     if (root === null) return;
     fitLines(root);
     // EACH LINE'S LETTERS ON SCREEN, once per layout (ADR-0280, Decision 4): the geometry every rule here reads.
-    root.querySelectorAll('[data-text-line]').forEach((element, at) => {
-      const run = runs[at] ?? null;
+    // BY THE LINE'S OWN INDEX: the elements are in layout order, which is not always the runs' (`layoutOrder`).
+    root.querySelectorAll('[data-text-line]').forEach((element) => {
+      const run = runs[Number(element.getAttribute('data-text-line'))] ?? null;
       if (run === null) RUNS.delete(element);
       else RUNS.set(element, run);
     });
@@ -1201,7 +1204,10 @@ export function TextLayer({
       {/* A SEARCH'S MATCHES AS PAINTED (`paintMatches`), beneath the selection. */}
       <svg aria-hidden="true" className="m-text-layer__matches" ref={matchSurface} />
       <svg aria-hidden="true" className="m-text-layer__selection" ref={surface} />
-      {lines.map((line, index) => {
+      {/* IN LAYOUT ORDER, which is what a selection runs through (`layoutOrder`); each line keeps its index. */}
+      {layout.map((index) => {
+        const line = lines[index];
+        if (line === undefined) return null;
         const { left, top, width, height, turn } = linePlacement(line, runs[index] ?? null, geometry);
 
         return (

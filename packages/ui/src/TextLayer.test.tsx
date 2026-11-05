@@ -2,7 +2,7 @@
 import { render } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import { TextLayer, type TextLayerLine } from './TextLayer.js';
+import { TextLayer, type TextLayerLine, caretOnLine } from './TextLayer.js';
 import type { HighlightPainter, SearchHighlight } from './searchHighlight.js';
 
 /**
@@ -200,5 +200,33 @@ describe('a page whose lines just arrived asks the selection nothing', () => {
     } finally {
       asked.mockRestore();
     }
+  });
+});
+
+describe('a line the engine read out of its place on the page', () => {
+  /** Three rows, the middle one read last, each with letters, the middle holding fewer than the others. */
+  const lines: readonly TextLayerLine[] = [
+    { text: 'first row words', box: { x0: 10, y0: 20, x1: 200, y1: 34 } },
+    { text: 'third row words', box: { x0: 10, y0: 60, x1: 200, y1: 74 } },
+    { text: 'two', box: { x0: 10, y0: 40, x1: 60, y1: 54 } },
+  ].map((line) => ({ ...line, letters: { origin: { x: line.box.x0, y: line.box.y1 }, direction: { x: 1, y: 0 }, size: 12, advances: Array.from(line.text, () => 1000) } }));
+
+  it('is laid out where it lies, so a selection meets it in passing, and keeps its index', () => {
+    const { container } = draw(lines, undefined, recording().painter);
+    const elements = [...container.querySelectorAll('[data-text-line]')];
+    expect(elements.map((element) => element.textContent)).toStrictEqual(['first row words', 'two', 'third row words']);
+    expect(elements.map((element) => element.getAttribute('data-text-line'))).toStrictEqual(['0', '2', '1']);
+  });
+
+  it('keeps its own letters: the caret past its end is its own last letter, not its neighbour’s', () => {
+    const { container } = draw(lines, undefined, recording().painter);
+    const moved = container.querySelector('[data-text-line="2"]');
+    if (moved === null) throw new Error('the moved line was not drawn');
+    // FAR ALONG THE LINE, past all of its letters: the run paired with this element answers how many it has.
+    expect(caretOnLine(moved, 5000, 47)?.offset).toBe(3);
+    const kept = container.querySelector('[data-text-line="1"]');
+    if (kept === null) throw new Error('the kept line was not drawn');
+    // CONTROL: its neighbour answers its own, so the case above separates a wrong pairing.
+    expect(caretOnLine(kept, 5000, 67)?.offset).toBe('third row words'.length);
   });
 });
