@@ -25,10 +25,13 @@
 
 import { PDFDocument, PDFName, StandardFonts } from '@cantoo/pdf-lib';
 
+import { NATIVE_ENGINE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { bindNativeEngine } from '../lib/nativeEngine.mjs';
 
 const ROOT = repoRoot();
+// THE BUILD THESE FIGURES ARE OF is the sources' own, or nothing is timed: the edge is the one this script imports.
+refuseStaleBuild(ROOT, NATIVE_ENGINE, 1);
 if (bindNativeEngine(ROOT) === null) throw new Error('the MuPDF shim is not built here');
 // A LITERAL SPECIFIER, the one `nativeEngine.mjs` binds, so the import scans can read what this loads.
 const mupdf = await import('../../packages/kernel/dist/mupdfRaw.js');
