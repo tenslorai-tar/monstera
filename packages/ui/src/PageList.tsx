@@ -848,9 +848,11 @@ export function PageList({
       const gap = Number.parseFloat(style.columnGap);
       setSpreadGap(Number.isFinite(gap) ? gap : 0);
     });
-    // THE BORDER BOX IS OBSERVED, which a scrollbar coming or going never changes: what moves it (the window, a panel,
-    // a sidebar) is what moves the fit.
-    seen.observe(element, { box: 'border-box' });
+    // THE CONTENT BOX IS OBSERVED, because everything the answer reads moves it: the window or a panel, and the padding
+    // the stylesheet takes away at Fit page in Continuous (`.m-page-list--fit-page`), which leaves the border box as it
+    // was. Observing the border box alone missed that, and the fit's room stayed 32 px short (measured 2026-11-05,
+    // `fitPage.pw.ts`). A scrollbar coming or going also notifies, and answers the same box, which changes nothing.
+    seen.observe(element);
     return (): void => {
       seen.disconnect();
     };
