@@ -786,4 +786,151 @@ describe('what the cut does not reach, said so', () => {
     expect(blankInside(render(result.saved), result.regions).painted).toBe(0);
     expect(differenceOutside(render(bytes), render(result.saved), result.regions).offEdge).toBe(0);
   });
+
+  it('STATED: a tiling pattern’s cell stays whole in the file, and the fill and the stroke it paints are cut, so none of it shows under the mark', async () => {
+    // The cell: a red square in each 20 point tile. A filled rectangle wider than the mark, and a 6 point stroke across
+    // it, both painted with the pattern.
+    const bytes = await pageOf(
+      '/Pattern cs /P1 scn 60 30 260 80 re f\nq /Pattern CS /P1 SCN 6 w 60 130 m 320 60 l S Q',
+      (document) => ({
+        Pattern: {
+          P1: document.context.register(
+            document.context.stream(CELL, { Type: 'Pattern', PatternType: 1, PaintType: 1, TilingType: 1, BBox: [0, 0, 20, 20], XStep: 20, YStep: 20, Resources: {} }),
+          ),
+        },
+      }),
+    );
+    expect(blankInside(render(bytes), [rectRegion(OVER_LINE)]).painted, 'CONTROL: unredacted, the pattern paints under the mark').toBeGreaterThan(0);
+    const { burned: result } = await holdsTheRule(bytes, AREA);
+    // WHAT STAYS: the cell's own content, which is drawn wherever the cut fill reaches and is not a drawing on the page.
+    expect(streamsOf(result.saved)).toContain(CELL);
+    expect(result.content).toContain('/P1 scn');
+  });
+
+  it('STATED: a soft mask’s group stays whole in the file, and the fill it masks is cut, so none of it shows under the mark', async () => {
+    // The mask is white (all visible) with a black hole drawn under the mark; it masks a blue rectangle wider than the mark.
+    const bytes = await pageOf('q /GS1 gs 0 0 1 rg 60 30 260 80 re f Q', (document) => ({
+      ExtGState: {
+        GS1: {
+          SMask: {
+            Type: 'Mask',
+            S: 'Luminosity',
+            G: document.context.register(
+              document.context.stream(MASK, { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, ...PAGE], Group: { S: 'Transparency', CS: 'DeviceRGB' }, Resources: {} }),
+            ),
+          },
+        },
+      },
+    }));
+    expect(blankInside(render(bytes), [rectRegion(OVER_LINE)]).painted, 'CONTROL: unredacted, the masked fill shows under the mark').toBeGreaterThan(0);
+    const { burned: result } = await holdsTheRule(bytes, AREA);
+    // WHAT STAYS: the mask's own drawing, the hole under the mark included. It is a mask, which paints nothing itself.
+    expect(streamsOf(result.saved)).toContain(MASK);
+    expect(result.content).toContain('/GS1 gs');
+  });
+
+  it('STATED: a Type 3 font’s glyph drawings stay in the file, and every glyph shown under the mark goes, so none of it shows there', async () => {
+    // A square glyph, 20 points wide at this size. Four shown wholly under the mark, one across its right edge, one far.
+    const bytes = await pageOf('BT /T3 20 Tf 120 60 Td (AAAA) Tj ET\nBT /T3 20 Tf 270 60 Td (A) Tj ET\nBT /T3 20 Tf 120 300 Td (A) Tj ET', (document) => ({
+      Font: {
+        T3: document.context.obj({
+          Type: 'Font',
+          Subtype: 'Type3',
+          FontBBox: [0, 0, 1000, 1000],
+          FontMatrix: [0.001, 0, 0, 0.001, 0, 0],
+          CharProcs: { square: document.context.register(document.context.stream(GLYPH)) },
+          Encoding: { Type: 'Encoding', Differences: [65, PDFName.of('square')] },
+          FirstChar: 65,
+          LastChar: 65,
+          Widths: [1000],
+          Resources: {},
+        }),
+      },
+    }));
+    expect(blankInside(render(bytes), [rectRegion(OVER_LINE)]).painted, 'CONTROL: unredacted, the glyphs paint under the mark').toBeGreaterThan(0);
+    const result = await burned(bytes, AREA, 'none');
+    // NOTHING SHOWS UNDER THE MARK, and nothing is written there: MuPDF's text removal takes each glyph that meets it.
+    expect(blankInside(render(result.saved), result.regions).painted, 'pixels painted inside the mark').toBe(0);
+    expect(await pointsInsideMarks(result)).toStrictEqual([]);
+    // WHAT STAYS: the font's glyph procedure, used by the far glyph, which is still shown.
+    expect(streamsOf(result.saved)).toContain(GLYPH);
+    expect(result.content).toMatch(/120 300 T[dD] \(A\) ?Tj/);
+    // THE GLYPH ACROSS THE EDGE GOES WHOLE, as a letter does: text is removed by the glyph, not cut.
+    expect(result.content).not.toMatch(/270 60 T[dD]/);
+    FIGURES.push({ case: 'Type 3 glyphs', ...differenceOutside(render(bytes), render(result.saved), result.regions) });
+  });
+
+  it('OPEN, reported to the owner 2026-11-06: a glyph whose ink reaches past its advance, shown beside the mark, still paints inside it', async () => {
+    // THE HARD SHAPE. MuPDF's burn-in judges a glyph by its ADVANCE box (origin to advance width, descender to ascender;
+    // `pdf-op-filter.c`, the culler's FZ_CULL_GLYPH call), never by its ink. This glyph advances 1,000 units (20 points
+    // here) and draws 3,000 (60 points): shown at x 60, its advance box ends at 80, short of the mark at 92, and its ink
+    // reaches to 120. The cut does not touch text, so this is d594f808's behaviour too.
+    /** Pixels painted inside the mark after the burn-in, for a glyph of this advance and FontBBox. */
+    const paintedFor = async (advance: number, bbox: readonly number[]): Promise<number> => {
+      const bytes = await pageOf('BT /T3 20 Tf 60 60 Td (A) Tj ET', (document) => ({ Font: { T3: type3(document, LIAR, bbox, advance) } }));
+      expect(blankInside(render(bytes), [rectRegion(OVER_LINE)]).painted, 'CONTROL: unredacted, the glyph paints under the mark').toBeGreaterThan(0);
+      const result = await burned(bytes, AREA, 'none');
+      return blankInside(render(result.saved), result.regions).painted;
+    };
+    const declared = await paintedFor(1000, [0, 0, 100, 100]);
+    const whole = await paintedFor(1000, [0, 0, 3000, 1000]);
+    // CONTROL, THE MECHANISM: an advance that reaches the mark makes MuPDF take the glyph, whatever its FontBBox says.
+    const reaching = await paintedFor(3000, [0, 0, 100, 100]);
+    FIGURES.push({ case: 'a glyph inked past its advance', declared, whole, reaching });
+    expect(reaching).toBe(0);
+    // THE DEFECT, as it is today: the FontBBox does not help, because MuPDF never reads it for a glyph shown sideways.
+    expect(declared).toBeGreaterThan(0);
+    expect(whole).toBeGreaterThan(0);
+  });
 });
+
+/** A glyph whose d1 box is 100 units square and whose drawing is 3,000 units wide. */
+const LIAR = '1000 0 0 0 100 100 d1 0 0 3000 1000 re f';
+
+/** A Type 3 font of one glyph drawn by `glyph`, with `bbox` as its FontBBox and `advance` as its width. */
+function type3(document: PDFDocument, glyph: string, bbox: readonly number[], advance = 1000): unknown {
+  return document.context.obj({
+    Type: 'Font',
+    Subtype: 'Type3',
+    FontBBox: [...bbox],
+    FontMatrix: [0.001, 0, 0, 0.001, 0, 0],
+    CharProcs: { square: document.context.register(document.context.stream(glyph)) },
+    Encoding: { Type: 'Encoding', Differences: [65, PDFName.of('square')] },
+    FirstChar: 65,
+    LastChar: 65,
+    Widths: [advance],
+    Resources: {},
+  });
+}
+
+/** A tiling pattern's cell, a soft mask's group and a Type 3 glyph, as the text each stream holds. */
+const CELL = '1 0 0 rg 0 0 10 10 re f';
+const MASK = '1 g 0 0 612 460 re f 0 g 150 60 40 20 re f';
+const GLYPH = '1000 0 0 0 1000 1000 d1 0 0 1000 1000 re f';
+
+/** A rectangle as the region a mark has. */
+function rectRegion({ x0, y0, x1, y1 }: Rect): Region {
+  return [
+    [x0, y0],
+    [x1, y0],
+    [x1, y1],
+    [x0, y1],
+  ];
+}
+
+/** The decoded text of every stream object in a saved file. */
+function streamsOf(saved: ByteImage): string {
+  const document = mupdf.PDFDocument.openDocument(saved, 'application/pdf');
+  try {
+    if (!(document instanceof mupdf.PDFDocument)) throw new Error('not a PDF');
+    let text = '';
+    for (let at = 1; at < document.countObjects(); at += 1) {
+      const object = document.newIndirect(at);
+      if (object.isStream()) text += `${object.readStream().asString()}\n`;
+    }
+    if (text === '') throw new Error('no stream read from the saved file');
+    return text;
+  } finally {
+    document.destroy();
+  }
+}
