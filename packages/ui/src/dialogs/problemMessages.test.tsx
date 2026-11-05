@@ -97,6 +97,20 @@ describe('an edit PDFium refused says which part of the work refused', () => {
   });
 });
 
+describe('an unexpected failure', () => {
+  it('says the owner’s sentence, with the reference a person quotes under it', () => {
+    activateCatalogue('en', EN);
+    render(
+      <I18nProvider i18n={i18n}>
+        <CommandProblemBody code="internal" incident="inc-1" />
+      </I18nProvider>,
+    );
+    expect(screen.getByText('Monstera just encountered an error, your file is not changed.')).toBeTruthy();
+    expect(screen.getByText(english(PROBLEM_REFERENCE_LABEL))).toBeTruthy();
+    expect(screen.getByText('inc-1')).toBeTruthy();
+  });
+});
+
 describe('a replacement that would change nothing says so (ADR-0169 Decision 6)', () => {
   it('says nothing was changed and names the way that works, in a sentence of its own', () => {
     activateCatalogue('en', EN);

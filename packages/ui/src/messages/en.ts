@@ -7686,7 +7686,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [PROBLEM_SERVICE_REFUSED]: 'The service did not read this area, so nothing was changed.',
   [COPY_ANNOTATIONS_TITLE]: 'Copy',
   [PASTE_ANNOTATIONS_TITLE]: 'Paste annotations',
-  [PROBLEM_INTERNAL]: 'Something went wrong inside Monstera. Your document is unchanged.',
+  [PROBLEM_INTERNAL]: 'Monstera just encountered an error, your file is not changed.',
   // A label, not a sentence: the value beside it is an opaque id, and ADR-0009
   // §9 is why it is the only thing about the diagnostic that crosses.
   [PROBLEM_REFERENCE_LABEL]: 'Reference',
