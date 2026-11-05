@@ -97,3 +97,11 @@ A right-to-left document now pairs right to left. Decision 10's *not built here*
 - Measured on Linux, Chromium 151: opening the six-page fixture in Continuous facing took a median of 499.8 ms against
   501.5 ms before, 16 rounds each in turn; the timer separates a 100 ms hold. The catalog lookup itself is 0.02 to
   0.03 ms an answer.
+
+## Correction, 2026-11-05 — Decision 7: a one-page document fits as one page
+
+The owner's decision of 2026-11-05. Decision 7's *Fit width and Fit page fit the pair* now holds for a document of two
+pages or more only. **A one-page document fits as one page** in both facing layouts: it has no partner to make room for,
+and fitting two widths drew it at half the pane. **The odd last page of a longer document keeps the pair's size**, and
+so does a lone cover page in one, so the zoom does not jump while reading on. The rule is `PageList`'s `fitsPair`
+(`pageCount > 1`), and `fitStability.pw.ts` holds both halves.

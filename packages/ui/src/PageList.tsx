@@ -951,13 +951,19 @@ export function PageList({
    */
   // FACING PAGES FIT A SPREAD, two pages and the gap between them: fitting one page's width would push its partner
   // off the pane. The gap is taken from the pane rather than added to the pages, because it does not scale with them.
+  //
+  // A ONE-PAGE DOCUMENT FITS AS ONE PAGE (the owner's decision, 2026-11-05): it has no partner to make room for, and
+  // fitting two widths drew it at half the pane. The odd last page of a longer document, and a lone cover page in
+  // one, keep the pair's size, so the zoom does not jump while reading on. The gap still comes off the pane: the
+  // grid keeps its two tracks, the empty one is no width, and the gap between them stands.
   const spread = facesPages(layout);
+  const fitsPair = spread && pageCount > 1;
   /** Fit page in one column: each page takes the whole pane, so no part of another shows (`.m-page-list--fit-page`). */
   const fitOnePage = mode.kind === 'fit-page' && layout === 'continuous';
   const resolved = resolveZoom(
     mode,
     spread && viewport !== undefined ? { width: viewport.width - spreadGap, height: viewport.height } : viewport,
-    spread && pageBox !== undefined ? { width: pageBox.width * 2, height: pageBox.height } : pageBox,
+    fitsPair && pageBox !== undefined ? { width: pageBox.width * 2, height: pageBox.height } : pageBox,
   );
   const shown = resolved ?? 1;
 
