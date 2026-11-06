@@ -860,11 +860,15 @@ describe('what the cut does not reach, said so', () => {
     FIGURES.push({ case: 'Type 3 glyphs', ...differenceOutside(render(bytes), render(result.saved), result.regions) });
   });
 
-  it('OPEN, reported to the owner 2026-11-06: a glyph whose ink reaches past its advance, shown beside the mark, still paints inside it', async () => {
-    // THE HARD SHAPE. MuPDF's burn-in judges a glyph by its ADVANCE box (origin to advance width, descender to ascender;
-    // `pdf-op-filter.c`, the culler's FZ_CULL_GLYPH call), never by its ink. This glyph advances 1,000 units (20 points
-    // here) and draws 3,000 (60 points): shown at x 60, its advance box ends at 80, short of the mark at 92, and its ink
-    // reaches to 120. The cut does not touch text, so this is d594f808's behaviour too.
+  it('STATED: a letter is judged by its advance box, so one shown beside the mark stays, even where its ink reaches inside', async () => {
+    // THE HARD SHAPE, built to show the rule, not a font anyone sets: MuPDF's burn-in judges a glyph by its ADVANCE box
+    // (origin to advance width, descender to ascender; `pdf-op-filter.c`, the culler's FZ_CULL_GLYPH call), never by
+    // its ink. This glyph advances 1,000 units (20 points here) and draws 3,000 (60 points): shown at x 60, its advance
+    // box ends at 80, short of the mark at 92, and its ink reaches to 120. The cut does not touch text.
+    //
+    // THE OWNER'S RULING, 2026-11-06 (ADR-0286's note of that date): not fixed. In ordinary fonts a letter that stays
+    // has only a small tail under the box (at most 0.16 em past its advance box, `glyphOverhang.mjs`), and it was not
+    // marked and stays readable beside the mark.
     /** Pixels painted inside the mark after the burn-in, for a glyph of this advance and FontBBox. */
     const paintedFor = async (advance: number, bbox: readonly number[]): Promise<number> => {
       const bytes = await pageOf('BT /T3 20 Tf 60 60 Td (A) Tj ET', (document) => ({ Font: { T3: type3(document, LIAR, bbox, advance) } }));
@@ -878,7 +882,7 @@ describe('what the cut does not reach, said so', () => {
     const reaching = await paintedFor(3000, [0, 0, 100, 100]);
     FIGURES.push({ case: 'a glyph inked past its advance', declared, whole, reaching });
     expect(reaching).toBe(0);
-    // THE DEFECT, as it is today: the FontBBox does not help, because MuPDF never reads it for a glyph shown sideways.
+    // THE RULE, STATED: the FontBBox does not change it, because MuPDF never reads it for a glyph shown sideways.
     expect(declared).toBeGreaterThan(0);
     expect(whole).toBeGreaterThan(0);
   });

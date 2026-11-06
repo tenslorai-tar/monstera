@@ -120,3 +120,25 @@ on the page, not 0.1.
   20 points and draws 60: 2,214 pixels painted inside the mark at 2×, whatever its FontBBox says, and none once its
   advance reaches the mark. That code path is the same for every font type; it was measured only for Type 3. The cut
   does not touch text, so d594f808 behaves the same.
+
+## Note, 2026-11-06: the owner rules on the glyph finding — not fixed
+
+**The ruling:** a letter is judged by its advance box, as MuPDF judges it, and no fix is built. The pixels came from
+a Type 3 glyph built to draw three times its advance. In ordinary fonts a letter that stays has only a small tail under
+the box, and that letter was not marked and stays readable beside it. The dialog keeps *not just covered*. The case in
+`redactionLineArt.test.ts` now reads as stated behaviour, with the same assertions and control.
+
+**The figures the ruling rests on**, from `scripts/research/glyphOverhang.mjs` (b1e34012), this container, MuPDF
+1.28.0 native, 2026-11-06, 94 printable ASCII glyphs a font:
+
+- **The test glyph under the default filled box:** 0 of 10,416 pixels inside the mark are anything but the box's
+  black at 1 px a point; the glyph is still drawn beneath it, and with the box's one path taken out of the saved content
+  588 pixels inside the mark are painted. Its letter extracts as *A*: it was shown beside the mark, not in it.
+- **Ink past the advance box in ordinary fonts**, most, in hundredths of an em: Liberation Serif 3, its italic 12,
+  FreeSans Oblique 16 (TrueType); Bitstream Charter 8, its italic 16 (Type 1); Inter Italic 10, Nimbus Roman 7, its
+  italic 15, Nimbus Sans Oblique 16 (CFF).
+- **The tenth MuPDF shrinks each box by:** a mark over the right 9% of a letter's box leaves the letter, with 2.9% (o)
+  to 7.5% (Inter Italic W) of its ink under the mark; at 10% the letter goes, in every font tried.
+- **Not built, and what it would have cost:** a two-pass glyph filter in the shim judging each glyph by its ink, about
+  three to five days, touching every burn-in (Apply redactions, Redact matches, the prompt on save, close, export,
+  print or send).
