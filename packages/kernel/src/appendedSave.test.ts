@@ -6,7 +6,8 @@ import { applySetDocumentProtection, protectedImageOf } from './documentProtecti
 import { NO_TIMESTAMPS, signPrepared } from './documentSign.js';
 import type { ByteImage, MupdfSession } from './engineSeam.js';
 import * as mupdf from './mupdfRaw.js';
-import { mupdfWriter, withDocument } from './mupdfWriter.js';
+import { mupdfWriter, signaturesKeptBySave, withDocument } from './mupdfWriter.js';
+import { applyPlaceImage } from './pageAnnotations.js';
 import { prepareSignature } from './signaturePlaceholder.js';
 import { placeholderRequestOf } from './signatureHole.js';
 import { readSignatures } from './signatureRead.js';
@@ -59,6 +60,35 @@ function plainPages(bytes: ByteImage): number {
   }
 }
 
+const STAMP = { author: 'Priya Raman', created: '2026-11-06T09:00:00.000Z' } as const;
+
+/** A small opaque PNG, made by MuPDF itself (B10: nothing committed). */
+function png(): Uint8Array {
+  const pixmap = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, [0, 0, 8, 4], false);
+  try {
+    pixmap.clear(128);
+    return pixmap.asPNG().slice();
+  } finally {
+    pixmap.destroy();
+  }
+}
+
+/**
+ * The newest cross-reference section, read as a reader starts: the last `startxref`'s offset, and the `/Prev` of the
+ * trailer that section ends in (a classic table's, or the cross-reference stream's dictionary). `undefined` when it has
+ * none, which is the first section's shape.
+ */
+function newestSection(bytes: ByteImage): { readonly at: number; readonly previous: number | undefined } {
+  const text = Buffer.from(bytes).toString('latin1');
+  const starts = [...text.matchAll(/startxref\s+(\d+)/g)];
+  const last = starts.at(-1);
+  if (last?.[1] === undefined) throw new Error('the file has no startxref, so no section could be read');
+  const at = Number(last[1]);
+  const section = text.slice(at, last.index);
+  const previous = /\/Prev\s+(\d+)/.exec(section)?.[1];
+  return { at, previous: previous === undefined ? undefined : Number(previous) };
+}
+
 /** Whether each signature in `bytes` covers what it signed, read on a fresh session. */
 async function covering(bytes: ByteImage, password?: string): Promise<boolean[]> {
   const session = await mupdfWriter.open(bytes, password);
@@ -108,6 +138,92 @@ describe('appended saves of a signed document, any number from one session', () 
 
   it('three saves in a row with no change between them, after one change before the first', async () => {
     await threeSaves(await applySignDocument(unsigned, { ...command, bytes: certificate }), 'first');
+  }, 60_000);
+
+  /**
+   * THE APPLICATION'S OWN SEQUENCE OF WRITES, the one the owner's report found faulty after the FIRST Save: on open the
+   * signatures panel serialises the session (`engine/signatures`); placing a picture is followed by main's image refresh,
+   * which serialises it again as held (`documentCommands`' `currentInto`, the host's `engine/serialise`); and Save is a
+   * third serialise, as a file a person keeps. A serialise with no change since the session opened returns the file's own
+   * bytes and writes nothing, so the refresh is the first appended write and Save the second, with no change between
+   * them; without the rebase Save's section sat at the refresh's offset and named itself as its `/Prev` (measured
+   * 2026-11-06, a plain open reading 0 pages). Called at the writer, where both host routes end: the case does not
+   * cross `composition.ts` or the pipe, which pass these options through unchanged.
+   */
+  it('the application’s sequence: the signatures read on open, a picture, the image refresh, then Save twice', async () => {
+    const signed = await applySignDocument(unsigned, { ...command, bytes: certificate });
+    const session = await mupdfWriter.open(signed);
+    try {
+      const onOpen = await mupdfWriter.serialise(session);
+      expect(Buffer.from(onOpen).equals(Buffer.from(signed)), 'a serialise with no change writes nothing').toBe(true);
+      expect(await readSignatures(session, onOpen)).toHaveLength(1);
+      await applyPlaceImage(session, {
+        kind: 'placeImage',
+        pages: [0],
+        rect: { x0: 50, y0: 50, x1: 150, y1: 100 },
+        bytes: png(),
+        stamp: STAMP,
+      });
+      let earlier: ByteImage = signed;
+      let wrote = 0;
+      for (const [step, write] of [
+        ['the image refresh', () => mupdfWriter.serialise(session)],
+        ['Save', () => mupdfWriter.serialise(session, { marks: 'engraved' })],
+        ['the refresh after Save', () => mupdfWriter.serialise(session)],
+        ['a second Save', () => mupdfWriter.serialise(session, { marks: 'engraved' })],
+      ] as const) {
+        const saved = await write();
+        expect(plainPages(saved), `${step}: the page count a plain reader finds`).toBe(PAGES);
+        const { at, previous } = newestSection(saved);
+        expect(previous, `${step}: the newest section does not name itself`).not.toBe(at);
+        expect(Buffer.from(saved.subarray(0, earlier.byteLength)).equals(Buffer.from(earlier)), `${step} keeps the earlier bytes`).toBe(true);
+        expect(await covering(saved), `${step}: the signature covers what it signed`).toStrictEqual([true]);
+        if (!Buffer.from(saved).equals(Buffer.from(earlier))) {
+          // A SECTION WAS WRITTEN, so it names the last file's newest one.
+          expect(previous, `${step}: the newest section names the last file's`).toBe(newestSection(earlier).at);
+          wrote += 1;
+          earlier = saved;
+        }
+      }
+      // THE PICTURE IS IN THE FILE: the refresh appended it, and the case is not one where nothing was ever written.
+      expect(wrote).toBeGreaterThan(0);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  }, 60_000);
+
+  /**
+   * A FILE THE FAULT ALREADY WROTE, as in the owner's item 8: its last section names itself. It opens with the repair,
+   * and MuPDF then refuses to append to a repaired document, so its next save rewrites the file whole. The file that
+   * comes out is sound, and the signature no longer covers it; the save says so before it is made (`signaturesKept`,
+   * the question ADR-0149 puts to the person). Pinned as it is, not as it should be: the owner's decision.
+   */
+  it('a file the fault already wrote opens repaired, is said beforehand to break its signature, and saves sound', async () => {
+    const signed = await applySignDocument(unsigned, { ...command, bytes: certificate });
+    // THE FAULT'S SHAPE, written as the build before the rebase wrote it: two appended saves from one document.
+    const raw = mupdf.PDFDocument.openDocument(signed, 'application/pdf');
+    if (!(raw instanceof mupdf.PDFDocument)) throw new Error('the case expected a PDF');
+    let damaged: ByteImage;
+    try {
+      raw.findPage(0).put('Rotate', 90);
+      raw.saveToBuffer('incremental').destroy();
+      damaged = raw.saveToBuffer('incremental').asUint8Array().slice();
+    } finally {
+      raw.destroy();
+    }
+    expect(plainPages(damaged), 'CONTROL: the damaged file reads no pages plainly').toBe(0);
+    expect(newestSection(damaged).previous).toBe(newestSection(damaged).at);
+    // THE SIGNED REVISION IS INTACT inside it, so this build's reader still says the signature covers what it signed.
+    expect(await covering(damaged)).toStrictEqual([true]);
+    const session = await mupdfWriter.open(damaged);
+    try {
+      expect(await signaturesKeptBySave(session)).toStrictEqual({ signatures: 1, kept: false });
+      const saved = await mupdfWriter.serialise(session);
+      expect(plainPages(saved)).toBe(PAGES);
+      expect(await covering(saved)).toStrictEqual([false]);
+    } finally {
+      await mupdfWriter.close(session);
+    }
   }, 60_000);
 
   it('a protected document, signed under its key and saved three times with a change between', async () => {
