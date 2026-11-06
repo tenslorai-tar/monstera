@@ -76,6 +76,7 @@ however that appearance is written.
 | Restore an earlier version, a backup | unchanged | a copy of a file already written |
 | DocuSign's signed copy, a new PDF composed from Markdown, CSV, images, a camera, an Office file, a URL | unchanged | not this session's bytes |
 | Print | not a file | pages go to the spooler as pictures, the layer drawn |
+| Sign with certificate's visible signature | unchanged, a form field | the owner's phone draws form fields, a certificate signature's visible mark among them (the note of 2026-11-06 below) |
 
 ## Rejected
 
@@ -123,3 +124,17 @@ section recursion*). It does not involve the marks option, which engraves nothin
   it: accepted.
 - **The second appended save is fixed in this release**: ADR-0008's correction of this date has the mechanism and the
   fix (`rebasedOn`).
+
+## Note, 2026-11-06 — Sign with certificate's visible signature is not changed, and the phone results
+
+Read on the owner's phone the same day: *cert-01*, a document signed with Sign with certificate as it is written today,
+shows the signature, and so does *cert-02*, the same mark drawn into the page and then signed. A filled form shows too.
+So these phone apps draw form fields, and a certificate signature's visible mark is a form field's appearance; what
+they skip is every other annotation layer. The owner's decision: the visible signature stays as it is written, and
+nothing is drawn into the page before signing. Its row is added to the routes table above on the owner's instruction.
+No notice goes to users (the owner's decision).
+
+The appended-save fault was also seen in the application after the person's FIRST Save, not their second. Both are
+one mechanism: a serialise with no change since the session opened writes nothing, and placing a picture is followed
+by main's image refresh, which is the session's first appended write, so the person's Save is its second. ADR-0008's
+note of this date has the measurement.
