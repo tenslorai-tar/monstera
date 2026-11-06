@@ -398,6 +398,11 @@ export class DocumentLocked extends Error {
 export interface SerialiseOptions {
   /** `left-out`: the bytes carry no `/Outlines` — a copy written without bookmarks (`saveDepth.ts`). */
   readonly outline?: 'left-out';
+  /**
+   * `engraved`: the bytes are a file a person keeps, so Monstera's own placed signatures, pictures and barcodes are
+   * drawn by the page, and the session keeps them as layers (ADR-0287). Absent: the bytes are the session as held.
+   */
+  readonly marks?: 'engraved';
 }
 
 export interface EngineWriter<TSession> {

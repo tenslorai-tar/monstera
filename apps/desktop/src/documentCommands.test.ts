@@ -21,7 +21,7 @@ import {
 } from '@cantoo/pdf-lib';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { type FoundBarcode, type StagedImage, placeStaged } from '@monstera/kernel';
+import { type FoundBarcode, type StagedImage, type Staging, placeStaged } from '@monstera/kernel';
 import {
   type AiModel,
   type Command,
@@ -349,6 +349,7 @@ const noSaving: SaveSource = {
     wait: () => Promise.resolve(),
   },
   flush: () => Promise.reject(new Error('this case does not save')),
+  deliver: () => Promise.reject(new Error('this case does not save')),
   stage: () => Promise.reject(new Error('this case does not save')),
   provenance: {
     made: () => Promise.reject(new Error('this case does not save')),
@@ -540,10 +541,10 @@ const noCertificates: CertificateSource = {
 const noDirectory: PickDirectory = () =>
   Promise.reject(new Error('this case does not split into a directory'));
 
-const localExtract: DocumentExtractReader = (id, sessions, pages) => {
+const localExtract: DocumentExtractReader = (id, sessions, pages, marks) => {
   const held = sessions.mupdf;
   if (held === undefined) throw new MissingSessionError(id, 'mupdf');
-  return extractPages(held, pages);
+  return extractPages(held, pages, marks);
 };
 
 /**
@@ -1832,7 +1833,10 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       restored: { readonly snapshot: string; readonly bytes: Uint8Array }[];
       /** Each path whose Recent picture was retaken. */
       retaken: string[];
+      /** Each staging the commands asked for, in order (ADR-0287). */
+      stagings: Staging[];
     }> {
+      const stagings: Staging[] = [];
       savables += 1;
       const path = join(directory, `save-${String(savables)}.pdf`);
       const before = await pdfBytes();
@@ -1858,6 +1862,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
         before,
         restored,
         retaken,
+        stagings,
         rebuild: async () => {
           current = await mupdfWriter.open(await mupdfWriter.serialise(current));
           held.hold(outcome.docId, { mupdf: current });
@@ -1917,11 +1922,18 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
               if (held_ === undefined) throw new Error('the fixture holds a session');
               return mupdfWriter.serialise(held_);
             },
-            stage: stagingFrom((_docId, sessions) => {
+            deliver: (_docId, sessions) => {
               const held_ = sessions.mupdf;
               if (held_ === undefined) throw new Error('the fixture holds a session');
-              return mupdfWriter.serialise(held_);
-            }),
+              return mupdfWriter.serialise(held_, { marks: 'engraved' });
+            },
+            // THE STAGING ASKED FOR, honoured as the host honours it (ADR-0287): a file a person keeps is engraved.
+            stage: async (_docId, sessions, staging) => {
+              const held_ = sessions.mupdf;
+              if (held_ === undefined) throw new Error('the fixture holds a session');
+              stagings.push(staging);
+              return stagedBytes(await mupdfWriter.serialise(held_, staging.marks === 'engraved' ? { marks: 'engraved' } : undefined));
+            },
           },
         }),
       };
@@ -1955,6 +1967,56 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       }
       // CONTROL, the pair: one failure, two files, two causes — so the cause is the file's answer and not the code's.
       expect(answers).toStrictEqual(['read-only', 'held']);
+    });
+
+    it('SAVE writes a placed picture as part of the page, and the session keeps it as a layer to move (ADR-0287)', async () => {
+      // A 16 by 8 opaque PNG, built from zlib's own pieces (B10: nothing committed).
+      const chunk = (type: string, data: Buffer): Buffer => {
+        const length = Buffer.alloc(4);
+        length.writeUInt32BE(data.length);
+        const body = Buffer.concat([Buffer.from(type, 'latin1'), data]);
+        const sum = Buffer.alloc(4);
+        sum.writeUInt32BE(crc32(body));
+        return Buffer.concat([length, body, sum]);
+      };
+      const header = Buffer.alloc(13);
+      header.writeUInt32BE(16, 0);
+      header.writeUInt32BE(8, 4);
+      header[8] = 8;
+      header[9] = 2;
+      const rows = Buffer.alloc((16 * 3 + 1) * 8, 0x30);
+      for (let y = 0; y < 8; y += 1) rows[y * (16 * 3 + 1)] = 0;
+      const png = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', header), chunk('IDAT', deflateSync(rows)), chunk('IEND', Buffer.alloc(0))]);
+
+      const t = await aSavableDocument();
+      await t.commands.execute(t.saved, {
+        kind: 'placeImage',
+        pages: [0],
+        rect: { x0: 20, y0: 20, x1: 120, y1: 70 },
+        bytes: new Uint8Array(png),
+        stamp: { author: 'A. Tester', created: '2026-11-06T09:00:00.000Z' },
+      });
+      const outcome = await t.commands.save(t.saved, { breakSignatures: false });
+      expect(outcome.kind).toBe('saved');
+
+      const stampsIn = async (bytes: Uint8Array): Promise<number> => {
+        const opened = await mupdfWriter.open(bytes);
+        try {
+          return await withDocument(opened, (document) => {
+            const annots = document.findPage(0).get('Annots');
+            let count = 0;
+            if (annots.isArray()) annots.forEach((each) => (count += String(each.get('Subtype')) === '/Stamp' ? 1 : 0));
+            return count;
+          });
+        } finally {
+          await mupdfWriter.close(opened);
+        }
+      };
+      // THE ROUTE ASKED FOR A FILE A PERSON KEEPS, and the file on disk has no stamp layer.
+      expect(t.stagings.at(-1)).toStrictEqual({ outline: 'kept', marks: 'engraved' });
+      expect(await stampsIn(new Uint8Array(readFileSync(t.path)))).toBe(0);
+      // CONTROL: the session still holds the stamp, so it moves until the document is closed.
+      expect(await stampsIn(await t.serialised())).toBe(1);
     });
 
     it('SAVE AND TAKE answers the image of the version it saved, though a command is queued right behind it (CR-DOC-04)', async () => {
@@ -3395,6 +3457,7 @@ describe('the form data export carries the format all the way to the file', () =
           wait: () => Promise.resolve(),
         },
         flush: () => Promise.reject(new Error('an export does not flush the document')),
+        deliver: () => Promise.reject(new Error('an export does not flush the document')),
         stage: () => Promise.reject(new Error('an export does not flush the document')),
       },
       copy: {
@@ -3564,6 +3627,11 @@ describe('annotations exported to a file and imported from it, through the lane 
         // BOTH ROUTES ARE COUNTED. A save stages (ADR-0121's addendum) and a direct flush is still a
         // member, so counting only `stage` let a path that called `flush` pass *flushes nothing*.
         flush: (docId, sessions) => {
+          flushes.push(docId);
+          return sessionFlush(docId, sessions);
+        },
+        // AND THE THIRD (ADR-0287): a file a person keeps is still a flush of the document.
+        deliver: (docId, sessions) => {
           flushes.push(docId);
           return sessionFlush(docId, sessions);
         },
@@ -3797,6 +3865,7 @@ describe('a document past 4,096 pages is extracted and split whole', () => {
           wait: () => Promise.resolve(),
         },
         flush: () => Promise.reject(new Error('an extract does not flush the document')),
+        deliver: () => Promise.reject(new Error('an extract does not flush the document')),
         stage: () => Promise.reject(new Error('an extract does not flush the document')),
       },
       copy: { pick: () => Promise.resolve(file), checkTarget: (target) => longService.checkCopyTarget(target) },
@@ -3970,6 +4039,7 @@ describe('exportPageImages — one image per page, in a folder, all or nothing',
           wait: () => Promise.resolve(),
         },
         flush: () => Promise.reject(new Error('an image export does not flush the document')),
+        deliver: () => Promise.reject(new Error('an image export does not flush the document')),
         stage: () => Promise.reject(new Error('an image export does not flush the document')),
       },
       copy: {
@@ -4205,6 +4275,9 @@ describe('exportText — the document’s words, streamed one page at a time', (
           wait: () => Promise.resolve(),
         },
         flush:
+          options.flush ?? (() => Promise.reject(new Error('a plain text export does not flush the document'))),
+        // THE SAME BYTES as a file a person keeps (ADR-0287): this harness's document carries no placed marks.
+        deliver:
           options.flush ?? (() => Promise.reject(new Error('a plain text export does not flush the document'))),
         stage: stagingFrom(
           options.flush ?? (() => Promise.reject(new Error('a plain text export does not flush the document'))),
@@ -5275,6 +5348,7 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
           wait: () => Promise.resolve(),
         },
         flush: () => Promise.reject(new Error('an Excel export does not flush the document')),
+        deliver: () => Promise.reject(new Error('an Excel export does not flush the document')),
         stage: () => Promise.reject(new Error('an Excel export does not flush the document')),
       },
       copy: {
@@ -6999,6 +7073,10 @@ describe('DocumentCommands — a page edited in another application (ADR-0062)',
         flushes.push(docId);
         return sessionFlush(docId, sessions);
       },
+      deliver: (docId, sessions) => {
+        flushes.push(docId);
+        return sessionFlush(docId, sessions);
+      },
       stage: stagingFrom((docId, sessions) => {
         flushes.push(docId);
         return sessionFlush(docId, sessions);
@@ -7310,6 +7388,7 @@ describe('importPageAsLayer — saved and reopened, and undone, through the lane
           wait: () => Promise.resolve(),
         },
         flush: flushHeld,
+        deliver: flushHeld,
         // The refresh after an undo stages (ADR-0121 Decision 2), so the stale-session refusal is on it too.
         stage: stagingFrom(flushHeld),
       },
@@ -7505,6 +7584,7 @@ describe('DocumentCommands.openFromUrl', () => {
         wait: () => Promise.resolve(),
       },
       flush: () => Promise.reject(new Error('a fetch flushes no document')),
+      deliver: () => Promise.reject(new Error('a fetch flushes no document')),
       stage: () => Promise.reject(new Error('a fetch flushes no document')),
       provenance: noSaving.provenance,
     };
@@ -7665,6 +7745,7 @@ describe('DocumentCommands.convertOfficeFile (ADR-0120)', () => {
             wait: () => Promise.resolve(),
           },
           flush: () => Promise.reject(new Error('an import flushes no document')),
+          deliver: () => Promise.reject(new Error('an import flushes no document')),
           stage: () => Promise.reject(new Error('an import flushes no document')),
         },
         copy,
@@ -7914,6 +7995,7 @@ describe('a document opened with its password: no unprotected copy, and no passw
             wait: () => Promise.resolve(),
           },
           flush: flushHeld,
+        deliver: flushHeld,
           stage: stagingFrom(flushHeld),
         },
       });
@@ -8080,6 +8162,7 @@ describe('a protect in this session: the holder follows it', () => {
           wait: () => Promise.resolve(),
         },
         flush: flushHeld,
+        deliver: flushHeld,
         stage: stagingFrom(flushHeld),
       },
     });
@@ -8365,6 +8448,7 @@ describe('composeImportFile: a CSV past the bound is composed in parts', () => {
       save: {
         deps: { checkWriteTarget: () => Promise.reject(new Error('an import writes a copy')), surface: nodeFileSurface, names: (target) => siblingNames(target, 1), wait: () => Promise.resolve() },
         flush: () => Promise.reject(new Error('an import flushes no document')),
+        deliver: () => Promise.reject(new Error('an import flushes no document')),
         stage: () => Promise.reject(new Error('an import flushes no document')),
         provenance: noSaving.provenance,
       },

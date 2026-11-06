@@ -2185,6 +2185,8 @@ export function liveSessionChannels() {
           into: outputNameSchema,
           /** `left-out`: write the bytes without the document's outline, for *Save a copy without bookmarks*. */
           outline: z.literal('left-out').exactOptional(),
+          /** `engraved`: a file a person keeps, Monstera's placed marks drawn by the page (ADR-0287). */
+          marks: z.literal('engraved').exactOptional(),
         })
         .strict(),
       // A COUNT, NOT A NAME. Main already knows where it asked for the bytes;
@@ -2387,6 +2389,8 @@ export const engineChannels = {
          */
         pages: pageSetSchema,
         into: outputNameSchema,
+        /** `engraved`: the new document is a file a person keeps, Monstera's placed marks drawn by the page (ADR-0287). */
+        marks: z.literal('engraved').exactOptional(),
       })
       .strict(),
     // A COUNT, for `engine/serialise`'s reason: main knows where it asked for

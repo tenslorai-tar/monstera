@@ -175,7 +175,11 @@ export {
   EngineSerialiseMismatch,
   type RemoteMupdfLifecycle,
   type SessionAreaSurface,
+  AS_HELD,
+  KEPT_FILE,
+  type StagedMarks,
   type StagedOutline,
+  type Staging,
   remoteMupdfLifecycle,
   takeAnnounced,
 } from './host/remoteLifecycle.js';

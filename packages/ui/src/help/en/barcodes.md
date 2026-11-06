@@ -34,7 +34,8 @@ To read barcodes:
 - A link in a barcode that is read is shown, and opened only when you choose the link button on its row.
 - A contact card is shown as name, title, company, phone, email and address lines.
 - The mark on the page goes away when you close the list. A contact is saved exactly as the barcode says it, with every field it holds, even ones the list does not show. A short contact format that is not a full card is shown as text and is not saved as a contact.
-- A placed barcode can be moved, resized or deleted like an image. Undo with **Ctrl+Z**.
+- A placed barcode can be moved, resized or deleted like an image until you close the document. Undo with **Ctrl+Z**.
+- When you save, the barcode is saved as part of the page, so every PDF app and scanner sees it. After you open the saved file again, it cannot be selected or moved; to take it away, use **Redact**.
 
 <!--
 Screenshots to capture:

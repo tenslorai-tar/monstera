@@ -39,7 +39,10 @@ import {
   toViewport,
   viewportPoint,
 } from '@monstera/shared';
+import { zlibSync } from 'fflate';
+
 import type {
+  Image,
   PDFAnnotation,
   PDFAnnotationLineEndingStyle,
   PDFAnnotationType,
@@ -1507,7 +1510,12 @@ function writeStamp(annotation: PDFAnnotation, stamp: AnnotationStamp): void {
  * author, so nothing can ever be marked foreign.
  */
 function authoredHere(annotation: PDFAnnotation): boolean {
-  const mark = annotation.getObject().get(AUTHORED_KEY);
+  return authoredObject(annotation.getObject());
+}
+
+/** {@link authoredHere}, asked of the annotation's dictionary, for a reader that walks objects rather than pages. */
+function authoredObject(object: PDFObject): boolean {
+  const mark = object.get(AUTHORED_KEY);
   return mark.isBoolean() && mark.asBoolean();
 }
 
@@ -2076,7 +2084,7 @@ export const applyPlaceImage: Apply<'mupdf', 'placeImage'> = (
     // THE DECODE IS ALSO BEFORE THE FIRST WRITE, and it is the failure most
     // likely to happen: the bytes came from a file a person picked. MuPDF
     // throws on anything it cannot read, which is what validates the file.
-    const embedded = document.addImage(decodedImage(command.bytes));
+    const embedded = addedCompressed(document, decodedImage(command.bytes));
 
     for (const { page, box, upright } of loaded) {
       const annotation = page.createAnnotation('Stamp');
@@ -2686,6 +2694,51 @@ function pictureThroughForm(document: PDFDocument, name: string, picture: PDFObj
 const PICTURE_STAMP_NAME = 'Image';
 
 /**
+ * THE KINDS A SAVED FILE DRAWS AS PART OF THE PAGE (ADR-0287, the owner's decision of 2026-11-06), beside the commands
+ * that create them: each is a subtype and a `/Name`, and every one is also Monstera's own by {@link authoredObject}.
+ * The names are the ones those commands have always written, so a file Monstera saved earlier is recognised. A later
+ * kind (a stamp, typewriter text, a text box) joins as a row here; `engraveOnSave.ts` reads nothing else.
+ */
+const ENGRAVED_ON_SAVE: readonly { readonly subtype: string; readonly name: string; readonly kind: string }[] = [
+  { subtype: 'Stamp', name: SIGNATURE_STAMP_NAME, kind: 'a plain signature, typed, drawn or a picture (ADR-0133)' },
+  { subtype: 'Stamp', name: PICTURE_STAMP_NAME, kind: 'a picture from Place image, and a barcode, placed as one' },
+];
+
+/**
+ * A picture this build places, added to the document and written COMPRESSED, with its soft mask (ADR-0287 Decision 7).
+ *
+ * **MuPDF writes a picture it decoded as raw samples**: a PNG has no filter a PDF can carry, so `addImage` stores the
+ * pixels unfiltered, and the alpha as an unfiltered `/SMask` beside them, with an empty `/DecodeParms`. Measured
+ * 2026-11-06: a 400 × 300 PNG with alpha saved 360,000 bytes of RGB and 120,000 of mask. Each stream with no `/Filter`
+ * is deflated here and marked `/FlateDecode`; one that already has a filter (a JPEG's `/DCTDecode`) is left as it is.
+ * The samples are the same, so the pixel size and the look do not change. Only the picture this command adds is
+ * touched: a picture already in the document never passes through here, and MuPDF hands back the same object for the
+ * same bytes, which this then finds already filtered.
+ */
+function addedCompressed(document: PDFDocument, image: Image): PDFObject {
+  const added = document.addImage(image);
+  for (const stream of [added, added.get('SMask')]) {
+    if (!stream.isIndirect() || !stream.isStream() || !stream.get('Filter').isNull()) continue;
+    stream.writeRawStream(zlibSync(stream.readRawStream().asUint8Array(), { level: 6 }));
+    stream.put('Filter', document.newName('FlateDecode'));
+    stream.delete('DecodeParms');
+  }
+  return added;
+}
+
+/**
+ * Whether a saved file draws this annotation as part of the page (ADR-0287): Monstera's own, and one of
+ * {@link ENGRAVED_ON_SAVE}. Another producer's annotation answers false whatever it looks like, because it carries no
+ * private mark of ours.
+ */
+export function engravedOnSave(object: PDFObject): boolean {
+  if (!object.isDictionary() || !authoredObject(object)) return false;
+  const subtype = String(object.get('Subtype'));
+  const name = String(object.get('Name'));
+  return ENGRAVED_ON_SAVE.some((each) => subtype === `/${each.subtype}` && name === `/${each.name}`);
+}
+
+/**
  * Writes a placed signature: a `/Stamp` whose appearance is the drawing, upright as the page is seen.
  *
  * `applyPlaceImage`'s shape — the appearance is WRITTEN, because no property means *this signature* — with the box and
@@ -2775,7 +2828,7 @@ export const applyPlaceSignaturePicture: Apply<'mupdf', 'placeSignaturePicture'>
       document,
       signaturePlacement(document, command.page, command.rect),
       drawing,
-      document.addImage(image),
+      addedCompressed(document, image),
       command.stamp,
     );
   });

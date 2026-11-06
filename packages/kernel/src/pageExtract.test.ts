@@ -114,7 +114,7 @@ async function nestedDocument(): Promise<Uint8Array> {
 async function extracted(bytes: Uint8Array, pages: PageSet): Promise<Uint8Array> {
   const session = await mupdfWriter.open(bytes);
   try {
-    return await extractPages(session, pages);
+    return await extractPages(session, pages, 'as-held');
   } finally {
     await mupdfWriter.close(session);
   }
@@ -271,7 +271,7 @@ describe('extractPages', () => {
   it('REFUSES an empty extract, which would write a document nothing can open', async () => {
     const session = await mupdfWriter.open(await richDocument());
     try {
-      await expect(extractPages(session, [])).rejects.toThrow(/no pages/u);
+      await expect(extractPages(session, [], 'as-held')).rejects.toThrow(/no pages/u);
     } finally {
       await mupdfWriter.close(session);
     }
@@ -280,7 +280,7 @@ describe('extractPages', () => {
   it('REFUSES a page the document does not have', async () => {
     const session = await mupdfWriter.open(await richDocument());
     try {
-      await expect(extractPages(session, [0, 9])).rejects.toThrow(/Page 9 is outside this document, which has 4 page/u);
+      await expect(extractPages(session, [0, 9], 'as-held')).rejects.toThrow(/Page 9 is outside this document, which has 4 page/u);
     } finally {
       await mupdfWriter.close(session);
     }
@@ -361,7 +361,7 @@ describe('extractPages', () => {
     // file and destroys the document the user is looking at.
     const session = await mupdfWriter.open(await nestedDocument());
     try {
-      await extractPages(session, [1, 3]);
+      await extractPages(session, [1, 3], 'as-held');
 
       const after = await readBack(await mupdfWriter.serialise(session));
       expect(after.widths).toStrictEqual([100, 101, 102, 103]);

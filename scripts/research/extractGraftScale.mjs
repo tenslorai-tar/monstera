@@ -69,7 +69,8 @@ for (const count of [10, 40, 160]) {
   console.log(`source ${count} pages: ${await objects(bytes)} objects`);
   const session = await mupdfWriter.open(bytes);
   try {
-    const out = await extractPages(session, [0, 1]);
+    // AS HELD, as this measured it before ADR-0287 added the choice: its subject is what the graft carries.
+    const out = await extractPages(session, [0, 1], 'as-held');
     console.log(`  extract of 2 pages: ${await objects(out)} objects`);
   } finally {
     await mupdfWriter.close(session);

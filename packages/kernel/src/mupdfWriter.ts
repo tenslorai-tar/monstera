@@ -10,6 +10,7 @@ import type {
 } from './engineSeam.js';
 import { DocumentLocked } from './engineSeam.js';
 import { openPdfFile } from './mupdfOpen.js';
+import { savedEngraved } from './engraveOnSave.js';
 import { savedBuffer, savedWithoutOutline } from './saveDepth.js';
 import { signatureValues } from './signatureFields.js';
 import { DOCUMENT_ACCESS_VALUES } from '@monstera/contract/host';
@@ -775,9 +776,14 @@ export const mupdfWriter: EngineWriter<MupdfSession> = {
     // INSIDE `promised`, as the lookup always was: a session from elsewhere is refused as a REJECTION, never a
     // synchronous throw from a method that answers a promise (the writer's CONTROL cases).
     return promised(() => {
-      const { document, terms } = saveTermsOf(session);
+      const { document, terms, appends } = saveTermsOf(session);
       // MEASURED BEFORE A COLLECTING SAVE, and refused in words where it would pass the engine's stack (`saveDepth.ts`).
-      return bufferBytes(options?.outline === 'left-out' ? savedWithoutOutline(document, terms) : savedBuffer(document, terms));
+      const save = (): mupdf.Buffer =>
+        options?.outline === 'left-out' ? savedWithoutOutline(document, terms) : savedBuffer(document, terms);
+      // A FILE A PERSON KEEPS draws Monstera's placed marks by the page (ADR-0287), and the session is put back after.
+      // NOT ON AN APPENDED SAVE: it exists to keep a signature, and page content changed after one is reported by
+      // every validator (Decision 5), so a signed document's marks stay layers.
+      return bufferBytes(options?.marks === 'engraved' && !appends ? savedEngraved(document, save).saved : save());
     });
   },
 

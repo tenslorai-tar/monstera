@@ -563,6 +563,52 @@ describe('CommandBus — a removal is recorded on the DOCUMENT', () => {
     }
   });
 
+  it('A PLACED PICTURE UNDONE BEFORE SAVING (ADR-0287): the restored document, saved as a file a person keeps, draws nothing', async () => {
+    const blank = await PDFDocument.create();
+    blank.addPage([300, 300]);
+    const session = await mupdfWriter.open(await blank.save({ useObjectStreams: false }));
+    const bus = new CommandBus({ mupdf: localMupdfWriter });
+    const context = contextStub(true);
+    const restoring = restoreStub();
+    const picture = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, [0, 0, 20, 10], false);
+    picture.clear(0);
+    /** Stamps on page 0 and pixels drawn there, of `bytes` saved as a file a person keeps. */
+    const kept = async (bytes: Uint8Array): Promise<{ stamps: number; dark: number }> => {
+      const opened = await mupdfWriter.open(bytes);
+      try {
+        const file = await mupdfWriter.serialise(opened, { marks: 'engraved' });
+        const document = mupdf.PDFDocument.openDocument(file, 'application/pdf');
+        try {
+          if (!(document instanceof mupdf.PDFDocument)) throw new Error('not a PDF');
+          const annots = document.findPage(0).get('Annots');
+          const pixmap = document.loadPage(0).toPixmap(mupdf.Matrix.identity, mupdf.ColorSpace.DeviceGray, false, true);
+          return { stamps: annots.isArray() ? annots.length : 0, dark: [...pixmap.getPixels()].filter((value) => value < 128).length };
+        } finally {
+          document.destroy();
+        }
+      } finally {
+        await mupdfWriter.close(opened);
+      }
+    };
+    try {
+      await bus.execute(
+        { mupdf: session },
+        context,
+        { kind: 'placeImage', pages: [0], rect: { x0: 50, y0: 50, x1: 150, y1: 100 }, bytes: picture.asPNG(), stamp: { author: 'A', created: '2026-11-06T09:00:00.000Z' } },
+        showingInputs(session),
+      );
+      // CONTROL: placed, the kept file draws it by the page, with no stamp left.
+      expect(await kept(await mupdfWriter.serialise(session))).toMatchObject({ stamps: 0, dark: expect.any(Number) as number });
+      expect((await kept(await mupdfWriter.serialise(session))).dark).toBeGreaterThan(1000);
+      await bus.undo({ mupdf: session }, context, restoring.restore, showingInputs(session));
+      const restored = context.written().at(-1)?.bytes.path;
+      if (restored === undefined) throw new Error('the undo restored no checkpoint');
+      expect(await kept(await readFile(restored))).toStrictEqual({ stamps: 0, dark: 0 });
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
   it('KEEP BOOKMARKS (ADR-0163, 2026-11-06): undo restores the checkpoint, which holds the outline the burn-in pruned', async () => {
     // TWO PAGES, a bookmark to each, and a redact mark on the first: the burn-in keeps one bookmark and removes one.
     const outlined = await PDFDocument.create();

@@ -155,7 +155,11 @@ import {
   saveDocument,
   placeStaged,
   type StagedImage,
+  type StagedMarks,
   type StagedOutline,
+  type Staging,
+  AS_HELD,
+  KEPT_FILE,
   StructureTooDeep,
   stagedBytes,
   type SplitOutcome,
@@ -1310,8 +1314,14 @@ export type ImageRead =
 export interface SaveSource {
   /** The write-target check and the filesystem the atomic ordering runs on. */
   readonly deps: SaveDependencies;
-  /** A document's current bytes. */
+  /** A document's current bytes, as the session holds them. */
   readonly flush: DocumentFlush;
+  /**
+   * The same bytes as a file a person keeps, read into `main`: Monstera's placed signatures, pictures and barcodes drawn
+   * by the page (ADR-0287). What a route that sends or converts the document is made from: Email, Export PDF/A, Text to
+   * curves, Optimize. REQUIRED, so a composition cannot leave such a route on the session's layer by omission.
+   */
+  readonly deliver: DocumentFlush;
   /**
    * The same bytes, staged where the engine wrote them and never read into `main` — what a save, a copy of the
    * document and a refreshed image are made from
@@ -1327,7 +1337,7 @@ export interface SaveSource {
 }
 
 /** {@link DocumentFlush}, staged. Composed in the same place, for the same reason. */
-export type DocumentStage = (docId: DocId, sessions: DocumentSessions, outline: StagedOutline) => Promise<StagedImage>;
+export type DocumentStage = (docId: DocId, sessions: DocumentSessions, staging: Staging) => Promise<StagedImage>;
 
 /**
  * The document as a Word package, composed where its pictures are drawn and staged there for `main` to move — never
@@ -1848,6 +1858,8 @@ export type DocumentExtractReader = (
   sessions: DocumentSessions,
   /** A page set, listed against the document where the engine is (JOURNAL, *No document-size refusals*). */
   pages: PageSet,
+  /** `engraved` for a file a person keeps; `as-held` for a page that comes back into this session (ADR-0287). */
+  marks: StagedMarks,
 ) => Promise<ByteImage>;
 
 /**
@@ -4489,7 +4501,8 @@ export class DocumentCommands {
       // encrypted form, which a byte-image writer cannot open without it.
       opensWith: () => this.#engine.opensWith(docId),
       // THE REFRESH'S ROUTE (ADR-0121 Decision 2): the session's bytes placed in the file the service names.
-      currentInto: async (destination) => placeStaged(await this.#save.stage(docId, live(), 'kept'), destination),
+      // AS HELD: the refreshed image becomes the session again (ADR-0287's routes).
+      currentInto: async (destination) => placeStaged(await this.#save.stage(docId, live(), AS_HELD), destination),
       adopt: (write) => this.#restore(docId, write),
       // THE LIST, not the flag: a table of contents is built from the entries there are, and the walk's bound is one
       // no real outline reaches (ADR-0130 Decision 3).
@@ -4589,7 +4602,8 @@ export class DocumentCommands {
       const sessions = this.#engine.sessions(docId);
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
-      return await this.#save.stage(docId, sessions, 'kept');
+      // A FILE THAT LEAVES THE APPLICATION (an upload, a form's POST): its placed marks drawn by the page (ADR-0287).
+      return await this.#save.stage(docId, sessions, KEPT_FILE);
     });
     return value;
   }
@@ -4746,7 +4760,8 @@ export class DocumentCommands {
         return await writeDocumentCopy(
           this.#save.deps,
           this.#copy.checkTarget,
-          () => this.#save.stage(docId, sessions, outline),
+          // A FILE A PERSON KEEPS, with or without its outline (ADR-0287).
+          () => this.#save.stage(docId, sessions, { outline, marks: 'engraved' }),
           destination,
           backupsFor(context),
         );
@@ -4788,7 +4803,8 @@ export class DocumentCommands {
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
       const sessions = this.#engine.sessions(docId);
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
-      return await this.#save.stage(docId, sessions, 'kept');
+      // SENT TO DOCUSIGN, a file that leaves the application (ADR-0287).
+      return await this.#save.stage(docId, sessions, KEPT_FILE);
     });
 
     try {
@@ -4909,7 +4925,8 @@ export class DocumentCommands {
         // THE ONE DIFFERENCE FROM `saveCopy`. Everything downstream — the
         // contested-destination check, the temporary and backup naming, the
         // atomic write — is the same code on the same terms.
-        async () => stagedBytes(await this.#extract(docId, sessions, pages)),
+        // A FILE A PERSON KEEPS: its placed marks drawn by the page (ADR-0287).
+        async () => stagedBytes(await this.#extract(docId, sessions, pages, 'engraved')),
         destination,
         backupsFor(context),
       );
@@ -4969,7 +4986,8 @@ export class DocumentCommands {
       return await writeDocumentCopy(
         this.#save.deps,
         this.#copy.checkTarget,
-        async () => stagedBytes(await this.#extract(docId, sessions, [page])),
+        // AS HELD: the page comes back into this session, where its marks are still layers (ADR-0287's routes).
+        async () => stagedBytes(await this.#extract(docId, sessions, [page], 'as-held')),
         destination,
         backupsFor(context),
       );
@@ -5475,7 +5493,7 @@ export class DocumentCommands {
       return await writeDocumentSplit(
         this.#save.deps,
         this.#copy.checkTarget,
-        (pages) => this.#extract(docId, sessions, pageSetOf(pages)),
+        (pages) => this.#extract(docId, sessions, pageSetOf(pages), 'engraved'),
         groups.map((pages) => ({
           destination: join(directory, splitPartName(suggest, pages)),
           pages,
@@ -5609,7 +5627,7 @@ export class DocumentCommands {
             tagsDropped = await this.#anyPageTagged(docId, sessions);
             // THE KEY THE DOCUMENT OPENS WITH, `optimize`'s reason: the copy is prepared by opening the flush, and PDF/A
             // forbids encryption, so the prepared copy is written without it.
-            const converted = await pdfa(await this.#save.flush(docId, sessions), level, this.#engine.opensWith(docId));
+            const converted = await pdfa(await this.#save.deliver(docId, sessions), level, this.#engine.opensWith(docId));
             leftOut = converted.leftOut;
             leftOutMore = converted.leftOutMore;
             otherLeftOut = converted.otherLeftOut;
@@ -5804,7 +5822,9 @@ export class DocumentCommands {
     if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
     const sessions = this.#engine.sessions(docId);
     if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
-    return this.#save.flush(docId, sessions);
+    // AS A FILE A PERSON KEEPS (ADR-0287): Text to curves and Optimize write a copy from these, and their measurements
+    // read the same bytes, so what is measured is what is written.
+    return this.#save.deliver(docId, sessions);
   }
 
   /**
@@ -6236,7 +6256,8 @@ export class DocumentCommands {
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
       const sessions = this.#engine.sessions(docId);
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
-      return await this.#save.flush(docId, sessions);
+      // SHARED, a file that leaves the application (ADR-0287).
+      return await this.#save.deliver(docId, sessions);
     });
 
     return await this.#offerToShare(fileName, { fileName, bytes });
@@ -7324,7 +7345,8 @@ export class DocumentCommands {
       const saved = await saveDocument(
         this.#save.deps,
         context,
-        () => this.#save.stage(docId, sessions, 'kept'),
+        // THE FILE A PERSON KEEPS: Monstera's placed signatures, pictures and barcodes drawn by the page (ADR-0287).
+        () => this.#save.stage(docId, sessions, KEPT_FILE),
         backupsFor(context),
       );
       // WHY IT WAS NOT WRITTEN, asked of the file now, inside the lane, so the person is told the remedy that fits.
@@ -7355,7 +7377,8 @@ export class DocumentCommands {
       }
       // THE IMAGE OF THE VERSION JUST SAVED, before this entry ends and the next command can run. From the sessions
       // as they are now: a removal's save has just renewed them from the file it wrote.
-      if (take) taken.push(await this.#save.stage(docId, this.#engine.sessions(docId) ?? sessions, 'kept'));
+      // THE CLOUD'S COPY of the file just written, so it is engraved as that file was (ADR-0287).
+      if (take) taken.push(await this.#save.stage(docId, this.#engine.sessions(docId) ?? sessions, KEPT_FILE));
       return outcome;
     });
 

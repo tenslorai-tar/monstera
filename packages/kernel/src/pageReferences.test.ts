@@ -774,7 +774,7 @@ describe('a page that leaves takes every reference to it (ADR-0155)', () => {
         }),
       );
       try {
-        const doc = await PDFDocument.load(await extractPages(session, [0]), { updateMetadata: false });
+        const doc = await PDFDocument.load(await extractPages(session, [0], 'as-held'), { updateMetadata: false });
         expect(held(doc)).toStrictEqual({ pages: 1, mark: false, answer: false });
         expect(outlineOf(doc)).toStrictEqual(['Part (heading) count 1', '  one', 'total 2']);
       } finally {

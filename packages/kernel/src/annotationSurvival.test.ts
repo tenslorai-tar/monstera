@@ -321,7 +321,8 @@ describe('an annotation survives the OTHER command that crosses documents', () =
 async function extractedWithMark(): Promise<Uint8Array> {
   const session = await mupdfWriter.open(await marked());
   try {
-    return await extractPages(session, [2, 1]);
+    // AS HELD: this file's subject is which annotations an extraction carries, which engraving would change (ADR-0287).
+    return await extractPages(session, [2, 1], 'as-held');
   } finally {
     await mupdfWriter.close(session);
   }
