@@ -70,13 +70,16 @@ export async function settlePendingRedactions(
   if (!answer.success) return 'stopped';
   if (answer.data === 'without') return 'kept';
 
-  const { pages, cover, images, keepTitle } = applyRedactionsDefaults('all');
+  // THE DEFAULTS, so the bookmarks go as the title does: this prompt asks only Apply or not (ADR-0163's correction of
+  // 2026-11-06 — the prompt on save, close, export, print or send applies with the box off).
+  const { pages, cover, images, keepTitle, keepBookmarks } = applyRedactionsDefaults('all');
   const applied = await applyDocumentCommand(deps, docId, {
     kind: 'applyRedactions',
     pages: pages === 'all' ? 'all' : [...pages],
     cover,
     images,
     keepTitle,
+    keepBookmarks,
   });
   return applied ? 'applied' : 'stopped';
 }

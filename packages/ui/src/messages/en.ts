@@ -3165,6 +3165,8 @@ export const APPLY_REDACTIONS_COVER_NONE = messageKey('dialog.apply-redactions.c
 export const APPLY_REDACTIONS_IMAGES = messageKey('dialog.apply-redactions.images');
 export const APPLY_REDACTIONS_KEEP_TITLE = messageKey('dialog.apply-redactions.keep-title');
 export const APPLY_REDACTIONS_KEEP_TITLE_WARNS = messageKey('dialog.apply-redactions.keep-title-warns');
+export const APPLY_REDACTIONS_KEEP_BOOKMARKS = messageKey('dialog.apply-redactions.keep-bookmarks');
+export const APPLY_REDACTIONS_KEEP_BOOKMARKS_WARNS = messageKey('dialog.apply-redactions.keep-bookmarks-warns');
 export const APPLY_REDACTIONS_IMAGES_PIXELS = messageKey('dialog.apply-redactions.images-pixels');
 export const APPLY_REDACTIONS_IMAGES_REMOVE = messageKey('dialog.apply-redactions.images-remove');
 export const APPLY_REDACTIONS_APPLY = messageKey('dialog.apply-redactions.apply');
@@ -6988,10 +6990,12 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // the half-true sentence nobody flags, in the one dialog where being wrong
   // about what is removed is the whole risk. The title is the checkbox's to
   // describe, and it does.
-  // THE BOOKMARKS ARE NAMED because a person sees them and there is no keeping them: a title of one can spell what a
-  // mark removes, and the owner chose removal with no option (2026-10-05, ADR-0163).
+  // THE BOOKMARKS ARE NAMED because a person sees them go: a title of one can spell what a mark removes. Removing them
+  // all is the default, and since the owner's correction of 2026-11-06 (ADR-0163) the box below keeps those on pages
+  // nothing is redacted on, so the sentence says *unless you tick the box*. THE OWNER'S WORDS, 2026-11-06, with what
+  // can stay in the file under a mark said plainly (ADR-0286 Decision 7, read in the saved file).
   [APPLY_REDACTIONS_WARNS]:
-    'The marked content is removed from the document, not covered over, with any comments and form fields under the marks. The document’s bookmarks, author, subject and other properties are removed too. The only way back is Undo, in this session.',
+    'The marked text, pictures and drawings are removed from the document, not just covered, along with comments and form fields under the marks. Everything else on the page stays. Gradients, patterns and transparency effects that reach under a mark can stay in the file, but nothing of them shows there. The author and other properties are removed too, and so are bookmarks unless you tick the box to keep some. Only Undo can bring this back, in this session.',
   [APPLY_REDACTIONS_SCOPE]: 'Apply to',
   [APPLY_REDACTIONS_SCOPE_PAGE]: 'Page {page}',
   [APPLY_REDACTIONS_SCOPE_ALL]: 'Every page',
@@ -7006,7 +7010,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // beside an irreversible act has to do.
   [APPLY_REDACTIONS_KEEP_TITLE]: 'Keep the document’s title',
   [APPLY_REDACTIONS_KEEP_TITLE_WARNS]:
-    'A title can itself contain what you are redacting — or say it in other words. Everything else about the document is removed either way.',
+    'A title can itself contain what you are redacting — or say it in other words. The author, subject and other properties are removed either way.',
+  // BESIDE THE TITLE'S, and off (ADR-0163's correction of 2026-11-06). The owner's words.
+  [APPLY_REDACTIONS_KEEP_BOOKMARKS]: 'Keep bookmarks on pages that aren’t redacted',
+  [APPLY_REDACTIONS_KEEP_BOOKMARKS_WARNS]:
+    'A bookmark’s name can still show what you are removing, even on another page. Bookmarks on redacted pages are always removed.',
   [APPLY_REDACTIONS_APPLY]: 'Apply redactions',
   // THE OWNER'S SENTENCE (2 October, item N1), with the count.
   [PENDING_REDACTIONS_TITLE]: 'Redactions not applied',

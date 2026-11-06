@@ -184,7 +184,7 @@ async function burned(bytes: ByteImage, marks: readonly Mark[], cover: 'solid' |
     const regions = await withDocument(session, (document) => regionsOf(document));
     if (marks.length > 0) {
       // The dialog's defaults: a filled box, and only the covered part of a picture blanked.
-      await applyApplyRedactions(session, { kind: 'applyRedactions', pages: 'all', cover, images: 'pixels', keepTitle: false });
+      await applyApplyRedactions(session, { kind: 'applyRedactions', pages: 'all', cover, images: 'pixels', keepTitle: false, keepBookmarks: false });
     }
     const saved = await mupdfWriter.serialise(session);
     const again = await mupdfWriter.open(saved);

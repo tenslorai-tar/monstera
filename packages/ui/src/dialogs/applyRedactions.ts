@@ -48,6 +48,11 @@ export const APPLY_REDACTIONS_RESULT = z
      * answer.
      */
     keepTitle: z.boolean(),
+    /**
+     * Whether the bookmarks on pages this burn-in leaves untouched survive (ADR-0163's correction of 2026-11-06).
+     * Required for `keepTitle`'s reason: absence must never mean *keep*.
+     */
+    keepBookmarks: z.boolean(),
   })
   .strict();
 
@@ -57,14 +62,14 @@ export type ApplyRedactionsAnswer = z.infer<typeof APPLY_REDACTIONS_RESULT>;
 /**
  * What the dialog starts on, and what a burn-in applies when *Confirm before redacting* is off — ONE definition, so
  * the choices a person would have been shown are exactly the ones applied without asking. The page in front of them,
- * a solid cover, the covered image pixels removed, and the title removed with the rest (ADR-0079: removal is the side
- * that cannot leak).
+ * a solid cover, the covered image pixels removed, and the title and every bookmark removed with the rest (ADR-0079,
+ * ADR-0163: removal is the side that cannot leak).
  *
  * **`'all'` is the third reader's scope**: *Apply* in the pending-redactions question (`pendingRedactions.ts`) answers a
  * count of the whole document's marks, so it burns in every one of them — with these same choices, never a second set.
  */
 export function applyRedactionsDefaults(scope: number | 'all'): ApplyRedactionsAnswer {
-  return { pages: scope === 'all' ? 'all' : [scope], cover: 'solid', images: 'pixels', keepTitle: false };
+  return { pages: scope === 'all' ? 'all' : [scope], cover: 'solid', images: 'pixels', keepTitle: false, keepBookmarks: false };
 }
 
 export const APPLY_REDACTIONS_DIALOG = declareDialog({

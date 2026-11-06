@@ -5100,7 +5100,7 @@ describe('Settings › Saving › Confirm before redacting (Part F)', () => {
       if (confirmOff) {
         expect(dialog, 'no confirmation when it is off').toBeNull();
         expect(executed.map((call) => call.params)).toStrictEqual([
-          { docId: DOC, command: { kind: 'applyRedactions', pages: [0], cover: 'solid', images: 'pixels', keepTitle: false } },
+          { docId: DOC, command: { kind: 'applyRedactions', pages: [0], cover: 'solid', images: 'pixels', keepTitle: false, keepBookmarks: false } },
         ]);
       } else {
         expect(dialog, 'the confirmation, by default').not.toBeNull();

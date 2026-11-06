@@ -21,7 +21,8 @@ Redaction removes content from the document itself, not just covers it. It happe
    - **Apply to**: **Page …** or **Every page**;
    - **Leave behind**: **A filled box** or **Nothing**;
    - **Images under a mark**: **Blank only the covered part** or **Remove the whole image**;
-   - whether to **Keep the document's title** (off by default).
+   - whether to **Keep the document's title** (off by default);
+   - whether to **Keep bookmarks on pages that aren't redacted** (off by default).
 5. Choose **Apply redactions**, then save.
 
 ![The Apply redactions window with its choices and warning](screenshot:redact-content-1)
@@ -30,7 +31,9 @@ Redaction removes content from the document itself, not just covers it. It happe
 
 - Nothing is removed until you choose **Apply redactions**. Marks alone remove nothing. An applied redaction is a solid box, so a page never shows a mark and a finished redaction the same way.
 - If you save, close, export, print or send a document that still has marks, Monstera asks whether to apply them first. **Apply** removes what every mark covers, on every page, with a filled box, and then goes on; the middle button, such as **Save without applying**, goes on and keeps the marks as marks; **Cancel** does neither.
-- Applying removes the text, pictures and drawings under the marks, plus any comments and form fields there. The document's bookmarks, author, subject and other properties are removed too. A bookmark's name can itself spell what you are redacting, so they are always removed. Links within the document keep working, but the hidden names they jump to are replaced with plain ones, for the same reason.
+- Applying removes the text, pictures and drawings under the marks, plus any comments and form fields there. Everything else on the page stays. Gradients, patterns and transparency effects that reach under a mark can stay in the file, but nothing of them shows there.
+- The document's author, subject and other properties are removed too, and so are its bookmarks, unless you tick **Keep bookmarks on pages that aren't redacted**. Then a bookmark stays only if it goes to a page in this document that nothing is redacted on. Bookmarks on redacted pages are always removed, and so are bookmarks that go to a web page or to another file. A bookmark's name can still show what you are removing, even on another page, which is why keeping them is off by default.
+- Links within the document keep working, but the hidden names they jump to are replaced with plain ones, because a name can spell what you are redacting too.
 - A title can itself contain what you are redacting, which is why keeping it is off by default.
 - The only way back is **Undo**, while the document is still open.
 - Saving after a redaction keeps no backup copy, because a backup of the previous file would still hold what you removed. The same save permanently deletes the older backups Monstera made of the file and Monstera's own undo copies of the document, and the message after saving says so. They do not go to the Recycle Bin, and Undo can no longer go back past this point. A file beside the document that is named like a backup but that Monstera did not make is never deleted. Monstera names it in **Some older copies were kept**, so you can delete it yourself.

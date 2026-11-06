@@ -8,6 +8,7 @@ import { pruneEmptyFields } from './formFields.js';
 import { withDocument, withDocumentRemoving } from './mupdfWriter.js';
 import { redraw } from './pageAnnotations.js';
 import { type PageScope, pagesOf } from './pageScope.js';
+import { keepUnredactedBookmarks } from './redactionOutline.js';
 import { glyphLinesOf, heldToTheirLines } from './redactionQuads.js';
 
 /**
@@ -231,7 +232,8 @@ function contentReads(page: mupdf.PDFObject): ContentReads {
  *   copying nothing, a tag none of whose content it wrote, so a list is reached through the dictionaries read before
  *   the filter as well as after. Those are now read only by other pages, so a copy kept for them kept the removed
  *   text in the file; another page that reads the same list loses its alternates too, which is the stated cost.
- * - **`/PieceInfo`**, the page's and the catalogue's, and **the outline**, which no region maps to.
+ * - **`/PieceInfo`**, the page's and the catalogue's. The outline, which no region maps to, is the caller's: it goes
+ *   whole unless the person keeps the bookmarks on untouched pages ({@link keepUnredactedBookmarks}).
  */
 function removeOtherCopies(document: mupdf.PDFDocument, burned: readonly BurnedPage[], deleted: ReadonlySet<number>): void {
   const root = document.getTrailer().get('Root');
@@ -273,8 +275,6 @@ function removeOtherCopies(document: mupdf.PDFDocument, burned: readonly BurnedP
     }
   }
   root.delete('PieceInfo');
-  root.delete('Outlines');
-  if (String(root.get('PageMode')) === '/UseOutlines') root.delete('PageMode');
 }
 
 /**
@@ -486,6 +486,8 @@ function rectOfQuad(quad: mupdf.Quad): mupdf.Rect {
 export const applyApplyRedactions: Apply<'mupdf', 'applyRedactions'> = (session, command) =>
   withDocumentRemoving(session, (document) => {
     const burnedPages: BurnedPage[] = [];
+    // THE PAGES THIS BURN-IN REDACTS: each scoped page holding a mark, which is what a kept bookmark must not point at.
+    const redacted = new Set<number>();
     const deleted = new Set<number>();
     for (const index of scopedPages(document, command.pages)) {
       const page = document.loadPage(index);
@@ -493,6 +495,7 @@ export const applyApplyRedactions: Apply<'mupdf', 'applyRedactions'> = (session,
       // `applyRedactions` on a page with no `/Redact` rewrites its content
       // stream for no reason, which on a document-wide pass is every page.
       if (redactMarksOn(page) === 0) continue;
+      redacted.add(index);
       removeCoveredObjects(document, page, deleted);
       const pageObject = page.getObject();
       const before = contentReads(pageObject);
@@ -507,6 +510,14 @@ export const applyApplyRedactions: Apply<'mupdf', 'applyRedactions'> = (session,
     }
     if (burnedPages.length > 0) {
       removeOtherCopies(document, burnedPages, deleted);
+      // THE OUTLINE, whole, unless the person asked to keep the bookmarks on pages left untouched and one is left
+      // (ADR-0163's correction of 2026-11-06). BEFORE the renaming, so MuPDF resolves each named destination by the
+      // name the outline still spells; a kept bookmark's name is then renamed with every other reference to it.
+      const root = document.getTrailer().get('Root');
+      if (!command.keepBookmarks || !keepUnredactedBookmarks(document, redacted)) {
+        root.delete('Outlines');
+        if (String(root.get('PageMode')) === '/UseOutlines') root.delete('PageMode');
+      }
       renameDestinations(document);
       // READ BEFORE THE DELETE, and only when it is wanted: `/Title` has to come
       // out of the dictionary this is about to remove.

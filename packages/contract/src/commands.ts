@@ -4918,6 +4918,15 @@ export const applyRedactionsSchema = z.object({
    * checkbox is off, and says a title can itself contain what was redacted.
    */
   keepTitle: z.boolean(),
+  /**
+   * Keep the bookmarks whose destination is a page this burn-in redacts nothing on (ADR-0163's correction of
+   * 2026-11-06, the owner reversing *no option to keep them*). `false` removes the whole outline, as every burn-in did
+   * before.
+   *
+   * **Required, for `keepTitle`'s reason**: the safe side is removal, so absence must never mean *keep*. Every caller
+   * spells it out; the prompt on save, close, export, print or send sends `false`.
+   */
+  keepBookmarks: z.boolean(),
 }).strict();
 
 /**

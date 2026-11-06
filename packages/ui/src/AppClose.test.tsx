@@ -397,7 +397,7 @@ describe('a tab’s × on a document carrying marks nobody applied (item N1)', (
     expect(called(sent, 'document.execute')).toStrictEqual([
       {
         docId: SECOND,
-        command: { kind: 'applyRedactions', pages: 'all', cover: 'solid', images: 'pixels', keepTitle: false },
+        command: { kind: 'applyRedactions', pages: 'all', cover: 'solid', images: 'pixels', keepTitle: false, keepBookmarks: false },
       },
     ]);
     // AND NOTHING CLOSED YET: the burn-in is an unsaved change, so the close asks about it.

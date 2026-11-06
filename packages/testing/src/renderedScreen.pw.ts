@@ -4874,6 +4874,7 @@ for (const look of LOOKS) {
       cover: 'solid',
       images: 'pixels',
       keepTitle: false,
+      keepBookmarks: false,
     });
   });
 }

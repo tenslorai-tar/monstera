@@ -81,6 +81,7 @@ async function burnIn(bytes: Uint8Array, box: Box, keepTitle = false): Promise<U
       cover: 'solid',
       images: 'pixels',
       keepTitle,
+      keepBookmarks: false,
     });
     return await mupdfWriter.serialise(session);
   } finally {

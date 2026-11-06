@@ -563,6 +563,50 @@ describe('CommandBus — a removal is recorded on the DOCUMENT', () => {
     }
   });
 
+  it('KEEP BOOKMARKS (ADR-0163, 2026-11-06): undo restores the checkpoint, which holds the outline the burn-in pruned', async () => {
+    // TWO PAGES, a bookmark to each, and a redact mark on the first: the burn-in keeps one bookmark and removes one.
+    const outlined = await PDFDocument.create();
+    const pages = [outlined.addPage([300, 300]), outlined.addPage([300, 300])];
+    const root = outlined.context.nextRef();
+    const [one, two] = [outlined.context.nextRef(), outlined.context.nextRef()];
+    const target = (at: number): PDFRef => pages[at]?.ref ?? root;
+    outlined.context.assign(one, outlined.context.obj({ Title: PDFString.of('Secret plan'), Parent: root, Next: two, Dest: [target(0), PDFName.of('Fit')] }));
+    outlined.context.assign(two, outlined.context.obj({ Title: PDFString.of('Kept'), Parent: root, Prev: one, Dest: [target(1), PDFName.of('Fit')] }));
+    outlined.context.assign(root, outlined.context.obj({ Type: 'Outlines', First: one, Last: two, Count: 2 }));
+    outlined.catalog.set(PDFName.of('Outlines'), root);
+    const session = await mupdfWriter.open(await outlined.save({ useObjectStreams: false }));
+    const bus = new CommandBus({ mupdf: localMupdfWriter });
+    const context = contextStub(true);
+    const restoring = restoreStub();
+    const titles = (bytes: Uint8Array): (string | undefined)[] => {
+      const document = mupdf.PDFDocument.openDocument(bytes, 'application/pdf');
+      try {
+        return (document.loadOutline() ?? []).map((item) => item.title);
+      } finally {
+        document.destroy();
+      }
+    };
+    try {
+      await applyAddAnnotation(session, {
+        kind: 'addAnnotation',
+        page: 0,
+        stamp: { author: 'A. Tester', created: '2026-11-06T09:00:00.000Z' },
+        annotation: { type: 'redact', over: 'region', rect: { x0: 40, y0: 40, x1: 120, y1: 120 }, colour: [0.85, 0.15, 0.15], opacity: 1 },
+      });
+      const burn = { kind: 'applyRedactions', pages: 'all', cover: 'solid', images: 'pixels', keepTitle: false, keepBookmarks: true } as const;
+      await bus.execute({ mupdf: session }, context, burn, showingInputs(session));
+      // THE BURN-IN PRUNED IT, so the undo below has something to take back.
+      expect(titles(await mupdfWriter.serialise(session))).toStrictEqual(['Kept']);
+      await bus.undo({ mupdf: session }, context, restoring.restore, showingInputs(session));
+      expect(restoring.calls()).toHaveLength(1);
+      const restored = context.written().at(-1)?.bytes.path;
+      if (restored === undefined) throw new Error('the undo restored no checkpoint');
+      expect(titles(await readFile(restored))).toStrictEqual(['Secret plan', 'Kept']);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
   it('UNDO records nothing and REDO records it again: an undone removal still left the file holding what it removed', async () => {
     const bus = new CommandBus({ mupdf: localMupdfWriter });
     const session = await mupdfWriter.open(flat);

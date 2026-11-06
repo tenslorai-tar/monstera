@@ -67,7 +67,7 @@ async function wordsAfter(session: MupdfSession): Promise<string[]> {
 const wordsOf = (at: number): string[] => (LINES[at] ?? '').split(' ');
 
 async function burnIn(session: MupdfSession): Promise<void> {
-  await applyApplyRedactions(session, { kind: 'applyRedactions', pages: [0], cover: 'solid', images: 'pixels', keepTitle: false });
+  await applyApplyRedactions(session, { kind: 'applyRedactions', pages: [0], cover: 'solid', images: 'pixels', keepTitle: false, keepBookmarks: false });
 }
 
 describe('a redaction of one line of closely set text (2a, F-R1)', () => {

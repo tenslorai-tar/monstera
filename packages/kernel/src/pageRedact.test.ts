@@ -101,6 +101,7 @@ describe('applyRedactions', () => {
         cover: 'solid',
         images: 'pixels',
         keepTitle: false,
+        keepBookmarks: false,
       });
 
       const [first] = await readBack(session);
@@ -145,6 +146,7 @@ describe('applyRedactions', () => {
         cover: 'solid',
         images: 'pixels',
         keepTitle: false,
+        keepBookmarks: false,
       });
 
       const [first] = await readBack(session);
@@ -183,6 +185,7 @@ describe('applyRedactions', () => {
         cover: 'solid',
         images: 'pixels',
         keepTitle: false,
+        keepBookmarks: false,
       });
 
       const [first, second] = await readBack(session);
@@ -204,6 +207,7 @@ describe('applyRedactions', () => {
         cover: 'solid',
         images: 'pixels',
         keepTitle: false,
+        keepBookmarks: false,
       });
 
       const [first, second] = await readBack(session);
@@ -226,6 +230,7 @@ describe('applyRedactions', () => {
           cover: 'solid',
           images: 'pixels',
           keepTitle: false,
+        keepBookmarks: false,
         }),
       ).rejects.toThrow(/Page 7 is outside this document, which has 2 page/u);
     } finally {
@@ -247,6 +252,7 @@ describe('applyRedactions', () => {
         cover: 'solid',
         images: 'pixels',
         keepTitle: false,
+        keepBookmarks: false,
       });
       const bytes = await mupdfWriter.serialise(session);
       const document = mupdf.PDFDocument.openDocument(bytes, 'application/pdf');
@@ -284,6 +290,7 @@ describe('applyRedactions', () => {
         cover: 'solid',
         images: 'pixels',
         keepTitle: false,
+        keepBookmarks: false,
       });
       const [first, second] = await readBack(session);
       expect(first).not.toContain('91000');
@@ -315,6 +322,7 @@ describe('applyRedactions', () => {
         cover: 'solid',
         images: 'pixels',
         keepTitle: false,
+        keepBookmarks: false,
       });
       const [first, second] = await readBack(session);
       expect(first).toContain(SECRET);
@@ -341,6 +349,7 @@ describe('applyRedactions', () => {
         cover: 'solid',
         images: 'pixels',
         keepTitle: false,
+        keepBookmarks: false,
       });
       const [first] = await readBack(session);
       expect(first).not.toContain('Salary');
@@ -505,6 +514,7 @@ describe('a mark is not a redaction until it is applied (item N1)', () => {
         cover: 'solid',
         images: 'pixels',
         keepTitle: false,
+        keepBookmarks: false,
       });
       const { text, marks } = await reopened(session);
       // EVERY WORD, not the phrase: a burn-in that left "91000" and took "Salary" would pass a phrase check.

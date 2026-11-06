@@ -5766,6 +5766,8 @@ export function applyRedactionsCommand(
         // call site would be a second place deciding what happens to the title,
         // and it would go on compiling the day the dialog stopped sending it.
         keepTitle: answer.keepTitle,
+        // AND THE BOOKMARKS, for the same reason (ADR-0163's correction of 2026-11-06).
+        keepBookmarks: answer.keepBookmarks,
       });
     },
   };
