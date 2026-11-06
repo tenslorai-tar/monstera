@@ -892,6 +892,46 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-11-06 — Placed marks in the real application: two faults the writer's cases could not reach
+
+Everything here was run in the application on the merged build, against the release's code as the control, except where
+it says read.
+
+**A placed mark could not be selected after a Save** (`a5a60c4e`). ADR-0287's Decision 3 says it moves until the
+document closes. After one Save a click gave 0 handles on the merged build and 8 on the release. MuPDF's save syncs open
+pages to `/Annots` while engraving has the marks out of it, and the restore did not sync again. The writer's case read
+the session by serialising it, and a save reads `/Annots`, so it was green. ADR-0287's correction has the mechanism.
+
+**A tool chosen just after placing a signature was dropped** (`6e09f558`). A placed picture or barcode that followed
+never landed, twice on the merged build; on the release, Image un-pressed itself in 1 of 3 rounds, so this is older than
+this work. The handover to Select waited for a read of the marks and then ignored what had been chosen meanwhile.
+
+**The renderer crash carried for a day was this seat's own harness.** Git Bash's `timeout` ended the app's child
+processes with exit 143, which logs as `render-process-gone reason=crashed` and writes no dump. An idle session died at
+44.2 s of a 45 s limit and 72.1 s of a 75 s one, and ran 108 s with no limit. The scripts reached their limits because
+they waited on an attribute that does not exist. A first control, `timeout 25`, ended during startup and looked like a
+refutation.
+
+**One edit on a 40 MB signed document, release against merged**, a rectangle from the mouse's release to nothing in
+flight, 15 edits a run, four alternating pairs: medians 2063, 1063, 1127, 1228 ms and 1258, 1456, 964, 957 ms. The
+spread is wider than the difference, so no cost of the rebase can be read from these. In the kernel the whole appended
+save took a median 140 ms, one plain open of its output 22 ms, and memory after a forced collection stayed at 166 MB on
+both builds across 20 saves.
+
+**Two routes ADR-0287's table leaves out.** Merge and Insert from PDF of a file holding a mark as a layer: the saved file
+draws it by the page. A recovery after a killed process: Reopen opens the file on disk, because no recovery copy exists,
+so a saved mark is part of the page and no longer moves, and a mark not yet saved is gone.
+
+**The audit's remaining items.** EEEEEEEEE-5: `checkLocal.proof.mjs` runs on Windows as well as Linux, read from Guards'
+steps at `1602ff74`, both success, so the finding's premise was wrong; its rename has not been seen to raise EPERM, and
+one run does not show it cannot. EEEEEEEEE-2's remainder: `60d4af7f`, red with the refusal removed.
+
+**One thing not explained.** One recovery run read 472,713 bytes and no marks from a file the same steps wrote at 58,296
+bytes either side. Its first placement took 11.2 s where others took 1 to 2 s, which explains why a later picture was in
+it and not the size. The file was overwritten by the next run, and it did not happen again.
+
+---
+
 ## 2026-11-06 — What the owner's page and a phone found: bars, fonts, links, a second edit, and a save that names itself
 
 All run on this machine on the branch's build unless a line says otherwise.
