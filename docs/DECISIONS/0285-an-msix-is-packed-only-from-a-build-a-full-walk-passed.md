@@ -126,3 +126,25 @@ rows, about 1½ hours, including fixes that sit inside one step's own entry and 
 Controls (`proof:walkrecord`): a step whose own entry changed is refused until it is walked again; a step whose entries
 did not change keeps its pass when another step's did; a change to the shared code refuses every kept row; a change to a
 helper two entries call refuses both, as shared code; and a step table read for another row's command throws.
+
+## Correction, 2026-11-06: the correction above is not built, and a narrower walk cannot clear a full walk's failure
+
+**The correction of 2026-11-04 states as present what is only owed (the stage audit's EEEEEEEEE-1).** Only the guard exists
+(`walkSteps.mjs`, whose header says so): no walk declares a `stepTable`, the record does not parse one, reports carry no
+per-step digest, and of the controls it lists only the last exists. What decides today is the second of this record's
+rules: a report counts while the build's digest and the whole walk program's digest are unchanged. Reading it as built
+would be reading a rule that protects nothing.
+
+**A row used to take the newest report across every walk, so a narrower walk's pass replaced a full walk's failure** on the
+same build (the stage audit's EEEEEEEEE-3), and `newFeaturesWalk`'s rows cover `text.edit`, `document.sanitize` and the fits.
+That narrowed the owner's *a full walk of every tool* without anyone deciding it.
+
+**The owner's ruling, 2026-11-06:** a full walk's failure stands until that same step passes again in the full walk on that
+build. A narrower walk's pass cannot replace it. It does not mean walking every row again after every failure: the full
+walk's `--only` runs what a fix reaches, and a report from it is the full walk's, by its program.
+
+So `rowsFrom` asks one thing more. **The full walk is `every-tool`, by the name its program gives its reports.** Where the
+newest report covering a row failed it, the row is failed, as before. Where it passed, the row is failed all the same if the
+newest `every-tool` report covering that row failed it, and the row names that report. A newer `every-tool` pass clears it,
+and a failure on another build is no report of this one. Reasons a narrower walk gives for not walking a row cannot clear
+it either. Refusal and control: `proof:walkrecord`.
