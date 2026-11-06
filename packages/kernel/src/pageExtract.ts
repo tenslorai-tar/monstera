@@ -3,6 +3,7 @@ import type { PageSet } from '@monstera/contract/host';
 import type { PDFDocument, PDFGraftMap, PDFObject } from './mupdfRaw.js';
 
 import type { ByteImage, MupdfSession } from './engineSeam.js';
+import { engraveForGood } from './engraveOnSave.js';
 import { keepFieldsOnPages } from './formFields.js';
 import { bufferBytes, newDocument, withDocument } from './mupdfWriter.js';
 import { graftingWithoutPageTree } from './pageGraft.js';
@@ -98,7 +99,7 @@ const INHERITABLE = ['Resources', 'MediaBox', 'CropBox', 'Rotate'] as const;
  *   one run (JOURNAL, *No document-size refusals*; it was a list capped at 4,096)
  * @throws RangeError for an empty set or a page the document does not have
  */
-export function extractPages(session: MupdfSession, set: PageSet): Promise<ByteImage> {
+export function extractPages(session: MupdfSession, set: PageSet, marks: 'as-held' | 'engraved'): Promise<ByteImage> {
   return withDocument(session, (source) => {
     const count = source.countPages();
     // REFUSED, both of them. An empty extract writes a PDF with no pages, which
@@ -137,6 +138,9 @@ export function extractPages(session: MupdfSession, set: PageSet): Promise<ByteI
     // destination naming a page not taken grafted that page in as an object of its own, content and all.
     keepFieldsOnPages(out);
     releasePagesOutsideTree(out);
+    // A FILE A PERSON KEEPS draws Monstera's placed signatures, pictures and barcodes by the page (ADR-0287). For good:
+    // this document is the extraction's own, and nothing holds it after this save.
+    if (marks === 'engraved') engraveForGood(out);
     // COLLECTED, as every full save is (ADR-0151): what the two steps above unlinked is not written.
     //
     // THE CALLER'S BYTES, never MuPDF's buffer, whose native memory this function

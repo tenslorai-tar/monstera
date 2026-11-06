@@ -208,7 +208,7 @@ import {
   remoteMupdfWriter,
   serialiseIntoFile,
   type StagedImage,
-  type StagedOutline,
+  type Staging,
   siblingNames,
   type CloudClient,
   writeStreamedDocument,
@@ -1328,12 +1328,21 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
   // THE SAME FLUSH, STAGED: the bytes stay where the host wrote them until they are placed, so a save, a copy and a
   // refreshed image never hold them in `main` (ADR-0121 Decision 2 and its addendum). `currentBytes`' check, the
   // same writer's session.
-  const stagedBytesOf = (docId: DocId, sessions: DocumentSessions, outline: StagedOutline): Promise<StagedImage> => {
+  const stagedBytesOf = (docId: DocId, sessions: DocumentSessions, staging: Staging): Promise<StagedImage> => {
     const session = sessions.mupdf;
     if (engineHost.writers.mupdf === undefined || session === undefined) {
       throw new MissingSessionError(docId, 'mupdf');
     }
-    return engineHost.stage(session, outline);
+    return engineHost.stage(session, staging);
+  };
+  // `currentBytes` as a file a person keeps (ADR-0287): what Email, Export PDF/A, Text to curves and Optimize start from.
+  const deliveredBytes = (docId: DocId, sessions: DocumentSessions): Promise<ByteImage> => {
+    const writer = engineHost.writers.mupdf;
+    const session = sessions.mupdf;
+    if (writer === undefined || session === undefined) {
+      throw new MissingSessionError(docId, 'mupdf');
+    }
+    return writer.serialise(session, { marks: 'engraved' });
   };
 
   // The real supervisor rather than two inline arrows: a stubbed lookup and a
@@ -1397,6 +1406,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
       },
       flush: currentBytes,
+      deliver: deliveredBytes,
       stage: stagedBytesOf,
       // WHICH BACKUPS MONSTERA MADE, by the kernel's one identity reader, and deleted with the surface's own `rm`, which
       // is permanent: a removal's save must not leave its copies in the recycle bin (ADR-0139).
@@ -2012,10 +2022,10 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // a SECOND document's bytes rather than answering a question about this
     // one, and that those bytes are built in the host because `extractPages`
     // reaches MuPDF (invariant 20).
-    extract: (docId, sessions, pages) => {
+    extract: (docId, sessions, pages, marks) => {
       const session = sessions.mupdf;
       if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
-      return engineHost.extract(session, pages);
+      return engineHost.extract(session, pages, marks);
     },
     // THE SNAPSHOT, composed the same way and with a second reason: the PNG is
     // built in the host because rasterising reaches MuPDF, and it is written
@@ -2645,7 +2655,7 @@ function engineSessionOpener(
    * The session's bytes, left in the host's output directory until placed or discarded — a save's flush, so they
    * never pass through `main` (ADR-0121's addendum). On this surface for {@link extract}'s reason.
    */
-  readonly stage: (session: MupdfSession, outline: StagedOutline) => Promise<StagedImage>;
+  readonly stage: (session: MupdfSession, staging: Staging) => Promise<StagedImage>;
   /** The document as a Word package, composed by the host and left staged for `main` to move (ADR-0072). */
   readonly word: (session: MupdfSession, mode: WordMode, pages: PageSet) => Promise<StagedImage>;
   /** Rasterises a region of a page. On this surface for {@link extract}'s reason. */
@@ -3287,7 +3297,7 @@ function engineSessionOpener(
    * and for the same reason: all three need the granted areas, and a second
    * factory would reach them from a second place.
    */
-  const extractThroughHost: HostExtract = (session, pages) => {
+  const extractThroughHost: HostExtract = (session, pages, marks) => {
     if (writer === null) {
       throw new Error(
         'An extract reached the engine with no host writer registered. A session was resolved ' +
@@ -3295,7 +3305,7 @@ function engineSessionOpener(
           'connection have diverged.',
       );
     }
-    return writer.extract(session, pages);
+    return writer.extract(session, pages, marks);
   };
 
   /** A page's forms as pages (ADR-0269), and {@link extractThroughHost}'s reason word for word. */
@@ -3868,7 +3878,7 @@ function engineSessionOpener(
     extract: extractThroughHost,
     formPages: formPagesThroughHost,
     // THE SAVE'S FLUSH, staged in the host's output directory and moved into place (ADR-0121's addendum).
-    stage: (session, outline) => liveWriter().stage(session, outline),
+    stage: (session, staging) => liveWriter().stage(session, staging),
     // THE WORD EXPORT, `stage`'s route: composed in the host, moved into place (ADR-0072's amendment of 2026-10-01).
     word: (session, mode, pages) => liveWriter().word(session, mode, pages),
     snapshot: snapshotThroughHost,

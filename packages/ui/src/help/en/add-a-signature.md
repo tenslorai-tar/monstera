@@ -30,7 +30,9 @@ Three signatures, side by side: **Signature** (Comment) is only a picture of you
 - The signature appears upright even on turned pages.
 - There are fifteen styles, most of them handwriting. If a style cannot write a letter of your name, Monstera names the letter as you type, and the list marks each style that cannot. The styles write Latin letters, and some write Cyrillic and Greek too; a name in Arabic, Hebrew, Chinese, Japanese or Korean can be drawn or uploaded instead.
 - A typed signature is drawn into the document as the shapes of its letters, so no font file is added to it.
-- Undo with **Ctrl+Z**. To remove a signature later, select it and press **Delete**.
+- Undo with **Ctrl+Z**. To remove a signature before you close the document, select it and press **Delete**.
+- When you save, the signature is saved as part of the page, so every PDF app shows it, including phone apps that do not show comments or stamps. You can still move, resize or delete it until you close the document. After you open the saved file again, it is part of the page and cannot be selected or moved; to take it away, use **Redact**.
+- In a document that already has a certificate signature, Monstera keeps the signature as a separate item when it saves, so that the certificate signature stays valid.
 
 <!--
 Screenshots to capture:

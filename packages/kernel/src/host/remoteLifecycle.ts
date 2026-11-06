@@ -1,6 +1,6 @@
 import type { AnnotationDataFormat, ClientApi, EncodedFormDataFormat, FormPath, FormsLeftOut, PageSet, WordMode } from '@monstera/contract';
 
-import type { ByteImage, LockedReason, MupdfSession } from '../engineSeam.js';
+import type { ByteImage, LockedReason, MupdfSession, SerialiseOptions } from '../engineSeam.js';
 import type { PageImageRequest } from '../pageImages.js';
 import type { RegionRequest, RegionSnapshot } from '../pageSnapshot.js';
 import { StructureTooDeep } from '../saveDepth.js';
@@ -101,6 +101,24 @@ export class EngineSerialiseFailed extends Error {
 
 /** Whether a staged copy keeps the document's outline or leaves it out (*Save a copy without bookmarks*). */
 export type StagedOutline = 'kept' | 'left-out';
+
+/**
+ * Whether a staged copy's placed signatures, pictures and barcodes are drawn by the page (`engraved`, a file a person
+ * keeps) or left as the session holds them (`as-held`, a copy the application reads back itself), ADR-0287.
+ */
+export type StagedMarks = 'as-held' | 'engraved';
+
+/** What a staged copy is: both halves REQUIRED, so no caller writes a file without saying which (ADR-0287 Decision 6). */
+export interface Staging {
+  readonly outline: StagedOutline;
+  readonly marks: StagedMarks;
+}
+
+/** The staging an undo checkpoint, a refreshed image and a host's own copy take: the session exactly as held. */
+export const AS_HELD: Staging = { outline: 'kept', marks: 'as-held' };
+
+/** The staging a file a person keeps takes, with its outline. */
+export const KEPT_FILE: Staging = { outline: 'kept', marks: 'engraved' };
 
 /**
  * The host's refusal of a serialise as `main` throws it: the document's depth as the same {@link StructureTooDeep} a
@@ -302,8 +320,8 @@ export interface SessionAreaSurface {
  * only be implemented the one way ADR-0023 Decision 14 had already refused.
  */
 export interface RemoteMupdfLifecycle {
-  /** The canonical bytes for the session's current state. */
-  readonly serialise: (session: MupdfSession) => Promise<ByteImage>;
+  /** The canonical bytes for the session's current state; with `marks: 'engraved'`, a file a person keeps (ADR-0287). */
+  readonly serialise: (session: MupdfSession, options?: SerialiseOptions) => Promise<ByteImage>;
   /**
    * The session's current bytes at `destination`, moved there from the host's output and never read by `main`
    * (ADR-0121) — what a checkpoint is made from. The count is the host's, checked against the file that moved.
@@ -313,7 +331,7 @@ export interface RemoteMupdfLifecycle {
    * The session's current bytes, serialised by the host and LEFT in its output directory until placed or discarded
    * (ADR-0121's addendum) — what a save flushes, so an engine failure is heard before the disk is touched.
    */
-  readonly stage: (session: MupdfSession, outline: StagedOutline) => Promise<StagedImage>;
+  readonly stage: (session: MupdfSession, staging: Staging) => Promise<StagedImage>;
   /**
    * The document as a Word file, composed by the host and LEFT in its output directory until placed or discarded —
    * {@link stage}'s shape, so `main` moves the package and never reads it (ADR-0072's amendment of 2026-10-01).
@@ -333,7 +351,7 @@ export interface RemoteMupdfLifecycle {
    * The source document is not modified; this produces a second document's
    * bytes and hands them to main, which writes them where the user chose.
    */
-  readonly extract: (session: MupdfSession, pages: PageSet) => Promise<ByteImage>;
+  readonly extract: (session: MupdfSession, pages: PageSet, marks: StagedMarks) => Promise<ByteImage>;
   /**
    * One page's form placements that show text, as a document of one page per placement and each placement's path
    * (ADR-0269), {@link extract}'s route: built in the host, taken from its output directory by count. A page with none
@@ -395,13 +413,14 @@ export function remoteMupdfLifecycle(
    * moves them and checks the count against what moved; discarding removes them if they were never placed — a whole
    * copy of the document where the contained host may read it, otherwise.
    */
-  const stage = async (session: MupdfSession, outline: StagedOutline): Promise<StagedImage> => {
+  const stage = async (session: MupdfSession, { outline, marks }: Staging): Promise<StagedImage> => {
     const area = sessions.areaFor(session);
     const into = areas.mintName();
     const answer = await client['engine/serialise']({
       session: sessions.handleFor(session),
       into,
       ...(outline === 'left-out' ? { outline } : {}),
+      ...(marks === 'engraved' ? { marks } : {}),
     });
     if (!answer.ok) throw serialiseRefusal(answer.error.code);
     const byteLength = answer.value.bytes;
@@ -416,19 +435,21 @@ export function remoteMupdfLifecycle(
   };
 
   return {
-    serialise: async (session) => {
+    serialise: async (session, options) => {
       const area = sessions.areaFor(session);
       const into = areas.mintName();
       const answer = await client['engine/serialise']({
         session: sessions.handleFor(session),
         into,
+        ...(options?.outline === undefined ? {} : { outline: options.outline }),
+        ...(options?.marks === undefined ? {} : { marks: options.marks }),
       });
       if (!answer.ok) throw serialiseRefusal(answer.error.code);
       return takeAnnounced(areas, area, into, answer.value.bytes);
     },
 
     // `serialise`'s dance with a MOVE where it reads, and the same count check against what moved.
-    stage: (session, outline) => stage(session, outline),
+    stage: (session, staging) => stage(session, staging),
 
     // `stage`'s dance with a different producer: the host composes the package into its output directory.
     word: async (session, mode, pages) => {
@@ -446,9 +467,10 @@ export function remoteMupdfLifecycle(
         discard: () => areas.removeOutput(area, into),
       };
     },
-    serialiseInto: async (session, destination) => placeStaged(await stage(session, 'kept'), destination),
+    // A CHECKPOINT IS THE SESSION AS HELD: undo rebuilds the session from it (ADR-0287's routes).
+    serialiseInto: async (session, destination) => placeStaged(await stage(session, AS_HELD), destination),
 
-    extract: async (session, pages) => {
+    extract: async (session, pages, marks) => {
       const area = sessions.areaFor(session);
       const into = areas.mintName();
       const answer = await client['engine/extract']({
@@ -456,6 +478,7 @@ export function remoteMupdfLifecycle(
         // COPIED, so the request holds its own array and not the caller's.
         pages: [...pages],
         into,
+        ...(marks === 'engraved' ? { marks } : {}),
       });
       if (!answer.ok) throw new EngineExtractFailed(answer.error.code);
       return takeAnnounced(areas, area, into, answer.value.bytes);

@@ -292,7 +292,7 @@ export type HostDuplicatesReader = (
  * `extractPages` in the host. It runs THERE rather than in main because it
  * reaches MuPDF, which invariant 20 keeps out of `main` (ADR-0026).
  */
-export type HostExtract = (session: MupdfSession, pages: PageSet) => Promise<ByteImage>;
+export type HostExtract = (session: MupdfSession, pages: PageSet, marks: 'as-held' | 'engraved') => Promise<ByteImage>;
 
 /**
  * One page's form placements that show text, as a document of one page per placement and each placement's path
@@ -874,11 +874,15 @@ export function createEngineHandlers({
       };
     },
 
-    'engine/serialise': async ({ session, into, outline }) => {
+    'engine/serialise': async ({ session, into, outline, marks }) => {
       const held = sessions.lookup(session);
       if (held === undefined) return gone;
       try {
-        const bytes = await writer.serialise(held.session, outline === undefined ? undefined : { outline });
+        // `marks: 'engraved'` for a file a person keeps (ADR-0287); absent, the session's bytes as held.
+        const bytes = await writer.serialise(held.session, {
+          ...(outline === undefined ? {} : { outline }),
+          ...(marks === undefined ? {} : { marks }),
+        });
         const written = await files.writeOutput(held.outputDirectory, into, bytes);
         return { ok: true, value: { bytes: written } };
       } catch (error) {
@@ -891,7 +895,7 @@ export function createEngineHandlers({
       }
     },
 
-    'engine/extract': async ({ session, pages, into }) => {
+    'engine/extract': async ({ session, pages, into, marks }) => {
       const held = sessions.lookup(session);
       if (held === undefined) return gone;
       try {
@@ -900,7 +904,7 @@ export function createEngineHandlers({
         // code out of `main`. The bytes it produces never cross the pipe —
         // they go into the granted output directory, exactly as a serialise's
         // do, and main reads the file.
-        const bytes = await extract(held.session, pages);
+        const bytes = await extract(held.session, pages, marks === 'engraved' ? 'engraved' : 'as-held');
         const written = await files.writeOutput(held.outputDirectory, into, bytes);
         return { ok: true, value: { bytes: written } };
       } catch (error) {
