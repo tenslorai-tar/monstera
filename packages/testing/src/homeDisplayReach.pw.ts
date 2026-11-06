@@ -9,9 +9,11 @@ import { openApp, openDocument } from './helpScreensHarness.js';
  */
 
 const FIVE = ['view.page-layout-single', 'view.page-layout-continuous', 'view.page-layout-pair', 'view.page-layout-facing', 'view.cover-page'];
+/** The three that stand after the layouts (the owner's decision of 2026-11-06), so a narrowing window folds them first. */
+const AFTER = ['view.toggle-split', 'view.toggle-dark-page', 'document.compare'];
 
 /** Where each command can be reached on the drawn ribbon now: its own button, a *More* holding it, or nowhere. */
-function reach(page: Page): Promise<Record<string, 'button' | 'more' | 'none'>> {
+function reach(page: Page, ids: readonly string[] = FIVE): Promise<Record<string, 'button' | 'more' | 'none'>> {
   return page.evaluate((ids) => {
     const inWindow = (element: Element): boolean => {
       const box = element.getBoundingClientRect();
@@ -25,7 +27,7 @@ function reach(page: Page): Promise<Record<string, 'button' | 'more' | 'none'>> 
       answer[id] = own ? 'button' : more ? 'more' : 'none';
     }
     return answer;
-  }, FIVE);
+  }, ids);
 }
 
 for (const width of [1920, 1280, 1024, 900, 760]) {
@@ -35,9 +37,11 @@ for (const width of [1920, 1280, 1024, 900, 760]) {
     await openDocument(page);
     await page.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: 'Home', exact: true }).click();
     await expect(page.locator('.m-ribbon__tools .m-ribbon__group').first()).toBeVisible();
-    const found = await reach(page);
+    const found = await reach(page, ['view.fit-width', 'view.fit-page', ...FIVE, ...AFTER]);
     test.info().annotations.push({ type: 'reach', description: JSON.stringify(found) });
-    expect(Object.values(found).filter((where) => where === 'none'), JSON.stringify(found)).toStrictEqual([]);
+    expect(FIVE.filter((id) => found[id] === 'none'), JSON.stringify(found)).toStrictEqual([]);
+    // THE FOLD TAKES THE GROUP'S END FIRST: while any layout is folded, none of the three after them is still a button.
+    if (FIVE.some((id) => found[id] === 'more')) expect(AFTER.filter((id) => found[id] === 'button'), JSON.stringify(found)).toStrictEqual([]);
   });
 }
 

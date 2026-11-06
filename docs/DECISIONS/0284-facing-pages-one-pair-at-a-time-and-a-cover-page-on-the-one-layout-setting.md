@@ -106,3 +106,23 @@ page* sit in **Home › Display**, after Compare, as small tools drawn in two co
 menu's entries stay. Because a section's menu in the menu bar is its ribbon section (ADR-0107), they also leave the
 menu bar's Tools menu; Home has no menu there, so the View menu is where the menu bar reaches them.
 `pageLayoutCommands.test.ts` holds the placement.
+
+## Correction, 2026-11-06 — between Fit page and Split view
+
+The owner approved moving the five on 2026-11-06 so they stay visible at smaller widths. *After Compare* above is
+superseded: they sit between Fit page (202) and Split view, at 210 to 214, and Split view, Dim pages and Compare move
+to 220, 222 and 224. A group folds from its end, so those three go into its More first.
+`pageLayoutCommands.test.ts` holds the order, and `homeDisplayReach.pw.ts` the fold.
+
+Read in the rendered app on Linux, Chromium 151, 2026-11-06 (`homeDisplayReach.pw.ts`):
+
+| window width | own buttons | in the group's More |
+|---|---|---|
+| 1920 | all ten | none |
+| 1280 | the fits and the five layouts | Split view, Dim pages, Compare |
+| 1024 | the fits, Single page, Continuous, Facing | Continuous facing, Show cover page, and the three |
+| 900 and 760 | the two fits | the five layouts and the three |
+
+Before this move, read the same way: at 1280 all five layouts were in More and Split view, Dim pages and Compare were
+own buttons; at 1024 Split view still was. That trade is the cost: those three are now in More from 1280 down. The old
+order fails the fold case at 1280 and 1024, which is its control.

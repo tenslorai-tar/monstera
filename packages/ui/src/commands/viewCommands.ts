@@ -114,8 +114,9 @@ const COVER_PAGE_ORDER = 24;
 
 /**
  * HOME › DISPLAY, the owner's decision of 2026-11-05 (ADR-0284's correction of that date): the Tools section had too
- * many items, and the layouts are a way of reading, beside the fits. After Compare (208), as small tools, so the five
- * draw as two columns, three and two (ADR-0194), beside the group's large buttons, and fold into its More first.
+ * many items, and the layouts are a way of reading, beside the fits. As small tools, so the five draw as two columns,
+ * three and two (ADR-0194). BETWEEN FIT PAGE (202) AND SPLIT VIEW (220), the owner's decision of 2026-11-06: a group
+ * folds from its end, so Split view, Dim pages and Compare (220, 222, 224) go into its More before the layouts do.
  */
 function onHome(order: number): Extract<Placement, { surface: 'ribbon' }> {
   return { surface: 'ribbon', section: 'home', group: GROUP_DISPLAY, order: 190 + order, size: 'small' };
@@ -264,7 +265,7 @@ export function toggleSplitViewCommand(deps: { readonly settings: SettingsStore 
       // SECONDARY IN TOOLS › DISPLAY: drawn on Home › Display and in View › Show (ADR-0107).
       { surface: 'ribbon', section: 'tools', group: GROUP_DISPLAY, order: 90, prominence: 'secondary', size: 'small' },
       // AND HOME › DISPLAY, v5-02's *Split View*.
-      { surface: 'ribbon', section: 'home', group: GROUP_DISPLAY, order: 204 },
+      { surface: 'ribbon', section: 'home', group: GROUP_DISPLAY, order: 220 },
       { surface: 'menu-bar', menu: 'view', group: 3, order: 40, caption: MENU_GROUP_SHOW },
     ],
     when: hasDocument,
@@ -343,7 +344,7 @@ export function toggleDarkPageCommand(deps: { readonly settings: SettingsStore }
       // SECONDARY IN TOOLS › DISPLAY: drawn on Home › Display and in View › Show (ADR-0107).
       { surface: 'ribbon', section: 'tools', group: GROUP_DISPLAY, order: 70, prominence: 'secondary', size: 'small' },
       // AND HOME › DISPLAY as v5-02's *Dim pages*: this is the command that dims a page for a dark room.
-      { surface: 'ribbon', section: 'home', group: GROUP_DISPLAY, order: 206 },
+      { surface: 'ribbon', section: 'home', group: GROUP_DISPLAY, order: 222 },
       { surface: 'menu-bar', menu: 'view', group: 3, order: 50, caption: MENU_GROUP_SHOW },
     ],
     when: hasDocument,

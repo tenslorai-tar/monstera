@@ -1,3 +1,4 @@
+import type { ContractClient } from '@monstera/contract';
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -9,7 +10,9 @@ import { ALL_SETTINGS } from '../settings/all.js';
 import { COVER_PAGE_SETTING, PAGE_LAYOUT_SETTING } from '../settings/viewing.js';
 import { SettingsStore } from '../settingsStore.js';
 import { menuBarModel, ribbonModel } from '../surfaces/projections.js';
-import { pageLayoutCommands } from './viewCommands.js';
+import { compareDocumentsCommand } from './compareDocuments.js';
+import { fitCommand } from './documentCommands.js';
+import { pageLayoutCommands, toggleDarkPageCommand, toggleRulersCommand, toggleSplitViewCommand } from './viewCommands.js';
 
 /** The page layout's commands and the one setting they write (ADR-0284 Decision 5). */
 
@@ -92,6 +95,38 @@ describe('the page layout, reached where a person reads (ADR-0284)', () => {
     expect(inGroup('tools')).toStrictEqual([]);
     const sizes = sections.flatMap((each) => each.groups.flatMap((group) => group.entries.map((entry) => entry.size)));
     expect(new Set(sizes)).toStrictEqual(new Set(['small']));
+  });
+
+  it('on Home › Display they stand between Fit page and Split view, so Split view, Dim pages and Compare fold first (the owner, 2026-11-06)', () => {
+    const settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
+    const onZoom = (): void => undefined;
+    const registry = new CommandRegistry([
+      // DELIBERATELY NOT IN DRAWING ORDER: the order asserted is the placements', not this list's.
+      compareDocumentsCommand({ client: {} as ContractClient, show: () => undefined }),
+      toggleDarkPageCommand({ settings }),
+      ...pageLayoutCommands({ settings }),
+      toggleSplitViewCommand({ settings }),
+      // Tools › Display's one primary, which the registry requires of a group these commands are secondary in.
+      toggleRulersCommand({ settings }),
+      fitCommand('page', { onZoom }),
+      fitCommand('width', { onZoom }),
+    ]);
+    const home = ribbonModel(registry, context)
+      .find((each) => each.section === 'home')
+      ?.groups.filter((group) => group.group === GROUP_DISPLAY)
+      .flatMap((group) => group.entries.map((entry) => entry.command.id));
+    expect(home).toStrictEqual([
+      'view.fit-width',
+      'view.fit-page',
+      'view.page-layout-single',
+      'view.page-layout-continuous',
+      'view.page-layout-pair',
+      'view.page-layout-facing',
+      'view.cover-page',
+      'view.toggle-split',
+      'view.toggle-dark-page',
+      'document.compare',
+    ]);
   });
 
   it('CONTROL: as installed, Continuous is the one checked, as every document has always opened', () => {

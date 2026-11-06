@@ -91,7 +91,7 @@ describe('Review › Compare opens Side by Side (ADR-0131)', () => {
   it('sits on Review › Compare and last on Home › Display, as v5-02 draws it', () => {
     expect(recorded().command.placements).toStrictEqual([
       { surface: 'ribbon', section: 'review', group: GROUP_COMPARE, order: 10 },
-      { surface: 'ribbon', section: 'home', group: GROUP_DISPLAY, order: 208 },
+      { surface: 'ribbon', section: 'home', group: GROUP_DISPLAY, order: 224 },
     ]);
   });
 });

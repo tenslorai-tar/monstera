@@ -37,7 +37,7 @@ export function compareDocumentsCommand(deps: {
     placements: [
       { surface: 'ribbon', section: 'review', group: GROUP_COMPARE, order: 10 },
       // AND HOME › DISPLAY, last, as v5-02 draws *Compare*: two documents side by side is a way of viewing.
-      { surface: 'ribbon', section: 'home', group: GROUP_DISPLAY, order: 208 },
+      { surface: 'ribbon', section: 'home', group: GROUP_DISPLAY, order: 224 },
     ],
     when: hasDocument,
     run: async (context: CommandContext): Promise<void> => {
