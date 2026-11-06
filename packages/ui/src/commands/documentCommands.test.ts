@@ -5688,7 +5688,7 @@ describe('protectDocumentCommand', () => {
           onApplied: () => undefined,
           ask: (id) => {
             opened.push(id);
-            return Promise.resolve({ pages: 'all', cover: 'solid', images: 'pixels', keepTitle: false });
+            return Promise.resolve({ pages: 'all', cover: 'solid', images: 'pixels', keepTitle: false, keepBookmarks: false });
           },
           confirm: () => confirm,
         }).run(CONTEXT);
@@ -5737,7 +5737,7 @@ describe('protectDocumentCommand', () => {
         onApplied: () => undefined,
         ask: (id, props) => {
           opened.push({ id, props });
-          return Promise.resolve({ pages: 'all', cover: 'none', images: 'remove', keepTitle: true });
+          return Promise.resolve({ pages: 'all', cover: 'none', images: 'remove', keepTitle: true, keepBookmarks: true });
         },
         confirm: () => true,
       }).run(CONTEXT);
@@ -5769,6 +5769,8 @@ describe('protectDocumentCommand', () => {
               // title the person asked to keep. `true` here is what makes the
               // assertion able to fail.
               keepTitle: true,
+              // AND THE BOOKMARKS, the same way: `true` is the dialog's answer, which a dropped field would not send.
+              keepBookmarks: true,
             },
           },
         },
@@ -5824,7 +5826,7 @@ describe('protectDocumentCommand', () => {
             docId: DOC,
             // THIS PAGE, never the whole document: an unasked burn-in never reaches further than the dialog would
             // have offered first.
-            command: { kind: 'applyRedactions', pages: [CONTEXT.page], cover: 'solid', images: 'pixels', keepTitle: false },
+            command: { kind: 'applyRedactions', pages: [CONTEXT.page], cover: 'solid', images: 'pixels', keepTitle: false, keepBookmarks: false },
           },
         },
       ]);

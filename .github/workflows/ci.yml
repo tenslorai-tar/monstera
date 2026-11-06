@@ -163,6 +163,11 @@ jobs:
       - name: Prove MuPDF's binding generator and the port's pins
         run: node scripts/ci/annotate.mjs scripts/provision/mupdfGlue.proof.mjs
 
+      # The internal MuPDF declarations the redaction cut is written against,
+      # read from the source the step above provisioned (ADR-0286 Decision 6).
+      - name: Prove the redaction cut's MuPDF internals are the ones it was written against
+        run: node scripts/ci/annotate.mjs scripts/provision/drawImpPin.proof.mjs
+
       # INVARIANT 24 ON THE LINUX SHIM TOO. The `shim` job runs this proof on
       # Windows only, so the Linux shim, which GNU ld linked by object and which
       # carried MuJS until the build linked by section, was checked by nothing.

@@ -292,7 +292,7 @@ const REMOVAL_CASES: Readonly<Record<string, RemovalCase>> = {
   },
   applyRedactions: {
     fixture: marked,
-    payload: { kind: 'applyRedactions', pages: 'all', cover: 'solid', images: 'pixels', keepTitle: false },
+    payload: { kind: 'applyRedactions', pages: 'all', cover: 'solid', images: 'pixels', keepTitle: false, keepBookmarks: false },
     residue: redactAnnotations,
     before: 1,
   },

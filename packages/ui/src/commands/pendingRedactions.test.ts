@@ -147,7 +147,7 @@ function asking(
 /** The burn-in *Apply* sends: every page, with the Apply redactions dialog's starting choices. */
 const BURN_IN = {
   docId: DOC,
-  command: { kind: 'applyRedactions', pages: 'all', cover: 'solid', images: 'pixels', keepTitle: false },
+  command: { kind: 'applyRedactions', pages: 'all', cover: 'solid', images: 'pixels', keepTitle: false, keepBookmarks: false },
 };
 
 function ids(sent: readonly { id: string }[]): readonly string[] {

@@ -131,7 +131,7 @@ async function productRedaction(/** @type {Uint8Array} */ image) {
   });
   await localMupdfExecution.apply({
     session,
-    command: { kind: 'applyRedactions', pages: 'all', cover: 'solid', images: 'pixels', keepTitle: false },
+    command: { kind: 'applyRedactions', pages: 'all', cover: 'solid', images: 'pixels', keepTitle: false, keepBookmarks: false },
     sources: [],
     reads: undefined,
   });

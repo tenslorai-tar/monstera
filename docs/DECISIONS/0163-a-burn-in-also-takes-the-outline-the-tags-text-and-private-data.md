@@ -151,3 +151,29 @@ both cases red on the scan; renaming the stores without the references turns the
 
 Rejected: **deleting the destinations**, which breaks every link that jumps to one; **renaming only names that match
 the marked text**, since the marked text is not known as text at this point and a near spelling would survive.
+
+## Correction, 2026-11-06: the owner reverses the 2026-10-05 answer, and the person chooses
+
+The owner's answer of 2026-10-05 above, *"no option to keep them"*, is reversed by the owner on 2026-11-06. The reason:
+losing every bookmark for one redacted line is too high a cost, so the person now chooses. **Removing every bookmark
+stays the default.**
+
+The rule, as the owner set it:
+
+- A tick box in the Apply redactions dialog, beside *Keep the title*, off by default: *Keep bookmarks on pages that
+  aren't redacted*.
+- **Off:** the whole outline goes, exactly as Decision 5 has it.
+- **On:** a bookmark stays only if its destination resolves to a page in this document that this burn-in redacts
+  nothing on. A page is redacted if it holds a mark this burn-in takes, so the *Page* and *Every page* scopes count
+  only the pages they reach.
+- A bookmark with no page in this document is removed: a web link, a broken destination, a destination in another
+  file.
+- When a parent goes and a child stays, the child moves up to the parent's level, in order, and the counts are made
+  right.
+- When no bookmark is left, the outline and `/PageMode /UseOutlines` are removed, as Decision 5 has it.
+- It is a **required** field of the command beside `keepTitle`, spelt out on every call, so an absent field can never
+  mean *keep*. The prompt on save, close, export, print or send applies with it off.
+
+What this costs, said plainly: a kept bookmark's name can still say what was removed, even though it points at a page
+nothing was removed from. The tick box's note says so. Decision 5's reason, that a title can spell the redacted text,
+is unchanged; what changed is who takes that risk.

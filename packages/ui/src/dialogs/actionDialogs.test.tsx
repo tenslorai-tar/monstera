@@ -251,13 +251,43 @@ describe('the action dialogs in the dialog pattern', () => {
   }
 });
 
-describe('Apply redactions says the bookmarks go, and offers no keeping them (the owner, 2026-10-05)', () => {
-  it('names the bookmarks among what is removed, and the one thing a person may keep is the title', () => {
+describe('Apply redactions removes the bookmarks unless the person keeps those on untouched pages (ADR-0163, 2026-11-06)', () => {
+  it('says the bookmarks go unless the box is ticked, and offers the title and the bookmarks, both off', () => {
     render(<InDialog><ApplyRedactionsBody page={0} resolve={ignore} update={ignore} /></InDialog>);
-    expect(document.body.textContent).toContain('The document’s bookmarks, author, subject and other properties are removed too.');
-    // NO OPTION, by the owner's ruling: the title's box is the dialog's only one. A box added for the bookmarks fails
-    // here, where a case reading the sentence alone would not see it.
-    const boxes = [...document.querySelectorAll('input[type="checkbox"]')].map((box) => box.getAttribute('aria-label'));
-    expect(boxes).toStrictEqual(['Keep the document’s title']);
+    expect(document.body.textContent).toContain('and so are bookmarks unless you tick the box to keep some.');
+    expect(document.body.textContent).toContain('Bookmarks on redacted pages are always removed.');
+    const boxes = [...document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')];
+    expect(boxes.map((box) => box.getAttribute('aria-label'))).toStrictEqual(['Keep the document’s title', 'Keep bookmarks on pages that aren’t redacted']);
+    // OFF, both: removal is the side that cannot leak.
+    expect(boxes.map((box) => box.checked)).toStrictEqual([false, false]);
+  });
+
+  it('the bookmarks box answers keepBookmarks, and only it: ticked, true with the title still false', () => {
+    const answers: unknown[] = [];
+    render(
+      <InDialog>
+        <ApplyRedactionsBody page={0} resolve={(answer) => answers.push(answer)} update={ignore} />
+      </InDialog>,
+    );
+    const bookmarks = document.querySelector<HTMLInputElement>('input[data-redact-keep-bookmarks]');
+    if (bookmarks === null) throw new Error('no bookmarks box');
+    fireEvent.click(bookmarks);
+    const apply = [...document.querySelectorAll<HTMLButtonElement>('.m-dialog-footer button')].at(-1);
+    if (apply === undefined) throw new Error('no Apply button');
+    fireEvent.click(apply);
+    expect(answers).toStrictEqual([{ pages: [0], cover: 'solid', images: 'pixels', keepTitle: false, keepBookmarks: true }]);
+  });
+
+  it('CONTROL: untouched, it answers keepBookmarks false', () => {
+    const answers: unknown[] = [];
+    render(
+      <InDialog>
+        <ApplyRedactionsBody page={0} resolve={(answer) => answers.push(answer)} update={ignore} />
+      </InDialog>,
+    );
+    const apply = [...document.querySelectorAll<HTMLButtonElement>('.m-dialog-footer button')].at(-1);
+    if (apply === undefined) throw new Error('no Apply button');
+    fireEvent.click(apply);
+    expect(answers).toStrictEqual([{ pages: [0], cover: 'solid', images: 'pixels', keepTitle: false, keepBookmarks: false }]);
   });
 });

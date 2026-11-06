@@ -15,6 +15,8 @@ import {
   APPLY_REDACTIONS_COVER_NONE,
   APPLY_REDACTIONS_COVER_SOLID,
   APPLY_REDACTIONS_IMAGES,
+  APPLY_REDACTIONS_KEEP_BOOKMARKS,
+  APPLY_REDACTIONS_KEEP_BOOKMARKS_WARNS,
   APPLY_REDACTIONS_KEEP_TITLE,
   APPLY_REDACTIONS_KEEP_TITLE_WARNS,
   APPLY_REDACTIONS_IMAGES_PIXELS,
@@ -75,6 +77,7 @@ export default function ApplyRedactionsBody({
   const [cover, setCover] = useState<PdfRedactCover>(start.cover);
   const [images, setImages] = useState<PdfRedactImages>(start.images);
   const [keepTitle, setKeepTitle] = useState(start.keepTitle);
+  const [keepBookmarks, setKeepBookmarks] = useState(start.keepBookmarks);
 
   return (
     <div className="m-apply-redactions">
@@ -150,11 +153,25 @@ export default function ApplyRedactionsBody({
         />
       </DialogRow>
 
+      {/* THE SAME KIND OF CHOICE as the title's, beside it and off (ADR-0163's correction of 2026-11-06): it keeps
+          something a burn-in would otherwise remove, so its note says what a kept bookmark can still show. */}
+      <DialogRow label={APPLY_REDACTIONS_KEEP_BOOKMARKS} note={APPLY_REDACTIONS_KEEP_BOOKMARKS_WARNS}>
+        <input
+          aria-label={_(APPLY_REDACTIONS_KEEP_BOOKMARKS)}
+          checked={keepBookmarks}
+          data-redact-keep-bookmarks=""
+          onChange={(event) => {
+            setKeepBookmarks(event.target.checked);
+          }}
+          type="checkbox"
+        />
+      </DialogRow>
+
       <DialogFooter>
         <Button
           label={APPLY_REDACTIONS_APPLY}
           onClick={() => {
-            resolve({ pages: scope === 'all' ? 'all' : [page], cover, images, keepTitle });
+            resolve({ pages: scope === 'all' ? 'all' : [page], cover, images, keepTitle, keepBookmarks });
           }}
           variant="primary"
         />
