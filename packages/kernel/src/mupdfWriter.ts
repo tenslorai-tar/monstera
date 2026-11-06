@@ -637,6 +637,44 @@ function saveTermsOf(session: MupdfSession): {
 }
 
 /**
+ * Makes the bytes an appended save just wrote the session's document, so the next appended save appends to THEM.
+ *
+ * **The mechanism, measured 2026-11-06 on MuPDF 1.28.0** (`appendedSave.test.ts`): after an incremental save into a
+ * buffer, MuPDF takes the cross-reference section it just wrote, at its offset in THAT output, as the document's last
+ * one, while the next incremental save is still appended to the bytes the document was opened from. So the second save's
+ * new section names as its `/Prev` an offset of a file that is not there: on a signed two-page document, the first save's
+ * section sat at 18,351 with `/Prev 17922` and opened; the second's sat at 18,352 with `/Prev 18351` and opened with no
+ * page tree; the third's had `/Prev 18352`, its own offset, the shape `mupdfOpen.ts` repairs at open. A reader that does
+ * not repair it sees a file with no pages.
+ *
+ * MuPDF's model is that the saved file IS the document after an incremental save (it saves over the file it opened); a
+ * save into memory leaves the base behind. Reopening the session from the bytes just written puts the two back together,
+ * for every route that appends, whichever caller asked and however many saves follow: each appends to the last, and every
+ * earlier revision, the signed one included, stays byte for byte. With the password the session was opened with, since a
+ * protected document keeps its key across an appended save.
+ *
+ * **A reopen that fails is a save that failed.** The bytes are not handed out, because a file this build cannot open
+ * again is the fault this exists to stop.
+ */
+function rebasedOn(session: MupdfSession, previous: mupdf.PDFDocument, bytes: ByteImage): void {
+  // READ PLAINLY FIRST, with no repair: `openPdfFile` rebuilds a broken chain on open, which would hide the very fault.
+  // A page tree's dictionaries are not encrypted, so a protected file's pages count without its password.
+  const plain = mupdf.PDFDocument.openDocument(bytes, 'application/pdf');
+  const pages = plain.countPages();
+  plain.destroy();
+  if (pages !== previous.countPages()) {
+    throw new Error(`The appended save wrote a file whose own chain reads ${String(pages)} pages, so it was not used.`);
+  }
+  const { document, access } = openPdfFile(bytes, heldPasswords.get(session));
+  if (!(document instanceof mupdf.PDFDocument) || access === 0 || document.countPages() !== previous.countPages()) {
+    document.destroy();
+    throw new Error('The appended save wrote a file this build cannot open again with its pages, so it was not used.');
+  }
+  documents.set(session, document);
+  previous.destroy();
+}
+
+/**
  * How many signatures the document carries, and whether the next save keeps them — Part F's *warn before a
  * signature-breaking save* (`BUILD-PROMPT.md`:618). A save keeps a signature only by appending; so it breaks them
  * exactly where there are any and {@link saveTermsOf} chose not to append — a removal, a change of protection, or a
@@ -783,7 +821,10 @@ export const mupdfWriter: EngineWriter<MupdfSession> = {
       // A FILE A PERSON KEEPS draws Monstera's placed marks by the page (ADR-0287), and the session is put back after.
       // NOT ON AN APPENDED SAVE: it exists to keep a signature, and page content changed after one is reported by
       // every validator (Decision 5), so a signed document's marks stay layers.
-      return bufferBytes(options?.marks === 'engraved' && !appends ? savedEngraved(document, save).saved : save());
+      const bytes = bufferBytes(options?.marks === 'engraved' && !appends ? savedEngraved(document, save).saved : save());
+      // AN APPENDED SAVE BECOMES THE SESSION'S BASE: see {@link rebasedOn}.
+      if (appends) rebasedOn(session, document, bytes);
+      return bytes;
     });
   },
 
