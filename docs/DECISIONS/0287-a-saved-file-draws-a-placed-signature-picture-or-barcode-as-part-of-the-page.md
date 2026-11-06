@@ -90,4 +90,27 @@ however that appearance is written.
 - After a save, Comments, Select and every list that read these items as annotations no longer see them once the file
   is reopened; they are page content, removed with Redact or Edit, not with Delete.
 - A signed document saved by appending keeps them as layers, and the phone fault stays for it.
-- Measured cost at save: recorded in the correction below once built.
+- Measured cost at save: recorded in the note below.
+
+## Note, 2026-11-06 — as built: the cost, and two things found
+
+**The cost at save**, from `scripts/research/engraveCost.mjs`, this container, MuPDF 1.28.0 native, 2026-11-06, a
+2,000-page document (769,105 bytes), the median of 7 saves each, as held against as a file a person keeps:
+
+| state | as held | kept file | extra |
+|---|---|---|---|
+| no placed mark | 102.9 ms | 109.4 ms | 6.4 ms (the walk of every page's `/Annots`) |
+| one picture on page 1 | 69.6 ms | 74.2 ms | 4.6 ms |
+| one picture on every page | 205.7 ms | 824.5 ms | 618.8 ms, the file 2,437,796 to 2,545,556 bytes |
+
+An earlier run the same day, before a refactor of how a free name is found, read 11.2, 5.7 and 681.4 ms.
+
+**A kept stamp picture is engraved too.** A picture placed from the Stamp chooser goes through the same `placeImage`
+command as Place image and is written the same way, `/Name /Image`, so this rule cannot tell the two apart, in a new
+file or in one saved earlier. Separating them needs a field on the command and a new name; it is put to the owner
+rather than built, since stamps join this rule in the next update.
+
+**Found, not this ADR's: two appended saves of one session of a signed document.** Measured 2026-11-06 in
+`engraveOnSave.test.ts`' signed case, with a picture placed: the first appended save reopens, and a second plain
+appended save from the same session gives a file MuPDF cannot open (*cannot find page tree*, after *ignoring xref
+section recursion*). It does not involve the marks option, which engraves nothing on an appended save. Reported.
