@@ -6993,9 +6993,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // THE BOOKMARKS ARE NAMED because a person sees them go: a title of one can spell what a mark removes. Removing them
   // all is the default, and since the owner's correction of 2026-11-06 (ADR-0163) the box below keeps those on pages
   // nothing is redacted on, so the sentence says *unless you tick the box*. THE OWNER'S WORDS, 2026-11-06, with what
-  // can stay in the file under a mark said plainly (ADR-0286 Decision 7, read in the saved file).
+  // can stay in the file under a mark said plainly (ADR-0286 Decision 7, read in the saved file). A LETTER CROSSING A
+  // MARK'S EDGE GOES WHOLE, the owner's sentence of 2026-11-06: text is removed by the glyph, never cut. The whole
+  // picture that *Remove the whole image* takes is left out on purpose, since the person chooses it in this dialog.
   [APPLY_REDACTIONS_WARNS]:
-    'The marked text, pictures and drawings are removed from the document, not just covered, along with comments and form fields under the marks. Everything else on the page stays. Gradients, patterns and transparency effects that reach under a mark can stay in the file, but nothing of them shows there. The author and other properties are removed too, and so are bookmarks unless you tick the box to keep some. Only Undo can bring this back, in this session.',
+    'The marked text, pictures and drawings are removed from the document, not just covered, along with comments and form fields under the marks. Everything else on the page stays, except that a letter crossing a mark’s edge goes whole. Gradients, patterns and transparency effects that reach under a mark can stay in the file, but nothing of them shows there. The author and other properties are removed too, and so are bookmarks unless you tick the box to keep some. Only Undo can bring this back, in this session.',
   [APPLY_REDACTIONS_SCOPE]: 'Apply to',
   [APPLY_REDACTIONS_SCOPE_PAGE]: 'Page {page}',
   [APPLY_REDACTIONS_SCOPE_ALL]: 'Every page',
