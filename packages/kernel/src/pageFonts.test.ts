@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { PDFDocument, PDFName, PDFNumber } from '@cantoo/pdf-lib';
 import { describe, expect, it } from 'vitest';
 
+import { Font } from './mupdfRaw.js';
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
 import { pageContentStreams } from './pageContent.js';
 import { pageFonts } from './pageFonts.js';
@@ -116,7 +117,66 @@ describe('an embedded subset with no ToUnicode', () => {
     expect(font?.draws(122)).toBe(false);
   });
 
-  it('CONTROL: a TrueType subset stays with no known characters, since its glyph numbers can hold nothing', async () => {
+  describe('a TrueType subset with no ToUnicode (the owner’s ruling of 2026-11-06, one try)', () => {
+    /** The committed Marcellus, with `blank`'s glyph emptied as a subset keeps a number with nothing in it: its `loca` entry moved up to the next. */
+    const programWithout = (blank: string): Uint8Array => {
+      const bytes = new Uint8Array(readFileSync(fileURLToPath(new URL('../../../assets/fonts/marcellus/Marcellus-Regular.ttf', import.meta.url))));
+      if (blank === '') return bytes;
+      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      const table = (name: string): number => {
+        for (let at = 0; at < view.getUint16(4); at += 1) {
+          const record = 12 + 16 * at;
+          if (String.fromCharCode(...bytes.subarray(record, record + 4)) === name) return view.getUint32(record + 8);
+        }
+        throw new Error(`no ${name}`);
+      };
+      const glyph = new Font('embedded', bytes).encodeCharacter(blank.codePointAt(0) ?? 0);
+      const loca = table('loca');
+      if (view.getInt16(table('head') + 50) === 0) view.setUint16(loca + glyph * 2, view.getUint16(loca + (glyph + 1) * 2));
+      else view.setUint32(loca + glyph * 4, view.getUint32(loca + (glyph + 1) * 4));
+      return bytes;
+    };
+    const pageWith = async (program: Uint8Array): Promise<Uint8Array> => {
+      const doc = await PDFDocument.create({ updateMetadata: false });
+      const page = doc.addPage([300, 300]);
+      const { context } = doc;
+      const truetype = context.obj({
+        Type: 'Font',
+        Subtype: 'TrueType',
+        BaseFont: 'ABCDEF+Marcellus',
+        FirstChar: 32,
+        LastChar: 122,
+        Widths: new Array<number>(91).fill(500),
+        Encoding: 'WinAnsiEncoding',
+        FontDescriptor: context.register(context.obj({ Type: 'FontDescriptor', FontName: 'ABCDEF+Marcellus', Flags: 32, FontFile2: context.register(context.flateStream(program)) })),
+      });
+      page.node.set(PDFName.of('Resources'), context.obj({ Font: context.obj({ F1: context.register(truetype) }) }));
+      page.node.set(PDFName.of('Contents'), context.register(context.flateStream('BT /F1 10 Tf (a) Tj ET')));
+      return doc.save({ useObjectStreams: false });
+    };
+
+    it('reads each code through its encoding and draws what has an outline, so its own letters stay in it', async () => {
+      const font = (await fontsOf(await pageWith(programWithout('z')))).get('F1');
+      expect(font?.toUnicode?.text.get(97)).toBe('a');
+      expect(font?.draws(97)).toBe(true);
+    });
+
+    it('a letter whose number is kept with nothing in it draws nothing: the shape a word written in it would vanish on', async () => {
+      const font = (await fontsOf(await pageWith(programWithout('z')))).get('F1');
+      expect(font?.toUnicode?.text.get(122)).toBe('z');
+      expect(font?.draws(122)).toBe(false);
+    });
+
+    it('CONTROL: the same letter with its outline draws, so the emptying is what said no', async () => {
+      expect((await fontsOf(await pageWith(programWithout('')))).get('F1')?.draws(122)).toBe(true);
+    });
+
+    it('white space has no outline in any font, and draws no less for it', async () => {
+      expect((await fontsOf(await pageWith(programWithout('z')))).get('F1')?.draws(32)).toBe(true);
+    });
+  });
+
+  it('CONTROL: a TrueType program MuPDF cannot load stays with no known characters', async () => {
     const doc = await PDFDocument.create({ updateMetadata: false });
     const page = doc.addPage([300, 300]);
     const context = doc.context;
@@ -204,7 +264,7 @@ describe('pageFonts', () => {
       expect(read('F3')).toStrictEqual({ codes: [65, 233, 128], widths: [0.667, null] });
       // CONTROL: MacRoman is not a table pdf-lib holds, so that font has no known characters and no width, as before.
       expect(read('F2')).toStrictEqual({ codes: null, widths: [null, null] });
-      // CONTROL: an EMBEDDED subset's encoding promises no glyph, so it has no known characters (documents 6 and 8).
+      // CONTROL: an EMBEDDED subset whose program cannot be loaded says nothing of what it holds, so no known characters.
       expect(read('F4')).toStrictEqual({ codes: null, widths: [0.6, null] });
     } finally {
       await mupdfWriter.close(session);

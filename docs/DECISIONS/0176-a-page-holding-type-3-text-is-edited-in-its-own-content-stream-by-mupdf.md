@@ -360,3 +360,18 @@ the lighter serif the owner saw; the 550-weight headings at text size 0.115, 570
 Everything else above stands: the family is the resolver's, the weight is read off its faces or its axis, the person's
 own Bold wins, and the descriptor decides where nothing can be measured — a glyph drawn as a picture, fewer than four
 stem letters, or a family of one weight.
+
+## Correction, 2026-11-06 — a TrueType subset with no ToUnicode is asked which glyphs have an outline
+
+The narrowing of 2026-10-25 left such a subset with no known characters, because it keeps a glyph's number with nothing
+in it, so asking for a character's glyph answered yes for a letter that draws nothing (documents 6 and 8, 0 pixels). That
+was right about the lookup and went too far on the font: with no characters the writer could not re-encode a line's own
+words, so one space sent the line to another face. On a corpus file that was 1,027 pixels on one row and the file growing
+from 254,697 to 468,552 bytes, and on another it added Arimo to a page that did not use it.
+
+The subset is now asked the second question too: `loca` gives each glyph its stretch of `glyf`, and an empty stretch is
+nothing in the glyph. So its own letters stay in it, and a letter it keeps empty is still not offered. Measured on the four
+corpus files with such fonts, one space at a block's end, against a save with no edit: no refusal, and each page's count
+of font resources unchanged. Pixels moved, all on the edited line: 303 (was 1,027), 24 (was 211), and 0 on the other two.
+**Still measured and not explained:** the saved file is 6 to 33 KB larger than one saved with no edit. A font encoded
+otherwise, or a program MuPDF cannot load, stays as before.

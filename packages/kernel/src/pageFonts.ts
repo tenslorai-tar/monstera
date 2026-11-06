@@ -20,9 +20,9 @@ import { type ToUnicode, readToUnicode } from './toUnicode.js';
  * ## A font the file does not carry, with no ToUnicode, is read through its encoding where pdf-lib holds its table
  *
  * ISO 32000-1 §9.10.2: the WinAnsi encoding, or Symbol's and ZapfDingbats' own (ADR-0176's correction of 2026-10-25). An
- * embedded Type 1 or CFF program with no ToUnicode is read through the same encoding, each code asked of the program
- * ({@link namedGlyphs}). An embedded TrueType program, or any font in another encoding, with no ToUnicode has no known
- * characters, as before.
+ * embedded Type 1, CFF or TrueType program with no ToUnicode is read through the same encoding, each code asked of the
+ * program ({@link namedGlyphs}). Any font in another encoding, or whose program cannot be loaded, with no ToUnicode has no
+ * known characters, as before.
  */
 
 /** One font resource of a page. */
@@ -143,21 +143,58 @@ function loadedProgram(stream: PDFObject): Font | undefined {
 /**
  * WHICH OF ITS ENCODING'S CODES AN EMBEDDED TYPE 1 OR CFF PROGRAM CAN DRAW, for a simple font with no ToUnicode. Such a
  * program names its glyphs, and a subset holds exactly the ones its producer kept, so asking it for a character's glyph
- * says whether the code draws. A TrueType subset is not asked: it keeps a glyph's number with nothing in it, so the same
- * lookup answers yes for a letter that draws nothing (ADR-0176's narrowing, documents 6 and 8, 0 pixels changed).
+ * says whether the code draws. A TRUETYPE SUBSET keeps a glyph's number with nothing in it, so that lookup answers yes for a
+ * letter that draws nothing (ADR-0176's narrowing, documents 6 and 8, 0 pixels changed): it is asked one thing more, whether
+ * the glyph has an outline, from its own `loca` table. White space has none in any font, and draws no less for it.
  * `undefined` where there is no such program, or MuPDF cannot load it.
  */
 function namedGlyphs(descriptor: PDFObject, characterOf: (code: number) => string | undefined): ((code: number) => boolean) | undefined {
   const type1 = descriptor.get('FontFile');
   const compact = descriptor.get('FontFile3');
+  const trueType = descriptor.get('FontFile2');
   const compactSubtype = compact.isNull() ? null : nameOf(resolved(compact).get('Subtype'));
-  const stream = !type1.isNull() ? type1 : compactSubtype === 'Type1C' ? compact : null;
+  const stream = !type1.isNull() ? type1 : compactSubtype === 'Type1C' ? compact : !trueType.isNull() ? trueType : null;
   if (stream === null) return undefined;
   const font = loadedProgram(stream);
   if (font === undefined) return undefined;
+  const outlined = stream === trueType ? trueTypeOutlines(bufferBytes(stream.readStream())) : () => true;
+  if (outlined === undefined) return undefined;
   return (code) => {
-    const point = characterOf(code)?.codePointAt(0);
-    return point !== undefined && font.encodeCharacter(point) > 0;
+    const character = characterOf(code);
+    const point = character?.codePointAt(0);
+    if (point === undefined) return false;
+    const glyph = font.encodeCharacter(point);
+    return glyph > 0 && (/^\s$/u.test(character ?? '') || outlined(glyph));
+  };
+}
+
+/**
+ * Whether each glyph of a TrueType program has an outline: `loca` gives each glyph its stretch of `glyf`, and an empty
+ * stretch is a glyph with nothing in it. `undefined` where the program has not the tables that say.
+ */
+function trueTypeOutlines(bytes: Uint8Array): ((glyph: number) => boolean) | undefined {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (bytes.length < 12) return undefined;
+  const tables = new Map<string, number>();
+  const count = view.getUint16(4);
+  for (let at = 0; at < count && 12 + 16 * (at + 1) <= bytes.length; at += 1) {
+    const record = 12 + 16 * at;
+    tables.set(String.fromCharCode(...bytes.subarray(record, record + 4)), view.getUint32(record + 8));
+  }
+  const head = tables.get('head');
+  const loca = tables.get('loca');
+  if (head === undefined || loca === undefined || head + 52 > bytes.length) return undefined;
+  const long = view.getInt16(head + 50) !== 0;
+  const size = long ? 4 : 2;
+  const offset = (glyph: number): number | undefined => {
+    const at = loca + glyph * size;
+    if (at + size > bytes.length) return undefined;
+    return long ? view.getUint32(at) : view.getUint16(at) * 2;
+  };
+  return (glyph) => {
+    const from = offset(glyph);
+    const to = offset(glyph + 1);
+    return from !== undefined && to !== undefined && to > from;
   };
 }
 
