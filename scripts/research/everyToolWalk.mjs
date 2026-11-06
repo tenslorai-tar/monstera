@@ -519,8 +519,10 @@ async function closeAll() {
     if ((await page.locator('.m-tab-close').count()) === 0 && (await page.locator('.m-status-name').count()) === 0) return;
     // THE TAB'S OWN CLOSE BUTTON, as a hand closes it: Ctrl+W pressed while Add comment's editor held the focus closed
     // nothing, and the next step opened its document beside the last one (2026-11-03).
-    const close = page.locator('.m-tab-close').first();
-    if ((await close.count()) > 0) await close.click();
+    const tabs = page.locator('.m-tab-close');
+    const open = await tabs.count();
+    const close = tabs.first();
+    if (open > 0) await close.click();
     else await page.keyboard.press('Control+W');
     for (let asked = 0; asked < 3; asked += 1) {
       const id = await openDialog();
@@ -531,7 +533,11 @@ async function closeAll() {
       else await page.keyboard.press('Escape');
       await page.waitForTimeout(200);
     }
-    await page.waitForTimeout(300);
+    // THE TAB GONE BEFORE ANOTHER IS LOOKED FOR. A close can outlast a fixed wait, and the next look then pressed a tab
+    // already closing: it left the page under the click, which waited its whole 30 s for a button that no longer existed
+    // (Playwright's *detached from the DOM, retrying*; Align left and Subscript in the walk of 2026-11-06, Numbering after).
+    if (open > 0) await expect.poll(() => tabs.count(), { timeout: 60_000 }).toBeLessThan(open);
+    else await page.waitForTimeout(300);
   }
 }
 

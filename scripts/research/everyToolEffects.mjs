@@ -21,6 +21,9 @@ import { deflateSync } from 'node:zlib';
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRef, StandardFonts } from '@cantoo/pdf-lib';
 import { unzipSync, strFromU8 } from 'fflate';
 
+/** The start of the names `engraveOnSave.ts` gives the marks a saved page draws. A rename there fails `annotate.image`'s row, loudly. */
+const ENGRAVED_PREFIX = 'MonsteraEngraved';
+
 /**
  * @typedef {{
  *   pages: number,
@@ -38,6 +41,7 @@ import { unzipSync, strFromU8 } from 'fflate';
  *   title: string,
  *   contentBytes: number[],
  *   images: number,
+ *   drawnMarks: number,
  *   links: string[],
  *   rects: Record<string, number[][]>,
  *   fonts: string[],
@@ -85,6 +89,7 @@ export async function readPdf(path) {
   const tabs = [];
   const contentBytes = [];
   let images = 0;
+  let drawnMarks = 0;
   /** @type {string[]} */
   const links = [];
   /** @type {Record<string, number[][]>} */
@@ -133,6 +138,9 @@ export async function readPdf(path) {
         const dict = /** @type {{ dict?: PDFDict }} */ (object)?.dict;
         if (String(dict?.get(PDFName.of('Subtype')) ?? '') === '/Image') images += 1;
       }
+      // A PLACED MARK THE PAGE DRAWS (ADR-0287), a form holding its picture under the name the engraving gives it. Read
+      // by the name because a form is not a picture, and a page may hold forms of its own.
+      for (const [name] of xobjects.entries()) if (name.decodeText().startsWith(ENGRAVED_PREFIX)) drawnMarks += 1;
     }
   }
   /** @type {Record<string, string>} */
@@ -167,6 +175,7 @@ export async function readPdf(path) {
     title: document.getTitle() ?? '',
     contentBytes,
     images,
+    drawnMarks,
     links,
     rects,
     fonts: fontsOf(document.getPages()[0]?.node.Resources()),
@@ -569,8 +578,9 @@ export const EFFECTS = {
   'annotate.sticky-note': addsMark('Text'),
   'annotate.stamp': addsMark('Stamp'),
   'annotate.eraser': saved((before, after) => ((after.marks['Text'] ?? 0) < (before.marks['Text'] ?? 0) ? null : `the note is still there: ${JSON.stringify(after.marks)}`)),
-  // A PICTURE PLACED, as a mark carrying it or drawn on the page.
-  'annotate.image': saved((before, after) => (allMarks(after) > allMarks(before) || after.images > before.images ? null : `no new mark and no new picture: ${JSON.stringify(after.marks)}`)),
+  // A PICTURE PLACED: the saved page draws it and no layer is left (ADR-0287). A layer here is the release's way, an
+  // intended change, so it fails rather than passing as the old reading did.
+  'annotate.image': saved((before, after) => (after.drawnMarks > before.drawnMarks && allMarks(after) === allMarks(before) ? null : `the saved page draws ${String(after.drawnMarks)} placed marks and holds ${JSON.stringify(after.marks)}, where it should draw one more and hold no new layer`)),
   'text.add': saved((before, after) => (after.texts.join(' ').includes(TYPED_WORD['text.add'] ?? '') && !before.texts.join(' ').includes(TYPED_WORD['text.add'] ?? '') ? null : `the typed word is not on any page: ${JSON.stringify((after.texts[0] ?? '').slice(0, 160))}`)),
   // A LINK THAT GOES WHERE IT WAS TOLD, read the way a reader follows it: the address or page the walk typed (`LINK_TYPED`).
   'annotate.link-address': saved((before, after) => (after.links.filter((each) => each === `uri:${LINK_TYPED['annotate.link-address']}`).length > before.links.filter((each) => each === `uri:${LINK_TYPED['annotate.link-address']}`).length ? null : `no new link to the typed address: ${JSON.stringify(after.links)}`)),
