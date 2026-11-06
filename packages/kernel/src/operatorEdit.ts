@@ -2030,8 +2030,32 @@ function write(
         }
         keptRuns.set(row.replaces, untouched);
       }
-      const x =
-        set.align === 'center'
+      // WORDS ADDED AFTER A LINE'S LAST RUN LEAVE THAT RUN'S OPERATORS ALONE, so it keeps its own kerning: set again, a line whose
+      // words nobody touched lost its `TJ` numbers for one space typed at its end (303 pixels on one row of a corpus file). Only
+      // what is new is written, from where the run's pen stopped. Also the words that wrapped here from below it.
+      const lastRun = replaced?.[untouched];
+      const lastPiece = row.pieces[untouched];
+      const addedTo =
+        keptRuns.get(row.replaces) === untouched &&
+        replaced !== undefined &&
+        untouched === replaced.length - 1 &&
+        lastRun !== undefined &&
+        lastPiece !== undefined &&
+        lastPiece.mark === NO_MARK &&
+        lastPiece.run === lastRun.run.index &&
+        lastPiece.standsAt === undefined &&
+        lastPiece.text.length > lastRun.run.text.length &&
+        lastPiece.text.startsWith(lastRun.run.text);
+      if (addedTo) keptRuns.set(row.replaces, untouched + 1);
+      const penOf = (run: typeof lastRun): number | undefined => {
+        if (run === undefined) return undefined;
+        const end = placed(run.last);
+        const tx = advance(run.last);
+        return tx === null ? run.right : end.x + tx * end.unit;
+      };
+      const x = addedTo
+        ? (penOf(lastRun) ?? restOrigin)
+        : set.align === 'center'
           ? set.centre - row.width / 2
           : set.align === 'right'
             ? blockRight - row.width
@@ -2042,7 +2066,13 @@ function write(
       visual.push(placedLine);
       // A JUSTIFIED PARAGRAPH'S WRAPPED LINE widens its spaces to the measure, capped as the PDFium writer caps it; its last
       // line is not stretched (ADR-0228 Decision 1).
-      const setting = row.pieces.slice(untouched);
+      const setting: readonly (typeof row.pieces)[number][] =
+        addedTo && lastPiece !== undefined && lastRun !== undefined
+          ? [
+              { ...lastPiece, text: lastPiece.text.slice(lastRun.run.text.length), at: lastPiece.at + lastRun.run.text.length },
+              ...row.pieces.slice(untouched + 1),
+            ]
+          : row.pieces.slice(untouched);
       const spaces =
         set.align === 'justify' && !row.last
           ? setting.reduce(
@@ -2079,7 +2109,9 @@ function write(
         );
       }
       laid.push(row.pieces.map((piece) => piece.text).join(''));
-      setLines.push(asAnotherReaderMay(setting.map((piece) => piece.text).join(''), placedLine));
+      // ONLY WHITE SPACE ADDED draws nothing a reader could be asked to find.
+      const setWords = setting.map((piece) => piece.text).join('');
+      if (setWords.trim() !== '') setLines.push(asAnotherReaderMay(setWords, placedLine));
     }
     // EVERY OLD LINE THE PLAN DID NOT KEEP is emptied from its first run that was set again: a line set afresh stands in
     // for it, or the person removed it.
@@ -2096,7 +2128,8 @@ function write(
         empty(run.members);
         if (scanRuns[at]?.[index] === true) covers.push({ left: run.run.left, bottom: run.run.bottom, right: run.run.right, top: run.run.top });
       }
-      emptyBetween(line[from]?.first ?? 0, line.at(-1)?.last ?? -1);
+      // EVERY RUN KEPT, words added after them: nothing of the line is emptied, its spaces between runs among it.
+      if (from < line.length) emptyBetween(line[from]?.first ?? 0, line.at(-1)?.last ?? -1);
     }
     for (const decoration of going) if (!staying.has(decoration)) decorationsGone.add(decoration);
     const lastLine = lines.at(-1) ?? firstLine;

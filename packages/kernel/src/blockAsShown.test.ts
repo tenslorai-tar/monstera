@@ -27,6 +27,16 @@ describe('sentAsShown (ADR-0260)', () => {
     expect(sentAsShown([{ lines: [[4], [7]], soft: [true, false], text: 'Names x Hours' }], shown)).toBe(false);
   });
 
+  it('is true for a space at a paragraph’s end, which draws nothing where the font holds no space', () => {
+    const block = { lines: [[1]], soft: [false], text: 'one two ' };
+    expect(sentAsShown([block], () => 'one two')).toBe(true);
+  });
+
+  it('CONTROL: a space taken from between two words is still a difference', () => {
+    const block = { lines: [[1]], soft: [false], text: 'onetwo ' };
+    expect(sentAsShown([block], () => 'one two')).toBe(false);
+  });
+
   it('CONTROL: a line break typed at the wrap is not spaces, and stays a difference', () => {
     expect(sentAsShown([{ lines: [[4], [7]], soft: [true, false], text: 'Names \nHours' }], shown)).toBe(false);
   });

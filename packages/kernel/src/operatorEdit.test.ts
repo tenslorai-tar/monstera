@@ -1078,6 +1078,37 @@ describe('editOperators on paragraphs (ADR-0179)', () => {
     });
   });
 
+  describe('words added at the end of a line whose own words nobody touched (the owner’s rule: untouched text does not change)', () => {
+    // KERNED BY `TJ`, as a word processor writes a line: set again from its words, those numbers would be gone.
+    const content = bytes(['BT /F1 10 Tf 1 0 0 1 72 100 Tm [(aa) -30 (a) 55 ( bbb)] TJ ET', 'BT /F1 10 Tf 1 0 0 1 72 88 Tm (cccccccccccccc) Tj ET'].join('\n'));
+    const page: PageRuns = { textObjects: [0, 1], runs: [inked(0, 'aaa bbb', 72, 200), inked(1, 'cccccccccccccc', 72, 200)] };
+    const edit = (text: string) => editOperators(content, fonts, page, [{ lines: [[0], [1]], soft: [false, false], text }]);
+
+    it('a word added leaves the line’s operator as it was, kerning and all, and writes only the word', () => {
+      const result = edit('aaa bbb new\ncccccccccccccc');
+      if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+      expect(latin1(result.value.content)).toContain('[(aa) -30 (a) 55 ( bbb)] TJ');
+      const object = inserted(result.value).join('\n');
+      expect(object).not.toContain('<616161');
+      expect(object).toContain('206E6577');
+    });
+
+    it('CONTROL: a word typed INSIDE the line sets it again, since its operator cannot be cut in two', () => {
+      const result = edit('aaa new bbb\ncccccccccccccc');
+      if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+      expect(latin1(result.value.content)).not.toContain('[(aa) -30 (a) 55 ( bbb)] TJ');
+    });
+
+    it('one space added draws nothing, and the words stay', () => {
+      const result = edit('aaa bbb \ncccccccccccccc');
+      if (!result.ok) {
+        expect(result.error.reason).toBe('unchanged');
+        return;
+      }
+      expect(latin1(result.value.content)).toContain('[(aa) -30 (a) 55 ( bbb)] TJ');
+    });
+  });
+
   describe('a line with a stretch its words leave empty, where a page draws a black bar (the owner’s ruling of 2026-11-06)', () => {
     // `aaa` then 60 empty then `bbb ccc`, and the same again on the second line: Helvetica here is 5 a character, so `bbb`
     // and `eee` stand at 72 + 20 + 60 = 152. The third line is what a closed gap would pull up.
@@ -1156,7 +1187,6 @@ describe('editOperators on paragraphs (ADR-0179)', () => {
 
       it('CONTROL: a bar over the line’s OWN words is no room, and they are not moved out from under it', () => {
         const object = typed('0 g 72 97 40 12 re f');
-        expect(object).toContain('1 0 0 1 72 100 Tm <6161612062626220');
         expect(object).toContain('1 0 0 1 112 100 Tm <6E6577');
       });
 
@@ -1381,7 +1411,8 @@ describe('editOperators on paragraphs (ADR-0179)', () => {
       { lines: [[0], [1], [2]], soft: [false, false, false], text: 'abc\nabcde\nabcd' },
     ]);
     if (!control.ok) throw new Error(`refused: ${JSON.stringify(control.error)}`);
-    expect(inserted(control.value)[0]).toContain('1 0 0 1 72 76 Tm');
+    // THE LINE'S OWN `ab` KEEPS ITS OPERATOR, and the letters added stand where its pen stopped.
+    expect(inserted(control.value)[0]).toContain('1 0 0 1 82 76 Tm');
   });
 });
 
@@ -1758,7 +1789,8 @@ describe('a block set at an angle is written in its own frame (ADR-0273)', () =>
       if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
       return result.value.drawn;
     };
-    expect(written({ reach: 808 })).toStrictEqual(['turned at an angle and more']);
+    // ONLY WHAT IS NEW IS SET: the line's own words keep their operator.
+    expect(written({ reach: 808 })).toStrictEqual([' and more']);
     // CONTROL: with no reach the line wraps at its own end, which is what the saved turned line did: the old line kept,
     // and the added words set on a line of their own.
     expect(written()).toStrictEqual(['and more']);

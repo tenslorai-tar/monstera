@@ -37,4 +37,6 @@ export function sentAsShown(blocks: readonly SentBlock[], shown: (run: number) =
   });
 }
 
-const oneSpaceEach = (text: string): string => text.replaceAll(/ {2,}/gu, ' ');
+// AND NONE AT A PARAGRAPH'S END: words added after a line's kept run leave its operators alone (`operatorEdit`), so a space
+// there, in a font that draws none, writes nothing and asks nothing of a reader, and the words are still the page's.
+const oneSpaceEach = (text: string): string => text.replaceAll(/ {2,}/gu, ' ').replaceAll(/ +(?=\n|$)/gu, '');
