@@ -3216,7 +3216,7 @@ describe('applyAddAnnotation writes a measurement', () => {
     const document = await PDFDocument.load(drawn, { updateMetadata: false });
     const stream = normal instanceof PDFRef ? document.context.lookup(normal) : normal;
     if (!(stream instanceof PDFStream)) throw new Error('the measurement has no appearance');
-    const content = Buffer.from(stream.getContents()).toString('latin1');
+    const content = decodedText(stream);
     expect(content).toContain('BT');
     expect(content).toContain('50.0 mm');
   });
@@ -3262,7 +3262,13 @@ describe('applyAddAnnotation writes a measurement', () => {
     if (!(stream instanceof PDFStream)) throw new Error('the measurement has no appearance');
     const rect = dict.lookup(PDFName.of('Rect'));
     const numbers = rect instanceof PDFArray ? rect.asArray().map((value) => (value instanceof PDFNumber ? value.asNumber() : NaN)) : [];
-    return { content: Buffer.from(stream.getContents()).toString('latin1'), rect: numbers };
+    return { content: decodedText(stream), rect: numbers };
+  }
+
+  /** A stream's DECODED bytes as text: a full save writes every stream compressed (`saveDepth.ts`' FULL_SAVE_TERMS). */
+  function decodedText(stream: PDFStream): string {
+    const bytes = stream instanceof PDFRawStream ? decodePDFRawStream(stream).decode() : stream.getContents();
+    return Buffer.from(bytes).toString('latin1');
   }
 
   it('DRAWS an AREA’s and a PERIMETER’s reading on the shape, which MuPDF does not (the owner’s item 14a)', async () => {

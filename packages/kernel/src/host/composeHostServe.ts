@@ -125,6 +125,8 @@ const preparePdfaIn: PdfaPreparer | null =
         try {
           if (!(document instanceof PDFDocument) || opened.access === 0) return { kind: 'unreadable' };
           const preparation = prepareForPdfa(document);
+          // NOT `saveDepth.ts`' FULL_SAVE_TERMS: the converter's input, which it rewrites whole; the PDF/A it writes is
+          // the file kept.
           const saved = savedBuffer(document, 'garbage,encrypt=none');
           try {
             const output = join(area.outputDirectory, into);
@@ -160,6 +162,8 @@ const countKeptIn: KeptCounter | null =
           if (!(document instanceof PDFDocument) || opened.access === 0) return { kind: 'unreadable' };
           const census = keptCensusOf(document);
           if (into === null) return { kind: 'counted', ...census, bytes: null };
+          // NOT `saveDepth.ts`' FULL_SAVE_TERMS: Ghostscript's input for Text to curves, read and rewritten by it, and the
+          // census's promise is that nothing but the encryption changes.
           const saved = savedBuffer(document, 'encrypt=none');
           try {
             const output = join(area.outputDirectory, into);

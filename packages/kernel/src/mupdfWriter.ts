@@ -11,7 +11,7 @@ import type {
 import { DocumentLocked } from './engineSeam.js';
 import { openPdfFile } from './mupdfOpen.js';
 import { savedEngraved } from './engraveOnSave.js';
-import { savedBuffer, savedWithoutOutline } from './saveDepth.js';
+import { FULL_SAVE_TERMS, savedBuffer, savedWithoutOutline } from './saveDepth.js';
 import { signatureValues } from './signatureFields.js';
 import { DOCUMENT_ACCESS_VALUES } from '@monstera/contract/host';
 
@@ -470,6 +470,9 @@ export function unprotectedImage(image: ByteImage, password: string | undefined)
     try {
       if (!(document instanceof mupdf.PDFDocument)) throw new Error('Opened document is not a PDF, so no PDF writer may act on it.');
       if (access === 0) throw new DocumentLocked(password === undefined ? 'needs-password' : 'wrong-password');
+      // NOT {@link FULL_SAVE_TERMS}: a copy that never reaches a file as it is. A pdf-lib result is protected again and
+      // saved by the session, which compresses; a signature's revision is appended to the protected file, and a signed
+      // document's appended bytes are not to move.
       return bufferBytes(savedBuffer(document, 'garbage,encrypt=none'));
     } finally {
       document.destroy();
@@ -607,7 +610,8 @@ function saveTermsOf(session: MupdfSession): {
   // went into the file whatever the purpose; measured 2026-10-03, and a
   // collecting save re-encodes a foreign annotation exactly as the plain one
   // did. What the purpose still decides is below: a removal never appends.
-  const options: Record<SavePurpose, string> = { ordinary: 'garbage', removal: 'garbage' };
+  // AND BOTH COMPRESS ({@link FULL_SAVE_TERMS}): a stream this build wrote new is not written raw.
+  const options: Record<SavePurpose, string> = { ordinary: FULL_SAVE_TERMS, removal: FULL_SAVE_TERMS };
   const purpose: SavePurpose = removals.has(session) ? 'removal' : 'ordinary';
   // COMPOSED, and the protection goes LAST so a reader of the string meets
   // the purpose first. The two are independent terms of one option list —
