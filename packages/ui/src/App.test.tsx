@@ -2975,7 +2975,7 @@ describe('App', () => {
       expect(vi.mocked(reportProblem)).toHaveBeenCalledTimes(1);
       // THE PAGE SAYS IT, in its own words, where the engine-unavailable sentence ends the mode instead. The first page's
       // own slot: the page ahead (ADR-0247) is read for Edit text too, and says the same.
-      expect(await within(firstPageSlot()).findByText(/text could not be read/u)).toBeDefined();
+      expect(await within(firstPageSlot()).findByText(/text is not readable/u)).toBeDefined();
       // STILL ON, asserted by the next press: a mode that was left is turned on again and asks again, and one still on is
       // turned OFF by it and reads nothing.
       const before = blockReads.length;
