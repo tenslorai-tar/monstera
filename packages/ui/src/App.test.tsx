@@ -5246,7 +5246,9 @@ describe('the proof locale — every word on screen came through the catalogue (
     expect(screen.getAllByText('annual.pdf').length).toBeGreaterThan(0);
     const tools = [...document.querySelectorAll('.m-ribbon [data-command]')];
     expect(tools.length).toBeGreaterThan(5);
-    expect(tools.every((tool) => tool.textContent.includes('⟦'))).toBe(true);
+    // AN ICON BUTTON (ADR-0194) DRAWS NO LABEL: its name is its aria-label, which comes through the catalogue too.
+    const named = (tool: Element): string => (tool.textContent.trim() === '' ? (tool.getAttribute('aria-label') ?? '') : tool.textContent);
+    expect(tools.every((tool) => named(tool).includes('⟦'))).toBe(true);
     const leaks = unmarked().filter((text) => !DATA.test(text));
     expect(leaks, `\n${leaks.join('\n')}\n`).toStrictEqual([]);
   });

@@ -264,8 +264,9 @@ export function toggleSplitViewCommand(deps: { readonly settings: SettingsStore 
     placements: [
       // SECONDARY IN TOOLS › DISPLAY: drawn on Home › Display and in View › Show (ADR-0107).
       { surface: 'ribbon', section: 'tools', group: GROUP_DISPLAY, order: 90, prominence: 'secondary', size: 'small' },
-      // AND HOME › DISPLAY, v5-02's *Split View*.
-      { surface: 'ribbon', section: 'home', group: GROUP_DISPLAY, order: 220 },
+      // AND HOME › DISPLAY, v5-02's *Split View*: SECONDARY AND SMALL, so with Dim pages and Compare it is one column
+      // after the layouts, its own run (ADR-0194 Decision 3), and the first to fold (the owner, 2026-11-06).
+      { surface: 'ribbon', section: 'home', group: GROUP_DISPLAY, order: 220, prominence: 'secondary', size: 'small' },
       { surface: 'menu-bar', menu: 'view', group: 3, order: 40, caption: MENU_GROUP_SHOW },
     ],
     when: hasDocument,
@@ -344,7 +345,7 @@ export function toggleDarkPageCommand(deps: { readonly settings: SettingsStore }
       // SECONDARY IN TOOLS › DISPLAY: drawn on Home › Display and in View › Show (ADR-0107).
       { surface: 'ribbon', section: 'tools', group: GROUP_DISPLAY, order: 70, prominence: 'secondary', size: 'small' },
       // AND HOME › DISPLAY as v5-02's *Dim pages*: this is the command that dims a page for a dark room.
-      { surface: 'ribbon', section: 'home', group: GROUP_DISPLAY, order: 222 },
+      { surface: 'ribbon', section: 'home', group: GROUP_DISPLAY, order: 222, prominence: 'secondary', size: 'small' },
       { surface: 'menu-bar', menu: 'view', group: 3, order: 50, caption: MENU_GROUP_SHOW },
     ],
     when: hasDocument,

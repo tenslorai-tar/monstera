@@ -2732,14 +2732,21 @@ test('a CAPTION THAT GROWS after the fold measured it is measured again, so the 
   // face and stopped doing on Windows' Segoe UI once Home's three Office buttons became one Export (cloud-4 item 9c):
   // the narrower captions then grew into the room left at the row's end, nothing folded, and the case failed for
   // its input rather than the fold. Letter spacing adds exactly its amount for each character a caption draws.
+  //
+  // COUNTED PER UNIT THE ROW DRAWS, not per caption (Home in small and icon sizes, 2026-11-06): a column of small tools
+  // (ADR-0194) is as wide as its WIDEST label, so only that label's characters widen the row, and an icon draws none.
+  // Summed over every caption, the growth was spread over labels stacked in one column and Home's room absorbed it.
   const { room, characters } = await tools.evaluate((row) => {
     const style = getComputedStyle(row);
     const inner = row.getBoundingClientRect().right - Number.parseFloat(style.paddingRight) - Number.parseFloat(style.borderRightWidth);
     const groups = [...row.querySelectorAll(':scope > .m-ribbon__group, :scope > .m-ribbon__rest')];
-    const labels = [...row.querySelectorAll('.m-tool-button__label')];
+    const length = (element: Element): number =>
+      Math.max(0, ...[...element.querySelectorAll('.m-tool-button__label')].map((label) => label.textContent.length));
+    const stacks = [...row.querySelectorAll('[data-stack]')];
+    const loose = [...row.querySelectorAll('.m-tool-button[data-command]')].filter((button) => button.closest('[data-stack]') === null);
     return {
       room: inner - Math.max(...groups.map((group) => group.getBoundingClientRect().right)),
-      characters: labels.reduce((sum, label) => sum + label.textContent.length, 0),
+      characters: [...stacks, ...loose].reduce((sum, unit) => sum + length(unit), 0),
     };
   });
   expect(characters).toBeGreaterThan(0);

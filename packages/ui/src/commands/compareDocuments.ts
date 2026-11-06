@@ -36,8 +36,9 @@ export function compareDocumentsCommand(deps: {
     ribbonTitle: RIBBON_COMPARE,
     placements: [
       { surface: 'ribbon', section: 'review', group: GROUP_COMPARE, order: 10 },
-      // AND HOME › DISPLAY, last, as v5-02 draws *Compare*: two documents side by side is a way of viewing.
-      { surface: 'ribbon', section: 'home', group: GROUP_DISPLAY, order: 224 },
+      // AND HOME › DISPLAY, last, as v5-02 draws *Compare*: two documents side by side is a way of viewing. Secondary and
+      // small, in the column Split view heads (the owner, 2026-11-06; ADR-0284's correction of that date).
+      { surface: 'ribbon', section: 'home', group: GROUP_DISPLAY, order: 224, prominence: 'secondary', size: 'small' },
     ],
     when: hasDocument,
     run: async (context: CommandContext): Promise<void> => {
