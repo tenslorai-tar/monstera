@@ -10,7 +10,8 @@
  * a press at the start, middle and end of letters in an untouched line puts the caret on the page's letter edge);
  * `properties` (ADR-0283: the title and dates edited, saved, reopened, read by Windows, undone, and removed by Sanitize);
  * `curves` (ADR-0282: the question's two warnings, the copy's letters, the report, Open the copy, the open file refused as
- * the target, a password-protected document); `placements` (cloud-50: Edit text's outlines on the 200-placement page).
+ * the target, a password-protected document); `placements` (cloud-50: Edit text's outlines on the 200-placement page);
+ * `placed` (ADR-0287: placed marks are drawn by the saved page, still move until the document closes, and a word stamp stays a layer).
  *
  * Every step asserts the effect a person would look for, never only that something answered.
  */
@@ -21,7 +22,8 @@ import { createRequire } from 'node:module';
 import { basename, dirname, join } from 'node:path';
 import { expect } from '@playwright/test';
 
-import { appRootOption, root, startWalk } from './liveWalk.mjs';
+import { appRootOption, nothingInFlight, root, startWalk } from './liveWalk.mjs';
+import { savedMarks } from './savedPdf.mjs';
 import { editTextOpening, textSteps } from './textWalkSteps.mjs';
 
 /** @type {typeof import('@cantoo/pdf-lib')} */
@@ -33,7 +35,7 @@ const ONLY = at === -1 ? undefined : new Set((process.argv[at + 1] ?? '').split(
 const runs = (/** @type {string} */ part) => ONLY === undefined || ONLY.has(part);
 
 const walk = await startWalk('new-features', appRootOption(process.argv));
-const { app, page, output, open, saveTo, command, section, step, finish } = walk;
+const { app, page, output, open, pickFiles, saveTo, command, section, step, finish } = walk;
 const text = textSteps(walk);
 
 /** Every tab closed, answering "Don't save": each part starts with nothing open. */
@@ -1107,6 +1109,154 @@ if (runs('one-space')) {
 }
 
 // ———————————————————————————————————�
+
+if (runs('placed')) {
+  // AN INTENDED CHANGE AGAINST 1.1.2610.0 (ADR-0287), which wrote all four as layers some phone apps do not draw.
+  const path = join(output, 'placed.pdf');
+  const blank = await PDFDocument.create();
+  blank.addPage([612, 792]).drawText('A page for placed marks', { x: 72, y: 720, size: 14 });
+  await writeFile(path, await blank.save());
+  const PICTURE = join(output, 'placed-picture.png');
+  await writeFile(PICTURE, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64'));
+  const settled = async () => {
+    await nothingInFlight(page);
+    await page.waitForTimeout(1500);
+  };
+  const slot = async () => {
+    const box = await page.locator('canvas.m-page:visible').first().boundingBox();
+    if (box === null) throw new Error('no page is showing');
+    return { x: box.x, y: box.y, scale: box.width / 612 };
+  };
+  const drag = async (/** @type {number[]} */ [x0 = 0, y0 = 0], /** @type {number[]} */ [x1 = 0, y1 = 0]) => {
+    const at = await slot();
+    await page.mouse.move(at.x + x0 * at.scale, at.y + y0 * at.scale);
+    await page.mouse.down();
+    await page.mouse.move(at.x + x1 * at.scale, at.y + y1 * at.scale, { steps: 10 });
+    await page.mouse.up();
+    await settled();
+  };
+  const press = async (/** @type {number} */ x, /** @type {number} */ y) => {
+    const at = await slot();
+    await page.mouse.click(at.x + x * at.scale, at.y + y * at.scale);
+    await settled();
+  };
+  // A TOOL STAYS CHOSEN ACROSS DOCUMENTS, and pressing it again turns it off.
+  const choose = async (/** @type {string} */ name) => {
+    const button = page.getByRole('button', { name, exact: true }).first();
+    if ((await button.getAttribute('aria-pressed')) !== 'true') await button.click();
+    await page.waitForTimeout(300);
+  };
+  const handles = () => page.locator('[data-selection-handle]').count();
+  const unsaved = async () => /Unsaved changes/u.test(await page.locator('.m-status-bar').first().innerText());
+  const saved = async () => {
+    await page.keyboard.press('Control+s');
+    await expect.poll(unsaved, { timeout: 30_000 }).toBe(false);
+    await settled();
+  };
+  /** Layers on page 1, and how many marks its content draws. */
+  const held = async () => {
+    const loaded = await PDFDocument.load(readFileSync(path), { updateMetadata: false, ignoreEncryption: true });
+    const annots = loaded.getPage(0).node.Annots();
+    const [first] = await savedMarks(path);
+    return { layers: annots === undefined ? 0 : annots.size(), drawn: (first?.own.match(/\/MonsteraEngraved\d+ Do/gu) ?? []).length, own: first?.own ?? '' };
+  };
+  const opened = async () => {
+    await open(path);
+    await section('Comment');
+    await command('Fit page');
+    await settled();
+  };
+  const COVERS = ['annotate.signature', 'annotate.image', 'organize.barcode', 'annotate.stamp'];
+  await step('placed (ADR-0287, intended against 1.1.2610.0): a signature, a picture, a barcode and a picture stamp are drawn by the saved page, with no layer left', async () => {
+    await opened();
+    const chooser = page.getByRole('dialog', { name: 'Signature' });
+    await command('Signature');
+    await chooser.getByRole('button', { name: 'Type' }).click();
+    await chooser.getByRole('textbox', { name: 'Your name' }).fill('Ada Lovelace');
+    await chooser.getByRole('img', { name: 'Your signature, as it will be placed' }).waitFor();
+    await chooser.getByRole('button', { name: 'Use Signature' }).click();
+    await chooser.waitFor({ state: 'hidden' });
+    await press(380, 490);
+    await pickFiles([PICTURE]);
+    await choose('Image');
+    await drag([40, 600], [180, 700]);
+    await command('Add a barcode');
+    await drag([460, 20], [540, 100]);
+    const barcode = page.getByRole('dialog', { name: 'Add a barcode' });
+    await barcode.getByLabel('Text or link').fill('https://example.com');
+    await barcode.getByRole('radio', { name: 'QR Code' }).check();
+    await barcode.getByRole('button', { name: 'Add to the page', exact: true }).click();
+    await barcode.waitFor({ state: 'hidden' });
+    await settled();
+    await pickFiles([PICTURE]);
+    await choose('Stamp');
+    await drag([220, 620], [370, 720]);
+    const stamp = page.getByRole('dialog', { name: 'Choose a stamp' });
+    await stamp.getByRole('button', { name: 'Add a picture…', exact: true }).click();
+    await page.locator('[data-stamp-picture] input').first().waitFor({ state: 'attached', timeout: 10_000 });
+    await page.locator('[data-stamp-picture] input').first().check();
+    await page.getByRole('dialog', { name: 'Choose a stamp' }).getByRole('button', { name: 'Add stamp', exact: true }).click();
+    await page.getByRole('dialog', { name: 'Choose a stamp' }).waitFor({ state: 'hidden' });
+    await settled();
+    await page.keyboard.press('Escape');
+    await saved();
+    const read = await held();
+    if (read.layers !== 0 || read.drawn !== 4) throw new Error(`the saved page holds ${String(read.layers)} layers and draws ${String(read.drawn)} marks, where it should hold none and draw 4`);
+    return { layers: read.layers, drawn: read.drawn };
+  }, { covers: COVERS });
+  await step('placed: after that Save the picture still selects and moves, and the next Save draws it where it went', async () => {
+    const before = (await held()).own;
+    await choose('Select');
+    await press(110, 650);
+    const shown = await handles();
+    // THE CASE THAT FOUND THE FAULT: the file was right and the session listed nothing, so a click gave no handles.
+    if (shown === 0) throw new Error('a click on the placed picture gave no handles');
+    await drag([110, 650], [150, 690]);
+    await press(30, 770);
+    await saved();
+    const read = await held();
+    if (read.own === before) throw new Error('the saved page draws the picture where it was');
+    if (read.layers !== 0 || read.drawn !== 4) throw new Error(`after the move the page holds ${String(read.layers)} layers and draws ${String(read.drawn)} marks`);
+    return { handles: shown };
+  }, { covers: COVERS });
+  await step('placed: closed and opened again, the picture is part of the page and no longer selects', async () => {
+    await closeAll();
+    await opened();
+    await choose('Select');
+    await press(150, 690);
+    const shown = await handles();
+    if (shown !== 0) throw new Error(`a click on the page's own picture gave ${String(shown)} handles`);
+    return { handles: shown };
+  }, { covers: COVERS });
+  await step('placed: a word stamp stays a layer after a reopen, and moves (next update makes it part of the page)', async () => {
+    await closeAll();
+    await writeFile(path, await blank.save());
+    await opened();
+    await choose('Stamp');
+    await drag([60, 90], [240, 150]);
+    const stamp = page.getByRole('dialog', { name: 'Choose a stamp' });
+    await stamp.getByRole('radio', { name: 'VOID', exact: true }).check();
+    await stamp.getByRole('button', { name: 'Add stamp', exact: true }).click();
+    await stamp.waitFor({ state: 'hidden' });
+    await settled();
+    await page.keyboard.press('Escape');
+    await saved();
+    await closeAll();
+    await opened();
+    await choose('Select');
+    await press(150, 120);
+    const shown = await handles();
+    const read = await held();
+    if (read.layers !== 1 || read.drawn !== 0 || shown === 0) throw new Error(`the word stamp: ${String(read.layers)} layers, ${String(read.drawn)} drawn, ${String(shown)} handles`);
+    await drag([150, 120], [300, 300]);
+    if (!(await unsaved())) throw new Error('a drag of the word stamp changed nothing');
+    await page.keyboard.press('Escape');
+    await closeAll();
+    return { layers: read.layers, handles: shown };
+  }, { covers: ['annotate.stamp'] });
+}
+
+// ———————————————————————————————————————————————————————————————————————
 
 if (runs('placements')) {
   await step('placements (50): 200 placements add under 500 ms to Edit text’s outlines of a page', async () => {
