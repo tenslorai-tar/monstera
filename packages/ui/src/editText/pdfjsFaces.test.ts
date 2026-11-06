@@ -40,6 +40,22 @@ describe('the face PDF.js loaded for each run of a block', () => {
     expect(runFamiliesOf(BLOCK, shown).size).toBe(0);
   });
 
+  describe('a block in a frame, whose lines are in the frame and PDF.js’s items on the page', () => {
+    // MEASURED 2026-11-06 on a corpus page under /Rotate 180 whose text is turned too: a line's box from -533.2 across and -130.17
+    // up, and PDF.js's item for it at (534, 128).
+    const line = { ...BLOCK.lines[0], box: { x0: -533.2, y0: -130.17, x1: -84.05, y1: -120.59 } } as TextBlock['lines'][number];
+    const turned: TextBlock = { ...BLOCK, lines: [line], frame: [-1, 0, 0, -1] };
+    const item = { x: 534, y: 128, text: 'first line', family: 'g_d0_f2' };
+
+    it('finds the run its item stands on', () => {
+      expect(runFamiliesOf(turned, [item]).get(1)).toBe('g_d0_f2');
+    });
+
+    it('CONTROL: the same block with no frame does not, so the frame is what found it', () => {
+      expect(runFamiliesOf({ ...BLOCK, lines: [line] }, [item]).size).toBe(0);
+    });
+  });
+
   it('matches across the spaces PDFium infers and PDF.js does not', () => {
     expect(runFamiliesOf(BLOCK, [{ x: 140, y: 691, text: 'line', family: 'g_d0_f1' }]).get(1)).toBe('g_d0_f1');
   });

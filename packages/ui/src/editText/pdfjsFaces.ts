@@ -1,4 +1,4 @@
-import type { DocVersion } from '@monstera/shared';
+import { type DocVersion, intoTextFrame } from '@monstera/shared';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 
 import type { TextBlock } from '../textBlock.js';
@@ -52,8 +52,12 @@ const bare = (text: string): string => text.replace(/\s+/gu, '');
  */
 export function runFamiliesOf(block: TextBlock, shown: readonly ShownText[]): Map<number, string> {
   const families = new Map<number, string>();
+  // PDF.JS SAYS WHERE IN PAGE SPACE, AND A FRAMED BLOCK'S LINES ARE IN ITS FRAME (ADR-0273): compared as they came, no run of a
+  // turned page ever met its item, so the whole of it was drawn in the chain's face and looked lighter than the page.
+  const { frame } = block;
+  const inBlock = frame === undefined ? shown : shown.map((item) => ({ ...item, ...intoTextFrame(frame, item.x, item.y) }));
   for (const line of block.lines) {
-    const onLine = shown.filter(
+    const onLine = inBlock.filter(
       (item) => item.x >= line.box.x0 - 1 && item.x <= line.box.x1 + 1 && item.y >= line.box.y0 - 1 && item.y <= line.box.y1 + 1,
     );
     for (const run of line.runs) {
