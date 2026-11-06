@@ -892,6 +892,54 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-11-06 — Stage audit of `f7e2adf7..0a5262ba` — findings EEEEEEEEE-1 to EEEEEEEEE-8
+
+The range from the last audit to the commit before the Home branch's merge, which would have carried it past one batch
+(101 commits; the hook refused that merge's commit, as it should). `npm run audit:scope` at `0a5262ba`: 95 commits, 190
+files; 13 proofs added, 50 modified, none removed; 22 source files added.
+
+**Method and coverage.** One read-only reviewer read the diffs of every modified proof that lost lines, the new
+instruments and the walk record, and reported **no check loosened**; this author then read findings 1 to 4 and 8 at the
+lines they name, and they hold. **About 45 of the 190 files were read.** Not read: `everyToolWalk.mjs` beyond its step
+loop, `everyToolEffects.mjs`, the AI commands walk, `fitStability.pw.ts`, ADRs 0282 and 0283, and most source diffs in
+`operatorEdit`, `pageFonts`, `textLayerOrder`, `paragraphFlow` and the CSS, whose own commits this author wrote. Nothing was
+mutated for this audit, so item 4's question is answered from reading in findings 2 and 4 and is stated as such. Item 1 was
+sampled from about 7 commit messages, none a workaround; that is a sample, not a classification.
+
+### To fix, each in a commit of its own after this record
+
+- **EEEEEEEEE-1** (medium) — ADR-0285's correction of 2026-11-04 is ahead of the code. It says in the present tense that
+  the record parses step tables; no walk calls `stepTable` or `walkingRow`, only `walkRecord.proof.mjs` does, and most of
+  the controls it names do not exist. The status lived in this journal and in `walkSteps.mjs`, not in the record. The
+  repair is a dated correction, by item 7's table.
+- **EEEEEEEEE-2** (medium) — the pack gate's refusals have no case. `countsFor`'s `!of.clean` and digest clauses
+  (`walkRecord.mjs`), its newest-first sort and `writeRecord`'s dirty refusal: the proof holds no `clean: false` and never
+  calls `reportsOf`, since its cases hand `rowsFrom` ordered reports. Read, not mutated.
+- **EEEEEEEEE-4** (low to medium) — `textSpaces.proof.mjs`' cases 6 and 7 cannot see a lost space. They assert the words
+  are present and no double space stands, so a read that dropped every space passes, and case 7's comment says the turned
+  reading is compared with it while nothing compares them.
+- **EEEEEEEEE-7** (low) — `zoomOfGoTo`'s comment says *as every other zoom is*, false since a fit may go below the ladder.
+- **EEEEEEEEE-8** (low) — figures with no date or instrument: `pdfiumHostServe.ts`' *1.06 to 1.23 s*, its test beside it,
+  and `EditTextLayer.tsx`' *2.7 to 5.8 s* and the flow test's copy. B6's rule.
+
+### For the owner
+
+- **EEEEEEEEE-3** (medium) — a narrower walk can replace a full walk's failure. `rowsFrom` takes the newest report that
+  covers a command across every walk, so a later `newFeaturesWalk` pass overrides an `everyToolWalk` failure on the same
+  build, for `text.edit`, `document.sanitize` and the fits. ADR-0285 permits it and the rule *a full walk of every tool*
+  is narrowed by it. **Asked of the owner, since it is the pack gate.**
+
+### Limits to state
+
+- **EEEEEEEEE-5** (low, asserted only) — `checkLocal.proof.mjs` renames over a file a reader may hold open, which can raise
+  EPERM on Windows. That proof is thought to run only on the Linux job, and neither half was read or run.
+- **EEEEEEEEE-6** (low, not inspected) — `converterFake.ts` may ship: `developerFiles.mjs` excludes by name and this name does
+  not match, and `engineHostFake.ts` has the same shape. No package was opened to see.
+- `proof:texttocurves` reports UNVERIFIABLE and exits 0 on both CI legs, disclosed in `ci.yml`.
+- The poisoned-dist timeout on main's Windows CI has no established mechanism; its commit says no limit was raised.
+
+---
+
 ## 2026-11-06 — Edit text's refusal found where every check had not looked, and how a comparison aims
 
 **The refusal was still in the build, and a commit message said it was not.** `f6993f7c` recorded that the owner's video
