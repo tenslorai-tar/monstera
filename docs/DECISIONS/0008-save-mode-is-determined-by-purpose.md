@@ -149,3 +149,21 @@ remains full rewrite on their account, not on item 4's.
 that also defines the `srcRef` marking scheme the invariant had always named and
 never had
 ([ADR-0043](0043-an-annotation-this-build-wrote-carries-a-private-mark.md)).
+
+## Correction, 2026-11-06 — rule 2's appended save, made twice from one session, wrote a file that does not open
+
+Rule 2's incremental save was correct once and wrong from the second time on, in one session. The mechanism, measured
+on MuPDF 1.28.0 with a signed two-page document: after an incremental save into a buffer, MuPDF takes the
+cross-reference section it just wrote, at its offset in that output, as the document's last one, while the next
+incremental save is still appended to the bytes the document was opened from. So the second save's new section named
+as its `/Prev` an offset of a file that is not there (`/Prev 18351`, opening with no page tree), and the third's named
+its own offset (`/Prev 18352`), the shape `mupdfOpen.ts` repairs at open. That repair was never the fix: another
+application reading the file does not make it, and a repaired open hides the revision structure a signature needs.
+
+**The fix** is in `mupdfWriter.ts`' `rebasedOn`: after an appended save the session's document is reopened from the
+bytes just written, so the next save appends to them; every earlier revision, the signed one included, stays byte for
+byte. It covers every caller of the writer's serialise, so every route that appends (a save, a copy, a checkpoint, a
+protected document's appended save) and any number of saves. A protected document keeps its key, reopened with the
+session's password. The rebase reads the written file plainly first, with no repair, and a file whose own chain does
+not read the session's pages is refused rather than handed out. `appendedUnderKey` was not affected: it opens a fresh
+document for each signature and saves it once. `appendedSave.test.ts` holds it, each case failing without the fix.

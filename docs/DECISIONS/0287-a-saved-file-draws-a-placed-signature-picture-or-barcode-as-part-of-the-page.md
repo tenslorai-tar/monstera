@@ -114,3 +114,12 @@ rather than built, since stamps join this rule in the next update.
 `engraveOnSave.test.ts`' signed case, with a picture placed: the first appended save reopens, and a second plain
 appended save from the same session gives a file MuPDF cannot open (*cannot find page tree*, after *ignoring xref
 section recursion*). It does not involve the marks option, which engraves nothing on an appended save. Reported.
+
+## Note, 2026-11-06 — the owner's rulings on the two findings
+
+- **A picture placed from the Stamp chooser is drawn into the page: accepted.** No field is added to separate it.
+  Word stamps (APPROVED, DRAFT and the rest) stay layers until the next update.
+- **A hand signature added to a document that already has a certificate signature stays a layer**, as Decision 5 has
+  it: accepted.
+- **The second appended save is fixed in this release**: ADR-0008's correction of this date has the mechanism and the
+  fix (`rebasedOn`).
