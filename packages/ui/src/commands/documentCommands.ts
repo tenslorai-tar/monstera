@@ -2823,8 +2823,9 @@ export function undoCommand(deps: DocumentCommandDeps): UiCommand {
     // ONE STEP BACK per repeat, as every editor's held Ctrl+Z.
     repeats: true,
     placements: [
-      // IN FILE, as v5-02 draws Open · Save · Print · Undo · Redo in one group.
-      { surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 24 },
+      // IN FILE, as v5-02 draws Open · Save · Print · Undo · Redo in one group. AN ICON, with Redo a column of two, so
+      // Home holds every tool at 1280 (the owner, 2026-11-06; ADR-0284's correction of that date).
+      { surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 24, size: 'icon' },
       // EDIT's FIRST, as every Windows application draws it (ADR-0107).
       { surface: 'menu-bar', menu: 'edit', group: 0, order: 10 },
     ],
@@ -2881,7 +2882,7 @@ export function redoCommand(deps: DocumentCommandDeps): UiCommand {
     alsoShortcuts: ['Ctrl+Shift+Z'],
     repeats: true,
     placements: [
-      { surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 26 },
+      { surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 26, size: 'icon' },
       { surface: 'menu-bar', menu: 'edit', group: 0, order: 20 },
     ],
     when: hasDocument,
@@ -4916,7 +4917,8 @@ export function handToolCommand(deps: {
     title: HAND_TOOL_TITLE,
     ribbonTitle: RIBBON_HAND,
     placements: [
-      { surface: 'ribbon', section: 'home', group: GROUP_QUICK_TOOLS, order: 102 },
+      // SMALL, in one column with Select and Text: the ways a press reads the page, beside the large marks.
+      { surface: 'ribbon', section: 'home', group: GROUP_QUICK_TOOLS, order: 102, size: 'small' },
       { surface: 'quick-toolbar', order: 40 },
       // VIEW, with Select text: the two ways a press on the page reads — move it, or select its words (ADR-0107).
       { surface: 'menu-bar', menu: 'view', group: 4, order: 10 },
@@ -4947,7 +4949,7 @@ export function selectTextCommand(deps: {
     title: SELECT_TEXT_TITLE,
     ribbonTitle: RIBBON_TEXT,
     placements: [
-      { surface: 'ribbon', section: 'home', group: GROUP_QUICK_TOOLS, order: 103 },
+      { surface: 'ribbon', section: 'home', group: GROUP_QUICK_TOOLS, order: 103, size: 'small' },
       { surface: 'quick-toolbar', order: 41 },
       { surface: 'menu-bar', menu: 'view', group: 4, order: 20 },
     ],

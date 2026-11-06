@@ -5,7 +5,7 @@
  *
  *   node scripts/research/newFeaturesWalk.mjs [--app-root <checkout>] [--only <part,part>]
  *
- * Parts: `layouts` (ADR-0284 and cloud-45: the four layouts and the cover page from Tools › Display, the View menu and
+ * Parts: `layouts` (ADR-0284 and cloud-45: the four layouts and the cover page from Home › Display (Tools › Display until the owner moved them on 2026-11-05), the View menu and
  * Settings, a right-to-left book, and a search hit and a link landing on a right-hand page's pair); `caret` (cloud-41:
  * a press at the start, middle and end of letters in an untouched line puts the caret on the page's letter edge);
  * `properties` (ADR-0283: the title and dates edited, saved, reopened, read by Windows, undone, and removed by Sanitize);
@@ -127,9 +127,9 @@ const LAYOUTS = [
   { layout: 'facing', title: 'Continuous facing' },
 ];
 
-/** The ribbon's Tools section, as a hand finds it. @param {string} name */
-async function fromToolsDisplay(name) {
-  await page.locator('[data-ribbon-section="tools"]').click();
+/** The ribbon's Home section, as a hand finds it (Home › Display since 2026-11-05). @param {string} name */
+async function fromHomeDisplay(name) {
+  await page.locator('[data-ribbon-section="home"]').click();
   await page.locator('.m-ribbon').getByRole('button', { name, exact: true }).first().click();
 }
 
@@ -171,7 +171,7 @@ if (runs('layouts')) {
   });
 
   for (const [surface, choose] of /** @type {const} */ ([
-    ['Tools › Display', fromToolsDisplay],
+    ['Home › Display', fromHomeDisplay],
     ['the View menu', fromViewMenu],
   ])) {
     for (const { layout, title } of LAYOUTS) {

@@ -624,10 +624,11 @@ export function linkPageToolCommand(deps: ToolCommandDeps): UiCommand {
  * has never depended on what the tool does when it is on.
  */
 export function selectToolCommand(deps: ToolCommandDeps): UiCommand {
-  // AND HOME › QUICK TOOLS, first, as v5-02 draws it.
+  // AND HOME › QUICK TOOLS, first, as v5-02 draws it: small, heading the column Hand and Text complete (the owner,
+  // 2026-11-06; ADR-0284's correction of that date).
   return alsoOn(
     alsoOnThePill(toolCommand(SELECT_TOOL_ID, { full: SELECT_TOOL_TITLE, ribbon: RIBBON_SELECT }, 'MousePointer2', 39, deps), 39),
-    { surface: 'ribbon', section: 'home', group: GROUP_QUICK_TOOLS, order: 100 },
+    { surface: 'ribbon', section: 'home', group: GROUP_QUICK_TOOLS, order: 100, size: 'small' },
   );
 }
 

@@ -1130,15 +1130,11 @@
     "where": [
       {
         "surface": "ribbon",
-        "section": "tools"
+        "section": "home"
       },
       {
         "surface": "menu-bar",
         "menu": "view"
-      },
-      {
-        "surface": "menu-bar",
-        "menu": "tools"
       }
     ]
   },
@@ -1148,15 +1144,11 @@
     "where": [
       {
         "surface": "ribbon",
-        "section": "tools"
+        "section": "home"
       },
       {
         "surface": "menu-bar",
         "menu": "view"
-      },
-      {
-        "surface": "menu-bar",
-        "menu": "tools"
       }
     ]
   },
@@ -1166,15 +1158,11 @@
     "where": [
       {
         "surface": "ribbon",
-        "section": "tools"
+        "section": "home"
       },
       {
         "surface": "menu-bar",
         "menu": "view"
-      },
-      {
-        "surface": "menu-bar",
-        "menu": "tools"
       }
     ]
   },
@@ -1184,15 +1172,11 @@
     "where": [
       {
         "surface": "ribbon",
-        "section": "tools"
+        "section": "home"
       },
       {
         "surface": "menu-bar",
         "menu": "view"
-      },
-      {
-        "surface": "menu-bar",
-        "menu": "tools"
       }
     ]
   },
@@ -1202,15 +1186,11 @@
     "where": [
       {
         "surface": "ribbon",
-        "section": "tools"
+        "section": "home"
       },
       {
         "surface": "menu-bar",
         "menu": "view"
-      },
-      {
-        "surface": "menu-bar",
-        "menu": "tools"
       }
     ]
   }

@@ -15,6 +15,7 @@ import {
   SPLIT_VIEW_TITLE,
 } from '../messages/en.js';
 import { type UiCommand, VISIBLE } from '../registries/commands.js';
+import type { Placement } from '../registries/placement.js';
 import { hasDocument } from './documentCommands.js';
 import type { IconName } from '../primitives/icons.js';
 import {
@@ -106,8 +107,20 @@ export function toggleRulersCommand(deps: { readonly settings: SettingsStore }):
   };
 }
 
-/** Each page layout's place among the five: the order a person reads them in, Tools › Display and the View menu alike. */
+/** Each page layout's place among the five: the order a person reads them in, in the View menu and on Home alike. */
 const PAGE_LAYOUT_ORDER: Readonly<Record<PageLayout, number>> = { single: 20, continuous: 21, pair: 22, facing: 23 };
+/** *Show cover page*'s place, after the four. */
+const COVER_PAGE_ORDER = 24;
+
+/**
+ * HOME › DISPLAY, the owner's decision of 2026-11-05 (ADR-0284's correction of that date): the Tools section had too
+ * many items, and the layouts are a way of reading, beside the fits. As small tools, so the five draw as two columns,
+ * three and two (ADR-0194). BETWEEN FIT PAGE (202) AND SPLIT VIEW (220), the owner's decision of 2026-11-06: a group
+ * folds from its end, so Split view, Dim pages and Compare (220, 222, 224) go into its More before the layouts do.
+ */
+function onHome(order: number): Extract<Placement, { surface: 'ribbon' }> {
+  return { surface: 'ribbon', section: 'home', group: GROUP_DISPLAY, order: 190 + order, size: 'small' };
+}
 const PAGE_LAYOUT_ICONS: Readonly<Record<PageLayout, IconName>> = { single: 'File', continuous: 'FileStack', pair: 'Columns2', facing: 'Files' };
 
 /**
@@ -125,7 +138,7 @@ export function pageLayoutCommands(deps: { readonly settings: SettingsStore }): 
     icon: PAGE_LAYOUT_ICONS[layout],
     title: PAGE_LAYOUT_OPTION_TITLES[layout],
     placements: [
-      { surface: 'ribbon', section: 'tools', group: GROUP_DISPLAY, order: PAGE_LAYOUT_ORDER[layout], size: 'small' },
+      onHome(PAGE_LAYOUT_ORDER[layout]),
       // GROUP 5, the first number the View menu leaves free (0 to 4 are taken, one caption each, ADR-0107).
       { surface: 'menu-bar', menu: 'view', group: 5, order: PAGE_LAYOUT_ORDER[layout], caption: PAGE_LAYOUT_TITLE },
     ],
@@ -141,8 +154,8 @@ export function pageLayoutCommands(deps: { readonly settings: SettingsStore }): 
     icon: 'PanelRight',
     title: COVER_PAGE_TITLE,
     placements: [
-      { surface: 'ribbon', section: 'tools', group: GROUP_DISPLAY, order: 24, size: 'small' },
-      { surface: 'menu-bar', menu: 'view', group: 5, order: 24, caption: PAGE_LAYOUT_TITLE },
+      onHome(COVER_PAGE_ORDER),
+      { surface: 'menu-bar', menu: 'view', group: 5, order: COVER_PAGE_ORDER, caption: PAGE_LAYOUT_TITLE },
     ],
     when: hasDocument,
     checked: () => deps.settings.get(COVER_PAGE_SETTING.id) === true,
@@ -251,8 +264,9 @@ export function toggleSplitViewCommand(deps: { readonly settings: SettingsStore 
     placements: [
       // SECONDARY IN TOOLS › DISPLAY: drawn on Home › Display and in View › Show (ADR-0107).
       { surface: 'ribbon', section: 'tools', group: GROUP_DISPLAY, order: 90, prominence: 'secondary', size: 'small' },
-      // AND HOME › DISPLAY, v5-02's *Split View*.
-      { surface: 'ribbon', section: 'home', group: GROUP_DISPLAY, order: 204 },
+      // AND HOME › DISPLAY, v5-02's *Split View*: SECONDARY AND SMALL, so with Dim pages and Compare it is one column
+      // after the layouts, its own run (ADR-0194 Decision 3), and the first to fold (the owner, 2026-11-06).
+      { surface: 'ribbon', section: 'home', group: GROUP_DISPLAY, order: 220, prominence: 'secondary', size: 'small' },
       { surface: 'menu-bar', menu: 'view', group: 3, order: 40, caption: MENU_GROUP_SHOW },
     ],
     when: hasDocument,
@@ -331,7 +345,7 @@ export function toggleDarkPageCommand(deps: { readonly settings: SettingsStore }
       // SECONDARY IN TOOLS › DISPLAY: drawn on Home › Display and in View › Show (ADR-0107).
       { surface: 'ribbon', section: 'tools', group: GROUP_DISPLAY, order: 70, prominence: 'secondary', size: 'small' },
       // AND HOME › DISPLAY as v5-02's *Dim pages*: this is the command that dims a page for a dark room.
-      { surface: 'ribbon', section: 'home', group: GROUP_DISPLAY, order: 206 },
+      { surface: 'ribbon', section: 'home', group: GROUP_DISPLAY, order: 222, prominence: 'secondary', size: 'small' },
       { surface: 'menu-bar', menu: 'view', group: 3, order: 50, caption: MENU_GROUP_SHOW },
     ],
     when: hasDocument,

@@ -4,7 +4,7 @@ title: Show pages one at a time or side by side
 summary: Choose whether pages scroll one after another, show one at a time, or face each other in pairs like an open book.
 keywords: [page layout, single page, one page, facing pages, facing, continuous facing, two pages, side by side, spread, book, cover page, continuous, page display]
 commands: [view.page-layout-single, view.page-layout-continuous, view.page-layout-pair, view.page-layout-facing, view.cover-page]
-contexts: [tools, dialog.settings]
+contexts: [home, dialog.settings]
 ---
 Monstera shows pages one after another by default. You can instead see a single page at a time, or pages in facing pairs.
 
@@ -13,7 +13,7 @@ Monstera shows pages one after another by default. You can instead see a single 
 1. In the menu bar, choose **View**.
 2. Under **Page layout**, choose **Single page**, **Continuous**, **Facing** or **Continuous facing**.
 
-The same choices are in the **Display** group of the **Tools** tab, and on the **Viewing** page of **Settings**, under **Page layout**. They are one setting: a choice made in one place shows in the others.
+The same choices are in the **Display** group of the **Home** tab, and on the **Viewing** page of **Settings**, under **Page layout**. They are one setting: a choice made in one place shows in the others.
 
 ![The Viewing page of Settings with the Page layout choice open](screenshot:page-layout-1)
 

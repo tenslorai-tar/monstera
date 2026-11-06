@@ -25,6 +25,11 @@ is not available.
 
 ## Ribbon › Home
 
+- [ ] **Single page** — Display · `view.page-layout-single` · Shows: on screen · Help: *Show pages one at a time or side by side*
+- [ ] **Continuous** — Display · `view.page-layout-continuous` · Shows: on screen · Help: *Show pages one at a time or side by side*
+- [ ] **Facing** — Display · `view.page-layout-pair` · Shows: on screen · Help: *Show pages one at a time or side by side*
+- [ ] **Continuous facing** — Display · `view.page-layout-facing` · Shows: on screen · Help: *Show pages one at a time or side by side*
+- [ ] **Show cover page** — Display · `view.cover-page` · Shows: on screen · Help: *Show pages one at a time or side by side*
 - [ ] **Export pages as images…** — Export · `document.export-page-images` · Shows: a toast · Help: *Save pages as pictures*
 - [ ] **Export to Word…** — Export · `document.export-word` · Shows: a toast · Help: *Export to Word*
 - [ ] **Export tables to Excel…** — Export · `document.export-excel` · Shows: a toast · Help: *Export tables to Excel*
@@ -195,12 +200,7 @@ is not available.
 - [ ] **Open from web address…** — Create · `document.open-from-url` · Shows: on screen · Help: *Open a PDF from a web address*
 - [ ] **New PDF from camera…** — Create · `document.new-from-camera` · Shows: on screen · Help: *Make a PDF with your camera*
 - [ ] **Zoom in** — Display · `view.zoom-in` · Shows: on screen · Help: *Read the status bar*
-- [ ] **Single page** — Display · `view.page-layout-single` · Shows: on screen · Help: *Show pages one at a time or side by side*
 - [ ] **Zoom out** — Display · `view.zoom-out` · Shows: on screen · Help: *Read the status bar*
-- [ ] **Continuous** — Display · `view.page-layout-continuous` · Shows: on screen · Help: *Show pages one at a time or side by side*
-- [ ] **Facing** — Display · `view.page-layout-pair` · Shows: on screen · Help: *Show pages one at a time or side by side*
-- [ ] **Continuous facing** — Display · `view.page-layout-facing` · Shows: on screen · Help: *Show pages one at a time or side by side*
-- [ ] **Show cover page** — Display · `view.cover-page` · Shows: on screen · Help: *Show pages one at a time or side by side*
 - [ ] **Fit width** — Display · `view.fit-width` · Shows: on screen · Help: *Read the status bar*
 - [ ] **Fit page** — Display · `view.fit-page` · Shows: on screen · Help: *Read the status bar*
 - [ ] **Show rulers** — Display · `view.toggle-rulers` · Shows: on screen · Help: *Show rulers and a grid*
