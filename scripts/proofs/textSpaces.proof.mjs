@@ -224,9 +224,14 @@ async function run(pdfium, kernel) {
   const turnedWords = await allWords(await prose(true));
   const plainWords = await allWords(await prose(false));
   const doubled = (/** @type {string} */ words) => (words.match(/ {2}/gu) ?? []).length;
-  // THE WORDS WERE READ AT ALL, by a word from each line: a page read as nothing holds no double space either.
-  const hasWords = (/** @type {string} */ words) => ['magna', 'commodo', 'fugiat', 'laborum'].every((word) => words.includes(word));
-  check(6, hasWords(turnedWords) && doubled(turnedWords) === 0, `${String(doubled(turnedWords))} double spaces in ${String(turnedWords.length)} characters`);
+  // EVERY LINE AS THE PAGE DRAWS IT, spaces and all: a word from each line and no double space was also what a read that lost
+  // every space answered, and what a page read as nothing answered for the second half. The control below holds that open.
+  const hasWords = (/** @type {string} */ words) => PROSE.every((line) => words.includes(line.trim()));
+  check(
+    6,
+    hasWords(turnedWords) && doubled(turnedWords) === 0 && !hasWords(turnedWords.replaceAll(' ', '')),
+    `${String(doubled(turnedWords))} double spaces in ${String(turnedWords.length)} characters`,
+  );
   check(7, hasWords(plainWords) && doubled(plainWords) === 0, `${String(doubled(plainWords))} double spaces in ${String(plainWords.length)} characters`);
 }
 
