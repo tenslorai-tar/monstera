@@ -410,6 +410,7 @@ export function EditTextLayer({
               faces={faces}
               finishingRef={finishingRef}
               geometry={geometry}
+              stacked={stacking[at] ?? 1}
               // THE BLOCK'S POSITION AND THE VERSION, so a new read is a new editor rather than old words in a new place.
               key={`editor-${String(blocks.version)}-${String(at)}`}
               native={native}
@@ -545,6 +546,8 @@ export function EditTextLayer({
           faces={NO_FACES}
           finishingRef={finishingRef}
           geometry={geometry}
+          // A NEW BOX HAS NO OUTLINE TO STAND WHERE: it is above them all, since its words are the ones being typed.
+          stacked={blocks.blocks.length + 1}
           key={`fresh-${String(blocks.version)}`}
           native={native}
           onClose={(outcome) => {

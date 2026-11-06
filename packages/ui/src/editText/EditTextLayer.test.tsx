@@ -447,6 +447,41 @@ describe('Edit text on the editor kit (ADR-0271)', () => {
   });
 });
 
+describe('an open editor among outlines that overlap it', () => {
+  // A SMALL BLOCK INSIDE A LARGE ONE'S BOX, which an edit of a line with a gap leaves: the page's own numbers in `operatorEdit`.
+  const large: TextBlock = { ...BLOCK, box: box(72, 640, 340, 700) };
+  const small: TextBlock = { ...OTHER, box: box(160, 688, 280, 700) };
+  const opened = (at: number) => {
+    const view = render(
+      <I18nProvider i18n={i18n}>
+        <EditTextLayer
+          blocks={{ ...BLOCKS, blocks: [large, small] }}
+          geometry={{ ...GEOMETRY, crop: [...GEOMETRY.crop] }}
+          onCommit={() => Promise.resolve('written')}
+          onLeave={() => undefined}
+          page={0}
+          paperAt={() => undefined}
+          blockFaces={() => Promise.resolve(NO_BLOCK_FACES)}
+        />
+      </I18nProvider>,
+    );
+    fireEvent.click(must(view.container.querySelector(`[data-text-block="${String(at)}"]`), 'outline'), { detail: 1 });
+    const frame = must(view.container.querySelector<HTMLElement>('[data-kit-frame]'), 'frame');
+    const other = must(view.container.querySelector<HTMLElement>('[data-text-block]'), 'the other outline');
+    return { frame: Number(frame.style.zIndex), other: Number(other.style.zIndex) };
+  };
+
+  it('the small block’s editor stands above the large block’s outline, so the press meant for its words reaches them', () => {
+    const { frame, other } = opened(1);
+    expect(frame).toBeGreaterThan(other);
+  });
+
+  it('CONTROL: the large block’s editor stands under the small block’s outline, so that block can still be pressed', () => {
+    const { frame, other } = opened(0);
+    expect(frame).toBeLessThan(other);
+  });
+});
+
 describe('stackingOf, the outlines’ order', () => {
   /** A block with only a box, which is all the order reads. */
   const boxed = (width: number, height: number): TextBlock => ({ box: { x0: 0, y0: 0, x1: width, y1: height } }) as TextBlock;

@@ -1075,6 +1075,35 @@ if (runs('one-space')) {
     }
     return { readings };
   }, { covers: ['text.edit'] });
+  await step('a second edit: the part of a line past a bar, which the first edit made a block of its own, takes the caret and a word', async () => {
+    await open(await paragraph('second-edit.pdf', { turned: false, bar: false, gap: true }));
+    await command('Fit page');
+    await section('Edit');
+    await text.ensureEditText();
+    const outlines = page.locator('[data-text-block]');
+    await outlines.first().waitFor({ state: 'attached', timeout: 30_000 });
+    await page.waitForTimeout(600);
+    await text.openBlock(outlines.first(), 'middle');
+    await page.keyboard.press('Control+Home');
+    await page.keyboard.press('End');
+    await page.keyboard.type(' ');
+    await text.pressAway();
+    if ((await outlines.count()) !== 2) throw new Error(`the first edit left ${String(await outlines.count())} blocks, where this row needs the split it exists to test`);
+    // THE SMALLER OF THE TWO: the press that places the caret is the one an outline over it took (the stack, `stackingOf`).
+    const boxes = await outlines.evaluateAll((all) => all.map((each) => each.getBoundingClientRect().height));
+    const inner = outlines.nth(boxes.indexOf(Math.min(...boxes)));
+    await hold();
+    await text.openBlock(inner, 'middle');
+    if ((await text.editor().count()) !== 1) throw new Error('the second press closed the editor, so no caret came');
+    await page.keyboard.press('Control+End');
+    await page.keyboard.type(' again');
+    const said = await text.pressAway();
+    if (said.length > 0) throw new Error(`the app said ${JSON.stringify(said)}`);
+    const count = await moved();
+    if (count === 0) throw new Error('the word typed in the second edit moved no pixel');
+    await closeAll();
+    return { pixels: count };
+  }, { covers: ['text.edit'] });
 }
 
 // ———————————————————————————————————�

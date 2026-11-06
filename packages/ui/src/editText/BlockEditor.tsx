@@ -72,6 +72,8 @@ export interface BlockEditorProps {
   readonly opened: OpenedBlock;
   readonly opening: Opening;
   readonly geometry: OverlayPage;
+  /** Its place in the stack of the page's outlines (`stackingOf`). */
+  readonly stacked: number;
   readonly placed: Placed;
   readonly paper: React.CSSProperties | undefined;
   readonly faces: RunFaces;
@@ -299,6 +301,7 @@ function EditorProblem({ problem }: { readonly problem: Exclude<BlockCommit, 'wr
 }
 
 export function BlockEditor({
+  stacked,
   block,
   opened,
   opening,
@@ -830,7 +833,10 @@ export function BlockEditor({
       data-kit-mode={mode}
       onKeyDown={onBoxKey}
       ref={frame}
-      style={{ ...boxStyle(placed), height: 'auto', minHeight: placed.height, minWidth: 'min-content' }}
+      // WHERE ITS OUTLINE STOOD IN THE STACK (`stackingOf`). With no place of its own the frame was under every outline, so where a
+      // larger block's box covers this one, as it does after an edit splits a line round a bar, the press meant for these
+      // words went to that block's outline: the second press closed the editor and no caret ever came.
+      style={{ ...boxStyle(placed), height: 'auto', minHeight: placed.height, minWidth: 'min-content', zIndex: stacked }}
       tabIndex={-1}
     >
       {(moved ? [{ top: 0, height: undefined }] : covers).map((cover, at) => (
