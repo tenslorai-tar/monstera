@@ -938,6 +938,61 @@ sampled from about 7 commit messages, none a workaround; that is a sample, not a
 - `proof:texttocurves` reports UNVERIFIABLE and exits 0 on both CI legs, disclosed in `ci.yml`.
 - The poisoned-dist timeout on main's Windows CI has no established mechanism; its commit says no limit was raised.
 
+### The checklist, each item answered (added the same day: Guards refused the entry above without it)
+
+#### 1. Root cause or workaround
+
+Sampled from about 7 commit messages, none a workaround; no override, loosened check or raised limit was found in the
+modified proofs read. Not a classification of all 95 commits.
+
+#### 2. The easy shape only
+
+Not asked of each fix in this range by the reviewer. This author's own: the bar was first run on a jump in a line, and a bar
+at a line's end and a bar over a line's last word were each found by running them, in `0a5262ba`.
+
+#### 2a. A change to how something is proven
+
+`editTextCaret.pw.ts` went from 6 controls to 3 on a dated measurement with its tolerance unchanged; `compositionHost.test.ts`'
+one-at-a-time case became one-call cases that also read each page's own words. Both read as no loss.
+
+#### 3. Would CI have caught it
+
+Answered from the run at `76dfeaa1`: Guards red on this entry, which is the mechanism working. The walks do not run in CI, so
+the bar and link faults' real-app half is this machine's; their kernel and rendered cases do.
+
+#### 4. Proofs non-vacuous
+
+Two absence cases in `linkPointer.pw.ts` were found vacuous by mutation in `42b4deed` and repaired there. EEEEEEEEE-2 and -4 are
+read as able to pass with the thing deleted; neither was mutated.
+
+#### 4a. Instruments' resolution
+
+In this entry's own day, not the range: an ink figure counted a block's outline as letters and read 2.6% lighter where
+inside the outline it is 0.0% (item 13, the owner's list). Nothing else was tested for this audit.
+
+#### 4b. A search's positive control
+
+`keptCensus.ts` and the walk record were read for one; the record's gap is EEEEEEEEE-2. Nothing else was tested.
+
+#### 4c. A derived extent
+
+`walkRecord.mjs`' rows derive from the registry, whose failure makes the set larger, so the derivation is the right way round.
+EEEEEEEEE-3 is about which report answers a row, not how many rows there are.
+
+#### 5. Executed or asserted
+
+EEEEEEEEE-5 and -6 and most of findings 2 and 4 are read and not run, and each says so.
+
+#### 6. Architecture before the feature
+
+ADRs 0282, 0283 and 0285 precede their features by commit order. ADR-0179's correction for holes went in the commit that
+built them, as a correction and not an amendment, since the plan's seam took it.
+
+#### 7. Documents against the code
+
+EEEEEEEEE-1 is the one found: ADR-0285 ahead of the code. EEEEEEEEE-7 is a comment. No cross-document relationship was swept
+beyond those.
+
 ---
 
 ## 2026-11-06 — Edit text's refusal found where every check had not looked, and how a comparison aims
