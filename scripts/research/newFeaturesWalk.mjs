@@ -916,6 +916,156 @@ if (runs('corpus')) {
 
 // ———————————————————————————————————————————— placements ————————————————————————————————————————————
 
+if (runs('fit')) {
+  /** Blank pages of one size, a file of the walk's own. */
+  const sized = async (/** @type {string} */ name, /** @type {number} */ width, /** @type {number} */ height, /** @type {number} */ count) => {
+    const document = await PDFDocument.create();
+    for (let at = 0; at < count; at += 1) document.addPage([width, height]);
+    const path = join(output, name);
+    await writeFile(path, await document.save());
+    return path;
+  };
+  /** The pages on screen against the room their scroller gives them, and how often anything moved in 800 ms. */
+  const fitReading = () =>
+    page.evaluate(async () => {
+      const shown = () => [...Reflect.get(globalThis, 'document').querySelectorAll('canvas.m-page')].filter((each) => each.getBoundingClientRect().width > 0);
+      /** @type {string[]} */
+      const seen = [];
+      for (let tick = 0; tick < 16; tick += 1) {
+        seen.push(shown().map((each) => { const box = each.getBoundingClientRect(); return `${String(Math.round(box.width))}x${String(Math.round(box.height))}`; }).join());
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      const [first] = shown();
+      let scroller = first?.parentElement ?? null;
+      while (scroller !== null && !['auto', 'scroll'].includes(Reflect.get(globalThis, 'getComputedStyle')(scroller).overflowY)) scroller = scroller.parentElement;
+      if (first === undefined || scroller === null) return null;
+      const top = first.getBoundingClientRect().top;
+      const row = shown().filter((each) => Math.abs(each.getBoundingClientRect().top - top) < 2);
+      const left = Math.min(...row.map((each) => each.getBoundingClientRect().left));
+      const right = Math.max(...row.map((each) => each.getBoundingClientRect().right));
+      return {
+        moves: seen.filter((each, at) => at > 0 && each !== seen[at - 1]).length,
+        width: right - left,
+        height: first.getBoundingClientRect().height,
+        roomWidth: scroller.clientWidth,
+        roomHeight: scroller.clientHeight,
+      };
+    });
+  await step('the fits stay still and fit: every layout, page count and paper, at the window heights the loop needed', async () => {
+    const files = [await sized('fit-two-a4.pdf', 595.28, 841.89, 2), await sized('fit-one-a4.pdf', 595.28, 841.89, 1), await sized('fit-wide.pdf', 1276, 1650, 1)];
+    const wrong = [];
+    let readings = 0;
+    for (const file of files) {
+      await open(file);
+      for (const layout of ['Single page', 'Continuous', 'Facing', 'Continuous facing']) {
+        await command(layout);
+        for (const height of [852, 868, 870, 874, 876]) {
+          await walk.sizeWindow({ width: 1600, height });
+          for (const [fit, fills] of /** @type {const} */ ([['Fit width', 'width'], ['Fit page', 'either']])) {
+            await command(fit);
+            await page.waitForTimeout(250);
+            const read = await fitReading();
+            readings += 1;
+            const label = `${basename(file)} ${layout} ${String(height)} ${fit}`;
+            if (read === null) {
+              wrong.push(`${label}: no page on screen`);
+              continue;
+            }
+            if (read.moves > 1) wrong.push(`${label}: moved ${String(read.moves)} times in 800 ms`);
+            if (read.width > read.roomWidth + 1) wrong.push(`${label}: ${String(read.width)} wide in ${String(read.roomWidth)}`);
+            if (fit === 'Fit page' && read.height > read.roomHeight + 1) wrong.push(`${label}: ${String(read.height)} high in ${String(read.roomHeight)}`);
+            // THE ROOM IS USED, or a fit of nothing would pass: the owner's one page drawn at half the pane.
+            const used = fills === 'width' ? read.width / read.roomWidth : Math.max(read.width / read.roomWidth, read.height / read.roomHeight);
+            if (used < 0.85) wrong.push(`${label}: uses ${used.toFixed(2)} of the room`);
+          }
+        }
+      }
+      await closeAll();
+    }
+    await walk.sizeWindow({ width: 1600, height: 900 });
+    if (wrong.length > 0) throw new Error(wrong.slice(0, 12).join('\n'));
+    return { readings };
+  }, { covers: ['view.fit-width', 'view.fit-page'] });
+}
+
+// ———————————————————————————————————�
+
+if (runs('one-space')) {
+  const LINES = Array.from({ length: 5 }, (_, at) => `Line ${String(at + 1)} of a paragraph that a person reads and never types in, ending here`);
+  /** One paragraph, drawn upright or turned the way a page under /Rotate 180 is, with or without a filled bar over part of it. */
+  const paragraph = async (/** @type {string} */ name, /** @type {{ turned: boolean; bar: boolean }} */ { turned, bar }) => {
+    const document = await PDFDocument.create();
+    const font = await document.embedFont(StandardFonts.Helvetica);
+    const sheet = document.addPage([612, 792]);
+    if (turned) sheet.setRotation(pdfLib.degrees(180));
+    for (const [at, line] of LINES.entries()) {
+      const y = 700 - at * 14;
+      sheet.drawText(line, turned ? { x: 612 - 72, y: 792 - y, size: 11, font, rotate: pdfLib.degrees(180) } : { x: 72, y, size: 11, font });
+    }
+    if (bar) sheet.drawRectangle(turned ? { x: 612 - 72 - 200, y: 792 - 700 - 3, width: 100, height: 12, color: rgb(0, 0, 0) } : { x: 172, y: 697, width: 100, height: 12, color: rgb(0, 0, 0) });
+    const path = join(output, name);
+    await writeFile(path, await document.save());
+    return path;
+  };
+  /** The page's pixels held, and how many have moved since. */
+  const hold = () =>
+    page.evaluate(() => {
+      const canvas = [...Reflect.get(globalThis, 'document').querySelectorAll('canvas.m-page')].find((each) => each.getBoundingClientRect().width > 0);
+      const context = canvas?.getContext('2d', { willReadFrequently: true });
+      if (!canvas || !context) throw new Error('no page on screen');
+      Reflect.set(globalThis, 'walkHeld', context.getImageData(0, 0, canvas.width, canvas.height).data);
+    });
+  const moved = () =>
+    page.evaluate(() => {
+      const canvas = [...Reflect.get(globalThis, 'document').querySelectorAll('canvas.m-page')].find((each) => each.getBoundingClientRect().width > 0);
+      const context = canvas?.getContext('2d', { willReadFrequently: true });
+      if (!canvas || !context) throw new Error('no page on screen');
+      const now =context.getImageData(0, 0, canvas.width, canvas.height).data;
+      const was = Reflect.get(globalThis, 'walkHeld');
+      let count = 0;
+      for (let at = 0; at < now.length; at += 4) {
+        if (Math.abs(now[at] - was[at]) + Math.abs(now[at + 1] - was[at + 1]) + Math.abs(now[at + 2] - was[at + 2]) > 24) count += 1;
+      }
+      return count;
+    });
+  await step('one space changes nothing on the page: upright and turned, with and without a bar, at a wrap and at the paragraph’s end', async () => {
+    /** @type {Record<string, number>} */
+    const readings = {};
+    for (const [name, shape] of /** @type {const} */ ([
+      ['upright', { turned: false, bar: false }],
+      ['turned', { turned: true, bar: false }],
+      ['upright with a bar', { turned: false, bar: true }],
+      ['turned with a bar', { turned: true, bar: true }],
+    ])) {
+      await open(await paragraph(`one-space-${name.replaceAll(' ', '-')}.pdf`, shape));
+      await command('Fit page');
+      await section('Edit');
+      await text.ensureEditText();
+      const block = page.locator('[data-text-block]').first();
+      await block.waitFor({ state: 'attached', timeout: 30_000 });
+      await page.waitForTimeout(600);
+      // THE WRAP IS THE SECOND LINE'S END, and not the first's: a bar lies on the first, and what an edit beside a bar does
+      // is the owner's to rule on (item 5, 2026-11-06), so this row does not settle it by what it happens to do today.
+      for (const [where, keys] of /** @type {const} */ ([['wrap', ['Control+Home', 'ArrowDown', 'End']], ['end', ['Control+End']]])) {
+        await hold();
+        await text.openBlock(block, 'middle');
+        for (const key of keys) await page.keyboard.press(key);
+        await page.keyboard.type(' ');
+        await text.pressAway();
+        const said = await text.problems();
+        if (said.length > 0) throw new Error(`${name}, ${where}: the app said ${JSON.stringify(said)}`);
+        const count = await moved();
+        readings[`${name}, ${where}`] = count;
+        if (count !== 0) throw new Error(`${name}, ${where}: ${String(count)} pixels moved for one space`);
+      }
+      await closeAll();
+    }
+    return { readings };
+  }, { covers: ['text.edit'] });
+}
+
+// ———————————————————————————————————�
+
 if (runs('placements')) {
   await step('placements (50): 200 placements add under 500 ms to Edit text’s outlines of a page', async () => {
     const path = join(output, 'placements-200.pdf');
