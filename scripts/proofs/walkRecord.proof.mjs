@@ -8,6 +8,7 @@
  * Usage: node scripts/proofs/walkRecord.proof.mjs
  */
 
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -15,12 +16,12 @@ import { join } from 'node:path';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
-import { FULL_WALK, commandIds, countsFor, programDigest, refusals, reportsOf, rowsFrom } from '../release/walkRecord.mjs';
+import { FULL_WALK, commandIds, countsFor, programDigest, refusals, reportsOf, rowsFrom, writeRecord } from '../release/walkRecord.mjs';
 import { stepTable, walkingRow } from '../research/walkSteps.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 32 });
+const roster = createRoster(failures, { cases: 34 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -217,6 +218,33 @@ async function main() {
   // THE ROWS ARE THE REGISTRY'S: read from the checklist the registry generates, with its own positive control.
   const ids = commandIds(readFileSync(join(repoRoot(), 'docs', 'manual-test-checklist.md'), 'utf8'));
   check('the checklist names every command once, document.save among them, and more than two hundred', ids.length > 200 && new Set(ids).size === ids.length, `${String(ids.length)} ids`);
+
+  // THE WRITER REFUSES A TREE WHOSE APP SOURCES ARE NOT THE COMMIT'S, in a repository of its own, with a real git. The
+  // control is the same tree committed, which must get past that refusal and write, or the refusal is all this could see.
+  const tree = mkdtempSync(join(tmpdir(), 'walk-record-tree-'));
+  try {
+    const git = (/** @type {string[]} */ ...args) =>
+      execFileSync('git', ['-c', 'user.name=proof', '-c', 'user.email=proof@example.invalid', '-c', 'core.hooksPath=', ...args], { cwd: tree, encoding: 'utf8' });
+    for (const folder of [join(tree, 'apps', 'desktop', 'dist'), join(tree, 'packages', 'kernel', 'dist'), join(tree, 'docs')]) mkdirSync(folder, { recursive: true });
+    writeFileSync(join(tree, 'apps', 'desktop', 'dist', 'main.js'), 'export {};\n');
+    writeFileSync(join(tree, 'packages', 'kernel', 'dist', 'index.js'), 'export {};\n');
+    writeFileSync(join(tree, 'docs', 'manual-test-checklist.md'), '- Save · `document.save` · a row\n');
+    git('init', '-q');
+    git('add', '.');
+    git('commit', '-q', '-m', 'the tree');
+    const written = writeRecord(tree);
+    check('CONTROL: a tree that is its commit gets a record, for that commit', written.commit === git('rev-parse', 'HEAD').trim() && written.commands === 1, JSON.stringify(written).slice(0, 160));
+    writeFileSync(join(tree, 'packages', 'kernel', 'edited.ts'), 'export {};\n');
+    let refused = '';
+    try {
+      writeRecord(tree);
+    } catch (error) {
+      refused = String(error);
+    }
+    check('a tree with an app source that is not the commit\'s gets no record, and the refusal says why', refused.includes('differ from'), refused === '' ? 'it wrote one' : refused);
+  } finally {
+    rmSync(tree, { recursive: true, force: true });
+  }
 
   // THE PACK ASKS IT, after its own clean build: a gate no pack calls refuses nothing, and these cases would stay green.
   const pack = readFileSync(join(repoRoot(), 'scripts', 'release', 'packageMsix.mjs'), 'utf8');
