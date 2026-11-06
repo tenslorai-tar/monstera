@@ -201,6 +201,9 @@ const SPACE_EM = 0.278;
  */
 const HOLE_EMS = 1;
 
+/** A font or family name to compare: lower case, its spaces and marks gone. */
+const compactName = (name: string): string => name.toLowerCase().replaceAll(/[\s\-_,]/gu, '');
+
 /** The painting operators that fill a path. */
 const FILLS_A_PATH: ReadonlySet<string> = new Set(['f', 'F', 'f*', 'B', 'B*', 'b', 'b*']);
 
@@ -1431,25 +1434,72 @@ function write(
       const faced = faces?.set(TAB_GAP, source, () => null, restyle) ?? null;
       return faced !== null && faced.length === 1 ? faced : [];
     };
+    /**
+     * The page's font of the family a mark names, at the weight and slant the word is to have: asked of `own`'s where the
+     * mark does not say. `undefined` where the page holds no such font; a font of drawn letters is no answer.
+     */
+    const pageFontOfFamily = (restyle: Restyle, own: PageFont): PageFont | undefined => {
+      const family = compactName(restyle.family ?? '');
+      const boldOf = (font: PageFont): boolean => /bold|black|heavy/iu.test(font.face ?? '') || statedBold(font);
+      const italicOf = (font: PageFont): boolean => /italic|oblique/iu.test(font.face ?? '');
+      const bold = restyle.bold ?? boldOf(own);
+      const italic = restyle.italic ?? italicOf(own);
+      return [...fonts.values()]
+        .filter((font) => font.subtype !== 'Type3' && compactName(font.face ?? '').startsWith(family) && boldOf(font) === bold && italicOf(font) === italic)
+        .sort((a, b) => (a.resource < b.resource ? -1 : 1))[0];
+    };
     /** @param said whether the page already said this word here (`saidAt`): only then may a drawn font set it. */
     const piecesOf = (source: ShowOperator, token: string, restyle: Restyle | undefined, said: boolean): readonly FacePiece[] | null => {
       const font = fontOf(source);
       const drawn = token === ' ' || said || (joinedIn.get(block)?.get(font)?.has(token) ?? false);
       const key = `${String(indexOf.get(source))}|${JSON.stringify(restyle ?? null)}|${String(drawn)}|${token}`;
       if (answers.has(key)) return answers.get(key) ?? null;
+      // THE FAMILY A PERSON CHOSE, WHERE THE PAGE HOLDS IT: its own font is that family's look, and the resolver's nearest
+      // face is not, so choosing the page's Helvetica over a word a face had set gave the same face back and changed nothing.
+      const chosen = restyle?.family === undefined ? undefined : pageFontOfFamily(restyle, font);
       // A RESTYLED WORD is not looked for in the run's own font: only white space is, which has no style to be wrong in.
-      const found = restyle !== undefined && token !== ' ' ? null : carrier(font, token, drawn);
+      const found = restyle !== undefined && token !== ' ' ? (chosen === undefined ? null : carrier(chosen, token, drawn)) : carrier(font, token, drawn);
       // A WORD NO ONE PAGE FONT CARRIES, set across them in the longest stretches each carries (ADR-0176's correction of
       // 2026-10-19, later): a letter typed before a full stop Chromium drew in a subset holding only `.`.
-      const across = found !== null || restyle !== undefined || token === ' ' ? null : acrossPageFonts(font, token, drawn);
+      const across = found !== null || (restyle !== undefined && chosen === undefined) || token === ' ' ? null : acrossPageFonts(chosen ?? font, token, drawn);
+      /**
+       * The page's font the person chose, letter by letter: a subset holds only the letters its page used, and a face sets
+       * a word whole, so asked as a word, `now` where the subset has no `w` stayed in the face and the choice changed nothing.
+       * Each stretch that font holds goes in it, and only the letters it lacks go to the face the choice resolves to.
+       */
+      const lettersOfChosen = (held: PageFont): readonly FacePiece[] | null => {
+        const out: FacePiece[] = [];
+        let lacking = '';
+        const flush = (): boolean => {
+          if (lacking === '') return true;
+          const set = faces?.set(lacking, source, () => null, restyle) ?? null;
+          if (set === null) return false;
+          out.push(...set);
+          lacking = '';
+          return true;
+        };
+        for (const letter of Array.from(token)) {
+          const hit = carrier(held, letter, drawn);
+          if (hit === null) {
+            lacking += letter;
+            continue;
+          }
+          if (!flush()) return null;
+          const last = out.at(-1);
+          if (last?.font === hit.font) out[out.length - 1] = { ...last, codes: [...last.codes, ...hit.codes] };
+          else out.push(hit);
+        }
+        return flush() ? out : null;
+      };
       const pieces: readonly FacePiece[] | null =
         found !== null
           ? [found]
           : token === ' '
             ? addedSpace(source, restyle)
             : (across ??
-              faces?.set(token, source, restyle === undefined ? (stretch) => carrier(font, stretch, drawn) : () => null, restyle) ??
-              null);
+              (chosen === undefined
+                ? (faces?.set(token, source, restyle === undefined ? (stretch) => carrier(font, stretch, drawn) : () => null, restyle) ?? null)
+                : lettersOfChosen(chosen)));
       if (pieces === null) {
         const before = uncarried.size;
         for (const character of token) if (restyle !== undefined || carrier(font, character, drawn) === null) uncarried.add(character);

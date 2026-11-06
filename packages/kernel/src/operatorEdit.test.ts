@@ -946,6 +946,61 @@ describe('editOperators on paragraphs (ADR-0179)', () => {
       expect(plain).toContain('1 0 0 1 107 100 Tm');
     });
 
+    describe('the family a person chooses, where the page holds it (the owner’s ruling of 2026-11-06)', () => {
+      // `aaa ` in the page's Helvetica, and `bbb` in the face an earlier edit set a typed word in.
+      const page = font('Page', 'abc ');
+      const twin = font('Twin', 'abcz ');
+      const held = new Map([
+        ['F1', { ...page, face: 'Helvetica' }],
+        ['F2', { ...twin, face: 'Arimo' }],
+      ]);
+      const content = bytes(['BT /F1 10 Tf 1 0 0 1 72 100 Tm (aaa ) Tj ET', 'BT /F2 10 Tf 1 0 0 1 92 100 Tm (bbb) Tj ET'].join('\n'));
+      const runs: PageRuns = { textObjects: [0, 1], runs: [inked(0, 'aaa ', 72, 92), inked(1, 'bbb', 92, 107)] };
+      const chose = (text: string, set: { family: string; bold?: boolean }) => {
+        const asked: { word: string; family: string | undefined; carried: string[] }[] = [];
+        const faces: OperatorFaces = {
+          set: (word, _source, own, restyle) => {
+            asked.push({ word, family: restyle?.family, carried: Array.from(word).filter((character) => own(character) !== null) });
+            return Array.from(word, (character) => ({ font: { ...twin, face: 'Arimo' }, codes: [character.charCodeAt(0)] }));
+          },
+          drawn: () => undefined,
+          isBold: statedBold,
+        };
+        const result = editOperators(content, held, runs, [{ lines: [[0, 1]], soft: [false], text, marks: [{ from: 4, to: text.length, set }] }], faces);
+        if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+        return { object: inserted(result.value).join('\n'), asked };
+      };
+
+      it('choosing it over a word a face had set writes that word in the page’s own font, and asks no face', () => {
+        const { object, asked } = chose('aaa bbb', { family: 'Helvetica' });
+        expect(object).toContain('/Page 10 Tf\n1 0 0 1 92 100 Tm <626262>');
+        expect(object).not.toContain('/Twin');
+        expect(asked).toStrictEqual([]);
+      });
+
+      it('the words outside the choice are not written at all', () => {
+        expect(chose('aaa bbb', { family: 'Helvetica' }).object).not.toContain('<616161');
+      });
+
+      it('a letter that font lacks goes to the face, and only that letter', () => {
+        const { object, asked } = chose('aaa zbb', { family: 'Helvetica' });
+        expect(asked).toStrictEqual([{ word: 'z', family: 'Helvetica', carried: [] }]);
+        expect(object).toContain('/Twin 10 Tf');
+        expect(object).toMatch(/\/Page 10 Tf\n[^\n]*<6262>/u);
+      });
+
+      it('CONTROL: a family the page does not hold goes to the faces, none of it carried by the page', () => {
+        const { asked } = chose('aaa bbb', { family: 'Times' });
+        expect(asked).toContainEqual({ word: 'bbb', family: 'Times', carried: [] });
+      });
+
+      it('CONTROL: bold asked of a family the page holds only upright is not that font', () => {
+        const { object, asked } = chose('aaa bbb', { family: 'Helvetica', bold: true });
+        expect(object).not.toContain('/Page 10 Tf');
+        expect(asked).toContainEqual({ word: 'bbb', family: 'Helvetica', carried: [] });
+      });
+    });
+
     it('asks the faces for the weight a bold mark names, and refuses by name where there are none', () => {
       const asked: unknown[] = [];
       const face: PageFont = { ...font('Face1', 'abcdefghijklmnopqrstuvwxyz'), face: 'Arimo', weight: 700 };
