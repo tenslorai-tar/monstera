@@ -1938,7 +1938,14 @@ describe('PageList', () => {
           constructor(private readonly callback: ResizeObserverCallback) {}
           observe(element: Element): void {
             this.callback(
-              [{ target: element, contentRect: PANE } as unknown as ResizeObserverEntry],
+              // BOTH BOXES, as a real entry carries: the fit's height is the border box's (no padding or border here).
+              [
+                {
+                  target: element,
+                  contentRect: PANE,
+                  borderBoxSize: [{ inlineSize: PANE.width, blockSize: PANE.height }],
+                } as unknown as ResizeObserverEntry,
+              ],
               this,
             );
           }

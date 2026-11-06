@@ -810,8 +810,25 @@ export function PageList({
    *
    * `undefined` until the first observation, which `resolveZoom` treats as *no
    * answer yet* rather than as a box of zero.
+   *
+   * **A BOX NO SCROLLBAR CHANGES**, because a fit is measured from it and changes what overflows: a box that lost a
+   * scrollbar's room when the fit made the pages overflow is a fit that changes its own box. The width is the content
+   * box's, which the stylesheet keeps clear of the vertical bar whether or not it shows (`scrollbar-gutter`). The
+   * height is the border box's less its borders and padding, because a horizontal bar takes its room from the content
+   * box and `scrollbar-gutter` reserves none for it. Measured 2026-11-05 (`fitStability.pw.ts`): two A4 pages in
+   * Facing at Fit width flipped 68% and 70% every frame through the vertical bar, and one A4 page in Single page at
+   * Fit page, from 100% in a pane narrower than the page, answered 45% and then 47% through the horizontal one.
+   *
+   * **AND NO PADDING THE MODE CHANGES**: the height is less the list's normal padding (`--m-list-padding-block`, the one
+   * property the stylesheet pads it by), never the padding it has now, because Fit page in Continuous takes the padding
+   * away, and a fit measured less the padding it had answered 63% and then 67% once it was gone (2026-11-05).
    */
   const [viewport, setViewport] = useState<Box | undefined>(undefined);
+  /**
+   * The scroller's whole height inside its borders: Fit page in Continuous centres each page in it, since that layout
+   * has no padding. Read from the same border box, so it moves exactly when the viewport does.
+   */
+  const [frameHeight, setFrameHeight] = useState<number | undefined>(undefined);
   /**
    * The gap between two pages side by side, READ from the stylesheet — the token is `app.css`' to set, and a number
    * here would be a second opinion about it. Only facing pages use it: a fit there spans two pages and this.
@@ -822,12 +839,24 @@ export function PageList({
     const element = scroller.current;
     if (element === null) return;
     const seen = new ResizeObserver((entries) => {
-      const box = entries[entries.length - 1]?.contentRect;
-      if (box !== undefined) setViewport({ width: box.width, height: box.height });
-      const gap = Number.parseFloat(getComputedStyle(element).columnGap);
+      const entry = entries[entries.length - 1];
+      const border = entry?.borderBoxSize[0];
+      const style = getComputedStyle(element);
+      if (entry !== undefined && border !== undefined) {
+        const along = (name: string): number => Number.parseFloat(style.getPropertyValue(name)) || 0;
+        const frame = border.blockSize - along('border-top-width') - along('border-bottom-width');
+        const height = frame - 2 * along('--m-list-padding-block');
+        const width = entry.contentRect.width;
+        // THE SAME BOX IS NOT A NEW ONE: an equal answer must not render the list again.
+        setViewport((was) => (was?.width === width && was.height === height ? was : { width, height }));
+        setFrameHeight(frame);
+      }
+      const gap = Number.parseFloat(style.columnGap);
       setSpreadGap(Number.isFinite(gap) ? gap : 0);
     });
-    seen.observe(element);
+    // THE BORDER BOX IS OBSERVED, which is all the answer reads now: a scrollbar coming or going and the padding Fit
+    // page takes away both leave it as it was, and what moves it (the window, a panel) is what moves the fit.
+    seen.observe(element, { box: 'border-box' });
     return (): void => {
       seen.disconnect();
     };
@@ -928,13 +957,19 @@ export function PageList({
    */
   // FACING PAGES FIT A SPREAD, two pages and the gap between them: fitting one page's width would push its partner
   // off the pane. The gap is taken from the pane rather than added to the pages, because it does not scale with them.
+  //
+  // A ONE-PAGE DOCUMENT FITS AS ONE PAGE (the owner's decision, 2026-11-05): it has no partner to make room for, and
+  // fitting two widths drew it at half the pane. The odd last page of a longer document, and a lone cover page in
+  // one, keep the pair's size, so the zoom does not jump while reading on. The gap still comes off the pane: the
+  // grid keeps its two tracks, the empty one is no width, and the gap between them stands.
   const spread = facesPages(layout);
+  const fitsPair = spread && pageCount > 1;
   /** Fit page in one column: each page takes the whole pane, so no part of another shows (`.m-page-list--fit-page`). */
   const fitOnePage = mode.kind === 'fit-page' && layout === 'continuous';
   const resolved = resolveZoom(
     mode,
     spread && viewport !== undefined ? { width: viewport.width - spreadGap, height: viewport.height } : viewport,
-    spread && pageBox !== undefined ? { width: pageBox.width * 2, height: pageBox.height } : pageBox,
+    fitsPair && pageBox !== undefined ? { width: pageBox.width * 2, height: pageBox.height } : pageBox,
   );
   const shown = resolved ?? 1;
 
@@ -1465,8 +1500,8 @@ export function PageList({
                     '--m-grid-minor': `${String(grid.minor ?? grid.major)}px`,
                   }),
               //
-              // FIT PAGE'S ROOM: the scroller's own measured height, each page's share of it.
-              ...(fitOnePage && viewport !== undefined ? { '--m-fit-room': `${String(viewport.height)}px` } : {}),
+              // FIT PAGE'S ROOM: the scroller's whole height inside its borders, which this layout does not pad.
+              ...(fitOnePage && frameHeight !== undefined ? { '--m-fit-room': `${String(frameHeight)}px` } : {}),
             } as React.CSSProperties)
       }
       // ALWAYS NAMED, since it is a focusable region (2026-09-26): *Document pages* alone, and in the split view each

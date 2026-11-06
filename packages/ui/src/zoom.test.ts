@@ -6,6 +6,7 @@ import {
   ZOOM_STEPS,
   type ZoomMode,
   resolveZoom,
+  sliderLeast,
   startingZoomMode,
   stepZoom,
 } from './zoom.js';
@@ -75,11 +76,32 @@ describe('resolveZoom', () => {
     expect(resolveZoom(FIT_WIDTH, { width: 8, height: 400 }, A4)).toBeUndefined();
   });
 
-  it('clamps a fit into the ladder, so every fit is a scale the controls can leave', () => {
+  it('clamps a fit at the ladder’s top', () => {
     const huge = resolveZoom(FIT_WIDTH, { width: 100_000, height: 100_000 }, A4);
     expect(huge).toBe(ZOOM_STEPS[ZOOM_STEPS.length - 1]);
-    const tiny = resolveZoom(FIT_WIDTH, { width: 60, height: 60 }, A4);
-    expect(tiny).toBe(ZOOM_STEPS[0]);
+  });
+
+  it('lets a fit go BELOW the ladder’s least when the page needs it, and the ladder steps in from there', () => {
+    // The owner's page, 1,276 pt wide, in a pane 868 × 610: a pair's width needs about 32% and its height about 35%.
+    // Clamped at 50% both fits answered 50% and the buttons did nothing (2026-11-05).
+    const scaleOf = (mode: ZoomMode): number => (mode.kind === 'scale' ? mode.scale : Number.NaN);
+    const big = { width: 1276, height: 1650 };
+    const pane = { width: 868, height: 610 };
+    const page = resolveZoom(FIT_PAGE, pane, big) ?? Number.NaN;
+    expect(page).toBeCloseTo((610 - 32) / 1650, 6);
+    expect(page).toBeLessThan(ZOOM_STEPS[0]);
+    // REACHABLE BOTH WAYS: + lands on the least step, − holds as it does at the least step itself.
+    expect(scaleOf(zoomInFrom(page))).toBe(ZOOM_STEPS[0]);
+    expect(scaleOf(zoomOutFrom(page))).toBe(page);
+    expect(scaleOf(stepZoom('in', '10pct')(page))).toBe(ZOOM_STEPS[0]);
+    expect(scaleOf(stepZoom('out', '25pct')(page))).toBe(page);
+    // CONTROL: a page the pane holds at more than 50% is fitted as before.
+    expect(resolveZoom(FIT_PAGE, pane, A4)).toBeCloseTo((610 - 32) / 842, 6);
+  });
+
+  it('puts the slider’s least at a fit’s own scale below the ladder, and at the ladder’s otherwise', () => {
+    expect(sliderLeast(0.32)).toBe(0.32);
+    expect(sliderLeast(0.8)).toBe(ZOOM_STEPS[0]);
   });
 });
 
