@@ -146,3 +146,13 @@ after the click; for the plain Signature it is superseded:
 
 The renderer receiving a picture's bytes is not the rule against document bytes: a kept picture already reaches the
 chooser this way (`library.picture`), and a picture the person just picked is theirs, not the document's.
+
+## Correction, 2026-11-06 — the saved file draws the mark as part of the page
+
+Decision 2's `/Stamp` is now the plain signature IN THE SESSION only. The owner decided on 2026-11-06 that in a saved
+file a plain signature, typed, drawn or a picture, is part of the page: some PDF readers draw no annotation layer, and
+on the owner's phone a placed signature did not show at all. The stamp is drawn by the page's own content when a file
+a person keeps is written, and leaves the file's annotations; the session keeps it, so it still moves, resizes and
+undoes until the document is closed. [ADR-0287](0287-a-saved-file-draws-a-placed-signature-picture-or-barcode-as-part-of-the-page.md)
+has the mechanism, the routes and the costs. Decision 1, one module drawing the mark for both writers, is unchanged,
+and *Sign with certificate* is unchanged.

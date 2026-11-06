@@ -1,0 +1,93 @@
+# ADR-0287 — A saved file draws a placed signature, picture or barcode as part of the page
+
+- **Status:** Accepted
+- **Date:** 2026-11-06
+- **Decided by:** the owner, 2026-11-06: *in a saved file, plain signatures (typed, drawn and picture), pictures from
+  Place image, and barcodes are part of the page.* While the document is open each can still be moved, resized and
+  undone; in the saved file the page's own content draws it and no stamp layer remains for it; after reopening it is
+  part of the page; a file Monstera saved earlier with one of these as a layer gets the same treatment when saved again.
+- **Amends:** [ADR-0133](0133-a-signatures-mark-is-drawn-once-for-both-writers.md) Decision 2 (a plain signature is
+  a `/Stamp` in the SESSION, and no longer in the file a person keeps), and the save seam: `SerialiseOptions`, the
+  host's `engine/serialise` and `engine/extract` requests, and `main`'s staging gain one field each, `marks`.
+- **Found by:** the owner's phone. PDF apps there draw no annotation layer at all: a Monstera signature, the same
+  layer rewritten without its extra form and with a compressed picture, a highlight, and another editor's comment marks
+  all showed nothing, while the same signature drawn by the page's own content showed.
+
+## The problem, in one sentence
+
+Some PDF readers draw only the page's content, so a mark that lives in an annotation's appearance is invisible in them,
+however that appearance is written.
+
+## Decisions
+
+1. **One module engraves, at the moment a file a person keeps is written** (`packages/kernel/src/engraveOnSave.ts`).
+   For each page, each annotation the rule in decision 2 names is drawn by the page: the page's `/Contents` becomes
+   `[q, the page's own streams, Q and one q cm Do Q per mark]`, the mark's own appearance form is named in a fresh
+   `/Resources` dictionary for that page (a shallow copy of the one it read, inherited or shared), and the annotation
+   leaves `/Annots`. The `cm` is the format's own appearance mapping (ISO 32000-1 §12.5.5): the form's `/BBox` through
+   its `/Matrix`, fitted to `/Rect`, so a turned page and a CropBox off zero draw it where the layer drew it. The
+   leading `q` and the `Q` before the marks undo whatever state the page's content leaves behind. No stream the page
+   already had is edited, so a stream or a resource dictionary shared with another page is unchanged there.
+2. **Which marks: Monstera's own, by its private mark, and only these kinds.** An annotation is engraved when it carries
+   `/Monstera_Authored true` (ADR-0043's private mark, the one reader of *which annotations are ours*), is a `/Stamp`,
+   and is named `Signature` (a plain signature, ADR-0133) or `Image` (Place image, and a barcode, which is placed as a
+   picture). The names are the ones those commands have always written, so a file saved earlier is recognised.
+   Another producer's stamp carries no such mark and stays a layer, whatever it looks like. The kinds are one table,
+   `ENGRAVED_ON_SAVE`, beside the commands that create them, so a later kind (a stamp, typewriter text, a text box)
+   joins as a row and never as a second writer.
+3. **Engraved for the save, then put back, so the session keeps its layer** (`savedWithoutOutline`'s shape): the
+   engraving is made in the live document, the bytes are written, and every page key it changed is restored in a
+   `finally`. The objects it added are left unreferenced in memory and the next collecting save drops them. So after a
+   save the person can still move, resize and undo the item until the document is closed, and the next save engraves
+   it again from the layer, once.
+4. **Which bytes win, against §4's save pipeline.** The session, and `main`'s canonical image serialised from it, stay
+   the document's truth: they hold the layer. A file a person keeps is a product of that truth, as *Save a copy
+   without bookmarks* already is, never a second truth. Nothing is merged back. Two consequences, stated:
+   - **A removal's save** (a redaction, Sanitize) renews the session from the file it wrote (`#renewSessions`), so after
+     such a save the marks are part of the page in the session too, and no longer move.
+   - **The canonical image and the file on disk differ** by exactly the engraving. Nothing compares the two; the save
+     stamps the version it wrote.
+5. **A signed document's appended save engraves nothing.** Engraving changes page content, and a change to page content
+   after a signature is reported by validators even where the bytes it covers are intact; the incremental save exists
+   to keep signatures. So where `saveTermsOf` appends, the marks stay layers. A full save of a signed document (a
+   removal, a change of protection) breaks the signature already, and is warned about already, and engraves.
+6. **Each route chooses, and none defaults** (B5): `marks: 'as-held' | 'engraved'` is a required part of `main`'s
+   staging, so a route that writes a file has to say which. The routes are listed below.
+7. **A placed picture is compressed** (the owner's report of 2026-11-06): MuPDF writes a PNG it decoded as raw samples,
+   with its soft mask raw beside it. Measured 2026-11-06: a 400 × 300 PNG with alpha placed through Place image saved
+   360,000 bytes of RGB and 120,000 of mask, unfiltered. The picture and its mask that Place image, a signature picture
+   and a barcode add are written with `/FlateDecode` at placement. Pictures already in a document are not touched, and
+   no picture's pixel size changes.
+
+## Routes
+
+| route | marks | why |
+|---|---|---|
+| Save, Autosave | engraved | the file a person keeps |
+| Save back to the cloud (both stages) | engraved | the cloud copy must be the file on disk |
+| Save a copy, without bookmarks, Work on a copy, Edit a copy, Recognise text's copy | engraved | a file a person keeps |
+| Upload a copy, a form's submit (POST), Send to DocuSign | engraved | a file that leaves the application |
+| Email / Share | engraved | as above |
+| Export PDF/A, Text to curves, Optimize | engraved (their input) | the output is made from the document as saved |
+| Extract pages, Split | engraved | a file a person keeps |
+| Edit page in another application | as held | the page comes back into this session, where its stamp still is |
+| Undo checkpoints, the byte-image refresh, host snapshots, sealing copies on Protect | as held | internal; they rebuild the session |
+| Optimize's and Text to curves' size measurements | as held | they measure, and write nothing |
+| Restore an earlier version, a backup | unchanged | a copy of a file already written |
+| DocuSign's signed copy, a new PDF composed from Markdown, CSV, images, a camera, an Office file, a URL | unchanged | not this session's bytes |
+| Print | not a file | pages go to the spooler as pictures, the layer drawn |
+
+## Rejected
+
+- **MuPDF's `bake`**: all or nothing; it would flatten comments, highlights and form fields with the marks.
+- **Rewriting the layer** (no extra form, a compressed picture): measured on the owner's phone, it still shows nothing.
+- **Engraving at placement**: the item could not be moved, resized or undone as a mark while the document is open.
+- **Engraving on a reopened copy of the bytes**: a second parse and save per save, and an encrypted document's copy
+  cannot be reopened without passwords this build may not hold.
+
+## Costs, stated
+
+- After a save, Comments, Select and every list that read these items as annotations no longer see them once the file
+  is reopened; they are page content, removed with Redact or Edit, not with Delete.
+- A signed document saved by appending keeps them as layers, and the phone fault stays for it.
+- Measured cost at save: recorded in the correction below once built.
