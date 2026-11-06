@@ -144,6 +144,13 @@ right. Nothing read the list the application reads.
 so the generator adds one in the binding's own form (`ADDED`, beside `WITHHELD`, in `mupdfGlue.mjs`). The case is
 `engraveOnSave.test.ts`' *still LISTS the picture*, which read 1 before the Save and 0 after it without the fix.
 
+## Note, 2026-11-06 — the owner's condition is met, read on the phone
+
+The owner's condition on this fix was that a file saved by the merged build shows on the phone. Read there by the owner
+the same day: a file with a barcode, a signature, a Place image picture and a picture stamp shows all four; a signed
+document saved twice opens with its pages and its certificate signature shows, while the picture and the rectangle
+placed on it do not, which is Decision 5's accepted limit.
+
 ## Note, 2026-11-06 — Sign with certificate's visible signature is not changed, and the phone results
 
 Read on the owner's phone the same day: *cert-01*, a document signed with Sign with certificate as it is written today,

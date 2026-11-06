@@ -691,6 +691,17 @@ const NO_SELECTION_LIST: HeldFields['fields'] = [];
  */
 const NOTE_MARGIN = 36;
 
+/** A count that work ending later reads, and nothing draws from: a change to it renders nothing. */
+function choiceCounter(): { readonly chosen: () => void; readonly count: () => number } {
+  let count = 0;
+  return {
+    chosen: () => {
+      count += 1;
+    },
+    count: () => count,
+  };
+}
+
 /** What the modes that share the tool slot wait for, the drawing tools' `hint` for the status line. */
 const MODE_HINTS: ReadonlyMap<string, MessageKey> = new Map([
   [HAND_TOOL_ID, HINT_HAND],
@@ -2558,6 +2569,8 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
    * the tool itself so nothing below this point knows a registry exists.
    */
   const [toolId, setToolSlot] = useState<string | undefined>(undefined);
+  /** How many times a tool has been armed or put down: what lets work that ends later tell a person has chosen since. */
+  const [toolChoices] = useState(choiceCounter);
   /**
    * Arms a tool, or puts it down. EVERY WRITER COMES THROUGH HERE, because arming one decides the centre view as well.
    *
@@ -2570,6 +2583,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
   const setToolId = useCallback(
     (id: string | undefined): void => {
       const arm = (): void => {
+        toolChoices.chosen();
         setToolSlot(id);
         if (id !== undefined && settings.get(RIBBON_SECTION_SETTING.id) === 'organize') settings.set(RIBBON_SECTION_SETTING.id, 'home');
       };
@@ -2583,7 +2597,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       }
       arm();
     },
-    [settings],
+    [settings, toolChoices],
   );
   const readTool = useCallback(() => toolId, [toolId]);
   /**
@@ -3658,6 +3672,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       if (activeId === undefined) return;
       const held = signatureLook;
       setSignatureLook(undefined);
+      const choiceAtPress = toolChoices.count();
       void (async (): Promise<void> => {
         // A PRESS WHILE THE CHOSEN LOOK IS STILL BEING PREPARED takes that look when it is ready (N5), not a second dialog.
         const look = held === undefined ? await chooseSignature({ client, ask }) : 'preparing' in held ? await held.preparing : held;
@@ -3667,11 +3682,14 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
         const walk = await listAnnotations();
         // THE WALK MUST BE THE PLACEMENT'S: a read at any other version could name a mark that landed in between.
         const placed = walk?.version === version ? selectionOfNewest(walk, page) : undefined;
+        // A TOOL CHOSEN SINCE THE PRESS STANDS: the placement and this read take a second or more, and the person has
+        // moved on. A selection exists only while Select is on, so the mark is not selected either.
+        if (toolChoices.count() !== choiceAtPress) return;
         setToolId(SELECT_TOOL_ID);
         if (placed !== undefined) setPicked(placed);
       })();
     },
-    [activeId, applied, ask, client, listAnnotations, setToolId, signatureLook, stamp, stores, toast],
+    [activeId, applied, ask, client, listAnnotations, setToolId, signatureLook, stamp, stores, toast, toolChoices],
   );
 
   /**

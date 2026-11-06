@@ -113,6 +113,72 @@ test('Home › SIGNATURE: the dialog, Use Signature, a click on the page — and
   expect((rect.y0 + rect.y1) / 2).toBeCloseTo(594, -1);
 });
 
+/** How long the walk of the marks is held after a signature lands: the time a tool can be chosen in. */
+const READ_HELD_MS = 2000;
+/**
+ * How long both cases below watch. THE SAME WINDOW, because reads queue in the document's lane, so the read after the
+ * placement answers some seconds after its own hold; the control proves the handover arrives inside it.
+ */
+const WATCHED_MS = 12_000;
+
+/** The Select tool's button on the float bar. */
+function selectTool(page: Page): ReturnType<Page['locator']> {
+  return page.getByRole('button', { name: 'Select annotations', exact: true }).first();
+}
+
+/** A signature placed with the read after it held, up to the moment that read is waiting. */
+async function placedWithTheReadHeld(page: Page): Promise<void> {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const bytes = await blockedPages([612, 792], 1);
+  let placed = false;
+  await bridge(
+    page,
+    {
+      opens: [{ kind: 'opened', docId: DOC, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'sign.pdf' }],
+      documentBytes: new Map([[DOC, bytes]]),
+      delays: { 'document.annotations': READ_HELD_MS },
+    },
+    (channel) => {
+      if (channel === 'document.placeSignature') placed = true;
+    },
+  );
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  await expect(page.locator('canvas[data-page-canvas="0"]')).toBeVisible();
+  await section(page, 'Comment');
+  await press(page, SIGNATURE);
+  const dialog = page.getByRole('dialog', { name: 'Signature' });
+  await dialog.getByRole('button', { name: 'Type' }).click();
+  await dialog.getByRole('textbox', { name: 'Your name' }).fill('Ada Lovelace');
+  await expect(dialog.getByRole('img', { name: 'Your signature, as it will be placed' })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Use Signature' }).click();
+  await expect(dialog).toBeHidden();
+  const surface = page.getByLabel('Draw on page 1');
+  const box = await surface.boundingBox();
+  if (box === null) throw new Error('the page surface has no box');
+  await surface.click({ position: { x: box.width / 2, y: box.height / 4 } });
+  await expect.poll(() => placed).toBe(true);
+}
+
+test('a tool chosen while a placed signature is being read stays chosen', async ({ page }) => {
+  await placedWithTheReadHeld(page);
+  // STILL WAITING, or this is the easy shape: a tool chosen after the read has nothing to overwrite it.
+  await expect(selectTool(page)).toHaveAttribute('aria-pressed', 'false');
+  await press(page, 'annotate.image');
+  // THE TOOLS' OWN BUTTONS, since the shim's new version of the same bytes takes the page's overlay away.
+  const image = page.locator('.m-ribbon__tools button[data-command="annotate.image"]');
+  await expect(image).toHaveAttribute('aria-pressed', 'true');
+  // PAST THE HELD READ, which is when the switch to Select used to overwrite this choice.
+  await page.waitForTimeout(WATCHED_MS);
+  await expect(image).toHaveAttribute('aria-pressed', 'true');
+  await expect(selectTool(page)).toHaveAttribute('aria-pressed', 'false');
+});
+
+test('CONTROL: with no other tool chosen, a placed signature still hands over to Select', async ({ page }) => {
+  await placedWithTheReadHeld(page);
+  await expect(selectTool(page)).toHaveAttribute('aria-pressed', 'true', { timeout: WATCHED_MS });
+});
+
 test('CONTROL: Home no longer carries Sign with certificate, and Protect › Signatures still does', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   const bytes = await blockedPages([612, 792], 1);
