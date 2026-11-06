@@ -142,3 +142,22 @@ the box, and that letter was not marked and stays readable beside it. The dialog
 - **Not built, and what it would have cost:** a two-pass glyph filter in the shim judging each glyph by its ink, about
   three to five days, touching every burn-in (Apply redactions, Redact matches, the prompt on save, close, export,
   print or send).
+
+## Note, 2026-11-06 — the content's growth on a page of drawings was the cut's quadrilaterals, and is gone
+
+The owner's document grew from 132,274 to 402,373 bytes of content under one mark (the cost note above). Reproduced on
+a page of 4,000 drawings, this container, MuPDF 1.28.0: 151,983 bytes before, 222,086 after the cut alone, while
+MuPDF's burn-in alone shrank the page to 144,873. Almost all of it was six cut shapes, each written as a stack of
+four-point slices about 0.1 point tall: Decision 3's quadrilateral per edge, for every edge of a curve flattened at
+0.01 point.
+
+**Waste, and removed.** Consecutive edges that join end to start and go the same way up or down have quadrilaterals
+whose y ranges touch and never overlap, so their union is one polygon, the run's points and two on x = X, with the same
+winding everywhere. `mz_fan_cut` now writes each run as that polygon: the same page grew to 158,573 bytes, the cut took
+6.6 ms against 7.8, and the burned-in page drawn at 4x by the cut before and after differs in 0 of 7,755,264 pixels.
+`redactionCutSize.test.ts` holds the size (under a tenth of growth, where it was nearly half) and the picture.
+
+**Found, the cut's own, not this change's, reported to the owner:** on that page at 2x, 45 pixels outside the mark
+differ from the page before the burn-in by more than 2 grey levels, the same before and after this change. 36 are within
+5 points of the mark, one of them ink lost (192 to 255, 3 points out); 9 are 3 to 5 levels along a cut shape redrawn as
+its flattened outline, the farthest 10.5 points out.

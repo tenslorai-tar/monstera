@@ -2189,24 +2189,50 @@ static int mz_ink_meets_marks(const mz_edges *es, const mz_cut_options *marks, i
  * The edges added are level, which a scanline rasteriser takes as nothing, or upright on x = X, where they cancel exactly,
  * so no sliver is drawn: closing each edge to one point instead left 7% of ink in the gaps between dashes. A level edge
  * itself is left out, having no crossing.
+ *
+ * A RUN OF EDGES IS ONE POLYGON. Consecutive edges that join end to start and go the same way up or down the page have
+ * quadrilaterals whose y ranges touch and never overlap, so together they are exactly the polygon (p0, ..., pk,
+ * (X, pk.y), (X, p0.y)): a point's rightward ray crosses one edge of the run, the same crossing. Written one by one a
+ * curve flattened at MZ_CUT_FLATNESS cost four points an edge, and a page of 4,000 drawings grew from 151,983 to 222,086
+ * bytes under one mark (measured 2026-11-06, the owner's 132,274 to 402,373 the same shape); as runs it is one point an
+ * edge and three a run.
  */
 static void mz_fan_cut(fz_context *ctx, const mz_edges *es, const mz_cut_options *marks, mz_polys *out)
 {
     float far = -1e30f;
-    int i;
+    int i = 0;
     for (i = 0; i < es->n; i++)
         far = fmaxf(far, fmaxf(es->e[i].x0, es->e[i].x1));
     far += 1;
-    for (i = 0; i < es->n; i++)
+    i = 0;
+    while (i < es->n)
     {
         mz_poly t = { 0 };
-        const mz_edge *e = &es->e[i];
-        if (e->y0 == e->y1)
+        const mz_edge *first = &es->e[i];
+        const mz_edge *last;
+        int down;
+        if (first->y0 == first->y1)
+        {
+            i++;
             continue;
-        mz_poly_push(ctx, &t, fz_make_point(e->x0, e->y0));
-        mz_poly_push(ctx, &t, fz_make_point(e->x1, e->y1));
-        mz_poly_push(ctx, &t, fz_make_point(far, e->y1));
-        mz_poly_push(ctx, &t, fz_make_point(far, e->y0));
+        }
+        down = first->y1 > first->y0;
+        mz_poly_push(ctx, &t, fz_make_point(first->x0, first->y0));
+        mz_poly_push(ctx, &t, fz_make_point(first->x1, first->y1));
+        last = first;
+        i++;
+        /* THE RUN GOES ON while the next edge starts where this one ended and keeps the same direction. */
+        while (i < es->n)
+        {
+            const mz_edge *next = &es->e[i];
+            if (next->y0 == next->y1 || next->x0 != last->x1 || next->y0 != last->y1 || (next->y1 > next->y0) != down)
+                break;
+            mz_poly_push(ctx, &t, fz_make_point(next->x1, next->y1));
+            last = next;
+            i++;
+        }
+        mz_poly_push(ctx, &t, fz_make_point(far, last->y1));
+        mz_poly_push(ctx, &t, fz_make_point(far, first->y0));
         mz_polys_push(ctx, out, &t);
     }
     mz_cut_polys(ctx, out, marks);
