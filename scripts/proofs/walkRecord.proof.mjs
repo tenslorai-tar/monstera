@@ -8,19 +8,19 @@
  * Usage: node scripts/proofs/walkRecord.proof.mjs
  */
 
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { repoRoot } from '../lib/gitScope.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
-import { commandIds, countsFor, programDigest, refusals, rowsFrom } from '../release/walkRecord.mjs';
+import { FULL_WALK, commandIds, countsFor, programDigest, refusals, reportsOf, rowsFrom } from '../release/walkRecord.mjs';
 import { stepTable, walkingRow } from '../research/walkSteps.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 22 });
+const roster = createRoster(failures, { cases: 32 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -123,6 +123,48 @@ async function main() {
   check('a newer pass outweighs an older failure of the same row', recovered?.result === 'passed', JSON.stringify(recovered));
   const broken = rowsFrom(COMMANDS, [olderFail, newerPass].map((each, at) => ({ ...each, folder: at === 0 ? '2026-11-03T03-00-00' : each.folder }))).find((row) => row.id === 'document.save');
   check('and a newer failure outweighs an older pass', broken?.result === 'failed', JSON.stringify(broken));
+
+  // A FULL WALK'S FAILURE STANDS (the owner's ruling, ADR-0285's correction of 2026-11-06). The narrower walk is newer in both.
+  const narrow = { ...reportAt(COMMIT, DIGEST, '2026-11-03T05-00-00', [OPEN_SAVE]), walk: 'new-features' };
+  const stood = rowsFrom(COMMANDS, [narrow, olderFail]);
+  const saveStood = stood.find((row) => row.id === 'document.save');
+  check(
+    'a narrower walk’s newer pass does not clear a full walk’s failure, and the row names the full walk',
+    saveStood?.result === 'failed' && saveStood.walkedOn?.report.startsWith(FULL_WALK) === true,
+    JSON.stringify(saveStood),
+  );
+  check('and the pack refuses that row', refusals({ ...recordOf(WALKED), rows: stood }, COMMIT, DIGEST, COMMANDS).some((said) => said.includes('document.save')), JSON.stringify(stood));
+  const cleared = rowsFrom(COMMANDS, [narrow, newerPass, olderFail]).find((row) => row.id === 'document.save');
+  check('CONTROL: the full walk passing that row again clears it, the narrower walk still the newest', cleared?.result === 'passed', JSON.stringify(cleared));
+  const neverFailed = rowsFrom(COMMANDS, [narrow, newerPass]).find((row) => row.id === 'document.save');
+  check('CONTROL: a narrower walk’s pass still counts where the full walk did not fail the row', neverFailed?.result === 'passed' && neverFailed.walkedOn?.report.startsWith('new-features') === true, JSON.stringify(neverFailed));
+  const narrowFailed = rowsFrom(COMMANDS, [{ ...narrow, steps: [{ ...OPEN_SAVE, outcome: 'failed' }] }, newerPass]).find((row) => row.id === 'document.save');
+  check('CONTROL: a narrower walk’s newer failure still fails the row', narrowFailed?.result === 'failed', JSON.stringify(narrowFailed));
+  const named = readFileSync(join(repoRoot(), 'scripts/research/everyToolWalk.mjs'), 'utf8');
+  check('the full walk’s program gives its reports the name the rule keys on', named.includes(`startWalk('${FULL_WALK}'`), FULL_WALK);
+
+  // THE GATE'S OWN REFUSALS (the stage audit's EEEEEEEEE-2): a report of a dirty tree or of other bytes is not counted, and each
+  // case holds everything else right, so the clause named is the one refusing. The real walk script is the program.
+  const program = 'scripts/research/everyToolWalk.mjs';
+  const countable = { commit: COMMIT, clean: true, digest: DIGEST, walker: { script: program, digest: programDigest(repoRoot(), program) } };
+  check('CONTROL: a clean report of this build and of the program now is counted', countsFor(repoRoot(), countable, DIGEST), JSON.stringify(countable));
+  check('a report of a dirty tree is not counted', !countsFor(repoRoot(), { ...countable, clean: false }, DIGEST), 'counted');
+  check('a report of other bytes is not counted', !countsFor(repoRoot(), { ...countable, digest: 'e'.repeat(64) }, DIGEST), 'counted');
+  // NEWEST FIRST, read from folders on disk given oldest first, or `rowsFrom`'s "newest" would be whatever the disk listed.
+  const walksRoot = mkdtempSync(join(tmpdir(), 'walk-record-'));
+  try {
+    writeFileSync(join(walksRoot, 'walk.mjs'), "import { a } from './liveWalk.mjs';\nexport const b = a;\n");
+    writeFileSync(join(walksRoot, 'liveWalk.mjs'), 'export const a = 1;\n');
+    const walker = { script: 'walk.mjs', digest: programDigest(walksRoot, 'walk.mjs') };
+    for (const folder of ['2026-11-03T01-00-00', '2026-11-03T03-00-00', '2026-11-03T02-00-00']) {
+      mkdirSync(join(walksRoot, '_review', 'walks', 'every-tool', folder), { recursive: true });
+      writeFileSync(join(walksRoot, '_review', 'walks', 'every-tool', folder, 'report.json'), JSON.stringify({ walk: 'every-tool', build: { commit: COMMIT, clean: true, digest: DIGEST, walker }, steps: [] }));
+    }
+    const order = reportsOf(walksRoot, { digest: DIGEST }).map((each) => each.folder);
+    check('reports are read newest first, whatever order the folders are listed in', JSON.stringify(order) === JSON.stringify(['2026-11-03T03-00-00', '2026-11-03T02-00-00', '2026-11-03T01-00-00']), JSON.stringify(order));
+  } finally {
+    rmSync(walksRoot, { recursive: true, force: true });
+  }
 
   // A WALK PROGRAM THAT CHANGED: the report counts only while its program's digest is the program's now. The real walk
   // script is the control, read through its own imports, so the digest is one this repository's files produce.

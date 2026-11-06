@@ -142,23 +142,40 @@ export function builtAt(root, git) {
  * @typedef {{ id: string, result: 'passed' | 'failed' | 'not walked', reason?: string, evidence: string[], walkedOn?: WalkedOn }} WalkRow
  */
 
+/** The walk that is the full walk: the name `everyToolWalk.mjs` gives its reports, a proof holding the two together. */
+export const FULL_WALK = 'every-tool';
+
 /**
  * One row per command from the reports of THIS build (Decision 4), each from the NEWEST report that walked it (the
  * correction of 2026-11-03): passed when every step of that report that covers it passed, failed when any failed, *not
  * walked* only where a step said why, and *not walked* with no reason where nothing reached it, which the refusal below
  * refuses. A row names the commit and the digest it was walked on.
+ *
+ * AND A FULL WALK'S FAILURE STANDS until the full walk passes that row again on this build, whatever a narrower walk says
+ * after it (the owner's ruling, ADR-0285's correction of 2026-11-06): the row's newest {@link FULL_WALK} report is read before
+ * the newest report of any walk.
  * @param {readonly string[]} commands
  * @param {readonly WalkReport[]} reports newest first
  * @returns {WalkRow[]}
  */
 export function rowsFrom(commands, reports) {
+  /** @param {string} id @param {WalkReport} report */
+  const stepsOf = (id, report) => report.steps.filter((step) => step.covers?.includes(id) === true);
+  /** @param {WalkReport} report */
+  const walkedOnOf = (report) => ({ commit: report.build?.commit ?? '', digest: report.build?.digest ?? '', report: `${report.walk}/${report.folder}` });
+  /** @param {WalkReport} report @param {readonly WalkStep[]} steps */
+  const evidenceOf = (report, steps) => steps.map((step) => `${report.walk}/${report.folder}: ${step.name}`);
   return commands.map((id) => {
+    const full = reports.find((each) => each.walk === FULL_WALK && stepsOf(id, each).length > 0);
+    if (full !== undefined && stepsOf(id, full).some((step) => step.outcome !== 'passed')) {
+      return { id, result: 'failed', evidence: evidenceOf(full, stepsOf(id, full)), walkedOn: walkedOnOf(full) };
+    }
     const report = reports.find((each) => each.steps.some((step) => step.covers?.includes(id) === true || (step.notWalked?.[id] ?? '').trim() !== ''));
     if (report === undefined) return { id, result: 'not walked', evidence: [] };
     /** @type {WalkedOn} */
-    const walkedOn = { commit: report.build?.commit ?? '', digest: report.build?.digest ?? '', report: `${report.walk}/${report.folder}` };
-    const covering = report.steps.filter((step) => step.covers?.includes(id) === true);
-    const evidence = covering.map((step) => `${report.walk}/${report.folder}: ${step.name}`);
+    const walkedOn = walkedOnOf(report);
+    const covering = stepsOf(id, report);
+    const evidence = evidenceOf(report, covering);
     if (covering.some((step) => step.outcome !== 'passed')) return { id, result: 'failed', evidence, walkedOn };
     if (covering.length > 0) return { id, result: 'passed', evidence, walkedOn };
     const reason = report.steps.map((step) => step.notWalked?.[id]).find((said) => (said ?? '').trim() !== '');
