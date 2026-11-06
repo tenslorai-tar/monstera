@@ -2040,8 +2040,7 @@ function write(
         replaced !== undefined &&
         untouched === replaced.length - 1 &&
         lastRun !== undefined &&
-        lastPiece !== undefined &&
-        lastPiece.mark === NO_MARK &&
+        lastPiece?.mark === NO_MARK &&
         lastPiece.run === lastRun.run.index &&
         lastPiece.standsAt === undefined &&
         lastPiece.text.length > lastRun.run.text.length &&
@@ -2067,7 +2066,7 @@ function write(
       // A JUSTIFIED PARAGRAPH'S WRAPPED LINE widens its spaces to the measure, capped as the PDFium writer caps it; its last
       // line is not stretched (ADR-0228 Decision 1).
       const setting: readonly (typeof row.pieces)[number][] =
-        addedTo && lastPiece !== undefined && lastRun !== undefined
+        addedTo
           ? [
               { ...lastPiece, text: lastPiece.text.slice(lastRun.run.text.length), at: lastPiece.at + lastRun.run.text.length },
               ...row.pieces.slice(untouched + 1),
