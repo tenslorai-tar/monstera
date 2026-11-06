@@ -992,14 +992,24 @@ if (runs('fit')) {
 
 if (runs('one-space')) {
   const LINES = Array.from({ length: 5 }, (_, at) => `Line ${String(at + 1)} of a paragraph that a person reads and never types in, ending here`);
-  /** One paragraph, drawn upright or turned the way a page under /Rotate 180 is, with or without a filled bar over part of it. */
-  const paragraph = async (/** @type {string} */ name, /** @type {{ turned: boolean; bar: boolean }} */ { turned, bar }) => {
+  /**
+   * One paragraph, drawn upright or turned the way a page under /Rotate 180 is, with or without a filled bar over part of it,
+   * or (`gap`) with a bar standing in a jump its first line's words make round it, the shape the owner's page has.
+   */
+  const paragraph = async (/** @type {string} */ name, /** @type {{ turned: boolean; bar: boolean; gap?: boolean }} */ { turned, bar, gap = false }) => {
     const document = await PDFDocument.create();
     const font = await document.embedFont(StandardFonts.Helvetica);
     const sheet = document.addPage([612, 792]);
     if (turned) sheet.setRotation(pdfLib.degrees(180));
     for (const [at, line] of LINES.entries()) {
       const y = 700 - at * 14;
+      if (gap && at === 0) {
+        const key = sheet.node.newFontDictionary(font.name, font.ref);
+        const shown = document.context.obj([font.encodeText('Line 1 of a '), -6000, font.encodeText('paragraph that reads, ending here')]);
+        sheet.pushOperators(pdfLib.beginText(), pdfLib.setFontAndSize(key, 11), pdfLib.moveText(72, y), pdfLib.PDFOperator.of(pdfLib.PDFOperatorNames.ShowTextAdjusted, [shown]), pdfLib.endText());
+        sheet.drawRectangle({ x: 72 + font.widthOfTextAtSize('Line 1 of a ', 11) + 3, y: y - 3, width: 60, height: 12, color: rgb(0, 0, 0) });
+        continue;
+      }
       sheet.drawText(line, turned ? { x: 612 - 72, y: 792 - y, size: 11, font, rotate: pdfLib.degrees(180) } : { x: 72, y, size: 11, font });
     }
     if (bar) sheet.drawRectangle(turned ? { x: 612 - 72 - 200, y: 792 - 700 - 3, width: 100, height: 12, color: rgb(0, 0, 0) } : { x: 172, y: 697, width: 100, height: 12, color: rgb(0, 0, 0) });
@@ -1036,17 +1046,20 @@ if (runs('one-space')) {
       ['turned', { turned: true, bar: false }],
       ['upright with a bar', { turned: false, bar: true }],
       ['turned with a bar', { turned: true, bar: true }],
+      ['upright with a bar in a gap', { turned: false, bar: false, gap: true }],
     ])) {
-      await open(await paragraph(`one-space-${name.replaceAll(' ', '-')}.pdf`, shape));
-      await command('Fit page');
-      await section('Edit');
-      await text.ensureEditText();
-      const block = page.locator('[data-text-block]').first();
-      await block.waitFor({ state: 'attached', timeout: 30_000 });
-      await page.waitForTimeout(600);
-      // THE WRAP IS THE SECOND LINE'S END, and not the first's: a bar lies on the first, and what an edit beside a bar does
-      // is the owner's to rule on (item 5, 2026-11-06), so this row does not settle it by what it happens to do today.
-      for (const [where, keys] of /** @type {const} */ ([['wrap', ['Control+Home', 'ArrowDown', 'End']], ['end', ['Control+End']]])) {
+      const path = await paragraph(`one-space-${name.replaceAll(' ', '-')}.pdf`, shape);
+      // THE FIRST LINE'S END TOO, where the bar lies: the words past a bar stay where they are (the owner's ruling, 2026-11-06).
+      // EACH PLACE FROM A FRESH OPEN: a write splits a line that has a jump in it into two blocks, and the block this row
+      // presses is then another one than the place it names.
+      for (const [where, keys] of /** @type {const} */ ([['first line', ['Control+Home', 'End']], ['wrap', ['Control+Home', 'ArrowDown', 'End']], ['end', ['Control+End']]])) {
+        await open(path);
+        await command('Fit page');
+        await section('Edit');
+        await text.ensureEditText();
+        const block = page.locator('[data-text-block]').first();
+        await block.waitFor({ state: 'attached', timeout: 30_000 });
+        await page.waitForTimeout(600);
         await hold();
         await text.openBlock(block, 'middle');
         for (const key of keys) await page.keyboard.press(key);
@@ -1057,8 +1070,8 @@ if (runs('one-space')) {
         const count = await moved();
         readings[`${name}, ${where}`] = count;
         if (count !== 0) throw new Error(`${name}, ${where}: ${String(count)} pixels moved for one space`);
+        await closeAll();
       }
-      await closeAll();
     }
     return { readings };
   }, { covers: ['text.edit'] });

@@ -18,7 +18,7 @@ import {
 
 import type { PageFont } from './pageFonts.js';
 import type { PageBox, PageCoverCell } from './paperColour.js';
-import { type BlockPlan, type FlowLine, type Measure, NO_MARK, type Row, attribute, largestFit, planBlock, saidUnits } from './paragraphFlow.js';
+import { type BlockPlan, type FlowLine, type Hole, type Measure, NO_MARK, type Row, attribute, largestFit, planBlock, saidUnits } from './paragraphFlow.js';
 import { DECORATION_KEY, DECORATION_KINDS, DECORATION_TAG, type DecorationKind, decorationBand, decorationsOf } from './markDecorations.js';
 import { JUSTIFY_CAP, RISE_SCALE, SUBSCRIPT_DROP, SUPERSCRIPT_RISE, spaceable, spacedBy } from './markFigures.js';
 import { carried, holds, neighbourSpan } from './contentCarry.js';
@@ -30,6 +30,7 @@ import {
   clipIdentitiesAt,
   contentEnd,
   contentLayout,
+  drawnObjects,
   multiply,
   operatorsAndDecorations,
   showOperators,
@@ -192,6 +193,16 @@ const SAME = 1e-6;
  * advance (278/1000). The gap is moved, never drawn, so a font with no space glyph is still spaced as its face would be.
  */
 const SPACE_EM = 0.278;
+
+/**
+ * How far a line's pen has to jump, in em, for the stretch to be a hole its words leave empty rather than a space. Past
+ * the widest a justified word space goes here, {@link JUSTIFY_CAP} added to a space's own {@link SPACE_EM}, and short of a
+ * black bar over a word of three letters and the spaces beside it.
+ */
+const HOLE_EMS = 1;
+
+/** The painting operators that fill a path. */
+const FILLS_A_PATH: ReadonlySet<string> = new Set(['f', 'F', 'f*', 'B', 'B*', 'b', 'b*']);
 
 /** The character a tab's gap is drawn as, under the mark that says it is a tab (ADR-0228 Decision 2): one place, W9. */
 const TAB_GAP = ' ';
@@ -705,6 +716,31 @@ function write(
           const ys = points.map(([, y]) => y);
           return { ...decoration, points, left: Math.min(...xs), right: Math.max(...xs), bottom: Math.min(...ys), top: Math.max(...ys) };
         });
+  /** The page's filled shapes in the edit's frame, each with where it is drawn; read when a block first asks. */
+  let filled: readonly { readonly start: number; readonly left: number; readonly right: number; readonly bottom: number; readonly top: number }[] | undefined;
+  /**
+   * The filled shapes drawn AFTER offset `after` that stand across the letters of a line at `baseline`: what would hide a
+   * word set there, since a later drawing paints over it. A black bar, whatever its colour says to a person. A bar at least
+   * {@link HOLE_EMS} wide and half an em tall, so a rule under a line or a table's cell edge is no bar.
+   */
+  const drawnOver = (after: number, baseline: number, em: number): { readonly left: number; readonly right: number }[] => {
+    filled ??= drawnObjects(content, arrangeWith.kinds)
+      .filter((object) => object.kind === 'path' && object.paint !== undefined && FILLS_A_PATH.has(object.paint.op) && object.points.length > 0)
+      .map((object) => {
+        const points = unframe === null ? object.points : object.points.map(([x, y]) => apply(unframe, x, y));
+        const xs = points.map(([x]) => x);
+        const ys = points.map(([, y]) => y);
+        return { start: object.start, left: Math.min(...xs), right: Math.max(...xs), bottom: Math.min(...ys), top: Math.max(...ys) };
+      });
+    return filled.filter(
+      (box) =>
+        box.start > after &&
+        box.right - box.left >= HOLE_EMS * em &&
+        box.top - box.bottom >= em / 2 &&
+        box.bottom < baseline + em / 2 &&
+        box.top > baseline + em / 4,
+    );
+  };
   /**
    * Whether the content sets a clip at all (a `W` or `W*` operator): only then can a clip hide the words a block sets, and
    * only then is the content read again for the windows in force (ADR-0266's correction of 2026-10-25). A false yes costs a
@@ -1146,10 +1182,101 @@ function write(
         fixedSoFar = true;
       }
     }
-    const flow: FlowLine[] = lines.map((line, at) => ({
-      runs: line.map((run) => ({ id: run.run.index, text: run.run.text })),
-      soft: soft[at] === true,
-    }));
+    /**
+     * The stretches a line's words leave empty, wider than {@link HOLE_EMS}: the distance its pen jumps inside an operator's
+     * `TJ` or between two operators, read from the same elements {@link advance} walks, and with them what {@link drawnOver}
+     * would hide past its words. So the plan keeps every one (`Hole`). From the line's first origin, which is what the row
+     * that stands in for the line is set from.
+     */
+    const ownRuns = new Set(block.lines.flat());
+    // A BLOCK THIS EDIT EMPTIES leaves its row: its words have gone, or joined this one (`joinedIn`).
+    const goneRuns = new Set(blocks.filter((each) => each.text === '').flatMap((each) => each.lines.flat()));
+    const holesOf = (line: (typeof lines)[number]): Hole[] => {
+      const start = line[0]?.origin.x ?? 0;
+      const gaps: Hole[] = [];
+      let pen: number | undefined;
+      /** The words' own stretch ends here, or `undefined` where a code's width cannot be read: then no drawing is judged. */
+      const walk = (): boolean => {
+        for (const member of line.flatMap((run) => run.members)) {
+          const op = ops[member];
+          const font = op?.state.font === null || op === undefined ? undefined : fonts.get(op.state.font);
+          if (op === undefined || font === undefined) return false;
+          const origin = placed(member);
+          const wide = HOLE_EMS * op.state.size * origin.unit;
+          if (pen !== undefined && origin.x - pen > wide) gaps.push({ from: pen - start, to: origin.x - start });
+          pen = origin.x;
+          for (const element of op.elements) {
+            if (typeof element === 'number') {
+              const jump = -(element / 1000) * op.state.size * op.state.scale * origin.unit;
+              if (jump > wide) gaps.push({ from: pen - start, to: pen + jump - start });
+              pen += jump;
+              continue;
+            }
+            const part = advanceOf(font, codesOf(font, element), op.state);
+            if (part === null) return false;
+            pen += part * origin.unit;
+          }
+        }
+        return true;
+      };
+      if (!walk() || pen === undefined) return gaps;
+      const end = pen - start;
+      const lead = line[0];
+      const leadOp = lead === undefined ? undefined : ops[lead.first];
+      const lastMember = line.at(-1)?.last;
+      const lastStart = lastMember === undefined ? undefined : ops[lastMember]?.start;
+      if (lead === undefined || leadOp === undefined || lastStart === undefined) return gaps;
+      const em = leadOp.state.size * lead.origin.up;
+      /** Where the line's words stand: what lies between its gaps. */
+      const inked: Hole[] = [];
+      let from = 0;
+      for (const gap of gaps) {
+        inked.push({ from, to: gap.from });
+        from = gap.to;
+      }
+      inked.push({ from, to: end });
+      // WHAT A DRAWING COVERS BESIDE THE LINE'S OWN WORDS. Over those words it is no hole: they are the page's, and they are
+      // not moved out from under it. A bar that starts over the line's last word and runs on past it still hides what would
+      // be set past that word, so its part past the words counts.
+      // AND ANOTHER BLOCK'S WORDS ON THE ROW, which is what a redaction applied in the middle of a line leaves: PDFium's read
+      // makes two blocks of the words either side of the bar, and a word typed past the bar landed on the second.
+      const beside = [...runs.values()].filter(
+        (other) =>
+          !ownRuns.has(other.index) &&
+          !goneRuns.has(other.index) &&
+          other.bottom < lead.origin.y + em / 2 &&
+          other.top > lead.origin.y + em / 4 &&
+          other.left >= start,
+      );
+      const drawn = [...drawnOver(lastStart, lead.origin.y, em), ...beside].flatMap((box) => {
+        let parts: Hole[] = [{ from: box.left - start, to: box.right - start }];
+        for (const words of inked) {
+          parts = parts.flatMap((part) => [
+            ...(part.from < words.from ? [{ from: part.from, to: Math.min(part.to, words.from) }] : []),
+            ...(part.to > words.to ? [{ from: Math.max(part.from, words.to), to: part.to }] : []),
+          ]);
+        }
+        return parts.filter((part) => part.to - part.from >= HOLE_EMS * em);
+      });
+      const holes: Hole[] = [];
+      for (const hole of [...gaps, ...drawn].sort((a, b) => a.from - b.from)) {
+        const last = holes.at(-1);
+        if (last !== undefined && hole.from <= last.to) holes[holes.length - 1] = { from: last.from, to: Math.max(last.to, hole.to) };
+        else holes.push(hole);
+      }
+      return holes;
+    };
+    // NO HOLES WHERE THE WORDS ARE NOT WHERE THEY WERE: a measure the person gave breaks every line elsewhere, and a block
+    // shrunk to fit is a smaller picture of itself, so neither lands a line's words on the line's old stretches.
+    const keepsHoles = !measured && fit !== 'shrink';
+    const flow: FlowLine[] = lines.map((line, at) => {
+      const holes = keepsHoles ? holesOf(line) : [];
+      return {
+        runs: line.map((run) => ({ id: run.run.index, text: run.run.text })),
+        soft: soft[at] === true,
+        ...(holes.length === 0 ? {} : { holes }),
+      };
+    });
     /**
      * WHERE EACH UNIT OF THE NEW WORDS CAME FROM, by the plan's own attribution taken to whole words (`saidUnits`; B3a:
      * the plan calls the same function on the same lines and words), and whether the `length` units from `at` are words
@@ -1885,8 +2012,11 @@ function write(
       );
       const perSpace = spaces === 0 ? 0 : Math.max(0, Math.min((blockRight - x - row.width) / spaces, JUSTIFY_CAP * smallest));
       let cursor = x;
+      // WHAT A HOLE'S PLACE IS MEASURED FROM: the line it was read from, wherever this row's own first words begin.
+      const lineStart = replaced !== undefined && keepsItsLine ? (replaced[0]?.origin.x ?? x) : x;
       for (const piece of setting) {
         const run = byId.get(piece.run) ?? firstRun;
+        if (piece.standsAt !== undefined) cursor = Math.max(cursor, lineStart + piece.standsAt);
         cursor = layOut(
           sourceOf(run),
           piece.text,

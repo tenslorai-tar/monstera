@@ -1023,6 +1023,136 @@ describe('editOperators on paragraphs (ADR-0179)', () => {
     });
   });
 
+  describe('a line with a stretch its words leave empty, where a page draws a black bar (the owner’s ruling of 2026-11-06)', () => {
+    // `aaa` then 60 empty then `bbb ccc`, and the same again on the second line: Helvetica here is 5 a character, so `bbb`
+    // and `eee` stand at 72 + 20 + 60 = 152. The third line is what a closed gap would pull up.
+    const content = bytes(
+      [
+        'BT /F1 10 Tf 1 0 0 1 72 100 Tm [(aaa ) -6000 (bbb ccc)] TJ ET',
+        'BT /F1 10 Tf 1 0 0 1 72 88 Tm [(ddd ) -6000 (eee fff)] TJ ET',
+        'BT /F1 10 Tf 1 0 0 1 72 76 Tm (ggg hhh iii jjj kkk lll) Tj ET',
+      ].join('\n'),
+    );
+    const page: PageRuns = {
+      textObjects: [0, 1, 2],
+      runs: [inked(0, 'aaa bbb ccc', 72, 187), inked(1, 'ddd eee fff', 72, 187), inked(2, 'ggg hhh iii jjj kkk lll', 72, 187)],
+    };
+    const edit = (text: string) => editOperators(content, fonts, page, [{ lines: [[0], [1], [2]], soft: [true, true, false], text }]);
+    const WHOLE = 'aaa bbb ccc ddd eee fff ggg hhh iii jjj kkk lll';
+    /** The one object the edit inserts. */
+    const written = (text: string): string => {
+      const result = edit(text);
+      if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+      return inserted(result.value).join('\n');
+    };
+
+    it('one space on the first line: the words past the stretch stay where they were', () => {
+      const object = written('aaa  bbb ccc ddd eee fff ggg hhh iii jjj kkk lll');
+      expect(object).toContain('1 0 0 1 152 100 Tm <626262');
+      // NOTHING PULLED UP: the second line is not written at all.
+      expect(object).not.toContain('88 Tm');
+    });
+
+    it('one space on the second line: the same, and the first line is not touched', () => {
+      const object = written('aaa bbb ccc ddd  eee fff ggg hhh iii jjj kkk lll');
+      expect(object).toContain('1 0 0 1 152 88 Tm <656565');
+      expect(object).not.toContain('100 Tm');
+      expect(object).not.toContain('76 Tm');
+    });
+
+    it('a word typed past the stretch: the words before it are not pulled, and what no longer fits goes down a line', () => {
+      const object = written('aaa bbb ccc ddd eee new fff ggg hhh iii jjj kkk lll');
+      expect(object).toContain('1 0 0 1 152 88 Tm <656565');
+      expect(object).not.toContain('100 Tm');
+    });
+
+    it('a word typed before the stretch lands past it, and never on it', () => {
+      const object = written('aaa new bbb ccc ddd eee fff ggg hhh iii jjj kkk lll');
+      expect(object).toContain('1 0 0 1 152 100 Tm <6E6577');
+    });
+
+    it('CONTROL: a line with no such stretch still fills from its left, and a gap of a word space is no stretch', () => {
+      const plain = bytes(['BT /F1 10 Tf 1 0 0 1 72 100 Tm [(aaa ) -300 (bbb ccc)] TJ ET', 'BT /F1 10 Tf 1 0 0 1 72 88 Tm (ddd eee fff ggg hhh) Tj ET'].join('\n'));
+      const runs: PageRuns = { textObjects: [0, 1], runs: [inked(0, 'aaa bbb ccc', 72, 130), inked(1, 'ddd eee fff ggg hhh', 72, 167)] };
+      const result = editOperators(plain, fonts, runs, [{ lines: [[0], [1]], soft: [true, false], text: 'aaa new bbb ccc ddd eee fff ggg hhh' }]);
+      if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+      expect(inserted(result.value).join('\n')).toContain('1 0 0 1 72 100 Tm <616161');
+      expect(inserted(result.value).join('\n')).not.toContain('Tm <6E6577');
+    });
+
+    describe('a bar DRAWN over the end of a line, where the words leave no jump to read', () => {
+      // `aaa bbb` ends at 107, a bar drawn after it from 110 to 187, and `cccccc` beside it makes the block's measure.
+      const words = ['BT /F1 10 Tf 1 0 0 1 72 100 Tm (aaa bbb) Tj ET', 'BT /F1 10 Tf 1 0 0 1 72 88 Tm (ccc ddd eee fff ggg hhh iii) Tj ET'];
+      const runs: PageRuns = { textObjects: [0, 1], runs: [inked(0, 'aaa bbb', 72, 107), inked(1, 'ccc ddd eee fff ggg hhh iii', 72, 207)] };
+      const typed = (drawing: string): string => {
+        const result = editOperators(bytes([...words, drawing].join('\n')), fonts, runs, [{ lines: [[0], [1]], soft: [true, false], text: 'aaa bbb new ccc ddd eee fff ggg hhh iii' }]);
+        if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+        return inserted(result.value).join('\n');
+      };
+
+      it('a word typed at the line’s end is not set under the bar: it goes past it where it fits', () => {
+        expect(typed('0 g 110 97 40 12 re f')).toContain('1 0 0 1 150 100 Tm <6E6577');
+      });
+
+      it('a bar that starts over the line’s last word and runs on: only its part past the words is left empty', () => {
+        // `aaa bbb ` ends at 112 with its space; a bar from 92 to 150 hides `bbb` and runs on past it.
+        expect(typed('0 g 92 97 58 12 re f')).toContain('1 0 0 1 150 100 Tm <6E6577');
+      });
+
+      it('CONTROL: a bar over the line’s OWN words is no room, and they are not moved out from under it', () => {
+        const object = typed('0 g 72 97 40 12 re f');
+        expect(object).toContain('1 0 0 1 72 100 Tm <6161612062626220');
+        expect(object).toContain('1 0 0 1 112 100 Tm <6E6577');
+      });
+
+      it('CONTROL: a thin rule across the line is no bar, and neither is a shape drawn BEFORE the words', () => {
+        expect(typed('0 g 110 100 90 0.5 re f')).toContain('1 0 0 1 112 100 Tm <6E6577');
+        const before = editOperators(bytes(['0 g 110 97 40 12 re f', ...words].join('\n')), fonts, runs, [{ lines: [[0], [1]], soft: [true, false], text: 'aaa bbb new ccc ddd eee fff ggg hhh iii' }]);
+        if (!before.ok) throw new Error(`refused: ${JSON.stringify(before.error)}`);
+        expect(inserted(before.value).join('\n')).toContain('1 0 0 1 112 100 Tm <6E6577');
+      });
+    });
+
+    describe('another block’s words on the row, which a redaction in the middle of a line leaves', () => {
+      const words = bytes(
+        [
+          'BT /F1 10 Tf 1 0 0 1 72 100 Tm (aaa bbb) Tj ET',
+          'BT /F1 10 Tf 1 0 0 1 72 88 Tm (ccc ddd eee fff ggg hhh iii) Tj ET',
+          'BT /F1 10 Tf 1 0 0 1 150 100 Tm (zzz) Tj ET',
+        ].join('\n'),
+      );
+      const runs: PageRuns = {
+        textObjects: [0, 1, 2],
+        runs: [inked(0, 'aaa bbb', 72, 107), inked(1, 'ccc ddd eee fff ggg hhh iii', 72, 207), { ...inked(2, 'zzz', 150, 165), bottom: 98, top: 108 }],
+      };
+
+      it('a word typed at the line’s end is set past them, and never on them', () => {
+        const result = editOperators(words, fonts, runs, [{ lines: [[0], [1]], soft: [true, false], text: 'aaa bbb new ccc ddd eee fff ggg hhh iii' }]);
+        if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+        const object = inserted(result.value).join('\n');
+        expect(object).toContain('1 0 0 1 112 100 Tm <6E6577');
+        const long = editOperators(words, fonts, runs, [{ lines: [[0], [1]], soft: [true, false], text: 'aaa bbb newnewnewnew ccc ddd eee fff ggg hhh iii' }]);
+        if (!long.ok) throw new Error(`refused: ${JSON.stringify(long.error)}`);
+        // TOO WIDE TO STAND PAST THEM, so it goes down a line rather than onto them.
+        expect(inserted(long.value).join('\n')).toContain('1 0 0 1 72 88 Tm <6E65776E6577');
+      });
+
+      it('CONTROL: a block this edit empties is no obstacle, since its words have left the row', () => {
+        const result = editOperators(words, fonts, runs, [
+          { lines: [[0], [1]], soft: [true, false], text: 'aaa bbb newnewnewnew ccc ddd eee fff ggg hhh iii' },
+          { lines: [[2]], soft: [false], text: '' },
+        ]);
+        if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+        expect(inserted(result.value).join('\n')).toContain('1 0 0 1 112 100 Tm <6E65776E6577');
+      });
+    });
+
+    it('CONTROL: an edit that changes nothing on the page still writes nothing', () => {
+      const result = edit(WHOLE);
+      expect(result.ok ? 'written' : result.error.reason).toBe('unchanged');
+    });
+  });
+
   it('JUSTIFIES a wrapped line by widening its spaces, capped, and leaves the paragraph’s last line alone (ADR-0228)', () => {
     // `aaa bbb` (35 wide) over `cccccccccccc` (60 wide), one paragraph: the measure is 60, so the first line has 25 to
     // spare over its one space, which the cap holds to 0.6 of the size, 6.

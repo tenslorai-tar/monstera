@@ -208,3 +208,18 @@ Decisions 1 to 6, 8 and 9, and the corrections above, are the wire's and the wri
 stated in its Proofs, that *a word wider than the measure is broken last, by grapheme*: in a reference marker's block,
 about 17 pt wide, it chopped typed words two letters to a line. A word is now never broken, and a word wider than the
 measure widens it for the whole block, in the editor and the writer alike. Everything else here is unchanged.
+
+## Correction, 2026-11-06 — a line's words go round what it leaves empty (the owner's ruling)
+
+This record's line fill counted only words and the spaces between them, so a line with a jump in it, where a page draws
+a black bar, laid out with the jump closed: one space on such a line took a paragraph from 5 lines to 4 and pulled words
+under the bar. A line now has **holes** (`Hole`, `paragraphFlow.ts`): the plan fills round them, a word that would land
+on one stands past it, and one that does not fit past it goes down a line. The operator writer reads them, since every
+page's text is its own: a jump of more than an em inside a `TJ` or between two operators; the part beside the line's own
+words of a filled shape drawn after them, a bar being what would hide a word set there; and another block's words on the
+row, which is what Apply redactions leaves when it cuts a line in two.
+
+**What this does not reach, stated:** the PDFium block writer takes the one plan and gives it no holes, and no page's text
+reaches that writer since ADR-0266. A block given a new measure and one shrunk to fit have none, since their words are
+not where they were. The editor's surface draws a paragraph with no holes, so while typing it can wrap otherwise than the
+written lines do. A word pushed past a bar moves the words after it on, by the same rule as any wrap.

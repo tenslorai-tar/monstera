@@ -38,6 +38,19 @@ export interface FlowLine {
   readonly runs: readonly FlowRun[];
   /** Whether the line ends in a soft wrap. Never true for the block's last line. */
   readonly soft: boolean;
+  /** The stretches of it no word may stand on, left to right, measured from where the line starts ({@link Hole}). */
+  readonly holes?: readonly Hole[];
+}
+
+/**
+ * A stretch of a line its words leave empty: what a black bar stands in, or a column's gap. Nothing here knows why it is
+ * empty, since a page's bar is a drawing the read does not see. The words a line is filled with go round it, so a word
+ * after it stays where it is, and one pushed on from before it lands past it.
+ */
+export interface Hole {
+  /** Where the empty stretch begins and ends, in the measure's units from where the line starts. */
+  readonly from: number;
+  readonly to: number;
 }
 
 /** The owner of a character no run wrote: the join between two lines. */
@@ -356,6 +369,8 @@ export interface Part {
   readonly text: string;
   /** Where its first unit is in the new words: what tells a word the person typed from one the page already said. */
   readonly at: number;
+  /** Where it stands from the line's start, past a {@link Hole}. */
+  readonly standsAt?: number;
 }
 
 /** A word no mark names: set in the style of the run that wrote it. */
@@ -496,6 +511,8 @@ export interface Piece {
   readonly width: number;
   /** Where its first unit is in the new words. */
   readonly at: number;
+  /** Where the writer sets it from the line's start, past a {@link Hole}: only ever on a piece that begins past one. */
+  readonly standsAt?: number;
 }
 
 /** One line of a paragraph the layout produced. */
@@ -515,12 +532,21 @@ function widthOf(parts: readonly Part[], measure: Measure): number {
 
 /** The pieces of a line's parts: consecutive parts of one run and one mark are one, and begin where the first does. */
 function piecesOf(parts: readonly Part[], measure: Measure): Piece[] {
-  const pieces: { run: number; mark: number; text: string; at: number }[] = [];
+  const pieces: { run: number; mark: number; text: string; at: number; standsAt?: number }[] = [];
   for (const part of parts) {
     const last = pieces.at(-1);
-    if (last?.run === part.run && last.mark === part.mark) {
+    // A PART PAST A HOLE STARTS A PIECE OF ITS OWN, however it matches the one before: one object cannot leave a hole.
+    if (part.standsAt === undefined && last?.run === part.run && last.mark === part.mark) {
       pieces[pieces.length - 1] = { ...last, text: last.text + part.text };
-    } else pieces.push({ run: part.run, mark: part.mark, text: part.text, at: part.at });
+    } else {
+      pieces.push({
+        run: part.run,
+        mark: part.mark,
+        text: part.text,
+        at: part.at,
+        ...(part.standsAt === undefined ? {} : { standsAt: part.standsAt }),
+      });
+    }
   }
   return pieces.map((piece) => ({ ...piece, width: measure(piece.run, piece.mark, piece.text, piece.at) }));
 }
@@ -533,6 +559,8 @@ export interface LayOutFrom {
   readonly line: number;
   /** Whether the lines above are left alone, so a line that starts where an old one did ends the layout. */
   readonly stopAt?: (start: number) => boolean;
+  /** The holes of the line with this number in its paragraph: the old line's that stands at the same place. */
+  readonly holesOf?: (line: number) => readonly Hole[] | undefined;
 }
 
 /**
@@ -561,6 +589,7 @@ export function layOutParagraph(
   let carried: { readonly part: Part; readonly start: number } | undefined;
   while (at < chunks.length) {
     const limit = number === 0 ? limits.first : limits.rest;
+    const holes = from.holesOf?.(number) ?? [];
     const parts: Part[] = [];
     let width = 0;
     let trail: Part | undefined;
@@ -583,6 +612,20 @@ export function layOutParagraph(
         continue;
       }
       const word = widthOf(chunk.core, measure);
+      // WHERE THE WORD STANDS: after what the line holds, or past the hole it would land on, so a word after a bar stays
+      // where it is and one pushed on from before it goes past it.
+      const follows = parts.length === 0 ? width : width + trailWidth;
+      // EVERY HOLE IT WOULD LAND ON, left to right: past one it may land on the next.
+      let lands = follows;
+      let hole: Hole | undefined;
+      for (const each of holes) {
+        if (lands < each.to - WITHIN && lands + word > each.from + WITHIN) {
+          hole = each;
+          lands = each.to;
+        }
+      }
+      const past = hole !== undefined && hole.to + word <= limit + WITHIN ? hole.to : undefined;
+      const landsAt = hole === undefined ? follows : past;
       if (parts.length === 0) {
         // A WORD WIDER THAN THE WHOLE LINE is set whole on a line of its own, past the limit: a word is never broken
         // between its letters (ADR-0275). `planBlock` widens a block's limits to its widest word, so there this only
@@ -593,7 +636,7 @@ export function layOutParagraph(
           at += 1;
           break;
         }
-      } else if (width + trailWidth + word > limit + WITHIN) {
+      } else if (landsAt === undefined || landsAt + word > limit + WITHIN) {
         const tab = trail?.text.indexOf('\t') ?? -1;
         const ended = chunks[at - 1];
         if (trail !== undefined && tab >= 0 && ended !== undefined) {
@@ -605,7 +648,11 @@ export function layOutParagraph(
         parts.push(trail);
         width += trailWidth;
       }
-      parts.push(...chunk.core);
+      const [head, ...rest] = chunk.core;
+      if (past !== undefined && head !== undefined) {
+        parts.push({ ...head, standsAt: past }, ...rest);
+        width = past;
+      } else parts.push(...chunk.core);
       width += word;
       trail = chunk.trail;
       trailWidth = trail === undefined ? 0 : measure(trail.run, trail.mark, trail.text, trail.at);
@@ -807,6 +854,7 @@ export function planBlock(
         chunk: begin,
         line: lineNumber,
         stopAt: resumes,
+        holesOf: (line) => (held === undefined ? undefined : lines[held.firstLine + line]?.holes),
       });
       let rejoin = held === undefined ? -1 : held.lastLine + 1;
       if (stoppedAt !== undefined) rejoin = lineAt(old, from[stoppedAt] ?? 0);
@@ -843,9 +891,18 @@ export function planBlock(
 function sameLine(old: FlowLine | undefined, line: FlowLineOut): boolean {
   if (old === undefined) return false;
   const runs = old.runs.filter((run) => run.text !== '');
-  if (runs.length !== line.pieces.length) return false;
-  return line.pieces.every((piece, at) => {
+  // RUN FOR RUN, so a run the layout split round a hole in it is still that run: one operator can draw across a hole.
+  const said: { run: number; text: string; plain: boolean }[] = [];
+  for (const piece of line.pieces) {
+    const last = said.at(-1);
+    if (last?.run === piece.run && piece.standsAt !== undefined) {
+      last.text += piece.text;
+      last.plain &&= piece.mark === NO_MARK;
+    } else said.push({ run: piece.run, text: piece.text, plain: piece.mark === NO_MARK });
+  }
+  if (runs.length !== said.length) return false;
+  return said.every((piece, at) => {
     const run = runs[at];
-    return run?.id === piece.run && run.text === piece.text && piece.mark === NO_MARK;
+    return run?.id === piece.run && run.text === piece.text && piece.plain;
   });
 }
