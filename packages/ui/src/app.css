@@ -6155,6 +6155,12 @@ optgroup {
   pointer-events: auto;
 }
 
+/* WHILE WORDS ARE BEING SELECTED the links stand aside: a button in front of the text keeps the browser from reaching the
+   words behind it, so the selection's end stopped where the link began. The whole pane, because a drag crosses pages. */
+.m-page-pane:has(.m-text-layer:active) .m-page-link {
+  pointer-events: none;
+}
+
 .m-page-link:hover {
   outline: 1px solid var(--accent-on-paper, var(--accent));
 }

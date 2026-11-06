@@ -1,5 +1,5 @@
 import { useLingui } from '@lingui/react';
-import { type ReactElement, useState } from 'react';
+import { type ReactElement, useRef, useState } from 'react';
 import type React from 'react';
 
 import { LINK_OUTLINE_DEFAULT_COLOUR } from '@monstera/contract';
@@ -136,6 +136,8 @@ export interface LinkPointer {
  *
  * A KEY'S CLICK (`detail` 0) is let through: the focused button is the link, and it follows itself.
  *
+ * A click follows only the link its press came down on: a drag's release is a click at the release point.
+ *
  * @param clickFollows whether a plain click follows a link here: true where the page is being read
  */
 export function useLinkPointer(
@@ -147,6 +149,9 @@ export function useLinkPointer(
 ): LinkPointer {
   const { i18n } = useLingui();
   const [hovered, setHovered] = useState<number | undefined>(undefined);
+  // THE LINK THE PRESS CAME DOWN ON. A drag's release is a click at the release point, so without this a text selection
+  // let go on a link followed it.
+  const pressedOn = useRef<number | undefined>(undefined);
   if (links === undefined || links.length === 0 || geometry === undefined || onFollow === undefined) {
     return { props: {}, hover: null };
   }
@@ -198,8 +203,10 @@ export function useLinkPointer(
         setHovered(undefined);
       },
       onPointerDownCapture: (event) => {
+        const at = under(event);
+        pressedOn.current = at;
         // A PRESS THAT WILL FOLLOW starts nothing else: no text selection, no pan, no shape, no pick.
-        if (under(event) !== undefined && follows(event)) event.stopPropagation();
+        if (at !== undefined && follows(event)) event.stopPropagation();
       },
       // AND NO TEXT SELECTION, which the browser starts on the mouse's own press whatever the pointer's did.
       onMouseDownCapture: (event) => {
@@ -209,7 +216,7 @@ export function useLinkPointer(
         if (event.detail === 0) return;
         const at = under(event);
         const followed = at === undefined ? undefined : links[at];
-        if (at === undefined || followed === undefined || !follows(event)) return;
+        if (at === undefined || at !== pressedOn.current || followed === undefined || !follows(event)) return;
         event.preventDefault();
         event.stopPropagation();
         onFollow({ page, index: at, link: followed });

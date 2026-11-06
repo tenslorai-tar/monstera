@@ -18,6 +18,12 @@ const ID = asDocId('00000000-0000-4000-8000-0000000000e1');
 const TO_PAGE_TWO = { kind: 'internal' as const, page: 1, bounds: { x0: 72, y0: 70, x1: 400, y1: 96 } };
 const TO_WEB = { kind: 'external' as const, uri: 'https://example.org/annual-report', bounds: { x0: 72, y0: 120, x1: 500, y1: 136 } };
 
+/** The sample's own body lines where it draws them, baselines 24 pt apart, so a drag has words: the first is under `TO_WEB`. */
+const BODY_LINES = [0, 1, 2, 3, 4].map((line) => ({
+  text: 'Revenue grew across all three regions, led by the northern accounts and renewals.',
+  box: { x0: 72, y0: 122 + line * 24, x1: 470, y1: 135 + line * 24 },
+}));
+
 type Sent = { channel: string; params: unknown }[];
 
 async function openWithLinks(page: Page, section: 'home' | 'comment', sent: Sent): Promise<{ x: (at: number) => number; y: (at: number) => number }> {
@@ -30,6 +36,7 @@ async function openWithLinks(page: Page, section: 'home' | 'comment', sent: Sent
       opens: [{ kind: 'opened' as const, docId: ID, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'Links.pdf' }],
       documentBytes: new Map([[ID, bytes]]),
       pageLinks: [[TO_PAGE_TWO, TO_WEB]],
+      pageLinesPlaced: [BODY_LINES],
       settings: { 'appearance.ribbon-section': section },
     },
     (channel, params) => {
@@ -141,13 +148,101 @@ test('the Links list has its own heading, and each link’s edge on the page is 
   expect({ swatch, edge }).toStrictEqual({ swatch: '#0066cc', edge: 'rgb(0, 102, 204)' });
 });
 
+/** Where a press lands on words clear of every link: the start of the first line below the web link. */
+async function wordsBelowTheLinks(page: Page, belowY: number): Promise<{ x: number; y: number }> {
+  await expect(page.locator('[data-text-layer="0"] .m-text-line').first()).toBeAttached();
+  const lines = await page.locator('[data-text-layer="0"] .m-text-line').evaluateAll((all) => all.map((line) => {
+    const box = line.getBoundingClientRect();
+    return { x: box.left, y: box.top, height: box.height, width: box.width };
+  }));
+  const line = lines.find((each) => each.y > belowY && each.width > 40);
+  if (line === undefined) throw new Error('the sample has no line below its links');
+  return { x: line.x + 10, y: line.y + line.height / 2 };
+}
+
+const selected = (page: Page): Promise<number> => page.evaluate(() => (getSelection()?.toString() ?? '').length);
+
+/**
+ * That no link was followed. A DIALOG'S ABSENCE READ AT ONCE PROVES NOTHING: the question opens a moment after the click,
+ * so with the press check deleted an immediate count read 0 and this file stayed green (measured 2026-11-06). It waits
+ * longer than the question takes, and the page still reading 1 covers a link to a page.
+ */
+async function followedNothing(page: Page, sent: Sent): Promise<void> {
+  await page.waitForTimeout(800);
+  await expect(page.getByRole('dialog', { name: 'Open this link?' })).toHaveCount(0);
+  await expect(page.locator('[data-goto-input="true"]')).toHaveValue('1');
+  expect(opened(sent)).toStrictEqual([]);
+}
+
+test('a text drag let go ON A LINK selects the words and follows nothing', async ({ page }) => {
+  const sent: Sent = [];
+  const at = await openWithLinks(page, 'home', sent);
+  const from = await wordsBelowTheLinks(page, at.y(140));
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(at.x(200), at.y(128), { steps: 10 });
+  await page.mouse.up();
+  expect(await selected(page)).toBeGreaterThan(0);
+  await followedNothing(page, sent);
+});
+
+test('the selection’s end FOLLOWS the pointer over a link, and does not stop where the link begins', async ({ page }) => {
+  const sent: Sent = [];
+  const at = await openWithLinks(page, 'home', sent);
+  const from = await wordsBelowTheLinks(page, at.y(140));
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(at.x(300), at.y(128), { steps: 10 });
+  const further = await selected(page);
+  await page.mouse.move(at.x(120), at.y(128), { steps: 10 });
+  const nearer = await selected(page);
+  await page.mouse.move(from.x, from.y + 60);
+  await page.mouse.up();
+  // DRAGGING UP, so the end further left along the line holds MORE. A held end reads the same at both.
+  expect(nearer).toBeGreaterThan(further);
+  expect(further).toBeGreaterThan(0);
+});
+
+test('REPORTED, not a fault of this fix: a drag that STARTS on a link selects nothing', async ({ page }) => {
+  const sent: Sent = [];
+  const at = await openWithLinks(page, 'home', sent);
+  const to = await wordsBelowTheLinks(page, at.y(140));
+  await page.mouse.move(at.x(200), at.y(128));
+  await page.mouse.down();
+  await page.mouse.move(to.x, to.y, { steps: 10 });
+  await page.mouse.up();
+  expect(await selected(page)).toBe(0);
+  await followedNothing(page, sent);
+});
+
+test('a press on ONE link let go on ANOTHER follows neither', async ({ page }) => {
+  const sent: Sent = [];
+  const at = await openWithLinks(page, 'home', sent);
+  await page.mouse.move(at.x(200), at.y(83));
+  await page.mouse.down();
+  await page.mouse.move(at.x(200), at.y(128), { steps: 6 });
+  await page.mouse.up();
+  await followedNothing(page, sent);
+});
+
+test('CONTROL: a plain click on a web link still asks, and so does the key on its button', async ({ page }) => {
+  const sent: Sent = [];
+  const at = await openWithLinks(page, 'home', sent);
+  const asks = page.getByRole('dialog', { name: 'Open this link?' });
+  await page.mouse.click(at.x(200), at.y(128));
+  await expect(asks).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(asks).toHaveCount(0);
+  await page.locator('[data-link-layer="0"] [data-page-link="1"]').focus();
+  await page.keyboard.press('Enter');
+  await expect(asks).toBeVisible();
+});
+
 test('CONTROL: a click on the page beside a link follows nothing, and no hover is shown there', async ({ page }) => {
   const sent: Sent = [];
   const at = await openWithLinks(page, 'home', sent);
   await page.mouse.move(at.x(200), at.y(110));
   await expect(page.locator('[data-link-hover]')).toHaveCount(0);
   await page.mouse.click(at.x(200), at.y(110));
-  await expect(page.locator('[data-goto-input="true"]')).toHaveValue('1');
-  await expect(page.getByRole('dialog', { name: 'Open this link?' })).toHaveCount(0);
-  expect(opened(sent)).toStrictEqual([]);
+  await followedNothing(page, sent);
 });
