@@ -345,7 +345,7 @@ describe('Add text takes the style of the words nearby (the owner’s B4.3)', ()
 
   it('a press before the page’s blocks are read is held, and opens the box WHERE IT WAS once they are', async () => {
     // THE CONTROL is the layer before this: no surface until the blocks were read, so the press placed nothing — the
-    // first read of a document took 2.7 to 5.8 s. WHERE: the nearby style below holds only at the press's own place,
+    // first read of a document took 2.7 to 5.8 s (read 2026-11-04, `675d1fec`). WHERE: the nearby style below holds only at the press's own place,
     // inside the paragraph's band; a box opened anywhere else starts in 12 point Arial (the case above).
     const onInsert = vi.fn((_insert: PageInsert, _read: BlocksRead) => Promise.resolve<BlockCommit>('written'));
     const made = layer(undefined, () => Promise.resolve('written'), { adding: true, onInsert });

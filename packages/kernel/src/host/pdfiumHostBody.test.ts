@@ -878,7 +878,7 @@ describe('the PDFium host body', () => {
     expect(answer.value.pages).toHaveLength(3);
     expect(answer.value.pages.every((page) => JSON.stringify(page.runs) === JSON.stringify(RUNS) && page.unaddressable === 7)).toBe(true);
     // EACH PAGE REACHED THE READER, in the order asked, in ONE call — one open of the image — with its file read once.
-    // Asked once a page, as until 2026-11-04, this read three calls: 200 opens on the 200-placement page, 1.06 to 1.23 s.
+    // Asked once a page, as until 2026-11-04, this read three calls: 200 opens on the 200-placement page, 1.06 to 1.23 s (timed in main, `af96d9c6`).
     expect(calls).toStrictEqual(['text-runs:4,0,2:7']);
     expect(reads).toBe(1);
   });

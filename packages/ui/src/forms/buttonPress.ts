@@ -56,7 +56,7 @@ export type ButtonCommandId = 'document.print' | 'document.import-form-data-fdf'
 
 /**
  * The zoom a go-to asks for (ISO 32000-1, table 151): the whole page, the page's width, or an `/XYZ`'s own zoom, kept
- * inside the zoom ladder's ends as every other zoom is; `undefined` keeps the reader's.
+ * inside the zoom ladder's ends as a step of the ladder is (a fit alone may go below them); `undefined` keeps the reader's.
  */
 export function zoomOfGoTo(action: Extract<FieldAction, { kind: 'goTo' }>): ZoomMode | undefined {
   if (action.view === 'fit') return { kind: 'fit-page' };

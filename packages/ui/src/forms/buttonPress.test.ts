@@ -138,7 +138,7 @@ describe('pressing a push button', () => {
     expect(routes).toStrictEqual([
       { show: 3, zoom: { kind: 'fit-page' } },
       { apply: 1 },
-      // A ZOOM PAST THE LADDER is the ladder's end, as every other zoom is.
+      // A ZOOM PAST THE LADDER is the ladder's end, as a step of the ladder is.
       { show: 0, zoom: { kind: 'scale', scale: 4 } },
       // NONE NAMED keeps the reader's.
       { show: 1, zoom: undefined },

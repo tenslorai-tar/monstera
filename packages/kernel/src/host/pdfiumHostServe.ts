@@ -67,7 +67,7 @@ const handlers = createPdfiumHandlers({
   // refused by the call that wanted it — `engine-refused` — rather than at a
   // moment when there is no document to speak of.
   // EACH READ OPENS THROUGH `onImage`, the one opener that takes the key the frame carried (ADR-0171's addendum).
-  // EVERY PAGE ASKED FROM ONE OPEN (`HostTextRunsReader`): opened once a page, 200 form placements cost 1.06 to 1.23 s.
+  // EVERY PAGE ASKED FROM ONE OPEN (`HostTextRunsReader`): opened once a page, 200 form placements cost 1.06 to 1.23 s (timed in main, 2026-11-04, `af96d9c6`).
   textRuns: (image, pages, unpack, clips) =>
     onImage(image, async (session) => {
       const answers = [];

@@ -255,7 +255,7 @@ export function EditTextLayer({
   const editing = open !== undefined || freshOpen !== undefined;
   /**
    * A PRESS ON THE PAGE BEFORE ITS BLOCKS ARE READ, in points from the page's corner, kept until they are: a new box is
-   * placed clear of the page's blocks (`freshBox`), and the first read of a document took 2.7 to 5.8 s, during which the
+   * placed clear of the page's blocks (`freshBox`), and the first read of a document took 2.7 to 5.8 s (read 2026-11-04, `675d1fec`), during which the
    * surface was not there and a press placed nothing (`addTextDelay`, 2026-11-04). Dropped when Add text is put down.
    */
   const [held, setHeld] = useState<{ readonly x: number; readonly y: number } | undefined>();

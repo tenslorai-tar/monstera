@@ -892,6 +892,55 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-11-06 — What the owner's page and a phone found: bars, fonts, links, a second edit, and a save that names itself
+
+All run on this machine on the branch's build unless a line says otherwise.
+
+- **Words under a bar** (`0a5262ba`). A line's fill counted only words and their spaces, so a jump in a line closed up. One space
+  took a paragraph from 5 lines to 4 and words went under the bar. Lines now have holes: a jump in the words, the part beside
+  the line's own words of a filled shape drawn after them, and another block's words on the row. One space at each line's
+  end of all three bar paragraphs on the owner's page: 0 pixels.
+- **A text drag let go on a link** (`42b4deed`). A drag's release is a click at the release point, and only that point was asked.
+  Separately, a link's button stands in front of the words, which held the selection's end at 116 characters where it now
+  reaches 2,163. Both fixed; the first attempt at the absence case stayed green with the fix deleted, because it counted a
+  dialog before the dialog opens.
+- **The font panel** (`1a5c3315`). A restyled word was never looked for on the page, so choosing Helvetica asked the resolver,
+  which answered Arimo: 0 pixels and 4.6 KB. The page's own font is now used letter by letter; a subset's missing letters go to
+  the face. 32 pixels on the typed word's row.
+- **The editor on a turned page** (`76dfeaa1`). A framed block's lines are in the frame and PDF.js's items on the page, so no run
+  met its item (a box at -533.2 across, its item at 534) and the block was drawn in the fallback stack. While typing, a plain
+  paragraph lost 29% of its ink on the build before, and 0.0% after. **An earlier figure of "2.6% lighter" with a block open was
+  the instrument:** it counted the closed block's outline. Inside the outline it is 0.0% on six blocks.
+- **A second edit** (`2b609959`). An open editor's frame had no place in the stack, so the outline of a larger block over it took the
+  press meant for its words, and the second press closed the editor. An edit that splits a line round a bar makes exactly that.
+  It stands where its outline stood now, and a walk row makes the second edit for real.
+- **TrueType subsets and untouched words** (`1602ff74`, `7044ab4a`). A subset with no text map had no known characters, so a line's own
+  words went to another face for one space, 1,027 pixels and 214 KB on one corpus file. It is now asked which glyphs have an
+  outline, from its `loca` table. And a line was set again for anything added after it, losing its `TJ` numbers, 303 pixels of
+  words nobody touched. Its operators now stay. On the four corpus files with such fonts: 0 pixels, no font added, no refusal.
+  Not explained: 6 to 33 KB more than a save with no edit.
+- **The pack gate** (`0ba16741`). A narrower walk's later pass replaced a full walk's failure on the same build. It no longer can.
+
+**Measured, and not this round's to fix:**
+
+- **A plain Save of a certificate-signed document writes a cross-reference section that names itself as its previous one**, on the
+  first save, on this build and on 1.1.2610.0's code, read by `xrefChain`: `prev 2414834` at `2414834`. MuPDF alone then reads 0 pages;
+  PDF.js, pdf-lib and PDFium read the page. An unsigned document's save, the control, has no such section. A corpus file whose
+  last section has that shape carries this application's author mark in that revision and no other, against a control this
+  build wrote: so a save here wrote it. Being fixed on `work/cloud-55-engrave-on-save`.
+- **Four phone apps the owner tried** draw form fields, a certificate signature's visible mark among them, and skip other annotations
+  such as highlights, comments, shapes, stamps and placed pictures, however those are written (the owner's results of 2026-11-06).
+- **The seven one-letter drags were not `ba394792`,** as this author had said from its message. With its rule switched off in a scratch
+  worktree they land as before, and with the pointer at the same place on the page 4 of 6 land on the same letter on the release.
+  The difference was the page moving 7 px with the always-kept scrollbar strip; the other two differ by one letter on a boundary.
+- **A package holds no test fake** (EEEEEEEEE-6, read from 1.1.2610.0's and 1.1.2611.0's own file lists): 0 of 2,516 files, the control finding
+  the shell's entry. What ships goes by what the program reaches, so that finding did not hold.
+- **Windows, display scale 1 and 1.5, the test window's own switch:** a one-page Facing fits as one page, the odd last page keeps the pair's zoom,
+  Zoom in from 24% goes to 50% and Zoom out holds, and Fit page answers in one step from 300%. **Compare has its own surface and
+  zoom**, which the fit commands do not reach.
+
+---
+
 ## 2026-11-06 — Stage audit of `f7e2adf7..0a5262ba` — findings EEEEEEEEE-1 to EEEEEEEEE-8
 
 The range from the last audit to the commit before the Home branch's merge, which would have carried it past one batch
