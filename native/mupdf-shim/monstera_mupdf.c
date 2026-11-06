@@ -3440,3 +3440,256 @@ MZ_EXPORT int mz_cut_line_art(pdf_page *page, int *cut_out)
         return MZ_ERR;
     return MZ_OK;
 }
+
+/*
+ * ---------------------------------------------------------------------------
+ * The burn-in, keeping each rewritten picture's kind (ADR-0288)
+ *
+ * MuPDF's pixels redaction (`pdf_redact_image_filter_pixels`, static in pdf-clean.c 1.28.0) decodes a picture a mark
+ * touches, sets the covered pixels white and its mask opaque, and hands back `fz_new_image_from_pixmap`: a picture with
+ * no compressed buffer, which `pdf_add_image` writes with no filter under a new name. So a JPEG photo came back as raw
+ * samples. What it was is known only BEFORE the burn-in, from its compressed buffer, and the one thing that pairs a
+ * replacement with its original is the transform it is drawn with, which the burn-in keeps.
+ *
+ * So: a device notes every picture the page draws, with its transform in device space and whether it was stored as
+ * JPEG; MuPDF burns the page in, unchanged; and where a JPEG was noted, MuPDF's own content filter runs once more with an
+ * image filter that hands back each replacement drawn at a transform where ONLY a JPEG was noted, written as JPEG.
+ * Everything else passes through as it is. The filter's transform is in user space, so it is taken through the page's
+ * own transform before it is compared, and compared within MZ_SAME_PLACE, since the burn-in writes numbers again as text.
+ * ---------------------------------------------------------------------------
+ */
+
+#define MZ_SAME_PLACE 0.001f
+
+typedef struct
+{
+    fz_matrix ctm;
+    int jpeg;
+} mz_noted_picture;
+
+typedef struct
+{
+    fz_device super;
+    mz_noted_picture *list;
+    int count;
+    int cap;
+} mz_note_device;
+
+typedef struct
+{
+    const mz_noted_picture *list;
+    int count;
+    fz_matrix page_ctm;
+    int quality;
+    int rewritten;
+} mz_kind_state;
+
+static void mz_note(fz_context *ctx, mz_note_device *dev, fz_matrix ctm, int jpeg)
+{
+    if (dev->count == dev->cap)
+    {
+        int cap = dev->cap ? dev->cap * 2 : 16;
+        dev->list = fz_realloc_array(ctx, dev->list, cap, mz_noted_picture);
+        dev->cap = cap;
+    }
+    dev->list[dev->count].ctm = ctm;
+    dev->list[dev->count].jpeg = jpeg;
+    dev->count++;
+}
+
+/* WHAT IT WAS STORED AS: the compressed buffer's own type, never the pixels. */
+static int mz_stored_as_jpeg(fz_context *ctx, fz_image *image)
+{
+    fz_compressed_buffer *buffer = fz_compressed_image_buffer(ctx, image);
+    return buffer != NULL && buffer->params.type == FZ_IMAGE_JPEG;
+}
+
+static void mz_note_fill_image(fz_context *ctx, fz_device *dev, fz_image *image, fz_matrix ctm, float alpha, fz_color_params params)
+{
+    (void)alpha;
+    (void)params;
+    mz_note(ctx, (mz_note_device *)dev, ctm, mz_stored_as_jpeg(ctx, image));
+}
+
+/* AN IMAGE MASK IS NEVER A JPEG: it is noted, so that a JPEG at the same place does not decide its replacement. */
+static void mz_note_fill_image_mask(fz_context *ctx, fz_device *dev, fz_image *image, fz_matrix ctm, fz_colorspace *space, const float *color, float alpha, fz_color_params params)
+{
+    (void)image;
+    (void)space;
+    (void)color;
+    (void)alpha;
+    (void)params;
+    mz_note(ctx, (mz_note_device *)dev, ctm, 0);
+}
+
+static int mz_same_place(fz_matrix a, fz_matrix b)
+{
+    const float x[6] = { a.a, a.b, a.c, a.d, a.e, a.f };
+    const float y[6] = { b.a, b.b, b.c, b.d, b.e, b.f };
+    int i;
+    for (i = 0; i < 6; i++)
+    {
+        float bound = MZ_SAME_PLACE * fmaxf(1.0f, fmaxf(fabsf(x[i]), fabsf(y[i])));
+        if (fabsf(x[i] - y[i]) > bound)
+            return 0;
+    }
+    return 1;
+}
+
+/*
+ * A filter's picture transform as the device sees it: the interpreter turns image space over before it draws (a picture's
+ * rows run top down, `[1 0 0 -1 0 1]`, pdf-op-run.c 1.28.0 line 918), then the page's own transform. Measured 2026-11-06: an
+ * 800 x 600 picture the filter saw at [400 0 0 -300 50 342] through the page was noted at [400 0 0 300 50 42].
+ */
+static fz_matrix mz_device_place(fz_matrix filter_ctm, fz_matrix page_ctm)
+{
+    return fz_concat(fz_concat(fz_make_matrix(1, 0, 0, -1, 0, 1), filter_ctm), page_ctm);
+}
+
+/* Whether a JPEG was noted at `ctm` and nothing else was: two kinds at one place keep the replacement lossless. */
+static int mz_only_jpeg_at(const mz_kind_state *state, fz_matrix ctm)
+{
+    int jpeg = 0, other = 0, i;
+    for (i = 0; i < state->count; i++)
+    {
+        if (!mz_same_place(state->list[i].ctm, ctm))
+            continue;
+        if (state->list[i].jpeg)
+            jpeg = 1;
+        else
+            other = 1;
+    }
+    return jpeg && !other;
+}
+
+/*
+ * MuPDF's image-filter contract (interpret.h, and pdf-op-filter.c's two callers): the picture handed back is a
+ * reference the caller owns, so an unchanged one is handed back kept, as MuPDF's own pixels filter does.
+ */
+static fz_image *mz_kind_image_filter(fz_context *ctx, void *opaque, fz_matrix ctm, const char *name, fz_image *image, fz_rect scissor)
+{
+    mz_kind_state *state = opaque;
+    fz_pixmap *pixmap = NULL;
+    fz_buffer *buffer = NULL;
+    fz_image *jpeg = NULL;
+
+    (void)name;
+    (void)scissor;
+
+    /*
+     * THE BURN-IN'S REPLACEMENT, read back from the object `pdf_add_image` wrote, is stored RAW: no filter, or no buffer
+     * where it is still the pixmap the burn-in made. A raw picture drawn where only a JPEG was drawn before the burn-in
+     * can be nothing else, since a picture no mark touched is that JPEG itself.
+     */
+    {
+        fz_compressed_buffer *stored = fz_compressed_image_buffer(ctx, image);
+        if ((stored != NULL && stored->params.type != FZ_IMAGE_RAW) || image->imagemask)
+            return fz_keep_image(ctx, image);
+    }
+    if (!mz_only_jpeg_at(state, mz_device_place(ctm, state->page_ctm)))
+        return fz_keep_image(ctx, image);
+
+    fz_var(pixmap);
+    fz_var(buffer);
+    fz_var(jpeg);
+    fz_try(ctx)
+    {
+        pixmap = fz_get_pixmap_from_image(ctx, image, NULL, NULL, NULL, NULL);
+        /* A JPEG holds no alpha channel; a pixmap carrying one stays lossless rather than lose it. */
+        if (pixmap->alpha == 0)
+        {
+            buffer = fz_new_buffer_from_pixmap_as_jpeg(ctx, pixmap, fz_default_color_params, state->quality, 0);
+            jpeg = fz_new_image_from_buffer(ctx, buffer);
+            jpeg->mask = fz_keep_image(ctx, image->mask);
+            state->rewritten++;
+        }
+    }
+    fz_always(ctx)
+    {
+        fz_drop_pixmap(ctx, pixmap);
+        fz_drop_buffer(ctx, buffer);
+    }
+    fz_catch(ctx)
+    {
+        fz_drop_image(ctx, jpeg);
+        fz_rethrow(ctx);
+    }
+    return jpeg != NULL ? jpeg : fz_keep_image(ctx, image);
+}
+
+/*
+ * Burns `page` in with MuPDF's own `pdf_redact_page` and the four options it takes, then writes each picture it
+ * rebuilt from a JPEG as JPEG at `quality` (ADR-0288). `rewritten_out` is how many were.
+ */
+MZ_EXPORT int mz_redact_page(pdf_page *page, int black_boxes, int image_method, int line_art, int text, int quality, int *rewritten_out)
+{
+    fz_context *ctx = mzg_context();
+    mz_note_device *notes = NULL;
+    pdf_redact_options redact;
+    pdf_sanitize_filter_options sanitize;
+    pdf_filter_factory list[2];
+    pdf_filter_options filter;
+    mz_kind_state state;
+    int jpegs = 0, i;
+
+    if (rewritten_out)
+        *rewritten_out = 0;
+    if (ctx == NULL || page == NULL || rewritten_out == NULL || quality < 1 || quality > 100)
+        return MZ_ERR;
+
+    fz_var(notes);
+
+    fz_try(ctx)
+    {
+        notes = fz_new_derived_device(ctx, mz_note_device);
+        notes->super.fill_image = mz_note_fill_image;
+        notes->super.fill_image_mask = mz_note_fill_image_mask;
+        pdf_run_page_contents(ctx, page, &notes->super, fz_identity, NULL);
+        fz_close_device(ctx, &notes->super);
+        for (i = 0; i < notes->count; i++)
+            jpegs += notes->list[i].jpeg;
+
+        redact.black_boxes = black_boxes;
+        redact.image_method = image_method;
+        redact.line_art = line_art;
+        redact.text = text;
+        pdf_redact_page(ctx, page->doc, page, &redact);
+
+        /* NO JPEG NOTED, NOTHING MORE: the page is exactly what MuPDF's burn-in wrote. */
+        if (jpegs > 0)
+        {
+            memset(&state, 0, sizeof state);
+            state.list = notes->list;
+            state.count = notes->count;
+            state.quality = quality;
+            pdf_page_transform(ctx, page, NULL, &state.page_ctm);
+            memset(&sanitize, 0, sizeof sanitize);
+            memset(&filter, 0, sizeof filter);
+            sanitize.opaque = &state;
+            sanitize.image_filter = mz_kind_image_filter;
+            list[0].filter = pdf_new_sanitize_filter;
+            list[0].options = &sanitize;
+            list[1].filter = NULL;
+            list[1].options = NULL;
+            /* THE BURN-IN'S OWN OPTIONS (init_redact_filter, pdf-clean.c 1.28.0), so this pass reaches what it reached. */
+            filter.recurse = 0;
+            filter.instance_forms = 1;
+            filter.ascii = 1;
+            filter.filters = list;
+            pdf_filter_page_contents(ctx, page->doc, page, &filter);
+            *rewritten_out = state.rewritten;
+        }
+    }
+    fz_always(ctx)
+    {
+        if (notes != NULL)
+        {
+            fz_free(ctx, notes->list);
+            notes->list = NULL;
+            fz_drop_device(ctx, &notes->super);
+        }
+    }
+    fz_catch(ctx)
+        return MZ_ERR;
+    return MZ_OK;
+}

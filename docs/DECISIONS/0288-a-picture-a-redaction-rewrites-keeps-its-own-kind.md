@@ -70,3 +70,21 @@ back as raw samples, and nothing on the new picture says what it was.
 
 - A page where a JPEG was noted is filtered twice more than before; a page without one, once more (the noting pass).
   Measured at build: in the note below.
+
+## Note, 2026-11-06 — as built
+
+- **The noting pass is a device, not a filter**, so it rewrites nothing: `pdf_run_page_contents` with a device that
+  receives each picture and its transform. The filter's transform is taken through the interpreter's turn of image space
+  (`[1 0 0 -1 0 1]`, `pdf-op-run.c` line 918) and the page's own transform before it is compared; measured, a picture
+  the filter saw at `[400 0 0 -300 50 342]` was noted at `[400 0 0 300 50 42]`. A page with no JPEG is filtered by the
+  burn-in alone, as before.
+- **The replacement, read back, is stored raw**: `pdf_add_image` wrote it as an object with no filter, which the second
+  pass loads as a picture of type `FZ_IMAGE_RAW`, not as one with no buffer. So the rule is: a raw picture drawn where
+  only a JPEG was drawn before the burn-in.
+- **The noting run uses the View usage**, so a picture inside optional content hidden for viewing is not noted, and its
+  replacement stays lossless: the safe direction.
+- **Cost**, this container, a 1,600 × 1,200 JPEG under one mark, three runs each: the burn-in 35 to 45 ms through the
+  binding against 108 to 114 ms through `mz_redact_page` (the JPEG decoded and encoded again); the saved file 911,904
+  bytes before (with `compress`) against 447,142 after, from 546,040. On the case's own page
+  (`redactionPictures.test.ts`) the photo comes back as `/DCTDecode` at 800 × 600; the probe page of the measurement
+  above, 1,819,204 bytes raw and 644,430 with `compress`, saved at 288,857.
