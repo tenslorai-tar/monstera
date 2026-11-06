@@ -892,6 +892,43 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-11-06 — Edit text's refusal found where every check had not looked, and how a comparison aims
+
+**The refusal was still in the build, and a commit message said it was not.** `f6993f7c` recorded that the owner's video
+of a space refused with `set-text 0` *no longer happens*. Every check behind that sentence put the caret at the
+paragraph's end, which `92eeff51` had already closed. The video's caret was at the end of a wrapped line: a wrap keeps no
+white space after a line's last word, so the block laid out as it was, the plan wrote nothing, and the sent words differed
+from the shown ones by that space. Reproduced on `c72cb97d`, `d468a575` and this branch, then fixed in `sentAsShown`
+(`a62a6085`, ADR-0260's correction): one space at each of 68 caret places on the owner's paragraph, none refused. What the
+false sentence cost was a reviewer's question aimed at the wrong thing: *find the commit that changed it*. No commit had.
+
+**Still open on that page, measured 2026-11-06:**
+
+| point | reading |
+|---|---|
+| words a rewrap pushes under a bar | one space beside the bar closes the line's gap: the paragraph goes from 5 lines to 4, 6,597 pixels change and words that stood after the bar stand under it |
+| a TrueType subset with no text map | one space on three corpus pages: refused on `d468a575`; on this branch one page unchanged, one line in a new copy of its face, one line in the closest face (Arimo), the file 39 KB larger |
+| the panel, after a typed word took another face | choosing Helvetica changes 0 pixels and the file still names Arimo |
+| the editor's letters against the page's | a block's ink is 2.6% less with the editor open, 5.2% fewer dark pixels (1388429 to 1352517, 5445 to 5160, Fit width) |
+
+**A comparison between builds aims with each build's own geometry.** The drag differences between 1.1.2610.0 and this
+branch read as a selection change on pages `758722a2` never touched. Each run aimed at its own build's line boxes, and
+those boxes changed in the text-layer rewrite of 2026-10-31 to 11-01. Run at the same screen points on both builds, 54
+became 26: 18 on pages whose order changed, seven a single letter at a drag's moving end (`ba394792`, which decides the
+side of a letter from the engine's advances), and one with no selection on either page's layer. The page that held 8 of 9
+lines holds 9 of 9 at the same points; on this build its last two lines' tops differ by 0.1 px, so the script's *bottom
+line* became the other one. The instrument is what moved, which only the same-point run could say.
+
+**Found by that reading, on both builds:** a text drag released over a link opens the Open link dialog. The browser sends
+the click to the common ancestor at the release point, and `useLinkPointer` asks only where the click is, never where the
+press was (read from the code; the behaviour is run, 2 of 2 links on both builds, and a release beside a link does not).
+
+**The walk gained the two rows it lacked.** `newFeaturesWalk.mjs`' `fit` and `one-space` parts. The fits read with real
+scrollbars at the window heights the loop needed; the sweep behind them found 2 flickering heights of 51 on `d468a575` and
+0 here.
+
+---
+
 ## 2026-11-04 — The final walk of 1.1.2611.0, the walk's own faults, and the packages
 
 **Six full walks after the entry below, and every failure in them was the walk's.** The app was right each time; the
