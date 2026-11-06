@@ -418,6 +418,7 @@ interface Libmupdf {
 	_wasm_pdf_enable_layer(doc: Pointer<"any_document">, layer: number, state: number): void,
 	_wasm_pdf_page_transform(page: Pointer<"any_page">): Pointer<"fz_matrix">,
 	_wasm_pdf_set_page_box(page: Pointer<"any_page">, which: number, rect: Pointer<"fz_rect">): void,
+	_wasm_pdf_sync_open_pages(doc: Pointer<"any_document">): void,
 	_wasm_pdf_first_annot(page: Pointer<"any_page">): Pointer<"pdf_annot">,
 	_wasm_pdf_next_annot(annot: Pointer<"pdf_annot">): Pointer<"pdf_annot">,
 	_wasm_pdf_first_widget(page: Pointer<"any_page">): Pointer<"pdf_annot">,
@@ -3210,6 +3211,11 @@ export class PDFDocument extends Document {
 	findPage(index: number) {
 		checkType(index, "number")
 		return this._fromPDFObjectKeep(libmupdf._wasm_pdf_lookup_page_obj(this.pointer, index))
+	}
+
+	/** Rebuilds every open page's annotation list from `/Annots`. The shim's own export, `ADDED` in `mupdfGlue.mjs`. */
+	syncOpenPages() {
+		libmupdf._wasm_pdf_sync_open_pages(this.pointer)
 	}
 
 	setPageTreeCache(enabled: boolean) {

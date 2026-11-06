@@ -13,6 +13,7 @@ import {
   applyPlaceImage,
   applyPlaceSignatureMark,
   applyPlaceSignaturePicture,
+  readAnnotations,
 } from './pageAnnotations.js';
 import { applyApplyRedactions } from './pageRedact.js';
 import { readSignatures } from './signatureRead.js';
@@ -289,6 +290,16 @@ describe('a placed picture is part of the page in a saved file (ADR-0287)', () =
       });
       expect(draws).toBe(1);
     }
+  });
+
+  it('after a Save the session still LISTS the picture, so it can be selected and moved until the document closes', async () => {
+    const listed = await onSession(await pageOf(), async (session) => {
+      await picture()(session);
+      const before = (await readAnnotations(session)).annotations.length;
+      await mupdfWriter.serialise(session, { marks: 'engraved' });
+      return { before, after: (await readAnnotations(session)).annotations.length };
+    });
+    expect(listed).toEqual({ before: 1, after: 1 });
   });
 
   it('a file saved earlier with the picture as a layer is engraved when saved again', async () => {

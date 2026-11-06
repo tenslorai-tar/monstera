@@ -125,6 +125,25 @@ section recursion*). It does not involve the marks option, which engraves nothin
 - **The second appended save is fixed in this release**: ADR-0008's correction of this date has the mechanism and the
   fix (`rebasedOn`).
 
+## Correction, 2026-11-06 — Decision 3 did not hold in the application until the session was synced
+
+*"The person can still move, resize and undo the item until the document is closed"* was false as built, and every
+case was green. Run in the application on an unsigned document: after
+one Save, a click on a placed picture gave no handles and a drag sent no command. The release build, the control, gave
+eight handles and a move.
+
+**The mechanism:** `pdf_write_document` ends with `pdf_sync_open_pages`, which rebuilds every open page's annotation
+list from `/Annots`, at the moment engraving has taken the marks out of it. The restore puts `/Annots` back and nothing
+syncs again, and `pdf_load_page` answers an open page from its list, so `readAnnotations` found nothing. Read in
+1.28.0's `pdf-write.c` and `pdf-page.c`.
+
+**Why the cases passed:** `sessionAfter` read the session by serialising it, and a save reads `/Annots`, which was
+right. Nothing read the list the application reads.
+
+**The fix** is MuPDF's own sync, called once the restore is done (`savedEngraved`). The binding has no export for it,
+so the generator adds one in the binding's own form (`ADDED`, beside `WITHHELD`, in `mupdfGlue.mjs`). The case is
+`engraveOnSave.test.ts`' *still LISTS the picture*, which read 1 before the Save and 0 after it without the fix.
+
 ## Note, 2026-11-06 — Sign with certificate's visible signature is not changed, and the phone results
 
 Read on the owner's phone the same day: *cert-01*, a document signed with Sign with certificate as it is written today,

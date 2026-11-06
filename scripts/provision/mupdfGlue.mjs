@@ -106,6 +106,26 @@ export const WITHHELD = {
     'validates a document\'s change history through MuPDF\'s signature-locking lists, where 1.28.0 double-frees (DEBIAN-CVE-2026-112036)',
 };
 
+/**
+ * Exports MuPDF's binding does not have and the object model needs, in the binding's own form, so each takes the same
+ * wrapper and signature row as the rest. Beside {@link WITHHELD}: the two together are every way this library differs
+ * from `mupdf.c`, and neither changes the upstream digest, which is of the source as it arrived.
+ *
+ * `wasm_pdf_sync_open_pages`: a page held open keeps its own list of annotations, rebuilt from `/Annots` when MuPDF
+ * syncs open pages. `pdf_write_document` syncs as it ends, so a caller that changes `/Annots` around a save and puts it
+ * back leaves every open page listing the temporary array, and opening the page again answers the same page. Read in
+ * 1.28.0's `pdf-write.c` and `pdf-page.c`, and measured 2026-11-06 in `engraveOnSave.test.ts`.
+ */
+export const ADDED = `
+EXPORT
+void wasm_pdf_sync_open_pages(pdf_document *doc)
+{
+	TRY ({
+		pdf_sync_open_pages(ctx, doc);
+	})
+}
+`;
+
 /** The error kinds `wasm_rethrow` distinguishes, as the runtime numbers them. */
 const THROWS = [
   { pattern: /^\{\s*throw\s+"TRYLATER";\s*\}$/, kind: 'MZG_TRYLATER', message: 'argument' },
@@ -423,7 +443,7 @@ export function generateGlue(source) {
   const digest = createHash('sha256').update(source).digest('hex');
   if (!source.includes('#include "emscripten.h"')) throw new Error('mupdfGlue: the source does not include emscripten.h');
   const included = source.replace('#include "emscripten.h"', '#include "monstera_emscripten.h"');
-  const renamed = renameExports(expandExportMacros(included));
+  const renamed = renameExports(`${expandExportMacros(included)}\n${ADDED}`);
   const rewritten = rewriteEmAsm(renamed.text);
   if (/\bEM_ASM/.test(rewritten.text)) throw new Error('mupdfGlue: an EM_ASM survived the rewrite');
 

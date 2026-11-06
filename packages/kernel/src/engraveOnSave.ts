@@ -61,6 +61,9 @@ export function savedEngraved<T>(document: PDFDocument, save: () => T): { readon
     return { saved: save(), engraved };
   } finally {
     for (const step of restore.reverse()) step();
+    // MUPDF'S SAVE SYNCED EVERY OPEN PAGE TO THE ARRAY THIS REMOVED THE MARKS FROM, and opening a page again answers the
+    // same page, so without this the session lists none of them and none can be selected until the document closes.
+    if (restore.length > 0) document.syncOpenPages();
   }
 }
 
