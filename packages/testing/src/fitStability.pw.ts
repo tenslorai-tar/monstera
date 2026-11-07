@@ -78,14 +78,23 @@ function sample(page: Page, ms: number, scroller = '.m-page-list'): Promise<Run>
   );
 }
 
-/** Every value the zoom figure takes after the one it had when sampling began, frame by frame, for `ms`. */
-function timeline(page: Page, ms: number): Promise<readonly string[]> {
-  return page.evaluate(
-    (duration) =>
+/**
+ * Every value the zoom figure takes after the one it had when sampling began, frame by frame, for `ms`.
+ *
+ * AWAITED BEFORE THE KEY IS PRESSED, and the answer is then a second call. Started and left running, the sampling and the
+ * press raced: a key that won it had changed the zoom before the first reading, so the fit read as no change at all, which
+ * is what CI's Ubuntu job read at 416d94c2 (Received length: 0). Lost the other way in the sweep, a fit's first step would go uncounted.
+ */
+async function timeline(page: Page, ms: number): Promise<{ readonly began: string; readonly answers: () => Promise<readonly string[]> }> {
+  const began = await page.evaluate((duration) => {
+    const zoom = document.querySelector<HTMLElement>('.m-status-bar .m-status-zoom');
+    if (zoom === null) throw new Error('no zoom figure');
+    const first = zoom.textContent;
+    Reflect.set(
+      window,
+      'fitTimeline',
       new Promise<readonly string[]>((resolve) => {
-        const zoom = document.querySelector<HTMLElement>('.m-status-bar .m-status-zoom');
-        if (zoom === null) throw new Error('no zoom figure');
-        let last = zoom.textContent;
+        let last = first;
         const seen: string[] = [];
         const start = performance.now();
         const step = (): void => {
@@ -97,8 +106,10 @@ function timeline(page: Page, ms: number): Promise<readonly string[]> {
         };
         requestAnimationFrame(step);
       }),
-    ms,
-  );
+    );
+    return first;
+  }, ms);
+  return { began, answers: () => page.evaluate(() => Reflect.get(window, 'fitTimeline') as Promise<readonly string[]>) };
 }
 
 /** What the reader sees of the pages after a fit: the first shown slot's box against the scroller's. */
@@ -277,9 +288,12 @@ test('FIT PAGE ANSWERS IN ONE STEP from a page wider than the pane, whose horizo
   // and a fit measured from that box answered twice as the bar went. Measured 2026-11-05 before the fix: 45%, then 47%.
   await open(page, { layout: 'single', pages: 1, size: A4, window: { width: 1280, height: 720 } });
   await page.locator('.m-page-list').focus();
-  const answering = timeline(page, 1000);
+  const answering = await timeline(page, 1000);
   await page.keyboard.press('Control+0');
-  expect(await answering).toHaveLength(1);
+  const answers = await answering.answers();
+  expect(answers).toHaveLength(1);
+  // ANOTHER FIGURE THAN IT HAD, so the one answer is the fit's and the sampling began before it.
+  expect(answers[0]).not.toBe(answering.began);
 });
 
 /** The sweeps take minutes each, so they run when asked (`MONSTERA_FIT_SWEEP=1`), as `longScroll.pw.ts`' figures do. */
@@ -322,9 +336,9 @@ if (MATRIX !== undefined) {
               await open(page, { layout, pages, size, window });
               await page.locator('.m-page-list').focus();
               // FROM THE PRESS: every frame of the next second, so a fit that lands in two visible steps is counted.
-              const answering = timeline(page, 1000);
+              const answering = await timeline(page, 1000);
               await page.keyboard.press(key);
-              const steps = await answering;
+              const steps = await answering.answers();
               const run = await sample(page, 2000);
               const where = await placement(page);
               const figures = { steps, ...run, where };
