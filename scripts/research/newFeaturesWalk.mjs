@@ -690,6 +690,12 @@ if (runs('forms')) {
 
   await step('forms (42): on page 20, scrolled to, Tab moves from field to field on that page', async () => {
     await open(path);
+    // NO EDITING MODE: a mode stays chosen across documents, and while Edit text holds a page its fields are not offered
+    // (`PageList.tsx`), so after the caret part every press on page 20 landed on text blocks (measured 2026-11-07).
+    await section('Edit');
+    const editText = page.getByRole('button', { name: 'Edit text', exact: true }).first();
+    if ((await editText.getAttribute('aria-pressed')) === 'true') await editText.click();
+    await expect(editText).toHaveAttribute('aria-pressed', 'false');
     const goTo = page.locator('[data-goto-input]').first();
     await goTo.fill('20');
     await goTo.press('Enter');
