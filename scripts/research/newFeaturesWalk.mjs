@@ -764,18 +764,25 @@ if (runs('forms')) {
 // ——————————————————————————————————————————————— corpus ———————————————————————————————————————————————
 
 /**
- * The owner's corpus, read through its one reader (`corpus.mjs`), which names each document only by its number in sorted
- * order and an id from its bytes. A copy is written into the walk's own folder, which git ignores, and opened from
- * there: the owner's file is never opened, and its name is never printed.
- * @param {number} number one-based
+ * The corpus documents these steps were written against, by the id their passing reports of 2026-11-03 recorded: an
+ * owner's text document, and the drawn-font document. By id and never by number (`documentById`): two documents added
+ * to the folder since moved "document 4" onto another file.
  */
-async function corpusCopy(number) {
-  const { openCorpus } = await import('../lib/corpus.mjs');
+const OWNERS_TEXT_DOCUMENT = 'corpus-198cf285';
+const DRAWN_FONT_DOCUMENT = 'corpus-21f3dcad';
+
+/**
+ * The owner's corpus, read through its one reader (`corpus.mjs`), one document by its id. A copy is written into the
+ * walk's own folder, which git ignores, and opened from there: the owner's file is never opened, and its name is never
+ * printed.
+ * @param {string} id as a report recorded it
+ */
+async function corpusCopy(id) {
+  const { documentById, openCorpus } = await import('../lib/corpus.mjs');
   const corpus = openCorpus({ required: true });
   if (!corpus.available) throw new Error('MONSTERA_CORPUS names no corpus here');
-  const document = corpus.documents[number - 1];
-  if (document === undefined) throw new Error(`the corpus has no document ${String(number)}`);
-  const path = join(output, `corpus-${String(number)}.pdf`);
+  const document = documentById(corpus, id);
+  const path = join(output, `${id}.pdf`);
   await writeFile(path, document.bytes);
   return { path, id: document.id };
 }
@@ -794,7 +801,7 @@ async function matchesOf(/** @type {string} */ words) {
 
 if (runs('corpus')) {
   await step('corpus (48): an Add text line on an owner’s document is saved, found as a phrase, and written as one run', async () => {
-    const { path, id } = await corpusCopy(3);
+    const { path, id } = await corpusCopy(OWNERS_TEXT_DOCUMENT);
     await open(path);
     const PHRASE = 'walked phrase seven four';
     if ((await matchesOf(PHRASE)) !== 0) throw new Error('the document already holds the phrase, so finding it proves nothing');
@@ -828,12 +835,12 @@ if (runs('corpus')) {
     const whole = content.items.some((item) => 'str' in item && item.str.includes(PHRASE));
     await task.destroy();
     if (!whole) throw new Error('a second reader does not find the phrase in one piece');
-    return { document: 3, id, found, oneRun: whole };
+    return { id, found, oneRun: whole };
   });
   await closeAll();
 
   await step('corpus (49): on the drawn-font document, every “ft” is still found after a colour change, saved and reopened', async () => {
-    const { path, id } = await corpusCopy(4);
+    const { path, id } = await corpusCopy(DRAWN_FONT_DOCUMENT);
     await open(path);
     const before = await matchesOf('ft');
     if (before === 0) throw new Error('the document shows no “ft” to keep');
@@ -888,12 +895,12 @@ if (runs('corpus')) {
     await open(kept);
     const after = await matchesOf('ft');
     if (after !== before) throw new Error(`“ft” was found ${String(before)} times before and ${String(after)} after`);
-    return { document: 4, id, before, after };
+    return { id, before, after };
   });
   await closeAll();
 
   await step('corpus (40): on a page that fills a shape before its drawn-font lines, each line opens in its own font', async () => {
-    const { path, id } = await corpusCopy(4);
+    const { path, id } = await corpusCopy(DRAWN_FONT_DOCUMENT);
     await open(path);
     await section('Edit');
     await text.ensureEditText();
@@ -917,7 +924,7 @@ if (runs('corpus')) {
     const distinct = new Set(fonts).size;
     // THE NAMES ARE THE OWNER'S DOCUMENT'S, so only their count and agreement are recorded.
     if (distinct < 2) throw new Error(`${String(fonts.length)} blocks opened in ${String(distinct)} font: the lines do not each take their own`);
-    return { document: 4, id, page: 1, blocks: fonts.length, distinctFonts: distinct };
+    return { id, page: 1, blocks: fonts.length, distinctFonts: distinct };
   });
   await closeAll();
 }

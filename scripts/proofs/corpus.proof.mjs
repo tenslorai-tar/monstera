@@ -39,14 +39,14 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { CORPUS_VARIABLE, corpusCaveat, openCorpus } from '../lib/corpus.mjs';
+import { CORPUS_VARIABLE, corpusCaveat, documentById, openCorpus } from '../lib/corpus.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { UNVERIFIABLE_MARKER } from '../lib/unverifiable.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 17 });
+const roster = createRoster(failures, { cases: 20 });
 
 /**
  * @param {string} label
@@ -234,6 +234,28 @@ try {
     const after = withCorpus(populated, () => openCorpus());
     const afterDocuments = after.available ? after.documents : [];
     rmSync(inserted, { force: true });
+
+    // A CALLER NAMING A DOCUMENT (`documentById`, the walks' one way to take one): the same id gives the same bytes after
+    // the insertion, where the same PLACE gives another document — the control, which is the walk's own fault of
+    // 2026-11-07 run on this fixture.
+    const named = documents[0];
+    const byId = after.available && named !== undefined ? documentById(after, named.id) : undefined;
+    check(
+      'after an insertion, a document taken by its id is the document it was',
+      named !== undefined && byId?.bytes.equals(named.bytes) === true,
+      `asked ${named?.id ?? 'nothing'}, given ${byId?.id ?? 'nothing'}`,
+    );
+    check(
+      'CONTROL: the same document taken by its place is another one, so the id is what kept it',
+      named !== undefined && afterDocuments[0] !== undefined && !afterDocuments[0].bytes.equals(named.bytes),
+      'the first place still held the first document, so this fixture cannot tell an id from a place',
+    );
+    const refused = after.available ? (thrownBy(() => documentById(after, 'corpus-00000000')) ?? '') : '';
+    check(
+      'an id the corpus does not hold is refused by name, never answered with another document',
+      /holds no document corpus-00000000/u.test(refused),
+      `the refusal read ${JSON.stringify(refused)}`,
+    );
 
     const moved = [...before]
       .map(([content, id]) => ({

@@ -246,3 +246,25 @@ export function openCorpus({ required = false } = {}) {
 
   return { available: true, documents };
 }
+
+/**
+ * THE ONE WAY A CALLER NAMES A CORPUS DOCUMENT: by its id, never by its place in `documents`. The place is the folder's
+ * sorted order, and a document added to the folder moves every one after it; measured 2026-11-07, two documents added
+ * after a walk was written made its "document 4" a 12 KB file with no drawn font, and one of its steps then failed on
+ * every build while another passed on a page it was never written for. An id the corpus does not hold is refused by
+ * name rather than answered with whatever stands at a number.
+ *
+ * @param {CorpusReading} reading an open corpus
+ * @param {string} id an id as a report recorded it, `corpus-3f9a1c2b`
+ * @returns {CorpusDocument}
+ */
+export function documentById(reading, id) {
+  const found = reading.documents.find((document) => document.id === id);
+  if (found === undefined) {
+    throw new Error(
+      `${CORPUS_VARIABLE} holds no document ${id}: the corpus has changed since the caller named it, and another ` +
+        'document would answer a question asked about this one.',
+    );
+  }
+  return found;
+}
