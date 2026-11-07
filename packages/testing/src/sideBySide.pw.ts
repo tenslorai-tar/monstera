@@ -219,6 +219,52 @@ test('identical documents in the two halves fit to the SAME width and read the s
   }
 });
 
+/**
+ * EACH HALF FITS ITSELF (the owner's item 6, 2026-11-06): View's Fit width and Fit page set the main view's mode, which a
+ * half never read, so a half that had been zoomed could only step back. The read is the first page's drawn box against
+ * its pane, which is what *fit* means; the percentage alone would pass for any zoom that happened to land there.
+ */
+async function firstPageIn(surface: Locator, side: string): Promise<{ readonly width: number; readonly height: number; readonly paneWidth: number; readonly paneHeight: number; readonly zoom: string }> {
+  return surface.locator(`[data-side-half="${side}"]`).evaluate((half) => {
+    const list = half.querySelector<HTMLElement>('.m-page-list');
+    const canvas = half.querySelector<HTMLElement>('.m-page-list canvas.m-page');
+    if (list === null || canvas === null) throw new Error('the half has no drawn page');
+    const box = canvas.getBoundingClientRect();
+    return { width: box.width, height: box.height, paneWidth: list.clientWidth, paneHeight: list.clientHeight, zoom: half.querySelector('[data-side-zoom]')?.textContent ?? '' };
+  });
+}
+
+test('each half has its own Fit width and Fit page; one half’s fit leaves the other alone', async ({ page }) => {
+  const surface = await openSideBySide(page);
+  const left = surface.locator('[data-side-half="left"]');
+  const fitWidth = left.getByRole('button', { name: 'Fit width', exact: true });
+  const fitPage = left.getByRole('button', { name: 'Fit page', exact: true });
+  await expect(fitWidth).toHaveAttribute('aria-pressed', 'true');
+  const started = await firstPageIn(surface, 'left');
+  const right = await firstPageIn(surface, 'right');
+  // CONTROL: at Fit width the portrait page is taller than its pane, so the Fit page read below can tell the two apart.
+  expect(started.height).toBeGreaterThan(started.paneHeight);
+
+  await fitPage.click();
+  await expect(fitPage).toHaveAttribute('aria-pressed', 'true');
+  await expect(fitWidth).toHaveAttribute('aria-pressed', 'false');
+  await expect.poll(async () => (await firstPageIn(surface, 'left')).height).toBeLessThanOrEqual(started.paneHeight);
+  const paged = await firstPageIn(surface, 'left');
+  expect(paged.width).toBeLessThan(started.width);
+  expect(paged.zoom).not.toBe(started.zoom);
+  // THE OTHER HALF did not move: its own mode, its own zoom.
+  expect(await firstPageIn(surface, 'right')).toStrictEqual(right);
+
+  // ZOOMED IN, then Fit width brings the page back to its pane's width, which stepping alone could not promise.
+  await left.getByRole('button', { name: 'Zoom in', exact: true }).click();
+  await left.getByRole('button', { name: 'Zoom in', exact: true }).click();
+  await expect(fitPage).toHaveAttribute('aria-pressed', 'false');
+  await fitWidth.click();
+  await expect(fitWidth).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(async () => (await firstPageIn(surface, 'left')).zoom).toBe(started.zoom);
+  expect((await firstPageIn(surface, 'left')).width).toBeCloseTo(started.width, 0);
+});
+
 test('the Differences close hides the panel AND every mark on both halves; the comparison is still held', async ({ page }) => {
   const surface = await openSideBySide(page);
   await surface.locator('[data-side-compare]').click();

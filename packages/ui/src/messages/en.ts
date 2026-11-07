@@ -988,6 +988,8 @@ export const SIDE_OPEN = messageKey('surface.side-by-side.open');
 export const SIDE_ZOOM_OUT = messageKey('surface.side-by-side.zoom-out');
 export const SIDE_ZOOM_IN = messageKey('surface.side-by-side.zoom-in');
 export const SIDE_ZOOM = messageKey('surface.side-by-side.zoom');
+export const SIDE_FIT_WIDTH = messageKey('surface.side-by-side.fit-width');
+export const SIDE_FIT_PAGE = messageKey('surface.side-by-side.fit-page');
 export const SIDE_COMPARE = messageKey('surface.side-by-side.compare');
 export const SIDE_COMPARING = messageKey('surface.side-by-side.comparing');
 export const SIDE_STOP = messageKey('surface.side-by-side.stop');
@@ -3928,6 +3930,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SIDE_ZOOM_OUT]: 'Zoom out',
   [SIDE_ZOOM_IN]: 'Zoom in',
   [SIDE_ZOOM]: '{percent}%',
+  [SIDE_FIT_WIDTH]: 'Fit width',
+  [SIDE_FIT_PAGE]: 'Fit page',
   [SIDE_COMPARE]: 'Compare',
   [SIDE_COMPARING]: 'Comparing… {done} of {total}',
   [SIDE_STOP]: 'Stop',
