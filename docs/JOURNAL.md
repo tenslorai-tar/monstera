@@ -892,6 +892,54 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-11-07 — Words that paint nothing, the save branch measured, and three walk failures traced to their causes
+
+Everything below was run in the application or in a test, and says which, except where a line says it was read.
+
+**Words that paint nothing over something that shows (ADR-0289, `f17cea8f`).** A corpus page draws its heading as white
+shapes on blue and lays a Type 3 font of 46 empty letters over them, so the heading can be selected. An edit wrote the new
+words as ordinary text in the colour the content had in force, black, and left the drawn words. The scan route's test asked
+for render mode 3 and an image object, and this page has neither. One rule now serves both writers: every operator paints
+nothing, and the page as drawn shows ink in the box. The old ink is covered as ADR-0187 has it, and the new words take the
+ink's colour, read from the same pixels. Run on the page: white on blue while typing, after the edit, and after a save and a
+reopen. The proofs go red with the rule off, and the controls go red with the pixel test off. The first run typed in black,
+because the editor drew the colour PDFium read. The read on open now carries the writer's colour (the ADR's correction).
+
+**A paragraph that rewrapped while it was typed in (`ffe5c8da`).** The editor waited for two reads together before using the
+page's own font. On a page whose words are in a form, PDF.js answered in 0.4 to 5.0 s and the read on open in 6.5 to
+9.7 s, and every word was drawn in a wider fallback until both had arrived. PDF.js's faces are now taken as they arrive. A
+strip of the paragraph read +32% while typing before and −0.2% after.
+
+**The save branch merged (`5c761074`, work/cloud-56-save-compression at 4d08a227).** Measured on the merged build against
+`a7da9e27`: an edit's full save grows by at most 66 bytes for a space and about 2.7 KB for a word, where it grew 7.5 to 66 KB.
+The signed document's redaction save is 1,270,803 bytes where it was 21,033,467, and the picture document's 53,513 where it
+was 3,020,956. The signed document keeps 4,103 points where it had 625,758, and no pixel outside its box changes. On the four
+files every changed pixel outside the box is a letter removed whole. Save and edit on a 39.6 MB document cost nothing new.
+The drawings page still grows to about 2.2 times and its redaction takes 108 ms against 19 ms; the owner decided this waits
+for the next update.
+
+**Tab in a form went nowhere when pressed while a fill was read again (`4ef381a9`).** The next field was looked for in the list
+at the version on show, which is empty from the moment a fill lands until it is read again. A trace at each Tab on a
+30-page form showed 91 fields at the first Tab, and 0 on show with 91 held at the second. The release has the same fault: given
+the same sequence, it fails the same step. The order now comes from the last list read, as the selection's already did. The
+browser case holds the re-read for 3 s and fails at the third field without the fix.
+
+**Three feature-walk failures that were the walk's.** The print button on page 20 failed because the caret part ends in Edit
+text, a mode stays chosen across documents, and while Edit text holds a page its fields are not offered (`bb6a1c20`: the forms
+part starts with it off). The drawn-font "ft" step failed on every build, and step 40 passed on a page it was not written for,
+because the walk took corpus documents by their place in the folder, and two documents added since moved "document 4" onto a
+12 KB file. The walk now takes them by content id through `documentById`, which refuses an id the corpus does not hold
+(`5dead873`). The two drags that differed from the release are the same on this build in two runs and against the reading
+of 2026-11-06. Against the release, every drag lands 6.8 px elsewhere on the page.
+
+**Not found.** Once in seven tries a block took more than 30 s to open, in a measuring script of this session. The log shows
+the page's blocks read, then no request for 30 s, and no block was selected. The step's picture shows Edit text off. The button
+was measured not to flicker across an open, and a press on an empty place does not turn Edit text off. What turned it off
+is not known.
+
+**1.1.2612.0** was packed from `ffe5c8da` after a full walk of its clean build and is not uploaded. The packs for this round
+follow these fixes.
+
 ## 2026-11-06 — Placed marks in the real application: two faults the writer's cases could not reach
 
 Everything here was run in the application on the merged build, against the release's code as the control, except where
