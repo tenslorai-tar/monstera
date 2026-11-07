@@ -57,8 +57,11 @@ export function runFamiliesOf(block: TextBlock, shown: readonly ShownText[]): Ma
   const { frame } = block;
   const inBlock = frame === undefined ? shown : shown.map((item) => ({ ...item, ...intoTextFrame(frame, item.x, item.y) }));
   for (const line of block.lines) {
+    // A LINE'S BOX IS ITS INK, and an item starts at the text's origin, a letter's side bearing to the left of it, which
+    // grows with the letter: a point of grace left a heading with no face. An eighth of the line's height covers a bearing.
+    const grace = Math.max(1, (line.box.y1 - line.box.y0) / 8);
     const onLine = inBlock.filter(
-      (item) => item.x >= line.box.x0 - 1 && item.x <= line.box.x1 + 1 && item.y >= line.box.y0 - 1 && item.y <= line.box.y1 + 1,
+      (item) => item.x >= line.box.x0 - grace && item.x <= line.box.x1 + 1 && item.y >= line.box.y0 - 1 && item.y <= line.box.y1 + 1,
     );
     for (const run of line.runs) {
       const words = bare(run.text);

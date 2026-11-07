@@ -40,6 +40,25 @@ describe('the face PDF.js loaded for each run of a block', () => {
     expect(runFamiliesOf(BLOCK, shown).size).toBe(0);
   });
 
+  describe('a large letter, whose ink starts well to the right of where the text does', () => {
+    // A LINE'S BOX IS ITS INK, and PDF.js gives the text's origin: at a heading's size a letter's side bearing is several
+    // points, so a fixed point of grace left the heading with no face, and it was drawn in the chain's.
+    const heading = { ...BLOCK.lines[0], box: { x0: 100, y0: 600, x1: 300, y1: 650 } } as TextBlock['lines'][number];
+    const large: TextBlock = { ...BLOCK, lines: [heading] };
+
+    it('still takes its face', () => {
+      expect([...runFamiliesOf(large, [{ x: 95, y: 605, text: 'first line', family: 'g_d0_f1' }])]).toStrictEqual([[1, 'g_d0_f1']]);
+    });
+
+    it('CONTROL: the same words a column away are not this run’s', () => {
+      expect(runFamiliesOf(large, [{ x: 60, y: 605, text: 'first line', family: 'g_d0_f1' }]).size).toBe(0);
+    });
+
+    it('CONTROL: at body size the grace stays under two points', () => {
+      expect(runFamiliesOf(BLOCK, [{ x: 69, y: 691, text: 'first line', family: 'g_d0_f1' }]).size).toBe(0);
+    });
+  });
+
   describe('a block in a frame, whose lines are in the frame and PDF.js’s items on the page', () => {
     // MEASURED 2026-11-06 on a corpus page under /Rotate 180 whose text is turned too: a line's box from -533.2 across and -130.17
     // up, and PDF.js's item for it at (534, 128).
