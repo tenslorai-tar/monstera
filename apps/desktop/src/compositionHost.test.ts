@@ -2251,14 +2251,15 @@ describe('the composition root, THE READ ON OPEN through both engine hosts (ADR-
     expect(first.harness.calls).not.toContain('peer.request:engine/form-pages');
 
     // HOP TWO: MuPDF was asked about the runs in the order asked, each named by its first object's place among the text
-    // objects (30 is the 5th, 12 the 1st), the unplaced 99 left out, and no form.
+    // objects (30 is the 5th, 12 the 1st), the unplaced 99 left out, and no form. EACH WITH ITS BOX as PDFium read it, where
+    // the page is asked what shows under words that paint nothing (ADR-0289).
     expect(mupdf.faces).toStrictEqual([
       {
         session: 'ab0f',
         page: 3,
         runs: [
-          { index: 30, object: 5, text: 'gamma' },
-          { index: 12, object: 1, text: 'alpha' },
+          { index: 30, object: 5, text: 'gamma', box: { left: 0, bottom: 60, right: 10, top: 70 } },
+          { index: 12, object: 1, text: 'alpha', box: { left: 0, bottom: 20, right: 10, top: 30 } },
         ],
       },
     ]);
@@ -2305,8 +2306,8 @@ describe('the composition root, THE READ ON OPEN through both engine hosts (ADR-
         page: 3,
         form,
         runs: [
-          { index: 30, object: 5, text: 'gamma' },
-          { index: 12, object: 1, text: 'alpha' },
+          { index: 30, object: 5, text: 'gamma', box: { left: 0, bottom: 60, right: 10, top: 70 } },
+          { index: 12, object: 1, text: 'alpha', box: { left: 0, bottom: 20, right: 10, top: 30 } },
         ],
       },
     ]);
