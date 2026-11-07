@@ -308,6 +308,40 @@ describe('layOutParagraph', () => {
   });
 });
 
+describe('planBlock: a line the page holds still fits, whatever the measure says of its words', () => {
+  // ELEVEN CHARACTERS, 66 UNITS, ON A 60-UNIT LINE: the page set them closer than the measure can see, with kerning, and
+  // they stand there. Found on a heading's small line and a full paragraph's last line, each wrapped by one space.
+  const narrow = { first: 60, rest: 60 };
+  const held = (): FlowLine[] => block([['aaa'], ['bbb ccc ddd']], [true, false]);
+
+  it('a space typed at its end moves no word', () => {
+    const rows = planBlock(held(), 'aaa bbb ccc ddd ', measure, narrow).rows;
+    expect(rows).toHaveLength(2);
+    expect(said(rows)[0]).toBe('old 0');
+    expect(said(rows)[1]).toContain('bbb ccc ddd');
+  });
+
+  it('CONTROL: a word typed at its end does wrap, since the page never held that', () => {
+    const rows = said(planBlock(held(), 'aaa bbb ccc ddd eee', measure, narrow).rows);
+    expect(rows).toHaveLength(3);
+    // THE LINE IS WHAT IT WAS, so it stays as the page drew it, and only the new word goes down.
+    expect(rows[1]).toBe('old 1');
+    expect(rows[2]).toContain('eee');
+  });
+
+  it('CONTROL: a word changed inside it is measured as any other, because the line is no longer what the page held', () => {
+    const rows = said(planBlock(held(), 'aaa bbb zzz ddd', measure, narrow).rows);
+    expect(rows).toHaveLength(3);
+    expect(rows[2]).toContain('ddd');
+  });
+
+  it('CONTROL: a line it holds does not widen the lines laid out after it', () => {
+    const lines = block([['bbb ccc ddd'], ['eee']], [true, false]);
+    const rows = said(planBlock(lines, 'bbb ccc ddd eee fff ggg hhh iii jjj', measure, narrow).rows);
+    expect(rows.slice(1).every((row) => row.replaceAll(/\d+:/gu, '').length <= 'new '.length + 'aaa bbb'.length)).toBe(true);
+  });
+});
+
 describe('planBlock: a paragraph reflows from its first changed line and stops where it comes back into step', () => {
   // twelve characters a line: "aaa bbb" (the next word, ten letters, will not fit), "cccccccccc", "dd eee".
   const paragraph = (): FlowLine[] => block([['aaa bbb'], ['cccccccccc'], ['dd eee']], [true, true, false]);

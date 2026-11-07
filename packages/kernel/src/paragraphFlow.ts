@@ -521,6 +521,8 @@ export interface FlowLineOut {
   readonly start: number;
   readonly pieces: readonly Piece[];
   readonly width: number;
+  /** Whether it passes its limit only because the page already held these words on one line ({@link LayOutFrom}'s `holds`). */
+  readonly heldByThePage?: boolean;
 }
 
 /** A float is equal to the limit when it is within a millionth of it. */
@@ -561,6 +563,12 @@ export interface LayOutFrom {
   readonly stopAt?: (start: number) => boolean;
   /** The holes of the line with this number in its paragraph: the old line's that stands at the same place. */
   readonly holesOf?: (line: number) => readonly Hole[] | undefined;
+  /**
+   * Whether the new words from `start` to `end` are exactly what the old line with this number in its paragraph begins
+   * with. THE PAGE HOLDS THEM ON ONE LINE, so they fit, whatever the measure says: it cannot see everything that set them
+   * closer, such as kerning, and a line ended early by that moved untouched words for one typed space.
+   */
+  readonly holds?: (line: number, start: number, end: number) => boolean;
 }
 
 /**
@@ -594,6 +602,7 @@ export function layOutParagraph(
     let width = 0;
     let trail: Part | undefined;
     let trailWidth = 0;
+    let holds = false;
     const start = carried?.start ?? chunks[at]?.start ?? paragraph.start;
     if (carried !== undefined) {
       parts.push(carried.part);
@@ -636,7 +645,10 @@ export function layOutParagraph(
           at += 1;
           break;
         }
-      } else if (landsAt === undefined || landsAt + word > limit + WITHIN) {
+      } else if (
+        landsAt === undefined ||
+        (landsAt + word > limit + WITHIN && !(holds = from.holds?.(number, start, chunk.start + chunk.core.reduce((total, part) => total + part.text.length, 0)) === true))
+      ) {
         const tab = trail?.text.indexOf('\t') ?? -1;
         const ended = chunks[at - 1];
         if (trail !== undefined && tab >= 0 && ended !== undefined) {
@@ -661,7 +673,7 @@ export function layOutParagraph(
     // white space after the paragraph's last word is theirs to keep. Dropped, a space typed at a block's end laid out as
     // the old line, which was kept, and the edit wrote nothing and was refused (the full walk of 2026-11-02).
     if (at >= chunks.length && trail !== undefined) parts.push(trail);
-    lines.push({ start, pieces: piecesOf(parts, measure), width });
+    lines.push({ start, pieces: piecesOf(parts, measure), width, ...(holds ? { heldByThePage: true } : {}) });
     number += 1;
     const next = chunks[at];
     // A CARRIED TAB STARTS THE NEXT LINE, which no old line did, so the layout does not stop before setting it.
@@ -855,12 +867,22 @@ export function planBlock(
         line: lineNumber,
         stopAt: resumes,
         holesOf: (line) => (held === undefined ? undefined : lines[held.firstLine + line]?.holes),
+        holds: (line, unitFrom, unitTo) => {
+          if (held === undefined || formatted || held.firstLine + line > held.lastLine) return false;
+          const lineStart = old.lineStarts[held.firstLine + line] ?? -1;
+          const lineEnd = old.lineStarts[held.firstLine + line + 1] ?? old.text.length;
+          if (lineStart < 0 || lineStart + (unitTo - unitFrom) > lineEnd) return false;
+          for (let unit = unitFrom; unit < unitTo; unit += 1) {
+            if (from[unit] !== lineStart + (unit - unitFrom)) return false;
+          }
+          return true;
+        },
       });
       let rejoin = held === undefined ? -1 : held.lastLine + 1;
       if (stoppedAt !== undefined) rejoin = lineAt(old, from[stoppedAt] ?? 0);
       for (const [at, line] of laid.entries()) {
         // A LINE PAST ITS LIMIT is a word wider than it, set whole on a line of its own (`layOutParagraph`).
-        overflow = Math.max(overflow, line.width - (lineNumber + at === 0 ? limitsHere.first : limitsHere.rest));
+        if (line.heldByThePage !== true) overflow = Math.max(overflow, line.width - (lineNumber + at === 0 ? limitsHere.first : limitsHere.rest));
         const stands = relaidFrom < 0 ? -1 : relaidFrom + at < rejoin ? relaidFrom + at : -1;
         // A FORMATTED OR RE-SET PARAGRAPH IS NEVER KEPT by saying the same words: where its lines stand is what changed.
         if (stands >= 0 && !formatted && sameLine(lines[stands], line)) rows.push({ kind: 'old', line: stands });

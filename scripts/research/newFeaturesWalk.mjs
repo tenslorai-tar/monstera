@@ -998,13 +998,21 @@ if (runs('one-space')) {
    * One paragraph, drawn upright or turned the way a page under /Rotate 180 is, with or without a filled bar over part of it,
    * or (`gap`) with a bar standing in a jump its first line's words make round it, the shape the owner's page has.
    */
-  const paragraph = async (/** @type {string} */ name, /** @type {{ turned: boolean; bar: boolean; gap?: boolean }} */ { turned, bar, gap = false }) => {
+  const paragraph = async (/** @type {string} */ name, /** @type {{ turned: boolean; bar: boolean; gap?: boolean; tight?: boolean }} */ { turned, bar, gap = false, tight = false }) => {
     const document = await PDFDocument.create();
     const font = await document.embedFont(StandardFonts.Helvetica);
     const sheet = document.addPage([612, 792]);
     if (turned) sheet.setRotation(pdfLib.degrees(180));
     for (const [at, line] of LINES.entries()) {
       const y = 700 - at * 14;
+      // THE BLOCK'S WIDEST LINE, ITS LAST, SET CLOSER THAN ITS LETTERS MEASURE: the page holds it, and only kerning fits it.
+      if (tight && at === LINES.length - 1) {
+        const key = sheet.node.newFontDictionary(font.name, font.ref);
+        const words = 'This last line is the widest of the paragraph and its words are set closer than they measure'.split(' ');
+        const shown = document.context.obj(words.flatMap((word, place) => (place === words.length - 1 ? [font.encodeText(word)] : [font.encodeText(`${word} `), 120])));
+        sheet.pushOperators(pdfLib.beginText(), pdfLib.setFontAndSize(key, 11), pdfLib.moveText(72, y), pdfLib.PDFOperator.of(pdfLib.PDFOperatorNames.ShowTextAdjusted, [shown]), pdfLib.endText());
+        continue;
+      }
       if (gap && at === 0) {
         const key = sheet.node.newFontDictionary(font.name, font.ref);
         const shown = document.context.obj([font.encodeText('Line 1 of a '), -6000, font.encodeText('paragraph that reads, ending here')]);
@@ -1049,6 +1057,7 @@ if (runs('one-space')) {
       ['upright with a bar', { turned: false, bar: true }],
       ['turned with a bar', { turned: true, bar: true }],
       ['upright with a bar in a gap', { turned: false, bar: false, gap: true }],
+      ['upright with a full line set tight', { turned: false, bar: false, tight: true }],
     ])) {
       const path = await paragraph(`one-space-${name.replaceAll(' ', '-')}.pdf`, shape);
       // THE FIRST LINE'S END TOO, where the bar lies: the words past a bar stay where they are (the owner's ruling, 2026-11-06).
