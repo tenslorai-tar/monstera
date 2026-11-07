@@ -940,6 +940,26 @@ is not known.
 **1.1.2612.0** was packed from `ffe5c8da` after a full walk of its clean build and is not uploaded. The packs for this round
 follow these fixes.
 
+**Addition, the 30-second block open: an open finding, left for the next update by the owner's decision of 2026-11-07.**
+Something switched Edit text off while a block was being opened, and what did it is not known. It happened once in 7 tries,
+on one corpus document, in a measuring script that opened the same document three times in one application, each time a
+fresh copy, and on the third pressed a block to type a word.
+- The run: `_review/walks/edit-growth/2026-11-07T11-26-08` (gitignored, kept on the owner's machine). Its report says the
+  editor's frame was never focused within 30 s.
+- Its diagnostics log, `app-data/logs/shell.log`, all times UTC: the third open at 11:26:46.4; `app.prepareEditing` at
+  11:26:49.6, so Edit text was on as the document opened; `document.textBlocks` at 11:26:52.0 and 11:26:53.3; then no
+  request at all until the next document opened at 11:27:24.5. No `document.blockFaces` was asked, which a block being
+  selected always asks, so the press selected no block.
+- The step's picture, `01-file-2.png`: the Edit section on show, the Edit text button not pressed, and no block outline on
+  the page.
+- Ruled out, by measurement on 5dead873's build: the Edit text button stays pressed across a second document's open
+  (sampled every 100 ms, three times; `aria-pressed` true throughout), so the script's step that switches Edit text on
+  when it reads it off did not toggle it; and a press on a place with no block does not turn Edit text off (two presses,
+  the button still pressed and all 82 blocks still there).
+- Seen and not proven to matter: for about 0.2 s after the open begins, the page still shows the previous document's
+  block outlines, and the new document's arrive 3.5 to 5 s later. The script waited for any outline and pressed one by
+  count, so it may have pressed one that was going.
+
 ## 2026-11-06 — Placed marks in the real application: two faults the writer's cases could not reach
 
 Everything here was run in the application on the merged build, against the release's code as the control, except where
