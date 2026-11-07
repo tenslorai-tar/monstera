@@ -88,3 +88,19 @@ back as raw samples, and nothing on the new picture says what it was.
   bytes before (with `compress`) against 447,142 after, from 546,040. On the case's own page
   (`redactionPictures.test.ts`) the photo comes back as `/DCTDecode` at 800 × 600; the probe page of the measurement
   above, 1,819,204 bytes raw and 644,430 with `compress`, saved at 288,857.
+
+## Note, 2026-11-07 — a CMYK photo came back RGB, and now keeps its space
+
+Tested on the owner's request, a CMYK JPEG stored as its samples and one stored inverted under `/Decode [1 0 1 0 1 0 1 0]`
+(the way a CMYK JPEG from Photoshop is held): both came back as JPEG and drew their colours, but in RGB, three samples a
+pixel. MuPDF's own burn-in keeps the picture CMYK (an ICC-based space, four components, raw); the JPEG writer the shim
+called, `fz_new_buffer_from_pixmap_as_jpeg`, converts any space but the device grey, RGB and CMYK singletons to RGB
+(`jpeg_from_pixmap`, `output-jpeg.c` 1.28.0). That is a change of kind the decision does not allow, and a print workflow
+would see it.
+
+The shim now writes through `fz_write_pixmap_as_jpeg`, which takes any grey, RGB or CMYK space as it is; the picture is
+given the burn-in pixmap's own space, and its samples are written plain and marked so (`fz_new_image_from_buffer` takes
+every JPEG for inverted CMYK, which would have put a `/Decode` turning them over). A pixmap in another space (Lab, a
+separation) stays lossless rather than fail the redaction. `redactionPictures.test.ts`: both CMYK photos come back as
+JPEG, four samples a pixel, a mean colour difference outside the mark of 1.29 of 255 against the page before, and white
+inside; with the samples written inverted the difference is 112.8, so the comparison sees the colours.

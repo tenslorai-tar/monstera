@@ -90,7 +90,7 @@ function fixture(options: { rotate?: mupdf.Rotate; inForm?: boolean; photoSpace?
 }
 
 /** Marks A and B burned in, and the session saved: the file a person keeps. */
-async function redacted(bytes: ByteImage): Promise<ByteImage> {
+async function redacted(bytes: ByteImage, cover: 'solid' | 'none' = 'solid'): Promise<ByteImage> {
   const session: MupdfSession = await mupdfWriter.open(bytes);
   try {
     for (const rect of [MARK_A, MARK_B]) {
@@ -101,7 +101,7 @@ async function redacted(bytes: ByteImage): Promise<ByteImage> {
         annotation: { type: 'redact', over: 'region', rect, colour: [0, 0, 0], opacity: 1 },
       });
     }
-    await applyApplyRedactions(session, { kind: 'applyRedactions', pages: 'all', cover: 'solid', images: 'pixels', keepTitle: false, keepBookmarks: false });
+    await applyApplyRedactions(session, { kind: 'applyRedactions', pages: 'all', cover, images: 'pixels', keepTitle: false, keepBookmarks: false });
     return await mupdfWriter.serialise(session);
   } finally {
     await mupdfWriter.close(session);
@@ -288,5 +288,92 @@ describe('a picture a redaction rewrites keeps its own kind, and what the mark c
     } finally {
       await mupdfWriter.close(session);
     }
+  }, 60_000);
+});
+
+/**
+ * A CMYK JPEG keeps its colours (ADR-0288): stored as its samples, and stored inverted under `/Decode [1 0 1 0 1 0 1 0]`,
+ * the way a CMYK JPEG from Photoshop is held in a PDF. The page is drawn in RGB before the burn-in and after it, and the
+ * photo's colours outside the mark compared; inside it the page is white.
+ */
+describe('a CMYK JPEG under a mark keeps its colours', () => {
+  /** A page drawing an 800 by 600 CMYK JPEG at PHOTO_AT, its stream written by hand as each convention has it. */
+  function cmykPage(inverted: boolean): ByteImage {
+    const document = new mupdf.PDFDocument();
+    try {
+      const pixels = picture(800, 600, mupdf.ColorSpace.DeviceCMYK, false, 23);
+      const photo = document.addRawStream(pixels.asJPEG(92, inverted), {
+        Type: 'XObject',
+        Subtype: 'Image',
+        Width: 800,
+        Height: 600,
+        ColorSpace: 'DeviceCMYK',
+        BitsPerComponent: 8,
+        Filter: 'DCTDecode',
+        ...(inverted ? { Decode: [1, 0, 1, 0, 1, 0, 1, 0] } : {}),
+      });
+      const resources = document.addObject({ XObject: { P: photo } });
+      document.insertPage(-1, document.addPage([0, 0, 612, 792], 0, resources, 'q 400 0 0 300 50 450 cm /P Do Q'));
+      return document.saveToBuffer('garbage,compress').asUint8Array().slice();
+    } finally {
+      document.destroy();
+    }
+  }
+
+  /** The page drawn in RGB at 1x, rows top down. */
+  function rgb(bytes: ByteImage): Uint8Array {
+    const document = mupdf.PDFDocument.openDocument(bytes, 'application/pdf');
+    try {
+      const pixmap = document.loadPage(0).toPixmap(mupdf.Matrix.identity, mupdf.ColorSpace.DeviceRGB, false, false);
+      try {
+        return Uint8Array.from(pixmap.getPixels());
+      } finally {
+        pixmap.destroy();
+      }
+    } finally {
+      document.destroy();
+    }
+  }
+
+  /** Over the photo, the mean colour difference outside the mark (4 points clear of it), and the darkest sample inside. */
+  function compared(before: Uint8Array, after: Uint8Array): { readonly meanOutside: number; readonly darkestInside: number } {
+    let total = 0;
+    let count = 0;
+    let darkest = 255;
+    for (let y = 792 - (PHOTO_AT.y + PHOTO_AT.h); y < 792 - PHOTO_AT.y; y += 1) {
+      for (let x = PHOTO_AT.x; x < PHOTO_AT.x + PHOTO_AT.w; x += 1) {
+        const ux = x + 0.5;
+        const uy = 792 - y - 0.5;
+        const away = Math.max(MARK_A.x0 - ux, ux - MARK_A.x1, MARK_A.y0 - uy, uy - MARK_A.y1);
+        for (let k = 0; k < 3; k += 1) {
+          const at = (y * 612 + x) * 3 + k;
+          if (away < -4) darkest = Math.min(darkest, after[at] ?? 0);
+          else if (away > 4) {
+            total += Math.abs((before[at] ?? 0) - (after[at] ?? 0));
+            count += 1;
+          }
+        }
+      }
+    }
+    return { meanOutside: total / Math.max(1, count), darkestInside: darkest };
+  }
+
+  it.each([
+    ['stored as its samples', false],
+    ['stored inverted under /Decode [1 0 1 0 1 0 1 0]', true],
+  ])('%s: JPEG again, the same colours outside the mark, white inside it', async (_name, inverted) => {
+    const bytes = cmykPage(inverted);
+    // NO COVER, so what is drawn inside the mark is the picture's own pixels, not the black box over them.
+    const saved = await redacted(bytes, 'none');
+    const before = rgb(bytes);
+    const after = rgb(saved);
+    const photo = picturesOf(saved).get('800x600');
+    expect(photo?.filter).toBe('/DCTDecode');
+    // STILL CMYK: four samples a pixel, as it was. The JPEG writer had turned an ICC-based CMYK pixmap into RGB.
+    expect(photo?.n).toBe(4);
+    const read = compared(before, after);
+    // CONTROL: the photo is dark and varied, so a page drawn with its colours turned over would be far off.
+    expect(read.meanOutside).toBeLessThan(6);
+    expect(read.darkestInside).toBeGreaterThan(240);
   }, 60_000);
 });

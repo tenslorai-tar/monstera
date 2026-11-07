@@ -4491,6 +4491,7 @@ static fz_image *mz_kind_image_filter(fz_context *ctx, void *opaque, fz_matrix c
     fz_pixmap *pixmap = NULL;
     fz_buffer *buffer = NULL;
     fz_image *jpeg = NULL;
+    fz_output *out = NULL;
 
     (void)name;
     (void)scissor;
@@ -4511,20 +4512,42 @@ static fz_image *mz_kind_image_filter(fz_context *ctx, void *opaque, fz_matrix c
     fz_var(pixmap);
     fz_var(buffer);
     fz_var(jpeg);
+    fz_var(out);
     fz_try(ctx)
     {
         pixmap = fz_get_pixmap_from_image(ctx, image, NULL, NULL, NULL, NULL);
-        /* A JPEG holds no alpha channel; a pixmap carrying one stays lossless rather than lose it. */
-        if (pixmap->alpha == 0)
+        /*
+         * A JPEG holds no alpha channel, and only grey, RGB or CMYK samples: a pixmap with alpha, separations or another
+         * colour space stays lossless rather than lose any of it, or refuse the redaction.
+         */
+        if (pixmap->alpha == 0 && pixmap->s == 0 && pixmap->colorspace != NULL &&
+            (fz_colorspace_is_gray(ctx, pixmap->colorspace) || fz_colorspace_is_rgb(ctx, pixmap->colorspace) ||
+                fz_colorspace_is_cmyk(ctx, pixmap->colorspace)))
         {
-            buffer = fz_new_buffer_from_pixmap_as_jpeg(ctx, pixmap, fz_default_color_params, state->quality, 0);
+            fz_compressed_buffer *written;
+            /*
+             * THE PIXMAP'S OWN SPACE: fz_new_buffer_from_pixmap_as_jpeg converts any space but the device singletons to
+             * RGB (jpeg_from_pixmap, output-jpeg.c 1.28.0), and the burn-in's pixmap of a CMYK photo is ICC-based, so a
+             * CMYK photo came back RGB (measured 2026-11-07). Written as its samples, and said to be, so no /Decode turns
+             * them over: fz_new_image_from_buffer takes every JPEG to be inverted CMYK.
+             */
+            buffer = fz_new_buffer(ctx, 1024);
+            out = fz_new_output_with_buffer(ctx, buffer);
+            fz_write_pixmap_as_jpeg(ctx, out, pixmap, state->quality, 0);
+            fz_close_output(ctx, out);
             jpeg = fz_new_image_from_buffer(ctx, buffer);
+            fz_drop_colorspace(ctx, jpeg->colorspace);
+            jpeg->colorspace = fz_keep_colorspace(ctx, pixmap->colorspace);
+            written = fz_compressed_image_buffer(ctx, jpeg);
+            if (written != NULL)
+                written->params.u.jpeg.invert_cmyk = 0;
             jpeg->mask = fz_keep_image(ctx, image->mask);
             state->rewritten++;
         }
     }
     fz_always(ctx)
     {
+        fz_drop_output(ctx, out);
         fz_drop_pixmap(ctx, pixmap);
         fz_drop_buffer(ctx, buffer);
     }
