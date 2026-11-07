@@ -711,6 +711,12 @@ export interface BrowserShimOptions {
    * common case, and it is the honest empty rather than an invented field.
    */
   readonly formFields?: readonly (readonly ShimFormField[])[];
+  /**
+   * How long `document.formFields` takes to answer at any version after the first, in milliseconds: the gap a real write
+   * leaves between the version moving and its fields being read again, during which the list at the version on show is
+   * empty. Absent answers at once, as every other read here does.
+   */
+  readonly formFieldsLateBy?: number;
 
   /**
    * What `document.annotations` lists: page, walk index, kind and rect, in PDF user space.
@@ -2608,7 +2614,9 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       const current = versions.get(docId);
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
       const fields = fieldLists.length > 1 ? (fieldLists.shift() ?? []) : (fieldLists[0] ?? []);
-      return Promise.resolve(
+      const late = current > 1 ? (options.formFieldsLateBy ?? 0) : 0;
+      const after = <T,>(value: T): Promise<T> => (late === 0 ? Promise.resolve(value) : new Promise((resolve) => setTimeout(() => { resolve(value); }, late)));
+      return after(
         ok({
           version: asDocVersion(current),
           fields: fields.slice(from).map((field) => {

@@ -1639,7 +1639,11 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
         }
       },
       onTab: (page: number, index: number, backwards: boolean, filled: boolean): void => {
-        const next = nextFillable(fieldsInOrder, { page, index }, backwards);
+        // THE FORM'S ORDER FROM THE LAST LIST READ (`useFormFieldList`' `held`), the selection's reason below: the list at the
+        // version on show is empty from the moment a fill lands until it is read again, and a Tab pressed in that gap
+        // found no next field and went nowhere (measured 2026-11-07 on a 30-page form: 0 fields on show, 91 held). A fill
+        // changes a field's value, never which fields there are or their order.
+        const next = nextFillable(formFieldList.held?.fields ?? fieldsInOrder, { page, index }, backwards);
         if (next === undefined) return;
         // A STAMP THAT ONLY RISES: a spent request is cleared, and one counted from it would repeat a stamp the layer
         // has already taken, so the second Tab would go nowhere.
@@ -1647,7 +1651,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
         setFieldFocus({ page: next.page, index: next.index, stamp: focusStamps.current, after: filled ? openVersion : undefined });
       },
     }),
-    [fieldFocus, fieldReveal, fieldsInOrder, openVersion, reminderFocus, requiredReminder, selectedFieldKeys, toast],
+    [fieldFocus, fieldReveal, fieldsInOrder, formFieldList.held, openVersion, reminderFocus, requiredReminder, selectedFieldKeys, toast],
   );
   /**
    * THE LIST THE SELECTION IS JOINED TO: the last one read for this document, with its version, until the next replaces

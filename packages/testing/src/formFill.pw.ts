@@ -35,6 +35,7 @@ async function openWithFields(
   look: (typeof LOOKS)[number],
   fields: readonly ShimFormField[],
   sent: { channel: string; params: unknown }[],
+  formFieldsLateBy?: number,
 ): Promise<void> {
   const bytes = await samplePdf();
   await page.setViewportSize({ width: 1280, height: 860 });
@@ -45,6 +46,7 @@ async function openWithFields(
       opens: [{ kind: 'opened' as const, docId: ID, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'Sample.pdf' }],
       documentBytes: new Map([[ID, bytes]]),
       formFields: [fields],
+      ...(formFieldsLateBy === undefined ? {} : { formFieldsLateBy }),
     },
     (channel, params) => {
       sent.push({ channel, params });
@@ -347,11 +349,39 @@ for (const look of LOOKS) {
     expect(fills(sent)).toStrictEqual([]);
 
     // CONTROL: an edit is sent, with its line break.
+    // (The case below presses Tab inside the gap a write leaves; this one presses it with the list already read.)
     const edited = await opened('address');
     await edited.fill('1 High Street\nLeeds LS1');
     await page.keyboard.press('Tab');
     await expect.poll(() => fills(sent)).toStrictEqual([
       { kind: 'fillFormField', page: 0, index: 0, version: 1, value: { set: 'text', text: '1 High Street\nLeeds LS1' } },
     ]);
+  });
+
+  test(`Tab still moves to the next field while the last fill's fields are being read again, ${look.name}`, async ({ page }) => {
+    // THE GAP A WRITE LEAVES: the version moves, and the list at the version on show is empty until it is read again.
+    // Measured 2026-11-07 in the application on a 30-page form: a person who typed and pressed Tab inside it had the Tab
+    // go nowhere, because the next field was looked for in that empty list.
+    const sent: { channel: string; params: unknown }[] = [];
+    const at = (y: number): { x0: number; y0: number; x1: number; y1: number } => ({ x0: 100, y0: y, x1: 300, y1: y + 20 });
+    await openWithFields(
+      page,
+      look,
+      [field({ index: 0, name: 'first', rect: at(700) }), field({ index: 1, name: 'second', rect: at(650) }), field({ index: 2, name: 'third', rect: at(600) })],
+      sent,
+      3000,
+    );
+    const layer = page.locator('[data-form-layer="0"]');
+    await layer.locator('[data-form-field="0"]').click();
+    await expect(layer.locator('input[aria-label="first"]')).toBeFocused();
+    await page.keyboard.type('one');
+    await page.keyboard.press('Tab');
+    await expect.poll(() => fills(sent).length).toBe(1);
+    await expect(layer.locator('input[aria-label="second"]')).toBeFocused();
+    // INSIDE THE GAP: the first fill has landed and its fields are not yet read again.
+    await page.keyboard.type('two');
+    await page.keyboard.press('Tab');
+    await expect.poll(() => fills(sent).length).toBe(2);
+    await expect(layer.locator('input[aria-label="third"]')).toBeFocused({ timeout: 6000 });
   });
 }
