@@ -224,3 +224,15 @@ square keeps its corner. The filled circle is 100 bytes, the forty curves 2,798,
   one (`pending.ctm = fz_concat(ctm, pending.ctm)`, `pdf-op-filter.c` 1.28.0 line 1354), and a reader of the original
   multiplies them in another order: on a page of 2,000 small curved shapes under nested transforms, none near the mark,
   215 pixels moved by up to 16 levels, the same with the cut, with MuPDF's burn-in alone, and with both.
+
+## The owner's decisions of 2026-11-07 on what is left
+
+All four stay as they are, and the cut is not changed for them. Each is held at its figure by a case in
+`redactionOutside.test.ts`, at 4x, so a change beyond it goes red.
+
+| what still changes outside the mark | how much | why it stays | held by |
+|---|---|---|---|
+| A thin stroke's ink beside the end cut where its centre meets the mark | 3 pixels within half a point of the mark, up to 89 levels; 2 more beyond it, 3 and 7 levels, where a split curve is flattened a little differently | **accepted: removal comes first**, so that ink stays gone; keeping it would put the stroke's ink inside the mark | the thin wave: at most 3 near, 2 far, 89 levels |
+| A line cut short where it crosses the mark, drawn by the renderer a little differently along its length | 143 pixels on the page of 4,000 drawings, worst 14 levels, the farthest 9 points out; MuPDF's burn-in alone moves none | **accepted**: any cut shortens a segment that crosses the mark | the 4,000 drawings: at most 143, 14 levels, 9 points; the burn-in alone, none |
+| A wide stroke crossing the mark in one subpath, outlined whole | no pixel moves; the 3-point circle is 115,053 bytes, from 157 (180,999 before this amendment) | **accepted**: the pixels stay exact and the size is already below what it was | the 3-point circle: no pixel moves, at most 115,053 bytes |
+| Drawings no mark touches, under nested transforms, which MuPDF's own filter folds into one `cm` | on 2,000 small curved shapes: 215 pixels move, up to 16 levels (112 of them by more than 2 levels), the same with the cut and without | **not patched**: ADR-0011 already rejects carrying a private patch to MuPDF | the 2,000 shapes: the same with and without the cut, at most 112 by more than 2 levels, 16 levels |
