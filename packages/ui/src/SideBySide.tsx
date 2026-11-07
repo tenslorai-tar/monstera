@@ -1,7 +1,7 @@
 import { useLingui } from '@lingui/react';
 import type { ContractClient } from '@monstera/contract';
 import type { CompareBox, DocId, DocVersion, MessageKey } from '@monstera/shared';
-import { X, ZoomIn, ZoomOut } from 'lucide-react';
+import { Maximize, MoveHorizontal, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { type KeyboardEvent, type ReactElement, useEffect, useId, useMemo, useRef, useState } from 'react';
 
 import type { DifferenceMark } from './DifferenceLayer.js';
@@ -46,6 +46,8 @@ import {
   SIDE_PICK_SECOND,
   SIDE_SUBTITLE,
   SIDE_TITLE,
+  SIDE_FIT_PAGE,
+  SIDE_FIT_WIDTH,
   SIDE_ZOOM,
   SIDE_ZOOM_IN,
   SIDE_ZOOM_OUT,
@@ -486,6 +488,26 @@ function Half({
           onClick={() => {
             step('in');
           }}
+          size="dense"
+        />
+        {/* THIS HALF'S OWN FITS: View's Fit width and Fit page set the main view's mode, which a half does not read, so
+            each half carries its pair. The main view's icons, and pressed while the half is fitted that way. */}
+        <IconButton
+          icon={MoveHorizontal}
+          label={SIDE_FIT_WIDTH}
+          onClick={() => {
+            setMode({ kind: 'fit-width' });
+          }}
+          pressed={mode.kind === 'fit-width'}
+          size="dense"
+        />
+        <IconButton
+          icon={Maximize}
+          label={SIDE_FIT_PAGE}
+          onClick={() => {
+            setMode({ kind: 'fit-page' });
+          }}
+          pressed={mode.kind === 'fit-page'}
           size="dense"
         />
       </div>
