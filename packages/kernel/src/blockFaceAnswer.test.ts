@@ -8,27 +8,28 @@ import { BLOCK_FACE_TEXT_MAX, blockFaceRunsOf, facesInOrder } from './blockFaceA
  */
 
 /** PDFium's pre-read: a rule at page object 1 between two lines, so a text object's place is not its object number. */
+const BOX = { left: 10, bottom: 20, right: 30, top: 40 };
 const READ = {
   textObjects: [0, 2, 3],
   runs: [
-    { index: 0, members: [0], text: 'first line' },
-    { index: 2, members: [2, 3], text: 'second line' },
+    { index: 0, members: [0], text: 'first line', ...BOX },
+    { index: 2, members: [2, 3], text: 'second line', ...BOX },
     // A RUN WHOSE FIRST MEMBER IS NO TEXT OBJECT, so its first text object is the one after it.
-    { index: 1, members: [1, 3], text: 'x'.repeat(BLOCK_FACE_TEXT_MAX + 1) },
+    { index: 1, members: [1, 3], text: 'x'.repeat(BLOCK_FACE_TEXT_MAX + 1), ...BOX },
   ],
 };
 
 describe('a block’s runs for the host, and the host’s answer back on them', () => {
   it('names each run by the content’s numbering of its first text object, not by PDFium’s object numbers', () => {
     expect(blockFaceRunsOf(READ, [0, 2])).toStrictEqual([
-      { index: 0, object: 0, text: 'first line' },
+      { index: 0, object: 0, text: 'first line', box: BOX },
       // CONTROL: the second line is PDFium's object 2, which is the content's text object 1.
-      { index: 2, object: 1, text: 'second line' },
+      { index: 2, object: 1, text: 'second line', box: BOX },
     ]);
   });
 
   it('skips a member that is no text object, and carries no more of the words than the bound', () => {
-    expect(blockFaceRunsOf(READ, [1])).toStrictEqual([{ index: 1, object: 2, text: 'x'.repeat(BLOCK_FACE_TEXT_MAX) }]);
+    expect(blockFaceRunsOf(READ, [1])).toStrictEqual([{ index: 1, object: 2, text: 'x'.repeat(BLOCK_FACE_TEXT_MAX), box: BOX }]);
   });
 
   it('answers a run the pre-read did not hold with none, and every other run keeps its own font', () => {

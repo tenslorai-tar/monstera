@@ -328,29 +328,88 @@ export function coversInPageSpace(
   boxes: readonly PageBox[],
 ): PageCoverCell[][] {
   // THE GROWTH STARTS {@link COVER_MARGIN} OUT from the recogniser's box, and runs on through the ink from there.
-  const grown = boxes.map((box) => ({ left: box.left - COVER_MARGIN, bottom: box.bottom - COVER_MARGIN, right: box.right + COVER_MARGIN, top: box.top + COVER_MARGIN }));
+  const grown = boxes.map(grownBox);
   const [a, b, c, d, e, f] = toDevice;
   const determinant = a * d - b * c;
   if (!Number.isFinite(determinant) || determinant === 0) return grown.map((box) => [{ box, colour: { r: 255, g: 255, b: 255 } }]);
-  const deviceOf = (x: number, y: number): readonly [number, number] => [a * x + c * y + e, b * x + d * y + f];
   const pageOf = (x: number, y: number): readonly [number, number] => [
     (d * (x - e) - c * (y - f)) / determinant,
     (-b * (x - e) + a * (y - f)) / determinant,
   ];
-  /** The smallest upright box holding `corners`, in whichever space they are. */
-  const around = (corners: readonly (readonly [number, number])[]): PageBox => ({
+  return grown.map((box) =>
+    paperCoverFor(bgra, width, height, seedOn(toDevice, box), pixelsPerPoint).map((cell) => ({
+      box: around([pageOf(cell.box.x0, cell.box.y0), pageOf(cell.box.x1, cell.box.y0), pageOf(cell.box.x0, cell.box.y1), pageOf(cell.box.x1, cell.box.y1)]),
+      colour: cell.colour,
+    })),
+  );
+}
+
+/** A box grown by {@link COVER_MARGIN}: a word's ink is wider than the box a read gives it. */
+function grownBox(box: PageBox): PageBox {
+  return { left: box.left - COVER_MARGIN, bottom: box.bottom - COVER_MARGIN, right: box.right + COVER_MARGIN, top: box.top + COVER_MARGIN };
+}
+
+/** The smallest upright box holding `corners`, in whichever space they are. */
+function around(corners: readonly (readonly [number, number])[]): PageBox {
+  return {
     left: Math.min(...corners.map((corner) => corner[0])),
     bottom: Math.min(...corners.map((corner) => corner[1])),
     right: Math.max(...corners.map((corner) => corner[0])),
     top: Math.max(...corners.map((corner) => corner[1])),
-  });
-  return grown.map((box) => {
-    const device = around([deviceOf(box.left, box.bottom), deviceOf(box.left, box.top), deviceOf(box.right, box.bottom), deviceOf(box.right, box.top)]);
-    const seed: PixelBox = { x0: device.left, y0: device.bottom, x1: device.right, y1: device.top };
-    return paperCoverFor(bgra, width, height, seed, pixelsPerPoint).map((cell) => ({
-      box: around([pageOf(cell.box.x0, cell.box.y0), pageOf(cell.box.x1, cell.box.y0), pageOf(cell.box.x0, cell.box.y1), pageOf(cell.box.x1, cell.box.y1)]),
-      colour: cell.colour,
-    }));
+  };
+}
+
+/** A page box on the raster that `toDevice` maps page space onto. */
+function seedOn(toDevice: Affine, box: PageBox): PixelBox {
+  const [a, b, c, d, e, f] = toDevice;
+  const deviceOf = (x: number, y: number): readonly [number, number] => [a * x + c * y + e, b * x + d * y + f];
+  const device = around([deviceOf(box.left, box.bottom), deviceOf(box.left, box.top), deviceOf(box.right, box.bottom), deviceOf(box.right, box.top)]);
+  return { x0: device.left, y0: device.bottom, x1: device.right, y1: device.top };
+}
+
+/** How much of a box must be ink for something to show there: past a speck of a scan's dust, short of the thinnest word. */
+export const SHOWS_SHARE = 0.005;
+
+/** The pixels whose colour is the ink's: at least this share of the way to the one furthest from the paper, past a soft edge. */
+const INK_CORE_SHARE = 0.75;
+
+/**
+ * WHAT THE PAGE AS DRAWN SHOWS IN EACH OF `boxes`, given in page space
+ * ([ADR-0289](../../../docs/DECISIONS/0289-words-that-paint-nothing-over-something-that-shows-are-edited-as-the-words-a-person-sees.md)):
+ * the colour of the ink there, or `null` where nothing differs from the background round the box. The one test for
+ * whether words that paint nothing stand over words a person can see, whatever drew them, and the one reading of what
+ * colour those words are, in both writers (B3a). Ink is {@link paperCoverFor}'s ink: {@link INK_THRESHOLD} from the plane
+ * fitted to the ring.
+ *
+ * Its colour is the middle of the pixels furthest from the paper, since a stroke's soft edge is a mix of the two and the
+ * middle of every ink pixel reads lighter on a dark ground and darker on a light one.
+ */
+export function inkShowingIn(bgra: Uint8Array, width: number, height: number, toDevice: Affine, boxes: readonly PageBox[]): (Rgb | null)[] {
+  const [a, b, c, d] = toDevice;
+  const determinant = a * d - b * c;
+  if (!Number.isFinite(determinant) || determinant === 0) return boxes.map(() => null);
+  return boxes.map((page) => {
+    const seed = seedOn(toDevice, grownBox(page));
+    const paper = paperAround(bgra, width, height, seed);
+    const pixels: { readonly far: number; readonly colour: Rgb }[] = [];
+    const y0 = Math.max(0, Math.floor(seed.y0));
+    const y1 = Math.min(height, Math.ceil(seed.y1));
+    const x0 = Math.max(0, Math.floor(seed.x0));
+    const x1 = Math.min(width, Math.ceil(seed.x1));
+    for (let y = y0; y < y1; y += 1) {
+      for (let x = x0; x < x1; x += 1) {
+        const at = (y * width + x) * 4;
+        const colour = { r: bgra[at + 2] ?? 255, g: bgra[at + 1] ?? 255, b: bgra[at] ?? 255 };
+        const expected = paper.at(x, y);
+        const far = Math.max(Math.abs(colour.r - expected.r), Math.abs(colour.g - expected.g), Math.abs(colour.b - expected.b));
+        if (far > INK_THRESHOLD) pixels.push({ far, colour });
+      }
+    }
+    const area = Math.max(1, (x1 - x0) * (y1 - y0));
+    if (pixels.length / area < SHOWS_SHARE) return null;
+    const furthest = Math.max(...pixels.map((pixel) => pixel.far));
+    const core = pixels.filter((pixel) => pixel.far >= furthest * INK_CORE_SHARE);
+    return { r: median(core.map((pixel) => pixel.colour.r)), g: median(core.map((pixel) => pixel.colour.g)), b: median(core.map((pixel) => pixel.colour.b)) };
   });
 }
 

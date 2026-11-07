@@ -53,6 +53,11 @@ export interface PageFont {
    */
   readonly outline?: (code: number) => readonly (readonly (readonly [number, number])[])[] | null;
   /**
+   * A Type 3 font every letter of which paints nothing (ADR-0289): words in it can be selected and cannot be seen, so it is
+   * no face for a word that is to be seen. Absent for every other font.
+   */
+  readonly paintsNothing?: true;
+  /**
    * The codes whose text in `toUnicode` is PDFium's READING of the page and not the font's own statement
    * (`pageFontsAsRead`, ADR-0270): a glyph the font names nothing for, which another reader is free to name otherwise.
    * Absent where none were learned.
@@ -270,6 +275,31 @@ function type3Glyphs(font: PDFObject): ReadonlyMap<number, string> {
 }
 
 /**
+ * Whether a glyph procedure paints nothing: every token of it a number, its width's `d0` or `d1`, or a `q` or `Q`. Anything
+ * else, an image mask or an operator this does not name among them, is a letter that paints.
+ */
+function letterPaintsNothing(procedure: Uint8Array): boolean {
+  const tokens = new TextDecoder('latin1').decode(procedure).split(/\s+/u).filter((token) => token !== '');
+  return tokens.every((token) => /^[-+]?(?:\d+\.?\d*|\.\d+)$/u.test(token) || ['d0', 'd1', 'q', 'Q'].includes(token));
+}
+
+/**
+ * Whether EVERY letter a Type 3 font encodes paints nothing (ADR-0289): such a font sets words to be selected over something
+ * else that draws them. The whole font and never one letter, since a real font's space is an empty letter too. The first
+ * letter that paints answers it, so a font of real letters costs one procedure read.
+ */
+function lettersPaintNothing(font: PDFObject, glyphs: ReadonlyMap<number, string>): boolean {
+  const procs = resolved(font.get('CharProcs'));
+  if (glyphs.size === 0 || !procs.isDictionary()) return false;
+  for (const name of new Set(glyphs.values())) {
+    // ASKED OF THE REFERENCE, `toUnicodeOf`'s reason: an indirect stream's `resolve()` answers its dictionary.
+    const procedure = procs.get(name);
+    if (procedure.isNull() || !procedure.isStream() || !letterPaintsNothing(bufferBytes(procedure.readStream()))) return false;
+  }
+  return true;
+}
+
+/**
  * A Type 3 font's drawn glyphs as outlines (ADR-0176's corrections of 2026-10-26): each glyph procedure's filled contours
  * through the font's matrix, in text space at a size of 1. Read on first asking and kept, since a font is measured once.
  */
@@ -316,12 +346,14 @@ function read(resource: string, font: PDFObject, standard: StandardFontTables): 
   let width: PageFont['width'];
   let draws: PageFont['draws'];
   let outline: PageFont['outline'];
+  let paintsNothing = false;
   if (subtype === 'Type3') {
     const matrix = numbers(font.get('FontMatrix')) ?? [0.001];
     width = simpleWidths(font, matrix[0] ?? 0.001);
     const glyphs = type3Glyphs(font);
     draws = (code) => glyphs.has(code);
     outline = type3Outlines(font, glyphs, matrix);
+    paintsNothing = lettersPaintNothing(font, glyphs);
   } else if (descendant !== null) {
     width = cidWidths(descendant);
     draws = () => true;
@@ -374,6 +406,7 @@ function read(resource: string, font: PDFObject, standard: StandardFontTables): 
     face: face === null ? null : withoutSubsetTag(face),
     weight: weightObject?.isNumber() === true ? weightObject.asNumber() : null,
     ...(outline === undefined ? {} : { outline }),
+    ...(paintsNothing ? { paintsNothing: true as const } : {}),
     ...(closest ? { widthsUnstated: true as const } : {}),
   };
 }

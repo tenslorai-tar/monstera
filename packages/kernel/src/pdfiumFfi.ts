@@ -27,7 +27,7 @@ import {
   logicalOf,
   readBackOf,
 } from './bidiOrder.js';
-import { type Affine, PAPER_PIXELS_PER_POINT, type PageCoverCell, coversInPageSpace } from './paperColour.js';
+import { type Affine, PAPER_PIXELS_PER_POINT, type PageCoverCell, type Rgb, coversInPageSpace, inkShowingIn } from './paperColour.js';
 import {
   DECORATION_KEY,
   DECORATION_TAG,
@@ -3069,12 +3069,27 @@ function layOutBlocks(
       // the paper round each, read ONCE from the page as it is now, before any object is changed. Where such a word is
       // edited the new words are drawn and the picture's old ones are covered with the paper, since the page is a picture
       // and the words a person reads there are its pixels. Only a write does it: a trial lays out for a fit and draws nothing.
-      const scanned = blocks.map((block) =>
-        mode === 'write' ? recognisedOverPictures(bindings, handle, block.lines.flat().flatMap((run) => [run.object, ...run.extras])) : [],
+      // ADR-0289's RULE, the operator writer's too: what paints nothing here is what render mode 3 hides, since a font of empty
+      // letters is a Type 3 font and a page holding one is the operator writer's (`pageRewrite.ts`). THE PAGE IS DRAWN ONLY
+      // for a block holding such a word.
+      const invisibly = blocks.map((block) =>
+        mode === 'write'
+          ? block.lines.flat().flatMap((run) => [run.object, ...run.extras]).filter((object) => numberFrom(bindings.getRenderMode(object), 'FPDFTextObj_GetTextRenderMode') === 3)
+          : [],
       );
-      const coverBoxes = scanned.flatMap((objects) => objects.map((object): Bounds => boundsOf(bindings, object)));
-      const papers = coverBoxes.length === 0 ? [] : coversRoundBoxes(bindings, handle, coverBoxes);
+      const drawnNow = invisibly.flat().length === 0 ? null : pageAsDrawn(bindings, handle);
+      const scanned = invisibly.map((objects) => {
+        const inks = drawnNow?.inkIn(objects.map((object): Bounds => boundsOf(bindings, object))) ?? [];
+        return objects.flatMap((object, at) => {
+          const ink = inks[at];
+          return ink === null || ink === undefined ? [] : [{ object, ink }];
+        });
+      });
+      const coverBoxes = scanned.flatMap((objects) => objects.map(({ object }): Bounds => boundsOf(bindings, object)));
+      const papers = drawnNow === null || coverBoxes.length === 0 ? [] : drawnNow.coversOf(coverBoxes);
       let coverAt = 0;
+      /** The objects a mark gave a colour: the person's choice, which the ink's colour does not replace. */
+      const colouredByMark = new Set<string>();
       // THE PAGE'S MARKED DECORATIONS (the owner's L2), read once before any object moves: each block takes the ones its
       // runs carry, removes them with its old words and draws them again with its new ones.
       const pageDecos = pageDecorations(bindings, handle);
@@ -3538,6 +3553,7 @@ function layOutBlocks(
                   }
                   if (marked.set.colour !== undefined) {
                     bindings.setFillColour(object, marked.set.colour.r, marked.set.colour.g, marked.set.colour.b, 255);
+                    colouredByMark.add(String(koffi.address(object)));
                   }
                 }
                 if (marked.set.rise === 'superscript') rise += SUPERSCRIPT_RISE * marked.size;
@@ -3743,16 +3759,19 @@ function layOutBlocks(
             const address = (object: unknown): string => String(koffi.address(object));
             const gone = new Set(removed.map(address));
             const wrote = new Set(written.map((entry) => address(entry.object)));
-            const touched = onScan.flatMap((object, at) => (gone.has(address(object)) || wrote.has(address(object)) ? [at] : []));
+            const touched = onScan.flatMap(({ object }, at) => (gone.has(address(object)) || wrote.has(address(object)) ? [at] : []));
             if (touched.length > 0) {
+              // THE COLOUR OF THE WORDS A PERSON SEES (ADR-0289), the first of the block's, where the person chose none.
+              const ink = onScan[0]?.ink;
               for (const { object } of visual.flatMap((line) => line.objects)) {
                 if (!wrote.has(address(object)) || numberFrom(bindings.getRenderMode(object), 'FPDFTextObj_GetTextRenderMode') !== 3) continue;
                 if (numberFrom(bindings.setRenderMode(object, 0), 'FPDFTextObj_SetTextRenderMode') !== 1) {
                   throw refusedAt('object', 'FPDFTextObj_SetTextRenderMode refused to draw a line written over a scan');
                 }
+                if (ink !== undefined && !colouredByMark.has(address(object))) bindings.setFillColour(object, ink.r, ink.g, ink.b, 255);
               }
               const indices = objectIndices(bindings, handle);
-              const lowest = Math.min(...onScan.map((object) => indices.get(address(object)) ?? Number.POSITIVE_INFINITY));
+              const lowest = Math.min(...onScan.map(({ object }) => indices.get(address(object)) ?? Number.POSITIVE_INFINITY));
               for (const at of touched) {
                 // ONE RECTANGLE WHERE THE PAPER IS ONE COLOUR, a grid of them where it shades (ADR-0187).
                 for (const { box, colour: paper } of papersHere[at] ?? []) {
@@ -4458,42 +4477,18 @@ interface Bounds {
   readonly top: number;
 }
 
-const IMAGE_OBJECT = 3;
-
 /**
- * THE RECOGNISED WORDS OF A SCAN AMONG `objects` ([ADR-0181](../../../docs/DECISIONS/0181-right-to-left-text-is-written-in-drawing-order-and-read-back-as-typed.md)
- * Decision 9): those painted invisibly (render mode 3, how an OCR text layer is drawn) that lie over a picture, so the
- * words a person reads there are the picture's.
- *
- * The picture is the test, and not the invisibility alone: invisible text over nothing is text a document keeps for a
- * reader that is not eyes, and an edit of it stays as invisible as it was (ADR-0179's keep list).
- */
-function recognisedOverPictures(bindings: Bound, handle: unknown, objects: readonly unknown[]): unknown[] {
-  const pictures: Bounds[] = [];
-  const count = numberFrom(bindings.countObjects(handle), 'FPDFPage_CountObjects');
-  for (let at = 0; at < count; at += 1) {
-    const object: unknown = bindings.getObject(handle, at);
-    if (object !== null && numberFrom(bindings.objectType(object), 'FPDFPageObj_GetType') === IMAGE_OBJECT) {
-      pictures.push(boundsOf(bindings, object));
-    }
-  }
-  if (pictures.length === 0) return [];
-  return objects.filter((object) => {
-    if (numberFrom(bindings.getRenderMode(object), 'FPDFTextObj_GetTextRenderMode') !== 3) return false;
-    const box = boundsOf(bindings, object);
-    return pictures.some((picture) => box.left < picture.right && box.right > picture.left && box.bottom < picture.top && box.top > picture.bottom);
-  });
-}
-
-/**
- * The cover for each of `boxes` on the page as it is drawn now, read once from one raster, in the order the boxes were
- * given, by the one rule both writers take (`coversInPageSpace`, ADR-0187).
+ * THE PAGE AS IT IS DRAWN NOW, once, with what the two questions of a scan's words ask of it: what shows under each box and
+ * what covers it, by the one rule both writers take (`inkShowingIn`, ADR-0289; `coversInPageSpace`, ADR-0187).
  *
  * THE MAP IS THE PAGE'S OWN, from three corners: PDFium's mapping is affine (a scale, a quarter turn at most, a shift), so
  * where the page's width and height are carried to the device gives it to the pixel over the whole page and not to a
- * pixel over a point. A page handle PDFium refuses to map maps to nothing, which the shared rule covers in white.
+ * pixel over a point. A page handle PDFium refuses to map maps to nothing: nothing shows, and the shared rule covers in white.
  */
-function coversRoundBoxes(bindings: Bound, handle: unknown, boxes: readonly Bounds[]): PageCoverCell[][] {
+function pageAsDrawn(bindings: Bound, handle: unknown): {
+  readonly inkIn: (boxes: readonly Bounds[]) => (Rgb | null)[];
+  readonly coversOf: (boxes: readonly Bounds[]) => PageCoverCell[][];
+} {
   const pageWidth = numberFrom(bindings.pageWidth(handle), 'FPDF_GetPageWidthF');
   const pageHeight = numberFrom(bindings.pageHeight(handle), 'FPDF_GetPageHeightF');
   const width = Math.max(1, Math.round(pageWidth * PAPER_PIXELS_PER_POINT));
@@ -4519,7 +4514,10 @@ function coversRoundBoxes(bindings: Bound, handle: unknown, boxes: readonly Boun
           origin[0],
           origin[1],
         ];
-  return coversInPageSpace(raster.bgra, width, height, toDevice, PAPER_PIXELS_PER_POINT, boxes);
+  return {
+    inkIn: (boxes) => inkShowingIn(raster.bgra, width, height, toDevice, boxes),
+    coversOf: (boxes) => coversInPageSpace(raster.bgra, width, height, toDevice, PAPER_PIXELS_PER_POINT, boxes),
+  };
 }
 
 /** One object's box, read through `FPDFPageObj_GetBounds`. */

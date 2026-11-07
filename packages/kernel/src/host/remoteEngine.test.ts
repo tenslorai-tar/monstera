@@ -697,7 +697,7 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
     );
     const type3 = await joined(chromium);
     try {
-      const runs = [{ index: 0, object: 0, text: 'heading' }];
+      const runs = [{ index: 0, object: 0, text: 'heading', box: { left: 0, bottom: 0, right: 10, top: 10 } }];
       const crossed = await type3.blockFaces(type3.token, { page: 0 }, runs);
       // ONE FONT, the heading's, and it is a drawn one: the read names it, so the equality below is not of two empties.
       expect(crossed.runs).toStrictEqual([0]);

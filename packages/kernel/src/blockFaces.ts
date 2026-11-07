@@ -20,7 +20,9 @@ import { BOLD } from './lookedWeights.js';
 import { withDocument } from './mupdfWriter.js';
 import { type PageFont, loadStandardFonts, pageFonts } from './pageFonts.js';
 import { type CandidateFace, candidatesFor } from './fontResolver.js';
-import { targetOf } from './textOperatorEdit.js';
+import { paintsNothingIn } from './operatorEdit.js';
+import type { Rgb } from './paperColour.js';
+import { pageAsDrawn, targetOf } from './textOperatorEdit.js';
 import { showOperators } from './textOperators.js';
 
 /**
@@ -51,9 +53,18 @@ export async function readBlockFaces(
     // EACH TEXT OBJECT'S FONT, by the content's own numbering (`textOperators.ts`), which `blockFaceRunsOf` translated
     // the runs into.
     const fontOfObject = new Map<number, string>();
-    for (const op of showOperators(content)) {
+    const ops = showOperators(content);
+    for (const op of ops) {
       if (op.object !== null && op.state.font !== null && !fontOfObject.has(op.object)) fontOfObject.set(op.object, op.state.font);
     }
+    // WHAT THE WRITER WILL DRAW THIS RUN'S WORDS IN, BY ITS OWN RULE (ADR-0289): the editor draws them in it too. The page is
+    // drawn only for a run that paints nothing, so a block of ordinary words costs this read nothing.
+    const page = pageAsDrawn(document, at.page);
+    const inkOf = new Map<number, Rgb>();
+    const inkOfRun = (run: BlockFaceRun): Rgb | null => {
+      const op = ops.find((each) => each.object === run.object);
+      return paintsNothingIn(op, fonts) ? (page.inkIn([run.box])[0] ?? null) : null;
+    };
     const placeOf = new Map<string, number>();
     const texts: string[] = [];
     const named: PageFont[] = [];
@@ -69,11 +80,17 @@ export async function readBlockFaces(
         texts.push('');
       }
       texts[place] = `${texts[place] ?? ''}${run.text}`;
+      if (!inkOf.has(place)) {
+        const ink = inkOfRun(run);
+        if (ink !== null) inkOf.set(place, ink);
+      }
       return place;
     });
     const answerFonts = named.map((font, place): BlockFont => {
       const own = font.subtype !== 'Type3';
-      if (source === null || weights === null) return { own, chosen: null, candidates: [] };
+      const seen = inkOf.get(place);
+      const ink = seen === undefined ? {} : { ink: seen };
+      if (source === null || weights === null) return { own, chosen: null, candidates: [], ...ink };
       const request = weights.requestFor(font);
       // THE FACE A NEW WORD GOES TO, asked of the block's own words in this font so a face carrying their script is the
       // answer: the writer's planner with the run's own font carrying nothing, which is the word it cannot carry.
@@ -88,7 +105,7 @@ export async function readBlockFaces(
       // THE CHOSEN FACE FIRST, whether or not the order put it in the first few.
       const rest = families.filter((each) => each.family !== chosen?.family);
       const candidates = (chosen === null ? rest : [chosen, ...rest]).slice(0, BLOCK_FACE_CANDIDATES_MAX);
-      return { own, chosen, candidates };
+      return { own, chosen, candidates, ...ink };
     });
     return { fonts: answerFonts, runs: answerRuns };
   });

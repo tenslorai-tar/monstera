@@ -17,7 +17,7 @@ import {
 } from '@monstera/shared';
 
 import type { PageFont } from './pageFonts.js';
-import type { PageBox, PageCoverCell } from './paperColour.js';
+import type { PageBox, PageCoverCell, Rgb } from './paperColour.js';
 import { type BlockPlan, type FlowLine, type Hole, type Measure, NO_MARK, type Row, attribute, largestFit, planBlock, saidUnits } from './paragraphFlow.js';
 import { DECORATION_KEY, DECORATION_KINDS, DECORATION_TAG, type DecorationKind, decorationBand, decorationsOf } from './markDecorations.js';
 import { JUSTIFY_CAP, RISE_SCALE, SUBSCRIPT_DROP, SUPERSCRIPT_RISE, spaceable, spacedBy } from './markFigures.js';
@@ -138,13 +138,24 @@ export interface ArrangeContext {
   readonly plainState: string;
   /** The cover for each box, in page space and in the order given (`coversInPageSpace`); asked only where a scan's line is set. */
   readonly paper: (boxes: readonly PageBox[]) => readonly (readonly PageCoverCell[])[];
+  /** What the page as drawn shows in each box, its ink's colour or `null` (`inkShowingIn`, ADR-0289); asked only of words that paint nothing. */
+  readonly inkIn: (boxes: readonly PageBox[]) => readonly (Rgb | null)[];
 }
 
-/** No arrange is possible: no XObject is known, a plain state is never named, and a cover is the plain white one. */
+/**
+ * Whether an operator paints nothing (ADR-0289): drawn invisibly, or in a font whose letters are empty
+ * (`PageFont.paintsNothing`). The one spelling of the first half of the rule, which the writer and the read on open take.
+ */
+export function paintsNothingIn(op: ShowOperator | undefined, fonts: ReadonlyMap<string, PageFont>): boolean {
+  return op !== undefined && (op.state.render === 3 || (op.state.font !== null && fonts.get(op.state.font)?.paintsNothing === true));
+}
+
+/** No arrange is possible: no XObject is known, a plain state is never named, a cover is the plain white one, and no page is drawn to show anything. */
 const NO_ARRANGE: ArrangeContext = {
   kinds: () => undefined,
   plainState: '',
   paper: (boxes) => boxes.map((box) => [{ box, colour: { r: 255, g: 255, b: 255 } }]),
+  inkIn: (boxes) => boxes.map(() => null),
 };
 
 /** A byte range. */
@@ -851,38 +862,16 @@ function write(
   }
 
   /**
-   * THE PICTURES THE PAGE DRAWS, in page space, each with where its instruction stands: what makes invisible words a scan's
-   * recognised words (ADR-0181 Decision 9). Read only where the content paints some text invisibly at all, since it is a
-   * pass over the whole page. A picture inside a form is not among them: the page walk does not enter a form.
+   * The colour of the words a person sees under a run, or `null` where the run is not over any (ADR-0289, amending ADR-0181
+   * Decision 9): every operator of it paints nothing, and the page as drawn shows ink in its box, whatever drew that ink.
+   * Words that paint nothing over nothing that shows are text a document keeps for a reader that is not eyes, and stay as
+   * invisible as they were (ADR-0179's keep list).
    */
-  // NOT IN A FRAME (ADR-0273): the pictures are in page space and the runs here in the frame's, and a scan's recognised
-  // words are read upright, so an edit in a frame has no scan's ink to cover.
-  const pictures = frame === null && real.some((op) => op.state.render === 3)
-    ? contentLayout(content, arrangeWith.kinds)
-        .drawn.filter((object) => object.kind === 'image')
-        .map((object) => {
-          const corners = [apply(object.ctm, 0, 0), apply(object.ctm, 1, 0), apply(object.ctm, 0, 1), apply(object.ctm, 1, 1)];
-          return {
-            start: object.start,
-            left: Math.min(...corners.map((corner) => corner[0])),
-            right: Math.max(...corners.map((corner) => corner[0])),
-            bottom: Math.min(...corners.map((corner) => corner[1])),
-            top: Math.max(...corners.map((corner) => corner[1])),
-          };
-        })
-    : [];
-  /**
-   * Whether a run is recognised words over a scan: every operator of it painted invisibly, over a picture drawn BEFORE it,
-   * so the words a person reads there are the picture's pixels. Invisible text over no picture is text a document keeps
-   * for a reader that is not eyes, and stays as invisible as it was (ADR-0179's keep list).
-   */
-  const overAScan = (run: PageRun, members: readonly number[]): boolean => {
-    const first = ops[members[0] ?? -1];
-    if (pictures.length === 0 || first === undefined || !members.every((at) => ops[at]?.state.render === 3)) return false;
-    return pictures.some(
-      (picture) => picture.start < first.start && run.left < picture.right && run.right > picture.left && run.bottom < picture.top && run.top > picture.bottom,
-    );
-  };
+  // NOT IN A FRAME (ADR-0273): the raster is in page space and the runs here in the frame's.
+  const inkUnder = (run: PageRun, members: readonly number[]): Rgb | null =>
+    frame !== null || members.length === 0 || !members.every((at) => paintsNothingIn(ops[at], fonts))
+      ? null
+      : (arrangeWith.inkIn([{ left: run.left, bottom: run.bottom, right: run.right, top: run.top }])[0] ?? null);
 
   const fontOf = (op: ShowOperator): PageFont => {
     const added = syntheticFonts.get(op);
@@ -969,6 +958,8 @@ function write(
     }
   }
 
+  /** Whether the block being set stands over words a person sees, so its words are drawn (ADR-0289). Set for each block. */
+  let wordsAreSeen = false;
   /**
    * A word in the first of the page's fonts that carries all of it: the source's own, then a sibling (Decision 5). A
    * sibling is the same face by name less its subset tag, and a weight disagrees only where BOTH fonts state one: the
@@ -986,7 +977,8 @@ function write(
       .sort((a, b) => (a.resource < b.resource ? -1 : 1));
     // A FONT OF DRAWN LETTERS IS NO FACE FOR A NEW WORD (ADR-0176's correction of 2026-10-25, the owner's font principle):
     // `drawn` is false for a word the run did not already say, and such a word goes to an ordinary face.
-    for (const font of [own, ...siblings].filter((each) => drawn || each.subtype !== 'Type3')) {
+    // AND A FONT WHOSE LETTERS PAINT NOTHING IS NO FACE FOR A WORD THAT IS TO BE SEEN (ADR-0289), the page's own word or not.
+    for (const font of [own, ...siblings].filter((each) => (drawn || each.subtype !== 'Type3') && !(wordsAreSeen && each.paintsNothing === true))) {
       const codes = font.toUnicode === null ? null : codesFor(font.toUnicode, word);
       if (codes?.every((code) => font.draws(code) && font.width(code) !== null) === true) return { font, codes };
     }
@@ -1112,13 +1104,19 @@ function write(
     const firstLine = lines[0];
     const firstRun = firstLine?.[0];
     if (firstLine === undefined || firstRun === undefined) continue;
-    // A SCAN'S LINES, REDRAWN WHOLE (ADR-0271's correction of 2026-10-26, the owner's answer): the operators of every run
-    // that is recognised words over a picture, which are drawn visible wherever the edit sets them again; the lines holding
-    // one, none of whose runs is left as its own operator when the line is set afresh; and the ink of each such run the
-    // edit empties, which is covered with the paper that is there.
-    const scanRuns = lines.map((line) => line.map((run) => overAScan(run.run, run.members)));
-    const runOnScan = scanRuns.flat();
-    const drawnVisible = new Set(lines.flat().flatMap((run, at) => (runOnScan[at] === true ? run.members.map((member) => ops[member]) : [])));
+    // A SCAN'S LINES, REDRAWN WHOLE (ADR-0271's correction of 2026-10-26, the owner's answer; ADR-0289's rule for which they
+    // are): the operators of every run that paints nothing over words a person sees, which are drawn visible in those words'
+    // colour wherever the edit sets them again; the lines holding one, none of whose runs is left as its own operator when
+    // the line is set afresh; and the ink of each such run the edit empties, which is covered with the paper that is there.
+    const inkOfRuns = lines.map((line) => line.map((run) => inkUnder(run.run, run.members)));
+    const scanRuns = inkOfRuns.map((line) => line.map((ink) => ink !== null));
+    wordsAreSeen = scanRuns.flat().includes(true);
+    const drawnVisible = new Map<ShowOperator | undefined, Rgb>(
+      lines.flatMap((line, at) => line.flatMap((run, index) => {
+        const ink = inkOfRuns[at]?.[index];
+        return ink === null || ink === undefined ? [] : run.members.map((member) => [ops[member], ink] as const);
+      })),
+    );
     const covers: PageBox[] = [];
     const ctm = ops[firstRun.first]?.state.ctm;
     // ONE INSERTED OBJECT DRAWS EVERY LINE, under the CTM where it stands. A line drawn under another CTM is reproduced
@@ -1773,6 +1771,8 @@ function write(
           const op = ops[member];
           const font = fonts.get(op?.state.font ?? '');
           if (op === undefined || font === undefined || (op.operator !== 'Tj' && op.operator !== 'TJ')) return null;
+          // CARRIED, ITS EMPTY LETTERS WOULD STILL PAINT NOTHING (ADR-0289), so a line that is to be seen is set again.
+          if (wordsAreSeen && font.paintsNothing === true) return null;
           carried.push({ op, at: member, font, run });
         }
       }
@@ -2202,8 +2202,8 @@ function write(
     let fontSize = 0;
     /** Whether the fill colour in force is a mark's, so the next segment starts from the source's own again. */
     let tinted = false;
-    /** Whether this writer has said `0 Tr` for a scan's words since the source's settings were last replayed. */
-    let shownVisible = false;
+    /** The `Tr` this writer last said, or `null` while the source's own settings are what is in force. */
+    let modeSaid: number | null = null;
     /**
      * Each decoration of the block as stretches of one kind and colour on one line, in user space: a rule under or through
      * words is drawn after the text object, a highlight BEFORE it, so the words are over it.
@@ -2231,20 +2231,27 @@ function write(
           if (tinted && !settings.some((setting) => /(^|\s)(g|rg|k|sc|scn)(\s|$)/u.test(setting))) parts.push('0 g');
           font = segment.source.state.font;
           fontSize = segment.source.state.size;
-          shownVisible = false;
+          if (settings.some((setting) => /(^|\s)Tr(\s|$)/u.test(setting))) modeSaid = null;
         }
         replayed = segment.source;
         tinted = false;
       }
       // A SCAN'S WORDS SET AGAIN ARE DRAWN, in fill mode, where the source's own settings paint them invisibly; and a
-      // segment after them from text that is not a scan's goes back to the source's own mode.
-      const visible = drawnVisible.has(segment.source);
-      if (visible !== shownVisible) {
-        parts.push(`${String(visible ? 0 : segment.source.state.render)} Tr`);
-        shownVisible = visible;
+      // segment after them from text that is not a scan's goes back to the source's own mode. AND A WORD OF A FONT WHOSE
+      // LETTERS PAINT NOTHING over nothing that shows, set in another font, is set invisibly: its run painted nothing, and
+      // words nobody can see do not become words everybody can (ADR-0289).
+      const seen = drawnVisible.get(segment.source);
+      const staysUnseen = seen === undefined && segment.font.paintsNothing !== true && segment.source.state.font !== null && fonts.get(segment.source.state.font)?.paintsNothing === true;
+      const mode = seen !== undefined ? 0 : staysUnseen ? 3 : segment.source.state.render;
+      if (mode !== (modeSaid ?? segment.source.state.render)) {
+        parts.push(`${String(mode)} Tr`);
+        modeSaid = mode;
       }
-      if (style?.colour !== undefined) {
-        parts.push(`${style.colour.map((channel) => num(channel / 255)).join(' ')} rg`);
+      // THE COLOUR OF THE WORDS A PERSON SEES (ADR-0289), where the person chose none: what the content has in force there
+      // is one no letter of it ever showed.
+      const colour = style?.colour ?? (seen === undefined ? undefined : [seen.r, seen.g, seen.b]);
+      if (colour !== undefined) {
+        parts.push(`${colour.map((channel) => num(channel / 255)).join(' ')} rg`);
         tinted = true;
       }
       const size = segment.source.state.size * (style?.factor ?? 1);

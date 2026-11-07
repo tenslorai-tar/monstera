@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { PAPER_RING, coversInPageSpace, paperColourAround, paperCoverFor } from './paperColour.js';
+import { PAPER_RING, coversInPageSpace, inkShowingIn, paperColourAround, paperCoverFor } from './paperColour.js';
 
 /** A raster of `width` by `height` in one colour, BGRA. */
 function raster(width: number, height: number, colour: readonly [number, number, number]): Uint8Array {
@@ -197,5 +197,63 @@ describe('coversInPageSpace, the one rule both writers turn page boxes into a co
     expect(coversInPageSpace(bgra, 160, 80, [0, 0, 0, 0, 0, 0], 2, [WORD])).toStrictEqual([
       [{ box: { left: 18.5, bottom: 8.5, right: 51.5, top: 19.5 }, colour: { r: 255, g: 255, b: 255 } }],
     ]);
+  });
+});
+
+describe('inkShowingIn, the one rule for what a person sees under words that paint nothing (ADR-0289)', () => {
+  const BLUE = [0, 120, 212] as const;
+  const WHITE = [255, 255, 255] as const;
+  /** A raster at two pixels a point, y down, page y up: an identity but for the flip. */
+  const FLIP = [2, 0, 0, -2, 0, 80] as const;
+  const WORD = { left: 20, bottom: 10, right: 50, top: 18 };
+  /** The word's box on the raster. */
+  const onRaster = { x0: 40, y0: 44, x1: 100, y1: 60 };
+
+  it('reads white words on a blue ground as white, past the soft edge of each stroke', () => {
+    const bgra = raster(160, 80, BLUE);
+    paint(bgra, 160, onRaster, WHITE);
+    // A SOFT EDGE of a mid colour all round the strokes, more of it than of the core, which a middle of every ink pixel would read.
+    paint(bgra, 160, { x0: 40, y0: 44, x1: 100, y1: 50 }, [128, 188, 234]);
+    paint(bgra, 160, { x0: 40, y0: 54, x1: 100, y1: 60 }, [128, 188, 234]);
+    expect(inkShowingIn(bgra, 160, 80, FLIP, [WORD])).toStrictEqual([{ r: 255, g: 255, b: 255 }]);
+  });
+
+  it('reads dark ink on cream as that ink, so a scan’s words keep the colour they were scanned in', () => {
+    const bgra = raster(160, 80, [250, 240, 200]);
+    paint(bgra, 160, onRaster, [150, 20, 20]);
+    expect(inkShowingIn(bgra, 160, 80, FLIP, [WORD])).toStrictEqual([{ r: 150, g: 20, b: 20 }]);
+  });
+
+  it('CONTROL: answers null over a ground of one colour, and over a ground that only shades', () => {
+    expect(inkShowingIn(raster(160, 80, BLUE), 160, 80, FLIP, [WORD])).toStrictEqual([null]);
+    const shaded = raster(160, 80, BLUE);
+    for (let x = 0; x < 160; x += 1) paint(shaded, 160, { x0: x, y0: 0, x1: x + 1, y1: 80 }, [0, 120 - x / 4, 212 - x / 4]);
+    expect(inkShowingIn(shaded, 160, 80, FLIP, [WORD])).toStrictEqual([null]);
+  });
+
+  it('RESOLUTION: tells a difference just past the threshold from one just short of it', () => {
+    const past = raster(160, 80, BLUE);
+    paint(past, 160, onRaster, [0, 120 + 33, 212]);
+    const short = raster(160, 80, BLUE);
+    paint(short, 160, onRaster, [0, 120 + 32, 212]);
+    expect(inkShowingIn(past, 160, 80, FLIP, [WORD])[0]).not.toBeNull();
+    expect(inkShowingIn(short, 160, 80, FLIP, [WORD])).toStrictEqual([null]);
+  });
+
+  it('CONTROL: a speck is not words, and a thin stroke is', () => {
+    const speck = raster(160, 80, BLUE);
+    paint(speck, 160, { x0: 60, y0: 50, x1: 61, y1: 51 }, WHITE);
+    expect(inkShowingIn(speck, 160, 80, FLIP, [WORD])).toStrictEqual([null]);
+    const stroke = raster(160, 80, BLUE);
+    paint(stroke, 160, { x0: 60, y0: 44, x1: 62, y1: 60 }, WHITE);
+    expect(inkShowingIn(stroke, 160, 80, FLIP, [WORD])).toStrictEqual([{ r: 255, g: 255, b: 255 }]);
+  });
+
+  it('answers each box in the order given, and null on a page of no size', () => {
+    const bgra = raster(160, 80, BLUE);
+    paint(bgra, 160, onRaster, WHITE);
+    const elsewhere = { left: 20, bottom: 26, right: 50, top: 34 };
+    expect(inkShowingIn(bgra, 160, 80, FLIP, [elsewhere, WORD])).toStrictEqual([null, { r: 255, g: 255, b: 255 }]);
+    expect(inkShowingIn(bgra, 160, 80, [0, 0, 0, 0, 0, 0], [WORD])).toStrictEqual([null]);
   });
 });

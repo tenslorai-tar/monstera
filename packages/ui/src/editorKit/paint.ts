@@ -23,6 +23,8 @@ export interface Look {
   readonly pitch: number | undefined;
   /** The CSS `font-family` a style is drawn in. */
   readonly faceCss: (style: RunStyle) => string;
+  /** The colour a style is drawn in: its own, or the words' a person sees where it paints nothing itself (ADR-0289). */
+  readonly inkOf: (style: RunStyle) => Rgb;
 }
 
 export const PARAGRAPH_CLASS = 'm-kit__paragraph';
@@ -43,7 +45,7 @@ export function paintRun(span: HTMLElement, style: RunStyle, look: Look): void {
   span.style.fontSize = `${String((risen ? style.size * RISEN_SIZE : style.size) * look.zoom)}px`;
   span.style.fontWeight = style.bold ? '700' : '400';
   span.style.fontStyle = style.italic ? 'italic' : 'normal';
-  span.style.color = rgb(style.colour);
+  span.style.color = rgb(look.inkOf(style));
   span.style.textDecoration = [style.underline ? 'underline' : '', style.strike ? 'line-through' : ''].filter(Boolean).join(' ');
   span.style.backgroundColor = style.highlight === null ? '' : rgb(style.highlight);
   // THE WIRE'S FRACTION OF THE SIZE IS CSS'S `em`, so what is drawn while typing is spaced as the writer spaces it.

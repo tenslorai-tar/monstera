@@ -64,6 +64,7 @@ async function written(blocks: readonly EditedBlock[], content = CONTENT): Promi
         kinds: xobjectKinds(leaf),
         plainState: 'MonPlain1',
         paper: (boxes) => boxes.map(() => []),
+        inkIn: (boxes) => boxes.map(() => null),
       });
       if (!made.ok) throw new Error(`refused: ${JSON.stringify(made.error)}`);
       return new TextDecoder('latin1').decode(made.value.content);

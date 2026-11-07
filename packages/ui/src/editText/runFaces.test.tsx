@@ -8,7 +8,7 @@ import type { RunStyle } from '../editorKit/model.js';
 import { noteFamilies } from '../familyFaces.js';
 import type { TextBlock } from '../textBlock.js';
 import { runStyleOf } from './blockModel.js';
-import { type FaceRead, editorFacesOf, faceCssOf, runFacesOf, useRunFaces } from './runFaces.js';
+import { type FaceRead, editorFacesOf, faceCssOf, inkOfFaces, runFacesOf, useRunFaces } from './runFaces.js';
 
 const STYLE = { size: 11, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false, italic: false, bold: false };
 const BOX = { x0: 72, y0: 686, x1: 300, y1: 700 };
@@ -53,6 +53,30 @@ const styleOfRun = (at: number): RunStyle => {
   if (run === undefined) throw new Error('the fixture has two runs');
   return runStyleOf(run.style, run.index);
 };
+
+describe('the colour an open block is drawn in (ADR-0289)', () => {
+  const WHITE = { r: 255, g: 255, b: 255 };
+  const [carried, drawn] = READ.faces.fonts as [BlockFontRead, BlockFontRead];
+  const SEEN: FaceRead = { ...READ, faces: { ...READ.faces, fonts: [carried, { ...drawn, ink: WHITE }] } };
+  const ink = inkOfFaces(runFacesOf(BLOCK, SEEN), BLOCK);
+
+  it('is the colour the writer will draw, not the colour the content has in force, where the font’s words paint nothing', () => {
+    expect(ink(styleOfRun(1))).toStrictEqual(WHITE);
+  });
+
+  it('CONTROL: another font in the same block keeps its own colour', () => {
+    expect(ink(styleOfRun(0))).toStrictEqual(STYLE.colour);
+  });
+
+  it('CONTROL: a colour the person chose is drawn as chosen, as it is written', () => {
+    const red = { r: 255, g: 0, b: 0 };
+    expect(ink({ ...styleOfRun(1), colour: red })).toStrictEqual(red);
+  });
+
+  it('CONTROL: with no answer yet each word is drawn in its own colour', () => {
+    expect(inkOfFaces(runFacesOf(BLOCK, READ), BLOCK)(styleOfRun(1))).toStrictEqual(STYLE.colour);
+  });
+});
 
 describe('the faces an open block is drawn in', () => {
   it('belong to the READ that gave them: the same block opened again is not settled until its own read answers', async () => {

@@ -35,6 +35,11 @@ export interface BlockFont {
   readonly chosen: FaceChoice | null;
   /** The chain's nearest faces, one per family, the chosen one's family first. Empty where this process has no faces. */
   readonly candidates: readonly FaceChoice[];
+  /**
+   * The colour of the words a person sees under this font's runs, where they paint nothing over something that shows
+   * (ADR-0289): what the writer draws their new words in, so the editor draws them in it too. Absent everywhere else.
+   */
+  readonly ink?: { readonly r: number; readonly g: number; readonly b: number };
 }
 
 export interface BlockFaces {
@@ -52,6 +57,8 @@ export interface BlockFaceRun {
   readonly index: number;
   readonly object: number;
   readonly text: string;
+  /** Its box on the page as PDFium read it: where the page is asked what shows under it (ADR-0289). */
+  readonly box: { readonly left: number; readonly bottom: number; readonly right: number; readonly top: number };
 }
 
 /**
@@ -61,7 +68,10 @@ export interface BlockFaceRun {
  * objects are none of its text objects, is left out, and the answer then names no font for it.
  */
 export function blockFaceRunsOf(
-  read: { readonly textObjects: readonly number[]; readonly runs: readonly { readonly index: number; readonly members: readonly number[]; readonly text: string }[] },
+  read: {
+    readonly textObjects: readonly number[];
+    readonly runs: readonly (BlockFaceRun['box'] & { readonly index: number; readonly members: readonly number[]; readonly text: string })[];
+  },
   indices: readonly number[],
 ): BlockFaceRun[] {
   const ordinalOf = new Map(read.textObjects.map((object, ordinal) => [object, ordinal]));
@@ -70,7 +80,8 @@ export function blockFaceRunsOf(
     const run = runs.get(index);
     if (run === undefined) return [];
     const object = run.members.map((member) => ordinalOf.get(member)).find((ordinal) => ordinal !== undefined);
-    return object === undefined ? [] : [{ index, object, text: run.text.slice(0, BLOCK_FACE_TEXT_MAX) }];
+    const box = { left: run.left, bottom: run.bottom, right: run.right, top: run.top };
+    return object === undefined ? [] : [{ index, object, text: run.text.slice(0, BLOCK_FACE_TEXT_MAX), box }];
   });
 }
 

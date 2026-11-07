@@ -26,7 +26,7 @@ const SET = { align: 'left', lineSpacing: 1, spaceBefore: 0, spaceAfter: 0, firs
 const FIRST: Paragraph = { ...SET, runs: [{ text: 'A ', style: BODY }, { text: 'bold', style: BOLD }, { text: ' word', style: BODY }] };
 const SECOND: Paragraph = { ...SET, runs: [{ text: 'Second line', style: BODY }] };
 const MODEL: Model = { paragraphs: [FIRST, SECOND] };
-const LOOK: Look = { zoom: 2, pitch: 12, faceCss: (style) => `"${style.face}"` };
+const LOOK: Look = { zoom: 2, pitch: 12, inkOf: (style) => style.colour, faceCss: (style) => `"${style.face}"` };
 
 function surface(drawn?: { paragraphs: readonly Paragraph[]; wraps: readonly (readonly number[])[]; widths: readonly (readonly number[])[] }) {
   const store = createEditorStore({ model: MODEL, selection: caret({ paragraph: 0, offset: 0 }) });

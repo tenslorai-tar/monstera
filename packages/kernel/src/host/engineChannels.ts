@@ -371,6 +371,11 @@ export const ENGINE_OCR_WORD_TEXT_MAX = 256;
  */
 const ocrBoxSchema = z.tuple([z.number(), z.number(), z.number(), z.number()]).readonly();
 
+/** A colour `engine/block-faces` says a font's words are drawn in where they paint nothing (ADR-0289), each channel 0 to 255. */
+const wordsInkSchema = z
+  .object({ r: z.number().int().min(0).max(255), g: z.number().int().min(0).max(255), b: z.number().int().min(0).max(255) })
+  .strict();
+
 /** A face `engine/block-faces` names (`blockFaceAnswer.ts`' `FaceChoice`): a family, the weight and slant set, its styles. */
 const faceChoiceSchema = z
   .object({
@@ -3105,6 +3110,7 @@ export const engineChannels = {
                 index: z.number().int().nonnegative(),
                 object: z.number().int().nonnegative(),
                 text: z.string().max(BLOCK_FACE_TEXT_MAX),
+                box: z.object({ left: z.number(), bottom: z.number(), right: z.number(), top: z.number() }).strict(),
               })
               .strict(),
           )
@@ -3122,6 +3128,7 @@ export const engineChannels = {
                 own: z.boolean(),
                 chosen: faceChoiceSchema.nullable(),
                 candidates: z.array(faceChoiceSchema).max(BLOCK_FACE_CANDIDATES_MAX).readonly(),
+                ink: wordsInkSchema.exactOptional(),
               })
               .strict(),
           )

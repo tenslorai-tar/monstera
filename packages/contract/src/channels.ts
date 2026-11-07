@@ -1353,6 +1353,11 @@ export const AI_SETUP_AT_START_SETTING_ID = 'ai.setup-at-start';
  * and the next reader deserves to know it is the base schema that carries it —
  * not a modifier they might remove as noise.
  */
+/** A colour a block's words are drawn in, each channel 0 to 255: what `document.blockFaces` says of words that paint nothing (ADR-0289). */
+const wordsInkSchema = z
+  .object({ r: z.number().int().min(0).max(255), g: z.number().int().min(0).max(255), b: z.number().int().min(0).max(255) })
+  .strict();
+
 /**
  * A face `document.blockFaces` names: a family, the weight and slant the writer sets it at, and every style the family
  * has, which is what the editor's style choice offers.
@@ -6303,6 +6308,8 @@ export const channels = {
               own: z.boolean(),
               chosen: faceChoiceSchema.nullable(),
               candidates: z.array(faceChoiceSchema).max(MAX_FACE_CANDIDATES).readonly(),
+              /** The colour the writer draws the font's words in, where they paint nothing over something that shows (ADR-0289). */
+              ink: wordsInkSchema.exactOptional(),
             }),
           )
           .max(MAX_BLOCK_FONTS)

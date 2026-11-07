@@ -268,7 +268,7 @@ const failures = [];
 // THE COUNT IS MOVED ONLY WITH THE CASES IT COUNTS, and the commit that moves it names the cases it adds or removes. A
 // running ledger of the count was kept here until 2026-10-17 and had stopped at 246 against 274 (VVVVVVV-23): a second
 // copy of the history git already holds, which nothing compared with the count.
-const roster = createRoster(failures, { cases: 292 });
+const roster = createRoster(failures, { cases: 295 });
 
 /**
  * @param {string} name
@@ -4716,6 +4716,81 @@ async function scanCases() {
     'CONTROL: the same edit of invisible text over NO picture draws nothing and covers nothing, so it is the picture that makes it a scan',
     (await dark(bareEdited, { x0: 0, y0: 0, x1: 400, y1: 400 })) === 0 && (await textOf(bareEdited)).includes('Edited'),
     `${String(await dark(bareEdited, { x0: 0, y0: 0, x1: 400, y1: 400 }))} dark pixel(s)`,
+  );
+
+  // ADR-0289, THIS WRITER'S HALF OF THE ONE RULE: what shows under the words decides, and no picture need draw it. The same
+  // recognised words over a DRAWING, white bars on blue, and over a page that is only filled.
+  const overDrawing = async (/** @type {boolean} */ bars) => {
+    const document = await PDFDocument.create();
+    const page = document.addPage([400, 400]);
+    const font = await document.embedFont(StandardFonts.Helvetica);
+    page.drawRectangle({ x: 0, y: 0, width: 400, height: 400, color: rgb(0, 120 / 255, 212 / 255) });
+    if (bars) {
+      for (const [at, line] of SCAN_LINES.entries()) {
+        page.drawRectangle({ x: 72, y: line.baseline - 1, width: widths[at] ?? 0, height: 8, color: rgb(1, 1, 1) });
+      }
+    }
+    page.pushOperators(setTextRenderingMode(3));
+    for (const line of SCAN_LINES) page.drawText(line.text, { x: 72, y: line.baseline, size: 11, font });
+    const source = await document.save();
+    const read = (await blocksOf(source)).blocks[0];
+    const named = read?.lines.map((line) => line.runs.map((run) => run.index)) ?? [];
+    return localPdfiumExecution.apply({
+      session: source,
+      command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+        kind: 'editTextBlock',
+        page: 0,
+        ...blockEditOf([{ lines: named, soft: named.map(() => false), text: `${SCAN_LINES[0]?.text ?? ''}\nEdited` }]),
+        fit: 'reflow',
+        version: 1,
+      }),
+      sources: [],
+      reads: undefined,
+    });
+  };
+  const isBlue = (/** @type {readonly number[]} */ colour) => (colour[0] ?? 255) <= 8 && Math.abs((colour[1] ?? 0) - 120) <= 8 && Math.abs((colour[2] ?? 0) - 212) <= 8;
+  const drawing = await overDrawing(true);
+  /** How many of a stretch's pixels are white, and how many are dark, on the page edited. */
+  const tally = async (/** @type {Uint8Array} */ page, /** @type {{ x0: number; y0: number; x1: number; y1: number }} */ box) => {
+    const session = await pdfiumWriter.open(page);
+    try {
+      const raster = await renderPageBitmap(session, 0, 400, 400);
+      let white = 0;
+      let black = 0;
+      for (let y = box.y0; y < box.y1; y += 1) {
+        for (let x = box.x0; x < box.x1; x += 1) {
+          const at = (y * 400 + x) * 4;
+          const [blue, green, red] = [raster.bgra[at] ?? 0, raster.bgra[at + 1] ?? 0, raster.bgra[at + 2] ?? 0];
+          // A LETTER AT A PIXEL A POINT never reaches full white, its strokes being thinner than a pixel. The ground has no red
+          // and black words add none, so red is what only white words can bring.
+          if (red > 100) white += 1;
+          if (blue < 90 && green < 90 && red < 90) black += 1;
+        }
+      }
+      return { white, black };
+    } finally {
+      await pdfiumWriter.close(session);
+    }
+  };
+  const newBaseline = SCAN_LINES[1]?.baseline ?? 0;
+  const newLine = { x0: 72, y0: 400 - (newBaseline + 10), x1: 72 + 40, y1: 400 - (newBaseline - 3) };
+  const seen = await tally(drawing, newLine);
+  record(
+    'ADR-0289: recognised words over a DRAWING are covered with the ground that is there, with no picture on the page',
+    isBlue(await pixel(drawing, farEnd(1), rowOf(1))),
+    `the far end of the old white reads ${JSON.stringify(await pixel(drawing, farEnd(1), rowOf(1)))}`,
+  );
+  record(
+    'ADR-0289: and the new word is drawn in the colour of the words it replaces: white, with no black, though the content’s own colour is black',
+    seen.white > 15 && seen.black === 0,
+    `${String(seen.white)} white and ${String(seen.black)} black pixel(s) where the new line is`,
+  );
+  const filled = await overDrawing(false);
+  const unseen = await tally(filled, { x0: 0, y0: 0, x1: 400, y1: 400 });
+  record(
+    'CONTROL: over a page that is only filled nothing shows: the words stay invisible and nothing is covered, so a rectangle is not what decides',
+    unseen.white === 0 && unseen.black === 0 && (await textOf(filled)).includes('Edited'),
+    `${String(unseen.white)} white and ${String(unseen.black)} black pixel(s)`,
   );
 
   // THE COVER IS WHERE THE INK IS (ADR-0187): a scanned letter runs past the recogniser's box, and the paper behind a word

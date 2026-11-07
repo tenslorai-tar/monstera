@@ -144,6 +144,27 @@ export function faceCssOf(
   };
 }
 
+/**
+ * The colour a style is drawn in while it is typed: the colour the writer will draw it in (ADR-0289). Where the read on
+ * open says a font's words paint nothing over words a person sees, that is those words' colour, for every word still in
+ * the colour the page read for that font; a colour the person chose differs from it and is drawn as chosen, as it is written.
+ */
+export function inkOfFaces(faces: RunFaces, block: TextBlock | undefined): (style: RunStyle) => RunStyle['colour'] {
+  const asRead = new Map<string, TextBlock['style']['colour']>();
+  for (const line of block?.lines ?? []) {
+    for (const run of line.runs) {
+      const key = faceKeyOf(run.style, run.index);
+      if (!asRead.has(key)) asRead.set(key, run.style.colour);
+    }
+  }
+  return (style) => {
+    const ink = faces.fonts.get(style.face)?.ink;
+    const read = asRead.get(style.face);
+    const unchosen = read?.r === style.colour.r && read.g === style.colour.g && read.b === style.colour.b;
+    return ink !== undefined && unchosen ? ink : style.colour;
+  };
+}
+
 /** The kind a kind face names (`kindFace`). */
 function kindOfFace(face: string): FaceKind {
   return face === kindFace({ serif: true, mono: false }) ? 'serif' : face === kindFace({ serif: false, mono: true }) ? 'mono' : 'sans';

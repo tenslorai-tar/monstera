@@ -8,7 +8,7 @@ import { withDocument } from './mupdfWriter.js';
 import type { OperatorFaceSet as OperatorFaceSetType } from './operatorFaces.js';
 import type { PageFont } from './pageFonts.js';
 import { type ArrangeContext, type OperatorRefusal, type PageRuns, checkOperatorEdit, editOperators, pageFontsAsRead } from './operatorEdit.js';
-import { type Affine, PAPER_PIXELS_PER_POINT, coversInPageSpace } from './paperColour.js';
+import { type Affine, PAPER_PIXELS_PER_POINT, coversInPageSpace, inkShowingIn } from './paperColour.js';
 import { scaleWithinPixelBound } from './pageSnapshot.js';
 import { addPlainState, plainStateName } from './drawnObjectEdit.js';
 import { pageContentStreams, xobjectKinds } from './pageContent.js';
@@ -166,7 +166,7 @@ export async function applyEditTextOperators(
       kinds: xobjectKinds(holder),
       plainState,
       // THE PAGE AS IT IS DRAWN NOW: nothing of the edit is written until `target.write` below.
-      paper: paperOf(document, command.page),
+      ...pageAsDrawn(document, command.page),
     });
     if (!made.ok) {
       const refusal = made.error;
@@ -240,8 +240,9 @@ function needsAFace(session: MupdfSession, command: CommandOfKind<'editTextOpera
       command.fit,
       command.inserts ?? [],
       // THE SAME ARRANGE the apply will make, so a block arranged past a picture is asked about as it will be written.
-      // NO PAPER: this pass asks only whether a word needs a face, and a cover changes no answer to that.
-      { kinds: xobjectKinds(holder), plainState: plainStateName(holder), paper: (boxes) => boxes.map(() => []) },
+      // NO PAPER: this pass asks only whether a word needs a face, and a cover changes no answer to that. THE INK IT DOES
+      // READ, since words that are to be seen cannot be set in a font whose letters paint nothing, which needs a face.
+      { kinds: xobjectKinds(holder), plainState: plainStateName(holder), paper: (boxes) => boxes.map(() => []), inkIn: pageAsDrawn(document, command.page).inkIn },
     );
     return !made.ok && made.error.reason === 'needs-a-face';
   });
@@ -314,9 +315,16 @@ export function targetOf(document: PDFDocument, command: { readonly page: number
  * `getTransform()` is what it applies to the content, its flip, crop origin and `/Rotate` — so nothing about the page's
  * turn is assumed here.
  */
-function paperOf(document: PDFDocument, page: number): ArrangeContext['paper'] {
-  let drawn: { readonly bgra: Uint8Array; readonly width: number; readonly height: number; readonly toDevice: Affine; readonly scale: number } | null = null;
-  return (boxes) => {
+export function pageAsDrawn(document: PDFDocument, page: number): Pick<ArrangeContext, 'paper' | 'inkIn'> {
+  interface Raster {
+    readonly bgra: Uint8Array;
+    readonly width: number;
+    readonly height: number;
+    readonly toDevice: Affine;
+    readonly scale: number;
+  }
+  let drawn: Raster | null = null;
+  const raster = (): Raster => {
     if (drawn === null) {
       const loaded = document.loadPage(page);
       const [x0, y0, x1, y1] = loaded.getBounds();
@@ -337,7 +345,17 @@ function paperOf(document: PDFDocument, page: number): ArrangeContext['paper'] {
         pixmap.destroy();
       }
     }
-    return coversInPageSpace(drawn.bgra, drawn.width, drawn.height, drawn.toDevice, drawn.scale, boxes);
+    return drawn;
+  };
+  return {
+    paper: (boxes) => {
+      const { bgra, width, height, toDevice, scale } = raster();
+      return coversInPageSpace(bgra, width, height, toDevice, scale, boxes);
+    },
+    inkIn: (boxes) => {
+      const { bgra, width, height, toDevice } = raster();
+      return inkShowingIn(bgra, width, height, toDevice, boxes);
+    },
   };
 }
 

@@ -74,3 +74,17 @@ The second half is a question the page as drawn already answers, without naming 
   the page, and it changes what the page drew, which ADR-0187 keeps: nothing is dropped, and one Undo puts the page back.
 - **The colour of the first ink pixel found, or the median of all of them.** The soft edge of a stroke is a mix of ink and
   background, so a median of everything reads lighter on a dark ground and darker on a light one.
+
+## Correction, 2026-11-07: the editor draws the same colour
+
+Decision 3 said what is written and was silent about what is typed. Run on the corpus page, the saved words were white and the
+words being typed were black, because the editor draws a run in the colour PDFium read for it, which is the one no letter ever
+showed. The read on open (`document.blockFaces`, ADR-0271) now carries the colour for each font (`BlockFont.ink`), from the same
+`paintsNothingIn` and `inkShowingIn` the writer takes, and the editor draws in it (`inkOfFaces`). Not a second reading of the
+page in the renderer, which would be a second opinion about what the writer will do (B3a).
+
+## Correction, 2026-11-07: no fixture changed
+
+The first limit above says the fixture in `editCatalogue.mjs` *changes* because it draws one flat grey picture. That was read from
+the fixture's one-line description and not run. Its picture has ink where the words are, and all 25 catalogue cases pass on the
+rule unchanged. The limit itself stands: recognised words over a blank stretch of a scan now stay invisible.

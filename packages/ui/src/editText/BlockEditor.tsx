@@ -43,7 +43,7 @@ import {
 } from '../textPlacement.js';
 import { type OpenedBlock, editOf } from './blockModel.js';
 import { type Placed, boxStyle } from './editing.js';
-import { type FaceKind, type RunFaces, editorFacesOf, faceCssOf } from './runFaces.js';
+import { type FaceKind, type RunFaces, editorFacesOf, faceCssOf, inkOfFaces } from './runFaces.js';
 
 /**
  * One block open for editing, on the editor kit
@@ -355,7 +355,8 @@ export function BlockEditor({
   const given = useSyncExternalStore(subscribeFaces, facesGiven);
   const faceCss = useMemo(() => faceCssOf(faces, block, fallback, given), [faces, block, fallback, given]);
   const pitch = pitchOf(block);
-  const look = useMemo<Look>(() => ({ zoom: geometry.zoom, pitch, faceCss }), [geometry.zoom, pitch, faceCss]);
+  const inkOf = useMemo(() => inkOfFaces(faces, block), [faces, block]);
+  const look = useMemo<Look>(() => ({ zoom: geometry.zoom, pitch, faceCss, inkOf }), [geometry.zoom, pitch, faceCss, inkOf]);
   // A BLOCK MOVED OFF ITS PLACE draws every paragraph: the page's copy of it is papered whole.
   const drawn = useMemo(
     () => (moved ? undefined : { paragraphs: opened.model.paragraphs, wraps: opened.wraps, widths: opened.widths, words: opened.words }),
