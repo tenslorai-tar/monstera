@@ -1,6 +1,6 @@
 import { MAX_REDACT_MATCHES_PER_PAGE, type PdfRedactImages } from '@monstera/contract/host';
 import type * as mupdf from './mupdfRaw.js';
-import { cutLineArt } from './mupdfRaw.js';
+import { cutLineArt, redactPage } from './mupdfRaw.js';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, MupdfSession } from './engineSeam.js';
@@ -62,6 +62,12 @@ const LINE_ART_NONE = 0;
 
 /** `REDACT_TEXT_REMOVE`. See the header — the other value is the defect. */
 const TEXT_REMOVE = 0;
+
+/**
+ * The JPEG quality a picture the burn-in rebuilt from a JPEG is written at ([ADR-0288](../../../docs/DECISIONS/0288-a-picture-a-redaction-rewrites-keeps-its-own-kind.md)):
+ * the owner's *high quality*, on MuPDF's own scale. Every other picture stays lossless.
+ */
+const REDACTED_JPEG_QUALITY = 90;
 
 /**
  * The page indices a scope names, against a document that knows its own count.
@@ -503,7 +509,12 @@ export const applyApplyRedactions: Apply<'mupdf', 'applyRedactions'> = (session,
       // originals are what `removeOtherCopies` must find no longer drawn. Its instances are unreferenced after the
       // burn-in's own, and this save collects them.
       cutLineArt(page);
-      page.applyRedactions(command.cover === 'solid', IMAGE_METHOD[command.images], LINE_ART_NONE, TEXT_REMOVE);
+      // MuPDF'S OWN BURN-IN, through the shim, so a picture it rebuilt from a JPEG goes back to JPEG (ADR-0288).
+      redactPage(
+        page,
+        { blackBoxes: command.cover === 'solid', imageMethod: IMAGE_METHOD[command.images], lineArt: LINE_ART_NONE, text: TEXT_REMOVE },
+        REDACTED_JPEG_QUALITY,
+      );
       pageObject.delete('Thumb');
       pageObject.delete('Metadata');
       burnedPages.push({ page: pageObject, before, after: contentReads(pageObject) });

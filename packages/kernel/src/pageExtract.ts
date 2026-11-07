@@ -9,7 +9,7 @@ import { bufferBytes, newDocument, withDocument } from './mupdfWriter.js';
 import { graftingWithoutPageTree } from './pageGraft.js';
 import { releasePagesOutsideTree } from './pageReferences.js';
 import { pagesOf } from './pageScope.js';
-import { savedBuffer } from './saveDepth.js';
+import { FULL_SAVE_TERMS, savedBuffer } from './saveDepth.js';
 
 /**
  * Building a NEW document out of some of another one's pages — the operation
@@ -141,12 +141,13 @@ export function extractPages(session: MupdfSession, set: PageSet, marks: 'as-hel
     // A FILE A PERSON KEEPS draws Monstera's placed signatures, pictures and barcodes by the page (ADR-0287). For good:
     // this document is the extraction's own, and nothing holds it after this save.
     if (marks === 'engraved') engraveForGood(out);
-    // COLLECTED, as every full save is (ADR-0151): what the two steps above unlinked is not written.
+    // COLLECTED AND COMPRESSED, as every full save of a kept file is ({@link FULL_SAVE_TERMS}, ADR-0151): what the two
+    // steps above unlinked is not written, and no stream goes in raw.
     //
     // THE CALLER'S BYTES, never MuPDF's buffer, whose native memory this function
     // is about to drop: `mupdfWriter.ts`' `bufferBytes` says where the one copy is
     // made and which case asserts it.
-    return bufferBytes(savedBuffer(out, 'garbage'));
+    return bufferBytes(savedBuffer(out, FULL_SAVE_TERMS));
   });
 }
 

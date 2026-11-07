@@ -321,6 +321,8 @@ export function formPagesDocument(document: PDFDocument, page: number): FormPage
   const bytes = withContentPages(
     leaf,
     placements.map((placement) => ({ content: wrappedForm(placement).bytes, resources: resourcesOf(placement) })),
+    // NOT `saveDepth.ts`' FULL_SAVE_TERMS: a read image PDFium is handed and that is then discarded, so compressing it is time
+    // spent on bytes nobody keeps.
     (pages) => bufferBytes(savedBuffer(pages, '')),
   );
   return { bytes, paths: placements.map((placement) => placement.path), left };

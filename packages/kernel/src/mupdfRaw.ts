@@ -5492,6 +5492,7 @@ export function openMupdfShim(libraryPath: string): void {
 		saveKept: library.func("int mz_save_kept(void *c, void *d, const char *path)") as unknown as MzNative,
 		textLetters: library.func("int mz_text_letters(intptr_t page, void *out, int capacity, int max_lines, int max_chars, _Out_ int *written, _Out_ int *walked)") as unknown as MzNative,
 		cutLineArt: library.func("int mz_cut_line_art(intptr_t page, _Out_ int *cut)") as unknown as MzNative,
+		redactPage: library.func("int mz_redact_page(intptr_t page, int black_boxes, int image_method, int line_art, int text, int quality, _Out_ int *rewritten)") as unknown as MzNative,
 	}
 }
 
@@ -5524,6 +5525,30 @@ interface MzApi {
 	readonly saveKept: MzNative
 	readonly textLetters: MzNative
 	readonly cutLineArt: MzNative
+	readonly redactPage: MzNative
+}
+
+/** The four options `pdf_redact_page` takes, MuPDF's own values (`PDFPage`'s `REDACT_*` constants). */
+export interface RedactPageOptions {
+	readonly blackBoxes: boolean
+	readonly imageMethod: number
+	readonly lineArt: number
+	readonly text: number
+}
+
+/**
+ * The shim's `mz_redact_page` (ADR-0288): MuPDF's own burn-in of the page, after which each picture it rebuilt from a
+ * JPEG is written as JPEG at `quality`, its mask kept; every other picture is as the burn-in wrote it. Answers how many
+ * were written as JPEG.
+ */
+export function redactPage(page: PDFPage, options: RedactPageOptions, quality: number): number {
+	const api = mzApi
+	if (api === undefined)
+		throw new Error("the MuPDF shim is not bound in this process")
+	const rewritten: number[] = [ 0 ]
+	if (api.redactPage(page.pointer, Number(options.blackBoxes), options.imageMethod, options.lineArt, options.text, quality, rewritten) !== 0)
+		throw new MupdfNativeError("burn the page's redaction marks in", "the burn-in failed")
+	return rewritten[0] ?? 0
 }
 
 /**

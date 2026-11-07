@@ -142,3 +142,97 @@ the box, and that letter was not marked and stays readable beside it. The dialog
 - **Not built, and what it would have cost:** a two-pass glyph filter in the shim judging each glyph by its ink, about
   three to five days, touching every burn-in (Apply redactions, Redact matches, the prompt on save, close, export,
   print or send).
+
+## Note, 2026-11-06 — the content's growth on a page of drawings was the cut's quadrilaterals, and is gone
+
+The owner's document grew from 132,274 to 402,373 bytes of content under one mark (the cost note above). Reproduced on
+a page of 4,000 drawings, this container, MuPDF 1.28.0: 151,983 bytes before, 222,086 after the cut alone, while
+MuPDF's burn-in alone shrank the page to 144,873. Almost all of it was six cut shapes, each written as a stack of
+four-point slices about 0.1 point tall: Decision 3's quadrilateral per edge, for every edge of a curve flattened at
+0.01 point.
+
+**Waste, and removed.** Consecutive edges that join end to start and go the same way up or down have quadrilaterals
+whose y ranges touch and never overlap, so their union is one polygon, the run's points and two on x = X, with the same
+winding everywhere. `mz_fan_cut` now writes each run as that polygon: the same page grew to 158,573 bytes, the cut took
+6.6 ms against 7.8, and the burned-in page drawn at 4x by the cut before and after differs in 0 of 7,755,264 pixels.
+`redactionCutSize.test.ts` holds the size (under a tenth of growth, where it was nearly half) and the picture.
+
+**Found, the cut's own, not this change's, reported to the owner:** on that page at 2x, 45 pixels outside the mark
+differ from the page before the burn-in by more than 2 grey levels, the same before and after this change. 36 are within
+5 points of the mark, one of them ink lost (192 to 255, 3 points out); 9 are 3 to 5 levels along a cut shape redrawn as
+its flattened outline, the farthest 10.5 points out.
+
+## Amendment, 2026-11-07 — only what meets a mark is rewritten; the rest is written as it was
+
+- **Decided by:** the owner, 2026-11-07: *fix the pixels outside the box; only what is inside the box is removed and
+  everything outside stays.* Amends Decisions 2, 3 and 4 as to WHAT of a cut path is rewritten. What is removed, how a
+  mark is read, the burn-in after it and Decision 7 do not change.
+
+**Found, measured 2026-11-07 on MuPDF 1.28.0 in this container, at 4x:**
+
+- **The ink lost 3 points out was a thin stroke's corner.** A closed subpath under a point wide, cut on its centre line
+  (Decision 4), was written as runs that each started with a move, so the run ending at the subpath's start and the run
+  beginning there met as two butt ends, and the corner's join went. It went whatever the corner's distance from the
+  mark: on a 0.5-point square crossing the mark's edge, starting outside it, a pixel went from black to white.
+- **The rest was the whole path being rewritten, flattened** (Decision 3), however far it reached: a 0.6-point wave of
+  curves crossing the mark changed 1,116 pixels more than 5 points out, by up to 91 levels; a filled shape of forty
+  curves, 370 by up to 10; a filled circle of 177 bytes came back as 11,006, a 3-point stroked circle of 157 as 180,999.
+  On the owner's documents the local agent reported 315 of 324 changed pixels in two drawings crossing the box, and
+  points going from 5,284 to 625,758: this mechanism by its description, not yet measured with this amendment.
+
+**Decided:**
+
+1. **The path is read as written**, subpath by subpath and segment by segment, line or cubic, in the stream's own
+   numbers. A subpath that does not reach a mark is written as it was. A curve that does is split by its own control
+   points (de Casteljau, at one half) until each piece either keeps its control box clear of every mark's box, and is
+   written as the curve it is, or is no larger than half a point, and is flattened and cut. A curve lies inside its
+   control points' hull, so no kept piece reaches into a mark.
+2. **A fill (or a clip) keeps its winding exactly.** A closed subpath's winding is the sum, over its segments, of the
+   loop (segment, (X, end.y), (X, start.y)), a curve's as a line's. A run of clear pieces is one such loop with its curves
+   as written; where a mark lies to its right inside its height, the loop is split at x = c between the run and the mark
+   into a part no mark meets and a rectangle, which is cut exactly. Only the flattened pieces' quadrilaterals are cut as
+   before. A loop with no area is not written.
+3. **A thin stroke keeps its joins**: what is drawn between two cuts is one run, and a closed subpath cut open writes the
+   run ending at its start and the run beginning there as one, so the corner keeps its join. A dashed one keeps its runs
+   apart, each at its own phase.
+4. **A wide stroke's subpaths are stroked as written where their ink shares no pixel with a cut one** (their ink boxes,
+   grown by a point, do not meet), only where a second coat changes nothing: opaque, no overprint, the Normal blend. A
+   cut subpath is outlined whole, as before. Splitting inside a subpath was built and measured, and withdrawn: where a
+   native stroke and an outline overlap, each antialiased edge pixel is painted twice and comes out darker (300 pixels,
+   up to 64 levels, on the 3-point circle); cut at the seam instead, it would leave a light line there.
+5. **The outline's edges are joined by their ends**, not taken in the order they come: MuPDF's stroker sends a stroke's
+   two sides interleaved, so every edge had been its own quadrilateral. The same edges and the same winding.
+
+**As built, the same pages:** none of the fills, the stroked circle, the grid of lines in one path or the drawings beside
+the mark moves a pixel by more than 2 levels anywhere outside the mark, and nothing is drawn inside it; the 0.5-point
+square keeps its corner. The filled circle is 100 bytes, the forty curves 2,798, the stroked circle 115,053.
+`redactionOutside.test.ts` holds each, and with the cut before this amendment six of its ten cases fail.
+
+**What is left, measured, and put to the owner:**
+
+- **A thin stroke's end at the mark.** Cut on its centre line, a stroke under a point ends square where its centre meets
+  the mark, so up to half its width of ink beside that end goes, inside half a point of the mark (3 pixels on the wave,
+  up to 89 levels). Keeping that ink would put the stroke's ink inside the mark.
+- **A segment cut short is drawn by the renderer a little differently along its length.** A thin line drawn from its
+  start to where it meets the mark differs from the same line drawn whole by 3 levels up to 2 points back, and on the
+  page of 4,000 drawings the 143 pixels left outside the mark are all on thin lines crossing it: worst 14 levels, the
+  farthest 9 points out. MuPDF's burn-in alone moves none of them. A cut must shorten a segment that crosses the mark.
+- **A wide stroke crossing a mark in one subpath is still outlined whole**: exact, and large (the 3-point circle 157 to
+  115,053 bytes), because its outline at the cut's 0.01-point flatness is that many points. A coarser outline or a
+  native stroke beside it would change pixels, as above.
+- **The burn-in moves drawings no mark touches, and it is MuPDF's.** Its content filter folds nested `cm` operators into
+  one (`pending.ctm = fz_concat(ctm, pending.ctm)`, `pdf-op-filter.c` 1.28.0 line 1354), and a reader of the original
+  multiplies them in another order: on a page of 2,000 small curved shapes under nested transforms, none near the mark,
+  215 pixels moved by up to 16 levels, the same with the cut, with MuPDF's burn-in alone, and with both.
+
+## The owner's decisions of 2026-11-07 on what is left
+
+All four stay as they are, and the cut is not changed for them. Each is held at its figure by a case in
+`redactionOutside.test.ts`, at 4x, so a change beyond it goes red.
+
+| what still changes outside the mark | how much | why it stays | held by |
+|---|---|---|---|
+| A thin stroke's ink beside the end cut where its centre meets the mark | 3 pixels within half a point of the mark, up to 89 levels; 2 more beyond it, 3 and 7 levels, where a split curve is flattened a little differently | **accepted: removal comes first**, so that ink stays gone; keeping it would put the stroke's ink inside the mark | the thin wave: at most 3 near, 2 far, 89 levels |
+| A line cut short where it crosses the mark, drawn by the renderer a little differently along its length | 143 pixels on the page of 4,000 drawings, worst 14 levels, the farthest 9 points out; MuPDF's burn-in alone moves none | **accepted**: any cut shortens a segment that crosses the mark | the 4,000 drawings: at most 143, 14 levels, 9 points; the burn-in alone, none |
+| A wide stroke crossing the mark in one subpath, outlined whole | no pixel moves; the 3-point circle is 115,053 bytes, from 157 (180,999 before this amendment) | **accepted**: the pixels stay exact and the size is already below what it was | the 3-point circle: no pixel moves, at most 115,053 bytes |
+| Drawings no mark touches, under nested transforms, which MuPDF's own filter folds into one `cm` | on 2,000 small curved shapes: 215 pixels move, up to 16 levels (112 of them by more than 2 levels), the same with the cut and without | **not patched**: ADR-0011 already rejects carrying a private patch to MuPDF | the 2,000 shapes: the same with and without the cut, at most 112 by more than 2 levels, 16 levels |

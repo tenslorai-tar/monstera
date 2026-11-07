@@ -222,6 +222,25 @@ export function saveDepth(document: PDFDocument): SaveDepth {
 }
 
 /**
+ * The terms of every FULL save of a document a person keeps, and of the session images made the same way: `garbage`
+ * collects what nothing references (ADR-0151), and `compress` deflates every stream that is written with no filter.
+ *
+ * **Why `compress`.** Without it MuPDF writes a stream exactly as it holds it, so a stream this build wrote new, a page's
+ * rewritten content, an appearance, a font program, went into the file raw. Measured 2026-11-06 (MuPDF 1.28.0, this
+ * container, `saveCompression.test.ts`): a stamp on a document saved compressed left its 141-byte appearance raw. On
+ * 2,000 pages, the median of 7 (`scripts/research/saveCompressionCost.mjs`, same date and place): a stream that already
+ * carries a filter is copied as it is, so a document its producer stored compressed saves in the same time (43.3 to
+ * 44.8 ms, an edit 44.1 to 44.4 ms, 1,131,591 to 1,131,588 bytes); one stored raw costs about 24 ms more (47.5 to
+ * 71.3 ms, an edit 46.7 to 71.7 ms) and is written at a quarter of its size (4,572,474 to 1,131,588 bytes).
+ *
+ * **Lossless**: a flate stream decodes to the bytes it was given. A picture already encoded is not re-encoded, and no
+ * stream's filter chain is changed beyond adding flate to one that had none.
+ *
+ * NOT an appended save's terms: a signed document's revision appends with `incremental` alone, and its bytes do not move.
+ */
+export const FULL_SAVE_TERMS = 'garbage,compress';
+
+/**
  * The ONE way a MuPDF document is written: `saveToBuffer` with `terms`, measured first when the terms collect, and
  * refused as {@link StructureTooDeep} where the save would pass {@link SAVE_DEPTH_MAX}. `saveDepth.test.ts` holds every
  * other `saveToBuffer` in the kernel's source to this one.
