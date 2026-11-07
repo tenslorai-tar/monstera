@@ -8,7 +8,7 @@ import type { RunStyle } from '../editorKit/model.js';
 import { noteFamilies } from '../familyFaces.js';
 import type { TextBlock } from '../textBlock.js';
 import { runStyleOf } from './blockModel.js';
-import { type FaceRead, editorFacesOf, faceCssOf, inkOfFaces, runFacesOf, useRunFaces } from './runFaces.js';
+import { type FaceRead, type FaceReads, editorFacesOf, faceCssOf, inkOfFaces, runFacesOf, useRunFaces } from './runFaces.js';
 
 const STYLE = { size: 11, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false, italic: false, bold: false };
 const BOX = { x0: 72, y0: 686, x1: 300, y1: 700 };
@@ -80,17 +80,20 @@ describe('the colour an open block is drawn in (ADR-0289)', () => {
 
 describe('the faces an open block is drawn in', () => {
   it('belong to the READ that gave them: the same block opened again is not settled until its own read answers', async () => {
-    const first = (): Promise<FaceRead> => Promise.resolve(NONE);
-    let answer: (read: FaceRead) => void = () => undefined;
-    const second = (): Promise<FaceRead> =>
-      new Promise((resolve) => {
+    const first = (): FaceReads => ({ faces: Promise.resolve(NONE.faces), shown: Promise.resolve(NONE.shown) });
+    let answer: (faces: FaceRead['faces']) => void = () => undefined;
+    const second = (): FaceReads => ({
+      faces: new Promise((resolve) => {
         answer = resolve;
-      });
-    const opening: { read: (() => Promise<FaceRead>) | undefined } = { read: first };
-    const { result, rerender } = renderHook(({ read }: { read: (() => Promise<FaceRead>) | undefined }) => useRunFaces(BLOCK, read), {
+      }),
+      shown: Promise.resolve(NONE.shown),
+    });
+    const opening: { read: (() => FaceReads) | undefined } = { read: first };
+    const { result, rerender } = renderHook(({ read }: { read: (() => FaceReads) | undefined }) => useRunFaces(BLOCK, read), {
       initialProps: opening,
     });
     await act(async () => {
+      await Promise.resolve();
       await Promise.resolve();
     });
     expect(result.current.settled).toBe(true);
@@ -99,10 +102,29 @@ describe('the faces an open block is drawn in', () => {
     rerender({ read: second });
     expect(result.current.settled).toBe(false);
     await act(async () => {
-      answer(NONE);
+      answer(NONE.faces);
+      await Promise.resolve();
       await Promise.resolve();
     });
     expect(result.current.settled).toBe(true);
+  });
+
+  it('draws a run in PDF.js’s face as soon as PDF.js answers, before the read on open, which is not yet settled', async () => {
+    // THE READ ON OPEN NEVER ANSWERS here: measured on a corpus page whose words are in a form, it took 6.5 to 9.7 s.
+    const read = (): FaceReads => ({ faces: new Promise(() => undefined), shown: Promise.resolve(READ.shown) });
+    const { result } = renderHook(() => useRunFaces(BLOCK, read));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(result.current.settled).toBe(false);
+    expect(faceCssOf(result.current, BLOCK, 'sans')(styleOfRun(0))).toBe('"g_d0_f1", var(--m-face-sans)');
+  });
+
+  it('CONTROL: with neither read answered, a run is drawn in no face PDF.js loaded, which is what the early answer replaces', () => {
+    const read = (): FaceReads => ({ faces: new Promise(() => undefined), shown: new Promise(() => undefined) });
+    const { result } = renderHook(() => useRunFaces(BLOCK, read));
+    expect(faceCssOf(result.current, BLOCK, 'sans')(styleOfRun(0))).not.toContain('g_d0_f1');
   });
 
   it('draws a run in PDF.js’s face, then the chain’s, then its kind; a run PDF.js loaded nothing for, in the chain’s', () => {

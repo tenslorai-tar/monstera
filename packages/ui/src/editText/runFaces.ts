@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import type { BlockFaces, BlockFontRead } from '../commands/documentCommands.js';
+import { type BlockFaces, type BlockFontRead, NO_BLOCK_FACES } from '../commands/documentCommands.js';
 import type { RunStyle } from '../editorKit/model.js';
 import type { EditorFaces } from '../editorKit/openEditor.js';
 import { drawFamiliesNamed, drawnWith, previewFamilyOf } from '../familyFaces.js';
@@ -81,20 +81,38 @@ export function runFacesOf(block: TextBlock, read: FaceRead): RunFaces {
   return { settled: true, loaded, fonts };
 }
 
+/** The two reads a block's faces come from, begun together: PDF.js's faces for its runs, and the read on open. */
+export interface FaceReads {
+  readonly shown: Promise<ReadonlyMap<number, string>>;
+  readonly faces: Promise<BlockFaces>;
+}
+
 /**
  * Reads `block`'s faces from `read` while `read` is given. The answer is kept with the READ that gave it, never the
  * block: a block closed and opened again is a new read, and is not settled until that read answers. The chain's
  * families are given their faces as the answer arrives (`drawFamiliesNamed`), so a new word is drawn in its face rather
  * than in its kind while a picker has never drawn the list.
+ *
+ * PDF.JS'S FACES ARE TAKEN AS THEY ARRIVE, never held for the read on open: measured 2026-11-07 on a corpus page whose
+ * words are in a form, PDF.js answered in 0.4 to 5.0 s and the read on open in 6.5 to 9.7 s, and every word the page's
+ * own font draws was drawn in its kind's face until the second came, so a paragraph broke its lines elsewhere while it
+ * was typed in. Until the read on open answers, the faces are not settled.
  */
-export function useRunFaces(block: TextBlock | undefined, read: (() => Promise<FaceRead>) | undefined): RunFaces {
-  const [faces, setFaces] = useState<{ readonly read: (() => Promise<FaceRead>) | undefined; readonly faces: RunFaces }>({ read: undefined, faces: UNSETTLED });
+export function useRunFaces(block: TextBlock | undefined, read: (() => FaceReads) | undefined): RunFaces {
+  const [faces, setFaces] = useState<{ readonly read: (() => FaceReads) | undefined; readonly faces: RunFaces }>({ read: undefined, faces: UNSETTLED });
   useEffect(() => {
     if (block === undefined || read === undefined) return undefined;
     let current = true;
-    void read().then((answer) => {
+    let whole = false;
+    const asked = read();
+    void asked.shown.then((shown) => {
+      if (!current || whole) return;
+      setFaces({ read, faces: { ...runFacesOf(block, { faces: NO_BLOCK_FACES, shown }), settled: false } });
+    });
+    void Promise.all([asked.faces, asked.shown]).then(([blockFaces, shown]) => {
       if (!current) return;
-      const found = runFacesOf(block, answer);
+      whole = true;
+      const found = runFacesOf(block, { faces: blockFaces, shown });
       drawFamiliesNamed(
         [...found.fonts.values()].flatMap((font) => [font.chosen, ...font.candidates].flatMap((face) => (face === null ? [] : [face.family]))),
       );

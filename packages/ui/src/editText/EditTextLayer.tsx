@@ -29,7 +29,7 @@ import { modelOfBlock } from './blockModel.js';
 import { BlockEditor, type Opening } from './BlockEditor.js';
 import { type FreshBox, type PageBlocks, type Placed, boxStyle, cssMatrixOf, fontsOfPage, freshBox, insertOf, newlyCovered, overlaps, pastItsPage, place } from './editing.js';
 import { type ShownPage, runFamiliesOf } from './pdfjsFaces.js';
-import { type FaceKind, type FaceRead, type RunFaces, useRunFaces } from './runFaces.js';
+import { type FaceKind, type FaceReads, type RunFaces, useRunFaces } from './runFaces.js';
 
 /**
  * Text edited where it is on the page — Edit text's mode, drawn over one page
@@ -307,11 +307,13 @@ export function EditTextLayer({
     () =>
       openBlock === undefined || blocks === undefined
         ? undefined
-        : async (): Promise<FaceRead> => {
-            const [faces, page] = await Promise.all([readsNow.current.blockFaces(openBlock, blocks), readsNow.current.shown()]);
+        : (): FaceReads => ({
+            faces: readsNow.current.blockFaces(openBlock, blocks),
             // PDF.JS'S TEXT AT ANOTHER VERSION describes words the open block may no longer have, so it lends no face.
-            return { faces, shown: page?.version === blocks.version ? runFamiliesOf(openBlock, page.items) : new Map() };
-          },
+            shown: readsNow.current
+              .shown()
+              .then((page) => (page?.version === blocks.version ? runFamiliesOf(openBlock, page.items) : new Map<number, string>())),
+          }),
     [openBlock, blocks],
   );
   const faces = useRunFaces(openBlock, readFaces);
