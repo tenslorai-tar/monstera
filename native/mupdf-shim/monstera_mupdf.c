@@ -2197,45 +2197,141 @@ static int mz_ink_meets_marks(const mz_edges *es, const mz_cut_options *marks, i
  * bytes under one mark (measured 2026-11-06, the owner's 132,274 to 402,373 the same shape); as runs it is one point an
  * edge and three a run.
  */
+static void mz_fan_polys(fz_context *ctx, const mz_edges *es, float far, mz_polys *out);
+
 static void mz_fan_cut(fz_context *ctx, const mz_edges *es, const mz_cut_options *marks, mz_polys *out)
 {
     float far = -1e30f;
-    int i = 0;
+    int i;
     for (i = 0; i < es->n; i++)
         far = fmaxf(far, fmaxf(es->e[i].x0, es->e[i].x1));
-    far += 1;
-    i = 0;
-    while (i < es->n)
-    {
-        mz_poly t = { 0 };
-        const mz_edge *first = &es->e[i];
-        const mz_edge *last;
-        int down;
-        if (first->y0 == first->y1)
-        {
-            i++;
-            continue;
-        }
-        down = first->y1 > first->y0;
-        mz_poly_push(ctx, &t, fz_make_point(first->x0, first->y0));
-        mz_poly_push(ctx, &t, fz_make_point(first->x1, first->y1));
-        last = first;
-        i++;
-        /* THE RUN GOES ON while the next edge starts where this one ended and keeps the same direction. */
-        while (i < es->n)
-        {
-            const mz_edge *next = &es->e[i];
-            if (next->y0 == next->y1 || next->x0 != last->x1 || next->y0 != last->y1 || (next->y1 > next->y0) != down)
-                break;
-            mz_poly_push(ctx, &t, fz_make_point(next->x1, next->y1));
-            last = next;
-            i++;
-        }
-        mz_poly_push(ctx, &t, fz_make_point(far, last->y1));
-        mz_poly_push(ctx, &t, fz_make_point(far, first->y0));
-        mz_polys_push(ctx, out, &t);
-    }
+    mz_fan_polys(ctx, es, far + 1, out);
     mz_cut_polys(ctx, out, marks);
+}
+
+/* The quadrilaterals of an edge set to x = `far`, a run of joined edges as one polygon (see mz_fan_cut), not yet cut. */
+typedef struct
+{
+    float x, y;
+    int edge;
+} mz_end_key;
+
+static int mz_end_key_cmp(const void *a, const void *b)
+{
+    const mz_end_key *p = a, *q = b;
+    if (p->x != q->x)
+        return p->x < q->x ? -1 : 1;
+    if (p->y != q->y)
+        return p->y < q->y ? -1 : 1;
+    return p->edge - q->edge;
+}
+
+/* An unused edge in `keys` (sorted) at (x, y) going the way `down` says, or -1. */
+static int mz_find_end(const mz_end_key *keys, int n, const mz_edges *es, const unsigned char *used, float x, float y, int down)
+{
+    int lo = 0, hi = n;
+    while (lo < hi)
+    {
+        int mid = (lo + hi) / 2;
+        if (keys[mid].x < x || (keys[mid].x == x && keys[mid].y < y))
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    for (; lo < n && keys[lo].x == x && keys[lo].y == y; lo++)
+    {
+        const mz_edge *e = &es->e[keys[lo].edge];
+        if (!used[keys[lo].edge] && (e->y1 > e->y0) == down)
+            return keys[lo].edge;
+    }
+    return -1;
+}
+
+/*
+ * The quadrilaterals of an edge set to x = `far`, a run of joined edges as one polygon (see mz_fan_cut), not yet cut.
+ *
+ * THE RUNS ARE FOUND BY THEIR ENDS, not by the order the edges came in: MuPDF's stroker sends a stroke's two sides
+ * interleaved, so no two edges in a row joined and every edge was its own quadrilateral (measured 2026-11-07: a 3-point
+ * circle under a mark, 180,999 bytes). Joining an edge to the unused one that starts where it ends, going the same way
+ * up or down, is the same set of edges and the same winding.
+ */
+static void mz_fan_polys(fz_context *ctx, const mz_edges *es, float far, mz_polys *out)
+{
+    mz_end_key *starts = NULL, *ends = NULL;
+    unsigned char *used = NULL;
+    int *chain = NULL;
+    int i;
+
+    if (es->n == 0)
+        return;
+    fz_var(starts);
+    fz_var(ends);
+    fz_var(used);
+    fz_var(chain);
+    fz_try(ctx)
+    {
+        starts = fz_malloc_array(ctx, es->n, mz_end_key);
+        ends = fz_malloc_array(ctx, es->n, mz_end_key);
+        used = fz_calloc(ctx, es->n, 1);
+        chain = fz_malloc_array(ctx, 2 * es->n + 1, int);
+        for (i = 0; i < es->n; i++)
+        {
+            starts[i].x = es->e[i].x0;
+            starts[i].y = es->e[i].y0;
+            starts[i].edge = i;
+            ends[i].x = es->e[i].x1;
+            ends[i].y = es->e[i].y1;
+            ends[i].edge = i;
+        }
+        qsort(starts, es->n, sizeof *starts, mz_end_key_cmp);
+        qsort(ends, es->n, sizeof *ends, mz_end_key_cmp);
+        for (i = 0; i < es->n; i++)
+        {
+            mz_poly t = { 0 };
+            int head, tail, down, k, q;
+            const mz_edge *e = &es->e[i];
+            if (used[i] || e->y0 == e->y1)
+                continue;
+            down = e->y1 > e->y0;
+            /* THE CHAIN, held in the middle of `chain` so it can grow either way. */
+            head = tail = es->n;
+            chain[head] = i;
+            used[i] = 1;
+            for (;;)
+            {
+                const mz_edge *f = &es->e[chain[head]];
+                k = mz_find_end(ends, es->n, es, used, f->x0, f->y0, down);
+                if (k < 0)
+                    break;
+                used[k] = 1;
+                chain[--head] = k;
+            }
+            for (;;)
+            {
+                const mz_edge *f = &es->e[chain[tail]];
+                k = mz_find_end(starts, es->n, es, used, f->x1, f->y1, down);
+                if (k < 0)
+                    break;
+                used[k] = 1;
+                chain[++tail] = k;
+            }
+            mz_poly_push(ctx, &t, fz_make_point(es->e[chain[head]].x0, es->e[chain[head]].y0));
+            for (q = head; q <= tail; q++)
+                mz_poly_push(ctx, &t, fz_make_point(es->e[chain[q]].x1, es->e[chain[q]].y1));
+            mz_poly_push(ctx, &t, fz_make_point(far, es->e[chain[tail]].y1));
+            mz_poly_push(ctx, &t, fz_make_point(far, es->e[chain[head]].y0));
+            mz_polys_push(ctx, out, &t);
+        }
+    }
+    fz_always(ctx)
+    {
+        fz_free(ctx, starts);
+        fz_free(ctx, ends);
+        fz_free(ctx, used);
+        fz_free(ctx, chain);
+    }
+    fz_catch(ctx)
+        fz_rethrow(ctx);
 }
 
 /* ---- the filter ---- */
@@ -2265,6 +2361,7 @@ typedef struct
     mz_paint stroke_paint;
     float fill_alpha, stroke_alpha;
     int fill_overprint, stroke_overprint;
+    int blend_normal; /* the blend mode is Normal (or Compatible): a second coat of an opaque paint changes nothing */
 } mz_cut_gstate;
 
 typedef struct
@@ -2457,6 +2554,14 @@ static void mz_cut_K(fz_context *ctx, pdf_processor *proc, float c, float m, flo
     paint->color[3] = k;
     if (proc->chain->op_K)
         proc->chain->op_K(ctx, proc->chain, c, m, y, k);
+}
+
+static void mz_cut_gs_BM(fz_context *ctx, pdf_processor *proc, const char *blendmode)
+{
+    mz_gs((mz_cut_processor *)proc)->blend_normal =
+        blendmode == NULL || !strcmp(blendmode, "Normal") || !strcmp(blendmode, "Compatible");
+    if (proc->chain->op_gs_BM)
+        proc->chain->op_gs_BM(ctx, proc->chain, blendmode);
 }
 
 static void mz_cut_gs_ca(fz_context *ctx, pdf_processor *proc, float alpha)
@@ -2874,122 +2979,6 @@ static fz_stroke_state *mz_stroke_state(fz_context *ctx, mz_cut_gstate *g)
     return s;
 }
 
-/* A thin stroke, cut on its centre line: the polylines outside every mark, each a stroke of its own dash phase. */
-static void mz_emit_thin_stroke(fz_context *ctx, mz_cut_processor *p, fz_matrix total, fz_matrix to_stream)
-{
-    pdf_processor *chain = p->super.chain;
-    mz_polys lines = { 0 };
-    mz_flat f = { 0 };
-    mz_cut_gstate *g = mz_gs(p);
-    int dashed = g->dash && pdf_array_len(ctx, g->dash) > 0;
-    int i, j, k;
-
-    fz_var(lines);
-    fz_try(ctx)
-    {
-        f.ctx = ctx;
-        f.ctm = total;
-        f.lines = &lines;
-        fz_walk_path(ctx, p->path, &mz_flat_walker, &f);
-        mz_flat_end(&f);
-
-        for (i = 0; i < lines.n; i++)
-        {
-            const mz_poly *pl = &lines.p[i];
-            double along = 0;
-            int drawing = 0;
-            double piece_start = 0;
-            for (j = 0; j + 1 < pl->n; j++)
-            {
-                fz_point a = pl->v[j], b = pl->v[j + 1];
-                double len = hypot(b.x - a.x, b.y - a.y);
-                /* THE PARTS OF THIS SEGMENT INSIDE ANY MARK, merged, as parameter intervals in [0, 1]. */
-                double lo[64], hi[64];
-                int n = 0, s;
-                double t = 0;
-                for (k = 0; k < p->options->count && n < 64; k++)
-                {
-                    double t0, t1;
-                    if (mz_segment_in_mark(&p->options->marks[k], a, b, &t0, &t1))
-                    {
-                        lo[n] = t0;
-                        hi[n] = t1;
-                        n++;
-                    }
-                }
-                /* sort the intervals by start */
-                for (s = 1; s < n; s++)
-                {
-                    double l = lo[s], h = hi[s];
-                    int r = s - 1;
-                    while (r >= 0 && lo[r] > l)
-                    {
-                        lo[r + 1] = lo[r];
-                        hi[r + 1] = hi[r];
-                        r--;
-                    }
-                    lo[r + 1] = l;
-                    hi[r + 1] = h;
-                }
-                for (s = 0; s <= n; s++)
-                {
-                    double end = s < n ? lo[s] : 1;
-                    if (end > t)
-                    {
-                        fz_point from = fz_make_point((float)(a.x + (b.x - a.x) * t), (float)(a.y + (b.y - a.y) * t));
-                        fz_point to = fz_make_point((float)(a.x + (b.x - a.x) * end), (float)(a.y + (b.y - a.y) * end));
-                        fz_point sf = fz_transform_point(from, to_stream), st = fz_transform_point(to, to_stream);
-                        if (!drawing)
-                        {
-                            piece_start = along + len * t;
-                            if (dashed)
-                            {
-                                /* THE DASH CONTINUES where this piece starts along the original subpath. */
-                                chain->op_q(ctx, chain);
-                                chain->op_d(ctx, chain, g->dash, (float)(g->phase + piece_start / fmax(1e-12, mz_least_expansion(total))));
-                            }
-                            chain->op_m(ctx, chain, sf.x, sf.y);
-                            drawing = 1;
-                        }
-                        chain->op_l(ctx, chain, st.x, st.y);
-                    }
-                    if (s < n)
-                    {
-                        if (drawing && hi[s] > lo[s])
-                        {
-                            if (dashed)
-                            {
-                                chain->op_S(ctx, chain);
-                                chain->op_Q(ctx, chain);
-                            }
-                            drawing = 0;
-                        }
-                        if (hi[s] > t)
-                            t = hi[s];
-                    }
-                }
-                along += len;
-            }
-            if (drawing && dashed)
-            {
-                chain->op_S(ctx, chain);
-                chain->op_Q(ctx, chain);
-            }
-            (void)piece_start;
-        }
-        if (!dashed)
-            chain->op_S(ctx, chain);
-    }
-    fz_always(ctx)
-    {
-        mz_flat_end(&f);
-        mz_poly_free(ctx, &f.cur);
-        mz_polys_free(ctx, &lines);
-    }
-    fz_catch(ctx)
-        fz_rethrow(ctx);
-}
-
 /* The ink a fill of the current path paints, as edges in page space. */
 static void mz_fill_edges(fz_context *ctx, mz_cut_processor *p, fz_matrix total, mz_edges *out)
 {
@@ -3028,6 +3017,908 @@ static void mz_replay(fz_context *ctx, mz_cut_processor *p)
     fz_walk_path(ctx, p->path, &mz_replay_walker, p->super.chain);
 }
 
+/*
+ * ---------------------------------------------------------------------------
+ * ONLY WHAT MEETS A MARK IS REWRITTEN (ADR-0286's amendment of 2026-11-07)
+ *
+ * The cut used to rewrite the whole of every path whose ink met a mark, flattened at MZ_CUT_FLATNESS: a filled circle
+ * of 177 bytes came back as 11,006, and every pixel along its edge, however far from the mark, was drawn from the
+ * flattening rather than from the curve (measured 2026-11-07, `redactionOutside.test.ts`). Here the path is read as
+ * written, subpath by subpath and segment by segment, and a curve is split, by its own control points, until each piece
+ * either keeps its control box clear of every mark's box or is smaller than MZ_CUT_NEAR. A clear piece is written as the
+ * curve it is, in the stream's own numbers; only the small pieces against a mark are flattened and cut. A curve lies
+ * within its control points' hull, so a kept piece cannot reach into a mark.
+ * ---------------------------------------------------------------------------
+ */
+
+/* A curve piece no larger than this on the page, against a mark, is flattened and cut rather than split again. */
+#define MZ_CUT_NEAR 0.5f
+#define MZ_CUT_SPLIT_DEPTH 24
+
+typedef struct
+{
+    int cubic;     /* 0: a line from s[0] to s[3]; 1: the cubic s[0], s[1], s[2], s[3] */
+    fz_point s[4]; /* the stream's space: what is written */
+    fz_point p[4]; /* the page's space: what is measured */
+} mz_seg;
+
+typedef struct
+{
+    mz_seg *v;
+    int n, cap;
+    int closed;
+} mz_sub;
+
+typedef struct
+{
+    fz_context *ctx;
+    fz_matrix total;
+    mz_sub *v;
+    int n, cap;
+    fz_point start, last; /* the stream's space */
+} mz_segs;
+
+static void mz_segs_free(fz_context *ctx, mz_segs *g)
+{
+    int i;
+    for (i = 0; i < g->n; i++)
+        fz_free(ctx, g->v[i].v);
+    fz_free(ctx, g->v);
+    g->v = NULL;
+    g->n = g->cap = 0;
+}
+
+static void mz_segs_new_sub(mz_segs *g)
+{
+    if (g->n == g->cap)
+    {
+        int cap = g->cap ? g->cap * 2 : 8;
+        g->v = fz_realloc_array(g->ctx, g->v, cap, mz_sub);
+        g->cap = cap;
+    }
+    memset(&g->v[g->n], 0, sizeof g->v[g->n]);
+    g->n++;
+}
+
+static void mz_segs_push(mz_segs *g, int cubic, fz_point a, fz_point b, fz_point c, fz_point d)
+{
+    mz_sub *s;
+    mz_seg *e;
+    int i;
+    /* A SEGMENT AFTER A CLOSE, with no move, starts a new subpath at the closed one's start, as the format has it. */
+    if (g->n == 0 || g->v[g->n - 1].closed)
+        mz_segs_new_sub(g);
+    s = &g->v[g->n - 1];
+    if (s->n == s->cap)
+    {
+        int cap = s->cap ? s->cap * 2 : 8;
+        s->v = fz_realloc_array(g->ctx, s->v, cap, mz_seg);
+        s->cap = cap;
+    }
+    e = &s->v[s->n++];
+    e->cubic = cubic;
+    e->s[0] = a;
+    e->s[1] = b;
+    e->s[2] = c;
+    e->s[3] = d;
+    for (i = 0; i < 4; i++)
+        e->p[i] = fz_transform_point(e->s[i], g->total);
+    g->last = d;
+}
+
+static void mz_segs_moveto(fz_context *ctx, void *arg, float x, float y)
+{
+    mz_segs *g = arg;
+    (void)ctx;
+    mz_segs_new_sub(g);
+    g->start = g->last = fz_make_point(x, y);
+}
+
+static void mz_segs_lineto(fz_context *ctx, void *arg, float x, float y)
+{
+    mz_segs *g = arg;
+    fz_point a = g->last, d = fz_make_point(x, y);
+    (void)ctx;
+    mz_segs_push(g, 0, a, a, d, d);
+}
+
+static void mz_segs_curveto(fz_context *ctx, void *arg, float x1, float y1, float x2, float y2, float x3, float y3)
+{
+    mz_segs *g = arg;
+    (void)ctx;
+    mz_segs_push(g, 1, g->last, fz_make_point(x1, y1), fz_make_point(x2, y2), fz_make_point(x3, y3));
+}
+
+static void mz_segs_curvetov(fz_context *ctx, void *arg, float x2, float y2, float x3, float y3)
+{
+    mz_segs *g = arg;
+    mz_segs_curveto(ctx, arg, g->last.x, g->last.y, x2, y2, x3, y3);
+}
+
+static void mz_segs_curvetoy(fz_context *ctx, void *arg, float x1, float y1, float x3, float y3)
+{
+    mz_segs_curveto(ctx, arg, x1, y1, x3, y3, x3, y3);
+}
+
+static void mz_segs_closepath(fz_context *ctx, void *arg)
+{
+    mz_segs *g = arg;
+    (void)ctx;
+    if (g->n == 0)
+        return;
+    /* THE CLOSING SIDE AS A SEGMENT, so a fill and a stroke both see the edge the format draws there. */
+    if (g->last.x != g->start.x || g->last.y != g->start.y)
+        mz_segs_push(g, 0, g->last, g->last, g->start, g->start);
+    g->v[g->n - 1].closed = 1;
+    g->last = g->start;
+}
+
+static void mz_segs_rectto(fz_context *ctx, void *arg, float x1, float y1, float x2, float y2)
+{
+    mz_segs_moveto(ctx, arg, x1, y1);
+    mz_segs_lineto(ctx, arg, x2, y1);
+    mz_segs_lineto(ctx, arg, x2, y2);
+    mz_segs_lineto(ctx, arg, x1, y2);
+    mz_segs_closepath(ctx, arg);
+}
+
+static const fz_path_walker mz_segs_walker = {
+    mz_segs_moveto, mz_segs_lineto, mz_segs_curveto, mz_segs_closepath,
+    NULL, mz_segs_curvetov, mz_segs_curvetoy, mz_segs_rectto,
+};
+
+static void mz_read_segs(fz_context *ctx, const fz_path *path, fz_matrix total, mz_segs *out)
+{
+    memset(out, 0, sizeof *out);
+    out->ctx = ctx;
+    out->total = total;
+    fz_walk_path(ctx, path, &mz_segs_walker, out);
+}
+
+static fz_rect mz_seg_box(const mz_seg *e)
+{
+    fz_rect r = fz_empty_rect;
+    int i;
+    for (i = 0; i < 4; i++)
+        r = fz_include_point_in_rect(r, e->p[i]);
+    return r;
+}
+
+static int mz_box_meets_marks(const mz_cut_options *marks, fz_rect box)
+{
+    int k;
+    for (k = 0; k < marks->count; k++)
+        if (mz_boxes_meet(box, marks->marks[k].box))
+            return 1;
+    return 0;
+}
+
+/* Whether a segment's quadrilateral to the right (mz_fan_cut) can reach a mark: a mark beside it, to its right. */
+static int mz_box_shadows_marks(const mz_cut_options *marks, fz_rect box)
+{
+    int k;
+    for (k = 0; k < marks->count; k++)
+    {
+        const fz_rect m = marks->marks[k].box;
+        if (box.y0 < m.y1 && m.y0 < box.y1 && box.x0 < m.x1)
+            return 1;
+    }
+    return 0;
+}
+
+static void mz_split_seg(const mz_seg *e, fz_matrix total, mz_seg *a, mz_seg *b)
+{
+    /* DE CASTELJAU AT ONE HALF, in the stream's space, so each half is exactly part of the curve as written. */
+    fz_point p01 = fz_make_point((e->s[0].x + e->s[1].x) / 2, (e->s[0].y + e->s[1].y) / 2);
+    fz_point p12 = fz_make_point((e->s[1].x + e->s[2].x) / 2, (e->s[1].y + e->s[2].y) / 2);
+    fz_point p23 = fz_make_point((e->s[2].x + e->s[3].x) / 2, (e->s[2].y + e->s[3].y) / 2);
+    fz_point q0 = fz_make_point((p01.x + p12.x) / 2, (p01.y + p12.y) / 2);
+    fz_point q1 = fz_make_point((p12.x + p23.x) / 2, (p12.y + p23.y) / 2);
+    fz_point m = fz_make_point((q0.x + q1.x) / 2, (q0.y + q1.y) / 2);
+    int i;
+    a->cubic = b->cubic = 1;
+    a->s[0] = e->s[0];
+    a->s[1] = p01;
+    a->s[2] = q0;
+    a->s[3] = m;
+    b->s[0] = m;
+    b->s[1] = q1;
+    b->s[2] = p23;
+    b->s[3] = e->s[3];
+    for (i = 0; i < 4; i++)
+    {
+        a->p[i] = fz_transform_point(a->s[i], total);
+        b->p[i] = fz_transform_point(b->s[i], total);
+    }
+}
+
+typedef struct
+{
+    mz_seg seg;
+    int near; /* against a mark: flattened and cut */
+} mz_piece;
+
+typedef struct
+{
+    mz_piece *v;
+    int n, cap;
+} mz_pieces;
+
+static void mz_pieces_push(fz_context *ctx, mz_pieces *ps, const mz_seg *e, int near)
+{
+    if (ps->n == ps->cap)
+    {
+        int cap = ps->cap ? ps->cap * 2 : 16;
+        ps->v = fz_realloc_array(ctx, ps->v, cap, mz_piece);
+        ps->cap = cap;
+    }
+    ps->v[ps->n].seg = *e;
+    ps->v[ps->n].near = near;
+    ps->n++;
+}
+
+/* A segment as pieces: kept whole where its control box is clear of every mark's box, split where it is not. */
+static void mz_pieces_of(fz_context *ctx, const mz_cut_options *marks, fz_matrix total, const mz_seg *e, int depth, mz_pieces *out)
+{
+    fz_rect box = mz_seg_box(e);
+    mz_seg a, b;
+    if (!mz_box_meets_marks(marks, box))
+    {
+        mz_pieces_push(ctx, out, e, 0);
+        return;
+    }
+    if (!e->cubic || depth >= MZ_CUT_SPLIT_DEPTH || fmaxf(box.x1 - box.x0, box.y1 - box.y0) <= MZ_CUT_NEAR)
+    {
+        mz_pieces_push(ctx, out, e, 1);
+        return;
+    }
+    mz_split_seg(e, total, &a, &b);
+    mz_pieces_of(ctx, marks, total, &a, depth + 1, out);
+    mz_pieces_of(ctx, marks, total, &b, depth + 1, out);
+}
+
+static double mz_point_line_distance(fz_point p, fz_point a, fz_point b)
+{
+    double dx = (double)b.x - a.x, dy = (double)b.y - a.y;
+    double len = hypot(dx, dy);
+    if (len < 1e-12)
+        return hypot((double)p.x - a.x, (double)p.y - a.y);
+    return fabs(dx * ((double)a.y - p.y) - dy * ((double)a.x - p.x)) / len;
+}
+
+/* A near piece on the page as a polyline after its first point, flat within MZ_CUT_FLATNESS, into `out`. */
+static void mz_flatten_piece(fz_context *ctx, const mz_seg *e, fz_matrix total, int depth, mz_poly *out)
+{
+    mz_seg a, b;
+    if (!e->cubic || depth >= MZ_CUT_SPLIT_DEPTH ||
+        (mz_point_line_distance(e->p[1], e->p[0], e->p[3]) <= MZ_CUT_FLATNESS &&
+            mz_point_line_distance(e->p[2], e->p[0], e->p[3]) <= MZ_CUT_FLATNESS))
+    {
+        mz_poly_push(ctx, out, e->p[3]);
+        return;
+    }
+    mz_split_seg(e, total, &a, &b);
+    mz_flatten_piece(ctx, &a, total, depth + 1, out);
+    mz_flatten_piece(ctx, &b, total, depth + 1, out);
+}
+
+static void mz_emit_seg(fz_context *ctx, pdf_processor *chain, const mz_seg *e)
+{
+    if (e->cubic)
+        chain->op_c(ctx, chain, e->s[1].x, e->s[1].y, e->s[2].x, e->s[2].y, e->s[3].x, e->s[3].y);
+    else
+        chain->op_l(ctx, chain, e->s[3].x, e->s[3].y);
+}
+
+static void mz_emit_sub(fz_context *ctx, pdf_processor *chain, const mz_sub *s)
+{
+    int i;
+    if (s->n == 0)
+        return;
+    chain->op_m(ctx, chain, s->v[0].s[0].x, s->v[0].s[0].y);
+    for (i = 0; i < s->n; i++)
+        mz_emit_seg(ctx, chain, &s->v[i]);
+    if (s->closed)
+        chain->op_h(ctx, chain);
+}
+
+/* ---- a fill (or a clip): the subpaths that cannot reach a mark as written, the rest by their quadrilaterals ---- */
+
+/*
+ * THE WINDING IS A SUM OF QUADRILATERALS (mz_fan_cut): a closed subpath's winding everywhere is the sum, over its
+ * segments, of the loop (segment, (X, end.y), (X, start.y)), and that holds for a curve as for a line. So a run of
+ * clear pieces is one loop with its curves as written. Where a mark lies to the run's right, inside its height, the loop
+ * is split at x = c between the run and the mark: (run, (c, end.y), (c, start.y)), which no mark meets, and the
+ * rectangle from c to X, which is cut by the marks exactly as a polygon is. Near pieces are flattened and their edges'
+ * quadrilaterals cut as before. A subpath none of whose quadrilaterals can reach a mark contributes nothing inside one,
+ * and is written as it was.
+ *
+ * Answers how many loops were written, so a clip cut to nothing can be told from one that is not.
+ */
+static int mz_emit_fill_cut(fz_context *ctx, mz_cut_processor *p, const mz_segs *g, fz_matrix to_stream)
+{
+    pdf_processor *chain = p->super.chain;
+    const mz_cut_options *marks = p->options;
+    mz_polys polys = { 0 };
+    mz_edges edges = { 0 };
+    mz_pieces pieces = { 0 };
+    float far = -1e30f;
+    int written = 0, i, j, k;
+
+    fz_var(polys);
+    fz_var(edges);
+    fz_var(pieces);
+    fz_try(ctx)
+    {
+        for (i = 0; i < g->n; i++)
+            for (j = 0; j < g->v[i].n; j++)
+                for (k = 0; k < 4; k++)
+                    far = fmaxf(far, g->v[i].v[j].p[k].x);
+        /*
+         * FROM THE PATH ALONE, as mz_fan_cut's: the split below is an identity whatever c is, so X need not pass the marks,
+         * and an X past a mark would leave each quadrilateral a sliver beyond it that its partner cancels but that still
+         * counts as written (a clip wholly under a mark read as not empty, measured 2026-11-07).
+         */
+        far += 1;
+
+        for (i = 0; i < g->n; i++)
+        {
+            const mz_sub *s = &g->v[i];
+            mz_seg closing;
+            int reaches = 0, total_n;
+            if (s->n == 0)
+                continue;
+            /* A FILL CLOSES EVERY SUBPATH; the closing side is part of what the quadrilaterals sum. */
+            total_n = s->n;
+            if (!s->closed && (s->v[s->n - 1].s[3].x != s->v[0].s[0].x || s->v[s->n - 1].s[3].y != s->v[0].s[0].y))
+            {
+                fz_point a = s->v[s->n - 1].s[3], d = s->v[0].s[0];
+                closing.cubic = 0;
+                closing.s[0] = closing.s[1] = a;
+                closing.s[2] = closing.s[3] = d;
+                for (k = 0; k < 4; k++)
+                    closing.p[k] = fz_transform_point(closing.s[k], g->total);
+                total_n++;
+            }
+            for (j = 0; j < total_n && !reaches; j++)
+                reaches = mz_box_shadows_marks(marks, mz_seg_box(j < s->n ? &s->v[j] : &closing));
+            if (!reaches)
+            {
+                mz_emit_sub(ctx, chain, s);
+                if (!s->closed)
+                    chain->op_h(ctx, chain);
+                written++;
+                continue;
+            }
+
+            pieces.n = 0;
+            for (j = 0; j < total_n; j++)
+                mz_pieces_of(ctx, marks, g->total, j < s->n ? &s->v[j] : &closing, 0, &pieces);
+
+            /* RUNS OF CLEAR PIECES whose box together stays clear; near pieces become edges. */
+            j = 0;
+            while (j < pieces.n)
+            {
+                if (pieces.v[j].near)
+                {
+                    mz_poly line = { 0 };
+                    int q;
+                    fz_var(line);
+                    fz_try(ctx)
+                    {
+                        mz_flatten_piece(ctx, &pieces.v[j].seg, g->total, 0, &line);
+                        {
+                            fz_point from = pieces.v[j].seg.p[0];
+                            for (q = 0; q < line.n; q++)
+                            {
+                                mz_edges_push(ctx, &edges, from.x, from.y, line.v[q].x, line.v[q].y);
+                                from = line.v[q];
+                            }
+                        }
+                    }
+                    fz_always(ctx)
+                        mz_poly_free(ctx, &line);
+                    fz_catch(ctx)
+                        fz_rethrow(ctx);
+                    j++;
+                    continue;
+                }
+                {
+                    int first = j, last = j, m;
+                    fz_rect box = mz_seg_box(&pieces.v[j].seg);
+                    fz_point a, b;
+                    float c = far, right = 1e30f;
+                    while (last + 1 < pieces.n && !pieces.v[last + 1].near)
+                    {
+                        fz_rect grown = fz_union_rect(box, mz_seg_box(&pieces.v[last + 1].seg));
+                        if (mz_box_meets_marks(marks, grown))
+                            break;
+                        box = grown;
+                        last++;
+                    }
+                    a = pieces.v[first].seg.p[0];
+                    b = pieces.v[last].seg.p[3];
+                    /* THE NEAREST MARK TO THE RUN'S RIGHT within its height: the split goes halfway to it. */
+                    for (k = 0; k < marks->count; k++)
+                    {
+                        const fz_rect mb = marks->marks[k].box;
+                        if (box.y0 < mb.y1 && mb.y0 < box.y1 && mb.x0 >= box.x1)
+                            right = fminf(right, mb.x0);
+                    }
+                    if (right < 1e29f)
+                        c = box.x1 + (right - box.x1) / 2;
+                    /*
+                     * A LOOP OF NO AREA IS NOT WRITTEN: it adds nothing to the winding, and a side lying on a mark's edge
+                     * would otherwise make a clip the marks cut to nothing read as one that is not, keeping what it clipped.
+                     * The area counts the control points, so a curve that bulges has some.
+                     */
+                    {
+                        mz_poly hull = { 0 };
+                        double area;
+                        mz_poly_push(ctx, &hull, a);
+                        for (m = first; m <= last; m++)
+                        {
+                            const mz_seg *e = &pieces.v[m].seg;
+                            if (e->cubic)
+                            {
+                                mz_poly_push(ctx, &hull, e->p[1]);
+                                mz_poly_push(ctx, &hull, e->p[2]);
+                            }
+                            mz_poly_push(ctx, &hull, e->p[3]);
+                        }
+                        mz_poly_push(ctx, &hull, fz_make_point(c, b.y));
+                        mz_poly_push(ctx, &hull, fz_make_point(c, a.y));
+                        area = mz_poly_area(&hull);
+                        mz_poly_free(ctx, &hull);
+                        if (fabs(area) <= MZ_CUT_AREA_EPS)
+                        {
+                            j = last + 1;
+                            continue;
+                        }
+                    }
+                    chain->op_m(ctx, chain, pieces.v[first].seg.s[0].x, pieces.v[first].seg.s[0].y);
+                    for (m = first; m <= last; m++)
+                        mz_emit_seg(ctx, chain, &pieces.v[m].seg);
+                    {
+                        fz_point qb = fz_transform_point(fz_make_point(c, b.y), to_stream);
+                        fz_point qa = fz_transform_point(fz_make_point(c, a.y), to_stream);
+                        chain->op_l(ctx, chain, qb.x, qb.y);
+                        chain->op_l(ctx, chain, qa.x, qa.y);
+                        chain->op_h(ctx, chain);
+                    }
+                    written++;
+                    /* THE OTHER HALF, whichever side of X the split fell: a mark far to the right puts c past X. */
+                    if (c != far)
+                    {
+                        mz_poly r = { 0 };
+                        mz_poly_push(ctx, &r, fz_make_point(c, b.y));
+                        mz_poly_push(ctx, &r, fz_make_point(far, b.y));
+                        mz_poly_push(ctx, &r, fz_make_point(far, a.y));
+                        mz_poly_push(ctx, &r, fz_make_point(c, a.y));
+                        mz_polys_push(ctx, &polys, &r);
+                    }
+                    j = last + 1;
+                }
+            }
+        }
+
+        mz_fan_polys(ctx, &edges, far, &polys);
+        mz_cut_polys(ctx, &polys, marks);
+        mz_emit_polys(ctx, chain, &polys, to_stream);
+        written += polys.n;
+    }
+    fz_always(ctx)
+    {
+        mz_polys_free(ctx, &polys);
+        fz_free(ctx, edges.e);
+        fz_free(ctx, pieces.v);
+    }
+    fz_catch(ctx)
+        fz_rethrow(ctx);
+    return written;
+}
+
+/* ---- a thin stroke: its centre line cut where it enters a mark, the rest as written ---- */
+
+typedef struct
+{
+    mz_seg *v;
+    int n, cap;
+    double along; /* the length along the subpath where the run starts, on the page */
+    int from_start; /* the run begins at the subpath's start point */
+    int to_end;     /* the run ends at the subpath's end point */
+} mz_run;
+
+typedef struct
+{
+    mz_run *v;
+    int n, cap;
+} mz_runs;
+
+static void mz_runs_free(fz_context *ctx, mz_runs *rs)
+{
+    int i;
+    for (i = 0; i < rs->n; i++)
+        fz_free(ctx, rs->v[i].v);
+    fz_free(ctx, rs->v);
+    rs->v = NULL;
+    rs->n = rs->cap = 0;
+}
+
+static mz_run *mz_runs_open(fz_context *ctx, mz_runs *rs, double along, int from_start)
+{
+    mz_run *r;
+    if (rs->n == rs->cap)
+    {
+        int cap = rs->cap ? rs->cap * 2 : 8;
+        rs->v = fz_realloc_array(ctx, rs->v, cap, mz_run);
+        rs->cap = cap;
+    }
+    r = &rs->v[rs->n++];
+    memset(r, 0, sizeof *r);
+    r->along = along;
+    r->from_start = from_start;
+    return r;
+}
+
+static void mz_run_push(fz_context *ctx, mz_run *r, const mz_seg *e)
+{
+    if (r->n == r->cap)
+    {
+        int cap = r->cap ? r->cap * 2 : 8;
+        r->v = fz_realloc_array(ctx, r->v, cap, mz_seg);
+        r->cap = cap;
+    }
+    r->v[r->n++] = *e;
+}
+
+static double mz_seg_length(fz_context *ctx, const mz_seg *e, fz_matrix total)
+{
+    mz_poly line = { 0 };
+    double len = 0;
+    fz_point from = e->p[0];
+    int q;
+    if (!e->cubic)
+        return hypot((double)e->p[3].x - e->p[0].x, (double)e->p[3].y - e->p[0].y);
+    fz_var(line);
+    fz_try(ctx)
+    {
+        mz_flatten_piece(ctx, e, total, 0, &line);
+        for (q = 0; q < line.n; q++)
+        {
+            len += hypot((double)line.v[q].x - from.x, (double)line.v[q].y - from.y);
+            from = line.v[q];
+        }
+    }
+    fz_always(ctx)
+        mz_poly_free(ctx, &line);
+    fz_catch(ctx)
+        fz_rethrow(ctx);
+    return len;
+}
+
+/* The line a->b on the page, its parts outside every mark appended to the runs, a gap closing the open one. */
+static void mz_thin_line(fz_context *ctx, const mz_cut_options *marks, fz_point a, fz_point b, fz_matrix to_stream,
+    fz_matrix total, mz_runs *rs, mz_run **open, double *along, int *gaps, int at_start)
+{
+    double lo[64], hi[64], t = 0, len = hypot((double)b.x - a.x, (double)b.y - a.y);
+    int n = 0, s, k;
+    for (k = 0; k < marks->count && n < 64; k++)
+    {
+        double t0, t1;
+        if (mz_segment_in_mark(&marks->marks[k], a, b, &t0, &t1))
+        {
+            lo[n] = t0;
+            hi[n] = t1;
+            n++;
+        }
+    }
+    for (s = 1; s < n; s++)
+    {
+        double l = lo[s], h = hi[s];
+        int r = s - 1;
+        while (r >= 0 && lo[r] > l)
+        {
+            lo[r + 1] = lo[r];
+            hi[r + 1] = hi[r];
+            r--;
+        }
+        lo[r + 1] = l;
+        hi[r + 1] = h;
+    }
+    for (s = 0; s <= n; s++)
+    {
+        double end = s < n ? lo[s] : 1;
+        if (end > t)
+        {
+            mz_seg e;
+            fz_point from = fz_make_point((float)(a.x + (b.x - a.x) * t), (float)(a.y + (b.y - a.y) * t));
+            fz_point to = fz_make_point((float)(a.x + (b.x - a.x) * end), (float)(a.y + (b.y - a.y) * end));
+            int i;
+            if (*open == NULL)
+                *open = mz_runs_open(ctx, rs, *along + len * t, at_start && t == 0);
+            e.cubic = 0;
+            e.s[0] = e.s[1] = fz_transform_point(from, to_stream);
+            e.s[2] = e.s[3] = fz_transform_point(to, to_stream);
+            for (i = 0; i < 4; i++)
+                e.p[i] = fz_transform_point(e.s[i], total);
+            mz_run_push(ctx, *open, &e);
+        }
+        if (s < n)
+        {
+            if (hi[s] > lo[s])
+            {
+                *open = NULL;
+                (*gaps)++;
+            }
+            if (hi[s] > t)
+                t = hi[s];
+        }
+    }
+    *along += len;
+}
+
+static void mz_emit_run(fz_context *ctx, pdf_processor *chain, const mz_run *r, int from)
+{
+    int i;
+    for (i = from; i < r->n; i++)
+        mz_emit_seg(ctx, chain, &r->v[i]);
+}
+
+/*
+ * A THIN STROKE, CUT ON ITS CENTRE LINE: a subpath that meets no mark as written; a segment whose control box is clear as
+ * written; a curve against a mark split, and only its small pieces against the mark flattened and cut. What is drawn
+ * between two gaps is one run, so the joins inside it are the stroker's own. A CLOSED SUBPATH CUT OPEN keeps the join at
+ * its start point: the run that ends there and the run that starts there are written as one, the first after the last.
+ * Writing them apart left that corner to two butt ends (measured 2026-11-07: a 0.5-point square crossing a mark lost 4
+ * pixels of its corner at 8x, 3 points outside the mark). A dashed subpath keeps its runs apart, each at its own phase,
+ * since the pattern does not run on past a subpath's end.
+ */
+static void mz_emit_thin_cut(fz_context *ctx, mz_cut_processor *p, const mz_segs *g, fz_matrix to_stream)
+{
+    pdf_processor *chain = p->super.chain;
+    const mz_cut_options *marks = p->options;
+    mz_cut_gstate *gs = mz_gs(p);
+    int dashed = gs->dash && pdf_array_len(ctx, gs->dash) > 0;
+    mz_runs runs = { 0 };
+    mz_pieces pieces = { 0 };
+    int i, j, r;
+
+    fz_var(runs);
+    fz_var(pieces);
+    fz_try(ctx)
+    {
+        for (i = 0; i < g->n; i++)
+        {
+            const mz_sub *s = &g->v[i];
+            mz_run *open = NULL;
+            double along = 0;
+            int gaps = 0, touches = 0;
+            if (s->n == 0)
+                continue;
+            for (j = 0; j < s->n && !touches; j++)
+                touches = mz_box_meets_marks(marks, mz_seg_box(&s->v[j]));
+            if (!touches)
+            {
+                if (!dashed)
+                    mz_emit_sub(ctx, chain, s);
+                else
+                {
+                    /* KEPT AS IT WAS, its own subpath under the original dash, which starts each subpath at the phase. */
+                    chain->op_q(ctx, chain);
+                    mz_emit_sub(ctx, chain, s);
+                    chain->op_S(ctx, chain);
+                    chain->op_Q(ctx, chain);
+                }
+                continue;
+            }
+            runs.n = 0;
+            for (j = 0; j < s->n; j++)
+            {
+                int q;
+                pieces.n = 0;
+                mz_pieces_of(ctx, marks, g->total, &s->v[j], 0, &pieces);
+                for (q = 0; q < pieces.n; q++)
+                {
+                    const mz_seg *e = &pieces.v[q].seg;
+                    if (!pieces.v[q].near)
+                    {
+                        if (open == NULL)
+                            open = mz_runs_open(ctx, &runs, along, j == 0 && q == 0);
+                        mz_run_push(ctx, open, e);
+                        if (dashed)
+                            along += mz_seg_length(ctx, e, g->total);
+                        continue;
+                    }
+                    {
+                        mz_poly line = { 0 };
+                        fz_point from = e->p[0];
+                        int w;
+                        fz_var(line);
+                        fz_try(ctx)
+                        {
+                            mz_flatten_piece(ctx, e, g->total, 0, &line);
+                            for (w = 0; w < line.n; w++)
+                            {
+                                /* THE SUBPATH'S VERY FIRST POINT: a run opened there starts at the subpath's start. */
+                                mz_thin_line(ctx, marks, from, line.v[w], to_stream, g->total, &runs, &open, &along, &gaps,
+                                    j == 0 && q == 0 && w == 0);
+                                from = line.v[w];
+                            }
+                        }
+                        fz_always(ctx)
+                            mz_poly_free(ctx, &line);
+                        fz_catch(ctx)
+                            fz_rethrow(ctx);
+                    }
+                }
+            }
+            if (open != NULL)
+                open->to_end = 1;
+            if (gaps == 0)
+            {
+                /* NOTHING WAS CUT AFTER ALL: the subpath as written, its close included. */
+                if (!dashed)
+                    mz_emit_sub(ctx, chain, s);
+                else
+                {
+                    chain->op_q(ctx, chain);
+                    mz_emit_sub(ctx, chain, s);
+                    chain->op_S(ctx, chain);
+                    chain->op_Q(ctx, chain);
+                }
+                continue;
+            }
+            {
+                /* THE JOIN AT A CLOSED SUBPATH'S START: the last run, then the first after it, as one. */
+                int wrap = !dashed && s->closed && runs.n >= 2 && runs.v[0].from_start && runs.v[runs.n - 1].to_end;
+                for (r = wrap ? 1 : 0; r < runs.n; r++)
+                {
+                    const mz_run *run = &runs.v[r];
+                    if (run->n == 0)
+                        continue;
+                    if (dashed)
+                    {
+                        chain->op_q(ctx, chain);
+                        chain->op_d(ctx, chain, gs->dash, (float)(gs->phase + run->along / fmax(1e-12, mz_least_expansion(g->total))));
+                    }
+                    chain->op_m(ctx, chain, run->v[0].s[0].x, run->v[0].s[0].y);
+                    mz_emit_run(ctx, chain, run, 0);
+                    if (wrap && r == runs.n - 1)
+                        mz_emit_run(ctx, chain, &runs.v[0], 0);
+                    if (dashed)
+                    {
+                        chain->op_S(ctx, chain);
+                        chain->op_Q(ctx, chain);
+                    }
+                }
+            }
+        }
+        if (!dashed)
+            chain->op_S(ctx, chain);
+    }
+    fz_always(ctx)
+    {
+        mz_runs_free(ctx, &runs);
+        fz_free(ctx, pieces.v);
+    }
+    fz_catch(ctx)
+        fz_rethrow(ctx);
+}
+
+/* ---- a wide stroke: the subpaths whose ink shares no pixel with a cut one stroked as written, the rest outlined ---- */
+
+/*
+ * A STROKE'S SUBPATHS ARE PAINTED AS ONE (one S): where two of them cover a pixel, the rasteriser takes their coverage
+ * together. Split into a stroke and a fill, that pixel is painted twice, and an antialiased edge comes out darker
+ * (measured 2026-11-07: a 3-point circle stroked in part and outlined in part darkened 300 pixels along the overlap, by
+ * up to 64 levels at 4x). So a subpath is kept as written only where its ink box, grown by a point, meets no cut
+ * subpath's ink box, and only where a second coat changes nothing: opaque, no overprint, the Normal blend. A dashed
+ * stroke keeps its pattern, which the format restarts at each subpath. Elsewhere the whole path is outlined, as before.
+ * Answers whether it did the work, so the caller can fall back.
+ */
+static int mz_emit_wide_cut(fz_context *ctx, mz_cut_processor *p, const mz_segs *g, fz_matrix total, fz_matrix to_stream)
+{
+    pdf_processor *chain = p->super.chain;
+    mz_cut_gstate *gs = mz_gs(p);
+    fz_stroke_state *state = NULL;
+    fz_path *one = NULL;
+    fz_rasterizer *r = NULL;
+    mz_edges edges = { 0 };
+    mz_polys cut = { 0 };
+    unsigned char *meets = NULL;
+    fz_rect *ink = NULL;
+    fz_rect cut_ink = fz_empty_rect;
+    int kept = 0, i, j, done = 0;
+
+    if (gs->stroke_alpha != 1 || gs->stroke_overprint || !gs->blend_normal || g->n < 2)
+        return 0;
+
+    fz_var(state);
+    fz_var(one);
+    fz_var(r);
+    fz_var(edges);
+    fz_var(cut);
+    fz_var(meets);
+    fz_var(ink);
+    fz_try(ctx)
+    {
+        state = mz_stroke_state(ctx, gs);
+        meets = fz_calloc(ctx, g->n, 1);
+        ink = fz_malloc_array(ctx, g->n, fz_rect);
+        for (i = 0; i < g->n; i++)
+        {
+            const mz_sub *s = &g->v[i];
+            int q;
+            ink[i] = fz_empty_rect;
+            if (s->n == 0)
+                continue;
+            fz_drop_path(ctx, one);
+            one = NULL;
+            one = fz_new_path(ctx);
+            fz_moveto(ctx, one, s->v[0].s[0].x, s->v[0].s[0].y);
+            for (j = 0; j < s->n; j++)
+            {
+                const mz_seg *e = &s->v[j];
+                if (e->cubic)
+                    fz_curveto(ctx, one, e->s[1].x, e->s[1].y, e->s[2].x, e->s[2].y, e->s[3].x, e->s[3].y);
+                else
+                    fz_lineto(ctx, one, e->s[3].x, e->s[3].y);
+            }
+            if (s->closed)
+                fz_closepath(ctx, one);
+            edges.n = 0;
+            r = mz_new_capture(ctx, &edges);
+            fz_flatten_stroke_path(ctx, r, one, state, total, MZ_CUT_FLATNESS, state->linewidth, fz_infinite_irect, NULL);
+            fz_drop_rasterizer(ctx, r);
+            r = NULL;
+            for (q = 0; q < edges.n; q++)
+            {
+                ink[i] = fz_include_point_in_rect(ink[i], fz_make_point(edges.e[q].x0, edges.e[q].y0));
+                ink[i] = fz_include_point_in_rect(ink[i], fz_make_point(edges.e[q].x1, edges.e[q].y1));
+            }
+            if (mz_ink_meets_marks(&edges, p->options, 0, 0))
+            {
+                meets[i] = 1;
+                cut_ink = fz_union_rect(cut_ink, ink[i]);
+                mz_fan_cut(ctx, &edges, p->options, &cut);
+            }
+            else
+                kept++;
+        }
+        /* NO SHARED PIXEL between what is stroked and what is outlined, or the overlap is painted twice. */
+        if (kept > 0 && !fz_is_empty_rect(cut_ink))
+        {
+            done = 1;
+            for (i = 0; i < g->n && done; i++)
+                if (!meets[i] && !fz_is_empty_rect(ink[i]) && mz_boxes_meet(fz_expand_rect(ink[i], 1), fz_expand_rect(cut_ink, 1)))
+                    done = 0;
+        }
+        if (done)
+        {
+            for (i = 0; i < g->n; i++)
+                if (!meets[i])
+                    mz_emit_sub(ctx, chain, &g->v[i]);
+            chain->op_S(ctx, chain);
+            mz_emit_stroke_paint(ctx, p, &cut, to_stream);
+        }
+    }
+    fz_always(ctx)
+    {
+        if (r)
+            fz_drop_rasterizer(ctx, r);
+        fz_drop_path(ctx, one);
+        fz_drop_stroke_state(ctx, state);
+        fz_free(ctx, edges.e);
+        mz_polys_free(ctx, &cut);
+        fz_free(ctx, meets);
+        fz_free(ctx, ink);
+    }
+    fz_catch(ctx)
+        fz_rethrow(ctx);
+    return done;
+}
+
 typedef void (mz_paint_fn)(fz_context *ctx, pdf_processor *proc);
 
 /*
@@ -3046,12 +3937,14 @@ static void mz_cut_paint(fz_context *ctx, pdf_processor *proc, int fill, int str
     int clip = p->clip;
     fz_rect reach;
     int k, near = 0;
+    mz_segs segs = { 0 };
 
     fz_var(fill_e);
     fz_var(stroke_e);
     fz_var(fill_p);
     fz_var(stroke_p);
     fz_var(clip_p);
+    fz_var(segs);
 
     p->clip = 0;
     fz_try(ctx)
@@ -3133,14 +4026,13 @@ static void mz_cut_paint(fz_context *ctx, pdf_processor *proc, int fill, int str
         else
         {
             p->options->cut++;
+            /* THE PATH AS WRITTEN, segment by segment, which each cut below rewrites only where it meets a mark. */
+            mz_read_segs(ctx, p->path, total, &segs);
             /* THE FILL, then THE STROKE, then THE CLIP: the order a fill-and-stroke paints in, and a clip applies after. */
             if (fill)
             {
                 if (fill_cut)
-                {
-                    mz_fan_cut(ctx, &fill_e, p->options, &fill_p);
-                    mz_emit_polys(ctx, chain, &fill_p, to_stream);
-                }
+                    mz_emit_fill_cut(ctx, p, &segs, to_stream);
                 else
                     mz_replay(ctx, p);
                 if (fill == 2)
@@ -3156,8 +4048,8 @@ static void mz_cut_paint(fz_context *ctx, pdf_processor *proc, int fill, int str
                     chain->op_S(ctx, chain);
                 }
                 else if (thin)
-                    mz_emit_thin_stroke(ctx, p, total, to_stream);
-                else
+                    mz_emit_thin_cut(ctx, p, &segs, to_stream);
+                else if (!mz_emit_wide_cut(ctx, p, &segs, total, to_stream))
                 {
                     mz_fan_cut(ctx, &stroke_e, p->options, &stroke_p);
                     mz_emit_stroke_paint(ctx, p, &stroke_p, to_stream);
@@ -3167,9 +4059,7 @@ static void mz_cut_paint(fz_context *ctx, pdf_processor *proc, int fill, int str
             {
                 if (clip_cut)
                 {
-                    mz_fan_cut(ctx, &fill_e, p->options, &clip_p);
-                    mz_emit_polys(ctx, chain, &clip_p, to_stream);
-                    if (clip_p.n == 0)
+                    if (mz_emit_fill_cut(ctx, p, &segs, to_stream) == 0)
                     {
                         /* A CLIP CUT TO NOTHING IS AN EMPTY CLIP, never none: a W with no path is not written, and
                          * whatever it clipped would then paint everywhere. A rectangle of no area, at a point outside
@@ -3198,6 +4088,7 @@ static void mz_cut_paint(fz_context *ctx, pdf_processor *proc, int fill, int str
         mz_polys_free(ctx, &fill_p);
         mz_polys_free(ctx, &stroke_p);
         mz_polys_free(ctx, &clip_p);
+        mz_segs_free(ctx, &segs);
         fz_drop_path(ctx, p->path);
         p->path = NULL;
         p->path = fz_new_path(ctx);
@@ -3318,6 +4209,7 @@ static pdf_processor *mz_new_cut_filter(fz_context *ctx, pdf_document *doc, pdf_
     p->super.op_gs_CA = mz_cut_gs_CA;
     p->super.op_gs_op = mz_cut_gs_op;
     p->super.op_gs_OP = mz_cut_gs_OP;
+    p->super.op_gs_BM = mz_cut_gs_BM;
     p->super.chain = chain;
     p->super.requirements = chain->requirements;
     p->options = options;
@@ -3343,6 +4235,7 @@ static pdf_processor *mz_new_cut_filter(fz_context *ctx, pdf_document *doc, pdf_
         p->gs[0].stroke_alpha = 1;
         p->gs[0].fill_overprint = 0;
         p->gs[0].stroke_overprint = 0;
+        p->gs[0].blend_normal = 1;
         p->path = fz_new_path(ctx);
     }
     fz_catch(ctx)

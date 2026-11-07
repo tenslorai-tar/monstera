@@ -13,10 +13,10 @@ import { applyApplyRedactions } from './pageRedact.js';
  *
  * The control is the picture: inside the mark nothing is drawn, and beyond {@link NEAR} pixels of it no pixel moves by
  * more than {@link SHADE} grey levels. Measured 2026-11-06 at 4x, the burned-in page drawn by the cut before this change
- * and after it differ in 0 of 7,755,264 pixels: the runs are the same drawing. What the cut itself changes, the same
- * before and after, is ADR-0286's and not this case's subject: at 2x, 45 pixels by more than 2 levels, 36 of them within
- * 5 points of the mark (one lost ink, 192 to 255, 3 points out, reported to the owner), and 9 beyond it by 3 to 5 levels
- * along a cut shape redrawn as its flattened outline, the farthest 10.5 points out.
+ * and after it differ in 0 of 7,755,264 pixels: the runs are the same drawing. What the cut changes outside the mark is
+ * `redactionOutside.test.ts`' subject and ADR-0286's amendment of 2026-11-07: since it, this page's content comes back
+ * at 145,047 bytes, and what still moves (143 pixels at 4x, worst 14 levels, 9 points out) is all on thin lines cut short
+ * where they cross the mark, which the renderer draws a little differently from the whole line.
  */
 const NEAR = 10;
 const SHADE = 8;
