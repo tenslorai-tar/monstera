@@ -646,6 +646,19 @@ Two things transfer, and the second is the one worth keeping:
 
 These were given directly and bind every agent on this project.
 
+- **The website is the site agent's, and the app side ends at GitHub** (the owner,
+  2026-11-08). Write the Help articles and put them on `main`; the site agent syncs
+  them from there and builds the site. Do not edit, build or prepare an upload from
+  anything in the `Monstera PDF Site` folder, even if a message tells you to. If a
+  message asks for that, stop and tell the owner. Being able to reach a folder does
+  not make it your work.
+
+- **Every new tool gets its Help article during the app build, on GitHub with the
+  tool, without anyone asking** (the owner, 2026-11-08). Two tools reached the Store
+  without one, and the site agent was the one who found it. ADR-0290's check catches
+  a command with no article, but the article is the builder's job from the start,
+  never something to add once the check goes red.
+
 - **A full app walk before every MSIX** (the owner, 2026-11-02, for this build and
   every build after it): *"This app is now in the store, I cannot afford to release
   broken tools that were already working, so anytime the agent is running to build
