@@ -21,7 +21,9 @@ import type { DropOpener, EventSubscriber } from './bridge.js';
 import { CONVERT_SCAN_TARGETS } from './commands/convertScan.js';
 import { reportProblem } from './commands/documentCommands.js';
 import { START_SCREEN_CONTEXT } from './commands/help.js';
-import { HELP_ARTICLES } from './help/articles.js';
+import { commandCoverage } from './help/articleCoverage.js';
+import { HELP_ARTICLES, helpFor } from './help/articles.js';
+import { COMMANDS_NO_ARTICLE, TAUGHT_IN_OTHER_WORDS } from './help/noArticleNeeded.js';
 import { CommandRegistry, type UiCommand } from './registries/commands.js';
 import type { DialogRegistry } from './registries/dialogs.js';
 import { SECTION_IDS } from './registries/placement.js';
@@ -3217,6 +3219,45 @@ describe('App', () => {
     expect(commands.get('document.rotate-page')).toBeDefined();
     expect(commands.get('document.frobnicate')).toBeUndefined();
     expect(dialogs.get('dialog.help')).toBeDefined();
+  });
+
+  it('every command the application registers has an article that says its name, or a written reason (ADR-0290)', () => {
+    let commands: CommandRegistry | undefined;
+    const { client } = recordingClient({ kind: 'cancelled' });
+    render(<App client={client} settings={freshSettings()} onRegistries={(registries) => (commands = registries.commands)} />);
+    if (commands === undefined) throw new Error('the shell reported no registries');
+    const subjects = commands.all().map((command) => ({
+      id: command.id,
+      names: [command.title, ...(command.ribbonTitle === undefined ? [] : [command.ribbonTitle])].map((key) => i18n._(key)),
+    }));
+    // THE ANCHORS, written here rather than taken from the registry: a registry that came back short agrees with any
+    // list derived from it, so these name two commands that must be in it and a size it has passed.
+    expect(subjects.length).toBeGreaterThan(250);
+    expect(subjects.map((subject) => subject.id)).toEqual(expect.arrayContaining(['document.properties', 'document.convert-text-to-curves']));
+
+    const report = commandCoverage(subjects, HELP_ARTICLES, COMMANDS_NO_ARTICLE, TAUGHT_IN_OTHER_WORDS);
+    const problems = [
+      ...report.untaught.map((id) => `no article teaches ${id}: write one, or say why in noArticleNeeded.ts`),
+      ...report.listedNotNamed.map((pair) => `${pair} is listed and its name is not in the article`),
+      ...report.badExemptions,
+    ];
+    expect(problems, `\n${problems.join('\n')}\n`).toStrictEqual([]);
+
+    // THE CONTROL, on the application's own registry and articles: the two features that shipped with no article are
+    // reported the moment their articles are gone, which is the state of 5dead873. Nothing here is synthetic, so a check
+    // that had stopped reading the registry or the articles' lists would fail this and not the case above.
+    const gone = new Set(['document-properties', 'convert-text-to-curves']);
+    const withoutThem = commandCoverage(
+      subjects,
+      HELP_ARTICLES.filter((article) => !gone.has(article.id)),
+      COMMANDS_NO_ARTICLE,
+      TAUGHT_IN_OTHER_WORDS,
+    );
+    expect(withoutThem.untaught).toStrictEqual(subjects.map((subject) => subject.id).filter((id) => id === 'document.properties' || id === 'document.convert-text-to-curves'));
+
+    // AND F1 FINDS THEM, by the lookup the Help command calls.
+    expect(helpFor({ tool: 'document.properties', context: 'home' }).article?.id).toBe('document-properties');
+    expect(helpFor({ tool: 'document.convert-text-to-curves', context: 'tools' }).article?.id).toBe('convert-text-to-curves');
   });
 
   it('every command with a state, and every surface that draws it, is the list commandStateLive.pw.ts presses (ADR-0258’s correction)', async () => {

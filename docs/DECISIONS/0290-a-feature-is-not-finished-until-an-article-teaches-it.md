@@ -26,8 +26,9 @@ reader comes to.
    id in `commands:`. A command that needs no article is listed in `packages/ui/src/help/noArticleNeeded.ts` with its
    reason. Anything else fails a case, and the failure names the commands.
 2. **A listing has to be backed by the body.** The id is what F1 and *Show me* read, and it costs one word, so a list that
-   only asked for the id could be met without a sentence of help. The article must also say a name the person reads on
-   screen, the command's title or its ribbon label. Where an article teaches a command in other words (an arrow key for a
+   only asked for the id could be met without a sentence of help. The article's body must also say a name the person
+   reads on screen, the command's title or its ribbon label. The title, summary and keywords do not count: a keyword is
+   a word to find the article by. Where an article teaches a command in other words (an arrow key for a
    nudge), that pair is listed in `TAUGHT_IN_OTHER_WORDS`, in the same file, with the reason.
 3. **Every setting the Settings dialog shows is named by an article**, or is listed in `SETTINGS_NO_ARTICLE` with its
    reason. A setting marked `remembered` draws no row, so it is left out by that flag. The settings are in the same

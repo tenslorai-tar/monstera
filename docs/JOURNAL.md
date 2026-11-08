@@ -892,6 +892,28 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-11-08 — Help for every tool: what was missing, and the check that holds it
+
+The owner found two live features with no article, *Document properties* and *Convert text to curves*. Nothing asked for
+one: ADR-0112 checked that what an article names exists, never the other way round. `docs/manual-test-checklist.md` had
+printed the gap all along, as a line with no *Help:*, and nothing read it.
+
+**Measured at `52414223`:** 282 commands, 50 listed by no article. Read against the articles' bodies, they split in three:
+4 needed a new article, 5 need none and say why in `noArticleNeeded.ts`, and 41 belong in an article that exists, where
+some were already taught and only F1 and *Show me* were blind to them, and others needed a sentence. Run in the application
+before writing, on the fictional documents, at `52414223`'s build.
+
+**A mutation found a hole in the check on its first run.** With every mention of *Highlight fields* gone from an article's
+body it stayed green, because the name was still in the keywords, which the search text includes. The check now reads the
+body only, and a case holds it.
+
+**Not run:** *Check for updates*. It opens the Microsoft Store, the full walk records it as not walked for that reason, and
+an unpacked build opens nothing. Its article is written from the code. The packed Windows build's Text to curves proof is
+still owed, as its FEATURES row says; the runs here were the development build with the shipped Ghostscript.
+
+**Found and not fixed**, for the next update: choosing the open document's own file as the destination of a curves copy is
+refused correctly, and the message says another open document is writing to the file, which is not what happened.
+
 ## 2026-11-07 — Words that paint nothing, the save branch measured, and three walk failures traced to their causes
 
 Everything below was run in the application or in a test, and says which, except where a line says it was read.
