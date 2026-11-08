@@ -960,6 +960,12 @@ fresh copy, and on the third pressed a block to type a word.
   block outlines, and the new document's arrive 3.5 to 5 s later. The script waited for any outline and pressed one by
   count, so it may have pressed one that was going.
 
+**Addition, Fit page in Continuous: kept smaller, by the owner's decision of 2026-11-08.** Compared with the release, this
+build draws a page at Fit page about 4 points of zoom smaller (73% against 77% on the page measured), with the list's 16 px
+padding left above and below it. `9ab0acb2` did that on purpose: it measures the fit against the box less that padding, so
+the fit answers once instead of twice, which is the flicker it fixed. The smaller page was not put to the owner when that
+commit landed. Put to them on 2026-11-07, the owner kept it for 1.1.2613.0, so no new fix or pack follows from it.
+
 ## 2026-11-06 — Placed marks in the real application: two faults the writer's cases could not reach
 
 Everything here was run in the application on the merged build, against the release's code as the control, except where
