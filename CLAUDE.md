@@ -559,8 +559,11 @@ the architecture first.
 Registered (no bespoke wiring) · contract entries exist and validate · kernel
 logic unit-tested · a proof with a control case covers its invariant · strings
 are i18n keys · dialogs use the primitive and pass the a11y lint · configurable
-behavior is in the settings registry · `docs/FEATURES.md` row updated · comments
-state mechanisms only · committed as a working unit.
+behavior is in the settings registry · **a Help article teaches it, written after
+running the feature, or `noArticleNeeded.ts` says why not
+([ADR-0290](docs/DECISIONS/0290-a-feature-is-not-finished-until-an-article-teaches-it.md);
+a case fails otherwise)** · `docs/FEATURES.md` row updated · comments state
+mechanisms only · committed as a working unit.
 
 ### The wired-tools rule (absolute)
 
