@@ -3,7 +3,7 @@ id: select-annotations
 title: Select, move, resize and delete annotations
 summary: Pick up comments and shapes to move, resize, copy, paste or delete them.
 keywords: [select, move annotation, resize, drag, nudge, delete annotation, copy annotation, paste annotation, arrow keys]
-commands: [annotate.select, annotate.delete-selection, annotate.copy-selection, annotate.paste, annotate.nudge-left, annotate.nudge-right, annotate.nudge-up, annotate.nudge-down, annotate.nudge-left-far, annotate.nudge-right-far, annotate.nudge-up-far, annotate.nudge-down-far]
+commands: [annotate.select, annotate.select-all, annotate.delete-selection, annotate.copy-selection, annotate.paste, annotate.nudge-left, annotate.nudge-right, annotate.nudge-up, annotate.nudge-down, annotate.nudge-left-far, annotate.nudge-right-far, annotate.nudge-up-far, annotate.nudge-down-far]
 contexts: [comment, home]
 ---
 **Select annotations** lets you pick up marks you or others have added and change where they are and how big they are.
@@ -11,7 +11,7 @@ contexts: [comment, home]
 ## Steps
 
 1. In the rail, choose **Comment**, then **Select** in the **Markup** group (its full name is **Select annotations**). It is also in **Home**, **Quick tools**, and on the Float bar.
-2. Click a mark to select it, or drag a box to select every mark it touches.
+2. Click a mark to select it, or drag a box to select every mark it touches. To take every mark on the page, press **Ctrl+K** and choose **Select every comment on this page**.
 3. Drag a selected mark to move it; drag its handles to resize it.
 4. Use the arrow keys to nudge it; hold **Shift** for bigger steps.
 5. Press **Delete** to remove the selection.

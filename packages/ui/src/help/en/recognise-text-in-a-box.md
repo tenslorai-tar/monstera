@@ -4,7 +4,7 @@ title: Recognise text in part of a page
 summary: Draw a box on a scanned page to read the text in just that area.
 keywords: [ocr region, recognise area, partial ocr, box, select area, scan region]
 commands: [tools.ocr-region]
-contexts: [tools]
+contexts: [tools, dialog.region-read]
 ---
 Instead of reading a whole page, you can read the text in one area of a scanned page.
 

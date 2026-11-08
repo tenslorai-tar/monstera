@@ -87,7 +87,7 @@ is not available.
 - [ ] **Spell check** — Proofing · `document.spell-check` · Shows: on screen · Help: *Check spelling*
 - [ ] **Word count** — Proofing · `document.word-count` · Shows: a result dialog · Help: *Count words and characters*
 - [ ] **Edit text on the page** — Text · `text.edit` · Shows: on screen · Help: *Edit text on the page*
-- [ ] **Add text** — Text · `text.add` · Shows: on screen
+- [ ] **Add text** — Text · `text.add` · Shows: on screen · Help: *Edit text on the page*
 - [ ] **Edit all objects** — Text · `edit.objects-all` · Shows: on screen · Help: *Move, resize, recolour or remove things on a page*
 - [ ] **Edit text objects** — Text · `edit.objects-text` · Shows: on screen · Help: *Move, resize, recolour or remove things on a page*
 - [ ] **Edit images** — Text · `edit.objects-images` · Shows: on screen · Help: *Move, resize, recolour or remove things on a page*
@@ -147,7 +147,7 @@ is not available.
 - [ ] **Fields list** — Fields · `view.show-fields` · Shows: on screen · Help: *Delete a form field*
 - [ ] **Add a signature field** — Fields · `forms.field-signature` · Shows: on screen · Help: *Create form fields*
 - [ ] **Add a date field** — Fields · `forms.field-date` · Shows: on screen · Help: *Create form fields*
-- [ ] **Highlight fields** — Manage · `view.toggle-field-highlight` · Shows: on screen
+- [ ] **Highlight fields** — Manage · `view.toggle-field-highlight` · Shows: on screen · Help: *Highlight the fields of a form*
 - [ ] **Find fields on this page…** — Manage · `document.find-flat-fields` · Shows: a result dialog · Help: *Find fields on a flat form*
 - [ ] **Flatten form** — Manage · `document.flatten-form` · Shows: a toast · Help: *Flatten a form*
 - [ ] **Tab order…** — Manage · `document.tab-order` · Shows: a toast · Help: *Change a form field*
@@ -188,7 +188,7 @@ is not available.
 - [ ] **Keyboard shortcuts** — Application · `app.keyboard-shortcuts` · Shows: on screen · Help: *See and change keyboard shortcuts*
 - [ ] **Settings** — Application · `app.settings` · Shows: on screen · Help: *Change Monstera's settings*
 - [ ] **Export as PDF/A…** — Convert · `document.export-pdfa` · Shows: a toast · Help: *Save an archival copy (PDF/A)*
-- [ ] **Convert text to curves…** — Convert · `document.convert-text-to-curves` · Shows: a toast
+- [ ] **Convert text to curves…** — Convert · `document.convert-text-to-curves` · Shows: a toast · Help: *Convert text to curves*
 - [ ] **Save a smaller copy…** — Convert · `document.optimize` · Shows: a toast · Help: *Make a smaller copy of a PDF*
 - [ ] **Export text…** — Convert · `document.export-text` · Shows: a toast · Help: *Save the text as a text file*
 - [ ] **Export text with layout…** — Convert · `document.export-layout-text` · Shows: a toast · Help: *Save the text as a text file*
@@ -223,10 +223,10 @@ is not available.
 - [ ] **Close tab** · `document.close-tab` · Shows: on screen · Help: *Close a document that has unsaved changes*
 - [ ] **Copy** · `text.copy` · Shows: a toast · Help: *Select and copy text*
 - [ ] **Edit comment…** · `annotate.edit-selection` · Shows: on screen · Help: *Edit a comment or reply to it*
-- [ ] **Field properties** · `forms.field-properties` · Shows: on screen
-- [ ] **Copy** · `forms.copy-fields` · Shows: on screen
-- [ ] **Paste** · `forms.paste-fields` · Shows: on screen
-- [ ] **Duplicate field** · `forms.duplicate-field` · Shows: on screen
+- [ ] **Field properties** · `forms.field-properties` · Shows: on screen · Help: *Change a form field*
+- [ ] **Copy** · `forms.copy-fields` · Shows: on screen · Help: *Change a form field*
+- [ ] **Paste** · `forms.paste-fields` · Shows: on screen · Help: *Change a form field*
+- [ ] **Duplicate field** · `forms.duplicate-field` · Shows: on screen · Help: *Change a form field*
 - [ ] **Close other tabs** · `document.close-others` · Shows: on screen · Help: *Use right-click menus*
 - [ ] **Highlight** · `text.highlight` · Shows: on screen · Help: *Highlight, underline or strike through text*
 - [ ] **Reply…** · `annotate.reply-selection` · Shows: on screen · Help: *Edit a comment or reply to it*
@@ -248,35 +248,35 @@ is not available.
 
 ## Menu bar
 
-- [ ] **Check for updates** · `app.check-for-updates` · Shows: on screen
+- [ ] **Check for updates** · `app.check-for-updates` · Shows: on screen · Help: *Get the newest version of Monstera*
 - [ ] **Cut** · `edit.cut` · Shows: on screen
 - [ ] **Go to page** · `view.go-to` · Shows: on screen · Help: *Move between pages*
-- [ ] **Match the system theme** · `view.theme-system` · Shows: on screen
-- [ ] **Pages panel** · `view.show-pages` · Shows: on screen
+- [ ] **Match the system theme** · `view.theme-system` · Shows: on screen · Help: *Change the theme and accent colour*
+- [ ] **Pages panel** · `view.show-pages` · Shows: on screen · Help: *Use the document panel*
 - [ ] **Ribbon layout** · `view.layout-ribbon` · Shows: on screen · Help: *Choose a layout: Ribbon, Studio or Focus*
 - [ ] **Show or hide the document panel** · `view.toggle-panel` · Shows: on screen · Help: *Use the document panel*
-- [ ] **Bookmarks panel** · `view.show-bookmarks` · Shows: on screen
+- [ ] **Bookmarks panel** · `view.show-bookmarks` · Shows: on screen · Help: *Use the document panel*
 - [ ] **Command palette** · `view.command-palette` · Shows: on screen · Help: *Find any tool by name*
-- [ ] **Light theme** · `view.theme-light` · Shows: on screen
+- [ ] **Light theme** · `view.theme-light` · Shows: on screen · Help: *Change the theme and accent colour*
 - [ ] **Save a copy…** · `document.save-copy` · Shows: a toast · Help: *Save a copy under another name*
 - [ ] **Show or hide the properties panel** · `view.toggle-context-panel` · Shows: on screen · Help: *Use the properties panel*
 - [ ] **Studio layout** · `view.layout-studio` · Shows: on screen · Help: *Choose a layout: Ribbon, Studio or Focus*
 - [ ] **Restore a previous version…** · `document.restore-version` · Shows: on screen · Help: *Save your changes*
-- [ ] **Actual size** · `view.actual-size` · Shows: on screen
+- [ ] **Actual size** · `view.actual-size` · Shows: on screen · Help: *Zoom in, zoom out and fit the page*
 - [ ] **Autoscroll** · `view.autoscroll` · Shows: on screen · Help: *Move between pages*
 - [ ] **Cloud storage…** · `cloud.storage` · Shows: on screen · Help: *Open and save PDFs in OneDrive or Google Drive*
-- [ ] **Dark theme** · `view.theme-dark` · Shows: on screen
-- [ ] **Document properties…** · `document.properties` · Shows: a toast
+- [ ] **Dark theme** · `view.theme-dark` · Shows: on screen · Help: *Change the theme and accent colour*
+- [ ] **Document properties…** · `document.properties` · Shows: a toast · Help: *See and change a document's properties*
 - [ ] **Focus layout** · `view.layout-focus` · Shows: on screen · Help: *Choose a layout: Ribbon, Studio or Focus*
 - [ ] **Paste** · `edit.paste` · Shows: on screen
 - [ ] **Save back to cloud** · `cloud.save-back` · Shows: a toast · Help: *Open and save PDFs in OneDrive or Google Drive*
 - [ ] **Reset Float bar position** · `view.reset-float-bar` · Shows: on screen · Help: *Use the Float bar*
 - [ ] **Clear recent files** · `document.clear-recent` · Shows: on screen · Help: *Reopen a recent file*
 - [ ] **Select all** · `edit.select-all` · Shows: on screen
-- [ ] **Start screen** · `app.start-screen` · Shows: on screen
-- [ ] **Layers panel** · `view.show-layers` · Shows: on screen
-- [ ] **Search panel** · `view.show-search` · Shows: on screen
-- [ ] **Properties panel** · `view.show-properties` · Shows: on screen
+- [ ] **Start screen** · `app.start-screen` · Shows: on screen · Help: *Use the start screen*
+- [ ] **Layers panel** · `view.show-layers` · Shows: on screen · Help: *Use the document panel*
+- [ ] **Search panel** · `view.show-search` · Shows: on screen · Help: *Use the document panel*
+- [ ] **Properties panel** · `view.show-properties` · Shows: on screen · Help: *Use the properties panel*
 - [ ] **Exit** · `app.exit` · Shows: on screen
 
 ## Menu bar (centre)
@@ -291,16 +291,16 @@ is not available.
 - [ ] **Send backward** · `edit.object-backward` · Shows: on screen · Help: *Move, resize, recolour or remove things on a page*
 - [ ] **Copy to other pages…** · `forms.copy-to-pages` · Shows: on screen · Help: *Change a form field*
 - [ ] **Align left edges** · `forms.arrange.align-left` · Shows: on screen · Help: *Change a form field*
-- [ ] **Align right edges** · `forms.arrange.align-right` · Shows: on screen
-- [ ] **Align tops** · `forms.arrange.align-top` · Shows: on screen
-- [ ] **Align bottoms** · `forms.arrange.align-bottom` · Shows: on screen
-- [ ] **Centre across the first field** · `forms.arrange.centre-horizontally` · Shows: on screen
-- [ ] **Centre down the first field** · `forms.arrange.centre-vertically` · Shows: on screen
-- [ ] **Same width as the first field** · `forms.arrange.same-width` · Shows: on screen
-- [ ] **Same height as the first field** · `forms.arrange.same-height` · Shows: on screen
+- [ ] **Align right edges** · `forms.arrange.align-right` · Shows: on screen · Help: *Change a form field*
+- [ ] **Align tops** · `forms.arrange.align-top` · Shows: on screen · Help: *Change a form field*
+- [ ] **Align bottoms** · `forms.arrange.align-bottom` · Shows: on screen · Help: *Change a form field*
+- [ ] **Centre across the first field** · `forms.arrange.centre-horizontally` · Shows: on screen · Help: *Change a form field*
+- [ ] **Centre down the first field** · `forms.arrange.centre-vertically` · Shows: on screen · Help: *Change a form field*
+- [ ] **Same width as the first field** · `forms.arrange.same-width` · Shows: on screen · Help: *Change a form field*
+- [ ] **Same height as the first field** · `forms.arrange.same-height` · Shows: on screen · Help: *Change a form field*
 - [ ] **Same size as the first field** · `forms.arrange.same-size` · Shows: on screen · Help: *Change a form field*
-- [ ] **Spread evenly across** · `forms.arrange.distribute-horizontally` · Shows: on screen
-- [ ] **Spread evenly down** · `forms.arrange.distribute-vertically` · Shows: on screen
+- [ ] **Spread evenly across** · `forms.arrange.distribute-horizontally` · Shows: on screen · Help: *Change a form field*
+- [ ] **Spread evenly down** · `forms.arrange.distribute-vertically` · Shows: on screen · Help: *Change a form field*
 
 ## Start screen
 
@@ -329,23 +329,23 @@ is not available.
 - [ ] **Move selection right** · `annotate.nudge-right-far` · Shows: on screen · Help: *Select, move, resize and delete annotations*
 - [ ] **Move selection up** · `annotate.nudge-up` · Shows: on screen · Help: *Select, move, resize and delete annotations*
 - [ ] **Move selection up** · `annotate.nudge-up-far` · Shows: on screen · Help: *Select, move, resize and delete annotations*
-- [ ] **Select every comment on this page** · `annotate.select-all` · Shows: on screen
-- [ ] **Align centre** · `text.format.align-center` · Shows: on screen
-- [ ] **Justify** · `text.format.align-justify` · Shows: on screen
-- [ ] **Align left** · `text.format.align-left` · Shows: on screen
-- [ ] **Align right** · `text.format.align-right` · Shows: on screen
-- [ ] **Bold** · `text.format.bold` · Shows: on screen
-- [ ] **Bullets** · `text.format.bullets` · Shows: on screen
-- [ ] **Decrease indent** · `text.format.indent-less` · Shows: on screen
-- [ ] **Increase indent** · `text.format.indent-more` · Shows: on screen
-- [ ] **Italic** · `text.format.italic` · Shows: on screen
-- [ ] **Numbering** · `text.format.numbering` · Shows: on screen
-- [ ] **Strikethrough** · `text.format.strike` · Shows: on screen
-- [ ] **Subscript** · `text.format.subscript` · Shows: on screen
-- [ ] **Superscript** · `text.format.superscript` · Shows: on screen
-- [ ] **Underline** · `text.format.underline` · Shows: on screen
+- [ ] **Select every comment on this page** · `annotate.select-all` · Shows: on screen · Help: *Select, move, resize and delete annotations*
+- [ ] **Align centre** · `text.format.align-center` · Shows: on screen · Help: *Edit text on the page*
+- [ ] **Justify** · `text.format.align-justify` · Shows: on screen · Help: *Edit text on the page*
+- [ ] **Align left** · `text.format.align-left` · Shows: on screen · Help: *Edit text on the page*
+- [ ] **Align right** · `text.format.align-right` · Shows: on screen · Help: *Edit text on the page*
+- [ ] **Bold** · `text.format.bold` · Shows: on screen · Help: *Edit text on the page*
+- [ ] **Bullets** · `text.format.bullets` · Shows: on screen · Help: *Edit text on the page*
+- [ ] **Decrease indent** · `text.format.indent-less` · Shows: on screen · Help: *Edit text on the page*
+- [ ] **Increase indent** · `text.format.indent-more` · Shows: on screen · Help: *Edit text on the page*
+- [ ] **Italic** · `text.format.italic` · Shows: on screen · Help: *Edit text on the page*
+- [ ] **Numbering** · `text.format.numbering` · Shows: on screen · Help: *Edit text on the page*
+- [ ] **Strikethrough** · `text.format.strike` · Shows: on screen · Help: *Edit text on the page*
+- [ ] **Subscript** · `text.format.subscript` · Shows: on screen · Help: *Edit text on the page*
+- [ ] **Superscript** · `text.format.superscript` · Shows: on screen · Help: *Edit text on the page*
+- [ ] **Underline** · `text.format.underline` · Shows: on screen · Help: *Edit text on the page*
 - [ ] **Back** · `view.go-back` · Shows: on screen · Help: *Move between pages*
 - [ ] **Forward** · `view.go-forward` · Shows: on screen · Help: *Move between pages*
 - [ ] **Leave Focus** · `view.leave-focus` · Shows: on screen · Help: *Choose a layout: Ribbon, Studio or Focus*
-- [ ] **Move to the next pane** · `view.next-pane` · Shows: on screen
-- [ ] **Move to the previous pane** · `view.previous-pane` · Shows: on screen
+- [ ] **Move to the next pane** · `view.next-pane` · Shows: on screen · Help: *See and change keyboard shortcuts*
+- [ ] **Move to the previous pane** · `view.previous-pane` · Shows: on screen · Help: *See and change keyboard shortcuts*

@@ -16,6 +16,8 @@ The first time you start Monstera, the start screen offers to set up the AI assi
 4. Choose **Check and save**. Monstera asks the provider whether the key works and saves it only if it does.
 5. Or choose **Skip**.
 
+Each provider's key can also be entered or changed in **Settings**, on the **AI** page: **Anthropic API key**, **OpenAI API key**, **Google Gemini API key**, **Mistral API key**, **xAI API key**, **Azure OpenAI key**, **OpenRouter API key**, **Groq API key**, **Perplexity API key** and **DeepSeek API key**.
+
 ![The Set up the AI assistant window](screenshot:set-up-ai-1)
 
 ## Good to know

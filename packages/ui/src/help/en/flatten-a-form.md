@@ -4,7 +4,7 @@ title: Flatten a form
 summary: Draw what is written in every field onto the page and remove the form, so it can no longer be changed.
 keywords: [flatten, flatten form, lock form, make permanent, remove fields, finalise form]
 commands: [document.flatten-form]
-contexts: [forms]
+contexts: [forms, dialog.flatten-form]
 ---
 Flatten turns the form into an ordinary page. Whatever is typed or ticked stays exactly as it looks, but nobody can change it any more. Use it before you send a final copy.
 

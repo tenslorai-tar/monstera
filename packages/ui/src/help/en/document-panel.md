@@ -3,7 +3,7 @@ id: document-panel
 title: Use the document panel
 summary: The panel on the left shows Pages, Bookmarks, Comments, Forms, Layers, Search and Accessibility for the open document.
 keywords: [side panel, left panel, sidebar, thumbnails, pages panel, bookmarks, comments, forms, layers, search, accessibility, collapse, resize]
-commands: [view.toggle-panel]
+commands: [view.toggle-panel, view.show-pages, view.show-bookmarks, view.show-layers, view.show-search]
 contexts: [panel.pages, panel.bookmarks, panel.comments, panel.forms, panel.layers, panel.search, panel.accessibility]
 ---
 The document panel sits to the left of the pages. It has seven tabs, one shown at a time: **Pages**, **Bookmarks**, **Comments**, **Forms**, **Layers**, **Search** and **Accessibility**.
@@ -19,6 +19,7 @@ The document panel sits to the left of the pages. It has seven tabs, one shown a
 ## Good to know
 
 - Shortcut: **Ctrl+Shift+B** shows or hides the panel.
+- The **Window** menu opens the panel on a tab: **Pages panel**, **Bookmarks panel**, **Layers panel** or **Search panel**.
 - The panel's width and which tab is open are remembered.
 - The size of the page pictures in **Pages** is set in **Settings**, **Appearance** page, **Thumbnail size**.
 

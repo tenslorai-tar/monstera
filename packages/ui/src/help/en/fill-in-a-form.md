@@ -4,7 +4,7 @@ title: Fill in a form
 summary: Fill a PDF form's text boxes, tick boxes, options, dropdowns and lists on the page or from the Forms tab.
 keywords: [fill form, form, fields, fill in, tick box, checkbox, radio, dropdown, list, acroform, complete form, reset form, clear form, start again]
 commands: [view.show-fields, document.reset-form]
-contexts: [panel.forms, forms]
+contexts: [panel.forms, forms, dialog.reset-form]
 ---
 Fill a form where it is on the page, or from the **Forms** tab, which lists every field in the document with a control to fill it in.
 

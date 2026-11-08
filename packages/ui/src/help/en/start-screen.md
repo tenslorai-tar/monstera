@@ -3,7 +3,7 @@ id: start-screen
 title: Use the start screen
 summary: The first screen shows Open PDF, six shortcut cards, your recent files and links to Settings, About and the Help centre.
 keywords: [start screen, home screen, welcome, cards, shortcuts, getting started, first screen]
-commands: [document.open, start.annotate, start.forms, start.ocr, start.split-merge, start.encrypt-sign, start.export, app.settings, app.about, app.help]
+commands: [document.open, app.start-screen, start.annotate, start.forms, start.ocr, start.split-merge, start.encrypt-sign, start.export, app.settings, app.about, app.help]
 contexts: [start-screen]
 ---
 When no document is open, Monstera shows the start screen. From here you can open a PDF, jump straight to a kind of task, reopen a recent file, or open Settings.
@@ -14,6 +14,7 @@ When no document is open, Monstera shows the start screen. From here you can ope
 2. To start a task, choose one of the six cards: **Annotate & mark up**, **Fill & create forms**, **OCR scanned pages**, **Split & merge**, **Encrypt & sign** or **Export anywhere**. Each card asks for a PDF, opens it, and shows the matching section of the rail.
 3. To reopen something you had before, choose it under **Recent**.
 4. At the foot of the screen you will find **Settings**, **About** and **Help centre**.
+5. To come back here with documents open, choose **Start screen** in the **File** menu.
 
 ![The start screen showing the Open PDF… button, the six task cards, and the Recent list](screenshot:start-screen-1)
 

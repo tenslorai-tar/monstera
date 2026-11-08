@@ -4,7 +4,7 @@ title: Make a PDF from a Markdown file
 summary: Turn a Markdown (.md) text file into a new PDF, or add it as pages to the open document.
 keywords: [markdown, md, text to pdf, create pdf, convert markdown, append pages, notes to pdf]
 commands: [document.new-from-markdown, document.append-markdown]
-contexts: [dialog.new-from-text, dialog.markdown-import-problem, dialog.boxed-characters, tools]
+contexts: [dialog.new-from-text, dialog.markdown-import-problem, dialog.boxed-characters, dialog.insert-markdown, tools]
 ---
 Markdown is a simple way of writing formatted text in a plain text file. Monstera can turn one into a PDF.
 

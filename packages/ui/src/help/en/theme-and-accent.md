@@ -3,14 +3,14 @@ id: theme-and-accent
 title: Change the theme and accent colour
 summary: Choose a light or dark window, follow Windows, and pick an accent colour.
 keywords: [theme, dark mode, light mode, high contrast, accent colour, color, appearance, reduce motion, animations]
-commands: [app.settings]
+commands: [app.settings, view.theme-system, view.theme-light, view.theme-dark]
 contexts: [dialog.settings]
 ---
 You can choose how Monstera's window looks. This changes the window around your document, not the document.
 
 ## Steps
 
-To switch between light and dark at once, press the sun or moon button in the title bar, beside the command search. It shows the theme a click switches to, so a sun means "switch to light". If the window follows Windows, it switches to the opposite of what you see.
+To switch between light and dark at once, press the sun or moon button in the title bar, beside the command search. It shows the theme a click switches to, so a sun means "switch to light". If the window follows Windows, it switches to the opposite of what you see. The **View** menu also has **Match the system theme**, **Light theme** and **Dark theme**.
 
 For the other choices:
 

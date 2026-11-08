@@ -3,7 +3,7 @@ id: keyboard-shortcuts
 title: See and change keyboard shortcuts
 summary: Press Ctrl+/ for the list of every command and its keys, and give any command the keys you want.
 keywords: [keyboard shortcuts, hotkeys, keys, ctrl+/, shortcut list, key bindings, change shortcut, rebind, customise keys]
-commands: [app.keyboard-shortcuts]
+commands: [app.keyboard-shortcuts, view.next-pane, view.previous-pane]
 contexts: [dialog.keyboard-shortcuts, tools]
 ---
 Monstera lists every command in one window with the keys that run it, and any of them can be changed.
@@ -21,7 +21,7 @@ Monstera lists every command in one window with the keys that run it, and any of
 ## Good to know
 
 - Some shortcuts you will use most: **Ctrl+O** open, **Ctrl+S** save, **Ctrl+P** print, **Ctrl+Z** undo, **Ctrl+Y** redo, **Ctrl+F** find, **Ctrl+K** search tools, **Ctrl+W** close tab, **F1** help.
-- **F6** moves to the next part of the window — the tabs, the ribbon, the panels, the pages, the status bar — and **Shift+F6** moves back. They are in the list, so you can change them.
+- **F6** moves to the next part of the window — the tabs, the ribbon, the panels, the pages, the status bar — and **Shift+F6** moves back. In the list they are **Move to the next pane** and **Move to the previous pane**, so you can change them.
 - A few keys belong to one place and are not in the list, so they cannot be changed: **F10** or **Alt** reaches the menu bar, **Shift+F10** opens the right-click menu, and **Delete** deletes the selected pages in the Organize page grid.
 - In any box you type in, right-click for Cut, Copy, Paste and Select All, as well as Ctrl+X, Ctrl+C and Ctrl+V.
 - A change works at once, in the menus and the tool search too, and is kept for next time.

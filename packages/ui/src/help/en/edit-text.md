@@ -3,7 +3,7 @@ id: edit-text
 title: Edit text on the page
 summary: Change the words already on a page where they are, add new words to the page, and format them.
 keywords: [edit text, change text, correct typo, rewrite, modify pdf text, in place editing, reflow, unpack, add text, font, format text, text box]
-commands: [text.edit]
+commands: [text.edit, text.add, text.format.bold, text.format.italic, text.format.underline, text.format.strike, text.format.superscript, text.format.subscript, text.format.align-left, text.format.align-center, text.format.align-right, text.format.align-justify, text.format.bullets, text.format.numbering, text.format.indent-more, text.format.indent-less]
 contexts: [edit]
 ---
 Edit text lets you change the words already on a page, in place, keeping their font, size and colour where the font allows. **Add text** puts new words into the page itself.
@@ -29,7 +29,7 @@ It is one box at a time, and then you are back in Edit text, where the new block
 
 While a block is open, the **Properties** tab shows two sections for it. They change the words you have selected, or the paragraph the cursor is in.
 
-- **Text**, in this order: the font and the size on one row; **Bold**, **Italic**, **Underline**, **Strikethrough**, **Superscript** and **Subscript**; the text colour; a **Highlight** colour behind the words; alignment (left, centre, right or **Justify**) with bullets, numbering and indent; then **Line spacing**, the space after the paragraph and **Character spacing in points**. A text box, typed text and a callout show the same section.
+- **Text**, in this order: the font and the size on one row; **Bold**, **Italic**, **Underline**, **Strikethrough**, **Superscript** and **Subscript**; the text colour; a **Highlight** colour behind the words; **Align left**, **Align centre**, **Align right** or **Justify**, with **Bullets**, **Numbering**, **Increase indent** and **Decrease indent**; then **Line spacing**, the space after the paragraph and **Character spacing in points**. A text box, typed text and a callout show the same section.
 - **Box**: **Remove this text** takes the block off the page.
 
 Choosing something there keeps the block open, so you can go on typing; click the page away from the block, or press **Esc**, when you are done. **Ctrl+B**, **Ctrl+I** and **Ctrl+U** work while you type.
@@ -74,6 +74,7 @@ The list shows only fonts that can be used in a PDF. A font on this computer who
 - Each word keeps its own look. A bold word that moves to the next line is still bold, and a word you type takes the look of the word you typed it into. A centred or right-aligned paragraph stays that way, and so does an indented first line.
 - The squares just outside the open block are controls, and they never cover your words. Drag a side to change the width of the text (it wraps again at the new width), a corner to make it bigger or smaller, the grip at the top to move it, and the round handle to its right to turn it. Whatever you do to the block is shown at once and written together with your words when you finish, as one change, so one **Ctrl+Z** puts it all back. You can do the same from the keyboard: **Alt** with an arrow moves the block a point (hold **Shift** for ten), **Alt** with the plus or minus key scales it, **Alt** with the left or right square bracket key changes its width, and **Alt** with the comma or full stop key turns it.
 - A block you turn is saved as text set at an angle, and you can open it and edit it again like any other. A page that draws its text in the kind of font described below is moved, resized, turned and added to the same way, and its blocks can be joined and split. A line you did not change is carried to its new place exactly as it was.
+- While you edit, letters the document's own font does not have are shown in the kind of font set by **Font for letters a document font lacks** in **Settings**, on the **Editing defaults** page.
 - A bullet or number is written into the text as its first characters, so it is kept when the file is opened elsewhere. Turning the list off takes those characters away again.
 - Click another block while one is open and Monstera writes the open block first, then selects the one you clicked, so nothing you typed is lost. While the first is being written its words stay on screen and cannot be typed into. If the write is refused, your words stay in the box with the reason, and the block you clicked does not open over them.
 - Right-click in the words for a menu. Over a word that is spelled wrongly it offers the likeliest corrections (choose one to replace the word) and Add “word” to the dictionary; below those are **Cut**, **Copy**, **Paste** and **Select all**. Cut and Copy are available when something is selected. Your own dictionary is the one **Spell check** uses, and if it is full the menu says so beside the words.

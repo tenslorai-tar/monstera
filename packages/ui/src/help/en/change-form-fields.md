@@ -3,7 +3,7 @@ id: change-form-fields
 title: Change a form field
 summary: Rename, restyle, format, calculate, align, copy and set the tab order of the fields you have drawn.
 keywords: [field properties, rename field, tooltip, required, read only, default value, font, border, border style, check style, validate, fill, number format, date format, calculation, align fields, same size, copy field, tab order, button action, reset button, go to page button]
-commands: [forms.arrange.align-left, forms.arrange.same-size, forms.copy-to-pages, document.tab-order]
+commands: [forms.arrange.align-left, forms.arrange.align-right, forms.arrange.align-top, forms.arrange.align-bottom, forms.arrange.centre-horizontally, forms.arrange.centre-vertically, forms.arrange.same-width, forms.arrange.same-height, forms.arrange.same-size, forms.arrange.distribute-horizontally, forms.arrange.distribute-vertically, forms.copy-to-pages, forms.field-properties, forms.copy-fields, forms.paste-fields, forms.duplicate-field, document.tab-order]
 contexts: [dialog.field-copy, dialog.tab-order, forms]
 ---
 Every field has properties you can change after it is drawn: its name, what it looks like and how it behaves.
@@ -35,6 +35,8 @@ Every field has properties you can change after it is drawn: its name, what it l
 ## Line up and copy
 
 - With two or more fields selected, the foot of the **Properties** tab offers **Align left edges**, **Align right edges**, **Align tops**, **Align bottoms**, **Centre across the first field** and **Centre down the first field**, and also **Same width as the first field**, **Same height as the first field** and **Same size as the first field**. Fields already where you ask are left alone.
+- With three or more fields selected, it also offers **Spread evenly across** and **Spread evenly down**, which put the same space between them.
+- Right-click a field for **Field properties**, which opens the **Properties** tab, and for **Copy** and **Paste**, which make a new field from the one you copied. **Duplicate field** (**Ctrl+D**) does both at once. Each new field has its own name, such as contact_2.
 - With one field selected, **Copy to other pages…** puts a copy at the same place on the pages you type. On a page of another size the place is the same fraction of the page, and the copy is kept inside it. Each copy is a new field with its own name and starts empty. A radio option and a signature cannot be copied alone.
 - In the **Forms** section, **Tab order…** chooses how the Tab key moves through the form: across each row, down each column, or in the order the document was made, on every page. Or choose **In the order I click**: each field shows its number, click the fields one after another, and choose **Set this order**. Click a field again to take it out, or press **Esc** to stop without changing anything.
 

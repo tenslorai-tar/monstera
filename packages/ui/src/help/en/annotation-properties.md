@@ -23,7 +23,7 @@ The **Properties** tab of the right-hand panel controls how annotations look. Wi
 - **Each tool's own** colour keeps each tool's usual colour, for example yellow for highlights.
 - Some kinds of mark, such as highlights and notes, have no line width; the tab says so.
 - Your name on new marks comes from **Settings**, **Editing defaults** page, **Your name for comments**. It is seen by anyone you share the document with. Empty means your Windows user name.
-- The same defaults can be set with no document open in **Settings**, **Editing defaults** page.
+- The same defaults can be set with no document open in **Settings**, **Editing defaults** page, as **Annotation colour**, **Annotation opacity**, **Annotation line width** and **Annotation font size**.
 - Changes can be undone with **Ctrl+Z**.
 
 <!--

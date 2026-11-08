@@ -4,7 +4,7 @@ title: Add a page background
 summary: Give pages a soft colour behind their content, like tinted paper.
 keywords: [background, page colour, page color, tint, paper colour, fill]
 commands: [document.page-background]
-contexts: [organize]
+contexts: [organize, dialog.page-background]
 ---
 Add page background puts a soft colour behind everything on a page, like tinted paper.
 

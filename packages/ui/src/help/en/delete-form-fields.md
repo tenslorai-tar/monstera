@@ -4,7 +4,7 @@ title: Delete a form field
 summary: Remove a field from a form, from the page or from the Fields list.
 keywords: [delete field, remove field, form field, clear form structure]
 commands: [view.show-fields, forms.edit-fields, annotate.delete-selection]
-contexts: [panel.forms]
+contexts: [panel.forms, dialog.delete-fields]
 ---
 You can remove a field completely, not just empty it.
 
