@@ -236,3 +236,27 @@ All four stay as they are, and the cut is not changed for them. Each is held at 
 | A line cut short where it crosses the mark, drawn by the renderer a little differently along its length | 143 pixels on the page of 4,000 drawings, worst 14 levels, the farthest 9 points out; MuPDF's burn-in alone moves none | **accepted**: any cut shortens a segment that crosses the mark | the 4,000 drawings: at most 143, 14 levels, 9 points; the burn-in alone, none |
 | A wide stroke crossing the mark in one subpath, outlined whole | no pixel moves; the 3-point circle is 115,053 bytes, from 157 (180,999 before this amendment) | **accepted**: the pixels stay exact and the size is already below what it was | the 3-point circle: no pixel moves, at most 115,053 bytes |
 | Drawings no mark touches, under nested transforms, which MuPDF's own filter folds into one `cm` | on 2,000 small curved shapes: 215 pixels move, up to 16 levels (112 of them by more than 2 levels), the same with the cut and without | **not patched**: ADR-0011 already rejects carrying a private patch to MuPDF | the 2,000 shapes: the same with and without the cut, at most 112 by more than 2 levels, 16 levels |
+
+## Note, 2026-11-10: where the page of 4,000 drawings' growth came from, and the part removed
+
+The owner's figure: on `scripts/research/redactCutTiming.mjs`' page of 4,000 drawn paths and one mark, the content went
+from 132,274 to 291,383 bytes with the cut and to 128,825 without it. Read from the content after the cut alone, this
+container, MuPDF 1.28.0 native: the 126 paths the cut counts are almost all inside the mark and written as nothing;
+ten replacements are written, seven of them under 1,100 bytes, and three of about 52 KB each. Those three are one
+curve each, stroked 1.2 points wide, crossing the mark's right side.
+
+**Two causes, one of them waste.** A stroke that wide crossing a mark is outlined whole (Decision 4 of the amendment,
+accepted 2026-11-07), and MuPDF's stroker gives a bending curve's inner side as edges that double back, so they join
+into runs of one: about 470 small polygons for the part outside the mark. That is the accepted cost. The waste was the
+quadrilaterals' far end: they ran right to beyond the ink, so every edge INSIDE the mark left a sliver between the mark's
+right side and there, which cancel and draw nothing. A curve across the mark's left side had none.
+
+**Removed:** the quadrilaterals now end inside the first mark the ink meets, with rectangles for the edges' net crossing
+where they do not close, so the picture is the same exactly (`mz_fan_cut`, `mz_fan_corrections`). The page now comes
+back at 266,050 bytes, timed the same (21 rounds: 27.2 ms with the cut, 5.3 ms without). `redactionCutSize.test.ts`
+holds it: the curve across the right side is no larger than its mirror image across the left (49,491 against about
+34,000 before), and no pixel moves that the cut did not already move. Every case in the nine redaction files passes.
+
+**What remains is the accepted outline**, 137 KB on this page for three curves, and making it smaller moves pixels by
+this amendment's own measurements: a coarser flatness, or a native stroke beside an outline. It is put to the owner
+again with this figure.
