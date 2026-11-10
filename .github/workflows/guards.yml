@@ -708,6 +708,17 @@ jobs:
       - name: Native engine advisories
         run: node scripts/ci/annotate.mjs scripts/security/engineAdvisories.mjs
 
+      # A dependency alert held open by the owner's decision ends by itself: the
+      # check asks the npm registry whether every package that depends on the held
+      # one now accepts a fixed version, and fails the day they all do, or the day
+      # the lockfile resolves a fixed version (docs/security/dependency-alerts.md).
+      # A registry it cannot read is could-not-look, never a hold still in force.
+      - name: Prove the dependency-hold check ends a hold and cannot pass blind
+        run: node scripts/ci/annotate.mjs scripts/proofs/dependencyHolds.proof.mjs
+
+      - name: Dependency alerts held open still have their reason
+        run: node scripts/ci/annotate.mjs scripts/security/dependencyHolds.mjs
+
       # The register above is only as good as its inability to pass while
       # unreadable. Its parse used to be wrapped in a bare `catch` returning an
       # empty baseline, and every reachability verdict is a search whose broken

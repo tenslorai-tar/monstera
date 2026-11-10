@@ -238,6 +238,8 @@
     "check:handlers": "node scripts/security/handlerFootprint.mjs",
     "check:advisories": "node scripts/security/engineAdvisories.mjs",
     "proof:advisories": "node scripts/proofs/advisoryRegister.proof.mjs",
+    "check:dependencyholds": "node scripts/security/dependencyHolds.mjs",
+    "proof:dependencyholds": "node scripts/proofs/dependencyHolds.proof.mjs",
     "proof:retrytransient": "node scripts/proofs/retryTransient.proof.mjs",
     "proof:osvquery": "node scripts/proofs/osvQuery.proof.mjs",
     "proof:historyrange": "node scripts/proofs/historyRange.proof.mjs",
