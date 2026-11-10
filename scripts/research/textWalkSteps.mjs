@@ -104,7 +104,10 @@ export function editTextOpening(page) {
    */
   async function pointOf(block, at) {
     // THE WINDOW'S OWN SIZE: the walks size the native window (`sizeWindow`), so Playwright's viewport is unset here.
-    const viewport = await page.evaluate(() => ({ width: globalThis.innerWidth, height: globalThis.innerHeight }));
+    const viewport = await page.evaluate(() => ({
+      width: /** @type {number} */ (Reflect.get(globalThis, 'innerWidth')),
+      height: /** @type {number} */ (Reflect.get(globalThis, 'innerHeight')),
+    }));
     return blockPressPoint(block, at, viewport);
   }
 
