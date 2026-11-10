@@ -27,4 +27,6 @@ repository's own. The owner dismisses the GitHub alert as tolerable risk; the al
 from the lockfile every package that depends on minimatch and asks the npm registry whether the newest version of each
 accepts 11.0.1 or later. It fails the day they all do, naming each, so they are updated then; and it fails if the
 lockfile ever resolves a fixed version, so this record and the alert are closed. A registry it cannot read is reported as
-could-not-look, never as a hold still in force. It would also end if minimatch came to reach shipped code.
+could-not-look, never as a hold still in force, and on Guards, which reaches the internet, the step passes
+`--require-registry`, so could-not-look there fails the run; exit 0 on could-not-look is for a run by hand with no
+network. Its proof reads that step from `guards.yml` and fails without the flag. It would also end if minimatch came to reach shipped code.

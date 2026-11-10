@@ -3,18 +3,23 @@
  * Proves `dependencyHolds.mjs` ends a hold by itself and cannot pass blind: it reports a hold still in force while one
  * dependent accepts no fixed version, fails naming every dependent once all accept one, fails as stale once the lockfile
  * resolves a fixed version, takes its dependents from the lockfile so a new one is asked about, refuses an empty set, and
- * treats a registry it cannot read, or one whose fixed range lists nothing, as could-not-look rather than as held.
+ * treats a registry it cannot read, or one whose fixed range lists nothing, as could-not-look rather than as held — and
+ * that Guards runs it with --require-registry, so could-not-look there is a failure rather than a green step.
  *
  * Offline: the registry is a table here, answered the way `npm view <spec> <field> --json` answers.
  *
  * Usage: node scripts/proofs/dependencyHolds.proof.mjs
  */
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { HOLDS, decide, treeOf } from '../security/dependencyHolds.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 8 });
+const roster = createRoster(failures, { cases: 9 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -132,6 +137,22 @@ const tree = (installed, dependents) => ({ installed, dependents });
     threw = error instanceof Error ? error.message : String(error);
   }
   check('a lockfile naming no dependent is a broken read, refused rather than taken as nothing to ask', threw.includes('broken read'), threw || 'no refusal');
+}
+
+{
+  // GUARDS RUNS IT WITH --require-registry. Without the flag `exitUnverifiable` exits 0, so a lookup that broke for good
+  // would leave the hold green on every run and nothing would say so. Read from the workflow's own command lines: exactly
+  // one step runs the check (the proof's path is a different file), and it carries the flag. None found is a broken
+  // read, never a pass.
+  const workflow = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', '.github', 'workflows', 'guards.yml'), 'utf8');
+  const runs = workflow
+    .split('\n')
+    .filter((line) => /^\s*run:\s/u.test(line) && line.includes('scripts/security/dependencyHolds.mjs'));
+  check(
+    'the Guards step that runs the check passes --require-registry, so a lookup that fails there is a failure',
+    runs.length === 1 && /\s--require-registry(\s|$)/u.test(runs[0] ?? ''),
+    `${String(runs.length)} step(s) run the check: ${JSON.stringify(runs.map((line) => line.trim()))}`,
+  );
 }
 
 process.stdout.write(
