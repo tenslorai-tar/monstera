@@ -522,6 +522,7 @@ import { useWindowControlsOverlay } from './windowControlsOverlay.js';
 import { readWholeList } from './readWholeList.js';
 import { DropTarget } from './surfaces/DropTarget.js';
 import { StartScreen } from './surfaces/StartScreen.js';
+import { LockedDocument } from './surfaces/LockedDocument.js';
 import { ViewProblem } from './surfaces/ViewProblem.js';
 
 /**
@@ -5288,6 +5289,14 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
     [context, designedFields, objectSelection?.page, registry, selection?.page, selectionStore],
   );
 
+  // ONE DOCUMENT'S CLOSE, for a protected document's *Close*: the same path the tab's × takes.
+  const closeOne = useCallback(
+    (docId: DocId): void => {
+      void requestClose([docId]);
+    },
+    [requestClose],
+  );
+
   /**
    * What a background layer shares with the layer on show (ADR-0129): every prop that decides the page area's
    * LAYOUT, so a document brought forward is already laid out exactly as it will be shown and nothing re-fits.
@@ -5301,6 +5310,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       // A LAYER BEHIND READS THE ROW'S ANSWER AND NEVER WRITES IT: it is laid out in the same box (ADR-0146).
       measuresRow: false,
       requestPassword,
+      onCloseDocument: closeOne,
       documentKeys: stores.keys,
       onVersionMoved: versionMoved,
       menuAt: NO_MENU,
@@ -5317,7 +5327,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       coverPage,
       onFirstFrame: markFramed,
     }),
-    [client, coverPage, layout, markFramed, versionMoved, pageBadges, presence, quality, requestPassword, rulers, secondRenderer, settings, showGrid, smoothScroll, split, stores.keys, tileAbove, unit],
+    [client, closeOne, coverPage, layout, markFramed, versionMoved, pageBadges, presence, quality, requestPassword, rulers, secondRenderer, settings, showGrid, smoothScroll, split, stores.keys, tileAbove, unit],
   );
 
   return (
@@ -5545,6 +5555,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
           autoscroll={autoscrollOn === open.docId ? AUTOSCROLL_PIXELS_PER_SECOND[autoscrollSpeed] : undefined}
           onAutoscrollEnd={stopAutoscroll}
           requestPassword={requestPassword}
+          onCloseDocument={closeOne}
           documentKeys={stores.keys}
           settings={settings}
           presence={presence}
@@ -5987,6 +5998,7 @@ type BackgroundLayer = Pick<
   | 'presence'
   | 'measuresRow'
   | 'requestPassword'
+  | 'onCloseDocument'
   | 'documentKeys'
   | 'onVersionMoved'
   | 'menuAt'
@@ -6222,7 +6234,10 @@ function PageCanvas({
   contextPanel,
   quickToolbar,
   menuAt,
+  onCloseDocument,
 }: {
+  /** Closes this document's tab through the one close path, for a protected document's *Close* (`LockedDocument`). */
+  readonly onCloseDocument: (docId: DocId) => void;
   readonly client: ContractClient;
   readonly document: OpenDocument;
   /** The document's holder of released marks in their final look (ADR-0257), for the pages that show them. */
@@ -6397,7 +6412,7 @@ function PageCanvas({
   );
 
   const keys = useMemo(() => viewKeysOf(documentKeys, open.docId), [documentKeys, open.docId]);
-  const { ready, failed, retry } = useDocumentView(client, open, moved, askPassword, keys);
+  const { ready, failed, locked, retry } = useDocumentView(client, open, moved, askPassword, keys);
   // THE VIEW ON SCREEN, told to the document's page plan (ADR-0261): the ops this view has drawn leave, and a command
   // sent from now is planned over it. A layout effect, so a command sent in the frame after the view changed plans over
   // the new one.
@@ -6623,6 +6638,31 @@ function PageCanvas({
           },
     [gridLeaving, viewDrawn],
   );
+
+  if (locked) {
+    // A PROTECTED DOCUMENT WHOSE PROMPT WAS CANCELLED (the owner, 2026-11-10): no error, the sentence and two ways on.
+    // No `data-failed` canvas, because nothing failed: the harness's marker for a parse that threw stays that alone.
+    return (
+      <DocumentBody
+        settings={settings}
+        presence={presence}
+        measuresRow={measuresRow}
+        panel={<DocumentPanel settings={settings} presence={presence} panels={panels} pages={null} />}
+        page={
+          <div className="m-page-pane" data-first-frame="locked">
+            <LockedDocument
+              onClose={() => {
+                onCloseDocument(open.docId);
+              }}
+              onEnterPassword={retry}
+            />
+          </div>
+        }
+        contextPanel={contextPanel}
+        quickToolbar={quickToolbar}
+      />
+    );
+  }
 
   if (failed) {
     // A CANVAS, and the element is the contract rather than the appearance.

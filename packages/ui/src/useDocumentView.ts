@@ -105,16 +105,27 @@ export function useDocumentView(
   /** Whether the parse threw. Distinct from *not yet*, which `ready` says. */
   readonly failed: boolean;
   /**
+   * Whether the document needs a password and the person dismissed the prompt (the owner, 2026-11-10). Not a failure:
+   * nothing went wrong, so the caller says the document is protected and offers to ask again, never *could not be
+   * displayed*. Never true with `failed`, since both are read from one state.
+   */
+  readonly locked: boolean;
+  /**
    * Opens the view again after a failure, at the same version: the page area's *Try again* (the owner's Part 7 B). A
    * failure is never the last word on a tab, because a range main refused once may be served the next time.
    */
   readonly retry: () => void;
 } {
-  const [failed, setFailed] = useState(false);
-  // EACH TRY IS AN OPEN: the opening effect depends on it, so a retry runs the same open a new version would.
+  // ONE STATE FOR BOTH ENDINGS that are not a view, so a document cannot read as failed and locked at once.
+  const [ended, setEnded] = useState<'failed' | 'locked' | undefined>(undefined);
+  const setFailed = useCallback((now: boolean): void => {
+    setEnded(now ? 'failed' : undefined);
+  }, []);
+  // EACH TRY IS AN OPEN: the opening effect depends on it, so a retry runs the same open a new version would, and for a
+  // locked document that open asks for the password again.
   const [attempt, setAttempt] = useState(0);
   const retry = useCallback((): void => {
-    setFailed(false);
+    setEnded(undefined);
     setAttempt((tried) => tried + 1);
   }, []);
   // KEYED BY DOCUMENT, so a view is only ever kept across a version of ITS document. The callers
@@ -196,15 +207,14 @@ export function useDocumentView(
      * cap would only lock somebody out of their own document and make them
      * close and reopen it.
      */
-    const openWithPassword = async (): Promise<DocumentView | undefined> => {
+    const openWithPassword = async (): Promise<DocumentView | 'declined' | undefined> => {
       let retry = false;
       for (;;) {
         const password = await requestPassword(retry);
-        // DISMISSED. Not a failure to report — a person who changes their mind
-        // about opening a protected document has not hit an error — but there
-        // is no view, so the caller shows the same *cannot display* surface a
-        // failed parse produces.
-        if (password === undefined) return undefined;
+        // DISMISSED. Not a failure to report: a person who changes their mind about opening a protected document has
+        // not hit an error, so the caller says the document is protected and offers the prompt again (the owner,
+        // 2026-11-10), where it used to show the *could not be displayed* surface a failed parse produces.
+        if (password === undefined) return 'declined';
         if (stopped()) return undefined;
 
         const unlocked = await client['document.unlock']({ docId, password });
@@ -264,11 +274,12 @@ export function useDocumentView(
           // else falls through to the outer catch and becomes `failed`.
           if (!needsPasswordToParse(cause)) throw cause;
           if (stopped()) return;
-          view = (await openWithHeldKey()) ?? (await openWithPassword());
-          if (view === undefined) {
-            if (!stopped()) setFailed(true);
+          const unlocked = (await openWithHeldKey()) ?? (await openWithPassword());
+          if (unlocked === 'declined' || unlocked === undefined) {
+            if (!stopped()) setEnded(unlocked === 'declined' ? 'locked' : 'failed');
             return;
           }
+          view = unlocked;
         }
         if (stopped()) {
           closeView(view);
@@ -297,7 +308,7 @@ export function useDocumentView(
     return (): void => {
       cancelled = true;
     };
-  }, [attempt, byteLength, client, closeView, docId, keys, onVersionMoved, requestPassword, workerOf, version]);
+  }, [attempt, byteLength, client, closeView, docId, keys, onVersionMoved, requestPassword, setFailed, workerOf, version]);
 
   // THE WORKER ENDS WITH THE HOOK, after every close it began. LAST of this hook's effects, so on unmount its cleanup runs
   // after the two above have begun closing their views (React runs a component's cleanups in declaration order).
@@ -310,5 +321,5 @@ export function useDocumentView(
     };
   }, []);
 
-  return { ready: shown?.docId === docId ? shown.view : undefined, failed, retry };
+  return { ready: shown?.docId === docId ? shown.view : undefined, failed: ended === 'failed', locked: ended === 'locked', retry };
 }

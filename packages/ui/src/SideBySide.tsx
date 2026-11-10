@@ -397,6 +397,7 @@ export function SideBySide({
 interface HalfView {
   readonly ready: DocumentView | undefined;
   readonly failed: boolean;
+  readonly locked: boolean;
   readonly retry: () => void;
 }
 
@@ -513,7 +514,9 @@ function Half({
       </div>
       {/* THE MAIN PANE'S TWO STATES, for the owner's Part 7 B: opening says so, and a failure says why and offers
           Try again, where this half used to show an empty pane for both. */}
-      {view.failed ? (
+      {/* A PROTECTED DOCUMENT IS NOT SHOWN HERE: this pane declines every prompt (`declinePassword`), so a locked view
+          ends as it always did, with the sentence and Try again. */}
+      {view.failed || view.locked ? (
         <div className="m-page-pane" data-first-frame="failed">
           <canvas className="m-page" data-failed="true" hidden />
           <ViewProblem onRetry={view.retry} />

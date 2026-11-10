@@ -1348,6 +1348,10 @@ export const TAB_ALL_DOCUMENTS = messageKey('surface.tabs.all');
 export const VIEW_PROBLEM_TITLE = messageKey('surface.view-problem.title');
 export const VIEW_PROBLEM_BODY = messageKey('surface.view-problem.body');
 export const VIEW_PROBLEM_RETRY = messageKey('surface.view-problem.retry');
+/** A protected document whose prompt was cancelled: no error, the owner's sentence and two ways on (2026-11-10). */
+export const VIEW_LOCKED_TITLE = messageKey('surface.view-locked.title');
+export const VIEW_LOCKED_ENTER = messageKey('surface.view-locked.enter');
+export const VIEW_LOCKED_CLOSE = messageKey('surface.view-locked.close');
 export const WINDOW_PROBLEM_TITLE = messageKey('surface.window-problem.title');
 export const WINDOW_PROBLEM_BODY = messageKey('surface.window-problem.body');
 export const DIALOG_PROBLEM_TITLE = messageKey('surface.dialog-problem.title');
@@ -4304,6 +4308,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // makes *try again* worth pressing.
   [VIEW_PROBLEM_BODY]: 'Your file is unchanged. Trying again returns to the same page.',
   [VIEW_PROBLEM_RETRY]: 'Try again',
+  // THE OWNER'S WORDS, 2026-11-10.
+  [VIEW_LOCKED_TITLE]: 'This document is protected with a password.',
+  [VIEW_LOCKED_ENTER]: 'Enter password',
+  [VIEW_LOCKED_CLOSE]: 'Close',
   [WINDOW_PROBLEM_TITLE]: 'Part of this window stopped working.',
   // The documents are held in main, and the tabs naming them live above the boundary, so
   // both survive a retry — which is what the sentence promises.

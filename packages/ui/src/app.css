@@ -4163,6 +4163,12 @@ optgroup {
   font-size: var(--font-chrome-12);
 }
 
+/* A PROTECTED DOCUMENT'S TWO WAYS ON, side by side under its sentence (`LockedDocument.tsx`). */
+.m-view-problem-actions {
+  display: flex;
+  gap: var(--space-8);
+}
+
 .m-page-pane {
   display: grid;
   grid-template: 'list' minmax(0, 1fr) / minmax(0, 1fr);
