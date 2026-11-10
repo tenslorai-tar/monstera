@@ -892,6 +892,34 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-11-10 — The 30-second block open was the walk's press, aimed through a list that changed under it
+
+Item 68, the open finding of 2026-11-07 (*Addition, the 30-second block open*). Reproduced on today's main with the same
+flow as that run, on the same corpus document, by a script that also records in the renderer every key and pointer press,
+the element each one reached (never the document's words) and every change of the Edit text button: 1 failure in 20
+rounds (40 block opens), after 0 in an earlier 10.
+
+**The mechanism.** The document has two pages, and in 12 of those 20 rounds it opened scrolled to page 2, so page 2's 29
+outlines arrived before page 1's 53. The walk counted 29 and chose `blocks.nth(14)`. A locator is looked up again at
+every call, and in the failing round page 1's outlines arrived between the walk's scroll and its measure: page 1's come
+first in the page, so the measure found a page-1 outline scrolled out of view, and the press went to y −110, above the
+window, reaching the page's root element. No block was selected and the wait for the editor ran out at 30 s. The
+recorder shows Edit text on at the press and no change to it until the failure was recorded.
+
+**The fix is the walk's, in the one helper every text walk takes** (`blockPressPoint` in
+`scripts/research/textWalkSteps.mjs`): the element is taken once and scrolled, measured and pressed as that element, and
+a point outside the window is refused rather than pressed. Its case builds a list that changes between lookups, as the
+failing round's did, and fails when the measure looks the element up again. Run again for 20 rounds with the fix: 20
+passed, and one of them had the same interleaving, page 1's outlines arriving between the choice and the press, and
+pressed the block in view.
+
+**Not explained: Edit text off in 2026-11-07's picture.** That run's picture shows the mode off; the reproduced miss left
+it on for the whole 30 s. That run was on `ffe5c8da`'s build, and its walk took the picture without closing anything
+first. Nothing here says what turned it off then. The recorder is the instrument for the next occurrence: a flip of the
+button is logged with the press or key before it.
+
+---
+
 ## 2026-11-08 — Help for every tool: what was missing, and the check that holds it
 
 The owner found two live features with no article, *Document properties* and *Convert text to curves*. Nothing asked for

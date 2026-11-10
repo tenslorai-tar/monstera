@@ -18,6 +18,41 @@ const expect = defaultExpect.configure({ timeout: 30_000 });
 /** @typedef {{ ms: number, busy: boolean, problem: string | null }} EditorSample */
 
 /**
+ * The window point a walk presses on `block`: `at` from its top left, `'middle'` for its centre (where a locator's own
+ * `click()` presses), or by default its middle across and its first line down.
+ *
+ * ONE ELEMENT FOR THE SCROLL, THE MEASURE AND THE PRESS. A locator such as `blocks.nth(14)` is looked up again at every
+ * call, and a page's outlines arrive page by page: on a two-page document opened scrolled to page 2, page 2's 29 outlines
+ * came first, the walk chose the 15th, and page 1's 53 arrived between the scroll and the measure. Page 1's come first in
+ * the page, so the measure found a page-1 outline scrolled out of view and the press went to y −110, above the window:
+ * no block selected, and a 30 s wait (item 68; 1 open in 20, `repro68.mjs`, 2026-11-10). So the element is taken once.
+ *
+ * IN VIEW FIRST, as a locator's own `click()` brings it: a press is made at window coordinates, and a block scrolled under
+ * the ribbon was pressed THROUGH the ribbon — the text walk's steps 7 and 15 on the sample's first block, which passed
+ * while the walks clicked the locator (2026-10-27). And a point outside the window is refused rather than pressed: a
+ * press there reaches nothing on the page, and what the walk then reports is a wait, not the miss.
+ *
+ * @param {{ elementHandle: () => Promise<{ scrollIntoViewIfNeeded: () => Promise<void>, boundingBox: () => Promise<{ x: number, y: number, width: number, height: number } | null> } | null> }} block
+ * @param {{ x: number, y: number } | 'middle' | undefined} at
+ * @param {{ width: number, height: number } | null} viewport
+ */
+export async function blockPressPoint(block, at, viewport) {
+  const element = await block.elementHandle();
+  if (element === null) throw new Error('the block has no outline on the page');
+  await element.scrollIntoViewIfNeeded();
+  const box = await element.boundingBox();
+  if (box === null) throw new Error('the block has no outline on screen');
+  const point =
+    at === 'middle'
+      ? { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+      : { x: box.x + (at?.x ?? box.width / 2), y: box.y + (at?.y ?? Math.min(8, box.height / 2)) };
+  if (viewport !== null && (point.x < 0 || point.y < 0 || point.x >= viewport.width || point.y >= viewport.height)) {
+    throw new Error(`the point to press on the block, ${String(Math.round(point.x))},${String(Math.round(point.y))}, is outside the window`);
+  }
+  return point;
+}
+
+/**
  * EDIT TEXT OPENS A BLOCK IN TWO STEPS (ADR-0271 section 3), and these are the only way a walk opens one (B3a): the first
  * press SELECTS THE BOX — its frame up and focused, no caret in the words — a second press inside it puts the caret where
  * it lands, Enter on the box puts it at the words' end, and a double press does both at once. Walks that take no other
@@ -68,14 +103,9 @@ export function editTextOpening(page) {
    * @param {{ x: number, y: number } | 'middle'} [at]
    */
   async function pointOf(block, at) {
-    // IN VIEW FIRST, as a locator's own `click()` brings it: a press is made at window coordinates, and a block scrolled
-    // under the ribbon was pressed THROUGH the ribbon — the text walk's steps 7 and 15 on the sample's first block, which
-    // passed while the walks clicked the locator (2026-10-27).
-    await block.scrollIntoViewIfNeeded();
-    const box = await block.boundingBox();
-    if (box === null) throw new Error('the block has no outline on screen');
-    if (at === 'middle') return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
-    return { x: box.x + (at?.x ?? box.width / 2), y: box.y + (at?.y ?? Math.min(8, box.height / 2)) };
+    // THE WINDOW'S OWN SIZE: the walks size the native window (`sizeWindow`), so Playwright's viewport is unset here.
+    const viewport = await page.evaluate(() => ({ width: globalThis.innerWidth, height: globalThis.innerHeight }));
+    return blockPressPoint(block, at, viewport);
   }
 
   /**
