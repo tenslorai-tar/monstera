@@ -17,7 +17,7 @@ Redaction removes content from the document itself, not just covers it. It happe
    - mark every match of a word, see "Find and redact words".
 2. Check the marks. Each is shown hatched, with the label **Marked for redaction**, and the words under it still show between the lines. Delete any you did not mean with **Select annotations** or **Erase annotation**.
 3. In the rail, choose **Protect**, then **Apply redactions** in the **Redact** group.
-4. The **Apply redactions** window says how many marks will be removed and on how many pages, for example **5 marks on 3 pages will be removed.** Every mark in the document is applied, on every page, wherever you are reading. Then choose:
+4. The **Apply redactions** window says how many marks will be removed and on how many pages, for example 5 marks on 3 pages. Every mark in the document is applied, on every page, wherever you are reading. Then choose:
    - **Leave behind**: **A filled box** or **Nothing**;
    - **Images under a mark**: **Blank only the covered part** or **Remove the whole image**;
    - whether to **Keep the document's title** (off by default);
