@@ -920,6 +920,155 @@ button is logged with the press or key before it.
 
 ---
 
+## 2026-11-10 — Stage audit of `0a5262ba..01d02a84` — findings FFFFFFFFF-1 to FFFFFFFFF-12
+
+Main's range from the last audit to `01d02a84`, audited on its own branch at the owner's instruction (2026-11-10) because a
+cloud branch's next commit would have carried the range past one batch and the hook refused it, as it should.
+`npm run audit:scope` at `01d02a84`: 84 commits, 191 files; 13 proofs added, 44 modified, none removed; 12 source files
+added, 77 changed, none removed.
+
+**Method and coverage.** Three read-only reviewers read one slice each: the proofs (every modified proof's per-commit
+diff, the 13 added ones for their controls), the instruments and non-test source (the four added research scripts in
+full, `articleCoverage.ts`, `noArticleNeeded.ts`, `engraveOnSave.ts`, and the diffs of `walkRecord.mjs`, `corpus.mjs`,
+`mupdfGlue.mjs` and the three walks), and the documents and commits (all 84 messages, ADRs 0286 to 0290, FEATURES,
+ARCHITECTURE and CLAUDE.md in the range). This author then read every finding below at the lines it names, and each
+holds; item 3 was answered from the runs by this author. **Nothing was mutated or run for this audit**, so every finding
+is READ. Not reached: the bodies of `redactionBookmarks`, `redactionPictures` and `appendedSave` (titles, controls and
+history only), most of `redactionLineArt`, `redactionOutline.ts`' logic, `engraveOnSave.test.ts`, `savedPdf.mjs`, the
+tail of `newFeaturesWalk.mjs`, and the FEATURES rows for Compare, text editing, barcodes and document properties.
+
+### To fix, each in a commit of its own after this record (the owner decides where)
+
+- **FFFFFFFFF-1** (medium) — ADR-0290's Decision 2 was rewritten in place in `01d02a84`, after the ADR was accepted in
+  `abcba611`: *the article must also say* became *the article's body must also say*, with a new sentence that the title,
+  summary and keywords do not count. No dated correction was appended. The rule changed for a measured reason, a mutation
+  that stayed green, which is exactly what an appended correction records. ADRs are append-only.
+- **FFFFFFFFF-2** (medium) — `articleNames` (`packages/ui/src/help/articleCoverage.ts:39-41`) matches a name with
+  `text.includes`, with no word boundary, so a short title is *said* by any body holding it inside another word (*Cut* in
+  *shortcut*, *Print* in *printer*). The *listed but not named* half can pass for the wrong reason, and the test's fixture
+  (*Save a copy…*) is one a substring match also handles. `settingCoverage` is looser. How many real titles are short
+  enough to trip it was not counted; that needs a run.
+- **FFFFFFFFF-3** (medium) — ADR-0287's cost table labels the 6.4 ms of the no-mark state *(the walk of every page's
+  `/Annots`)*, and no measurement established the label. `engraveCost.mjs` times its three states in a fixed order on fresh
+  sessions with no warm-up and prints no spread; the same table shows the as-held save at 102.9 ms with no mark and
+  69.6 ms with one, and an earlier run read 11.2 ms. Being first is as good an explanation. B6: a label carries the
+  command that established it.
+- **FFFFFFFFF-4** (medium) — `glyphOverhang.mjs` can print **REMOVED** blinded. The letter's box is
+  `boxOf(charBoxes(page)[0]?.quad ?? [])` (line 188), which is zeros when structured text read nothing, and an empty read
+  after the burn-in prints REMOVED (line 199); line 287 prints *0 pixels painted inside the mark* for a blank render through
+  `?? 0`. Both default toward the reassuring answer. ADR-0286's figures show the recorded run did see, so no figure on record
+  is wrong; the instrument has no positive control (item 4b).
+- **FFFFFFFFF-5** (low to medium) — `engraveCost.mjs` and `saveCompressionCost.mjs` carry no resolution check: neither
+  asserts its two arms differ, so an ignored option prints *extra ~0 ms* and *no cost*. `redactCutTiming.mjs` checks that
+  work was done but not that the cut found a path on the many-paths page, and its within/beyond verdict compares a median
+  difference with a max-minus-min spread, which leans toward *within* (item 4a).
+- **FFFFFFFFF-6** (low) — the CONTROL *a bar over the line's own words … not moved out from under it*
+  (`operatorEdit.test.ts:1188`) lost its assertion that the line's own words keep their operator; it now checks only where
+  the new words land, so its title claims more than it checks.
+- **FFFFFFFFF-7** (low) — `homeDisplayReach.pw.ts:43` asserts the fold order only inside `if (FIVE.some(… 'more'))`, and no
+  case there proves any width folds a layout, so the branch can never run and stay green. `homeReach.pw.ts` carries the
+  matching control at 900; this file does not.
+- **FFFFFFFFF-8** (low) — figures with no date or instrument, B6: `operatorEdit.ts:2034` (*303 pixels on one row of a corpus
+  file*); `redactionOutside.test.ts:11-12` and `:232`, where the undated 115,053 is also the assertion's ceiling (line 233);
+  `redactionCutSize.test.ts:11-12`; `runFaces.test.tsx:113` (*6.5 to 9.7 s*), whose twin in `runFaces.ts:97` is dated and
+  names no instrument.
+- **FFFFFFFFF-9** (low) — `wordsPaintingNothing.test.ts:226` says *the blue's own red channel* where the assertion reads
+  `colour[1]`, green. The assertion is right; the comment is wrong.
+- **FFFFFFFFF-10** (low) — the engraved XObject prefix has three spellings: `PREFIX` in `engraveOnSave.ts:45`,
+  `ENGRAVED_PREFIX` in `everyToolEffects.mjs:25` and a regular expression in `newFeaturesWalk.mjs`. A rename fails loudly,
+  so the danger runs the safe way; it is still three opinions with no shared name (B3a).
+
+### For the owner
+
+- **FFFFFFFFF-11** (low) — the `app.update-available` exemption in `noArticleNeeded.ts` *owes an article the day the check
+  goes live*, and nothing watches that day: the stale-exemption failure fires only when the id leaves or an article lists
+  it. By item 7's expiry table an event-expiring claim belongs in a FEATURES row with its trigger, and no row names it.
+
+### Limits to state
+
+- **FFFFFFFFF-12** (low, a record) — `abcba611` put *a case fails otherwise* in CLAUDE.md and ARCHITECTURE §7 three commits
+  before the case existed (`01d02a84`). True at HEAD.
+- `App.test.tsx:5289-5292` now passes an icon button on its `aria-label` (ADR-0194, stated in a comment); a button whose
+  text is only whitespace is then judged by its label alone. A stated widening, not a finding.
+- `proof:texttocurves`' UNVERIFIABLE on both legs was not re-read in this range's logs.
+
+### The checklist, each item answered
+
+#### 1. Root cause or workaround
+
+All 84 messages read. None reads as a workaround and none says *flaky*. `5c914bff` replaced a fixed 300 ms wait with a poll
+on the tab count, a wait on a condition with its mechanism stated, on the evidence of one run. 26 commits carry no
+mechanism wording; each is a record, a baseline, an ADR note or a lint or typecheck follow-up, and every fix among them
+(`a4749e4a`, `09508977`, `3207c32f`, `bc324628`) names its cause.
+
+#### 2. The easy shape only
+
+Not asked of each fix by the reviewers. The fixture sets read held one value across older callers in three places
+(`extractPages` always `'as-held'`, `applyRedactions` always `keepBookmarks: false`, `editObjectText`'s `inkIn` stub always
+`null`), and each other side has a file of its own: `engraveOnSave.test.ts` and `saveCompression.test.ts`,
+`redactionBookmarks.test.ts`, `wordsPaintingNothing.test.ts`. Worth knowing if those files are ever cut back.
+
+#### 2a. A change to how something is proven
+
+`walkRecord.mjs` (`0ba16741`) changed what counts as walked, in the stricter direction only: a failure in the newest full
+walk covering a row stands over a newer narrower pass, with both directions in the proof. A newer full walk that marks the
+row *not walked* is skipped, so an older full-walk failure still stands; stricter, and not stated. `pageFonts.test.ts:179`'s
+control was renamed to the narrower claim still true, with four new cases replacing it; `actionDialogs.test.tsx`' title-box
+control was reversed by ADR-0163's correction and replaced by stronger cases.
+
+#### 3. Would CI have caught it
+
+Answered from the runs at `01d02a84`: CI 42520956172 and Guards 42520956165 both success. `affectedProofs` over the range's
+191 files names 98 proof scripts, and each is a workflow step by path. The CI run's steps: 354 success, 7 skipped, every
+skip a platform condition (the Linux shim's interpreter proof is skipped on Windows and passed on Linux) or a step that runs
+only on a failure. `a4749e4a` records a push that left `compositionHost.test.ts` red, a test outside the changed files'
+own; CI caught it, which is the mechanism working. The walks do not run in CI.
+
+#### 4. Proofs non-vacuous
+
+None of the 44 modified proofs lost a check without a stated reason; the three narrowed assertions were replaced by
+controls (2a). Every added proof was read for a control the bug would fail and has one. FFFFFFFFF-6 and -7 are the gaps
+found. Nothing was mutated.
+
+#### 4a. Instruments' resolution
+
+FFFFFFFFF-5: the two cost scripts carry no check that their arms differ, and the timing verdict leans one way. Nothing was
+resolution-tested for this audit.
+
+#### 4b. A search's positive control
+
+FFFFFFFFF-4 (`glyphOverhang.mjs`) and FFFFFFFFF-2 (the coverage check's window). `corpus.mjs`' `documentById` refuses an
+unknown id by name, and `articleCoverage.test.ts` holds a real-data control that removing two articles reports exactly
+those two commands.
+
+#### 4c. A derived extent
+
+`articleCoverage`'s subjects derive from the registry and are anchored independently in `App.test.tsx` (more than 250
+commands and two by name; more than 50 settings and `viewing.starting-zoom`), so a shrink is seen. One soft spot: a setting
+wrongly flagged `remembered` leaves the set silently, and one remembered id is asserted. `walkRecord.mjs`' rows derive from
+the registry, whose failure makes the set larger.
+
+#### 5. Executed or asserted
+
+Everything in this entry is read, and item 3 is read from the runs. FFFFFFFFF-2's count and FFFFFFFFF-3's cause would each
+need a run.
+
+#### 6. Architecture before the feature
+
+ADRs 0286, 0287, 0288, 0289 and 0290, and 0286's amendment, each landed in its own commit before the first commit that
+builds it (`1b0f3183` before `fbe604b2`, `bc14037e` before `f6d9adfd`, `0457e688` before `45dd7e18`, `c6546387` before
+`dafce3bc`, `4d638cda` before `f17cea8f`, `abcba611` before `565b4636`). Later commits only append dated notes, except
+FFFFFFFFF-1.
+
+#### 7. Documents against the code
+
+Checked and holding: the redaction row's named tests exist; `LINE_ART_NONE` and `cutLineArt` precede the burn-in
+(`pageRedact.ts`); `keepBookmarks` gates the outline; `FULL_SAVE_TERMS` is used by both save purposes; ADR-0287's
+correction (`syncOpenPages`, `ADDED`, the *still lists the picture* case); ARCHITECTURE §7's ADR-0290 paragraph. Found:
+FFFFFFFFF-1, -3, -11 and -12. No JOURNAL entry and no other ADR in the range lost a line.
+
+---
+
 ## 2026-11-08 — Help for every tool: what was missing, and the check that holds it
 
 The owner found two live features with no article, *Document properties* and *Convert text to curves*. Nothing asked for
