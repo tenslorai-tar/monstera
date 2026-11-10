@@ -5,16 +5,35 @@
  * `articleCoverage.ts` reads these. An entry that has stopped being true fails the same case as a command with no
  * article, so these lists cannot quietly outlive what they excuse.
  */
+import { UPDATE_MANIFEST, type UpdateManifestAddress } from '@monstera/contract';
 
-/** Commands with no article: the id, and why a person does not need one. */
-export const COMMANDS_NO_ARTICLE: Readonly<Record<string, string>> = {
-  'edit.cut': 'The standard Windows Edit menu item, acting on whichever box has the focus. It does nothing specific to Monstera.',
-  'edit.paste': 'The standard Windows Edit menu item, acting on whichever box has the focus. Pasting marks is taught by "Select, move, resize and delete annotations".',
-  'edit.select-all': 'The standard Windows Edit menu item, acting on whichever box has the focus. It does nothing specific to Monstera.',
-  'app.exit': 'Closes the application, as every Windows program does. What happens to unsaved work is taught by "Close a document that has unsaved changes".',
-  'app.update-available':
-    'Drawn only when the update check offers a version, and that check is dormant by the owner’s decision of 2026-10-14 (ADR-0110’s note). An article would describe a button nobody can see. It owes an article the day the check goes live.',
-};
+/**
+ * Commands with no article, for a build whose update check is in `manifest`'s state: the id, and why a person does not
+ * need one.
+ *
+ * THE UPDATE BUTTON'S EXEMPTION EXISTS ONLY WHILE THE CHECK IS DORMANT, read from the one value that switches it on
+ * (`UPDATE_MANIFEST`, ADR-0110), the same value that brings the update setting's row (`settings/updates.ts`). It used to be
+ * a sentence saying it owed an article the day the check went live, and nothing would have noticed that day (FFFFFFFFF-11,
+ * the audit of 0a5262ba..01d02a84). Going live now removes the excuse in the same one-line change, and the case that
+ * every command is taught fails until an article teaches the button.
+ */
+export function commandsNoArticle(manifest: UpdateManifestAddress): Readonly<Record<string, string>> {
+  return {
+    'edit.cut': 'The standard Windows Edit menu item, acting on whichever box has the focus. It does nothing specific to Monstera.',
+    'edit.paste': 'The standard Windows Edit menu item, acting on whichever box has the focus. Pasting marks is taught by "Select, move, resize and delete annotations".',
+    'edit.select-all': 'The standard Windows Edit menu item, acting on whichever box has the focus. It does nothing specific to Monstera.',
+    'app.exit': 'Closes the application, as every Windows program does. What happens to unsaved work is taught by "Close a document that has unsaved changes".',
+    ...(manifest.state === 'live'
+      ? {}
+      : {
+          'app.update-available':
+            'Drawn only when the update check offers a version, and that check is dormant by the owner’s decision of 2026-10-14 (ADR-0110’s note). An article would describe a button nobody can see.',
+        }),
+  };
+}
+
+/** This build's: the update check as `UPDATE_MANIFEST` has it. */
+export const COMMANDS_NO_ARTICLE: Readonly<Record<string, string>> = commandsNoArticle(UPDATE_MANIFEST);
 
 /**
  * Where an article teaches a command in other words than its title: `article: command`, and the words it uses. The
