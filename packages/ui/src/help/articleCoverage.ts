@@ -38,7 +38,27 @@ const asWritten = (name: string): string => name.replaceAll('…', '').replace(/
  */
 export function articleNames(article: Article, names: readonly string[]): boolean {
   const text = asWritten(searchTextOf({ ...article, title: '', summary: '', keywords: [] }));
-  return names.some((name) => text.includes(asWritten(name)));
+  return names.some((name) => saysAsWords(text, asWritten(name)));
+}
+
+/** A letter or a digit in any script: what a name must not run into on either side to be said as words. */
+const WORD_CHARACTER = /[\p{L}\p{N}]/u;
+
+/**
+ * Whether `text` says `name` as words of its own: found with no letter or digit against either end.
+ *
+ * A bare `includes` counted *Cut* as said by *shortcut* and *Print* by *printer*, so the half of the rule that asks an
+ * article to say what it lists could pass for a word it never wrote (FFFFFFFFF-2, the audit of 0a5262ba..01d02a84). An
+ * empty name says nothing: it would be found in every article.
+ */
+export function saysAsWords(text: string, name: string): boolean {
+  if (name === '') return false;
+  for (let at = text.indexOf(name); at >= 0; at = text.indexOf(name, at + 1)) {
+    const before = at === 0 ? '' : (text[at - 1] ?? '');
+    const after = text[at + name.length] ?? '';
+    if (!WORD_CHARACTER.test(before) && !WORD_CHARACTER.test(after)) return true;
+  }
+  return false;
 }
 
 /**

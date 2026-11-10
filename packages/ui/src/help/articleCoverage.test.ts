@@ -44,6 +44,24 @@ describe('commandCoverage', () => {
     expect(commandCoverage([save], [inFrontMatter], {}, {}).listedNotNamed).toStrictEqual(['x: a.save']);
   });
 
+  it('a name said only INSIDE a longer word is not said (FFFFFFFFF-2): *Select* in *selecting*, *Cut* in *shortcut*', () => {
+    // THE ONE REAL PAIR this exposed, 2026-11-10: the Float bar article listed `annotate.select`, whose button reads
+    // Select, and said only "selecting", which the old `includes` counted.
+    const select = { id: 'a.select', names: ['Select annotations', 'Select'] };
+    expect(commandCoverage([select], [article('x', ['a.select'], 'It holds selecting, the hand.')], {}, {}).listedNotNamed).toStrictEqual([
+      'x: a.select',
+    ]);
+    const cut = { id: 'a.cut', names: ['Cut'] };
+    expect(commandCoverage([cut], [article('y', ['a.cut'], 'Press the shortcut.')], {}, {}).listedNotNamed).toStrictEqual(['y: a.cut']);
+  });
+
+  it('CONTROL: the same names said as words are said, beside punctuation, bold and the start and end of the text', () => {
+    const select = { id: 'a.select', names: ['Select'] };
+    for (const body of ['Choose **Select**.', 'Select', 'Use Select, then drag.', '(Select)']) {
+      expect(commandCoverage([select], [article('x', ['a.select'], body)], {}, {}).listedNotNamed, body).toStrictEqual([]);
+    }
+  });
+
   it('a written exemption excuses a command, and a written pair excuses a listing in other words', () => {
     const none = commandCoverage([save], [], { 'a.save': 'Because.' }, {});
     expect(none.untaught).toStrictEqual([]);
