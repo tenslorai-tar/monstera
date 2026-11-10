@@ -23,7 +23,7 @@ import { reportProblem } from './commands/documentCommands.js';
 import { START_SCREEN_CONTEXT } from './commands/help.js';
 import { commandCoverage } from './help/articleCoverage.js';
 import { HELP_ARTICLES, helpFor } from './help/articles.js';
-import { COMMANDS_NO_ARTICLE, TAUGHT_IN_OTHER_WORDS } from './help/noArticleNeeded.js';
+import { COMMANDS_NO_ARTICLE, TAUGHT_IN_OTHER_WORDS, commandsNoArticle } from './help/noArticleNeeded.js';
 import { CommandRegistry, type UiCommand } from './registries/commands.js';
 import type { DialogRegistry } from './registries/dialogs.js';
 import { SECTION_IDS } from './registries/placement.js';
@@ -3254,6 +3254,18 @@ describe('App', () => {
       TAUGHT_IN_OTHER_WORDS,
     );
     expect(withoutThem.untaught).toStrictEqual(subjects.map((subject) => subject.id).filter((id) => id === 'document.properties' || id === 'document.convert-text-to-curves'));
+
+    // THE DAY THE UPDATE CHECK GOES LIVE (FFFFFFFFF-11): the update button's exemption leaves with the one value that
+    // switches the check on, so this same case fails until an article teaches the button. The control is the case
+    // above, which passes on this build's dormant check with the button excused.
+    const live = commandCoverage(
+      subjects,
+      HELP_ARTICLES,
+      commandsNoArticle({ state: 'live', url: 'https://monsterapdf.com/updates/v1/store.json' }),
+      TAUGHT_IN_OTHER_WORDS,
+    );
+    expect(live.untaught).toStrictEqual(['app.update-available']);
+    expect(commandsNoArticle({ state: 'dormant' })).toStrictEqual(COMMANDS_NO_ARTICLE);
 
     // AND F1 FINDS THEM, by the lookup the Help command calls.
     expect(helpFor({ tool: 'document.properties', context: 'home' }).article?.id).toBe('document-properties');

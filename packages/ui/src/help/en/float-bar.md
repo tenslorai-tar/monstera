@@ -6,7 +6,7 @@ keywords: [float bar, floating toolbar, quick toolbar, pill, zoom buttons, hide 
 commands: [view.toggle-quick-toolbar, view.reset-float-bar, view.zoom-in, view.zoom-out, annotate.select, view.hand, view.select-text, annotate.sticky-note, view.snapshot, document.crop-pages]
 contexts: [home]
 ---
-The Float bar is a narrow bar that floats over the pages. It holds everyday tools such as zoom in and out, selecting, the hand, adding a note, taking a snapshot and cropping.
+The Float bar is a narrow bar that floats over the pages. It holds everyday tools such as zoom in and out, **Select** for picking annotations, the hand, adding a note, taking a snapshot and cropping.
 
 ## Steps
 

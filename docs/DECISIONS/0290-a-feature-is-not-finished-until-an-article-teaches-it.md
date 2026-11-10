@@ -54,3 +54,20 @@ what running the feature before describing it is for, and it stays a discipline:
 - **Requiring each command to have an article of its own.** Thirteen formatting commands are one section of one article,
   and a page for *Italic* would help nobody. ADR-0112's *one article per feature* is about features, not ids.
 - **Listing the id alone.** See Decision 2.
+
+## Correction, 2026-11-10 — Decision 2 was rewritten in place, and this records what changed
+
+The audit of `0a5262ba..01d02a84` (finding FFFFFFFFF-1, `docs/JOURNAL.md`) found that `01d02a84` rewrote Decision 2
+after this record was accepted in `abcba611`, with no correction appended. An ADR is append-only, so the rewritten text
+stays as it is and this says what it replaced and why.
+
+**As accepted, `abcba611`:** *"The article must also say a name the person reads on screen, the command's title or its
+ribbon label."*
+
+**As rewritten, `01d02a84`:** *"The article's body must also say a name the person reads on screen, the command's title
+or its ribbon label. The title, summary and keywords do not count: a keyword is a word to find the article by."*
+
+**Why it changed:** a mutation run while building the check stayed green. With every mention of a command's name taken
+out of an article's body, the name in its `keywords:` alone still counted as saying it, so an article with a keyword and
+no sentence of help passed. The check now reads the body only (`articleNames` in `packages/ui/src/help/articleCoverage.ts`),
+and its case holds a control that a name only in the keywords does not count. The rule as rewritten is the one in force.
