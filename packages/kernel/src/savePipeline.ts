@@ -299,9 +299,9 @@ export async function saveDocument(
 /**
  * What writing a copy did.
  *
- * {@link SaveOutcome}'s three shapes minus the one that cannot occur:
- * `refused` carries a {@link CopyTargetVerdict} rather than a
- * `WriteTargetVerdict`, which is two members instead of five.
+ * {@link SaveOutcome}'s shapes minus the one that cannot occur: a refusal
+ * comes from a {@link CopyTargetVerdict} rather than a `WriteTargetVerdict`,
+ * through {@link copyRefusalOf}.
  */
 export type CopyOutcome =
   /**
@@ -309,10 +309,31 @@ export type CopyOutcome =
    * `FileHandle` for it, so a person can be shown the file without the renderer ever holding where it is.
    */
   | { readonly kind: 'copied'; readonly bytes: number; readonly destination: string }
-  /** Another open document reaches the destination. Nothing was written. */
-  | { readonly kind: 'refused'; readonly others: readonly DocId[] }
+  | CopyRefusal
   /** The filesystem refused. Nothing at the destination was replaced. */
   | { readonly kind: 'write-failed'; readonly failure: AtomicWriteFailure };
+
+/** Why a destination was refused before anything was written: the two verdicts that are not `writable`. */
+export type CopyRefusal =
+  /** Another open document reaches the destination. Nothing was written. */
+  | { readonly kind: 'refused'; readonly others: readonly DocId[] }
+  /** The destination is the file the copied document was opened from. Nothing was written. */
+  | { readonly kind: 'onto-source' };
+
+/**
+ * The refusal a verdict makes, or `undefined` where the destination is writable — ONE mapping, so every writer of a
+ * copy refuses the source's own file in the same words.
+ */
+export function copyRefusalOf(verdict: CopyTargetVerdict): CopyRefusal | undefined {
+  switch (verdict.kind) {
+    case 'writable':
+      return undefined;
+    case 'contested':
+      return { kind: 'refused', others: verdict.others };
+    case 'source':
+      return { kind: 'onto-source' };
+  }
+}
 
 /**
  * A copy of the open document's own bytes, as *Save a copy* answers it: {@link CopyOutcome}, or refused for its depth
@@ -336,8 +357,8 @@ export type DocumentCopyOutcome = CopyOutcome | TooDeepToSave;
 export type SplitOutcome =
   /** Every file is on disk in the chosen directory. */
   | { readonly kind: 'split'; readonly files: number }
-  /** Another open document reaches one of the derived paths. Nothing written. */
-  | { readonly kind: 'refused'; readonly others: readonly DocId[] }
+  /** Another open document reaches one of the derived paths, or one is the source's own file. Nothing written. */
+  | CopyRefusal
   /** The filesystem refused. Nothing was written. */
   | { readonly kind: 'write-failed'; readonly failure: AtomicWriteFailure };
 
@@ -400,8 +421,8 @@ export async function writeDocumentSplit(
   parts: readonly SplitPart[],
 ): Promise<SplitOutcome> {
   for (const part of parts) {
-    const verdict = await check(part.destination);
-    if (verdict.kind === 'contested') return { kind: 'refused', others: verdict.others };
+    const refused = copyRefusalOf(await check(part.destination));
+    if (refused !== undefined) return refused;
   }
 
   for (const part of parts) {
@@ -479,8 +500,8 @@ export async function writeDocumentCopy(
   destination: string,
   backups: SaveBackups,
 ): Promise<CopyOutcome> {
-  const verdict = await check(destination);
-  if (verdict.kind === 'contested') return { kind: 'refused', others: verdict.others };
+  const refused = copyRefusalOf(await check(destination));
+  if (refused !== undefined) return refused;
 
   const staged = await flush();
   const written = await atomicWriteStaged(deps, destination, staged, backups);
@@ -514,8 +535,8 @@ export async function writeStreamedDocument(
   open: () => Promise<AsyncIterable<Uint8Array>>,
   destination: string,
 ): Promise<CopyOutcome> {
-  const verdict = await check(destination);
-  if (verdict.kind === 'contested') return { kind: 'refused', others: verdict.others };
+  const refused = copyRefusalOf(await check(destination));
+  if (refused !== undefined) return refused;
 
   const source = await open();
   let bytes = 0;

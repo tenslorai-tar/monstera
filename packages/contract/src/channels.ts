@@ -449,6 +449,13 @@ export const WRITTEN = { written: fileHandleSchema } as const;
  */
 export const tooDeepToSaveSchema = z.object({ kind: z.literal('too-deep'), bookmarks: z.boolean() });
 
+/**
+ * NOTHING WAS WRITTEN: the destination a person chose for a copy is the file the document being copied was opened
+ * from. Its own member, never `refused` with a count, because *another open document* names a document the person
+ * cannot find. Every channel that writes a copy of an open document answers it, defined once here.
+ */
+export const COPY_ONTO_SOURCE = z.object({ kind: z.literal('onto-source') }).strict();
+
 /** The browser's own edit commands `window.edit` runs, named as `webContents` names its methods. */
 export const WINDOW_EDIT_ACTIONS = ['cut', 'copy', 'paste', 'selectAll'] as const;
 export type WindowEditAction = (typeof WINDOW_EDIT_ACTIONS)[number];
@@ -2997,6 +3004,7 @@ export const channels = {
       z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative(), ...WRITTEN }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
+      COPY_ONTO_SOURCE,
       z.object({ kind: z.literal('write-failed') }),
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
@@ -3029,6 +3037,7 @@ export const channels = {
       /** The chosen destination does not end `.pdf`; nothing was written or opened. */
       z.object({ kind: z.literal('not-pdf') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
+      COPY_ONTO_SOURCE,
       z.object({ kind: z.literal('write-failed') }),
       /** The page was written, and the operating system could not open it. Not watched. */
       z.object({ kind: z.literal('launch-failed') }),
@@ -3149,6 +3158,7 @@ export const channels = {
       z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative(), ...WRITTEN }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
+      COPY_ONTO_SOURCE,
       z.object({ kind: z.literal('write-failed') }),
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
@@ -3201,6 +3211,7 @@ export const channels = {
       z.object({ kind: z.literal('split'), files: z.number().int().positive(), ...WRITTEN }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
+      COPY_ONTO_SOURCE,
       z.object({ kind: z.literal('write-failed') }),
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
@@ -3244,6 +3255,7 @@ export const channels = {
       z.object({ kind: z.literal('split'), files: z.number().int().positive(), ...WRITTEN }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
+      COPY_ONTO_SOURCE,
       z.object({ kind: z.literal('write-failed') }),
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
@@ -3282,6 +3294,7 @@ export const channels = {
       z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative(), ...WRITTEN }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
+      COPY_ONTO_SOURCE,
       z.object({ kind: z.literal('write-failed') }),
       /** A value this format cannot carry. The other two can — see above. */
       z.object({ kind: z.literal('unrepresentable') }),
@@ -3321,6 +3334,7 @@ export const channels = {
       z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative(), ...WRITTEN }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
+      COPY_ONTO_SOURCE,
       z.object({ kind: z.literal('write-failed') }),
       z.object({ kind: z.literal('unavailable') }),
       z.object({ kind: z.literal('failed') }),
@@ -3344,6 +3358,7 @@ export const channels = {
       z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative(), ...WRITTEN }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
+      COPY_ONTO_SOURCE,
       z.object({ kind: z.literal('write-failed') }),
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
@@ -3372,6 +3387,7 @@ export const channels = {
       }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
+      COPY_ONTO_SOURCE,
       z.object({ kind: z.literal('write-failed') }),
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
@@ -3443,6 +3459,7 @@ export const channels = {
       }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
+      COPY_ONTO_SOURCE,
       z.object({ kind: z.literal('write-failed') }),
       z.object({ kind: z.literal('no-tables'), picturePages: z.number().int().nonnegative() }),
       /** The document moved since the review, or an edit names no cell it has. Nothing was written. */
@@ -3508,6 +3525,7 @@ export const channels = {
       }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
+      COPY_ONTO_SOURCE,
       z.object({ kind: z.literal('write-failed') }),
       z.object({ kind: z.literal('unavailable') }),
       z.object({ kind: z.literal('failed') }),
@@ -3554,6 +3572,7 @@ export const channels = {
         .strict(),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
+      COPY_ONTO_SOURCE,
       z.object({ kind: z.literal('write-failed') }),
       z.object({ kind: z.literal('unavailable') }),
       z.object({ kind: z.literal('failed') }),
@@ -3614,6 +3633,7 @@ export const channels = {
       }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
+      COPY_ONTO_SOURCE,
       z.object({ kind: z.literal('write-failed') }),
       z.object({
         kind: z.literal('not-smaller'),
@@ -3684,6 +3704,7 @@ export const channels = {
       z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative(), ...WRITTEN }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
+      COPY_ONTO_SOURCE,
       z.object({ kind: z.literal('write-failed') }),
       tooDeepToSaveSchema,
     ]),
@@ -3736,6 +3757,7 @@ export const channels = {
       }),
       z.object({ kind: z.literal('cancelled') }),
       importContestedSchema,
+      COPY_ONTO_SOURCE,
       importWriteFailedSchema,
       openAbsentSchema,
       openAtCapacitySchema,
@@ -3760,6 +3782,7 @@ export const channels = {
       openedSchema,
       z.object({ kind: z.literal('cancelled') }),
       importContestedSchema,
+      COPY_ONTO_SOURCE,
       importWriteFailedSchema,
       openAbsentSchema,
       openAtCapacitySchema,
@@ -4223,6 +4246,7 @@ export const channels = {
       z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative(), ...WRITTEN }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
+      COPY_ONTO_SOURCE,
       z.object({ kind: z.literal('write-failed') }),
       /** DocuSign's status for the envelope, which is not yet `completed`. */
       z.object({ kind: z.literal('not-completed'), status: z.string().min(1).max(64) }),
@@ -4367,6 +4391,7 @@ export const channels = {
       // THE VERSION IS NOT THERE: a Clear, or a newer save that rotated it away, since the list was read.
       z.object({ kind: z.literal('gone') }),
       importContestedSchema,
+      COPY_ONTO_SOURCE,
       importWriteFailedSchema,
       openAbsentSchema,
       openAtCapacitySchema,
@@ -4437,6 +4462,7 @@ export const channels = {
       z.object({ kind: z.literal('no-such-barcode') }),
       z.object({ kind: z.literal('not-a-contact') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
+      COPY_ONTO_SOURCE,
       z.object({ kind: z.literal('write-failed') }),
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
@@ -4663,6 +4689,7 @@ export const channels = {
       z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative(), ...WRITTEN }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
+      COPY_ONTO_SOURCE,
       z.object({ kind: z.literal('write-failed') }),
       z.object({ kind: z.literal('unrepresentable') }),
     ]),

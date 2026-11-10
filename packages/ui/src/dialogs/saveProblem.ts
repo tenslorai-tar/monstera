@@ -42,6 +42,7 @@ export const SAVE_PROBLEM_DIALOG = declareDialog({
   props: z.object({
     outcome: z.enum([
       'contested',
+      'onto-source',
       'replaced',
       'target-absent',
       'unrepresentable',

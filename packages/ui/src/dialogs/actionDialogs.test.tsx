@@ -45,7 +45,12 @@ const BODIES: readonly { readonly name: string; readonly body: ReactNode; readon
   { name: 'Page transition', body: <PageTransitionBody pages={PAGES} resolve={ignore} update={ignore} />, firstRow: 'Transition' },
   { name: 'Sanitize', body: <SanitizeDocumentBody resolve={ignore} update={ignore} />, firstRow: '' },
   { name: 'Protect', body: <ProtectDocumentBody resolve={ignore} update={ignore} />, firstRow: '' },
-  { name: 'Apply redactions', body: <ApplyRedactionsBody page={0} resolve={ignore} update={ignore} />, firstRow: '' },
+  // ITS FIRST ROW IS THE COVER: the *Apply to* row is gone (the owner, 2026-11-10).
+  {
+    name: 'Apply redactions',
+    body: <ApplyRedactionsBody counted={{ marks: 5, pages: 3 }} resolve={ignore} update={ignore} />,
+    firstRow: 'Leave behind',
+  },
   { name: 'Mark matches', body: <RedactMatchesBody page={0} resolve={ignore} update={ignore} />, firstRow: '' },
   {
     name: 'Document password',
@@ -253,7 +258,7 @@ describe('the action dialogs in the dialog pattern', () => {
 
 describe('Apply redactions removes the bookmarks unless the person keeps those on untouched pages (ADR-0163, 2026-11-06)', () => {
   it('says the bookmarks go unless the box is ticked, and offers the title and the bookmarks, both off', () => {
-    render(<InDialog><ApplyRedactionsBody page={0} resolve={ignore} update={ignore} /></InDialog>);
+    render(<InDialog><ApplyRedactionsBody counted={{ marks: 1, pages: 1 }} resolve={ignore} update={ignore} /></InDialog>);
     expect(document.body.textContent).toContain('and so are bookmarks unless you tick the box to keep some.');
     expect(document.body.textContent).toContain('Bookmarks on redacted pages are always removed.');
     const boxes = [...document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')];
@@ -266,28 +271,48 @@ describe('Apply redactions removes the bookmarks unless the person keeps those o
     const answers: unknown[] = [];
     render(
       <InDialog>
-        <ApplyRedactionsBody page={0} resolve={(answer) => answers.push(answer)} update={ignore} />
+        <ApplyRedactionsBody counted={{ marks: 1, pages: 1 }} resolve={(answer) => answers.push(answer)} update={ignore} />
       </InDialog>,
     );
-    const bookmarks = document.querySelector<HTMLInputElement>('input[data-redact-keep-bookmarks]');
+    const bookmarks =document.querySelector<HTMLInputElement>('input[data-redact-keep-bookmarks]');
     if (bookmarks === null) throw new Error('no bookmarks box');
     fireEvent.click(bookmarks);
     const apply = [...document.querySelectorAll<HTMLButtonElement>('.m-dialog-footer button')].at(-1);
     if (apply === undefined) throw new Error('no Apply button');
     fireEvent.click(apply);
-    expect(answers).toStrictEqual([{ pages: [0], cover: 'solid', images: 'pixels', keepTitle: false, keepBookmarks: true }]);
+    expect(answers).toStrictEqual([{ cover: 'solid', images: 'pixels', keepTitle: false, keepBookmarks: true }]);
   });
 
   it('CONTROL: untouched, it answers keepBookmarks false', () => {
     const answers: unknown[] = [];
     render(
       <InDialog>
-        <ApplyRedactionsBody page={0} resolve={(answer) => answers.push(answer)} update={ignore} />
+        <ApplyRedactionsBody counted={{ marks: 1, pages: 1 }} resolve={(answer) => answers.push(answer)} update={ignore} />
       </InDialog>,
     );
     const apply = [...document.querySelectorAll<HTMLButtonElement>('.m-dialog-footer button')].at(-1);
     if (apply === undefined) throw new Error('no Apply button');
     fireEvent.click(apply);
-    expect(answers).toStrictEqual([{ pages: [0], cover: 'solid', images: 'pixels', keepTitle: false, keepBookmarks: false }]);
+    expect(answers).toStrictEqual([{ cover: 'solid', images: 'pixels', keepTitle: false, keepBookmarks: false }]);
+  });
+});
+
+describe('Apply redactions removes every mark and says how many (the owner, 2026-11-10)', () => {
+  it('says the count of marks and pages, and offers no page scope', () => {
+    render(<InDialog><ApplyRedactionsBody counted={{ marks: 5, pages: 3 }} resolve={ignore} update={ignore} /></InDialog>);
+    expect(document.querySelector('[data-redact-count]')?.textContent).toBe('5 marks on 3 pages will be removed.');
+    expect(document.querySelector('[data-redact-scope]')).toBeNull();
+    expect(document.body.textContent).not.toContain('Apply to');
+  });
+
+  it('says one mark on one page in the singular', () => {
+    render(<InDialog><ApplyRedactionsBody counted={{ marks: 1, pages: 1 }} resolve={ignore} update={ignore} /></InDialog>);
+    expect(document.querySelector('[data-redact-count]')?.textContent).toBe('1 mark on 1 page will be removed.');
+  });
+
+  it('CONTROL: where main refused the count, it claims no number and still asks', () => {
+    render(<InDialog><ApplyRedactionsBody resolve={ignore} update={ignore} /></InDialog>);
+    expect(document.querySelector('[data-redact-count]')).toBeNull();
+    expect(document.querySelector('.m-dialog-footer button.m-button--primary')).not.toBeNull();
   });
 });

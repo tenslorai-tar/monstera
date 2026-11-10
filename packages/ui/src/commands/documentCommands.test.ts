@@ -1506,6 +1506,24 @@ describe('delete pages — the mutation-dialog gate', () => {
     expect(saidFor).toStrictEqual({ cancelled: 0, refused: 0 });
   });
 
+  it('a copy onto the document’s OWN FILE says that, not that another document is writing to it (the owner, 2026-11-10)', async () => {
+    const opened: { id: string; props: unknown }[] = [];
+    const client = createClient(channels, () => Promise.resolve(ok({ kind: 'onto-source' })));
+    await saveCopyCommand({
+      settleMarks: NOTHING_MARKED,
+      client,
+      stamp,
+      signatures,
+      onApplied: () => undefined,
+      toast: () => undefined,
+      ask: (id, props) => {
+        opened.push({ id, props });
+        return Promise.resolve(undefined);
+      },
+    }).run(CONTEXT);
+    expect(opened).toStrictEqual([{ id: 'dialog.save-problem', props: { outcome: 'onto-source' } }]);
+  });
+
   it('EACH EXPORT DISPATCHES ITS OWN FORMAT, which is the only thing separating them', async () => {
     // THE UI HALF, and the pair's blind spot is exactly here: three commands
     // built from one factory differ in a single argument, so a factory that
@@ -3968,6 +3986,8 @@ describe('delete pages — the mutation-dialog gate', () => {
         [{ kind: 'failed' }, [{ id: 'dialog.save-problem', props: { outcome: 'curves-failed' } }]],
         [{ kind: 'write-failed' }, [{ id: 'dialog.save-problem', props: { outcome: 'write-failed' } }]],
         [{ kind: 'refused', openElsewhere: 1 }, [{ id: 'dialog.save-problem', props: { outcome: 'contested' } }]],
+        // THE DOCUMENT'S OWN FILE chosen for the copy (the owner, 2026-11-10): its own sentence, never *another document*.
+        [{ kind: 'onto-source' }, [{ id: 'dialog.save-problem', props: { outcome: 'onto-source' } }]],
         [{ kind: 'cancelled' }, []],
       ] as const) {
         const { command, asked } = curvesDeps(
@@ -5641,10 +5661,13 @@ describe('protectDocumentCommand', () => {
    */
   describe('applyRedactionsCommand', () => {
     /** A document carrying `marks` Redact marks beside one square, recording every call and answering a burn-in. */
-    function marked(marks: number): { client: ContractClient; sent: { id: string; params: unknown }[] } {
+    function marked(
+      marks: number,
+      pageOf: (at: number) => number = () => 0,
+    ): { client: ContractClient; sent: { id: string; params: unknown }[] } {
       const sent: { id: string; params: unknown }[] = [];
-      const listed = (kind: 'redact' | 'square', index: number): unknown => ({
-        page: 0,
+      const listed = (kind: 'redact' | 'square', index: number, page: number): unknown => ({
+        page,
         index,
         rect: { x0: 10, y0: 10, x1: 50, y1: 30 },
         inReplyTo: null,
@@ -5663,7 +5686,11 @@ describe('protectDocumentCommand', () => {
             ok({
               version: asDocVersion(1),
               // THE SQUARE IS THE CONTROL in the fixture: a count of every annotation would say 1 with no marks.
-              annotations: [listed('square', 0), ...Array.from({ length: marks }, (_unused, at) => listed('redact', at + 1))],
+              // AND ON A PAGE OF ITS OWN, so a page count of every annotation would say one page too many.
+              annotations: [
+                listed('square', 0, 9),
+                ...Array.from({ length: marks }, (_unused, at) => listed('redact', at + 1, pageOf(at))),
+              ],
               next: null,
               truncated: false,
             }),
@@ -5725,8 +5752,9 @@ describe('protectDocumentCommand', () => {
       expect(said).toStrictEqual([]);
     });
 
-    it('dispatches the scope and both choices, with `all` unexpanded', async () => {
-      const { client, sent: calls } = marked(2);
+    it('opens the dialog with the COUNT of marks and their pages, and dispatches every mark with both choices', async () => {
+      // FIVE MARKS ON THREE PAGES, none of them the page on show: the dialog's number is the document's, never the page's.
+      const { client, sent: calls } = marked(5, (at) => [3, 3, 4, 6, 6][at] ?? 0);
       const opened: { id: string; props: unknown }[] = [];
 
       await applyRedactionsCommand({
@@ -5737,15 +5765,12 @@ describe('protectDocumentCommand', () => {
         onApplied: () => undefined,
         ask: (id, props) => {
           opened.push({ id, props });
-          return Promise.resolve({ pages: 'all', cover: 'none', images: 'remove', keepTitle: true, keepBookmarks: true });
+          return Promise.resolve({ cover: 'none', images: 'remove', keepTitle: true, keepBookmarks: true });
         },
         confirm: () => true,
       }).run(CONTEXT);
 
-      // THE PAGE WENT IN, so the dialog can offer *this page* by number.
-      expect(opened).toStrictEqual([
-        { id: 'dialog.apply-redactions', props: { page: CONTEXT.page } },
-      ]);
+      expect(opened).toStrictEqual([{ id: 'dialog.apply-redactions', props: { counted: { marks: 5, pages: 3 } } }]);
       // THE MARKS ARE COUNTED FIRST, then the burn-in is the one command sent.
       expect(calls[0]?.id).toBe('document.annotations');
       const sent = calls.filter((call) => call.id !== 'document.annotations');
@@ -5796,7 +5821,32 @@ describe('protectDocumentCommand', () => {
       expect(sent.map((call) => call.id)).toStrictEqual(['document.annotations']);
     });
 
-    it('with *Confirm before redacting* OFF, asks nothing and burns in THIS PAGE with the dialog’s own defaults', async () => {
+    it('a REFUSED COUNT still asks, with no number, and burns in nothing on a dismissal', async () => {
+      // THE DECISION is that a refusal is never the route past the confirmation: the dialog is asked, its props carry
+      // no count, and the dismissal dispatches nothing.
+      const sent: string[] = [];
+      const client = createClient(channels, (id) => {
+        sent.push(id);
+        return Promise.resolve(err({ code: 'document-not-open' }));
+      });
+      const opened: { id: string; props: unknown }[] = [];
+      await applyRedactionsCommand({
+        client,
+        stamp,
+        signatures,
+        toast: () => undefined,
+        onApplied: () => undefined,
+        ask: (id, props) => {
+          opened.push({ id, props });
+          return Promise.resolve(undefined);
+        },
+        confirm: () => true,
+      }).run(CONTEXT);
+      expect(opened).toStrictEqual([{ id: 'dialog.apply-redactions', props: {} }]);
+      expect(sent).toStrictEqual(['document.annotations']);
+    });
+
+    it('with *Confirm before redacting* OFF, asks nothing and burns in EVERY MARK with the dialog’s own defaults', async () => {
       // The decision is whether the dialog opens, so the call not made is asserted, not only the dispatch — and the
       // dispatch is the dialog's starting choices, from the one definition both read (`applyRedactionsDefaults`).
       const { client, sent: calls } = marked(2);
@@ -5824,9 +5874,9 @@ describe('protectDocumentCommand', () => {
           id: 'document.execute',
           params: {
             docId: DOC,
-            // THIS PAGE, never the whole document: an unasked burn-in never reaches further than the dialog would
-            // have offered first.
-            command: { kind: 'applyRedactions', pages: [CONTEXT.page], cover: 'solid', images: 'pixels', keepTitle: false, keepBookmarks: false },
+            // EVERY MARK, as the dialog says it removes (the owner, 2026-11-10), never the page on show: an unasked
+            // burn-in reaches exactly as far as the dialog would have said.
+            command: { kind: 'applyRedactions', pages: 'all', cover: 'solid', images: 'pixels', keepTitle: false, keepBookmarks: false },
           },
         },
       ]);

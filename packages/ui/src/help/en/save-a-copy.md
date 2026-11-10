@@ -20,6 +20,7 @@ Save a copy writes the document, with your changes, to a new file you choose. Th
 
 - This is a copy, not "Save as": the open document does not move to the new file. If it had unsaved changes, it still has them, and Monstera still asks about them when you close it.
 - Monstera will not write over a file that is open in another tab.
+- A copy can't replace the document it came from. If you choose the document's own file, Monstera says so and writes nothing: choose another name. To keep your changes in the original file, use **Save** instead.
 
 <!--
 Screenshots to capture:

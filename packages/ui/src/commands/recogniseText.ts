@@ -37,6 +37,7 @@ import {
   reportProblem,
   sayTooDeep,
 } from './documentCommands.js';
+import { copyProblemOf } from './copyProblem.js';
 
 /**
  * Recognises the text on a document's scanned pages and writes it into them.
@@ -569,7 +570,7 @@ export function exportSearchableCommand(
         return;
       }
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
-        outcome: copied.value.kind === 'write-failed' ? 'write-failed' : 'contested',
+        outcome: copyProblemOf(copied.value.kind),
       });
     },
   };

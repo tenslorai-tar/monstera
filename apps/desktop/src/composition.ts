@@ -262,6 +262,7 @@ import {
   EngineUnavailableError,
   MissingSessionError,
   NetworkKeyMissing,
+  NoSourceNamedError,
   type OptimizeSource,
   type ProtectedCopies,
 } from './documentCommands.js';
@@ -1961,7 +1962,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // Electron, so the whole graph stays buildable in a plain Node test.
     copy: {
       pick: pickDestination,
-      checkTarget: (destination) => documents.checkCopyTarget(destination),
+      checkTarget: (destination, source) => documents.checkCopyTarget(destination, source),
     },
     // THE VERSIONS A SAVE REPLACED (ADR-0198), listed and restored as copies from here; the file's identity is read by the
     // kernel's one reader, for the folder's hint.
@@ -2322,10 +2323,12 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
                     names: (target) => siblingNames(target, 1),
                     wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
                   },
-                  (destination) => documents.checkCopyTarget(destination),
+                  // NO SOURCE: a working copy is fetched from the cloud, not copied from an open document.
+                  (destination) => documents.checkCopyTarget(destination, undefined),
                   open,
                   path,
                 );
+                if (written.kind === 'onto-source') throw new NoSourceNamedError();
                 if (written.kind === 'refused') return 'contested';
                 if (written.kind === 'write-failed') return 'write-failed';
                 return 'written';

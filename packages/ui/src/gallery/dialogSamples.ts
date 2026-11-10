@@ -534,7 +534,7 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
       steps: [type('Password to open (optional)', 'example-open'), type('Password to change permissions (optional)', 'example-owner')],
     },
   ],
-  'dialog.apply-redactions': [{ state: 'opened', props: { page: 2 } }],
+  'dialog.apply-redactions': [{ state: 'opened', props: { counted: { marks: 5, pages: 3 } } }],
   'dialog.redact-matches': [
     { state: 'opened', props: { page: 2 } },
     { state: 'filled', props: { page: 2 }, steps: [type('Find', 'account number')] },

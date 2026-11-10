@@ -660,6 +660,30 @@ describe('writeDocumentCopy', () => {
     expect(f.calls).toStrictEqual([]);
   });
 
+  it('REFUSES the source’s own file as ONTO-SOURCE, before flushing, and writes nothing', async () => {
+    // ITS OWN MEMBER, not `refused` with the source counted as another document: the sentence the person is shown
+    // turns on it (the owner, 2026-11-10).
+    const files: Files = new Map([[TARGET, 'original']]);
+    const f = fake(files);
+    const flushes = { count: 0 };
+
+    const outcome = await writeDocumentCopy(
+      copyDeps(f.surface),
+      () => Promise.resolve({ kind: 'source' }),
+      () => {
+        flushes.count += 1;
+        return through(f.surface, NEW_BYTES)();
+      },
+      TARGET,
+      'keep',
+    );
+
+    expect(outcome).toStrictEqual({ kind: 'onto-source' });
+    expect(files.get(TARGET)).toBe('original');
+    expect(flushes.count).toBe(0);
+    expect(f.calls).toStrictEqual([]);
+  });
+
   it('reports a write failure and leaves the destination as it was', async () => {
     const files: Files = new Map([[ELSEWHERE, 'existing']]);
     const f = fake(files, { step: 'rename', code: 'EPERM' });

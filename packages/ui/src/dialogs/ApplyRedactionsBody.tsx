@@ -11,6 +11,7 @@ import { useState } from 'react';
 
 import {
   APPLY_REDACTIONS_APPLY,
+  APPLY_REDACTIONS_COUNT,
   APPLY_REDACTIONS_COVER,
   APPLY_REDACTIONS_COVER_NONE,
   APPLY_REDACTIONS_COVER_SOLID,
@@ -21,15 +22,12 @@ import {
   APPLY_REDACTIONS_KEEP_TITLE_WARNS,
   APPLY_REDACTIONS_IMAGES_PIXELS,
   APPLY_REDACTIONS_IMAGES_REMOVE,
-  APPLY_REDACTIONS_SCOPE,
-  APPLY_REDACTIONS_SCOPE_ALL,
-  APPLY_REDACTIONS_SCOPE_PAGE,
   APPLY_REDACTIONS_WARNS,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
 import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Problem } from '../primitives/Problem.js';
-import { pdfjsPageOf } from '../pageNumbering.js';
+import type { RedactionTally } from '../commands/redactionMarks.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import { type ApplyRedactionsAnswer, applyRedactionsDefaults } from './applyRedactions.js';
 
@@ -55,25 +53,24 @@ const IMAGE_TITLES: Readonly<Record<PdfRedactImages, MessageKey>> = {
  * content is removed rather than covered, and the only way back is undo in
  * this session.
  *
- * ## `this page` is offered by NUMBER
+ * ## It says HOW MANY, and offers no scope
  *
- * `pdfjsPageOf` is the one converter between the kernel's zero-based indices
- * and the number on screen, and the payload carries the kernel index it was
- * given — so the label and the payload cannot disagree, which is the wired-pair
- * blind spot this repository names by name.
+ * Every mark in the document is removed, and the first line says how many and
+ * on how many pages, counted by the command before the dialog opened. A page
+ * scope is gone because it could remove nothing while marks stood elsewhere
+ * (`applyRedactions.ts`).
  *
  * A default export because `declareDialog` takes a `lazy()` component.
  */
 export default function ApplyRedactionsBody({
-  page,
+  counted,
   resolve,
-}: { readonly page: number } & DialogAnswering<ApplyRedactionsAnswer>): ReactElement {
+}: { readonly counted?: RedactionTally | undefined } & DialogAnswering<ApplyRedactionsAnswer>): ReactElement {
   const { _ } = useLingui();
   // FROM THE ONE DEFINITION a burn-in without asking applies (`applyRedactionsDefaults`), so what this dialog starts
   // on and what *Confirm before redacting: off* does cannot drift apart. The title is removed by default — ADR-0079:
   // removal is the side that cannot leak, so keeping it is something a person asks for.
-  const start = applyRedactionsDefaults(page);
-  const [scope, setScope] = useState<'all' | 'page'>(start.pages === 'all' ? 'all' : 'page');
+  const start = applyRedactionsDefaults();
   const [cover, setCover] = useState<PdfRedactCover>(start.cover);
   const [images, setImages] = useState<PdfRedactImages>(start.images);
   const [keepTitle, setKeepTitle] = useState(start.keepTitle);
@@ -82,23 +79,12 @@ export default function ApplyRedactionsBody({
   return (
     <div className="m-apply-redactions">
       {/* A WARNING LOOKS LIKE ONE (the owner, 2026-10-08): this burns the marks in and cannot be undone. */}
+      {counted === undefined ? null : (
+        <p className="m-apply-redactions__count" data-redact-count="">
+          {_(APPLY_REDACTIONS_COUNT, { marks: counted.marks, pages: counted.pages })}
+        </p>
+      )}
       <Problem message={_(APPLY_REDACTIONS_WARNS)} />
-
-      <DialogRow label={APPLY_REDACTIONS_SCOPE}>
-        <select
-          aria-label={_(APPLY_REDACTIONS_SCOPE)}
-          data-redact-scope=""
-          onChange={(event) => {
-            setScope(event.target.value === 'all' ? 'all' : 'page');
-          }}
-          value={scope}
-        >
-          <option value="page">
-            {_(APPLY_REDACTIONS_SCOPE_PAGE, { page: pdfjsPageOf(page) })}
-          </option>
-          <option value="all">{_(APPLY_REDACTIONS_SCOPE_ALL)}</option>
-        </select>
-      </DialogRow>
 
       <DialogRow label={APPLY_REDACTIONS_COVER}>
         <select
@@ -171,7 +157,7 @@ export default function ApplyRedactionsBody({
         <Button
           label={APPLY_REDACTIONS_APPLY}
           onClick={() => {
-            resolve({ pages: scope === 'all' ? 'all' : [page], cover, images, keepTitle, keepBookmarks });
+            resolve({ cover, images, keepTitle, keepBookmarks });
           }}
           variant="primary"
         />

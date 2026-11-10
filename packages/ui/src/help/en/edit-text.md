@@ -12,8 +12,9 @@ Edit text lets you change the words already on a page, in place, keeping their f
 
 1. In the rail, choose **Edit**, then **Edit text** in the **Text** group (its full name is **Edit text on the page**), or press **Ctrl+Shift+T**.
 2. Every block of text you can edit is outlined. Click a block to select it, then click inside it again where you want the cursor.
-3. Type your changes. A line that gets too long wraps, and the block grows downwards.
-4. Press **Esc** or click away to finish. The change is written into the page, and one **Ctrl+Z** puts the whole block back.
+3. Before you type, drag a side handle to make the box wider. Editing works better with room: the words have space to grow along the line instead of wrapping at once. The open block says so in one line under it until you type or widen it.
+4. Type your changes. A line that gets too long wraps, and the block grows downwards.
+5. Press **Esc** or click away to finish. The change is written into the page, and one **Ctrl+Z** puts the whole block back.
 
 ![A page in Edit text mode with blocks outlined and one open for editing](screenshot:edit-text-1)
 

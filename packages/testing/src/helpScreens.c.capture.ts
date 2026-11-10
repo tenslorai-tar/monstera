@@ -257,7 +257,6 @@ test('redact-content-1', async ({ page }) => {
   await openDocument(page);
   await runCommand(page, 'Apply redactions');
   const dialog = await theDialog(page);
-  await dialog.getByRole('combobox', { name: 'Apply to' }).selectOption({ label: 'Every page' });
   await dialog.getByRole('combobox', { name: 'Leave behind' }).selectOption({ label: 'A filled box' });
   await dialog.getByRole('combobox', { name: 'Images under a mark' }).selectOption({ label: 'Blank only the covered part' });
   await shoot(page, 'redact-content-1', dialog);

@@ -11,20 +11,22 @@ export const APPLY_REDACTIONS_DIALOG_ID = 'dialog.apply-redactions';
 /**
  * The confirmation a burn-in asks for.
  *
- * ## It is a CONFIRM DIALOG and it is also where the two options live
+ * ## It is a CONFIRM DIALOG and it is also where the options live
  *
  * Splitting them would put a settings screen in front of an irreversible act
  * and then ask a person to confirm something they can no longer see. What is
- * being confirmed is *this scope, with this cover, removing these images* —
- * one sentence with three nouns in it.
+ * being confirmed is *these marks, with this cover, removing these images*.
  *
- * ## It claims no COUNT
+ * ## EVERY MARK, and it says how many (the owner, 2026-11-10)
  *
- * *Burn in 4 marks on 2 pages* would be better than *are you sure*, and it
- * needs a query channel of its own because the session lives in the contained
- * host. The dialog says the scope and what redaction does instead, and claims
- * no number it cannot support — `pageRedact.ts` records the trigger for
- * revisiting that.
+ * There is no scope to choose. An *Apply to: this page* over a page with no
+ * marks, while other pages had them, removed nothing at all and said nothing,
+ * so the person believed the document redacted (`pageRedact.test.ts`, *a
+ * burn-in scoped to an unmarked page*). The dialog is opened with the count of
+ * the document's marks and the pages they are on, from the same read the
+ * question before a save counts with (`tallyPendingRedactions`), and its answer
+ * carries no page list: the command sends `'all'`, so no answer this dialog can
+ * give leaves a mark behind.
  *
  * ## No `blurred`
  *
@@ -35,7 +37,6 @@ export const APPLY_REDACTIONS_DIALOG_ID = 'dialog.apply-redactions';
  */
 export const APPLY_REDACTIONS_RESULT = z
   .object({
-    pages: z.union([z.literal('all'), z.array(z.number().int().nonnegative()).min(1)]),
     cover: z.enum(PDF_REDACT_COVERS),
     images: z.enum(PDF_REDACT_IMAGES),
     /**
@@ -61,23 +62,24 @@ export type ApplyRedactionsAnswer = z.infer<typeof APPLY_REDACTIONS_RESULT>;
 
 /**
  * What the dialog starts on, and what a burn-in applies when *Confirm before redacting* is off — ONE definition, so
- * the choices a person would have been shown are exactly the ones applied without asking. The page in front of them,
- * a solid cover, the covered image pixels removed, and the title and every bookmark removed with the rest (ADR-0079,
- * ADR-0163: removal is the side that cannot leak).
- *
- * **`'all'` is the third reader's scope**: *Apply* in the pending-redactions question (`pendingRedactions.ts`) answers a
- * count of the whole document's marks, so it burns in every one of them — with these same choices, never a second set.
+ * the choices a person would have been shown are exactly the ones applied without asking: a solid cover, the covered
+ * image pixels removed, and the title and every bookmark removed with the rest (ADR-0079, ADR-0163: removal is the side
+ * that cannot leak). Every reader burns in every mark, the third being *Apply* in the pending-redactions question
+ * (`pendingRedactions.ts`), with these same choices, never a second set.
  */
-export function applyRedactionsDefaults(scope: number | 'all'): ApplyRedactionsAnswer {
-  return { pages: scope === 'all' ? 'all' : [scope], cover: 'solid', images: 'pixels', keepTitle: false, keepBookmarks: false };
+export function applyRedactionsDefaults(): ApplyRedactionsAnswer {
+  return { cover: 'solid', images: 'pixels', keepTitle: false, keepBookmarks: false };
 }
 
 export const APPLY_REDACTIONS_DIALOG = declareDialog({
   id: APPLY_REDACTIONS_DIALOG_ID,
   title: APPLY_REDACTIONS_TITLE,
   props: z.object({
-    /** The page the reader is on, so *this page* can be offered by number. */
-    page: z.number().int().nonnegative(),
+    /**
+     * How many marks the burn-in removes, and on how many pages, so the dialog says it rather than *are you sure*.
+     * Absent only where main refused the count, and then the dialog claims no number.
+     */
+    counted: z.object({ marks: z.number().int().positive(), pages: z.number().int().positive() }).strict().optional(),
   }),
   result: APPLY_REDACTIONS_RESULT,
   component: lazy(() => import('./ApplyRedactionsBody.js')),

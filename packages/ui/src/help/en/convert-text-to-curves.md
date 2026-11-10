@@ -28,6 +28,7 @@ Everything else is kept where it can be. Monstera counts the pages, comments and
 - The copy may be much larger, because every letter becomes a shape of its own. An eight-page report went from 12 KB to 460 KB.
 - The copy keeps the document's title, but its **Created** and **Modified** dates become the moment the copy was made.
 - It always converts the whole document. To convert only some pages, extract them first; see "Extract pages to a new PDF".
+- The copy can't replace the document it came from. If you choose the document's own file, Monstera says so and writes nothing: choose another name.
 - You cannot save the copy over the document it came from. Monstera refuses and nothing changes, so choose another name.
 - **Fonts** in "See and change a document's properties" reads **None** for the copy.
 - If you have unsaved changes, the copy includes them. Your document stays unsaved until you save it.

@@ -81,8 +81,8 @@ export const WARN_SIGNATURE_BREAK_SETTING: SettingDefinition<z.ZodBoolean> = {
  * Whether *Apply redactions* asks first — Part F's *"confirm redaction"* (`BUILD-PROMPT.md`:618), ON by default as
  * the owner answered on 2026-09-27. A burn-in removes content and the only way back is undo in this session, so the
  * confirmation is where the person sees the scope and what is removed. Off, the burn-in applies the choices the dialog
- * would have started on (`applyRedactionsDefaults`): this page, a solid cover, the covered pixels removed, the title
- * removed — never a wider scope than the one a person would have been shown.
+ * would have started on (`applyRedactionsDefaults`): every mark in the document, as the dialog says it removes, with a
+ * solid cover, the covered pixels removed and the title removed — never a choice the person would not have been shown.
  */
 export const CONFIRM_REDACTION_SETTING: SettingDefinition<z.ZodBoolean> = {
   id: 'saving.confirm-redaction',

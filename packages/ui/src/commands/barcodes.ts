@@ -22,6 +22,7 @@ import type { ShowToast } from '../toasts.js';
 import type { Spot } from '../accessibility/view.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
 import { confirmCopied, confirmWritten } from './confirmWritten.js';
+import { copyProblemOf } from './copyProblem.js';
 import { type DocumentCommandDeps, hasDocument, reportProblem } from './documentCommands.js';
 
 /**
@@ -163,10 +164,9 @@ async function saveContact(
     case 'cancelled':
       return;
     case 'write-failed':
-      void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: 'write-failed' });
-      return;
     case 'refused':
-      void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: 'contested' });
+    case 'onto-source':
+      void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: copyProblemOf(saved.value.kind) });
       return;
     case 'stale':
     case 'no-such-barcode':

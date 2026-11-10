@@ -19,6 +19,7 @@ import {
   TEXT_EDIT_EDITOR_LABEL,
   TEXT_EDIT_HELD,
   TEXT_EDIT_PAST_PAGE,
+  TEXT_EDIT_ROOM_TIP,
   TEXT_EDIT_REFUSED_ESC_HINT,
   TEXT_EDIT_REFUSED_HINT,
   TEXT_HANDLE_MOVE,
@@ -485,6 +486,17 @@ export function BlockEditor({
       }),
     [store],
   );
+  // THE ROOM TIP is for the moment before the first word: once the words change the advice is late, and once the box is
+  // widened it has been taken. A move of the caret is not a change of the words, so it stays through that.
+  const [wordsChanged, setWordsChanged] = useState(false);
+  useEffect(
+    () =>
+      store.subscribe(() => {
+        if (store.get().model !== opened.model) setWordsChanged(true);
+      }),
+    [store, opened.model],
+  );
+  const roomTip = placeable && !wordsChanged && placement.width === undefined;
 
   // FINISHED BY A PRESS OR A FOCUS ANYWHERE ELSE: outside the frame, outside what keeps the editor, outside the menu.
   useEffect(() => {
@@ -909,6 +921,10 @@ export function BlockEditor({
       ) : past ? (
         <div className="m-kit-problem m-kit-problem--above" role="status">
           <p>{_(TEXT_EDIT_PAST_PAGE)}</p>
+        </div>
+      ) : roomTip ? (
+        <div className="m-kit-problem m-kit-tip" data-kit-tip="" role="note">
+          <p>{_(TEXT_EDIT_ROOM_TIP)}</p>
         </div>
       ) : null}
     </div>

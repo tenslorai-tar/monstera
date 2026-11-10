@@ -1348,6 +1348,10 @@ export const TAB_ALL_DOCUMENTS = messageKey('surface.tabs.all');
 export const VIEW_PROBLEM_TITLE = messageKey('surface.view-problem.title');
 export const VIEW_PROBLEM_BODY = messageKey('surface.view-problem.body');
 export const VIEW_PROBLEM_RETRY = messageKey('surface.view-problem.retry');
+/** A protected document whose prompt was cancelled: no error, the owner's sentence and two ways on (2026-11-10). */
+export const VIEW_LOCKED_TITLE = messageKey('surface.view-locked.title');
+export const VIEW_LOCKED_ENTER = messageKey('surface.view-locked.enter');
+export const VIEW_LOCKED_CLOSE = messageKey('surface.view-locked.close');
 export const WINDOW_PROBLEM_TITLE = messageKey('surface.window-problem.title');
 export const WINDOW_PROBLEM_BODY = messageKey('surface.window-problem.body');
 export const DIALOG_PROBLEM_TITLE = messageKey('surface.dialog-problem.title');
@@ -1673,6 +1677,8 @@ export const TEXT_UNCHANGED = messageKey('surface.text-edit.text-unchanged');
 export const TEXT_EDIT_HELD = messageKey('surface.text-edit.held');
 /** A block whose words run past the page's edge: written whole, outlined, and said (the owner's Q7). */
 export const TEXT_EDIT_PAST_PAGE = messageKey('surface.text-edit.past-page');
+/** The one line an open block shows until its words change or it is widened: room first, then words (the owner, 2026-11-10). */
+export const TEXT_EDIT_ROOM_TIP = messageKey('surface.text-edit.room-tip');
 // THE EDITOR'S FORMATTING (ADR-0180): the ribbon group, each command, and the bar's own value controls.
 export const TEXT_FORMAT_BOLD = messageKey('command.text.format.bold');
 export const TEXT_FORMAT_ITALIC = messageKey('command.text.format.italic');
@@ -3158,9 +3164,8 @@ export const PERMISSION_PRINT_HIGH_QUALITY = messageKey('permission.print-high-q
 export const APPLY_REDACTIONS_COMMAND_TITLE = messageKey('command.apply-redactions.title');
 export const APPLY_REDACTIONS_TITLE = messageKey('dialog.apply-redactions.title');
 export const APPLY_REDACTIONS_WARNS = messageKey('dialog.apply-redactions.warns');
-export const APPLY_REDACTIONS_SCOPE = messageKey('dialog.apply-redactions.scope');
-export const APPLY_REDACTIONS_SCOPE_PAGE = messageKey('dialog.apply-redactions.scope-page');
-export const APPLY_REDACTIONS_SCOPE_ALL = messageKey('dialog.apply-redactions.scope-all');
+/** What the burn-in removes, counted: every mark in the document (the owner, 2026-11-10). */
+export const APPLY_REDACTIONS_COUNT = messageKey('dialog.apply-redactions.count');
 export const APPLY_REDACTIONS_COVER = messageKey('dialog.apply-redactions.cover');
 export const APPLY_REDACTIONS_COVER_SOLID = messageKey('dialog.apply-redactions.cover-solid');
 export const APPLY_REDACTIONS_COVER_NONE = messageKey('dialog.apply-redactions.cover-none');
@@ -3526,6 +3531,8 @@ export const WORDS_NOT_WRITTEN_DISCARD = messageKey('dialog.words-not-written.di
 export const SAVE_PROBLEM_TITLE = messageKey('dialog.save-problem.title');
 export const SAVE_WORK_INTACT = messageKey('dialog.save-problem.intact');
 export const SAVE_REFUSED_CONTESTED = messageKey('dialog.save-problem.contested');
+/** A copy's destination is the file of the document being copied (the owner, 2026-11-10). */
+export const SAVE_REFUSED_ONTO_SOURCE = messageKey('dialog.save-problem.onto-source');
 export const SAVE_REFUSED_REPLACED = messageKey('dialog.save-problem.replaced');
 export const SAVE_REFUSED_TARGET_ABSENT = messageKey('dialog.save-problem.target-absent');
 export const SAVE_REFUSED_UNREPRESENTABLE = messageKey('dialog.save-problem.unrepresentable');
@@ -3776,7 +3783,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [BACKUP_COPIES_OPTION_TITLES.five]: '5',
   [BACKUP_COPIES_OPTION_TITLES.ten]: '10',
   [CONFIRM_REDACTION_DESCRIPTION]:
-    'Shows what Apply redactions will remove before it removes it. Turned off, it removes marked content on the current page straight away, with a solid cover, and removes the document title and bookmarks too. Undo still works until you close the document.',
+    'Shows what Apply redactions will remove before it removes it. Turned off, it removes every marked part of the document straight away, with a solid cover, and removes the document title and bookmarks too. Undo still works until you close the document.',
   [STARTING_ZOOM_TITLE]: 'Starting zoom',
   [STARTING_ZOOM_DESCRIPTION]: 'How large a document is shown when you open it. You can still zoom each one as you read.',
   [STARTING_ZOOM_OPTION_TITLES['fit-width']]: 'Fit width',
@@ -4303,6 +4310,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // makes *try again* worth pressing.
   [VIEW_PROBLEM_BODY]: 'Your file is unchanged. Trying again returns to the same page.',
   [VIEW_PROBLEM_RETRY]: 'Try again',
+  // THE OWNER'S WORDS, 2026-11-10.
+  [VIEW_LOCKED_TITLE]: 'This document is protected with a password.',
+  [VIEW_LOCKED_ENTER]: 'Enter password',
+  [VIEW_LOCKED_CLOSE]: 'Close',
   [WINDOW_PROBLEM_TITLE]: 'Part of this window stopped working.',
   // The documents are held in main, and the tabs naming them live above the boundary, so
   // both survive a retry — which is what the sentence promises.
@@ -4716,6 +4727,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // THE OWNER'S OWN SENTENCE (Q7), and nothing promised that the editor cannot do: the words are all kept, and the way
   // to make them fit is to shorten them, which the open editor is for.
   [TEXT_EDIT_PAST_PAGE]: 'This text no longer fits on the page',
+  [TEXT_EDIT_ROOM_TIP]: 'Tip: drag a side handle to widen the box before you type. Editing works better with room.',
   [TEXT_FORMAT_BOLD]: 'Bold',
   [TEXT_FORMAT_ITALIC]: 'Italic',
   [TEXT_FORMAT_UNDERLINE]: 'Underline',
@@ -7002,9 +7014,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // picture that *Remove the whole image* takes is left out on purpose, since the person chooses it in this dialog.
   [APPLY_REDACTIONS_WARNS]:
     'The marked text, pictures and drawings are removed from the document, not just covered, along with comments and form fields under the marks. Everything else on the page stays, except that a letter crossing a mark’s edge goes whole. Gradients, patterns and transparency effects that reach under a mark can stay in the file, but nothing of them shows there. The author and other properties are removed too, and so are bookmarks unless you tick the box to keep some. Only Undo can bring this back, in this session.',
-  [APPLY_REDACTIONS_SCOPE]: 'Apply to',
-  [APPLY_REDACTIONS_SCOPE_PAGE]: 'Page {page}',
-  [APPLY_REDACTIONS_SCOPE_ALL]: 'Every page',
+  // THE OWNER'S EXAMPLE, 2026-11-10: "5 marks on 3 pages will be removed".
+  [APPLY_REDACTIONS_COUNT]:
+    '{marks, plural, one {# mark} other {# marks}} on {pages, plural, one {# page} other {# pages}} will be removed.',
   [APPLY_REDACTIONS_COVER]: 'Leave behind',
   [APPLY_REDACTIONS_COVER_SOLID]: 'A filled box',
   [APPLY_REDACTIONS_COVER_NONE]: 'Nothing',
@@ -7596,6 +7608,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // Each reason says what the user can DO. "Contested" and "unverifiable" are
   // the kernel's words for a verdict; a person needs the next action.
   [SAVE_REFUSED_CONTESTED]: 'Another open document is writing to this file. Close it and try again.',
+  [SAVE_REFUSED_ONTO_SOURCE]: 'A copy can’t replace the document it came from. Choose another name.',
   [SAVE_REFUSED_REPLACED]: 'The file on disk is not the one this document was opened from. Use Save As to write somewhere else.',
   [SAVE_REFUSED_TARGET_ABSENT]: 'The file this document came from is no longer there. Use Save As to write somewhere else.',
   [SAVE_REFUSED_UNVERIFIABLE]: 'Monstera could not confirm the file on disk is still the same one, so it did not overwrite it.',

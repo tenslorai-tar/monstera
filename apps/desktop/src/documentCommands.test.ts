@@ -132,6 +132,8 @@ import { type DocId, type DocVersion, asDocId, asDocVersion, asFileHandle } from
 
 /** Large enough that capacity is never what these tests are measuring. */
 const AMPLE_CEILING = 64 * 1024 * 1024;
+/** What a case passes as *Save a copy*'s answer to mean the document's own file, which no real path spells. */
+const ITS_OWN_FILE = 'the document’s own file';
 
 /** The name every conversion here runs under (ADR-0234); a case about the name itself mints its own. */
 const WORK = 'work-under-test';
@@ -1903,7 +1905,11 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
               return Promise.resolve();
             },
           },
-          copy: { pick: () => Promise.resolve(copyTo), checkTarget: (target) => own.checkCopyTarget(target) },
+          copy: {
+            // ITS OWN FILE where a case asks for it, which is a path this fixture names only once it is made.
+            pick: () => Promise.resolve(copyTo === ITS_OWN_FILE ? path : copyTo),
+            checkTarget: (target, source) => own.checkCopyTarget(target, source),
+          },
           save: {
             provenance,
             // THE REAL SURFACE AND THE REAL CHECK. Every other case in this
@@ -2302,6 +2308,16 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
 
         expect(await t.commands.saveCopy(t.saved)).toMatchObject({ kind: 'copied' });
         expect(readFileSync(`${destination}.bak`, 'utf8')).toBe('an earlier copy');
+      });
+
+      it('a copy onto the document’s OWN FILE is refused as onto-source, the file untouched (the owner, 2026-11-10)', async () => {
+        // THE REAL SERVICE AND THE REAL BINDING: the source is named by the command, through `#checkFor`, and the
+        // composition-shaped `checkTarget` forwards it. A binding that dropped it would answer `refused` here.
+        const t = await aSavableDocument(signaturesKeptBySave, ledger(), ITS_OWN_FILE);
+        await t.commands.execute(t.saved, rotateOnce);
+
+        expect(await t.commands.saveCopy(t.saved)).toStrictEqual({ kind: 'onto-source' });
+        expect(new Uint8Array(readFileSync(t.path))).toStrictEqual(t.before);
       });
     });
 
@@ -3462,7 +3478,7 @@ describe('the form data export carries the format all the way to the file', () =
       },
       copy: {
         pick: () => Promise.reject(new Error('this case does not write a copy')),
-        checkTarget: (target) => formService.checkCopyTarget(target),
+        checkTarget: (target, source) => formService.checkCopyTarget(target, source),
       },
       formData: { ...localFormData, pick: () => Promise.resolve(destination) },
     });
@@ -3642,7 +3658,7 @@ describe('annotations exported to a file and imported from it, through the lane 
       },
       copy: {
         pick: () => Promise.reject(new Error('this case does not write a copy')),
-        checkTarget: (target) => exchangeService.checkCopyTarget(target),
+        checkTarget: (target, source) => exchangeService.checkCopyTarget(target, source),
       },
       annotationData,
     });
@@ -3868,7 +3884,7 @@ describe('a document past 4,096 pages is extracted and split whole', () => {
         deliver: () => Promise.reject(new Error('an extract does not flush the document')),
         stage: () => Promise.reject(new Error('an extract does not flush the document')),
       },
-      copy: { pick: () => Promise.resolve(file), checkTarget: (target) => longService.checkCopyTarget(target) },
+      copy: { pick: () => Promise.resolve(file), checkTarget: (target, source) => longService.checkCopyTarget(target, source) },
       directory: () => Promise.resolve(folder),
     });
   }
@@ -4019,7 +4035,7 @@ describe('exportPageImages — one image per page, in a folder, all or nothing',
   /** The production composition, with a folder picker answering `folder`. */
   function exportingInto(
     folder: string | null,
-    checkTarget: CopySource['checkTarget'] = (target) => sizedService.checkCopyTarget(target),
+    checkTarget: CopySource['checkTarget'] = (target, source) => sizedService.checkCopyTarget(target, source),
     reads: Partial<typeof LOCAL_READS> = {},
   ): DocumentCommands {
     return new DocumentCommands({
@@ -4291,7 +4307,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
                 options.copyNames?.push(name);
                 return Promise.resolve(options.copyTo ?? null);
               },
-        checkTarget: options.checkTarget ?? ((target) => textService.checkCopyTarget(target)),
+        checkTarget: options.checkTarget ?? ((target, source) => textService.checkCopyTarget(target, source)),
       },
       pickText: (name) => {
         options.picked?.push(name);
@@ -4876,7 +4892,9 @@ describe('exportText — the document’s words, streamed one page at a time', (
 
       const outcome = await commands.convertTextToCurves(textDoc, WORK);
 
-      expect(outcome).toStrictEqual({ kind: 'refused', others: [textDoc] });
+      // ONTO ITS SOURCE, never `refused` with the document itself counted as another (the owner, 2026-11-10): this case
+      // read `{ kind: 'refused', others: [textDoc] }` until then, which is the wrong sentence written down as the answer.
+      expect(outcome).toStrictEqual({ kind: 'onto-source' });
       // REFUSED BEFORE THE CONVERTER RAN: the check reads the destination first.
       expect(given).toStrictEqual([]);
       expect(fileDigest(original)).toBe(digest);
@@ -5353,7 +5371,7 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
       },
       copy: {
         pick: () => Promise.reject(new Error('an Excel export uses its own picker')),
-        checkTarget: (target) => service.checkCopyTarget(target),
+        checkTarget: (target, source) => service.checkCopyTarget(target, source),
       },
       pickOffice: (name, format) => {
         picked.push(`${name}:${format}`);
@@ -7169,7 +7187,7 @@ describe('DocumentCommands — a page edited in another application (ADR-0062)',
         save: realSave(flushes),
         copy: {
           pick: () => Promise.reject(new Error('this case writes no copy')),
-          checkTarget: (path) => t.documents.checkCopyTarget(path),
+          checkTarget: (path, source) => t.documents.checkCopyTarget(path, source),
         },
         externalEdit: {
           pick: (suggested) => {

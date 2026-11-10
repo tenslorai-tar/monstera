@@ -6,7 +6,7 @@ import {
   createClient,
 } from '@monstera/contract';
 import { type DocId, asDocId, asDocVersion, ok } from '@monstera/shared';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { DocumentKeys, NO_KEYS, viewKeysOf } from './documentKeys.js';
@@ -35,9 +35,11 @@ vi.mock('./documentView.js', () => ({
   // cases below distinguish *asked and was told yes* from *asked nobody*.
   // A STALE KEY IS REFUSED like no key at all, the parser's answer to a password that no longer opens the document.
   openDocumentView: (options: { readonly docId: string; readonly password?: string }) =>
-    options.docId !== UNENCRYPTED && (options.password === undefined || options.password === STALE)
-      ? Promise.reject(new StubPasswordError())
-      : Promise.resolve({ document: { numPages: 1 }, close: () => Promise.resolve() }),
+    options.docId === BROKEN
+      ? Promise.reject(new Error('this stub parser cannot read this document'))
+      : options.docId !== UNENCRYPTED && (options.password === undefined || options.password === STALE)
+        ? Promise.reject(new StubPasswordError())
+        : Promise.resolve({ document: { numPages: 1 }, close: () => Promise.resolve() }),
   needsPasswordToParse: (cause: unknown) => cause instanceof StubPasswordError,
   createParserWorker: () => ({ destroy: () => undefined }),
 }));
@@ -58,6 +60,9 @@ class StubPasswordError extends Error {
 
 /** The one id the stub parser opens with no password — the control's fixture. */
 const UNENCRYPTED = 'doc-with-no-encrypt-dictionary';
+
+/** The id the stub parser refuses for a reason that is not a password: the control for *locked is not failed*. */
+const BROKEN = 'doc-the-parser-cannot-read';
 
 /** A key the stub parser refuses: one the document stood with before an undo of a protect. */
 const STALE = 'a-key-this-version-does-not-open';
@@ -127,6 +132,42 @@ describe('useDocumentView — an encrypted document', () => {
     expect(unlocks).toStrictEqual([{ docId: DOC.docId, password: 'reader-secret' }]);
   });
 
+  it('a CANCELLED prompt is locked, and the retry asks again and opens on the password then given', async () => {
+    const { client, unlocks } = unlockingClient([{ kind: 'unlocked', access: 2 }]);
+    const answers: (string | undefined)[] = [undefined, 'reader-secret'];
+    const asked: boolean[] = [];
+    const prompt = (retry: boolean): Promise<string | undefined> => {
+      asked.push(retry);
+      return Promise.resolve(answers.shift());
+    };
+    const { result } = renderHook(() => useDocumentView(client, DOC, ignoreVersion, prompt, NO_KEYS));
+    await waitFor(() => {
+      expect(result.current.locked).toBe(true);
+    });
+    // NOTHING WAS UNLOCKED on the cancel: the decision is that main was never asked.
+    expect(unlocks).toStrictEqual([]);
+    act(() => {
+      result.current.retry();
+    });
+    await waitFor(() => {
+      expect(result.current.ready).toBeDefined();
+    });
+    expect(result.current.locked).toBe(false);
+    expect(asked).toStrictEqual([false, false]);
+    expect(unlocks).toStrictEqual([{ docId: DOC.docId, password: 'reader-secret' }]);
+  });
+
+  it('CONTROL: a parse that throws for another reason is FAILED, not locked', async () => {
+    const { client } = unlockingClient([]);
+    const { result } = renderHook(() =>
+      useDocumentView(client, { ...DOC, docId: asDocId(BROKEN) }, ignoreVersion, () => Promise.resolve(undefined), NO_KEYS),
+    );
+    await waitFor(() => {
+      expect(result.current.failed).toBe(true);
+    });
+    expect(result.current.locked).toBe(false);
+  });
+
   it('asks AGAIN on wrong-password, and the second prompt is told it is a retry', async () => {
     const { client } = unlockingClient([
       { kind: 'wrong-password' },
@@ -157,9 +198,11 @@ describe('useDocumentView — an encrypted document', () => {
       Promise.resolve(retry ? undefined : 'wrong');
     const { result } = renderHook(() => useDocumentView(client, DOC, ignoreVersion, prompt, NO_KEYS));
 
+    // LOCKED, NOT FAILED (the owner, 2026-11-10): giving up at the prompt is the person's choice, not an error.
     await waitFor(() => {
-      expect(result.current.failed).toBe(true);
+      expect(result.current.locked).toBe(true);
     });
+    expect(result.current.failed).toBe(false);
     expect(result.current.ready).toBeUndefined();
     // ONCE, which is the assertion a `failed` flag cannot make: a loop that
     // kept trying after the dismissal would end in the same state and would

@@ -27,6 +27,7 @@ import {
   SAVE_PRINT_NO_PRINTER,
   SAVE_REVIEW_CHANGED,
   SAVE_WRITE_DISK_FULL,
+  SAVE_REFUSED_ONTO_SOURCE,
   SAVE_WRITE_FAILED,
   SAVE_WRITE_FOLDER_READ_ONLY,
   SAVE_WRITE_HELD,
@@ -36,6 +37,7 @@ import {
 /** Every outcome this dialog is opened for. */
 type SaveProblem =
   | 'contested'
+  | 'onto-source'
   | 'replaced'
   | 'target-absent'
   | 'unrepresentable'
@@ -80,6 +82,9 @@ type SaveProblem =
  */
 const MESSAGE: Readonly<Record<SaveProblem, MessageKey>> = {
   contested: SAVE_REFUSED_CONTESTED,
+  // A COPY ONTO THE FILE IT CAME FROM: refused like a contested one, and said as what it is, since *another open
+  // document* names a document the person cannot find.
+  'onto-source': SAVE_REFUSED_ONTO_SOURCE,
   replaced: SAVE_REFUSED_REPLACED,
   'target-absent': SAVE_REFUSED_TARGET_ABSENT,
   // THE SIXTH, and the first that is about the FORMAT rather than the

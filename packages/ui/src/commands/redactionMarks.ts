@@ -23,10 +23,25 @@ import { readWholeList } from '../readWholeList.js';
  * own call and reports it in the place it belongs.
  */
 export async function countPendingRedactions(client: ContractClient, docId: DocId): Promise<number | undefined> {
+  return (await tallyPendingRedactions(client, docId))?.marks;
+}
+
+/** How many marks the document carries and on how many pages: what *Apply redactions* says it will remove. */
+export interface RedactionTally {
+  readonly marks: number;
+  readonly pages: number;
+}
+
+/**
+ * The marks and the pages they are on, from the same one read {@link countPendingRedactions} answers from, so the
+ * dialog's *5 marks on 3 pages* and the question before a save cannot count differently.
+ */
+export async function tallyPendingRedactions(client: ContractClient, docId: DocId): Promise<RedactionTally | undefined> {
   const read = await readWholeList(
     (from) => client['document.annotations']({ docId, from }),
     (part) => part.annotations,
   );
   if (!read.ok) return undefined;
-  return read.value.items.filter((annotation) => annotation.kind === 'redact').length;
+  const marks = read.value.items.filter((annotation) => annotation.kind === 'redact');
+  return { marks: marks.length, pages: new Set(marks.map((mark) => mark.page)).size };
 }

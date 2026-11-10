@@ -10,6 +10,7 @@ import {
   TOAST_RESTORE_NONE,
 } from '../messages/en.js';
 import { type UiCommand, VISIBLE } from '../registries/commands.js';
+import { copyProblemOf } from './copyProblem.js';
 import { type DocumentCommandDeps, hasDocument, reportProblem } from './documentCommands.js';
 import type { OpenedDocument } from './importMarkdown.js';
 import type { ShowToast } from '../toasts.js';
@@ -70,10 +71,9 @@ export function restoreVersionCommand(
           deps.toast('problem', TOAST_RESTORE_GONE);
           return;
         case 'destination-contested':
-          void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: 'contested' });
-          return;
+        case 'onto-source':
         case 'write-failed':
-          void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: 'write-failed' });
+          void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: copyProblemOf(outcome.kind) });
           return;
         case 'absent':
         case 'at-capacity':
