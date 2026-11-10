@@ -527,3 +527,80 @@ describe('a mark is not a redaction until it is applied (item N1)', () => {
     }
   });
 });
+
+/**
+ * What a burn-in scoped to ONE page does when that page carries no mark and another page does — the reading the
+ * dialog's *Apply to: this page* gave when the page on show was clear (the owner's question, 2026-11-10).
+ *
+ * Recorded as the kernel answers it, because the dialog no longer offers a page scope: Apply burns in every mark. The
+ * scope is still a field of the command, and these cases keep what it does with an unmarked page stated.
+ */
+describe('a burn-in scoped to an unmarked page, while another page carries a mark', () => {
+  let titled: ByteImage;
+  beforeAll(async () => {
+    const document = await PDFDocument.load(written);
+    document.setTitle('Quarterly salaries');
+    document.setAuthor('A. Writer');
+    titled = await document.save();
+  });
+
+  /** The Info dictionary's title and author after a save and a fresh open, `undefined` where a key is absent. */
+  async function infoAfter(session: MupdfSession): Promise<{ readonly title?: string; readonly author?: string }> {
+    const bytes = await mupdfWriter.serialise(session);
+    const document = mupdf.PDFDocument.openDocument(bytes, 'application/pdf');
+    if (!(document instanceof mupdf.PDFDocument)) throw new Error('not a PDF');
+    try {
+      const info = document.getTrailer().get('Info');
+      const read = (key: string) => (info.isNull() || info.get(key).isNull() ? undefined : info.get(key).asString());
+      const title = read('Title');
+      const author = read('Author');
+      return { ...(title === undefined ? {} : { title }), ...(author === undefined ? {} : { author }) };
+    } finally {
+      document.destroy();
+    }
+  }
+
+  it('removes NOTHING: the other page keeps its secret and its mark, and the title and author both stay', async () => {
+    const session = await mupdfWriter.open(titled);
+    try {
+      await markFirstLine(session, 1);
+      await applyApplyRedactions(session, {
+        kind: 'applyRedactions',
+        pages: [0],
+        cover: 'solid',
+        images: 'pixels',
+        keepTitle: false,
+        keepBookmarks: false,
+      });
+      const [first, second] = await readBack(session);
+      expect(first).toContain(SECRET);
+      expect(second).toContain(SECRET);
+      const marks = (await readAnnotations(session)).annotations.filter((annotation) => annotation.kind === 'redact');
+      expect(marks.map((mark) => mark.page)).toStrictEqual([1]);
+      // KEEP TITLE WAS OFF and the title is still there: the metadata goes only with a page that was burned.
+      expect(await infoAfter(session)).toStrictEqual({ title: 'Quarterly salaries', author: 'A. Writer' });
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('CONTROL: the same command over the marked page removes the secret, the title and the author', async () => {
+    const session = await mupdfWriter.open(titled);
+    try {
+      await markFirstLine(session, 1);
+      await applyApplyRedactions(session, {
+        kind: 'applyRedactions',
+        pages: [1],
+        cover: 'solid',
+        images: 'pixels',
+        keepTitle: false,
+        keepBookmarks: false,
+      });
+      const [, second] = await readBack(session);
+      expect(second).not.toContain(SECRET);
+      expect(await infoAfter(session)).toStrictEqual({});
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+});

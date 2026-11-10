@@ -45,7 +45,7 @@ export type MarksSettled = 'none' | 'applied' | 'kept' | 'stopped';
  * Asks about the document's unapplied marks, where it carries any, and applies them on *Apply*.
  *
  * *Apply* burns in **every page's** marks with the choices the Apply redactions dialog starts on
- * (`applyRedactionsDefaults('all')`), through the one dispatcher — so the undo, the problem dialog and invariant 18's
+ * (`applyRedactionsDefaults()`), through the one dispatcher — so the undo, the problem dialog and invariant 18's
  * notice are the burn-in's own. The question is the confirmation: *Confirm before redacting* governs the ribbon's
  * command, whose dialog is where the scope and cover are chosen, and a second dialog here would ask the same thing
  * twice.
@@ -72,10 +72,10 @@ export async function settlePendingRedactions(
 
   // THE DEFAULTS, so the bookmarks go as the title does: this prompt asks only Apply or not (ADR-0163's correction of
   // 2026-11-06 — the prompt on save, close, export, print or send applies with the box off).
-  const { pages, cover, images, keepTitle, keepBookmarks } = applyRedactionsDefaults('all');
+  const { cover, images, keepTitle, keepBookmarks } = applyRedactionsDefaults();
   const applied = await applyDocumentCommand(deps, docId, {
     kind: 'applyRedactions',
-    pages: pages === 'all' ? 'all' : [...pages],
+    pages: 'all',
     cover,
     images,
     keepTitle,

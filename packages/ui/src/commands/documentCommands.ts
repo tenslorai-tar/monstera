@@ -377,7 +377,7 @@ import type { PanelPresence } from '../panelPresence.js';
 import { DOCUMENT_PANEL_SETTING } from '../settings/layout.js';
 import type { SettingsStore } from '../settingsStore.js';
 import type { ShowToast } from '../toasts.js';
-import { countPendingRedactions } from './redactionMarks.js';
+import { tallyPendingRedactions } from './redactionMarks.js';
 import { readWholeList } from '../readWholeList.js';
 import { confirmDone, confirmWritten, type ConfirmWrittenDeps } from './confirmWritten.js';
 import { countedAs } from '../inFlight.js';
@@ -5745,23 +5745,26 @@ export function applyRedactionsCommand(
       // NOTHING MARKED IS SAID, never offered (F-P1): an Apply with no marks to burn in is a control that does nothing.
       // Counted from main's own list of the document's annotations, which is what the marks on the pages are drawn
       // from. A refused read counts nothing and goes on: the burn-in meets the same refusal and reports it.
-      if ((await countPendingRedactions(deps.client, context.docId)) === 0) {
+      const tally = await tallyPendingRedactions(deps.client, context.docId);
+      if (tally?.marks === 0) {
         deps.toast('problem', TOAST_NOTHING_MARKED);
         return;
       }
       // UNASKED ONLY WHEN THE PERSON TURNED THE CONFIRMATION OFF, and then with exactly what the dialog would have
-      // started on — this page, never the whole document (`applyRedactionsDefaults`).
+      // started on (`applyRedactionsDefaults`). A REFUSED COUNT still asks, and the dialog then says no number it does
+      // not have: a refusal must never be the route past the confirmation.
       const answer = deps.confirm()
-        ? ((await deps.ask(APPLY_REDACTIONS_DIALOG_ID, { page: context.page })) as ApplyRedactionsAnswer | undefined)
-        : applyRedactionsDefaults(context.page);
+        ? ((await deps.ask(APPLY_REDACTIONS_DIALOG_ID, tally === undefined ? {} : { counted: tally })) as
+            | ApplyRedactionsAnswer
+            | undefined)
+        : applyRedactionsDefaults();
       if (answer === undefined) return;
 
       await applyDocumentCommand(deps, context.docId, {
         kind: 'applyRedactions',
-        // PASSED THROUGH, never expanded: `'all'` stays `'all'` so the payload
-        // is the same size for a two-page document and a two-thousand-page one
-        // (invariant L11), which is `cropPages`' own argument.
-        pages: answer.pages === 'all' ? 'all' : [...answer.pages],
+        // EVERY MARK IN THE DOCUMENT (the owner, 2026-11-10): a page scope could remove nothing while marks stood on
+        // other pages. `'all'`, never expanded, so the payload is the same size for two pages and two thousand (L11).
+        pages: 'all',
         cover: answer.cover,
         images: answer.images,
         // THE DIALOG'S ANSWER, never a default chosen here. A `?? false` at this

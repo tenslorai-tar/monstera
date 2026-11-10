@@ -3160,9 +3160,8 @@ export const PERMISSION_PRINT_HIGH_QUALITY = messageKey('permission.print-high-q
 export const APPLY_REDACTIONS_COMMAND_TITLE = messageKey('command.apply-redactions.title');
 export const APPLY_REDACTIONS_TITLE = messageKey('dialog.apply-redactions.title');
 export const APPLY_REDACTIONS_WARNS = messageKey('dialog.apply-redactions.warns');
-export const APPLY_REDACTIONS_SCOPE = messageKey('dialog.apply-redactions.scope');
-export const APPLY_REDACTIONS_SCOPE_PAGE = messageKey('dialog.apply-redactions.scope-page');
-export const APPLY_REDACTIONS_SCOPE_ALL = messageKey('dialog.apply-redactions.scope-all');
+/** What the burn-in removes, counted: every mark in the document (the owner, 2026-11-10). */
+export const APPLY_REDACTIONS_COUNT = messageKey('dialog.apply-redactions.count');
 export const APPLY_REDACTIONS_COVER = messageKey('dialog.apply-redactions.cover');
 export const APPLY_REDACTIONS_COVER_SOLID = messageKey('dialog.apply-redactions.cover-solid');
 export const APPLY_REDACTIONS_COVER_NONE = messageKey('dialog.apply-redactions.cover-none');
@@ -3778,7 +3777,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [BACKUP_COPIES_OPTION_TITLES.five]: '5',
   [BACKUP_COPIES_OPTION_TITLES.ten]: '10',
   [CONFIRM_REDACTION_DESCRIPTION]:
-    'Shows what Apply redactions will remove before it removes it. Turned off, it removes marked content on the current page straight away, with a solid cover, and removes the document title and bookmarks too. Undo still works until you close the document.',
+    'Shows what Apply redactions will remove before it removes it. Turned off, it removes every marked part of the document straight away, with a solid cover, and removes the document title and bookmarks too. Undo still works until you close the document.',
   [STARTING_ZOOM_TITLE]: 'Starting zoom',
   [STARTING_ZOOM_DESCRIPTION]: 'How large a document is shown when you open it. You can still zoom each one as you read.',
   [STARTING_ZOOM_OPTION_TITLES['fit-width']]: 'Fit width',
@@ -7005,9 +7004,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // picture that *Remove the whole image* takes is left out on purpose, since the person chooses it in this dialog.
   [APPLY_REDACTIONS_WARNS]:
     'The marked text, pictures and drawings are removed from the document, not just covered, along with comments and form fields under the marks. Everything else on the page stays, except that a letter crossing a mark’s edge goes whole. Gradients, patterns and transparency effects that reach under a mark can stay in the file, but nothing of them shows there. The author and other properties are removed too, and so are bookmarks unless you tick the box to keep some. Only Undo can bring this back, in this session.',
-  [APPLY_REDACTIONS_SCOPE]: 'Apply to',
-  [APPLY_REDACTIONS_SCOPE_PAGE]: 'Page {page}',
-  [APPLY_REDACTIONS_SCOPE_ALL]: 'Every page',
+  // THE OWNER'S EXAMPLE, 2026-11-10: "5 marks on 3 pages will be removed".
+  [APPLY_REDACTIONS_COUNT]:
+    '{marks, plural, one {# mark} other {# marks}} on {pages, plural, one {# page} other {# pages}} will be removed.',
   [APPLY_REDACTIONS_COVER]: 'Leave behind',
   [APPLY_REDACTIONS_COVER_SOLID]: 'A filled box',
   [APPLY_REDACTIONS_COVER_NONE]: 'Nothing',
