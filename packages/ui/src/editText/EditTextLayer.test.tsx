@@ -9,7 +9,7 @@ import { NO_BLOCK_FACES } from '../commands/documentCommands.js';
 import { pointOf } from '../editorKit/dom.js';
 import { formatOpenEditor } from '../editorKit/openEditor.js';
 import { activateCatalogue, i18n } from '../i18n.js';
-import { EN, TEXT_EDIT_FORMS_DEEPER, TEXT_EDIT_FORMS_MORE, TEXT_EDIT_HELD, TEXT_EDIT_TRUNCATED } from '../messages/en.js';
+import { EN, TEXT_EDIT_FORMS_DEEPER, TEXT_EDIT_FORMS_MORE, TEXT_EDIT_HELD, TEXT_EDIT_ROOM_TIP, TEXT_EDIT_TRUNCATED } from '../messages/en.js';
 import type { TextBlock } from '../textBlock.js';
 import type { PatchArea } from './AreaPatch.js';
 import type { PageBlocks } from './editing.js';
@@ -214,6 +214,37 @@ describe('Edit text on the editor kit (ADR-0271)', () => {
     // ALL THREE IN THE ONE COMMAND: the bold, the words and the width the handle gave.
     expect(JSON.stringify(formatting?.marks)).toContain('"bold":true');
     expect(formatting?.place?.width).toBeGreaterThan(228);
+  });
+
+  it('THE ROOM TIP: an open block says to widen it before typing, and the first typed letter takes the line away', () => {
+    const { outline, frame, surface } = layer();
+    const tip = () => frame()?.querySelector('[data-kit-tip]')?.textContent;
+    fireEvent.click(outline(0), { detail: 1 });
+    expect(tip()).toBe(EN[TEXT_EDIT_ROOM_TIP]);
+    // CONTROL: the caret going into the words changes no word, so the advice still stands.
+    act(() => {
+      fireEvent.keyDown(must(frame(), 'frame'), { key: 'Enter' });
+    });
+    expect(tip()).toBe(EN[TEXT_EDIT_ROOM_TIP]);
+    act(() => {
+      typeAt(surface(), 'x', { paragraph: 0, offset: 11 });
+    });
+    expect(tip()).toBeUndefined();
+  });
+
+  it('THE ROOM TIP goes once a side handle has widened the box, the advice taken', () => {
+    const { outline, frame } = layer();
+    fireEvent.click(outline(0), { detail: 1 });
+    expect(frame()?.querySelector('[data-kit-tip]')).not.toBeNull();
+    const handle = must(frame()?.querySelector<HTMLElement>('[data-handle="e"]'), 'width handle');
+    handle.setPointerCapture = vi.fn();
+    handle.releasePointerCapture = vi.fn();
+    act(() => {
+      fireEvent.pointerDown(handle, { clientX: 300, clientY: 690, pointerId: 1 });
+      fireEvent.pointerMove(handle, { clientX: 360, clientY: 690, pointerId: 1 });
+      fireEvent.pointerUp(handle, { clientX: 360, clientY: 690, pointerId: 1 });
+    });
+    expect(frame()?.querySelector('[data-kit-tip]')).toBeNull();
   });
 
   it('a press OUTSIDE finishes and keeps the changes', async () => {
