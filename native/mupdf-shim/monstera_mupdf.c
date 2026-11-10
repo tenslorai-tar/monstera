@@ -2199,14 +2199,128 @@ static int mz_ink_meets_marks(const mz_edges *es, const mz_cut_options *marks, i
  */
 static void mz_fan_polys(fz_context *ctx, const mz_edges *es, float far, mz_polys *out);
 
+/*
+ * WHERE THE QUADRILATERALS END: inside a mark the ink meets, not right of all the ink.
+ *
+ * Ended right of the ink, an edge INSIDE a mark has a quadrilateral that runs out through the mark's far side to X, and
+ * what the cut keeps of it is a sliver between that side and X. The slivers of a shape's inside edges cancel by winding,
+ * so nothing is drawn, and every one is written: a curve stroked at 1.2 points across a mark's right side came back as
+ * 510 slivers, about 52 KB, where its whole drawing was 41 bytes (measured 2026-11-10 with `redactCutTiming.mjs`'
+ * *thousands* page: content 132,274 to 291,383 bytes with the cut, 128,825 without it, 160 KB of it in three curves on
+ * x = 140). Ended at an X inside the mark, an inside edge's quadrilateral stays inside it and is cut away whole: the same
+ * page came back at 266,050 bytes, the rest being those curves' outlines outside the mark, which ADR-0286's amendment
+ * writes whole for a stroke wider than MZ_CUT_HAIRLINE.
+ *
+ * X INSIDE THE INK IS EXACT ONLY WITH A CORRECTION, and this is why. Right of X a quadrilateral runs leftward and counts
+ * the edges right of a point, negatively, where the rasteriser counts those left of it; the two differ by the edges' net
+ * crossing at that height, which is zero where the edges close and is not where MuPDF's stroker leaves them open (see
+ * mz_fan_polys' comment). So that net, a step function of y, is added as rectangles from X to the old X right of the ink:
+ * none at all for a closed outline, a few for an open one. An axis-aligned mark's every chord holds X; a turned mark's
+ * may not, and an edge whose chord does not hold X is written as before, correct and longer.
+ */
+static void mz_fan_corrections(fz_context *ctx, const mz_edges *es, float from, float to, mz_polys *out);
+
 static void mz_fan_cut(fz_context *ctx, const mz_edges *es, const mz_cut_options *marks, mz_polys *out)
 {
-    float far = -1e30f;
+    float right = -1e30f, far;
+    fz_rect ink = fz_empty_rect;
     int i;
     for (i = 0; i < es->n; i++)
-        far = fmaxf(far, fmaxf(es->e[i].x0, es->e[i].x1));
-    mz_fan_polys(ctx, es, far + 1, out);
+    {
+        right = fmaxf(right, fmaxf(es->e[i].x0, es->e[i].x1));
+        ink = fz_include_point_in_rect(ink, fz_make_point(es->e[i].x0, es->e[i].y0));
+        ink = fz_include_point_in_rect(ink, fz_make_point(es->e[i].x1, es->e[i].y1));
+    }
+    far = right + 1;
+    for (i = 0; i < marks->count; i++)
+    {
+        const mz_mark *m = &marks->marks[i];
+        if (!mz_boxes_meet(ink, m->box))
+            continue;
+        if (far > m->box.x1)
+            far = m->box.x1;
+        else if (far < m->box.x0)
+            far = m->box.x0;
+        break;
+    }
+    mz_fan_polys(ctx, es, far, out);
+    if (far != right + 1)
+        mz_fan_corrections(ctx, es, far, right + 1, out);
     mz_cut_polys(ctx, out, marks);
+}
+
+/* One end of an edge's span in y, and which way the edge goes: +1 down the page (y1 > y0), -1 up. */
+typedef struct
+{
+    float y;
+    int step;
+} mz_span_end;
+
+static int mz_span_end_cmp(const void *a, const void *b)
+{
+    const mz_span_end *p = a, *q = b;
+    if (p->y != q->y)
+        return p->y < q->y ? -1 : 1;
+    return 0;
+}
+
+/*
+ * The rectangles from x = `from` to x = `to` that carry the edges' net crossing, as mz_fan_cut says: over each run of
+ * heights with the same nonzero net, that many copies, each the quadrilateral of an upright edge on x = `from` going the
+ * net's way, so a copy counts exactly as one such edge does in mz_fan_polys.
+ */
+static void mz_fan_corrections(fz_context *ctx, const mz_edges *es, float from, float to, mz_polys *out)
+{
+    mz_span_end *ends = NULL;
+    int n = 0, i, net = 0;
+
+    if (es->n == 0)
+        return;
+    fz_var(ends);
+    fz_try(ctx)
+    {
+        ends = fz_malloc_array(ctx, 2 * es->n, mz_span_end);
+        for (i = 0; i < es->n; i++)
+        {
+            const mz_edge *e = &es->e[i];
+            int down;
+            if (e->y0 == e->y1)
+                continue;
+            down = e->y1 > e->y0 ? 1 : -1;
+            ends[n].y = fminf(e->y0, e->y1);
+            ends[n].step = down;
+            n++;
+            ends[n].y = fmaxf(e->y0, e->y1);
+            ends[n].step = -down;
+            n++;
+        }
+        qsort(ends, n, sizeof *ends, mz_span_end_cmp);
+        for (i = 0; i < n;)
+        {
+            float y0 = ends[i].y, y1;
+            int copy;
+            /* EVERY END AT THIS HEIGHT before the net is read, so a closed outline's meeting ends cancel exactly. */
+            for (; i < n && ends[i].y == y0; i++)
+                net += ends[i].step;
+            if (net == 0 || i == n)
+                continue;
+            y1 = ends[i].y;
+            for (copy = 0; copy < abs(net); copy++)
+            {
+                mz_poly t = { 0 };
+                float a = net > 0 ? y0 : y1, b = net > 0 ? y1 : y0;
+                mz_poly_push(ctx, &t, fz_make_point(from, a));
+                mz_poly_push(ctx, &t, fz_make_point(from, b));
+                mz_poly_push(ctx, &t, fz_make_point(to, b));
+                mz_poly_push(ctx, &t, fz_make_point(to, a));
+                mz_polys_push(ctx, out, &t);
+            }
+        }
+    }
+    fz_always(ctx)
+        fz_free(ctx, ends);
+    fz_catch(ctx)
+        fz_rethrow(ctx);
 }
 
 /* The quadrilaterals of an edge set to x = `far`, a run of joined edges as one polygon (see mz_fan_cut), not yet cut. */

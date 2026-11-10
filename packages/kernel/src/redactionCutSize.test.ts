@@ -95,6 +95,69 @@ async function burnedIn(bytes: Uint8Array): Promise<Uint8Array> {
   }
 }
 
+/**
+ * One curve stroked 1.2 points wide across the mark's right side at x 200, or its mirror image across the left side at
+ * x 100. A stroke that wide crossing a mark is outlined whole (ADR-0286's amendment, accepted by the owner on
+ * 2026-11-07), and the outline of the part outside the mark is the same size either side.
+ */
+function oneCurve(side: 'right' | 'left'): Uint8Array {
+  const document = new mupdf.PDFDocument();
+  try {
+    // MIRRORED ABOUT x = 150, the mark's own middle, so the part outside it is the same curve turned round.
+    const x = (at: number) => String(side === 'right' ? at : 300 - at);
+    const content = `1.2 w ${x(195)} 630 m ${x(201)} 646 ${x(207)} 614 ${x(213)} 634 c S\n`;
+    document.insertPage(-1, document.addPage([0, 0, 612, 792], 0, document.addObject({}), content));
+    return document.saveToBuffer('garbage,compress').asUint8Array().slice();
+  } finally {
+    document.destroy();
+  }
+}
+
+describe('a wide stroke across a mark costs the same on either side of it', () => {
+  // THE CAUSE, measured 2026-11-10 with `scripts/research/redactCutTiming.mjs`' page of 4,000 drawings: the cut's slabs
+  // ran right to beyond the ink, so every edge inside the mark left a sliver between the mark's right side and there.
+  // They cancel and nothing shows, but each is written: three such curves were 160 KB of that page's 291,383 bytes. A
+  // curve across the mark's LEFT side had none, which is what makes its mirror image the control.
+  it('the curve across the right side is written no larger than its mirror image across the left', async () => {
+    const right = contentLength(await burnedIn(oneCurve('right')));
+    const left = contentLength(await burnedIn(oneCurve('left')));
+    expect(left, 'the cut wrote the outline, so the comparison is of something').toBeGreaterThan(1000);
+    expect(right).toBeLessThanOrEqual(left * 1.05);
+  }, 60_000);
+
+  it('CONTROL: the curve across the right side is drawn as before outside the mark, and not at all inside it', async () => {
+    const bytes = oneCurve('right');
+    const was = drawn(bytes);
+    const now = drawn(await burnedIn(bytes));
+    const inside = (x: number, y: number, by: number) => x >= 200 + by && x < 400 - by && y >= 200 + by && y < 400 - by;
+    const differing: { x: number; y: number; was: number; now: number }[] = [];
+    let inked = 0;
+    let wasInked = 0;
+    let outsideInk = 0;
+    for (let at = 0; at < was.samples.length; at += 1) {
+      const x = at % was.width;
+      const y = Math.floor(at / was.width);
+      if (inside(x, y, 1)) {
+        if ((now.samples[at] ?? 255) < 255) inked += 1;
+        if ((was.samples[at] ?? 255) < 255) wasInked += 1;
+      } else if (!inside(x, y, -NEAR)) {
+        // BEYOND NEAR, as the page's own control reads it: within it a stroke cut short at the mark is drawn a little
+        // differently by the renderer, which ADR-0286's amendment measured and the owner accepted on 2026-11-07.
+        if ((now.samples[at] ?? 255) < 255) outsideInk += 1;
+        const shade = Math.abs((now.samples[at] ?? 0) - (was.samples[at] ?? 0));
+        if (shade > SHADE) differing.push({ x, y, was: was.samples[at] ?? 0, now: now.samples[at] ?? 0 });
+      }
+    }
+    expect(wasInked, 'the curve drew under the mark before').toBeGreaterThan(20);
+    expect(outsideInk, 'the part outside the mark is still drawn').toBeGreaterThan(20);
+    expect(inked).toBe(0);
+    // THE ONE PIXEL THE CUT ALREADY MOVED, and no other: read 2026-11-10 from this case with the shim built before this
+    // change and after it, the same pixel by the same amount both times, ten pixels right of the mark, 9 levels where
+    // SHADE allows 8. Pinned rather than allowed, so a cut that moves any pixel the old one did not turns this red.
+    expect(differing).toStrictEqual([{ x: 410, y: 327, was: 132, now: 123 }]);
+  }, 60_000);
+});
+
 describe('a burn-in on a page of thousands of drawings', () => {
   it('keeps the content within a tenth of its size, where it grew by nearly half', async () => {
     const bytes = drawings();
