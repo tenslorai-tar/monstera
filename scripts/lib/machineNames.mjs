@@ -12,7 +12,8 @@
  *
  * ## What is not checked, and why
  *
- * A name shorter than {@link MIN_LENGTH}, or one of {@link GENERIC}, is not looked for. A short name is usually a word of
+ * A name shorter than {@link MIN_LENGTH} (the part of a computer name before `-PC`: {@link STEM_MIN_LENGTH}), or one of
+ * {@link GENERIC}, is not looked for. A short name is usually a word of
  * the language or a common fragment (`mark`, `test`), and a generic one is every runner's and every container's (`runner`,
  * `root`), so looking for them would refuse ordinary prose and train people to bypass the gate. Which identifiers were
  * skipped, and why, is printed on every run that skipped one: a scan that quietly checked nothing reads as clean.
@@ -34,6 +35,13 @@ import { isMain } from './isMain.mjs';
 
 /** Names shorter than this are not looked for: see the header. */
 export const MIN_LENGTH = 5;
+
+/**
+ * The shorter minimum for one name alone, the part of a computer name before `-PC` ({@link beforePcSuffix}): the owner's
+ * decision of 2026-11-10. A stem is a name somebody chose for one machine, which an arbitrary four-letter word is not,
+ * and on the owner's machine it is four characters, which five would never look for.
+ */
+export const STEM_MIN_LENGTH = 4;
 
 /** Account and host names shared by every runner, container and default install, lower case: see the header. */
 export const GENERIC = new Set([
@@ -96,28 +104,35 @@ export function identifiersFrom(answered) {
   const checked = [];
   /** @type {Skipped[]} */
   const skipped = [];
-  const seen = new Set();
-  /** @param {Kind} kind @param {readonly (string | undefined)[]} values */
-  const take = (kind, values) => {
+  // A VALUE CHECKED ONCE IS CHECKED, and one skipped under one rule may still be checked under another: a four-letter
+  // user name that is skipped must not hide the same four letters as a computer name's stem, which are looked for.
+  const looked = new Set();
+  const noted = new Set();
+  /** @param {Kind} kind @param {readonly (string | undefined)[]} values @param {number} minimum */
+  const take = (kind, values, minimum) => {
     for (const raw of values) {
       const value = (raw ?? '').trim();
-      if (value === '' || seen.has(value.toLowerCase())) continue;
-      seen.add(value.toLowerCase());
-      if (value.length < MIN_LENGTH) skipped.push({ kind, why: `shorter than ${String(MIN_LENGTH)} characters` });
-      else if (GENERIC.has(value.toLowerCase())) skipped.push({ kind, why: 'a generic name every such machine shares' });
-      else checked.push({ kind, value });
+      const key = value.toLowerCase();
+      if (value === '' || looked.has(key)) continue;
+      /** @type {string | undefined} */
+      let why;
+      if (value.length < minimum) why = `shorter than ${String(minimum)} characters`;
+      else if (GENERIC.has(key)) why = 'a generic name every such machine shares';
+      if (why === undefined) {
+        looked.add(key);
+        checked.push({ kind, value });
+      } else if (!noted.has(`${key}\n${why}`)) {
+        noted.add(`${key}\n${why}`);
+        skipped.push({ kind, why });
+      }
     }
   };
-  take('user name', answered.users);
-  // THE SHORT FORM BEFORE `-PC` IS ITS OWN NAME, under the same length and generic rules as every other: a four-letter
-  // stem is skipped and said to be, exactly as a four-letter account name is.
-  take(
-    'computer name',
-    answered.hosts.flatMap((host) => {
-      const first = host?.split('.')[0];
-      return [host, first, beforePcSuffix(first)];
-    }),
-  );
+  take('user name', answered.users, MIN_LENGTH);
+  const firsts = answered.hosts.map((host) => host?.split('.')[0]);
+  take('computer name', [...answered.hosts, ...firsts], MIN_LENGTH);
+  // THE SHORT FORM BEFORE `-PC` IS ITS OWN NAME, from {@link STEM_MIN_LENGTH} characters and under the generic rule: the
+  // owner's decisions of 2026-11-10. Only the stem takes the shorter minimum; every other name keeps five.
+  take('computer name', firsts.map(beforePcSuffix), STEM_MIN_LENGTH);
   return { checked, skipped };
 }
 

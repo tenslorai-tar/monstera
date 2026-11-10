@@ -24,7 +24,7 @@ const SCAN = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'lib', 'mach
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 13 });
+const roster = createRoster(failures, { cases: 15 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -82,16 +82,42 @@ const fixture = identifiersFrom({ users: ['sampleuser'], hosts: ['SAMPLEBOX-PC']
   );
 }
 {
-  // THE SAME RULES AS EVERY NAME: a stem shorter than the minimum, or a generic one, is skipped with its reason. And a
-  // skipped entry carries the kind and the reason, never the value, so the note printed for it cannot leak the name.
-  const answered = identifiersFrom({ users: [], hosts: ['ABCD-PC', 'DESKTOP-PC'] });
+  // A STEM UNDER ITS OWN MINIMUM, or a generic one, is skipped with its reason. And a skipped entry carries the kind and
+  // the reason, never the value, so the note printed for it cannot leak the name.
+  const answered = identifiersFrom({ users: [], hosts: ['ABC-PC', 'DESKTOP-PC'] });
   const reasons = answered.skipped.map((each) => `${each.kind}: ${each.why}`).join('; ');
   check(
-    'a stem before "-PC" that is too short or generic is skipped with its reason, and the skip names no value',
+    'a stem before "-PC" shorter than four characters, or generic, is skipped with its reason, and the skip names no value',
     answered.checked.length === 2 &&
       answered.skipped.length === 2 &&
-      answered.skipped.every((each) => !JSON.stringify(each).toLowerCase().includes('abcd') && !JSON.stringify(each).toLowerCase().includes('desktop')),
+      answered.skipped.some((each) => each.why === 'shorter than 4 characters') &&
+      answered.skipped.every((each) => Object.keys(each).join() === 'kind,why' && !each.why.toLowerCase().includes('desktop')),
     `checked ${String(answered.checked.length)}; skipped ${reasons}`,
+  );
+}
+{
+  // A FOUR-CHARACTER STEM IS LOOKED FOR (the owner's decision of 2026-11-10): the one name with the shorter minimum. With
+  // the stem held to five, as every other name is, this line reports nothing.
+  const four = identifiersFrom({ users: [], hosts: ['WXYZ-PC'] });
+  const found = foundLines('copied from wxyz yesterday\n\\\\WXYZ\\share\n', four.checked);
+  check(
+    'a four-character stem before "-PC" is looked for and found on its own',
+    JSON.stringify(found) === '[{"line":1,"kind":"computer name"},{"line":2,"kind":"computer name"}]',
+    `checked ${String(four.checked.length)}; found ${JSON.stringify(found)}`,
+  );
+}
+{
+  // CONTROL: ONLY THE STEM takes four. A four-character user name and a four-character host label keep the five-character
+  // minimum and are skipped, and the same four letters as a user name do not stop them being looked for as a stem.
+  const user = identifiersFrom({ users: ['wxyz'], hosts: ['QRST'] });
+  const shared = identifiersFrom({ users: ['wxyz'], hosts: ['WXYZ-PC'] });
+  check(
+    'CONTROL: a four-character user name and host label are still skipped, while the same letters as a stem are looked for',
+    user.checked.length === 0 &&
+      user.skipped.length === 2 &&
+      user.skipped.every((each) => each.why === 'shorter than 5 characters') &&
+      shared.checked.some((each) => each.kind === 'computer name' && each.value === 'WXYZ'),
+    `user: checked ${String(user.checked.length)}, skipped ${String(user.skipped.length)}; shared: checked ${String(shared.checked.length)}`,
   );
 }
 {
