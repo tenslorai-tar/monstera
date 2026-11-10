@@ -68,6 +68,17 @@ export const GENERIC = new Set([
   'workstation',
 ]);
 
+/**
+ * The part of a computer name before a closing `-PC`, which Windows' setup suggests as `<name>-PC` and which a person
+ * writes on its own in a path, a prompt or a note. The owner's decision of 2026-11-10. Undefined when the name has no
+ * such ending, or nothing before it.
+ * @param {string | undefined} name
+ */
+export function beforePcSuffix(name) {
+  const match = /^(.+)-pc$/iu.exec((name ?? '').trim());
+  return match?.[1];
+}
+
 /** @typedef {'user name' | 'computer name'} Kind */
 /** @typedef {{ kind: Kind, value: string }} Identifier */
 /** @typedef {{ kind: Kind, why: string }} Skipped */
@@ -75,7 +86,8 @@ export const GENERIC = new Set([
 /**
  * The identifiers to look for, from what the operating system answered, and the ones skipped with the reason: the
  * account's name and its profile folder's name (which differ when an account is renamed, and the folder is what a path
- * carries), the host name and its first label (a fully qualified name's short form), and Windows' computer name.
+ * carries), the host name, its first label (a fully qualified name's short form) and that label's part before a closing
+ * `-PC` ({@link beforePcSuffix}), and Windows' computer name.
  * @param {{ users: readonly (string | undefined)[], hosts: readonly (string | undefined)[] }} answered
  * @returns {{ checked: Identifier[], skipped: Skipped[] }}
  */
@@ -97,7 +109,15 @@ export function identifiersFrom(answered) {
     }
   };
   take('user name', answered.users);
-  take('computer name', answered.hosts.flatMap((host) => [host, host?.split('.')[0]]));
+  // THE SHORT FORM BEFORE `-PC` IS ITS OWN NAME, under the same length and generic rules as every other: a four-letter
+  // stem is skipped and said to be, exactly as a four-letter account name is.
+  take(
+    'computer name',
+    answered.hosts.flatMap((host) => {
+      const first = host?.split('.')[0];
+      return [host, first, beforePcSuffix(first)];
+    }),
+  );
   return { checked, skipped };
 }
 
@@ -129,7 +149,8 @@ export function foundLines(text, identifiers) {
   for (const { kind, value } of identifiers) {
     const pattern = new RegExp(`(?<![\\p{L}\\p{N}_])${escaped(value)}(?![\\p{L}\\p{N}_])`, 'iu');
     lines.forEach((line, at) => {
-      if (pattern.test(line)) found.push({ line: at + 1, kind });
+      // ONCE PER LINE AND KIND: a full name and its stem before `-PC` both match `\\NAME-PC\`, and one line is one finding.
+      if (pattern.test(line) && !found.some((each) => each.line === at + 1 && each.kind === kind)) found.push({ line: at + 1, kind });
     });
   }
   return found.sort((a, b) => a.line - b.line);
