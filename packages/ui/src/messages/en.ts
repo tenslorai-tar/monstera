@@ -3531,6 +3531,8 @@ export const WORDS_NOT_WRITTEN_DISCARD = messageKey('dialog.words-not-written.di
 export const SAVE_PROBLEM_TITLE = messageKey('dialog.save-problem.title');
 export const SAVE_WORK_INTACT = messageKey('dialog.save-problem.intact');
 export const SAVE_REFUSED_CONTESTED = messageKey('dialog.save-problem.contested');
+/** A copy's destination is the file of the document being copied (the owner, 2026-11-10). */
+export const SAVE_REFUSED_ONTO_SOURCE = messageKey('dialog.save-problem.onto-source');
 export const SAVE_REFUSED_REPLACED = messageKey('dialog.save-problem.replaced');
 export const SAVE_REFUSED_TARGET_ABSENT = messageKey('dialog.save-problem.target-absent');
 export const SAVE_REFUSED_UNREPRESENTABLE = messageKey('dialog.save-problem.unrepresentable');
@@ -7606,6 +7608,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // Each reason says what the user can DO. "Contested" and "unverifiable" are
   // the kernel's words for a verdict; a person needs the next action.
   [SAVE_REFUSED_CONTESTED]: 'Another open document is writing to this file. Close it and try again.',
+  [SAVE_REFUSED_ONTO_SOURCE]: 'A copy can’t replace the document it came from. Choose another name.',
   [SAVE_REFUSED_REPLACED]: 'The file on disk is not the one this document was opened from. Use Save As to write somewhere else.',
   [SAVE_REFUSED_TARGET_ABSENT]: 'The file this document came from is no longer there. Use Save As to write somewhere else.',
   [SAVE_REFUSED_UNVERIFIABLE]: 'Monstera could not confirm the file on disk is still the same one, so it did not overwrite it.',

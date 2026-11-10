@@ -384,6 +384,7 @@ import { countedAs } from '../inFlight.js';
 import type { ZoomDirection, ZoomMode } from '../zoom.js';
 import type { TextBlock } from '../textBlock.js';
 import { shownOf } from '../objectRead.js';
+import { copyProblemOf } from './copyProblem.js';
 
 /**
  * The three commands that act on the open document.
@@ -1098,7 +1099,8 @@ async function editOnCopy(deps: DocumentCommandDeps, docId: DocId, command: Rend
     case 'cancelled':
       return false;
     case 'destination-contested':
-      void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: 'contested' });
+    case 'onto-source':
+      void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: copyProblemOf(outcome.kind) });
       return false;
     case 'write-failed':
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: 'write-failed' });
@@ -1159,7 +1161,7 @@ export async function snapshotRegion(
   }
   if (answer.value.kind === 'cancelled') return;
   void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
-    outcome: answer.value.kind === 'write-failed' ? 'write-failed' : 'contested',
+    outcome: copyProblemOf(answer.value.kind),
   });
 }
 
@@ -3225,7 +3227,8 @@ export async function sayTooDeep(
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: 'write-failed' });
       return;
     case 'refused':
-      void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: 'contested' });
+    case 'onto-source':
+      void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: copyProblemOf(answer.value.kind) });
       return;
   }
 }
@@ -3354,7 +3357,7 @@ export function extractPagesCommand(deps: DocumentCommandDeps & WritesAFile & Se
       }
       if (answer.value.kind === 'cancelled') return;
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
-        outcome: answer.value.kind === 'write-failed' ? 'write-failed' : 'contested',
+        outcome: copyProblemOf(answer.value.kind),
       });
     },
   };
@@ -3417,7 +3420,7 @@ export function splitDocumentCommand(deps: DocumentCommandDeps & WritesAFile & S
       }
       if (answer.value.kind === 'cancelled') return;
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
-        outcome: answer.value.kind === 'write-failed' ? 'write-failed' : 'contested',
+        outcome: copyProblemOf(answer.value.kind),
       });
     },
   };
@@ -3539,7 +3542,7 @@ export function exportWordCommand(
       }
       if (answer.value.kind === 'cancelled') return;
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
-        outcome: answer.value.kind === 'write-failed' ? 'write-failed' : 'contested',
+        outcome: copyProblemOf(answer.value.kind),
       });
     },
   };
@@ -3613,7 +3616,7 @@ export function exportPowerPointCommand(
       }
       if (answer.value.kind === 'cancelled') return;
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
-        outcome: answer.value.kind === 'write-failed' ? 'write-failed' : 'contested',
+        outcome: copyProblemOf(answer.value.kind),
       });
     },
   };
@@ -3784,7 +3787,7 @@ export function exportExcelCommand(
         return;
       }
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
-        outcome: outcome.kind === 'write-failed' ? 'write-failed' : 'contested',
+        outcome: copyProblemOf(outcome.kind),
       });
     },
   };
@@ -3854,7 +3857,8 @@ export function exportPdfaCommand(
           return;
         case 'write-failed':
         case 'refused':
-          void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: outcome.kind === 'write-failed' ? 'write-failed' : 'contested' });
+        case 'onto-source':
+          void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: copyProblemOf(outcome.kind) });
       }
     },
   };
@@ -3932,7 +3936,8 @@ export function convertTextToCurvesCommand(
           return;
         case 'write-failed':
         case 'refused':
-          void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: outcome.kind === 'write-failed' ? 'write-failed' : 'contested' });
+        case 'onto-source':
+          void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: copyProblemOf(outcome.kind) });
       }
     },
   };
@@ -4037,7 +4042,8 @@ export function optimizeCommand(
             return;
           case 'write-failed':
           case 'refused':
-            void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: outcome.kind === 'write-failed' ? 'write-failed' : 'contested' });
+          case 'onto-source':
+            void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: copyProblemOf(outcome.kind) });
             return;
         }
       }
@@ -4181,7 +4187,8 @@ async function runTextExport(
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: 'write-failed' });
       return;
     case 'refused':
-      void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: 'contested' });
+    case 'onto-source':
+      void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: copyProblemOf(answer.value.kind) });
       return;
     case 'unavailable':
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: 'layout-unavailable' });
@@ -4244,7 +4251,7 @@ export function exportPageImagesCommand(deps: DocumentCommandDeps & WritesAFile 
       }
       if (answer.value.kind === 'cancelled') return;
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
-        outcome: answer.value.kind === 'write-failed' ? 'write-failed' : 'contested',
+        outcome: copyProblemOf(answer.value.kind),
       });
     },
   };
@@ -4307,12 +4314,7 @@ function exportFormDataCommand(
       }
       if (answer.value.kind === 'cancelled') return;
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
-        outcome:
-          answer.value.kind === 'write-failed'
-            ? 'write-failed'
-            : answer.value.kind === 'unrepresentable'
-              ? 'unrepresentable'
-              : 'contested',
+        outcome: answer.value.kind === 'unrepresentable' ? 'unrepresentable' : copyProblemOf(answer.value.kind),
       });
     },
   });
@@ -4802,7 +4804,7 @@ export function saveCopyCommand(deps: DocumentCommandDeps & WritesAFile & Settle
         return;
       }
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
-        outcome: answer.value.kind === 'write-failed' ? 'write-failed' : 'contested',
+        outcome: copyProblemOf(answer.value.kind),
       });
     },
   };
@@ -5573,8 +5575,9 @@ export function docusignRetrieveCommand(
           return;
         case 'write-failed':
         case 'refused':
+        case 'onto-source':
           void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
-            outcome: outcome.kind === 'write-failed' ? 'write-failed' : 'contested',
+            outcome: copyProblemOf(outcome.kind),
           });
           return;
         case 'not-completed':

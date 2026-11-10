@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   existsSync,
+  linkSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -908,6 +909,62 @@ describe('DocumentService — the per-document lane', () => {
 
     expect(state.attempt).toBeDefined();
     await expect(state.attempt).rejects.toThrow(/Lane ordering violation/);
+  });
+});
+
+describe('DocumentService — a copy onto the document it came from (the owner, 2026-11-10)', () => {
+  it('the copied document’s own file is `source`, not another document', async () => {
+    const registry = new CapabilityRegistry();
+    const service = newService(registry);
+    const a = mustOpen(await service.open(registry.mint(original())));
+
+    expect(await service.checkCopyTarget(original(), a)).toStrictEqual({ kind: 'source' });
+  });
+
+  it('CONTROL: the same file checked for a copy with no source is `contested` by that document, as before', async () => {
+    // WITHOUT THE SOURCE NAMED, the walk's answer is unchanged: this is the reading every copy gave before.
+    const registry = new CapabilityRegistry();
+    const service = newService(registry);
+    const a = mustOpen(await service.open(registry.mint(original())));
+
+    expect(await service.checkCopyTarget(original(), undefined)).toStrictEqual({ kind: 'contested', others: [a] });
+  });
+
+  it('CONTROL: another open document’s file is still `contested` for a copy of the first', async () => {
+    const registry = new CapabilityRegistry();
+    const service = newService(registry);
+    const a = mustOpen(await service.open(registry.mint(original())));
+    const b = mustOpen(await service.open(registry.mint(other())));
+
+    expect(await service.checkCopyTarget(other(), a)).toStrictEqual({ kind: 'contested', others: [b] });
+  });
+
+  it('CONTROL: a file nothing open reaches is `writable`', async () => {
+    const registry = new CapabilityRegistry();
+    const service = newService(registry);
+    const a = mustOpen(await service.open(registry.mint(original())));
+
+    expect(await service.checkCopyTarget(join(root, 'never-opened-copy.pdf'), a)).toStrictEqual({ kind: 'writable' });
+  });
+
+  it('the source WINS where it and another document both reach the file', async () => {
+    const registry = new CapabilityRegistry();
+    const service = newService(registry);
+    const targetPath = join(root, 'source-wins-a.pdf');
+    const rivalPath = join(root, 'source-wins-b.pdf');
+    writeFileSync(targetPath, 'the source\n');
+    writeFileSync(rivalPath, 'a rival document\n');
+    const a = mustOpen(await service.open(registry.mint(targetPath)));
+    const b = mustOpen(await service.open(registry.mint(rivalPath)));
+    expect(b).not.toBe(a);
+    // THE RIVAL'S NAME BECOMES A SECOND NAME FOR THE SOURCE'S FILE after both opened, `contested`'s own construction.
+    unlinkSync(rivalPath);
+    linkSync(targetPath, rivalPath);
+    // CONTROL FIRST: with no source named, both are found, so the walk does see the two.
+    const unnamed = await service.checkCopyTarget(targetPath, undefined);
+    expect(unnamed.kind === 'contested' ? [...unnamed.others].sort() : unnamed).toStrictEqual([a, b].sort());
+
+    expect(await service.checkCopyTarget(targetPath, a)).toStrictEqual({ kind: 'source' });
   });
 });
 

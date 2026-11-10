@@ -861,8 +861,22 @@ function suffixed(name: string, word: string): string {
 export interface CopySource {
   /** Runs the platform's save dialog. See {@link PickDestination}. */
   readonly pick: PickDestination;
-  /** Whether another open document reaches the chosen path. */
-  readonly checkTarget: (destination: string) => Promise<CopyTargetVerdict>;
+  /**
+   * Whether another open document reaches the chosen path, or `source` itself does: the document being copied, where
+   * the copy has one. `DocumentService.checkCopyTarget`.
+   */
+  readonly checkTarget: (destination: string, source: DocId | undefined) => Promise<CopyTargetVerdict>;
+}
+
+/**
+ * A copy written with no source document was refused as one onto its source. `checkCopyTarget` answers `source` only
+ * for the document it was named, so this is a defect in the check, never a person's choice to be told about.
+ */
+export class NoSourceNamedError extends Error {
+  constructor() {
+    super('a copy with no source document was refused as one onto its source');
+    this.name = 'NoSourceNamedError';
+  }
 }
 
 /** Where the saved-over versions are kept, and how a file's identity is read for the folder's hint (ADR-0198). */
@@ -3822,7 +3836,7 @@ export class DocumentCommands {
     if (destination === null) return undefined;
     return writeStreamedDocument(
       this.#save.deps,
-      this.#copy.checkTarget,
+      this.#checkFor(docId),
       () => Promise.resolve(oneChunk(new TextEncoder().encode(file))),
       destination,
     );
@@ -4489,6 +4503,14 @@ export class DocumentCommands {
    * drawn rectangle in the running application. So no set is taken as a parameter: there
    * is nothing stale to hand in.
    */
+  /**
+   * The destination check for a copy of `source`, or of nothing where the copy is a new document. REQUIRED, never a
+   * default: a copy of an open document that forgot to name it would call that document *another open document*.
+   */
+  #checkFor(source: DocId | undefined): (destination: string) => Promise<CopyTargetVerdict> {
+    return (destination) => this.#copy.checkTarget(destination, source);
+  }
+
   #byteImage(docId: DocId, named: readonly DocId[] = []): CommandInputs {
     const live = (): DocumentSessions => {
       const sessions = this.#engine.sessions(docId);
@@ -4671,7 +4693,7 @@ export class DocumentCommands {
     const { value } = await this.#documents.run(docId, (context) =>
       writeDocumentCopy(
         this.#save.deps,
-        this.#copy.checkTarget,
+        this.#checkFor(docId),
         () => Promise.resolve(stagedBytes(bytes)),
         destination,
         backupsFor(context),
@@ -4759,7 +4781,7 @@ export class DocumentCommands {
       try {
         return await writeDocumentCopy(
           this.#save.deps,
-          this.#copy.checkTarget,
+          this.#checkFor(docId),
           // A FILE A PERSON KEEPS, with or without its outline (ADR-0287).
           () => this.#save.stage(docId, sessions, { outline, marks: 'engraved' }),
           destination,
@@ -4867,7 +4889,7 @@ export class DocumentCommands {
     const { value } = await this.#documents.run(docId, async (context) =>
       writeDocumentCopy(
         this.#save.deps,
-        this.#copy.checkTarget,
+        this.#checkFor(docId),
         () => Promise.resolve(stagedBytes(signed)),
         destination,
         backupsFor(context),
@@ -4921,7 +4943,7 @@ export class DocumentCommands {
 
       return await writeDocumentCopy(
         this.#save.deps,
-        this.#copy.checkTarget,
+        this.#checkFor(docId),
         // THE ONE DIFFERENCE FROM `saveCopy`. Everything downstream — the
         // contested-destination check, the temporary and backup naming, the
         // atomic write — is the same code on the same terms.
@@ -4985,7 +5007,7 @@ export class DocumentCommands {
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
       return await writeDocumentCopy(
         this.#save.deps,
-        this.#copy.checkTarget,
+        this.#checkFor(docId),
         // AS HELD: the page comes back into this session, where its marks are still layers (ADR-0287's routes).
         async () => stagedBytes(await this.#extract(docId, sessions, [page], 'as-held')),
         destination,
@@ -5133,7 +5155,7 @@ export class DocumentCommands {
 
       return await writeDocumentCopy(
         this.#save.deps,
-        this.#copy.checkTarget,
+        this.#checkFor(docId),
         async () => stagedBytes(await this.#snapshot.region(docId, sessions, request)),
         destination,
         backupsFor(context),
@@ -5181,7 +5203,7 @@ export class DocumentCommands {
 
       return await writeDocumentCopy(
         this.#save.deps,
-        this.#copy.checkTarget,
+        this.#checkFor(docId),
         async () => stagedBytes(await this.#formData.encode(docId, sessions, format)),
         destination,
         backupsFor(context),
@@ -5285,7 +5307,7 @@ export class DocumentCommands {
 
       return await writeDocumentCopy(
         this.#save.deps,
-        this.#copy.checkTarget,
+        this.#checkFor(docId),
         async () => stagedBytes(await this.#annotationData.encode(docId, sessions, format)),
         destination,
         backupsFor(context),
@@ -5492,7 +5514,7 @@ export class DocumentCommands {
 
       return await writeDocumentSplit(
         this.#save.deps,
-        this.#copy.checkTarget,
+        this.#checkFor(docId),
         (pages) => this.#extract(docId, sessions, pageSetOf(pages), 'engraved'),
         groups.map((pages) => ({
           destination: join(directory, splitPartName(suggest, pages)),
@@ -5571,7 +5593,7 @@ export class DocumentCommands {
               await layoutText(await this.#save.flush(docId, sessions), chosen);
 
       try {
-        return await writeStreamedDocument(this.#save.deps, this.#copy.checkTarget, open, destination);
+        return await writeStreamedDocument(this.#save.deps, this.#checkFor(docId), open, destination);
       } catch (thrown) {
         if (thrown instanceof LayoutTextFailedError) return { kind: 'failed', detail: thrown.message };
         throw thrown;
@@ -5619,7 +5641,7 @@ export class DocumentCommands {
       try {
         const outcome = await writeStreamedDocument(
           this.#save.deps,
-          this.#copy.checkTarget,
+          this.#checkFor(docId),
           async () => {
             // TAGS ARE READ BEFORE CONVERTING, because Ghostscript drops the structure
             // tree and does not say so: measured 2026-09-17, 4 of 4 tagged corpus
@@ -5700,7 +5722,7 @@ export class DocumentCommands {
       try {
         const outcome = await writeStreamedDocument(
           this.#save.deps,
-          this.#copy.checkTarget,
+          this.#checkFor(docId),
           async () => {
             const converted = await curves(pdf, this.#engine.opensWith(docId));
             seen.before = converted.before;
@@ -5801,7 +5823,7 @@ export class DocumentCommands {
         if (copy.bytes >= pdf.length) return { kind: 'not-smaller', before: pdf.length, after: copy.bytes };
         const outcome = await writeStreamedDocument(
           this.#save.deps,
-          this.#copy.checkTarget,
+          this.#checkFor(docId),
           () => Promise.resolve(copy.output),
           destination,
         );
@@ -5875,7 +5897,7 @@ export class DocumentCommands {
 
       return await writeDocumentCopy(
         this.#save.deps,
-        this.#copy.checkTarget,
+        this.#checkFor(docId),
         // Called only once the destination is free, so a contested file composes nothing.
         () => this.#word(docId, sessions, mode, pages),
         destination,
@@ -5913,7 +5935,7 @@ export class DocumentCommands {
 
       return await writeStreamedDocument(
         this.#save.deps,
-        this.#copy.checkTarget,
+        this.#checkFor(docId),
         async () => {
           // THE CHOSEN PAGES (ADR-0161), listed against this version; the deck takes the first chosen page's size.
           const { pageCount } = await this.#geometry(docId, sessions, []);
@@ -6045,7 +6067,7 @@ export class DocumentCommands {
 
       const written = await writeStreamedDocument(
         this.#save.deps,
-        this.#copy.checkTarget,
+        this.#checkFor(docId),
         () => Promise.resolve(ooxmlPackage(spreadsheetParts(this.#tablePages(docId, sessions, byPage, review.pages), layout))),
         destination,
       );
@@ -6102,7 +6124,7 @@ export class DocumentCommands {
       try {
         const written = await writeStreamedDocument(
           this.#save.deps,
-          this.#copy.checkTarget,
+          this.#checkFor(docId),
           () =>
             Promise.resolve(
               ooxmlPackage(spreadsheetParts(this.#servicePages(docId, sessions, engine, pages, leftOut, progress), layout)),
@@ -6458,7 +6480,7 @@ export class DocumentCommands {
 
       return await writeDocumentSplit(
         this.#save.deps,
-        this.#copy.checkTarget,
+        this.#checkFor(docId),
         async (pages) => {
           const [page] = pages;
           // NOT REACHABLE: every part below is built with exactly one page, and
@@ -6853,10 +6875,11 @@ export class DocumentCommands {
       if (destination === null) return { kind: 'cancelled' };
       const written = await writeStreamedDocument(
         this.#save.deps,
-        this.#copy.checkTarget,
+        this.#checkFor(undefined),
         () => Promise.resolve(converted.output),
         destination,
       );
+      if (written.kind === 'onto-source') throw new NoSourceNamedError();
       if (written.kind === 'refused') return { kind: 'destination-contested', openElsewhere: written.others.length };
       if (written.kind === 'write-failed') return { kind: 'write-failed' };
       return { kind: 'written', destination, missing: converted.missing };
@@ -6900,10 +6923,11 @@ export class DocumentCommands {
     try {
       const written = await writeStreamedDocument(
         this.#save.deps,
-        this.#copy.checkTarget,
+        this.#checkFor(undefined),
         () => this.#fetchUrl(checked.href),
         destination,
       );
+      if (written.kind === 'onto-source') throw new NoSourceNamedError();
       if (written.kind === 'refused') {
         return { kind: 'destination-contested', openElsewhere: written.others.length };
       }
@@ -6936,12 +6960,14 @@ export class DocumentCommands {
     // exactly as a copy onto it would be.
     const written = await writeDocumentCopy(
       this.#save.deps,
-      this.#copy.checkTarget,
+      // NO SOURCE: a document composed from a picked file has no open original to replace.
+      this.#checkFor(undefined),
       () => Promise.resolve(stagedBytes(pdf)),
       destination,
       // A NEW DOCUMENT, composed from a picked file: no open document's removal can be pending in it.
       'keep',
     );
+    if (written.kind === 'onto-source') throw new NoSourceNamedError();
     if (written.kind === 'refused') {
       return { kind: 'destination-contested', openElsewhere: written.others.length };
     }

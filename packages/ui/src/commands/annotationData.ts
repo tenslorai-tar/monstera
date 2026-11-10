@@ -28,6 +28,7 @@ import {
 import type { IconName } from '../primitives/icons.js';
 import { TOASTS, type UiCommand, VISIBLE } from '../registries/commands.js';
 import { confirmDone, confirmWritten } from './confirmWritten.js';
+import { copyProblemOf } from './copyProblem.js';
 import { type ConvertsInMain, type DocumentCommandDeps, type WritesAFile, hasDocument, reportProblem } from './documentCommands.js';
 import { withWorkProgress } from './workProgress.js';
 
@@ -73,12 +74,7 @@ function exportAnnotationsCommand(
       }
       if (answer.value.kind === 'cancelled') return;
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
-        outcome:
-          answer.value.kind === 'write-failed'
-            ? 'write-failed'
-            : answer.value.kind === 'unrepresentable'
-              ? 'unrepresentable'
-              : 'contested',
+        outcome: answer.value.kind === 'unrepresentable' ? 'unrepresentable' : copyProblemOf(answer.value.kind),
       });
     },
   });

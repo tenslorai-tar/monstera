@@ -65,6 +65,7 @@ import {
   askPairInstruction,
   askPictureInstruction,
   type CapabilityRegistry,
+  type CopyRefusal,
   DocumentBusyError,
   DocumentNotOpenError,
   StaleReadError,
@@ -1495,7 +1496,8 @@ function editPageExternallyHandler(
       const outcome = await commands.editPageExternally(docId, page, version);
       switch (outcome.kind) {
         case 'refused':
-          return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
+        case 'onto-source':
+          return ok(copyRefusalWire(outcome));
         case 'write-failed':
           return ok({ kind: 'write-failed' } as const);
         case 'sent':
@@ -1992,7 +1994,8 @@ function saveBarcodeContactHandler(
         case 'write-failed':
           return ok({ kind: 'write-failed' } as const);
         case 'refused':
-          return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
+        case 'onto-source':
+          return ok(copyRefusalWire(outcome));
         case 'stale':
         case 'no-such-barcode':
         case 'not-a-contact':
@@ -2090,9 +2093,7 @@ function docusignRetrieveHandler(commands: DocumentCommands, mint: MintWritten):
       if (outcome === undefined) return ok({ kind: 'cancelled' as const });
       if (outcome.kind === 'copied') return ok({ kind: 'copied' as const, bytes: outcome.bytes, written: mint(outcome.destination) });
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' as const });
-      if (outcome.kind === 'refused') {
-        return ok({ kind: 'refused' as const, openElsewhere: outcome.others.length });
-      }
+      if (outcome.kind === 'refused' || outcome.kind === 'onto-source') return ok(copyRefusalWire(outcome));
       return ok(outcome);
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
@@ -2101,6 +2102,34 @@ function docusignRetrieveHandler(commands: DocumentCommands, mint: MintWritten):
       throw thrown;
     }
   };
+}
+
+/**
+ * A copy's refusal on the wire, ONE mapping for every channel that writes a copy (B3a): another open document reaching
+ * the destination is counted, and the copied document's own file is its own member, so the renderer can say a copy
+ * cannot replace the document it came from rather than name a document the person cannot find.
+ */
+function copyRefusalWire(
+  refusal: CopyRefusal,
+): { readonly kind: 'refused'; readonly openElsewhere: number } | { readonly kind: 'onto-source' } {
+  switch (refusal.kind) {
+    case 'refused':
+      return { kind: 'refused', openElsewhere: refusal.others.length };
+    case 'onto-source':
+      return { kind: 'onto-source' };
+  }
+}
+
+/** {@link copyRefusalWire} for the routes that open the copy they write, whose contested member is the import's. */
+function openedCopyRefusalWire(
+  refusal: CopyRefusal,
+): { readonly kind: 'destination-contested'; readonly openElsewhere: number } | { readonly kind: 'onto-source' } {
+  switch (refusal.kind) {
+    case 'refused':
+      return { kind: 'destination-contested', openElsewhere: refusal.others.length };
+    case 'onto-source':
+      return { kind: 'onto-source' };
+  }
 }
 
 /**
@@ -2124,7 +2153,7 @@ function extractHandler(commands: DocumentCommands, mint: MintWritten): Contract
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
       if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes, written: mint(outcome.destination) } as const);
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
-      return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
+      return ok(copyRefusalWire(outcome));
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
@@ -2168,7 +2197,7 @@ function snapshotRegionHandler(
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
       if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes, written: mint(outcome.destination) } as const);
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
-      return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
+      return ok(copyRefusalWire(outcome));
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
@@ -2242,7 +2271,7 @@ function exportFormDataHandler(
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
       if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes, written: mint(outcome.destination) } as const);
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
-      return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
+      return ok(copyRefusalWire(outcome));
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
@@ -2274,7 +2303,7 @@ function exportAnnotationsHandler(
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
       if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes, written: mint(outcome.destination) } as const);
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
-      return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
+      return ok(copyRefusalWire(outcome));
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
@@ -2427,7 +2456,7 @@ function splitHandler(commands: DocumentCommands, mint: MintWritten): ContractHa
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
       if (outcome.kind === 'split') return ok({ kind: 'split', files: outcome.files, written: mint(outcome.destination) } as const);
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
-      return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
+      return ok(copyRefusalWire(outcome));
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
@@ -2458,7 +2487,7 @@ function exportPageImagesHandler(
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
       if (outcome.kind === 'split') return ok({ kind: 'split', files: outcome.files, written: mint(outcome.destination) } as const);
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
-      return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
+      return ok(copyRefusalWire(outcome));
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
@@ -2488,7 +2517,8 @@ function exportTextHandler(commands: DocumentCommands, mint: MintWritten): Contr
         case 'write-failed':
           return ok({ kind: 'write-failed' } as const);
         case 'refused':
-          return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
+        case 'onto-source':
+          return ok(copyRefusalWire(outcome));
         case 'unavailable':
           return ok({ kind: 'unavailable' } as const);
         case 'failed':
@@ -2518,7 +2548,7 @@ function exportWordHandler(commands: DocumentCommands, mint: MintWritten): Contr
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
       if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes, written: mint(outcome.destination) } as const);
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
-      return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
+      return ok(copyRefusalWire(outcome));
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
@@ -2550,7 +2580,7 @@ function exportPowerPointHandler(commands: DocumentCommands, mint: MintWritten):
         } as const);
       }
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
-      return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
+      return ok(copyRefusalWire(outcome));
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
@@ -2578,7 +2608,8 @@ function exportPdfaHandler(commands: DocumentCommands, mint: MintWritten): Contr
             written: mint(outcome.destination),
           } as const);
         case 'refused':
-          return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
+        case 'onto-source':
+          return ok(copyRefusalWire(outcome));
         case 'write-failed':
         case 'unavailable':
         case 'failed':
@@ -2625,7 +2656,8 @@ function convertTextToCurvesHandler(commands: DocumentCommands, mint: MintWritte
             written: mint(outcome.destination),
           } as const);
         case 'refused':
-          return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
+        case 'onto-source':
+          return ok(copyRefusalWire(outcome));
         case 'write-failed':
         case 'unavailable':
         case 'failed':
@@ -2668,7 +2700,8 @@ function optimizeHandler(commands: DocumentCommands, mint: MintWritten): Contrac
         case 'copied':
           return ok({ kind: 'copied', bytes: outcome.bytes, before: outcome.before, written: mint(outcome.destination) } as const);
         case 'refused':
-          return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
+        case 'onto-source':
+          return ok(copyRefusalWire(outcome));
         case 'not-smaller':
           return ok({ kind: 'not-smaller', before: outcome.before, after: outcome.after } as const);
         case 'write-failed':
@@ -2740,7 +2773,7 @@ function exportExcelHandler(commands: DocumentCommands, mint: MintWritten): Cont
       if (outcome.kind === 'no-tables') {
         return ok({ kind: 'no-tables', picturePages: outcome.picturePages } as const);
       }
-      return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
+      return ok(copyRefusalWire(outcome));
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
@@ -2764,7 +2797,7 @@ function saveCopyHandler(commands: DocumentCommands, mint: MintWritten): Contrac
       if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes, written: mint(outcome.destination) } as const);
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
       if (outcome.kind === 'too-deep') return ok({ kind: 'too-deep', bookmarks: outcome.bookmarks } as const);
-      return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
+      return ok(copyRefusalWire(outcome));
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
@@ -2808,8 +2841,8 @@ function workOnCopyHandler(
     if (copied === undefined) return ok({ kind: 'cancelled' } as const);
     if (copied.outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
     if (copied.outcome.kind === 'too-deep') return ok({ kind: 'too-deep', bookmarks: copied.outcome.bookmarks } as const);
-    if (copied.outcome.kind === 'refused') {
-      return ok({ kind: 'destination-contested', openElsewhere: copied.outcome.others.length } as const);
+    if (copied.outcome.kind === 'refused' || copied.outcome.kind === 'onto-source') {
+      return ok(openedCopyRefusalWire(copied.outcome));
     }
 
     const { outcome } = await openPath(deps, copied.destination);
@@ -2867,8 +2900,8 @@ function restoreBackupHandler(
     if (copied === undefined) return ok({ kind: 'cancelled' } as const);
     if (copied === 'gone') return ok({ kind: 'gone' } as const);
     if (copied.outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
-    if (copied.outcome.kind === 'refused') {
-      return ok({ kind: 'destination-contested', openElsewhere: copied.outcome.others.length } as const);
+    if (copied.outcome.kind === 'refused' || copied.outcome.kind === 'onto-source') {
+      return ok(openedCopyRefusalWire(copied.outcome));
     }
     const { outcome } = await openPath(deps, copied.destination);
     // UNREACHABLE FOR THE COPY ROUTE'S OWN REASON: a destination another open document reaches is refused before anything is written.
@@ -2896,8 +2929,8 @@ function editCopyHandler(
     if (copied === undefined) return ok({ kind: 'cancelled' } as const);
     if (copied.outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
     if (copied.outcome.kind === 'too-deep') return ok({ kind: 'too-deep', bookmarks: copied.outcome.bookmarks } as const);
-    if (copied.outcome.kind === 'refused') {
-      return ok({ kind: 'destination-contested', openElsewhere: copied.outcome.others.length } as const);
+    if (copied.outcome.kind === 'refused' || copied.outcome.kind === 'onto-source') {
+      return ok(openedCopyRefusalWire(copied.outcome));
     }
 
     const { outcome: opened, sessions } = await openPath(deps, copied.destination);

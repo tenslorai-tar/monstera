@@ -1506,6 +1506,24 @@ describe('delete pages — the mutation-dialog gate', () => {
     expect(saidFor).toStrictEqual({ cancelled: 0, refused: 0 });
   });
 
+  it('a copy onto the document’s OWN FILE says that, not that another document is writing to it (the owner, 2026-11-10)', async () => {
+    const opened: { id: string; props: unknown }[] = [];
+    const client = createClient(channels, () => Promise.resolve(ok({ kind: 'onto-source' })));
+    await saveCopyCommand({
+      settleMarks: NOTHING_MARKED,
+      client,
+      stamp,
+      signatures,
+      onApplied: () => undefined,
+      toast: () => undefined,
+      ask: (id, props) => {
+        opened.push({ id, props });
+        return Promise.resolve(undefined);
+      },
+    }).run(CONTEXT);
+    expect(opened).toStrictEqual([{ id: 'dialog.save-problem', props: { outcome: 'onto-source' } }]);
+  });
+
   it('EACH EXPORT DISPATCHES ITS OWN FORMAT, which is the only thing separating them', async () => {
     // THE UI HALF, and the pair's blind spot is exactly here: three commands
     // built from one factory differ in a single argument, so a factory that
@@ -3968,6 +3986,8 @@ describe('delete pages — the mutation-dialog gate', () => {
         [{ kind: 'failed' }, [{ id: 'dialog.save-problem', props: { outcome: 'curves-failed' } }]],
         [{ kind: 'write-failed' }, [{ id: 'dialog.save-problem', props: { outcome: 'write-failed' } }]],
         [{ kind: 'refused', openElsewhere: 1 }, [{ id: 'dialog.save-problem', props: { outcome: 'contested' } }]],
+        // THE DOCUMENT'S OWN FILE chosen for the copy (the owner, 2026-11-10): its own sentence, never *another document*.
+        [{ kind: 'onto-source' }, [{ id: 'dialog.save-problem', props: { outcome: 'onto-source' } }]],
         [{ kind: 'cancelled' }, []],
       ] as const) {
         const { command, asked } = curvesDeps(

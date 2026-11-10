@@ -4,6 +4,7 @@ import type { DocId } from '@monstera/shared';
 import { OPEN_PROBLEM_DIALOG_ID } from '../dialogs/openProblem.js';
 import { READ_ONLY_FILE_DIALOG_ID, READ_ONLY_FILE_RESULT } from '../dialogs/readOnlyFile.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
+import { copyProblemOf } from './copyProblem.js';
 import { reportProblem, sayTooDeep } from './documentCommands.js';
 import type { ShowToast } from '../toasts.js';
 import type { OpenedDocument } from './importMarkdown.js';
@@ -65,10 +66,9 @@ export async function sayWhenUnwritable(
       return;
     // THE COPY WAS NOT WRITTEN, said as Save a copy says it.
     case 'destination-contested':
-      void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: 'contested' });
-      return;
+    case 'onto-source':
     case 'write-failed':
-      void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: 'write-failed' });
+      void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: copyProblemOf(outcome.kind) });
       return;
     case 'too-deep':
       await sayTooDeep(deps, docId, outcome.bookmarks);

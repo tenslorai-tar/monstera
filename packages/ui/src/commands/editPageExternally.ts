@@ -13,6 +13,7 @@ import {
   RIBBON_EDIT_EXTERNALLY,
 } from '../messages/en.js';
 import { type UiCommand, VISIBLE } from '../registries/commands.js';
+import { copyProblemOf } from './copyProblem.js';
 import { type DocumentCommandDeps, hasDocument, reportProblem } from './documentCommands.js';
 import type { OpenedDocument } from './importMarkdown.js';
 
@@ -38,15 +39,15 @@ import type { OpenedDocument } from './importMarkdown.js';
 export function sendOutProblem(
   answer: ChannelResult<'document.editPageExternally'>,
 ):
-  | { readonly kind: 'save'; readonly outcome: 'write-failed' | 'contested' }
+  | { readonly kind: 'save'; readonly outcome: 'write-failed' | 'contested' | 'onto-source' }
   | { readonly kind: 'external'; readonly reason: ExternalEditProblem }
   | null {
   switch (answer.kind) {
     // THE SAME WRITE A COPY MAKES, so the same sentence a copy gets (B3a).
     case 'refused':
-      return { kind: 'save', outcome: 'contested' };
+    case 'onto-source':
     case 'write-failed':
-      return { kind: 'save', outcome: 'write-failed' };
+      return { kind: 'save', outcome: copyProblemOf(answer.kind) };
     case 'not-pdf':
     case 'launch-failed':
     case 'not-watchable':

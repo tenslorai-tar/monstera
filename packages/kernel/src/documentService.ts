@@ -1021,7 +1021,12 @@ export type CopyTargetVerdict =
   /** Nothing open reaches this path. The write creates or overwrites it. */
   | { readonly kind: 'writable' }
   /** Another open document reaches this file. Writing loses its unsaved edits. */
-  | { readonly kind: 'contested'; readonly others: readonly DocId[] };
+  | { readonly kind: 'contested'; readonly others: readonly DocId[] }
+  /**
+   * The file is the one the document being copied was opened from. A copy cannot replace the document it came from,
+   * and saying *another document* of it names a document the person cannot find.
+   */
+  | { readonly kind: 'source' };
 
 /**
  * Releases whatever a document holds outside this index — the engine session,
@@ -2562,9 +2567,17 @@ export class DocumentService {
    * nothing at the destination is the ordinary case and the write creates it.
    * The same reading, opposite verdicts, because the question is different.
    *
+   * ## The document being copied is not ANOTHER document
+   *
+   * The walk finds every open document reaching the file, the copy's own source among them when the person chose the
+   * file the document was opened from. That is still refused, since the copy would replace the original, but it is
+   * `source` rather than `contested`, and it wins over any other document reaching the same file: the reason the
+   * person can act on is that the name is the original's.
+   *
    * @param destination the path the picker returned
+   * @param source the document being copied, where the copy has one; a document composed from nothing has none
    */
-  async checkCopyTarget(destination: string): Promise<CopyTargetVerdict> {
+  async checkCopyTarget(destination: string, source?: DocId): Promise<CopyTargetVerdict> {
     return this.#throughIndexLane(async () => {
       const target = await this.#readIdentity(destination);
       // NOTHING THERE, so nothing to contest. A new file cannot hold anybody's
@@ -2581,6 +2594,7 @@ export class DocumentService {
       //
       // What keeps it honest is that the walk is the same `#documentsAt` the
       // controlled caller uses, so a broken walk turns that check red first.
+      if (source !== undefined && reaching.includes(source)) return { kind: 'source' } as const;
       return reaching.length > 0
         ? ({ kind: 'contested', others: reaching } as const)
         : ({ kind: 'writable' } as const);

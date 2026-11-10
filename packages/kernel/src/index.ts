@@ -526,6 +526,8 @@ export {
   type SaveFileNames,
   copyNames,
   type CopyOutcome,
+  type CopyRefusal,
+  copyRefusalOf,
   type DocumentCopyOutcome,
   type TooDeepToSave,
   type SaveOutcome,
