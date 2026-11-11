@@ -270,3 +270,23 @@ describe('a write the cipher cannot back', () => {
     expect(store.list(PLACE_KEY, ID)).toStrictEqual([]);
   });
 });
+
+describe('the 24-hour check’s ledger is sealed like every record (ADR-0279 Decision 6)', () => {
+  it('keeps what it is given and reads it back, and a place in it is not on the disk in the clear', () => {
+    const directory = folder();
+    const store = createHistoryStore(directory, fakeCipher());
+    const ledger = { lastPass: 5, sections: { [`${PLACE_KEY}/s`]: { seen: null, missingSince: 7, place: PLACE } } };
+    store.keepLedger(ledger);
+    expect(createHistoryStore(directory, fakeCipher()).ledger()).toStrictEqual(ledger);
+    expect(everyFileHolds(directory, Buffer.from(PLACE))).toBe(false);
+  });
+
+  it('CONTROL: another account reads no ledger, and Clear chat history removes it', () => {
+    const directory = folder();
+    const store = createHistoryStore(directory, fakeCipher());
+    store.keepLedger({ lastPass: 5, sections: {} });
+    expect(createHistoryStore(directory, fakeCipher('someone else')).ledger()).toBeNull();
+    store.clearAll();
+    expect(store.ledger()).toBeNull();
+  });
+});

@@ -49,6 +49,7 @@ import { replaceWithRetry } from './settingsFile.js';
 
 export const HISTORY_DIRECTORY = 'history';
 const KEY_FILE = 'key';
+const LEDGER_FILE = 'ledger';
 const EXTENSION = '.mhist';
 
 const GUARD = 1;
@@ -329,6 +330,13 @@ export interface HistoryStore {
   conversationsIn(path: string): readonly string[];
   /** One conversation's turns from the file at `path`, or `null`: the move's read-back. */
   readFile(path: string, conversation: string): readonly SavedTurn[] | null;
+  /**
+   * The 24-hour check's ledger (ADR-0279's Decision 6), sealed under the data key like every record: what it last saw
+   * of each section and when it first found one missing. `null` where none is kept or it does not open.
+   */
+  ledger(): unknown;
+  /** Keeps the ledger, written beside and renamed over. Nothing is kept where this machine cannot keep conversations. */
+  keepLedger(value: unknown): void;
   /** History's *Clear all*: this PDF's file. */
   clearFile(placeKey: string): void;
   /** Settings' *Clear chat history*: every file, answering how many conversations they held. */
@@ -347,6 +355,7 @@ export function createHistoryStore(
 ): HistoryStore {
   const folder = join(directory, HISTORY_DIRECTORY);
   const keyPath = join(folder, KEY_FILE);
+  const ledgerPath = join(folder, LEDGER_FILE);
   const fileOf = (placeKey: string): string => join(folder, `${placeKey}${EXTENSION}`);
   let dataKey: Buffer | null | undefined;
 
@@ -579,6 +588,26 @@ export function createHistoryStore(
         .map((name) => name.slice(0, -EXTENSION.length));
     },
 
+    ledger() {
+      const key = keyFor(false);
+      if (key === null || !existsSync(ledgerPath)) return null;
+      try {
+        return unseal(key, readFileSync(ledgerPath));
+      } catch {
+        // A LEDGER THAT DOES NOT OPEN is one never kept: the next pass starts every clock again, which can only delay a
+        // removal, never bring one forward.
+        return null;
+      }
+    },
+
+    keepLedger(value) {
+      const key = keyFor(true);
+      if (key === null) return;
+      mkdirSync(folder, { recursive: true });
+      writeFileSync(`${ledgerPath}.writing`, seal(key, value));
+      replaceWithRetry(`${ledgerPath}.writing`, ledgerPath);
+    },
+
     clearFile(placeKey) {
       rmSync(fileOf(placeKey), { force: true });
       written.delete(placeKey);
@@ -595,6 +624,8 @@ export function createHistoryStore(
           }) ?? 0;
         rmSync(fileOf(placeKey), { force: true });
       }
+      // THE LEDGER GOES WITH THEM: it names sections that no longer exist, and keeps a place in it.
+      rmSync(ledgerPath, { force: true });
       written.clear();
       savedTurns.clear();
       return count;
