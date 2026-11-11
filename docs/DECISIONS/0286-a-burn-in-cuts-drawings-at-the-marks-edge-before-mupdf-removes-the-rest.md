@@ -260,3 +260,7 @@ holds it: the curve across the right side is no larger than its mirror image acr
 **What remains is the accepted outline**, 137 KB on this page for three curves, and making it smaller moves pixels by
 this amendment's own measurements: a coarser flatness, or a native stroke beside an outline. It is put to the owner
 again with this figure.
+
+**2026-11-12, the owner's decision: the remaining ~137 KB is accepted, and item 67 is closed.** Measured on Windows the
+same page, `redactCutTiming.mjs --rounds 21` on `9856683c` with the native shim rebuilt from this source: 266,050 bytes,
+and a median of 72 ms with the cut against 14 ms without (spreads 59–93 and 12–31; 108 against 19 ms before the fix).
