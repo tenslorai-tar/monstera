@@ -922,6 +922,17 @@ about seven times, and the 2026-11-03 figure is not a baseline for this one: ano
 **Seen, not explained:** in round 2 the document was gone from the window when the round went to put Edit text down
 after its reading, so the step failed on that press; the round's figures had been taken, and round 3 began clean.
 
+**Correction, 2026-11-12: explained, and the press named above is wrong.** The walk's `report.json` names the failing
+call as the script's own press of a tab's ×, whose button "was detached from the DOM", not the Edit text button. The
+app's `logs/shell.log` for the run shows one ordinary close and nothing else: `document.close ok` at 22:48:50 with the
+engine hosts' shutdown lines that every close writes ("We closed this connection, so nothing here is a fault"), no
+renderer or host failure, and no crash report. The close took about ten seconds after the press, because its
+`document.unsaved` answered in 9,471 ms beside a `document.blockFaces` of 14,040 ms. The script, seeing the same ×
+still there, pressed it again, and the first close removed it under that press. So the script closed the document; the
+renderer did not crash; and it is not item 68's mechanism, whose picture showed Edit text off in a document still open.
+The close's wait behind the block faces read is a person's wait too, recorded here and not yet looked into.
+`closeTabs` now presses one tab's × and waits for that tab's own button to go.
+
 ---
 
 ## 2026-11-10 — The 30-second block open was the walk's press, aimed through a list that changed under it

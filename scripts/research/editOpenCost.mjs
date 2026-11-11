@@ -15,7 +15,9 @@
  *   outline to the editor focused with its caret, through `editTextOpening`'s two presses, and the renderer's long tasks
  *   from that first press until two seconds after the editor took focus, since the fits re-run as the faces arrive. The
  *   700 ms between the two presses is a hand's pause (`openAt`), not the editor's cost, so the wall time is printed with
- *   it and the long tasks are the editor's figure.
+ *   it. Two figures are the editor's: the renderer's work (its long tasks) and ADR-0271's *click until editable*, from
+ *   the press that opens the words to the first frame with the editor in text mode and focus in its words
+ *   ({@link armEditableClock}).
  *
  * Each round opens the document afresh in a new tab and closes it without saving, so every round is a first read.
  *
@@ -100,18 +102,69 @@ await recordLongTasks();
   process.stdout.write(`control: the planted 150 ms task was recorded as ${String(Math.round(Math.max(...seen.map((task) => task.duration))))} ms\n`);
 }
 
-/** @type {{ firstRead: number, wall: number, total: number, worst: number, count: number }[]} */
+/** @type {{ firstRead: number, editable: number, wall: number, total: number, worst: number, count: number }[]} */
 const readings = [];
 
+/**
+ * Closes every tab, ONE TAB AT A TIME BY ITS OWN BUTTON. A close can take seconds after the press: on 2026-11-11 the
+ * close's `document.unsaved` answered in 9,471 ms beside a 14,040 ms `document.blockFaces` (`logs/shell.log`, round 2), so
+ * a loop that counted the buttons again found the same one still there, pressed it, and waited 30 s on a button the first
+ * press then removed. So the press is followed by waiting for THAT tab's button to go, answering Don't save if asked.
+ */
 async function closeTabs() {
   for (let tab = 0; tab < 8 && (await page.locator('.m-tab-close').count()) > 0; tab += 1) {
-    await page.locator('.m-tab-close').first().click();
+    const button = page.locator('.m-tab-close').first();
+    const id = await button.getAttribute('data-tab-close');
+    if (id === null) throw new Error('a tab close button carries no data-tab-close');
+    await button.click();
+    const same = page.locator(`.m-tab-close[data-tab-close="${id}"]`);
     const dontSave = page.locator('.m-dialog:not(.m-palette)').last().getByRole('button', { name: 'Don’t save' });
-    await dontSave.waitFor({ state: 'visible', timeout: 1500 }).catch(() => undefined);
+    await Promise.race([same.waitFor({ state: 'detached', timeout: 60_000 }), dontSave.waitFor({ state: 'visible', timeout: 60_000 })]);
     if ((await dontSave.count()) > 0) await dontSave.click();
+    await same.waitFor({ state: 'detached', timeout: 60_000 });
     await nothingInFlight(page);
   }
 }
+
+/**
+ * ADR-0271 section 4's first row, CLICK UNTIL EDITABLE (caret shown, a key would land), on the window's own clock: the
+ * page notes every press, and on each frame whether the editor is in text mode with focus in its words. The first frame
+ * where it is, less the last press before it, is the reading. The first of `openBlock`'s presses only selects the box
+ * (`data-kit-mode="box"`), so the press it counts is the one that made the block editable, and the 700 ms between them is
+ * not in it. Armed before the presses; answers the reading once the editor is editable.
+ */
+async function armEditableClock() {
+  await page.evaluate(() => {
+    const clock = /** @type {{ now: () => number }} */ (Reflect.get(globalThis, 'performance'));
+    const dom = /** @type {{ querySelector: (selector: string) => unknown, activeElement: unknown, addEventListener: (type: string, run: () => void, options: unknown) => void, removeEventListener: (type: string, run: () => void, options: unknown) => void }} */ (
+      Reflect.get(globalThis, 'document')
+    );
+    const frame = /** @type {(run: () => void) => void} */ (Reflect.get(globalThis, 'requestAnimationFrame'));
+    let lastPress = -1;
+    const press = () => {
+      lastPress = clock.now();
+    };
+    dom.addEventListener('pointerdown', press, { capture: true });
+    Reflect.set(
+      globalThis,
+      '__editable',
+      new Promise((resolve) => {
+        const look = () => {
+          const kit = /** @type {{ getAttribute: (name: string) => string | null } | null} */ (dom.querySelector('[data-kit-frame]'));
+          const words = dom.querySelector('[data-kit-surface]');
+          if (lastPress >= 0 && kit?.getAttribute('data-kit-mode') === 'text' && words !== null && dom.activeElement === words) {
+            dom.removeEventListener('pointerdown', press, { capture: true });
+            resolve(clock.now() - lastPress);
+            return;
+          }
+          frame(look);
+        };
+        frame(look);
+      }),
+    );
+  });
+}
+const editableReading = () => page.evaluate(() => /** @type {Promise<number>} */ (Reflect.get(globalThis, '__editable')));
 
 for (let round = 1; round <= rounds; round += 1) {
   await step(`round ${String(round)}`, async () => {
@@ -152,17 +205,19 @@ for (let round = 1; round <= rounds; round += 1) {
     // OPENING IT: long tasks from the first press until two seconds after the editor took focus.
     await page.waitForTimeout(500);
     await takeLongTasks();
+    await armEditableClock();
     const from = await rendererNow();
     const started = Date.now();
     await openBlock(blocks.nth(largest), 'middle');
     const wall = Date.now() - started;
+    const editable = await editableReading();
     await page.waitForTimeout(2000);
     const tasks = (await takeLongTasks()).filter((task) => task.start >= from);
     const total = tasks.reduce((sum, task) => sum + task.duration, 0);
     const worst = tasks.reduce((most, task) => Math.max(most, task.duration), 0);
-    readings.push({ firstRead, wall, total, worst, count: tasks.length });
+    readings.push({ firstRead, editable, wall, total, worst, count: tasks.length });
     process.stdout.write(
-      `round ${String(round)}: first read ${String(firstRead)} ms; block ${String(largest + 1)} of ${String(handles.length)} (${String(Math.round(area))} px²) open in ${String(wall)} ms, long tasks ${String(Math.round(total))} ms over ${String(tasks.length)} (worst ${String(Math.round(worst))} ms)\n`,
+      `round ${String(round)}: first read ${String(firstRead)} ms; block ${String(largest + 1)} of ${String(handles.length)} (${String(Math.round(area))} px²): click until editable ${String(Math.round(editable))} ms, open in ${String(wall)} ms, long tasks ${String(Math.round(total))} ms over ${String(tasks.length)} (worst ${String(Math.round(worst))} ms)\n`,
     );
     await page.keyboard.press('Escape');
     await nothingInFlight(page);
@@ -183,6 +238,7 @@ if (readings.length > 0) {
     [
       `over ${String(readings.length)} round(s), document ${String(fileNumber)}:`,
       `  first read of the blocks: ${summary(readings.map((each) => each.firstRead))}`,
+      `  click until editable (ADR-0271's 300 ms, the window's clock): ${summary(readings.map((each) => each.editable))}`,
       `  opening the largest block, wall (with the 700 ms pause between the presses): ${summary(readings.map((each) => each.wall))}`,
       `  opening it, long tasks in all: ${summary(readings.map((each) => each.total))}`,
       `  opening it, the worst long task: ${summary(readings.map((each) => each.worst))}`,
