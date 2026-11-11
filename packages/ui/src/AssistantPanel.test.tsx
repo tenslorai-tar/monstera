@@ -2093,23 +2093,12 @@ describe('a new conversation keeps the old one, and a file at twenty is said (AD
     return store;
   };
 
-  const HISTORY_OFF = 'Chat history is off, so this conversation won’t be kept when you start a new one.';
-
-  it('with history OFF, one quiet line of its own in the pane says the conversation will not be kept (the owner, 2026-11-10)', async () => {
+  it('with history OFF the pane says NOTHING of it (the owner, 2026-11-12), and the conversation is there', async () => {
     await drawn({ focused: { docId: DOC, store: holding(), page: 0 } });
-    const line = screen.getByText(HISTORY_OFF);
-    // ITS OWN LINE in the pane, not squeezed into the bar beside New chat, where the owner found no word.
-    expect(line.closest('.m-assistant__conversation-bar')).toBeNull();
-    expect(line.closest('.m-assistant')).not.toBeNull();
-    // AND WHILE HISTORY IS OFF, before the first question too, so it is read before anything is asked.
-    cleanup();
-    await drawn({ focused: { docId: DOC, store: createDocumentStore(DOC, asDocVersion(1)), page: 0 } });
-    expect(screen.getByText(HISTORY_OFF)).not.toBeNull();
-  });
-
-  it('CONTROL: with history ON the line is not shown', async () => {
-    await drawn({ focused: { docId: DOC, store: holding(), page: 0 }, settings: historyOn() });
-    expect(screen.queryByText(HISTORY_OFF)).toBeNull();
+    // CONTROL: the pane drew the conversation, so the absence below is of the line and not of the pane.
+    expect(screen.getByText('Both parties.')).not.toBeNull();
+    expect(document.body.textContent).not.toMatch(/history is off/iu);
+    expect(document.querySelector('[data-assistant-history-off]')).toBeNull();
   });
 
   it(`with history ON and the file at ${String(MAX_FILE_CONVERSATIONS)}, New chat begins NOTHING and says to remove one`, async () => {

@@ -2456,8 +2456,6 @@ export const ASSISTANT_QUESTION_OVER = messageKey('assistant.question-over');
 export const ASSISTANT_FULL_COUNT = messageKey('assistant.full-count');
 /** A long conversation's recommendation, which blocks nothing (ADR-0277's correction of 2026-10-31). */
 export const ASSISTANT_LONG_NOTE = messageKey('assistant.long-note');
-/** Beside New chat while chat history is off: the press clears this conversation (the owner, 2026-10-31). */
-export const ASSISTANT_HISTORY_OFF_CLEARS = messageKey('assistant.history-off-clears');
 /** A conversation the provider refused as too long for its model (ADR-0277 Decisions 2 and 5). */
 export const ASSISTANT_FULL_PROVIDER = messageKey('assistant.full-provider');
 /** The one press from a full conversation to a new one (ADR-0277 Decision 2). */
@@ -5590,8 +5588,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_FULL_COUNT]:
     'This conversation is full: it holds as many messages as one conversation can. Start a new conversation to ask more.',
   [ASSISTANT_LONG_NOTE]: 'This conversation is now long. We recommend starting a new chat to save cost.',
-  // THE OWNER'S SENTENCE, 2026-11-10.
-  [ASSISTANT_HISTORY_OFF_CLEARS]: 'Chat history is off, so this conversation won’t be kept when you start a new one.',
   [ASSISTANT_FULL_PROVIDER]:
     'This conversation is now too long for the model to read, so the provider refused the last question. Start a new conversation to ask it again.',
   [ASSISTANT_START_NEW]: 'Start a new conversation',

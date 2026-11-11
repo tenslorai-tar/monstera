@@ -106,7 +106,6 @@ import {
   ASSISTANT_FULL_COUNT,
   ASSISTANT_FULL_PROVIDER,
   ASSISTANT_LONG_NOTE,
-  ASSISTANT_HISTORY_OFF_CLEARS,
   ASSISTANT_START_NEW,
   ASSISTANT_FILE_FULL_NEW,
   ASSISTANT_FILE_FULL_UNSAVED,
@@ -176,7 +175,7 @@ import { Button } from './primitives/Button.js';
 import { ChoiceMenu } from './primitives/ChoiceMenu.js';
 import { IconButton } from './primitives/IconButton.js';
 import { useEndKept } from './primitives/useEndKept.js';
-import { AI_MODELS_SETTING, AI_PROVIDER_SETTING, CHAT_HISTORY_SETTING } from './settings/ai.js';
+import { AI_MODELS_SETTING, AI_PROVIDER_SETTING } from './settings/ai.js';
 import { heldModels, holdModels } from './assistantModels.js';
 import { AssistantHistory } from './AssistantHistory.js';
 import type { SettingsStore } from './settingsStore.js';
@@ -457,7 +456,6 @@ export function AssistantPanel({
   // the recogniser, and a choice survives the panel closing. The list itself is fetched here, per provider.
   const provider = useSetting(settings, AI_PROVIDER_SETTING);
   const chosenModels = useSetting(settings, AI_MODELS_SETTING);
-  const historyOn = useSetting(settings, CHAT_HISTORY_SETTING);
   // WITH THE CAPABILITIES, because a model that cannot see is not offered a picture (ADR-0090):
   // `false` where the provider says so, `null` where it does not say.
   // WHAT THE PROVIDER LAST ANSWERED, from this panel's own read or else the session's (`assistantModels.ts`), and
@@ -1154,16 +1152,8 @@ export function AssistantPanel({
           />
         )}
       </div>
-      {/* WITH HISTORY OFF, ONE QUIET LINE OF ITS OWN in the pane, for as long as it is off (the owner, 2026-11-10): nothing
-          keeps this conversation once a new one starts. It stood squeezed into the bar beside New chat, and only with a
-          conversation, and the owner found New chat dropping one with no word. */}
-      {!historyOn && (
-        // A NOTICE, NOT A STATE: it stands for as long as the setting does, where a state line answers what just happened,
-        // and the cases that a problem is said once read the state lines alone.
-        <p className="m-assistant__notice" data-assistant-history-off="">
-          {i18n._(ASSISTANT_HISTORY_OFF_CLEARS)}
-        </p>
-      )}
+      {/* NOTHING IS SAID OF HISTORY BEING OFF (the owner, 2026-11-12, ADR-0279's correction of that day): it is on by
+          default, so anyone who has it off turned it off themselves. History's own empty list says so where it is read. */}
       {readiness !== 'ready' && readiness !== 'listing' && (
         <p className="m-assistant__state" data-assistant-readiness={readiness}>
           {i18n._(READINESS[readiness])}

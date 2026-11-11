@@ -99,7 +99,9 @@ for (const look of LOOKS) {
     await expect(pane).toHaveScreenshot(`${look.name}-assistant-long.png`);
   });
 
-  test(`${look.name}: with history off, the pane's line about it matches its baseline`, async ({ page }) => {
+  // WITH HISTORY OFF THE PANE SAYS NOTHING OF IT (the owner, 2026-11-12, ADR-0279's correction): the baseline is the pane
+  // with a conversation and no line about history.
+  test(`${look.name}: with history off, the pane carries no line about it and matches its baseline`, async ({ page }) => {
     // WITH HISTORY OFF NOTHING LOADS, so the conversation is asked here and its answer streamed in.
     let subscription: string | undefined;
     const pane = await openPane(page, look, { asks: true, historyOff: true }, (channel, params) => {
@@ -111,7 +113,8 @@ for (const look of LOOKS) {
     const sent = subscription ?? '';
     await pushEvent(page, 'ai.delta', { subscription: sent, text: 'Both parties sign on page 4.' });
     await pushEvent(page, 'ai.done', { subscription: sent, stopped: false, web: { answer: 'fixture-answer', searched: false, sources: [] } });
-    await expect(pane.getByText('Chat history is off, so this conversation won’t be kept when you start a new one.')).toBeVisible();
+    await expect(pane.getByText('Both parties sign on page 4.')).toBeVisible();
+    await expect(pane.getByText(/history is off/iu)).toHaveCount(0);
     await page.mouse.move(400, 450);
     await expect(pane).toHaveScreenshot(`${look.name}-assistant-history-off.png`);
   });
