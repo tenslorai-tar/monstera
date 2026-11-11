@@ -1141,13 +1141,6 @@ export function AssistantPanel({
           }}
           variant="quiet"
         />
-        {/* WITH HISTORY OFF, New chat CLEARS this conversation, said beside it before the press (the owner, 2026-10-31):
-            nothing keeps the old one, so the person learns it here rather than after. */}
-        {turns.length > 0 && !historyOn && (
-          <p className="m-assistant__state m-assistant__history-off" data-assistant-history-off="">
-            {i18n._(ASSISTANT_HISTORY_OFF_CLEARS)}
-          </p>
-        )}
         {turns.length > 0 && (
           // NEW CHAT, a "+" at the top right (the owner's review of 0.1.6.0): it empties this document's
           // conversation — and, with history on, its saved copy the next time it settles. Not while an answer is
@@ -1161,6 +1154,16 @@ export function AssistantPanel({
           />
         )}
       </div>
+      {/* WITH HISTORY OFF, ONE QUIET LINE OF ITS OWN in the pane, for as long as it is off (the owner, 2026-11-10): nothing
+          keeps this conversation once a new one starts. It stood squeezed into the bar beside New chat, and only with a
+          conversation, and the owner found New chat dropping one with no word. */}
+      {!historyOn && (
+        // A NOTICE, NOT A STATE: it stands for as long as the setting does, where a state line answers what just happened,
+        // and the cases that a problem is said once read the state lines alone.
+        <p className="m-assistant__notice" data-assistant-history-off="">
+          {i18n._(ASSISTANT_HISTORY_OFF_CLEARS)}
+        </p>
+      )}
       {readiness !== 'ready' && readiness !== 'listing' && (
         <p className="m-assistant__state" data-assistant-readiness={readiness}>
           {i18n._(READINESS[readiness])}

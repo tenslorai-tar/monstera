@@ -5590,7 +5590,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_FULL_COUNT]:
     'This conversation is full: it holds as many messages as one conversation can. Start a new conversation to ask more.',
   [ASSISTANT_LONG_NOTE]: 'This conversation is now long. We recommend starting a new chat to save cost.',
-  [ASSISTANT_HISTORY_OFF_CLEARS]: 'History is off, so New chat clears this conversation.',
+  // THE OWNER'S SENTENCE, 2026-11-10.
+  [ASSISTANT_HISTORY_OFF_CLEARS]: 'Chat history is off, so this conversation won’t be kept when you start a new one.',
   [ASSISTANT_FULL_PROVIDER]:
     'This conversation is now too long for the model to read, so the provider refused the last question. Start a new conversation to ask it again.',
   [ASSISTANT_START_NEW]: 'Start a new conversation',

@@ -155,3 +155,15 @@ refusal: no cap on conversations, nothing dropped. Until it is approved and buil
 The owner approved
 [ADR-0279](0279-saved-conversations-are-kept-without-caps-each-in-its-own-file-and-history-reads-one-log.md) on
 2026-11-01. It supersedes Decision 6 once it is built; until then Decision 6 still describes what ships.
+
+## Correction, 2026-11-10 — twenty conversations hold up to 10,240 messages, not "some 640"
+
+Decision 6 says twenty conversations *"are some 640 messages about one file"*. That counted questions and called them
+messages: with `MAX_CHAT_TURNS` at 64 when the decision was written, a full conversation held 64 messages, 32
+questions and their answers, so twenty held 1,280 messages and 640 questions (the audit's finding of that range,
+*Twenty are some 640 messages is the questions; the messages are 1,280*, `docs/JOURNAL.md`). Since the correction of
+2026-10-31 above, a conversation is full only at the safety ceiling of 512 messages (`MAX_CHAT_TURNS`,
+`packages/contract/src/channels.ts`), so twenty conversations hold up to **10,240 messages** about one file. The
+store's bound is unchanged in kind: `MAX_SAVED_CONVERSATIONS` files, each of at most `MAX_FILE_CONVERSATIONS`
+conversations within `MAX_CONVERSATION_TEXT` characters. The figure in the owner's list of 2026-11-10 was 1,280; the
+owner chose to record 10,240 with this history. ADR-0279 removes the per-file count once it is built.
