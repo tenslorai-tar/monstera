@@ -892,6 +892,38 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-11-11 — What Edit text costs before typing, read again on `628b8eaa` by a committed instrument
+
+Items 28/64 and 65, measured before any change. The figures of 2026-11-03 (*opening a dense block in Edit text: long
+tasks 788–950 ms*; *the first read 2.7–5.8 s*) name no instrument that is in the tree, so they cannot be repeated or
+compared with. `scripts/research/editOpenCost.mjs` is that instrument now: one corpus document by number, each round
+opened afresh with Edit text down, the first read timed from the press of the ribbon's Edit text to the first block
+outline, then the largest outline on screen opened through `editTextOpening`'s two presses with the renderer's
+`longtask` entries recorded from the first press to two seconds after the editor took focus. Its control, every run: a
+150 ms task the script plants from a timer in the page must be recorded as one task of at least 140 ms, or nothing is
+reported. Planted from inside Playwright's evaluate call instead, it was recorded as nothing (`[]`), so the control
+caught a blind recorder on its first run.
+
+`node scripts/research/editOpenCost.mjs --corpus <corpus> --file 2 --rounds 7`, this machine, 2026-11-11, run
+`_review/walks/edit-open-cost/2026-11-11T22-47-12`, 7 rounds:
+
+| reading | median | spread |
+|---|---|---|
+| first read of the blocks | 5,735 ms | 4,587–8,397 |
+| opening the largest block, long tasks in all | 2,086 ms | 1,970–9,712 |
+| opening it, the worst single long task | 1,647 ms | 1,579–5,865 |
+| opening it, wall time with the 700 ms pause between the presses | 3,392 ms | 2,725–11,386 |
+
+Round 1 is the cold one (9,712 ms of long tasks); rounds 2–7 lie within 1,970–2,143. An earlier run the same evening
+read 879 and 1,055 ms in its two clean rounds, but two of its rounds failed and left a second tab open under the rounds
+after them, so it measured two conditions and is not used. Against the editor's 300 ms budget the block open is over by
+about seven times, and the 2026-11-03 figure is not a baseline for this one: another instrument, block and moment.
+
+**Seen, not explained:** in round 2 the document was gone from the window when the round went to put Edit text down
+after its reading, so the step failed on that press; the round's figures had been taken, and round 3 began clean.
+
+---
+
 ## 2026-11-10 — The 30-second block open was the walk's press, aimed through a list that changed under it
 
 Item 68, the open finding of 2026-11-07 (*Addition, the 30-second block open*). Reproduced on today's main with the same
