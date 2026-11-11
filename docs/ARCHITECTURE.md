@@ -1857,14 +1857,24 @@ reconciled.
   audience will read the network tab.
 - **Recovery.** Crash-recovery sidecars for dirty documents, change-detected
   rather than timer-spammed, offered on next launch.
-- **Chat history** ([ADR-0093](DECISIONS/0093-chat-history-is-off-by-default-encrypted-in-main-and-keyed-by-the-file.md)).
-  **Off by default** (`ai.save-history`). When on, `main` keeps each file's
-  assistant conversation in `chat-history.json`, encrypted with the keys'
-  `SecretCipher`, keyed by a SHA-256 of the file's path so no path is stored in
-  the clear; the renderer loads and saves by `DocId` and `main` refuses a save
-  while the setting is off. Bounded to the contract's turn limits and 200
-  files, least recently saved dropped first. *Clear chat history* in
-  Settings › Privacy removes all of it.
+- **Chat history** ([ADR-0279](DECISIONS/0279-saved-conversations-are-kept-without-caps-each-in-its-own-file-and-history-reads-one-log.md),
+  superseding ADR-0093's store and ADR-0277 Decision 6). **On by default**
+  (`ai.save-history`); a person who turned it off stays off. `main` keeps **one
+  history file per PDF**, `history/<place>.mhist`, named by a SHA-256 of the
+  PDF's place so no path is in the clear. A file holds one section per
+  **guard** (the PDF's first `/ID` string, or its size and write time where it
+  has none, re-recorded by Monstera's own saves); each section is records
+  appended one after another, a card per save and the turns added since, each
+  sealed with AES-256-GCM under **one data key** that `safeStorage` wraps. A
+  save appends and reads nothing; **opening a PDF reads no history**; History
+  reads only the open PDF's file and shows the section whose guard matches
+  the PDF now there. No cap on PDFs or conversations. Delete one rewrites the
+  file without that conversation; History's *Clear all* removes the file and
+  Settings › Privacy's *Clear chat history* removes every file, each asking
+  first. A section whose PDF is gone or unreadable is removed **24 hours after
+  the first check that finds it so**, checked only while the person is idle.
+  History saved by 1.1.2610.0 is moved over once, losing nothing. The renderer
+  saves and lists by `DocId` and never holds a path, a key or a file name.
 - **What reaches an AI provider, and who says so.** Document content goes to a
   provider **only when the person presses Send**, which is the explicit action.
   The provider is named before anything is sent by the **provider picker under
@@ -3209,6 +3219,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-11-12 | **Chat history is one sealed file per PDF, on by default, with no caps** (§8). The owner's decisions of 2026-10-31, approved 2026-11-01 and corrected 2026-11-12: one append-only file per PDF named by its place, a section per guard (the PDF's `/ID`, else its size and write time), every record sealed under one data key `safeStorage` wraps; a save reads nothing, opening a PDF reads nothing, History reads only the open PDF's file; Delete really deletes; a section whose PDF is gone is removed 24 hours after it is found gone, only while the person is idle; 1.1.2610.0's history moved over once. Amended before the build, by B4 | §8's chat-history bullet: ADR-0093's `chat-history.json`, off by default, keyed by a path digest, 200 files; ADR-0277 Decision 6's twenty per file | [0279](DECISIONS/0279-saved-conversations-are-kept-without-caps-each-in-its-own-file-and-history-reads-one-log.md) |
 | 2026-11-08 | **A feature is not finished until an article teaches it** (§7's opening). The owner's decision of 2026-11-08, after two live features were found with no article. ADR-0112 checked that what an article names exists, and nothing checked the other direction: 50 of 282 commands were listed by no article. Every command is now listed by an article that also says its name, every setting the dialog shows is named by one, or the id has a written reason in `noArticleNeeded.ts`; a stale exemption fails too. Rejected: a count of articles against commands, an article per command, listing the id alone | `BUILD-PROMPT.md` Part H's definition of done, which names no article | [0290](DECISIONS/0290-a-feature-is-not-finished-until-an-article-teaches-it.md) |
 | 2026-10-29 | **Every packaged version is tagged, and About links that tag** (§8's packaging; the owner's decision before the Store launch of 1.1.2610.0). One rule in the contract, `releaseTag`, names a package version's tag; the pack step refuses a version whose tag is at another commit, tags the commit it packed, and pushes the tag, failing the pack when the push fails; About's *Source code* and licence links open the running version's tag rather than `main`, so the link is the AGPL's corresponding source. A GitHub release, source only, is made by hand per Store release. Rejected: tagging by hand, tagging in CI (both workflows are read-only), a commit sha in About, and baking the commit into the build. | ADR-0123's pack step; `webPages.ts`' source and licence addresses | [ADR-0276](DECISIONS/0276-every-packaged-version-is-tagged-and-about-links-its-tag.md) |
 | 2026-10-29 | **The append-only records were edited once, by the owner's decision, to remove the owner's own machine names.** Before launch the owner's Windows user name and computer name were found in five tracked files, pasted from real measurements: a UNC path in ADR-0009's extended identity measurement (two lines), a profile path in ADR-0023's packaged-host failure output, an ACL listing in ADR-0027's `icacls` reading, the same UNC path in one `docs/JOURNAL.md` table row, and a comment in `packages/kernel/src/documentIdentity.ts`. Each now reads a placeholder that keeps the evidence's meaning (`\\HOST\C$\…`, `C:\Users\<user>\…`, `HOST\<user>`); no figure, result or conclusion changed. A research script's note author, a short form of the computer name, became a neutral word. **History is not rewritten** (the owner chose this over a rewrite; B10 stands): the names stay in earlier commits, in one commit message and as the author email of the early commits. The rule is otherwise unchanged: ADRs and the journal are corrected by an appended note, never edited. The class is closed by `scripts/lib/machineNames.mjs` at pre-commit, which reads the committer's own user and computer names from the operating system at commit time, so no list of them is ever written, and refuses a staged file holding either, without printing the value. | `CLAUDE.md`'s record rules for ADRs and the journal (this edit only) | — (the owner's decision of 2026-10-29) |
