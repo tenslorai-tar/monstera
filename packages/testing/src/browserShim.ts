@@ -1502,6 +1502,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
             permissions: { print: true, copy: true, edit: true, annotate: true },
             pageCount: 12,
             firstPage: { width: 595.28, height: 841.89 },
+            permanentId: null,
           },
         }),
       );

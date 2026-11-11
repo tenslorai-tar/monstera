@@ -21,6 +21,7 @@ const INFORMATION: DocumentInformation = {
   permissions: { print: true, copy: false, edit: true, annotate: true },
   pageCount: 2,
   firstPage: { width: 595.28, height: 841.89 },
+  permanentId: null,
 };
 
 function shown(answered: unknown[] = []): void {

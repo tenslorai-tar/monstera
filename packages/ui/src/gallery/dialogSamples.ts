@@ -561,6 +561,7 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
           permissions: { print: true, copy: true, edit: true, annotate: true },
           pageCount: 12,
           firstPage: { width: 595.28, height: 841.89 },
+          permanentId: null,
         },
         fonts: [
           { name: 'Arial', partial: true },
@@ -583,6 +584,7 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
           permissions: { print: true, copy: false, edit: false, annotate: true },
           pageCount: 1,
           firstPage: { width: 612, height: 792 },
+          permanentId: null,
         },
         fonts: [],
         fontsTruncated: false,
@@ -602,6 +604,7 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
           permissions: { print: true, copy: true, edit: true, annotate: true },
           pageCount: 3,
           firstPage: { width: 595.28, height: 841.89 },
+          permanentId: null,
         },
         fonts: [],
         fontsTruncated: false,
