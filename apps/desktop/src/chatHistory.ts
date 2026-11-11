@@ -1,4 +1,6 @@
 import { randomBytes } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 
 import {
   MAX_DOCUMENT_NAME_LENGTH,
@@ -179,6 +181,48 @@ function parse(raw: Readonly<Record<string, unknown>>): Stored {
  * @param mint a new conversation's key: sixty-four hex characters from the system's random source, like a file's digest
  *   in length so one schema bounds both. A case passes its own, to name what it saved.
  */
+/** One entry's blob, decrypted and read in either shape, or `null` where it no longer reads (`secretStore`'s rule). */
+function openEntry(cipher: SecretCipher, blob: string): SavedConversationRead | null {
+  try {
+    const decoded: unknown = JSON.parse(cipher.decrypt(Buffer.from(blob, 'base64')));
+    const entry = entrySchema.safeParse(decoded);
+    if (entry.success) return { name: entry.data.name, savedAt: entry.data.savedAt, turns: entry.data.turns };
+    // THE SHAPE BEFORE ADR-0192: the turns alone, with no name and no date to say.
+    const legacy = savedTurnsSchema.safeParse(decoded);
+    return legacy.success ? { name: null, savedAt: null, turns: legacy.data } : null;
+  } catch {
+    return null;
+  }
+}
+
+/** One conversation `chat-history.json` holds, as the move to ADR-0279's store reads it. */
+export interface StoredConversation extends SavedConversationRead {
+  /** The file's key, the SHA-256 of its place: the new store's file name. */
+  readonly file: string;
+  /** The conversation's key in this store. */
+  readonly key: string;
+}
+
+/**
+ * Every conversation `chat-history.json` holds that reads, in BOTH shapes this store reads (ADR-0277 Decision 7), each
+ * file's newest first: the one reader of this format, which the move to ADR-0279's store takes (`historyMove.ts`) rather
+ * than parsing the file a second way. A blob that does not decrypt is left out, never counted. `null` where there is no
+ * file.
+ */
+export function readEveryConversation(directory: string, cipher: SecretCipher): readonly StoredConversation[] | null {
+  if (!existsSync(join(directory, CHAT_HISTORY_FILE))) return null;
+  const stored = parse(createJsonFile(directory, CHAT_HISTORY_FILE).read());
+  const found: StoredConversation[] = [];
+  for (const [file, keys] of Object.entries(stored.files)) {
+    for (const key of keys) {
+      const blob = stored.entries[key];
+      const conversation = blob === undefined ? null : openEntry(cipher, blob);
+      if (conversation !== null) found.push({ file, key, ...conversation });
+    }
+  }
+  return found;
+}
+
 export function createChatHistory(
   directory: string,
   cipher: SecretCipher,
@@ -191,19 +235,7 @@ export function createChatHistory(
     file.write({ order: stored.order, files: stored.files, entries: stored.entries });
   };
 
-  /** One entry's blob, decrypted and read in either shape, or `null` where it no longer reads (`secretStore`'s rule). */
-  const open = (blob: string): SavedConversationRead | null => {
-    try {
-      const decoded: unknown = JSON.parse(cipher.decrypt(Buffer.from(blob, 'base64')));
-      const entry = entrySchema.safeParse(decoded);
-      if (entry.success) return { name: entry.data.name, savedAt: entry.data.savedAt, turns: entry.data.turns };
-      // THE SHAPE BEFORE ADR-0192: the turns alone, with no name and no date to say.
-      const legacy = savedTurnsSchema.safeParse(decoded);
-      return legacy.success ? { name: null, savedAt: null, turns: legacy.data } : null;
-    } catch {
-      return null;
-    }
-  };
+  const open = (blob: string): SavedConversationRead | null => openEntry(cipher, blob);
 
   /** `stored` without one conversation, and without its file where that was the file's last. */
   const without = (stored: Stored, conversation: string): Stored => {

@@ -325,7 +325,7 @@ export interface HistoryStore {
   ): void;
   /** The file a place's history is in. */
   pathOf(placeKey: string): string;
-  /** The conversation keys a file at `path` holds cards for that open, in file order of their first card. */
+  /** The key of every card that opens in the file at `path`, in file order: a key twice is a conversation written twice. */
   conversationsIn(path: string): readonly string[];
   /** One conversation's turns from the file at `path`, or `null`: the move's read-back. */
   readFile(path: string, conversation: string): readonly SavedTurn[] | null;
@@ -530,7 +530,7 @@ export function createHistoryStore(
         readPath(path, (heads, open) => {
           const keys: string[] = [];
           for (const head of heads) {
-            if (head.type === CARD && !keys.includes(head.id) && cardRecordSchema.safeParse(open(head)).success) keys.push(head.id);
+            if (head.type === CARD && cardRecordSchema.safeParse(open(head)).success) keys.push(head.id);
           }
           return keys;
         }) ?? []
