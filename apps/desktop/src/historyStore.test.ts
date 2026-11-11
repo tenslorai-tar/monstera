@@ -8,6 +8,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 /** Every path the store opened for reading or read whole, recorded by the spy below. */
 const reads: string[] = vi.hoisted(() => []);
+/** Every path read WHOLE on this thread: what Delete's rewrite must leave to its worker (ADR-0279 Decision 7). */
+const wholeReads: string[] = vi.hoisted(() => []);
 
 vi.mock('node:fs', async (importOriginal) => {
   const real = await importOriginal<typeof import('node:fs')>();
@@ -19,6 +21,7 @@ vi.mock('node:fs', async (importOriginal) => {
     },
     readFileSync: (path: string, ...rest: unknown[]) => {
       reads.push(path);
+      wholeReads.push(path);
       return (real.readFileSync as (...args: unknown[]) => unknown)(path, ...rest);
     },
   };
@@ -233,6 +236,22 @@ describe('Delete really deletes (ADR-0279, the owner’s answers, Decision 7)', 
     // THE LAST ONE GOING takes the file.
     await store.remove(PLACE_KEY, kept);
     expect(existsSync(store.pathOf(PLACE_KEY))).toBe(false);
+  });
+
+  it('the rewrite runs OFF THIS THREAD: this thread reads no history file whole, and a save made meanwhile is kept', async () => {
+    const directory = folder();
+    const store = createHistoryStore(directory, fakeCipher());
+    const gone = store.save(PLACE_KEY, PLACE, ID, null, [{ role: 'user', text: 'Remove me' }], null, AT).conversation ?? '';
+    store.save(PLACE_KEY, PLACE, ID, null, TURNS, null, AT);
+    wholeReads.length = 0;
+    const removing = store.remove(PLACE_KEY, gone);
+    // A SAVE WHILE THE WORKER READS: appended after its read, so it is the tail this thread adds before the rename.
+    const during = store.save(PLACE_KEY, PLACE, ID, null, [{ role: 'user', text: 'Asked meanwhile' }], null, AT).conversation ?? '';
+    expect(await removing).toBe(true);
+    expect(wholeReads.filter((path) => path.startsWith(join(directory, 'history')) && !path.endsWith('key'))).toStrictEqual([]);
+    // CONTROL: the removal happened, and the save made during it is still there.
+    expect(store.list(PLACE_KEY, ID).map((card) => card.key)).not.toContain(gone);
+    expect(store.read(PLACE_KEY, during)?.turns).toStrictEqual([{ role: 'user', text: 'Asked meanwhile' }]);
   });
 
   it('removing a section keeps the other document’s, and the file goes with the last', async () => {

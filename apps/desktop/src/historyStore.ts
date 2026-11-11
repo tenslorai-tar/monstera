@@ -1,11 +1,34 @@
-import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { MAX_DOCUMENT_NAME_LENGTH, MAX_HISTORY_PREVIEW, type SavedTurn, savedTurnsSchema } from '@monstera/contract';
-import { z } from 'zod';
+import type { SavedTurn } from '@monstera/contract';
+import {
+  CARD,
+  GUARD,
+  HEAD,
+  type Head,
+  type HistoryCard,
+  type HistoryDrop,
+  type HistoryGuard,
+  type HistorySection,
+  ID_BYTES,
+  TURNS,
+  cardRecordSchema,
+  frame,
+  guardKey,
+  headsOf,
+  keptUnder,
+  previewOf,
+  seal,
+  sectionsOf,
+  turnsRecordSchema,
+  unseal,
+} from '@monstera/nodemode';
 
+export { frame, sameGuard, type HistoryCard, type HistoryGuard, type HistorySection } from '@monstera/nodemode';
+
+import { type HistoryRewriter, workerRewriter } from './historyRewriter.js';
 import type { SecretCipher } from './secretStore.js';
 import { replaceWithRetry } from './settingsFile.js';
 
@@ -52,123 +75,6 @@ const KEY_FILE = 'key';
 const LEDGER_FILE = 'ledger';
 const EXTENSION = '.mhist';
 
-const GUARD = 1;
-const CARD = 2;
-const TURNS = 3;
-const ID_BYTES = 32;
-const HEAD = 1 + ID_BYTES + 4;
-const NONCE = 12;
-const TAG = 16;
-
-/** How a PDF is recognised at its place (ADR-0279, the owner's answers, Decision 5). */
-export type HistoryGuard =
-  | { readonly kind: 'id'; readonly id: string }
-  | { readonly kind: 'stamp'; readonly size: number; readonly mtimeMs: number };
-
-/** One conversation as History lists it. */
-export interface HistoryCard {
-  readonly key: string;
-  readonly name: string | null;
-  /** An ISO 8601 instant, or `null` for a conversation 1.1.2610.0 saved without one. */
-  readonly savedAt: string | null;
-  readonly messages: number;
-  readonly preview: string;
-}
-
-/** A section of a file as the 24-hour check reads it: the guard in force and the place it was recorded at. */
-export interface HistorySection {
-  readonly section: string;
-  readonly place: string;
-  readonly guard: HistoryGuard;
-}
-
-const guardSchema = z.union([
-  z.object({ kind: z.literal('id'), id: z.string().min(1).max(256) }).strict(),
-  z.object({ kind: z.literal('stamp'), size: z.number().nonnegative(), mtimeMs: z.number() }).strict(),
-]);
-const guardRecordSchema = z.object({ place: z.string().max(32_768), guard: guardSchema, previous: guardSchema.nullable() }).strict();
-const cardRecordSchema = z
-  .object({
-    guard: guardSchema.nullable(),
-    name: z.string().max(MAX_DOCUMENT_NAME_LENGTH).nullable(),
-    savedAt: z.string().max(40).nullable(),
-    messages: z.number().int().nonnegative(),
-    preview: z.string().max(MAX_HISTORY_PREVIEW),
-  })
-  .strict();
-const turnsRecordSchema = z.object({ from: z.number().int().nonnegative(), turns: savedTurnsSchema }).strict();
-
-/** The one rule for *these two guards are the same document*, before re-links. */
-export function sameGuard(a: HistoryGuard, b: HistoryGuard): boolean {
-  if (a.kind === 'id' && b.kind === 'id') return a.id === b.id;
-  if (a.kind === 'stamp' && b.kind === 'stamp') return a.size === b.size && a.mtimeMs === b.mtimeMs;
-  return false;
-}
-
-const guardKey = (guard: HistoryGuard): string =>
-  guard.kind === 'id' ? `id:${guard.id}` : `stamp:${String(guard.size)}:${String(guard.mtimeMs)}`;
-
-/** The first question a conversation holds, collapsed to one line and bounded: what History quotes beside it. */
-function previewOf(turns: readonly SavedTurn[]): string {
-  const first = turns.find((turn) => turn.role === 'user') ?? turns[0];
-  const line = (first?.text ?? '').replace(/\s+/gu, ' ').trim();
-  return line.length <= MAX_HISTORY_PREVIEW ? line : `${line.slice(0, MAX_HISTORY_PREVIEW - 1)}…`;
-}
-
-function seal(key: Buffer, value: unknown): Buffer {
-  const nonce = randomBytes(NONCE);
-  const cipher = createCipheriv('aes-256-gcm', key, nonce);
-  const body = Buffer.concat([cipher.update(JSON.stringify(value), 'utf8'), cipher.final()]);
-  return Buffer.concat([nonce, cipher.getAuthTag(), body]);
-}
-
-/** The payload's value, or `undefined` where it does not open under `key` or is not JSON. */
-function unseal(key: Buffer, sealed: Buffer): unknown {
-  try {
-    const decipher = createDecipheriv('aes-256-gcm', key, sealed.subarray(0, NONCE));
-    decipher.setAuthTag(sealed.subarray(NONCE, NONCE + TAG));
-    return JSON.parse(Buffer.concat([decipher.update(sealed.subarray(NONCE + TAG)), decipher.final()]).toString('utf8'));
-  } catch {
-    return undefined;
-  }
-}
-
-export function frame(type: number, id: Buffer, sealed: Buffer): Buffer {
-  const head = Buffer.alloc(HEAD);
-  head.writeUInt8(type, 0);
-  id.copy(head, 1);
-  head.writeUInt32LE(sealed.length, 1 + ID_BYTES);
-  return Buffer.concat([head, sealed]);
-}
-
-interface Head {
-  readonly type: number;
-  readonly id: string;
-  /** Where the record starts, its head included. */
-  readonly start: number;
-  /** Where its payload starts, and how long it is. */
-  readonly at: number;
-  readonly length: number;
-}
-
-/** Every whole record's head in `bytes`, in order; a torn tail ends the list. */
-function headsOf(bytes: Buffer): Head[] {
-  const heads: Head[] = [];
-  for (let start = 0; start + HEAD <= bytes.length; ) {
-    const recordLength = bytes.readUInt32LE(start + 1 + ID_BYTES);
-    if (start + HEAD + recordLength > bytes.length) break;
-    heads.push({
-      type: bytes.readUInt8(start),
-      id: bytes.subarray(start + 1, start + 1 + ID_BYTES).toString('hex'),
-      start,
-      at: start + HEAD,
-      length: recordLength,
-    });
-    start += HEAD + recordLength;
-  }
-  return heads;
-}
-
 /**
  * Every whole record's head in the file at `path`, read by seeking, with a reader for a payload: History's list reads its
  * cards and steps over the turns without reading them. `null` where there is no file.
@@ -196,83 +102,6 @@ function withHeads<T>(path: string, use: (heads: readonly Head[], payload: (head
   } finally {
     closeSync(fd);
   }
-}
-
-/** The sections of one file, worked out from its guards and cards (see the module's comment). */
-interface Sections {
-  /** Each conversation's section root, and its newest card. */
-  readonly conversations: ReadonlyMap<string, { readonly root: string; readonly card: z.infer<typeof cardRecordSchema> }>;
-  /** Each section's id (its first GUARD record's id), latest guard and place, by root. */
-  readonly sections: ReadonlyMap<string, HistorySection>;
-  /** The section root a guard is in, or `undefined` where no record names it. */
-  readonly rootOf: (guard: HistoryGuard) => string | undefined;
-}
-
-/** The root a conversation with no guard is in until a GUARD adopts it. */
-const UNGUARDED = 'unguarded';
-
-function sectionsOf(heads: readonly Head[], open: (head: Head) => unknown): Sections {
-  const parent = new Map<string, string>();
-  const find = (key: string): string => {
-    let at = key;
-    for (let next = parent.get(at); next !== undefined && next !== at; next = parent.get(at)) at = next;
-    return at;
-  };
-  const add = (key: string): void => {
-    if (!parent.has(key)) parent.set(key, key);
-  };
-  const union = (a: string, b: string): void => {
-    add(a);
-    add(b);
-    const ra = find(a);
-    const rb = find(b);
-    if (ra !== rb) parent.set(rb, ra);
-  };
-  const newestCard = new Map<string, { guardKey: string | null; card: z.infer<typeof cardRecordSchema> }>();
-  const adoptedBy = new Map<string, string>();
-  const waiting: string[] = [];
-  const firstRecordOf = new Map<string, string>();
-  const latest = new Map<string, { place: string; guard: HistoryGuard }>();
-  for (const head of heads) {
-    if (head.type === GUARD) {
-      const value = guardRecordSchema.safeParse(open(head));
-      if (!value.success) continue;
-      const key = guardKey(value.data.guard);
-      add(key);
-      if (value.data.previous !== null) union(guardKey(value.data.previous), key);
-      if (!firstRecordOf.has(key)) firstRecordOf.set(key, head.id);
-      latest.set(key, { place: value.data.place, guard: value.data.guard });
-      // THE FIRST GUARD AFTER A CONVERSATION WITH NONE ADOPTS IT: the guard its PDF's next open wrote.
-      for (const conversation of waiting.splice(0)) adoptedBy.set(conversation, key);
-    } else if (head.type === CARD) {
-      const value = cardRecordSchema.safeParse(open(head));
-      if (!value.success) continue;
-      const key = value.data.guard === null ? null : guardKey(value.data.guard);
-      if (key !== null) add(key);
-      else if (!adoptedBy.has(head.id) && !waiting.includes(head.id)) waiting.push(head.id);
-      newestCard.set(head.id, { guardKey: key, card: value.data });
-    }
-  }
-  const conversations = new Map<string, { root: string; card: z.infer<typeof cardRecordSchema> }>();
-  for (const [conversation, { guardKey: key, card }] of newestCard) {
-    const own = key ?? adoptedBy.get(conversation);
-    conversations.set(conversation, { root: own === undefined ? UNGUARDED : find(own), card });
-  }
-  // EACH SECTION'S ID IS ITS FIRST GUARD RECORD'S, and its guard in force the LATEST record in it.
-  const sections = new Map<string, HistorySection>();
-  for (const head of heads) {
-    if (head.type !== GUARD) continue;
-    const value = guardRecordSchema.safeParse(open(head));
-    if (!value.success) continue;
-    const root = find(guardKey(value.data.guard));
-    const was = sections.get(root);
-    sections.set(root, { section: was?.section ?? head.id, place: value.data.place, guard: value.data.guard });
-  }
-  return {
-    conversations,
-    sections,
-    rootOf: (guard) => (parent.has(guardKey(guard)) ? find(guardKey(guard)) : undefined),
-  };
 }
 
 export interface HistoryStore {
@@ -352,6 +181,7 @@ export function createHistoryStore(
   directory: string,
   cipher: SecretCipher,
   mint: () => string = () => randomBytes(ID_BYTES).toString('hex'),
+  rewriter: HistoryRewriter = workerRewriter(),
 ): HistoryStore {
   const folder = join(directory, HISTORY_DIRECTORY);
   const keyPath = join(folder, KEY_FILE);
@@ -432,28 +262,44 @@ export function createHistoryStore(
    * rewrite ran are carried over too (a save is synchronous, so none lands between the last read and the rename), except
    * any `keep` refuses. The file goes when no card is left. Answers whether anything was dropped.
    */
-  const rewrite = async (placeKey: string, keep: (head: Head) => boolean): Promise<boolean> => {
+  /**
+   * Delete's rewrite: the WORKER reads the file, works out what to drop and writes what stays beside it (`rewriter`,
+   * Decision 7, off the main thread); here only what a save appended since the worker's read is added, filtered by the
+   * same plan, and the file renamed over, with no await between, so nothing a save writes in the meantime is lost. The
+   * tail is read by seeking, never the whole file. Answers the dropped conversations, `null` where nothing was dropped.
+   */
+  const rewrite = async (placeKey: string, drop: HistoryDrop): Promise<readonly string[] | null> => {
     const path = fileOf(placeKey);
-    if (!existsSync(path)) return false;
-    const bytes = await readFile(path);
-    const heads = headsOf(bytes);
-    const kept = heads.filter(keep);
-    if (kept.length === heads.length) return false;
-    const body = Buffer.concat(kept.map((head) => bytes.subarray(head.start, head.at + head.length)));
-    await writeFile(`${path}.writing`, body);
-    // WHAT A SAVE APPENDED SINCE THE READ, filtered the same way, then the rename: no await between, so nothing lands.
-    const now = readFileSync(path);
-    const later = headsOf(now.subarray(bytes.length)).filter(keep);
-    const tail = Buffer.concat(later.map((head) => now.subarray(bytes.length + head.start, bytes.length + head.at + head.length)));
-    const whole = Buffer.concat([body, tail]);
-    if (!headsOf(whole).some((head) => head.type === CARD)) {
-      rmSync(`${path}.writing`, { force: true });
-      rmSync(path, { force: true });
-      return true;
+    const key = keyFor(false);
+    if (key === null || !existsSync(path)) return null;
+    const writing = `${path}.writing`;
+    const result = await rewriter({ path, writing, key: new Uint8Array(key), drop });
+    if (result.kind === 'nothing') return null;
+    if (result.kind === 'failed') {
+      rmSync(writing, { force: true });
+      throw new Error(`the conversation could not be removed: ${result.message}`);
     }
-    if (tail.length > 0) appendFileSync(`${path}.writing`, tail);
-    replaceWithRetry(`${path}.writing`, path);
-    return true;
+    const keep = keptUnder(result.plan);
+    const fd = openSync(path, 'r');
+    let tail: Buffer;
+    try {
+      const size = statSync(path).size;
+      tail = Buffer.alloc(Math.max(0, size - result.read));
+      readSync(fd, tail, 0, tail.length, result.read);
+    } finally {
+      closeSync(fd);
+    }
+    const later = headsOf(tail).filter(keep);
+    const kept = Buffer.concat(later.map((head) => tail.subarray(head.start, head.at + head.length)));
+    // NO CONVERSATION LEFT, in the rewrite or the tail: the file goes, its guards with it.
+    if (result.cardsKept === 0 && !later.some((head) => head.type === CARD)) {
+      rmSync(writing, { force: true });
+      rmSync(path, { force: true });
+      return result.plan.conversations;
+    }
+    if (kept.length > 0) appendFileSync(writing, kept);
+    replaceWithRetry(writing, path);
+    return result.plan.conversations;
   };
 
   return {
@@ -552,29 +398,13 @@ export function createHistoryStore(
 
     async remove(placeKey, conversation) {
       savedTurns.delete(conversation);
-      return rewrite(placeKey, (head) => head.type === GUARD || head.id !== conversation);
+      return (await rewrite(placeKey, { kind: 'conversation', key: conversation })) !== null;
     },
 
     async removeSection(placeKey, section) {
-      const plan = read(placeKey, (heads, open) => {
-        const found = sectionsOf(heads, open);
-        const root = [...found.sections].find(([, each]) => each.section === section)?.[0];
-        if (root === undefined) return null;
-        const conversations = new Set([...found.conversations].filter(([, each]) => each.root === root).map(([key]) => key));
-        const guards = new Set(
-          heads
-            .filter((head) => head.type === GUARD)
-            .filter((head) => {
-              const value = guardRecordSchema.safeParse(open(head));
-              return value.success && found.rootOf(value.data.guard) === root;
-            })
-            .map((head) => head.id),
-        );
-        return { conversations, guards };
-      });
-      if (plan === null) return false;
-      for (const conversation of plan.conversations) savedTurns.delete(conversation);
-      return rewrite(placeKey, (head) => !(head.type === GUARD ? plan.guards.has(head.id) : plan.conversations.has(head.id)));
+      const dropped = await rewrite(placeKey, { kind: 'section', section });
+      for (const conversation of dropped ?? []) savedTurns.delete(conversation);
+      return dropped !== null;
     },
 
     guards(placeKey) {
