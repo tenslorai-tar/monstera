@@ -35,7 +35,13 @@ import type { ConversationTurn, DocumentStore } from './documentStores.js';
 
 export const SETTLE_MS = 800;
 
-/** The saved form of a conversation: newest turns, bounded, session-only fields dropped. */
+/**
+ * The saved form of a conversation: newest turns, bounded, session-only fields dropped.
+ *
+ * THE TURN'S MARKS ARE THE CONVERSATION'S STATE and are kept: a question the provider refused as too long, and an
+ * answer cut at its bound. Dropped, a reopened conversation read as one with room, and the refused question was sent
+ * again (the owner's list, 2026-11-10). {@link restoredTurns} is the other half, so the two cannot disagree on a field.
+ */
 export function savedTurns(turns: readonly ConversationTurn[]): SavedTurn[] {
   return turns.slice(-MAX_CHAT_TURNS).map((turn) => ({
     role: turn.role,
@@ -43,6 +49,21 @@ export function savedTurns(turns: readonly ConversationTurn[]): SavedTurn[] {
     ...(turn.sent === undefined || turn.sent === null ? {} : { sent: turn.sent }),
     ...(turn.model === undefined ? {} : { model: turn.model.slice(0, MAX_MODEL_ID) }),
     ...(turn.attached === undefined ? {} : { attached: [...turn.attached] }),
+    ...(turn.refused === undefined ? {} : { refused: turn.refused }),
+    ...(turn.cut === undefined ? {} : { cut: turn.cut }),
+  }));
+}
+
+/** A saved conversation as the panel holds it again: {@link savedTurns}' fields, each read back. */
+export function restoredTurns(turns: readonly SavedTurn[]): ConversationTurn[] {
+  return turns.map((turn) => ({
+    role: turn.role,
+    text: turn.text,
+    ...(turn.sent === undefined ? {} : { sent: turn.sent }),
+    ...(turn.model === undefined ? {} : { model: turn.model }),
+    ...(turn.attached === undefined ? {} : { attached: turn.attached }),
+    ...(turn.refused === undefined ? {} : { refused: turn.refused }),
+    ...(turn.cut === undefined ? {} : { cut: turn.cut }),
   }));
 }
 
@@ -85,13 +106,7 @@ export function syncConversation(
     void client['ai.history.load']({ docId }).then((answer) => {
       if (stopped || !answer.ok || answer.value.turns.length === 0) return;
       if (store.getState().conversation.length > 0 || store.getState().conversationSerial !== serial) return;
-      const turns: ConversationTurn[] = answer.value.turns.map((turn) => ({
-        role: turn.role,
-        text: turn.text,
-        ...(turn.sent === undefined ? {} : { sent: turn.sent }),
-        ...(turn.model === undefined ? {} : { model: turn.model }),
-        ...(turn.attached === undefined ? {} : { attached: turn.attached }),
-      }));
+      const turns = restoredTurns(answer.value.turns);
       loaded = turns;
       if (answer.value.conversation !== null) keys.set(serial, answer.value.conversation);
       store.getState().converse(turns);

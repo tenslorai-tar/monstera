@@ -644,6 +644,13 @@ export const savedTurnSchema = z
     model: z.string().max(MAX_MODEL_ID).optional(),
     /** The names of the files an asked turn carried (ADR-0135) — never a handle, which means nothing after a restart. */
     attached: z.array(z.string().max(MAX_DOCUMENT_NAME_LENGTH)).max(MAX_ASK_ATTACHMENTS).optional(),
+    /**
+     * An asked turn the provider refused as too long for its model (ADR-0277 Decision 5). SAVED, so a reopened
+     * conversation is still full by `conversationRoom` and the refused question is not sent again.
+     */
+    refused: z.literal('too-long').optional(),
+    /** An answer `main` stopped at its bound (ADR-0277 Decision 3), saved so its note stays under it after a reopen. */
+    cut: z.literal(true).optional(),
   })
   .strict();
 

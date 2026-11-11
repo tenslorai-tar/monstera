@@ -1,4 +1,12 @@
-import { type ContractClient, MAX_CHAT_TURNS, channels, createClient, savedTurnsSchema } from '@monstera/contract';
+import {
+  type ContractClient,
+  MAX_CHAT_TURNS,
+  type SavedTurn,
+  channels,
+  conversationRoom,
+  createClient,
+  savedTurnsSchema,
+} from '@monstera/contract';
 import { asDocId, asDocVersion, asFileHandle, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -16,7 +24,7 @@ const LOADED_KEY = 'c'.repeat(64);
 const newKey = (count: number): string => String(count % 10).repeat(64);
 
 function recording(
-  saved: readonly { role: 'user' | 'assistant'; text: string }[],
+  saved: readonly SavedTurn[],
   /** `main`'s answer to a NEW conversation's save: a key, or `file-full` once the file keeps its twenty. */
   fresh: 'key' | 'file-full' = 'key',
 ): {
@@ -293,5 +301,40 @@ describe('keeping a conversation saved (ADR-0093)', () => {
     expect(saved).toStrictEqual([{ role: 'user', text: 'What do these say?', attached: ['notes.txt', 'photo.jpg'] }]);
     expect(JSON.stringify(saved)).not.toContain('h-notes');
     expect(savedTurnsSchema.safeParse(saved).success).toBe(true);
+  });
+
+  it('a question the provider refused as TOO LONG stays refused through the save and the reopen, so it is not sent again', async () => {
+    const refused: ConversationTurn[] = [
+      { role: 'user', text: 'Earlier question' },
+      { role: 'assistant', text: 'A long answer', cut: true },
+      { role: 'user', text: 'The question the model refused', refused: 'too-long' },
+    ];
+    const saved = savedTurns(refused);
+    expect(saved[2]).toStrictEqual({ role: 'user', text: 'The question the model refused', refused: 'too-long' });
+    expect(saved[1]).toStrictEqual({ role: 'assistant', text: 'A long answer', cut: true });
+    // THE SCHEMA MAIN SAVES WITH accepts the marks, so the save is not refused for carrying them.
+    expect(savedTurnsSchema.safeParse(saved).success).toBe(true);
+
+    // REOPENED from what was saved: the gate Send reads says the conversation is full, by the provider, so nothing is asked.
+    const store = createDocumentStore(DOC, asDocVersion(1));
+    const { client } = recording(savedTurnsSchema.parse(saved));
+    syncConversation(client, DOC, store, () => true, manual().schedule);
+    await settle();
+    const reopened = store.getState().conversation;
+    expect(reopened.map((turn) => turn.refused)).toStrictEqual([undefined, undefined, 'too-long']);
+    expect(reopened[1]?.cut).toBe(true);
+    expect(conversationRoom(reopened, 'Ask again')).toStrictEqual({ kind: 'full', by: 'provider' });
+  });
+
+  it('CONTROL: the same conversation saved without the mark reopens with room, which is what sent the question again', async () => {
+    const store = createDocumentStore(DOC, asDocVersion(1));
+    const { client } = recording([
+      { role: 'user', text: 'Earlier question' },
+      { role: 'assistant', text: 'A long answer' },
+      { role: 'user', text: 'The question the model refused' },
+    ]);
+    syncConversation(client, DOC, store, () => true, manual().schedule);
+    await settle();
+    expect(conversationRoom(store.getState().conversation, 'Ask again')).toStrictEqual({ kind: 'room' });
   });
 });
