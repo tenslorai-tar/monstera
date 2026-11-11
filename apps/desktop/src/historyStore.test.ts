@@ -1,0 +1,272 @@
+import { randomBytes } from 'node:crypto';
+import { appendFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, truncateSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import type { SavedTurn } from '@monstera/contract';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+/** Every path the store opened for reading or read whole, recorded by the spy below. */
+const reads: string[] = vi.hoisted(() => []);
+
+vi.mock('node:fs', async (importOriginal) => {
+  const real = await importOriginal<typeof import('node:fs')>();
+  return {
+    ...real,
+    openSync: (path: string, flags?: string, ...rest: unknown[]) => {
+      if (flags === undefined || flags === 'r') reads.push(path);
+      return (real.openSync as (...args: unknown[]) => number)(path, flags, ...rest);
+    },
+    readFileSync: (path: string, ...rest: unknown[]) => {
+      reads.push(path);
+      return (real.readFileSync as (...args: unknown[]) => unknown)(path, ...rest);
+    },
+  };
+});
+
+import { type HistoryGuard, createHistoryStore, frame } from './historyStore.js';
+import type { SecretCipher } from './secretStore.js';
+
+/**
+ * ADR-0279's store, one file per PDF, against a FAKE of the account's cipher: Windows' own encryption is the local
+ * agent's to measure where it ships. The fake wraps a value so that only its own `decrypt` reads it back, which is all
+ * the store asks of the real one.
+ */
+function fakeCipher(account = 'me'): SecretCipher {
+  return {
+    available: () => true,
+    encrypt: (value) => Buffer.from(`${account}|${value}`, 'utf8'),
+    decrypt: (cipher) => {
+      const text = cipher.toString('utf8');
+      if (!text.startsWith(`${account}|`)) throw new Error('not this account’s');
+      return text.slice(account.length + 1);
+    },
+  };
+}
+
+const PLACE = 'C:/Users/someone/Documents/contract.pdf';
+const PLACE_KEY = 'a'.repeat(64);
+const ID: HistoryGuard = { kind: 'id', id: 'f1e2d3c4' };
+const STAMP: HistoryGuard = { kind: 'stamp', size: 1000, mtimeMs: 1_700_000_000_000 };
+const TURNS: SavedTurn[] = [
+  { role: 'user', text: 'Who signs the contract?' },
+  { role: 'assistant', text: 'Both parties sign on page 4.' },
+];
+const AT = new Date('2026-11-12T10:00:00.000Z');
+
+const made: string[] = [];
+function folder(): string {
+  const directory = mkdtempSync(join(tmpdir(), 'monstera-history-'));
+  made.push(directory);
+  return directory;
+}
+afterEach(() => {
+  for (const directory of made.splice(0)) rmSync(directory, { recursive: true, force: true });
+});
+
+/** Every byte under the history folder, the key file aside: what a search of the disk would read. */
+function everyFileHolds(directory: string, needle: Buffer): boolean {
+  const history = join(directory, 'history');
+  return readdirSync(history)
+    .filter((name) => name !== 'key')
+    .some((name) => readFileSync(join(history, name)).includes(needle));
+}
+
+describe('one history file per PDF (ADR-0279)', () => {
+  it('a conversation saved is listed and read back whole, with no cap and nothing else read', () => {
+    const directory = folder();
+    const store = createHistoryStore(directory, fakeCipher());
+    const { conversation } = store.save(PLACE_KEY, PLACE, ID, null, TURNS, 'contract.pdf', AT);
+    expect(conversation).toMatch(/^[0-9a-f]{64}$/u);
+    expect(store.list(PLACE_KEY, ID)).toStrictEqual([
+      { key: conversation, name: 'contract.pdf', savedAt: AT.toISOString(), messages: 2, preview: 'Who signs the contract?' },
+    ]);
+    expect(store.read(PLACE_KEY, conversation ?? '')?.turns).toStrictEqual(TURNS);
+    // NO CAP: a twenty-first, and more, are saved beside the others.
+    for (let at = 0; at < 25; at += 1) store.save(PLACE_KEY, PLACE, ID, null, [{ role: 'user', text: `Question ${String(at)}` }], null, AT);
+    expect(store.list(PLACE_KEY, ID)).toHaveLength(26);
+    // EVERYTHING A PERSON WROTE IS SEALED: the question is in no file in the clear.
+    expect(everyFileHolds(directory, Buffer.from('Who signs the contract?'))).toBe(false);
+  });
+
+  it('a SAVE READS NOTHING: no history file is opened for reading while it saves', () => {
+    const directory = folder();
+    const store = createHistoryStore(directory, fakeCipher());
+    const first = store.save(PLACE_KEY, PLACE, ID, null, TURNS, null, AT).conversation ?? '';
+    const path = store.pathOf(PLACE_KEY);
+    const before = statSync(path).size;
+    // RECORDED BY THE SPY ON node:fs (not by a file's mode, which root, who runs these, reads past): every path opened or
+    // read from here on. The key was unwrapped at the first save and is held, so a second save needs nothing from disk.
+    reads.length = 0;
+    store.save(PLACE_KEY, PLACE, ID, first, [...TURNS, { role: 'user', text: 'And the date?' }], null, AT);
+    expect(reads.filter((each) => each.startsWith(join(directory, 'history')))).toStrictEqual([]);
+    expect(statSync(path).size).toBeGreaterThan(before);
+    // CONTROL: the spy sees a read, so its silence above means something.
+    reads.length = 0;
+    store.list(PLACE_KEY, ID);
+    expect(reads).toContain(path);
+    expect(store.read(PLACE_KEY, first)?.turns).toHaveLength(3);
+  });
+
+  it('a regenerated answer replaces the tail: the save writes from where the turns changed, and reads back right', () => {
+    const store = createHistoryStore(folder(), fakeCipher());
+    const key = store.save(PLACE_KEY, PLACE, ID, null, TURNS, null, AT).conversation ?? '';
+    const regenerated: SavedTurn[] = [{ role: 'user', text: 'Who signs the contract?' }, { role: 'assistant', text: 'Only the buyer signs.' }];
+    store.save(PLACE_KEY, PLACE, ID, key, regenerated, null, AT);
+    expect(store.read(PLACE_KEY, key)?.turns).toStrictEqual(regenerated);
+    // CONTROL: an unchanged save writes nothing more.
+    const size = statSync(store.pathOf(PLACE_KEY)).size;
+    store.save(PLACE_KEY, PLACE, ID, key, regenerated, null, AT);
+    expect(statSync(store.pathOf(PLACE_KEY)).size).toBe(size);
+  });
+
+  it('an empty new conversation stores nothing', () => {
+    const store = createHistoryStore(folder(), fakeCipher());
+    expect(store.save(PLACE_KEY, PLACE, ID, null, [], null, AT)).toStrictEqual({ conversation: null });
+    expect(existsSync(store.pathOf(PLACE_KEY))).toBe(false);
+  });
+
+  it('a TORN last record ends the read and loses nothing before it', () => {
+    const directory = folder();
+    const store = createHistoryStore(directory, fakeCipher());
+    const kept = store.save(PLACE_KEY, PLACE, ID, null, TURNS, null, AT).conversation ?? '';
+    const path = store.pathOf(PLACE_KEY);
+    const whole = statSync(path).size;
+    store.save(PLACE_KEY, PLACE, ID, null, [{ role: 'user', text: 'Torn' }], null, AT);
+    // CONTROL: whole, both are listed.
+    expect(createHistoryStore(directory, fakeCipher()).list(PLACE_KEY, ID)).toHaveLength(2);
+    truncateSync(path, statSync(path).size - 5);
+    const after = createHistoryStore(directory, fakeCipher()).list(PLACE_KEY, ID);
+    expect(after.map((card) => card.key)).toStrictEqual([kept]);
+    expect(statSync(path).size).toBeGreaterThan(whole);
+  });
+
+  it('a record sealed under ANOTHER key is never shown or counted', () => {
+    const directory = folder();
+    const store = createHistoryStore(directory, fakeCipher());
+    store.save(PLACE_KEY, PLACE, ID, null, TURNS, null, AT);
+    // A CARD SEALED UNDER A KEY THIS STORE DOES NOT HOLD, with a well-formed head.
+    const stranger = randomBytes(32);
+    appendFileSync(store.pathOf(PLACE_KEY), frame(2, stranger, randomBytes(80)));
+    const reader = createHistoryStore(directory, fakeCipher());
+    expect(reader.list(PLACE_KEY, ID)).toHaveLength(1);
+    expect(reader.read(PLACE_KEY, stranger.toString('hex'))).toBeNull();
+    expect(reader.clearAll()).toBe(1);
+  });
+
+  it('another account cannot read a thing, and nothing is saved over its key', () => {
+    const directory = folder();
+    createHistoryStore(directory, fakeCipher('me')).save(PLACE_KEY, PLACE, ID, null, TURNS, null, AT);
+    const other = createHistoryStore(directory, fakeCipher('someone-else'));
+    expect(other.list(PLACE_KEY, ID)).toStrictEqual([]);
+    expect(() => other.save(PLACE_KEY, PLACE, ID, null, TURNS, null, AT)).toThrow(/not saved/u);
+    // CONTROL: the first account still reads it.
+    expect(createHistoryStore(directory, fakeCipher('me')).list(PLACE_KEY, ID)).toHaveLength(1);
+  });
+});
+
+describe('a section per document at one place (the owner’s correction of 2026-11-12)', () => {
+  it('a DIFFERENT PDF at the place sees nothing of the old one, and the old one coming back sees its own again', () => {
+    const directory = folder();
+    const store = createHistoryStore(directory, fakeCipher());
+    const mine = store.save(PLACE_KEY, PLACE, ID, null, TURNS, null, AT).conversation;
+    const other: HistoryGuard = { kind: 'id', id: '99887766' };
+    store.recordGuard(PLACE_KEY, PLACE, other);
+    expect(store.list(PLACE_KEY, other)).toStrictEqual([]);
+    const theirs = store.save(PLACE_KEY, PLACE, other, null, [{ role: 'user', text: 'A different document' }], null, AT).conversation;
+    expect(store.list(PLACE_KEY, other).map((card) => card.key)).toStrictEqual([theirs]);
+    // BACK WITHIN THE 24 HOURS: the first PDF's section is shown again, and only it.
+    store.recordGuard(PLACE_KEY, PLACE, ID);
+    expect(store.list(PLACE_KEY, ID).map((card) => card.key)).toStrictEqual([mine]);
+    expect(store.guards(PLACE_KEY)).toHaveLength(2);
+  });
+
+  it('Monstera’s own save RE-LINKS a PDF with no /ID, so its section continues; a stranger’s stamp does not match', () => {
+    const store = createHistoryStore(folder(), fakeCipher());
+    const key = store.save(PLACE_KEY, PLACE, STAMP, null, TURNS, null, AT).conversation;
+    const afterSave: HistoryGuard = { kind: 'stamp', size: 1200, mtimeMs: 1_700_000_100_000 };
+    // CONTROL: before the re-link, the new stamp is a stranger.
+    expect(store.list(PLACE_KEY, afterSave)).toStrictEqual([]);
+    store.relink(PLACE_KEY, PLACE, STAMP, afterSave);
+    expect(store.list(PLACE_KEY, afterSave).map((card) => card.key)).toStrictEqual([key]);
+    const stranger: HistoryGuard = { kind: 'stamp', size: 1200, mtimeMs: 1_700_000_200_000 };
+    expect(store.list(PLACE_KEY, stranger)).toStrictEqual([]);
+  });
+
+  it('a conversation MOVED from 1.1.2610.0, with no guard, is adopted by its PDF’s next open', () => {
+    const directory = folder();
+    const store = createHistoryStore(directory, fakeCipher());
+    const moved = 'b'.repeat(64);
+    store.writeUnguarded(PLACE_KEY, moved, TURNS, 'contract.pdf', '2026-10-01T09:00:00.000Z');
+    // UNTIL THE OPEN, it is in no section the 24-hour check looks at.
+    expect(store.guards(PLACE_KEY)).toStrictEqual([]);
+    const next = createHistoryStore(directory, fakeCipher());
+    next.recordGuard(PLACE_KEY, PLACE, ID);
+    expect(next.list(PLACE_KEY, ID).map((card) => card.key)).toStrictEqual([moved]);
+    expect(next.guards(PLACE_KEY)).toStrictEqual([{ section: expect.any(String) as string, place: PLACE, guard: ID }]);
+    // CONTROL: a PDF opened at the place AFTER the adopting guard does not take it.
+    const later: HistoryGuard = { kind: 'id', id: '00112233' };
+    next.recordGuard(PLACE_KEY, PLACE, later);
+    expect(next.list(PLACE_KEY, later)).toStrictEqual([]);
+  });
+
+  it('an open writes a guard only where the PDF has a file: a PDF with no history gets none', () => {
+    const store = createHistoryStore(folder(), fakeCipher());
+    store.recordGuard(PLACE_KEY, PLACE, ID);
+    expect(existsSync(store.pathOf(PLACE_KEY))).toBe(false);
+  });
+});
+
+describe('Delete really deletes (ADR-0279, the owner’s answers, Decision 7)', () => {
+  it('a removed conversation’s records are in no file under the history folder, and the kept one reads as before', async () => {
+    const directory = folder();
+    const store = createHistoryStore(directory, fakeCipher());
+    const gone = store.save(PLACE_KEY, PLACE, ID, null, [{ role: 'user', text: 'Remove me' }], null, AT).conversation ?? '';
+    const kept = store.save(PLACE_KEY, PLACE, ID, null, TURNS, null, AT).conversation ?? '';
+    // THE CONTROL BEFORE: both ids are in the clear heads, so the search below can see one.
+    expect(everyFileHolds(directory, Buffer.from(gone, 'hex'))).toBe(true);
+    expect(await store.remove(PLACE_KEY, gone)).toBe(true);
+    expect(everyFileHolds(directory, Buffer.from(gone, 'hex'))).toBe(false);
+    expect(everyFileHolds(directory, Buffer.from(kept, 'hex'))).toBe(true);
+    expect(store.read(PLACE_KEY, kept)?.turns).toStrictEqual(TURNS);
+    expect(store.list(PLACE_KEY, ID).map((card) => card.key)).toStrictEqual([kept]);
+    // THE LAST ONE GOING takes the file.
+    await store.remove(PLACE_KEY, kept);
+    expect(existsSync(store.pathOf(PLACE_KEY))).toBe(false);
+  });
+
+  it('removing a section keeps the other document’s, and the file goes with the last', async () => {
+    const store = createHistoryStore(folder(), fakeCipher());
+    store.save(PLACE_KEY, PLACE, ID, null, TURNS, null, AT);
+    const other: HistoryGuard = { kind: 'id', id: '99887766' };
+    const theirs = store.save(PLACE_KEY, PLACE, other, null, [{ role: 'user', text: 'Kept' }], null, AT).conversation;
+    const section = store.guards(PLACE_KEY).find((each) => each.guard.kind === 'id' && each.guard.id === 'f1e2d3c4')?.section ?? '';
+    expect(await store.removeSection(PLACE_KEY, section)).toBe(true);
+    expect(store.list(PLACE_KEY, ID)).toStrictEqual([]);
+    expect(store.list(PLACE_KEY, other).map((card) => card.key)).toStrictEqual([theirs]);
+    expect(store.guards(PLACE_KEY)).toHaveLength(1);
+  });
+
+  it('Clear all for one file removes that file; Clear chat history removes every file and counts what it held', () => {
+    const directory = folder();
+    const store = createHistoryStore(directory, fakeCipher());
+    const otherPlace = 'c'.repeat(64);
+    store.save(PLACE_KEY, PLACE, ID, null, TURNS, null, AT);
+    store.save(otherPlace, 'D:/other.pdf', STAMP, null, TURNS, null, AT);
+    store.save(otherPlace, 'D:/other.pdf', STAMP, null, TURNS, null, AT);
+    store.clearFile(PLACE_KEY);
+    expect(store.files()).toStrictEqual([otherPlace]);
+    expect(store.clearAll()).toBe(2);
+    expect(store.files()).toStrictEqual([]);
+  });
+});
+
+describe('a write the cipher cannot back', () => {
+  it('a save throws and nothing is listed where the account’s store is unavailable', () => {
+    const directory = folder();
+    const off: SecretCipher = { ...fakeCipher(), available: () => false };
+    const store = createHistoryStore(directory, off);
+    expect(() => store.save(PLACE_KEY, PLACE, ID, null, TURNS, null, AT)).toThrow(/not saved/u);
+    expect(store.list(PLACE_KEY, ID)).toStrictEqual([]);
+  });
+});
