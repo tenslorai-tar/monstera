@@ -237,3 +237,26 @@ Monstera is closed is not noticed until it next runs. This replaces the *propose
 `HISTORY_BOUNDS` row and the words *removes them within a day* in *Owed when it is built*: the help page,
 `packages/ui/src/help/en/ai-assistant.md`, uses the same sentence. Every other proposed string stands as the table gives
 it. Nothing is built yet.
+
+## Correction, 2026-11-12 — two gaps the build found, and the history-off line, answered by the owner
+
+Asked by the cloud agent building this ADR before any code, because each is a choice the text above does not make.
+
+1. **A different PDF at a place that already has a history file.** Decision 1 of *The owner's answers* names the file
+   by the place alone, and Decision 5 says a PDF found there with a different guard (another `/ID`, or a PDF with no
+   `/ID` that another program changed) is a different document that must not see the old conversations, the old ones
+   counting as not found. Neither said where the new PDF's own conversations go. **The owner's answer:** one file per
+   place still, holding one SECTION per guard. A new guard starts a new section; Monstera's own save of the same PDF
+   appends a guard to the section it continues (Decision 5), so it is not a new one. **History shows the section whose
+   guard matches the PDF now at that place**, not simply the newest, so a PDF that comes back within the 24 hours gets
+   its conversations back (Decision 6). Any other section is removed 24 hours after the first check that finds its PDF
+   gone, by the same rewrite Delete one uses (Decision 7), and the file is deleted when no section is left.
+2. **History moved from 1.1.2610.0 whose PDF is never opened again.** The old store kept only a digest of each place,
+   so a moved entry has no place to check until its PDF is opened. **The owner's answer:** keep it. It stays sealed, gets
+   its guard and its place the next time its PDF is opened, and the 24-hour check does not look at it until then.
+   *Clear chat history* in Settings still removes it.
+3. **The history-off line in the assistant pane** (*History is off, so New chat clears this conversation*, the owner's
+   decision of 2026-10-31, ADR-0277's correction of that day) **is removed, and nothing is shown in its place** (the
+   owner, 2026-11-12): with history on by default, anyone who has it off turned it off themselves. History's own empty
+   line for saving off, *Save chat history is off, so nothing is kept for this file. Turn it on in Settings › AI.*,
+   stays as the wording table gives it.
