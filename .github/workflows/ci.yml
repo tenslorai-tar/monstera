@@ -1026,6 +1026,14 @@ jobs:
       - name: Prove the composition root's ceiling is ADR-0007's
         run: node scripts/ci/annotate.mjs scripts/proofs/composition.proof.mjs
 
+      # A process tree is ended whole, each process by its own id. Guards runs this file on Linux, where the two live
+      # cases (a launched process's detached child survives the launched process alone; endTree ends both) cannot
+      # run, so the Windows leg runs them and refuses to pass without them.
+      - name: Prove a process tree is ended whole, with the live cases on Windows
+        run: >
+          node scripts/ci/annotate.mjs scripts/lib/childProcesses.proof.mjs
+          ${{ runner.os == 'Windows' && '--require-live' || '' }}
+
       # HERE AND NOT ON GUARDS, which is where its sibling `fetchVerified.proof`
       # sits: this one drives BOTH forms of invariant 9, and the application's
       # form is a built package. Guards runs no `npm ci`, so `@monstera/kernel`

@@ -19,9 +19,13 @@ import { repoRoot } from './gitScope.mjs';
 import { createRoster } from './passRoster.mjs';
 import { formatError } from './reportError.mjs';
 
-/** THE LIVE TREE CASES need Windows' process listing; elsewhere they are named as not run. */
+/**
+ * THE LIVE TREE CASES need Windows' process listing; elsewhere they are named as not run. `--require-live` makes not
+ * running them a failure, which CI's Windows leg passes, so a leg that should run them cannot report a pass without.
+ */
 const LIVE = process.platform === 'win32';
 const LIVE_CASES = 2;
+const REQUIRE_LIVE = process.argv.includes('--require-live');
 
 /** @type {string[]} */
 const failures = [];
@@ -180,6 +184,7 @@ async function main() {
   );
 
   if (LIVE) await liveTree();
+  else if (REQUIRE_LIVE) failures.push(`--require-live was given on ${process.platform}, where the ${String(LIVE_CASES)} live tree cases cannot run`);
   else process.stdout.write(`NOT RUN on ${process.platform}: the ${String(LIVE_CASES)} live tree cases, which read Windows' process listing\n`);
 
   process.stdout.write(

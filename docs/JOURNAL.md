@@ -892,6 +892,65 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-11-12 — Stage audit of `01d02a84..75a59036` — findings GGGGGGGGG-1 to GGGGGGGGG-7
+
+Owed before cloud-63's merge: the hook refused that merge commit because the unaudited range would reach 225 files, past
+the owner's batch of 200. The merge was aborted and this range audited first. `npm run audit:scope` at `75a59036`:
+49 commits, 133 files; 7 proofs added, 24 modified, none removed; 17 source files added, 63 changed, none removed.
+
+**Method and coverage.** One reader, this agent, which wrote most of the range; the owner should weigh that. Every
+modified proof's per-commit deletions were read (`git log -p` over the range, removed lines only, then the added lines
+that replaced each assertion that went). The added proofs and instruments were read for their controls, and the
+changed sources by diff. Run for this audit: `childProcesses.proof.mjs` with and without the mutation in GGGGGGGGG-2,
+and with `--require-live`. Everything else is READ. Not reached: the bodies of the cloud-58, cloud-59 and cloud-60
+merges beyond their test diffs, and `machineNames.mjs`' rewrites inside the range (9 deletions the net diff hides).
+
+**No check was loosened.** The removals were rewritten fixtures (a fourth host kind added to `hostCommandArguments`' rows,
+a new argument to `checkTarget`), roster counts moving with new cases, and two cases rewritten for a decision: Apply
+redactions now takes every mark and says how many (`1740a427`), so the case that asked for *this page only* became one
+that asks for every mark with the count; and `convertTextToCurves` onto its own source answered `refused` with the
+document counted as another, which the owner called the wrong sentence written down as the answer (`d78a6486`).
+
+### Fixed in this range or in this commit
+
+- **GGGGGGGGG-1** (high; decided as ADR-0294, `6d6be56f`, built after the merges) — ADR-0292 let `document.unsaved` answer
+  beside a running read, and a close now runs ahead of a read this window had queued; that read answers
+  `document-not-open` and Edit text reported it, so closing a document showed *That document is no longer open*
+  (`_review/walks/edit-open-cost/2026-11-12T13-58-37`, three rounds of seven). **Item 2:** `0dcb5260`'s cases put the
+  question beside a running read and never a read queued behind the close. **Item 3:** no case in either half of the
+  pair closes a document with a read queued, so CI could not see it; a live walk did. ADR-0292 carries the dated
+  correction.
+- **GGGGGGGGG-2** (high; fixed in `d8a5e278`) — `liveWalk.mjs` printed *the process was ended* and then ended the one
+  process Playwright launched, leaving the application's five running; the walk waited on them for an hour and 41
+  minutes. Three more scripts (`appMemory`, `frameTimes`, `startCheck`) spelt `taskkill /T /F` with a `catch` that
+  swallowed every failure, and `/T` follows the recorded parent id, which Windows reuses. All four now take `endTree`
+  over `childProcesses.mjs`' rule. Live control: ending only the launched process leaves its detached child running.
+  Mutated to end only the first target, the proof goes red naming the child left running. A scan refuses `taskkill`
+  anywhere.
+- **GGGGGGGGG-3** (medium; fixed in this commit) — the two live cases of `childProcesses.proof.mjs` ran on no CI leg:
+  Guards runs the file on Linux, where they print NOT RUN. CI's Windows leg now runs it with `--require-live`, which
+  fails rather than skips where the cases cannot run.
+- **GGGGGGGGG-4** (medium; fixed in `312597b1`, before the amendment cited anything) — the three catalogue instruments
+  imported a build without `refuseStaleBuild`, and Guards went red on `332e79ee`. None of the figures they had printed
+  could be shown to come from a build fresh for its commit, so each was measured again on a fresh build before ADR-0293
+  cited it.
+- **GGGGGGGGG-5** (low; fixed in `419d67a6`) — `e01da815` was committed with a typecheck error that the author counted
+  rather than gated on. No mechanism failed: the pre-commit hook typechecks the index only when unstaged compiler-read
+  work sits beside it (`preCommit.mjs`, JJJJJJJ-5), and the pre-push hook would have refused the push.
+
+### Open, each to be closed before the timing pair is reported
+
+- **GGGGGGGGG-6** (medium, item 4b) — `editOpenCost.mjs`' first-letter clock (`f4ba8618`) has no control. The release
+  read 0 held in 7, and nothing could say whether the clock can see a held letter at all. A control is written: on the
+  start screen, a stand-in surface shows a letter 1,200 ms after its key, which must read as held, and one shown at once,
+  which must not. It is committed once it has run on a build of this tree. The build on disk is the aborted merge's.
+- **GGGGGGGGG-7** (medium, AAAA-8's *what else is different about the odd point*) — the timing pair of 2026-11-12 ran
+  its halves across a memory event: the second half's app logged `memory-low` (1,128 of 12,170 MiB available) and the
+  first's did not, and the instrument records no free memory. The owner's rule for the re-run: free memory recorded at
+  the start of each half, and a half that logs `memory-low` does not count.
+
+---
+
 ## 2026-11-12 — A tab's × no longer waits for the read on open (ADR-0292), and why that read is long
 
 The close of 2026-11-11 is explained in two halves. **Why it waited:** `document.unsaved` ran as a lane write, which
