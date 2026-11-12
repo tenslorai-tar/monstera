@@ -5,6 +5,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { applySetDocumentProtection, protectedImageOf } from './documentProtection.js';
 import { NO_TIMESTAMPS, signPrepared } from './documentSign.js';
 import type { ByteImage, MupdfSession } from './engineSeam.js';
+import { lockedPageTree } from './lockedPageTreeFixture.js';
 import * as mupdf from './mupdfRaw.js';
 import { mupdfWriter, signaturesKeptBySave, withDocument } from './mupdfWriter.js';
 import { applyPlaceImage } from './pageAnnotations.js';
@@ -221,6 +222,56 @@ describe('appended saves of a signed document, any number from one session', () 
       const saved = await mupdfWriter.serialise(session);
       expect(plainPages(saved)).toBe(PAGES);
       expect(await covering(saved)).toStrictEqual([false]);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  }, 60_000);
+
+  it('a protected document whose PAGE TREE IS IN AN ENCRYPTED OBJECT STREAM, signed, saves three times (ADR-0291 Q4)', async () => {
+    // THE SHAPE qpdf writes with --encrypt and --object-streams=generate, built byte by byte; its signature added by
+    // MuPDF's own append, so the object streams stay as written. A value in a /Sig field is what the save counts.
+    const holder = mupdf.PDFDocument.openDocument(lockedPageTree(USER, OWNER), 'application/pdf');
+    if (!(holder instanceof mupdf.PDFDocument)) throw new Error('not a PDF');
+    holder.authenticatePassword(USER);
+    const value = holder.addObject(holder.newDictionary());
+    value.put('Type', holder.newName('Sig'));
+    value.put('Filter', holder.newName('Adobe.PPKLite'));
+    value.put('Contents', holder.newString('00'));
+    const field = holder.addObject(holder.newDictionary());
+    field.put('FT', holder.newName('Sig'));
+    field.put('T', holder.newString('Signature1'));
+    field.put('V', value);
+    const fields = holder.newArray();
+    fields.push(field);
+    const form = holder.newDictionary();
+    form.put('Fields', fields);
+    form.put('SigFlags', 3);
+    holder.getTrailer().get('Root').put('AcroForm', form);
+    const signed = holder.saveToBuffer('incremental').asUint8Array().slice();
+    holder.destroy();
+    // THE SHAPE, asserted: a reader with no password finds no pages, which is what the check used to read.
+    expect(plainPages(signed)).toBe(0);
+
+    const session = await mupdfWriter.open(signed, USER);
+    try {
+      expect(await signaturesKeptBySave(session)).toStrictEqual({ signatures: 1, kept: true });
+      let earlier: ByteImage = signed;
+      for (let round = 1; round <= 3; round += 1) {
+        await withDocument(session, (document) => {
+          document.findPage(0).put('Rotate', (round * 90) % 360);
+        });
+        const saved = await mupdfWriter.serialise(session);
+        // APPENDED, and whole: every earlier file is its first bytes, and with its password it reads its page.
+        expect(Buffer.from(saved.subarray(0, earlier.byteLength)).equals(Buffer.from(earlier)), `save ${String(round)}`).toBe(true);
+        expect(saved.byteLength).toBeGreaterThan(earlier.byteLength);
+        const reopened = await mupdfWriter.open(saved, USER);
+        try {
+          expect(await withDocument(reopened, (document) => document.countPages())).toBe(1);
+        } finally {
+          await mupdfWriter.close(reopened);
+        }
+        earlier = saved;
+      }
     } finally {
       await mupdfWriter.close(session);
     }

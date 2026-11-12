@@ -51,6 +51,24 @@ function attempt(image: Uint8Array, password: string | undefined): OpenedPdf {
 }
 
 /**
+ * How many pages `image` reads AS ITS OWN CHAIN STANDS: the one attempt at `password`, and none of {@link openPdfFile}'s
+ * rebuild, which would hide a broken chain. What an appended save's check reads (`mupdfWriter.ts`' `rebasedOn`).
+ *
+ * **With the password**, because a protected file's page tree may sit in an object stream, and object streams are
+ * encrypted: measured 2026-11-12, a file qpdf protected and wrote with object streams reads 0 pages without its password
+ * and every page with it, and so does `lockedPageTreeFixture.ts`. Read without it, every appended save of such a signed
+ * file was refused as broken when it was whole.
+ */
+export function pagesWithoutRepair(image: Uint8Array, password: string | undefined): number {
+  const { document, access } = attempt(image, password);
+  try {
+    return access <= 0 ? 0 : document.countPages();
+  } finally {
+    document.destroy();
+  }
+}
+
+/**
  * `image` as a document, with the one attempt at `password`, rebuilt where its chain left it with no pages.
  *
  * @throws what MuPDF throws for bytes it cannot read at all, which is the file's answer and each caller's to word.

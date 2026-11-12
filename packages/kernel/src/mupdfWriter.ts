@@ -10,7 +10,7 @@ import type {
 } from './engineSeam.js';
 import { carriesCertification, savedUncertified } from './docMdp.js';
 import { DocumentLocked } from './engineSeam.js';
-import { openPdfFile } from './mupdfOpen.js';
+import { openPdfFile, pagesWithoutRepair } from './mupdfOpen.js';
 import { savedEngraved } from './engraveOnSave.js';
 import { FULL_SAVE_TERMS, savedBuffer, savedWithoutOutline } from './saveDepth.js';
 import { signatureValues } from './signatureFields.js';
@@ -665,11 +665,10 @@ function saveTermsOf(session: MupdfSession): {
  * again is the fault this exists to stop.
  */
 function rebasedOn(session: MupdfSession, previous: mupdf.PDFDocument, bytes: ByteImage): void {
-  // READ PLAINLY FIRST, with no repair: `openPdfFile` rebuilds a broken chain on open, which would hide the very fault.
-  // A page tree's dictionaries are not encrypted, so a protected file's pages count without its password.
-  const plain = mupdf.PDFDocument.openDocument(bytes, 'application/pdf');
-  const pages = plain.countPages();
-  plain.destroy();
+  // READ AS ITS OWN CHAIN STANDS, with no rebuild: `openPdfFile` rebuilds a broken chain on open, which would hide the
+  // very fault. WITH THE SESSION'S PASSWORD: a protected file's page tree may sit in an encrypted object stream, which
+  // reads no pages without it (`pagesWithoutRepair`, measured 2026-11-12), and every save of such a file was refused.
+  const pages = pagesWithoutRepair(bytes, heldPasswords.get(session));
   if (pages !== previous.countPages()) {
     throw new Error(`The appended save wrote a file whose own chain reads ${String(pages)} pages, so it was not used.`);
   }
