@@ -181,12 +181,47 @@ export function previewFamilyOf(
  * family not in the list is one the resolver does not know, so a mark naming it could not be written.
  */
 export function listedFamiliesFor(name: string, families: readonly FontFamilyEntry[]): string[] {
-  const plain = withoutSubsetTag(name);
+  const index = familyIndexOf(families);
   const key = normaliseFamily(name);
   const standIn = STAND_INS[key];
   return [
-    families.find((family) => family.name.toLowerCase() === plain.toLowerCase())?.name,
-    families.find((family) => normaliseFamily(family.name) === key)?.name,
-    standIn === undefined ? undefined : families.find((family) => family.name === standIn)?.name,
+    index.byLowerName.get(withoutSubsetTag(name).toLowerCase()),
+    index.byKey.get(key),
+    standIn === undefined ? undefined : index.byName.get(standIn),
   ].filter((family): family is string => family !== undefined);
+}
+
+/** A list's families by the three keys {@link listedFamiliesFor} asks by, each holding the FIRST family in list order. */
+export interface FamilyIndex {
+  readonly byName: ReadonlyMap<string, string>;
+  readonly byLowerName: ReadonlyMap<string, string>;
+  readonly byKey: ReadonlyMap<string, string>;
+}
+
+/** Each list read, indexed once. Keyed on the list itself, so a new read is a new list and a new index. */
+const indexes = new WeakMap<readonly FontFamilyEntry[], FamilyIndex>();
+
+/**
+ * THE LIST'S INDEX, BUILT ONCE PER LIST. {@link listedFamiliesFor} is asked once per run of words each time the open
+ * editor fits its block (`faceCssOf`), and it used to normalise every listed family's name on every ask, four regular
+ * expressions each: on 2026-11-12 that was 320–400 ms of the 1.0–1.2 s the first press on a block of corpus document 2
+ * waited (`normaliseFamily` 171–211 ms of its own, `editOpenCost.mjs --profile` and `cpuProfileTop.mjs`, two warm
+ * rounds). The answers are the ones `Array.find` gave: where two families share a key the first in the list is kept.
+ */
+export function familyIndexOf(families: readonly FontFamilyEntry[]): FamilyIndex {
+  const known = indexes.get(families);
+  if (known !== undefined) return known;
+  const byName = new Map<string, string>();
+  const byLowerName = new Map<string, string>();
+  const byKey = new Map<string, string>();
+  for (const { name } of families) {
+    if (!byName.has(name)) byName.set(name, name);
+    const lower = name.toLowerCase();
+    if (!byLowerName.has(lower)) byLowerName.set(lower, name);
+    const key = normaliseFamily(name);
+    if (!byKey.has(key)) byKey.set(key, name);
+  }
+  const index = { byName, byLowerName, byKey };
+  indexes.set(families, index);
+  return index;
 }

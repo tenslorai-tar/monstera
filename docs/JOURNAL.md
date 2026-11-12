@@ -892,6 +892,56 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-11-12 — Opening a block: as slow on the release, and a third of it was tidying every installed font's name
+
+Items 28/64. `editOpenCost.mjs`, document 2, 7 rounds each, the release's commit `5dead873` (1.1.2613.0, its own
+worktree and shim) and this branch run back to back by one script, both controls passing (the planted 150 ms task;
+a press during a planted 600 ms task stamped 534 and 511 ms before its handler, so a press that waits is timed from
+when it arrived). Medians, spreads in brackets:
+
+| reading | release `5dead873` | this branch before the fix |
+|---|---|---|
+| first press until the box shows selected | 1,139 ms (720–3,697) | 1,199 ms (848–3,835) |
+| click until editable, ADR-0271's 300 ms row | 21 ms (16–54) | 19 ms (17–117) |
+| the renderer's work opening the block | 1,479 ms (1,020–7,291) | 1,565 ms (1,203–7,162) |
+| first read of the blocks | 3,028 ms (2,508–4,720) | 2,527 ms (2,474–4,099) |
+
+**Not a regression: the release is as slow.** And ADR-0271's row is met as it is written: the press that opens the
+words is editable in about 20 ms. The wait is the press BEFORE it, which selects the box (ADR-0271 §3's two steps): one
+long task of about a second, so a person who presses once waits that long to see the box. The figures of the evening
+before, on the same build (2,086 and 5,735 ms), were about double these; no other load was running then
+(`Get-Process`), and what differed is not established.
+
+**The task, profiled** (`editOpenCost.mjs --profile` on an unminified renderer, `cpuProfileTop.mjs`, two warm rounds):
+one layout effect, the editor's `paint`, 1.0–1.2 s. Under it, the browser's `getBoundingClientRect` 331–383 ms of its
+own, the fit (`fitDrawnLines`, `fitWords`, `paintRun`, `alongLine`), and **320–400 ms tidying font names**:
+`normaliseFamily` 171–211 ms of its own, with `withoutSubsetTag`, `withoutInstance`, `listedFamiliesFor` and a `find`
+callback. The mechanism: `faceCssOf` asks `listedFamiliesFor` once per run of words on each fit, and that searched
+the installed font list with `normaliseFamily` applied to every family on every ask, four regular expressions each. The
+list is the same list every time.
+
+**Fixed:** `familyIndexOf` indexes a list once, keyed on the list itself, so a new read is a new index, and each key
+keeps the first family in list order as `find` did. Cases: every answer equals the linear search's on a list where
+every key collides, with a control that the list separates first from last (an index keeping the last went red under
+both keys), and a later read is answered from its own families.
+
+Measured back to back after the fix, 7 rounds each, release first:
+
+| reading | release `5dead873` | this branch with the fix |
+|---|---|---|
+| first press until the box shows selected | 741 ms (616–2,713) | 452 ms (350–2,646) |
+| the renderer's work opening the block | 1,086 ms (881–5,038) | 749 ms (601–4,718) |
+| click until editable | 15 ms (11–19) | 17 ms (16–19) |
+| first read of the blocks | 2,470 ms (1,971–3,500) | 2,015 ms (1,444–2,993) |
+
+Rounds 2–7, the warm ones: the first press 616–950 ms on the release and 350–571 ms with the fix, no overlap; the
+difference, about 340 ms of renderer work, is the profile's 320–400 ms. **Still open:** the warm first press is still
+over 300 ms, most of what is left being the browser's text measurement in the fit; and the first round, cold, is about
+2.6 s on both builds and is not this mechanism. The machine was faster in this pair than in the one above (the release
+741 against 1,139 ms), which is why each comparison is made within one pair and never across two.
+
+---
+
 ## 2026-11-11 — What Edit text costs before typing, read again on `628b8eaa` by a committed instrument
 
 Items 28/64 and 65, measured before any change. The figures of 2026-11-03 (*opening a dense block in Edit text: long
