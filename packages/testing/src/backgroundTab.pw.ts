@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -49,6 +49,41 @@ async function heldCanvases(page: Page): Promise<number> {
   } finally {
     await cdp.detach();
   }
+}
+
+/**
+ * Every canvas the renderer holds is one in the document: the assertion both cases make, and WHEN IT FAILS, what the
+ * others are. Measured on CI 2026-11-12 (run 43214099024): four held against three in the page once, and the trace could
+ * not say which object kept the fourth, since a trace records the page and not the heap. So on a mismatch each held
+ * canvas out of the page is described, and a heap snapshot is attached, whose retainers name what keeps it.
+ */
+async function expectHeldInPage(page: Page): Promise<void> {
+  const held = await heldCanvases(page);
+  const inPage = await page.locator('canvas').count();
+  if (held === inPage) return;
+  const cdp = await page.context().newCDPSession(page);
+  try {
+    const prototype = await cdp.send('Runtime.evaluate', { expression: 'HTMLCanvasElement.prototype' });
+    const found = await cdp.send('Runtime.queryObjects', { prototypeObjectId: prototype.result.objectId ?? '' });
+    const described = await cdp.send('Runtime.callFunctionOn', {
+      objectId: found.objects.objectId ?? '',
+      functionDeclaration:
+        'function () { return this.filter((each) => !each.isConnected).map((each) => ({ className: each.className, width: each.width, height: each.height, data: { ...each.dataset } })); }',
+      returnByValue: true,
+    });
+    // FILES IN THE CASE'S OUTPUT FOLDER, which CI uploads on a failure: a body attachment lives only in the reporter,
+    // and this run's reporter keeps none.
+    writeFileSync(test.info().outputPath('held-canvases-out-of-the-page.json'), JSON.stringify(described.result.value, null, 2));
+    const chunks: string[] = [];
+    cdp.on('HeapProfiler.addHeapSnapshotChunk', (event) => {
+      chunks.push(event.chunk);
+    });
+    await cdp.send('HeapProfiler.takeHeapSnapshot', { reportProgress: false });
+    writeFileSync(test.info().outputPath('renderer.heapsnapshot'), chunks.join(''));
+  } finally {
+    await cdp.detach();
+  }
+  expect(held, 'every canvas the renderer holds is one in the document; the files beside this case name the others').toBe(inPage);
 }
 
 test('a thumbnail strip scrolled through forty pages holds pixels for its margin only, and a card coming back is drawn again', async ({
@@ -120,7 +155,7 @@ test('the window hidden for half a minute gives the page on show back, and shown
   await expect(pages).not.toHaveCount(0);
   await page.clock.runFor(11_000);
   await expect(pages).toHaveCount(0);
-  expect(await heldCanvases(page)).toBe(await page.locator('canvas').count());
+  await expectHeldInPage(page);
 
   await windowShown(page, true);
   await expect(pages.first()).toBeVisible({ timeout: 20_000 });
@@ -169,7 +204,7 @@ test('a tab behind holds no page canvas, and coming forward redraws it where the
   await expect(behind.locator('canvas.m-page')).toHaveCount(0);
   // AND NONE HELD OUT OF THE PAGE: every canvas the renderer holds is one in the document, so the scan's are gone and
   // not merely detached.
-  expect(await heldCanvases(page)).toBe(await page.locator('canvas').count());
+  await expectHeldInPage(page);
 
   // BACK TO THE SCAN: drawn again, at the place the reader left.
   await page.locator('[data-tab-select]').first().click();
