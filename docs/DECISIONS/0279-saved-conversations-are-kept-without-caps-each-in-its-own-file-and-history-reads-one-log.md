@@ -462,3 +462,28 @@ above, which was the full walk. That is the cost of a first write to a whole fil
 run). The cases: a torn tail is cut with no whole record before it opened, and the same head in the middle still walks in
 full and keeps every record. Mutated: with the tail sent down the full walk, the first fails, having opened all seven
 records; with the cut made on the shape alone, the middle cases fail.
+
+### The 539 and 863 ms appends, timed step by step (2026-11-13)
+
+Asked by the owner, since every save to a large file pays an append: is the cost in the open, the write or the close?
+`scripts/research/historyAppendCost.mjs` makes a 400 MiB file with the built store's own `save`, then times 20 appends of
+a 1 KiB record split into `statSync`, `openSync(path, 'a')`, `writeSync` and `closeSync`, 500 ms apart, and the same
+on a 1 KiB file. Its control: a planted 100 ms read 100.4 to 106.1 ms. Three runs, free memory 4,366, 4,603 and
+4,614 MiB at the start and about 4,020 MiB at the end:
+
+| step, 400 MiB file | medians over the three runs | worst of 60 |
+|---|---|---|
+| stat | 0.19 to 0.20 ms | 0.7 ms |
+| open | 0.69 to 0.85 ms | **80.0 ms**, once |
+| write | 0.20 to 0.25 ms | 0.5 ms |
+| close | 0.41 to 0.53 ms | 0.9 ms |
+
+On the 1 KiB file every step's worst was 1.4 ms. A first write over a torn tail and a first write to a whole file, read
+in a fourth run of `historyFirstWriteCost.mjs` the same night, were 21 to 24 ms.
+
+**The 539 and 863 ms did not come back in 60 appends**, and the one slow step was an open of 80 ms. **Decided: the
+file is not held open for the session.** The measurement does not show a cost that a held handle would remove, and a
+held handle would put a new question on Delete's path, which renames another file over this one: whether Windows lets
+that rename replace a file this process holds open, which was not measured. What was different about the two slow
+readings: free memory then ended at 2,154 to 2,264 MiB, against about 4,020 MiB now. That is recorded as a difference,
+not as the cause. They stay unexplained, and the step-by-step instrument is the one to run when one is seen again.
