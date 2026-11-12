@@ -892,6 +892,97 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-11-12 — Stage audit of `75a59036..658e14df` — findings HHHHHHHHH-1 to HHHHHHHHH-21
+
+Owed before ADR-0294's build could be committed: that commit, 88 files, would have carried the unaudited range to
+215 files. The range is the merges of work/cloud-63-certified (ADR-0291), work/cloud-62-history-per-pdf (ADR-0279,
+with cloud-61 inside it) and work/cloud-engrave-scale, and four local commits. `npm run audit:scope`: 42 commits,
+164 files; 11 proofs added, 56 modified, one removed (`chatHistory.test.ts`); 23 source files added, 62 changed.
+
+**Method and coverage.** Three read-only reviewers, one slice each: the proofs (every modified proof's removed lines and
+what replaced them, the 11 added ones for their controls, the removed file property by property), the non-test source
+and the instruments (the history store, rewriter, check and move in full, `docMdp.ts`, `appendRefused.ts`,
+`signedVersionFile.ts`, and the diffs of the save pipeline, signature keeping, composition and the handlers), and the
+documents and commits (all 42 messages, ADR-0279, 0291 and 0093, their index and log rows, FEATURES, the Help
+articles). **This author re-read the four high findings at the lines they name, and each holds** (HHHHHHHHH-1 to -4);
+the others are the reviewers' readings, each naming its lines, not re-read here. **Nothing was run for this audit.**
+Not reached: `ALLOWED_UNDER` against every mutating path, the engine side of certification, the UI side of history,
+most of the `+` sides of the save-pipeline and signed-version cases.
+
+**No check was loosened.** The modified proofs' removals are renames, fixtures given `certification` and `reread`, and
+cases cut for stated decisions (ADR-0279's no-cap decision, the history-off line). One proof was modified for a decision
+of this branch's own: `contract.proof.mjs`' client case, in the staged ADR-0294 build, which is not in this range.
+
+### High — each to be fixed before `main` moves past this range (the owner decides where)
+
+- **HHHHHHHHH-1** — a save of NO turns for a known conversation empties it. `historyStore.ts:363` returns early only
+  for a new conversation; for a known key `from` is 0 and a TURNS record `{from: 0, turns: []}` is appended, which
+  `fold` (`:279`) reads as no turns, even on a session's first save of it. The case that held *an empty save removes
+  nothing* left with `chatHistory.test.ts` and nothing replaced it, while the channel's own documentation
+  (`channels.ts:6781`, *Nothing is removed by a save*) and ADR-0093's correction still promise it.
+- **HHHHHHHHH-2** — a torn record hides every save after it. `save` appends blindly and nothing trims a torn tail, so
+  after a crash or a full disk mid-append the next record lands behind it, and `headsOf` (`historyRecords.ts:115`) stops
+  at the torn one or reads on misaligned. A later Delete writes only what was reached, which makes the loss permanent.
+- **HHHHHHHHH-3** — the worker tells `main` to resume from `bytes.length` (`historyRewrite.ts:22`), not from the end of
+  the last whole record it parsed, so a tail that began inside a record is read from its middle; a save caught
+  mid-append by the worker's read is in neither half.
+- **HHHHHHHHH-4** — *Save this signed version* refuses its own file by comparing strings (`documentCommands.ts:4873`,
+  `destination === path`), a second opinion beside `checkCopyTarget`, which every other copy route asks by file
+  identity (d78a6486). A destination spelt differently would have the cut renamed over the document's own file, and
+  another open document's file is not refused as `contested`.
+
+### Medium
+
+- **HHHHHHHHH-5** — the signed version is verified, then the picker is shown, then the file is cut again from its path
+  (`documentCommands.ts:4867-4875`); a save in between writes bytes that were never verified.
+- **HHHHHHHHH-6** — a PDF whose `/ID` cannot be read for any reason but a password (`failed`), or whose `stat` throws, is
+  counted as gone by the 24-hour check (`historyCheck.ts:103`); an install whose engine host cannot start would delete
+  every `/ID`-guarded history within a day.
+- **HHHHHHHHH-7** — Delete's `.writing` name is fixed per file (`historyStore.ts:303`) and nothing orders two Deletes, a
+  Delete and the 24-hour check, or a Delete and *Clear*.
+- **HHHHHHHHH-8** — a locked history answers *no conversations* to list, read and remove (`historyStore.ts:384-393`);
+  only save and the note ask `locked()`.
+- **HHHHHHHHH-9** — B3a: `withHeads` (`historyStore.ts:83-106`) re-implements the framing `headsOf` owns.
+- **HHHHHHHHH-10** — `signedVersion.test.ts:98-104`' control reads `read(short).catch(() => [])` and asserts `every`,
+  which an empty read also satisfies (item 4b).
+- **HHHHHHHHH-11** — item 2a, stated by 77e8dc22 and still a gap: no case runs the shipped `workerRewriter` on the built
+  entry with an append landing during its read.
+- **HHHHHHHHH-12** — ADR-0291's Decision 7 says a signed version is offered only where its cut verifies, from the bytes
+  opened; the build offers it on any signature short of the whole file and cuts the file on disk. No correction says so.
+- **HHHHHHHHH-13** — B4: ADR-0291 adds a fourth command axis, a lane refusal, serialise options and a save outcome, and
+  `docs/ARCHITECTURE.md` has no amendment row or §8 text for it, as ADR-0040, 0044, 0045, 0051 and 0149 each had.
+- **HHHHHHHHH-14** — ADR-0093 and its index row still say history is off by default (built on in 2cc23e40), and ADR-0279's
+  row still opens *not built yet*.
+- **HHHHHHHHH-15** — `certified-documents.md` was written from the cases (887144bd's own words), against ADR-0290's
+  *written after running the feature*; it and `save-a-document.md` read as contradicting each other on a certified
+  document's copy.
+- **HHHHHHHHH-16** — **this author's**, in 658e14df: ADR-0279's item 9 addition states run 2's figures as the answer
+  (*about 100 ms*, *324 against 424*, *about 2 ms once settled*) where run 1 reads 178 ms and 333 against 515, and two
+  of five settled renames took 1.4 and 1.6 s; it matches Delete's 103 to 118 ms to *the old file's share* by size alone;
+  and `renameOverCost.mjs` writes the OLD file just before replacing it, while Delete replaces a file that has sat, so
+  *the old file's share* was measured on the wrong file. It also times a bare `renameSync`, where Delete calls
+  `replaceWithRetry`, whose 40 ms pauses could make up 100 ms by themselves, and its control is not a resolution test.
+  The probe's 103/118/106 and 231 ms came from an uncommitted script. A dated correction to ADR-0279 is owed, and the
+  question is open again.
+
+### Low
+
+- **HHHHHHHHH-17** — `certificationOf`, `carriesCertification` and `savedUncertified` spell *is this certified* three
+  times, and each answers *not certified* where `/Perms` does not resolve.
+- **HHHHHHHHH-18** — `signedVersionVerifiesAt` catches every `Error` as *not a signed version*, so a host that died reads
+  as `not-found`; its `EngineDocumentLocked` clause is dead.
+- **HHHHHHHHH-19** — `permanentIdAt` writes a PDF's full path into the failure log, beside the store's *no path is in
+  the clear*.
+- **HHHHHHHHH-20** — the 24-hour check's `keepLedger` creates a data key on a machine that never saved a conversation.
+- **HHHHHHHHH-21** — the documents: `ARCHITECTURE.md:1897` still removes a password PDF's history after 24 hours; the
+  assistant's FEATURES row still claims history across reopen, which Decision 8 removed; the Certify row does not name
+  the export and print it owes; ADR-0291's sections are out of date order and its status still says *for review at
+  merge*; the certification line is a surface CLAUDE.md's projection list does not name; `chatHistory.test.ts`'
+  preview bound, list order, stale-key and corrupt-record cases have no successor; `documentHistory.test.ts:51-60` and
+  `mupdfOpen.test.ts:43` hold fixtures the bug would also pass.
+
+---
+
 ## 2026-11-12 — Stage audit of `01d02a84..75a59036` — findings GGGGGGGGG-1 to GGGGGGGGG-7
 
 Owed before cloud-63's merge: the hook refused that merge commit because the unaudited range would reach 225 files, past
