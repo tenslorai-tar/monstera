@@ -335,3 +335,52 @@ Rejected: **a setting**. A setting is drawn in the Settings window (`SettingDefi
 exported and imported with the rest, so a person could see a switch for a note and a settings file could bring it back.
 **The renderer's own storage** (a remembered flag in the window): it is per window, and the renderer holds no state of
 its own that outlives it.
+
+## Addition, 2026-11-12 — item 9 measured on Windows, and accepted by the owner
+
+The wiring's item 9 asked whether Delete's rewrite stays off the main thread on a large file. Measured by the local
+agent on the development machine (Windows 11, 12,170 MiB) before the merge left it, with
+`scripts/research/historyDeleteCost.mjs`: the built store, its own worker, files of long conversations made by its own
+`save` (32 turns at the answer's bound, about 2 MiB each). The reading is the main thread's worst gap between 5 ms
+timer ticks; a planted 500 ms block read 500 ms. Free memory at the start: 4,430 MiB.
+
+| file | rewrite on | Delete | main thread's worst gap |
+|---|---|---|---|
+| 20 conversations, 40 MiB | worker | 914 ms, then 1,578 ms | 33 ms, then 36 ms |
+| 20 conversations, 40 MiB | main thread (control) | 208 ms | 216 ms |
+| 200 conversations, 400 MiB | worker | 3,794 ms, then **12,460 ms** | 126 ms, then **433 ms** |
+| 200 conversations, 400 MiB | main thread (control) | 3,542 ms | 3,552 ms |
+
+**The rewrite stays off the main thread.** What still holds it is the end of Delete, which this ADR keeps on the main
+thread on purpose: a save is a synchronous append, so the tail is appended and the file renamed with nothing between.
+A scratch probe timed every synchronous file call `main` made during three Deletes on 400 MiB (its control: the
+wrappers saw the store's own `renameSync` and `statSync`): `renameSync` 103, 118 and 106 ms, and in the first run
+`existsSync` 231 ms.
+
+**The owner's decision, 2026-11-12: about 0.1 s once, at the end of a Delete on 400 MiB of history, is acceptable,**
+and the rename stays where it is.
+
+**What the 100 ms is,** asked by the owner before this is recorded as settled: the rename itself, or Windows freeing the
+file it replaces, or a scanner reading it. `scripts/research/renameOverCost.mjs`, two runs of five rounds on 400 MiB
+files of random bytes, the order rotated each round (free memory 3,399 to 3,772 MiB throughout):
+
+| the rename | run 1, median | run 2, median |
+|---|---|---|
+| a new file into a free name | 337 ms | 325 ms |
+| a new file over the old file | 515 ms (one of 1,427) | 424 ms |
+| the old file aside, then the new one in | 333 ms | 324 ms |
+| removing the aside file, alone | 432 ms | 100 ms |
+| a new file over a 1 KiB file | 284 ms (two of about 2 ms) | 318 ms |
+| a new file into a free name, after 5 s | not run | 2.3 ms (two of 1,442 and 1,553) |
+
+So **most of the cost belongs to the new file, not the old one**: renaming a large file just written costs about
+325 ms wherever it goes, and about 2 ms once it has sat for five seconds. Which mechanism that is (a scanner reading
+the new file, or its writes being flushed) is not established. **The old file's own share is about 100 ms** (the
+difference between the first two rows), and it is the only part the owner's route of renaming the old file aside
+first would take away: that route measured 324 ms against 424 ms. The probe's 103 to 118 ms for Delete's own rename is
+the size of that share, and why Delete's rename did not also pay the new file's 325 ms here is not established.
+No change was made; the route stays available, and it would need start-up to handle a leftover aside file.
+
+**Unexplained, recorded and not chased (the owner, 2026-11-12):** the second worker Delete on 400 MiB, 12,460 ms with a
+433 ms gap, in a run that started with 4,430 MiB free; the probe's one `existsSync` of 231 ms, whose free memory was not
+recorded; and the two settled renames of 1,442 and 1,553 ms.
