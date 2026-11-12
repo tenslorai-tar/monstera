@@ -57,3 +57,13 @@ But nothing makes that so; every lane entry's context carries all four.
 - **Interrupting the running read.** There is no safe point inside a native call (ADR-0274 Decision 2).
 - **A dirty flag in the renderer.** A second opinion about what `main` holds (B3a), whose stale answer is *clean*.
 - **Answering from the last write's result.** The renderer would hold a version the lane may already have moved.
+
+## Correction, 2026-11-12 — a close now runs ahead of a read this window had queued
+
+Decision 4 said *a close is unchanged*, and of the close itself that holds. What it did not say is what changed around
+it. While `document.unsaved` waited for every read, nothing this window had asked about the document was still queued
+when the close was sent. Now the close, a lane write, runs ahead of a queued read (ADR-0274), and that read answers
+`document-not-open`. Edit text's read reported it, so closing a document while its blocks were being read showed
+*That document is no longer open* (measured the same day, `_review/walks/edit-open-cost/2026-11-12T13-58-37`: three
+rounds of seven). The answer is right; reporting it is not. The fix is
+[ADR-0294](0294-a-refusal-for-a-document-this-window-closed-is-the-clients-own-code.md).
