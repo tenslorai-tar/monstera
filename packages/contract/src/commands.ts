@@ -4727,6 +4727,17 @@ export const documentInformationSchema = z
     pageCount: z.number().int().nonnegative(),
     /** The first page's displayed size in points, `null` for a document with no page. */
     firstPage: z.object({ width: z.number().nonnegative(), height: z.number().nonnegative() }).strict().nullable(),
+    /**
+     * The PDF's own permanent id, the FIRST string of its trailer `/ID`, as lower-case hex; `null` where it has none
+     * (ADR-0279: what chat history recognises a document by). Bounded at 64 bytes, longer than any writer uses.
+     */
+    permanentId: z
+      .string()
+      // THE BOUND SAID TWICE ON PURPOSE: the pattern already stops at 128 characters, but `payloadBounds.test.ts` reads a
+      // string's bound from its `.max()`, and a pattern's length is not something a schema walk can see.
+      .max(128)
+      .regex(/^(?:[0-9a-f]{2}){1,64}$/u)
+      .nullable(),
   })
   .strict();
 export type DocumentInformation = z.infer<typeof documentInformationSchema>;

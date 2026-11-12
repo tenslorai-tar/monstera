@@ -2444,8 +2444,9 @@ export const ASSISTANT_YOU = messageKey('assistant.you');
 export const ASSISTANT_HISTORY = messageKey('assistant.history');
 export const HISTORY_BACK = messageKey('assistant.history.back');
 export const HISTORY_BACK_TO_LIST = messageKey('assistant.history.back-to-list');
-/** What the store keeps and what goes past it (ADR-0277 Decision 6, ADR-0093 Decision 5), said above the list. */
+/** What keeps this file's conversations and what removes them (ADR-0279, the owner's approval of 2026-11-01). */
 export const HISTORY_BOUNDS = messageKey('assistant.history.bounds');
+/** The heading of a conversation 1.1.2610.0 saved before a time was recorded: every other is headed by its time. */
 export const HISTORY_UNNAMED = messageKey('assistant.history.unnamed');
 export const HISTORY_MESSAGES = messageKey('assistant.history.messages');
 export const HISTORY_SHOWN = messageKey('assistant.history.shown');
@@ -2456,7 +2457,14 @@ export const HISTORY_DELETE_SHOWN = messageKey('assistant.history.delete-shown')
 export const HISTORY_DELETE_ASK = messageKey('assistant.history.delete-ask');
 export const HISTORY_DELETE_YES = messageKey('assistant.history.delete-yes');
 export const HISTORY_DELETE_KEEP = messageKey('assistant.history.delete-keep');
+/** History's *Clear all* for this file, and the question it asks first (ADR-0279 Decision 3). */
+export const HISTORY_CLEAR_ALL = messageKey('assistant.history.clear-all');
+export const HISTORY_CLEAR_ALL_ASK = messageKey('assistant.history.clear-all-ask');
+export const HISTORY_CLEAR_ALL_YES = messageKey('assistant.history.clear-all-yes');
+export const HISTORY_CLEAR_ALL_KEEP = messageKey('assistant.history.clear-all-keep');
 export const HISTORY_EMPTY = messageKey('assistant.history.empty');
+/** The empty list with *Save chat history* off, which says why nothing is kept (ADR-0279's wording table). */
+export const HISTORY_EMPTY_OFF = messageKey('assistant.history.empty-off');
 export const HISTORY_FAILED = messageKey('assistant.history.failed');
 export const HISTORY_READ_ONLY = messageKey('assistant.history.read-only');
 export const HISTORY_GONE = messageKey('assistant.history.gone');
@@ -2478,16 +2486,17 @@ export const ASSISTANT_QUESTION_OVER = messageKey('assistant.question-over');
 export const ASSISTANT_FULL_COUNT = messageKey('assistant.full-count');
 /** A long conversation's recommendation, which blocks nothing (ADR-0277's correction of 2026-10-31). */
 export const ASSISTANT_LONG_NOTE = messageKey('assistant.long-note');
-/** Beside New chat while chat history is off: the press clears this conversation (the owner, 2026-10-31). */
-export const ASSISTANT_HISTORY_OFF_CLEARS = messageKey('assistant.history-off-clears');
 /** A conversation the provider refused as too long for its model (ADR-0277 Decisions 2 and 5). */
 export const ASSISTANT_FULL_PROVIDER = messageKey('assistant.full-provider');
 /** The one press from a full conversation to a new one (ADR-0277 Decision 2). */
 export const ASSISTANT_START_NEW = messageKey('assistant.start-new');
-/** A new conversation not begun, because its file keeps the most saved conversations one file keeps (ADR-0277). */
-export const ASSISTANT_FILE_FULL_NEW = messageKey('assistant.file-full-new');
-/** This conversation not being saved, for the same reason (ADR-0277). */
-export const ASSISTANT_FILE_FULL_UNSAVED = messageKey('assistant.file-full-unsaved');
+/**
+ * Conversations not being saved, because the history saved on this computer is sealed under a key this Windows account
+ * cannot unwrap (ADR-0279's correction of 2026-11-12): after a password reset, or a restore from another computer.
+ */
+export const ASSISTANT_HISTORY_LOCKED = messageKey('assistant.history-locked');
+/** The note that chat history is on, shown once on this computer (ADR-0279 decision h); the owner's words. */
+export const ASSISTANT_HISTORY_ON_NOTE = messageKey('assistant.history-on-note');
 /** A *Document only* ask to a model that searches the web for every answer, refused before sending (ADR-0108). */
 export const ASSISTANT_SEARCHES_THE_WEB = messageKey('assistant.searches-the-web');
 /** The *Document only / Document + web* switch, the Sources menu, and why a choice is disabled (ADR-0108). */
@@ -2842,6 +2851,9 @@ export const SETTINGS_DONE = messageKey('dialog.settings.done');
 export const SETTINGS_AI_PROVIDER_STORED = messageKey('dialog.settings.ai-provider.stored');
 export const SETTINGS_ACTION_CLEAR_HISTORY = messageKey('dialog.settings.clear-history');
 export const SETTINGS_ACTION_CLEAR_HISTORY_DESCRIPTION = messageKey('dialog.settings.clear-history.description');
+/** The question *Clear chat history* asks first, and its keep answer; its yes is the action's own label (ADR-0279). */
+export const SETTINGS_ACTION_CLEAR_HISTORY_ASK = messageKey('dialog.settings.clear-history.ask');
+export const SETTINGS_ACTION_CLEAR_HISTORY_KEEP = messageKey('dialog.settings.clear-history.keep');
 export const SETTINGS_ACTION_CLEAR_BACKUPS = messageKey('dialog.settings.clear-backups');
 export const SETTINGS_ACTION_CLEAR_BACKUPS_DESCRIPTION = messageKey('dialog.settings.clear-backups.description');
 export const SETTINGS_ACTION_CLEAR_RECENT = messageKey('dialog.settings.clear-recent');
@@ -5615,19 +5627,25 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [HISTORY_BACK]: 'Back to the conversation',
   [HISTORY_BACK_TO_LIST]: 'Back to History',
   [HISTORY_BOUNDS]:
-    'Each file keeps up to {perFile, plural, one {# conversation} other {# conversations}}, and conversations are kept for up to {files, plural, one {# file} other {# files}}. When a new file would be one too many, the file saved longest ago is removed with its conversations.',
+    'Conversations about this file, kept on this computer. If the file is moved, renamed or deleted, they are removed about a day after Monstera notices.',
   [HISTORY_UNNAMED]: 'Earlier conversation',
   [HISTORY_MESSAGES]: '{count, plural, one {# message} other {# messages}}',
-  [HISTORY_SHOWN]: 'This is a saved conversation, shown to read. It does not open the file.',
-  [HISTORY_OPEN]: 'Open {name}',
+  [HISTORY_SHOWN]: 'A saved conversation about this file, shown to read.',
+  [HISTORY_OPEN]: 'Open the conversation saved {time}',
   [HISTORY_OPEN_SHOWN]: 'Open',
-  [HISTORY_DELETE]: 'Delete {name}',
+  [HISTORY_DELETE]: 'Delete the conversation saved {time}',
   [HISTORY_DELETE_SHOWN]: 'Delete',
   [HISTORY_DELETE_ASK]: 'Delete this conversation?',
   [HISTORY_DELETE_YES]: 'Delete it',
   [HISTORY_DELETE_KEEP]: 'Keep it',
-  [HISTORY_EMPTY]: 'No conversations are saved. Turn on Save chat history in Settings › AI to keep them.',
-  [HISTORY_FAILED]: 'The saved conversations could not be read.',
+  [HISTORY_CLEAR_ALL]: 'Clear all',
+  [HISTORY_CLEAR_ALL_ASK]:
+    'Clear all conversations for this file? Every saved conversation about {name} is removed from this computer. This cannot be undone.',
+  [HISTORY_CLEAR_ALL_YES]: 'Clear all',
+  [HISTORY_CLEAR_ALL_KEEP]: 'Keep them',
+  [HISTORY_EMPTY]: 'No conversations are saved for this file.',
+  [HISTORY_EMPTY_OFF]: 'Save chat history is off, so nothing is kept for this file. Turn it on in Settings › AI.',
+  [HISTORY_FAILED]: 'The saved conversations for this file could not be read.',
   [HISTORY_READ_ONLY]: 'Saved conversation',
   [HISTORY_GONE]: 'This conversation is no longer saved.',
   [HISTORY_LOADING]: 'Loading saved conversations…',
@@ -5644,14 +5662,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_FULL_COUNT]:
     'This conversation is full: it holds as many messages as one conversation can. Start a new conversation to ask more.',
   [ASSISTANT_LONG_NOTE]: 'This conversation is now long. We recommend starting a new chat to save cost.',
-  [ASSISTANT_HISTORY_OFF_CLEARS]: 'History is off, so New chat clears this conversation.',
   [ASSISTANT_FULL_PROVIDER]:
     'This conversation is now too long for the model to read, so the provider refused the last question. Start a new conversation to ask it again.',
   [ASSISTANT_START_NEW]: 'Start a new conversation',
-  [ASSISTANT_FILE_FULL_NEW]:
-    'This file already keeps {limit, plural, one {# saved conversation} other {# saved conversations}}, the most one file keeps, so a new one was not started. Remove one in the History, then start a new conversation.',
-  [ASSISTANT_FILE_FULL_UNSAVED]:
-    'This file already keeps {limit, plural, one {# saved conversation} other {# saved conversations}}, the most one file keeps, so this one is not being saved. Remove one in the History and it will be saved.',
+  [ASSISTANT_HISTORY_LOCKED]:
+    'Chat history cannot be saved on this computer, because the history saved here cannot be opened by this Windows account. To start again, choose Clear chat history in Settings › Privacy.',
+  [ASSISTANT_HISTORY_ON_NOTE]:
+    'Chat history is on. Conversations about this file are kept on this computer, encrypted for your Windows account. You can turn it off in Settings › AI.',
   [ASSISTANT_ANSWER_CUT]:
     'The answer was stopped at its length limit of {limit, plural, other {# characters}}. What is above is all of it up to there. Ask for the rest in a new question.',
   [ASSISTANT_SEARCHES_THE_WEB]:
@@ -5996,7 +6013,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_MODELS_LISTING]: 'Loading models…',
   [SETTINGS_AI_MODELS_ASKING]: 'Asking {provider} which models it offers…',
   [AI_SAVE_HISTORY_DESCRIPTION]:
-    'Off by default. Conversations are discarded when the document closes; saved ones are encrypted on this computer.',
+    'On by default. Conversations about each file are kept on this computer, encrypted for your Windows account. Off, a conversation is discarded when the document closes.',
   [AI_AZURE_OPENAI_ENDPOINT_DESCRIPTION]: 'Your own Azure OpenAI resource address. Needed only for that provider.',
   [INTEGRATIONS_DOCUSIGN_KEY_DESCRIPTION]:
     'Write-only. Kept on this computer, encrypted for your Windows account. How to make one in DocuSign: “Send a document for signing with DocuSign” in Help, under Before you start.',
@@ -6042,7 +6059,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SETTINGS_DONE]: 'Done',
   [SETTINGS_AI_PROVIDER_STORED]: '{provider} — key stored',
   [SETTINGS_ACTION_CLEAR_HISTORY]: 'Clear chat history',
-  [SETTINGS_ACTION_CLEAR_HISTORY_DESCRIPTION]: 'Removes every saved conversation from this computer.',
+  [SETTINGS_ACTION_CLEAR_HISTORY_DESCRIPTION]: 'Removes every saved conversation, for every file, from this computer.',
+  [SETTINGS_ACTION_CLEAR_HISTORY_ASK]:
+    'Clear chat history? Every saved conversation, for every file, is removed from this computer. This cannot be undone.',
+  [SETTINGS_ACTION_CLEAR_HISTORY_KEEP]: 'Keep them',
   [SETTINGS_ACTION_CLEAR_BACKUPS]: 'Clear backups',
   // `app.clearBackups`'s own effect: the earlier versions Monstera keeps in its own folder; nothing beside a person's files.
   [SETTINGS_ACTION_CLEAR_BACKUPS_DESCRIPTION]:

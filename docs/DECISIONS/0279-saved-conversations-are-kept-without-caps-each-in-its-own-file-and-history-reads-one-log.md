@@ -237,3 +237,101 @@ Monstera is closed is not noticed until it next runs. This replaces the *propose
 `HISTORY_BOUNDS` row and the words *removes them within a day* in *Owed when it is built*: the help page,
 `packages/ui/src/help/en/ai-assistant.md`, uses the same sentence. Every other proposed string stands as the table gives
 it. Nothing is built yet.
+
+## Correction, 2026-11-12 — two gaps the build found, and the history-off line, answered by the owner
+
+Asked by the cloud agent building this ADR before any code, because each is a choice the text above does not make.
+
+1. **A different PDF at a place that already has a history file.** Decision 1 of *The owner's answers* names the file
+   by the place alone, and Decision 5 says a PDF found there with a different guard (another `/ID`, or a PDF with no
+   `/ID` that another program changed) is a different document that must not see the old conversations, the old ones
+   counting as not found. Neither said where the new PDF's own conversations go. **The owner's answer:** one file per
+   place still, holding one SECTION per guard. A new guard starts a new section; Monstera's own save of the same PDF
+   appends a guard to the section it continues (Decision 5), so it is not a new one. **History shows the section whose
+   guard matches the PDF now at that place**, not simply the newest, so a PDF that comes back within the 24 hours gets
+   its conversations back (Decision 6). Any other section is removed 24 hours after the first check that finds its PDF
+   gone, by the same rewrite Delete one uses (Decision 7), and the file is deleted when no section is left.
+2. **History moved from 1.1.2610.0 whose PDF is never opened again.** The old store kept only a digest of each place,
+   so a moved entry has no place to check until its PDF is opened. **The owner's answer:** keep it. It stays sealed, gets
+   its guard and its place the next time its PDF is opened, and the 24-hour check does not look at it until then.
+   *Clear chat history* in Settings still removes it.
+3. **The history-off line in the assistant pane** (*History is off, so New chat clears this conversation*, the owner's
+   decision of 2026-10-31, ADR-0277's correction of that day) **is removed, and nothing is shown in its place** (the
+   owner, 2026-11-12): with history on by default, anyone who has it off turned it off themselves. History's own empty
+   line for saving off, *Save chat history is off, so nothing is kept for this file. Turn it on in Settings › AI.*,
+   stays as the wording table gives it.
+
+## Correction, 2026-11-12 (later) — a data key this account cannot unwrap, answered by the owner's reviewer
+
+Decision 8 of *The owner's answers* seals everything under one data key wrapped by `safeStorage`. A key can be stored
+that this Windows account cannot unwrap: after an administrator resets the account's password, or with the history
+folder restored from another computer. The build kept that key and never replaced it, since a new key written over it
+would make every conversation sealed under it unreadable for good. That is right, and the reviewer's note of 2026-11-12
+keeps it. What it left was a person whose every save is refused with nothing said.
+
+1. **The key is kept and never replaced** (unchanged). `historyStore.ts`' `keyFor` answers no key rather than writing one
+   where a key file exists and does not unwrap.
+2. **The store names this state**: `locked()` is true where the cipher works, a key file exists and it does not unwrap,
+   and a save then throws `HistoryLockedError`, not the generic refusal a machine with no working cipher gets. The two are
+   different facts about the person's situation and are said differently.
+3. **The assistant says it once, plainly**, the first time a save is refused for this reason in a session, and not at
+   every answer after it. The wording proposed, sent to the owner before it ships:
+
+   > *Chat history cannot be saved on this computer, because the history saved here cannot be opened by this Windows
+   > account. To start again, choose Clear chat history in Settings › Privacy.*
+
+4. **Settings' *Clear chat history* removes the unreadable files AND the key**, asking first as Decision 3 already says.
+   It removes the key on every clear, locked or not: once every file is gone nothing is sealed under it, and keeping it
+   would leave a locked store locked. The next save makes a new key.
+
+The case is `historyStore.test.ts`' *history LOCKED to another account*: a key made by one account, a store under
+another refuses a save as locked, the key file is unchanged byte for byte, and after *Clear chat history* the key is
+gone and a save is read back whole. Its control asserts that a store with no key yet, and one whose cipher is off, are
+not locked and are not refused as locked. Reverting the refusal turns the first case red (measured, 2026-11-12).
+
+### What the wiring found, 2026-11-12
+
+Recorded by the cloud agent that wired the store, each a choice the text above does not make. None is final until the
+owner has read it.
+
+5. **A PDF that needs a password to open.** Decision 6 removes a section whose PDF *cannot be found or read*. The check
+   reads a closed PDF's `/ID` by opening a copy with no password, which a PDF with an open password refuses, so as written
+   the check would remove the history of a password PDF standing at its place a day after the first pass that looked.
+   **Built conservatively, and asked of the owner:** the host's `locked` answer counts as present, so nothing is removed;
+   a different password PDF put at the same place keeps the old section on disk, unshown, until the owner decides.
+   `historyCheck.test.ts`' *a PDF that needs a password* holds it, with an unreadable file removed as its control.
+6. **A conversation 1.1.2610.0 saved before times were kept** has no time to be headed by, so `HISTORY_UNNAMED`
+   (*Earlier conversation*) heads that one alone, where the wording table removed it.
+7. **History reads every page.** A list answer carries `HISTORY_PAGE` (200) conversations, and History asks for the next
+   until `main` answers none, so every conversation is listed with no control to reach the rest and no new string.
+8. **Decision h is not built yet:** *Save chat history* still defaults to off. On by default needs the one-time note,
+   whose wording the text above does not give and which needs a place to remember that it was shown. Both are asked of
+   the owner rather than written here.
+9. **Delete runs on a worker thread**, as Decision 7 says: `historyRewriteWorker.ts` in `packages/nodemode` opens every
+   record and writes the kept ones beside the file; `main` appends what was saved meanwhile and renames. The local agent's
+   measurement of a large file on Windows decides whether the 3.1 to 3.9 s figure now stays off the main thread.
+
+## The owner's answers to the wiring's findings, 2026-11-12
+
+- **5 (a PDF that needs a password):** kept as built. Its history is never removed while the PDF needs a password.
+- **The locked-history line** is approved as written. *Clear chat history* is on Settings › Privacy, as it says:
+  `SettingsBody.tsx` draws it on the page whose id is `privacy`, and `SettingsBody.test.tsx` opens that page to press it.
+- **8 (decision h): built, on by default, with this note shown once in the AI assistant**, the owner's words: *"Chat
+  history is on. Conversations about this file are kept on this computer, encrypted for your Windows account. You can
+  turn it off in Settings › AI."* A person who turned it off stays off: persistence sends only the settings a person
+  set (`settingsStore.ts`' `exportable`), so a switch nobody touched is unset, takes the new default, and one turned off
+  is stored off.
+
+### Where *shown once* is remembered
+
+**In `main`'s history folder, as a file named `note-shown`, written by `main`.** The history store is the one writer of
+that folder (B3), and the note is about what it keeps. `ai.history.note` answers `show: true` exactly once, writing the
+file in the same call, so two windows cannot both show it. It answers `false` without writing while chat history is off,
+while this machine cannot keep it (no secure store) and while it is locked to another account, because the note would
+then say something untrue; the note is still owed until it can be true. *Clear chat history* leaves `note-shown` in
+place: it removes conversations and their key, and a person who cleared them has read the note.
+
+Rejected: **a setting**. A setting is drawn in the Settings window (`SettingDefinition` has no hidden form) and is
+exported and imported with the rest, so a person could see a switch for a note and a settings file could bring it back.
+**The renderer's own storage** (a remembered flag in the window): it is per window, and the renderer holds no state of
+its own that outlives it.

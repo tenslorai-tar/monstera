@@ -853,16 +853,16 @@ export interface BrowserShimOptions {
    */
   readonly aiAskRefusal?: DeclaredOf<typeof channels, 'ai.ask'>;
   /**
-   * What `ai.history.load` answers: a conversation saved for the document, so a rendered case can show one without a
-   * provider to ask. Absent is nothing saved, the setting's default.
-   */
-  readonly aiHistory?: ChannelResult<'ai.history.load'>;
-  /**
    * Whether `ai.ask` answers *started*, for a case that then streams the answer in with `pushEvent`. Absent is
-   * *not started*: no provider in a browser.
+   * *not started*: no provider in a browser. Opening a PDF loads no saved conversation (ADR-0279 Decision 8), so this is
+   * how a rendered case puts one on screen: asked, and answered, as a person's is.
    */
   readonly aiAskStarts?: boolean;
-  /** What `ai.history.list` answers: the History's saved conversations. Absent is none. */
+  /** What a started `ai.ask` answers went with the question, for a case that draws the bubble's *Sent* line. Absent is none. */
+  readonly aiAskSent?: ChannelResult<'ai.ask'>['sent'];
+  /** Whether `ai.history.note` answers that the note that chat history is on is shown. Absent is not shown. */
+  readonly aiHistoryNote?: boolean;
+  /** What `ai.history.list` answers: the open PDF's saved conversations, in one page. Absent is none. */
   readonly aiConversations?: ChannelResult<'ai.history.list'>['conversations'];
   /** What `ai.models.held` answers per provider. A provider absent here answers `aiModels`, or the empty list. */
   readonly aiHeldModels?: Partial<Record<AiProviderId, AiModelListAnswer>>;
@@ -1520,6 +1520,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
             permissions: { print: true, copy: true, edit: true, annotate: true },
             pageCount: 12,
             firstPage: { width: 595.28, height: 841.89 },
+            permanentId: null,
           },
         }),
       );
@@ -2898,13 +2899,14 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       ),
     // REFUSED, because the shim has no provider to ask and a key it cannot check is not one it may keep.
     'ai.checkKey': () => Promise.resolve(ok({ accepted: false as const, problem: 'unreachable' as const })),
-    // NOTHING SAVED, the setting's default: the shim keeps no conversation between pages — unless a case seeds one.
-    'ai.history.load': () => Promise.resolve(ok(options.aiHistory ?? { turns: [], conversation: null })),
+    // NOTHING SAVED: the shim keeps no conversation between pages.
     'ai.history.save': () => Promise.resolve(ok({ saved: false, conversation: null })),
-    'ai.history.count': () => Promise.resolve(ok({ count: 0 })),
     'ai.history.clear': () => Promise.resolve(ok({ cleared: 0 })),
-    // NOTHING KEPT, as the shim's load: the History lists none, and nothing named reads or removes.
-    'ai.history.list': () => Promise.resolve(ok({ conversations: [...(options.aiConversations ?? [])] })),
+    // NO NOTE unless a case asks for it: every other rendered case keeps the panel it photographs.
+    'ai.history.note': () => Promise.resolve(ok({ show: options.aiHistoryNote ?? false })),
+    'ai.history.clearFile': () => Promise.resolve(ok({})),
+    // NOTHING KEPT unless a case seeds a list: History lists that, in one page, and nothing named reads or removes.
+    'ai.history.list': () => Promise.resolve(ok({ conversations: [...(options.aiConversations ?? [])], next: null })),
     'ai.history.read': () => Promise.resolve(ok({ conversation: null })),
     'ai.history.remove': () => Promise.resolve(ok({ removed: false })),
     // THE SHIM HAS NO CLIPBOARD, so nothing is claimed copied.
@@ -2941,7 +2943,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     'ai.ask': () =>
       Promise.resolve(
         options.aiAskRefusal === undefined
-          ? ok({ started: options.aiAskStarts === true, sent: null })
+          ? ok({ started: options.aiAskStarts === true, sent: options.aiAskStarts === true ? (options.aiAskSent ?? null) : null })
           : err({ code: options.aiAskRefusal }),
       ),
     // NO FILE PICKER IN A BROWSER: what `main` answers a picker the person cancelled.

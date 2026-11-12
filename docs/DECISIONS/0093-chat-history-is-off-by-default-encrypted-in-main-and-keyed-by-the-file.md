@@ -94,3 +94,11 @@ and awaiting approval, would supersede Decision 1 (off by default), Decision 2's
 The owner approved
 [ADR-0279](0279-saved-conversations-are-kept-without-caps-each-in-its-own-file-and-history-reads-one-log.md) on
 2026-11-01. It supersedes Decisions 1, 2, 3 and 5 once it is built; until then this ADR still describes what ships.
+
+## Correction, 2026-11-12 — ADR-0279 is built, on its branch
+
+ADR-0279's store is wired on `work/cloud-62-history-per-pdf` (`historyStore.ts`, `documentHistory.ts`), and
+`chatHistory.ts`, this ADR's store, is deleted there; 1.1.2610.0's `chat-history.json` is moved into it once
+(`historyMove.ts`). From the release that carries that branch, Decisions 1, 2, 3 and 5 here are superseded and ADR-0279
+describes what ships. One thing this ADR decided is unchanged for now: chat history is still off by default, because
+ADR-0279's decision h waits on the owner's wording for its one-time note (that ADR's correction of 2026-11-12, item 8).

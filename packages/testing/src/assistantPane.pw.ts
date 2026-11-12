@@ -1,6 +1,7 @@
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { type Page, expect, test } from '@playwright/test';
 
+import { asksHeard, converse } from './assistantConverse.js';
 import { blockedPages } from './blockedPages.js';
 import { readsAtTextFloor } from './inkOnScreen.js';
 import { LOOKS, type Look, bridge, bridgeUnder } from './pageBridge.js';
@@ -15,7 +16,7 @@ import { LOOKS, type Look, bridge, bridgeUnder } from './pageBridge.js';
 const DOC = asDocId('00000000-0000-4000-8000-0000000000a9');
 
 /**
- * The pane open on a saved conversation. Under a `look` it is bridged by `bridgeUnder` — the media and the theme
+ * The pane open on a conversation of one question and its answer (`converse`). Under a `look` it is bridged by `bridgeUnder` — the media and the theme
  * setting as the one pair, never applied by hand here — and the theme is asserted before anything is measured, so a
  * look that failed to apply cannot test the light screen three times.
  */
@@ -36,26 +37,22 @@ async function openPane(
       'ai.save-history': true,
       ...settings,
     },
-    // A SAVED CONVERSATION, so the chat is on screen without a provider to ask.
-    aiHistory: {
-      // THE KEY MAIN GAVE IT (ADR-0277), which a later save would continue it under.
-      conversation: 'a'.repeat(64),
-      turns: [
-        // WHAT WENT, so the bubble carries the owner's *Sent page 2 of 15* and its readability is measured.
-        {
-          role: 'user' as const,
-          text: 'What is this page about?',
-          sent: { firstPage: 1, lastPage: 1, pageCount: 15, characters: 800, truncated: false },
-        },
-        { role: 'assistant' as const, text: 'It is a page with a black square in its middle.' },
-      ],
-    },
+    // A PROVIDER OFFERED AND EVERY ASK STARTED, so the chat is put on screen as a person's is: asked, and answered.
+    secrets: { 'ai.anthropic-key': 'a-fixture-key' },
+    aiModels: { source: 'fetched' as const, models: [{ id: 'fixture-model', label: 'Fixture', capabilities: { vision: null, streaming: null } }] },
+    aiAskStarts: true,
+    // WHAT WENT, so the bubble carries the owner's *Sent page 2 of 15* and its readability is measured.
+    aiAskSent: { firstPage: 1, lastPage: 1, pageCount: 15, characters: 800, truncated: false },
   };
-  if (look === undefined) await bridge(page, options);
-  else await bridgeUnder(page, look, options);
+  const asks = asksHeard();
+  if (look === undefined) await bridge(page, options, asks.observe);
+  else await bridgeUnder(page, look, options, asks.observe);
   await page.goto('/');
   if (look !== undefined) await expect(page.locator('html')).toHaveAttribute('data-theme', look.name);
   await page.getByRole('button', { name: 'Open PDF…' }).click();
+  await converse(page, page.locator('.m-assistant'), asks.latest, [
+    { question: 'What is this page about?', answer: 'It is a page with a black square in its middle.' },
+  ]);
   await expect(page.locator('.m-assistant__turn')).toHaveCount(2, { timeout: 10_000 });
 }
 

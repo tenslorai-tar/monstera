@@ -155,3 +155,24 @@ refusal: no cap on conversations, nothing dropped. Until it is approved and buil
 The owner approved
 [ADR-0279](0279-saved-conversations-are-kept-without-caps-each-in-its-own-file-and-history-reads-one-log.md) on
 2026-11-01. It supersedes Decision 6 once it is built; until then Decision 6 still describes what ships.
+
+## Correction, 2026-11-10 — twenty conversations hold up to 10,240 messages, not "some 640"
+
+Decision 6 says twenty conversations *"are some 640 messages about one file"*. That counted questions and called them
+messages: with `MAX_CHAT_TURNS` at 64 when the decision was written, a full conversation held 64 messages, 32
+questions and their answers, so twenty held 1,280 messages and 640 questions (the audit's finding of that range,
+*Twenty are some 640 messages is the questions; the messages are 1,280*, `docs/JOURNAL.md`). Since the correction of
+2026-10-31 above, a conversation is full only at the safety ceiling of 512 messages (`MAX_CHAT_TURNS`,
+`packages/contract/src/channels.ts`), so twenty conversations hold up to **10,240 messages** about one file. The
+store's bound is unchanged in kind: `MAX_SAVED_CONVERSATIONS` files, each of at most `MAX_FILE_CONVERSATIONS`
+conversations within `MAX_CONVERSATION_TEXT` characters. The figure in the owner's list of 2026-11-10 was 1,280; the
+owner chose to record 10,240 with this history. ADR-0279 removes the per-file count once it is built.
+
+## Correction, 2026-11-12 — ADR-0279 is built, on its branch, and Decisions 6 and 7 go with it
+
+On `work/cloud-62-history-per-pdf`, ADR-0279's store replaces this ADR's: `MAX_FILE_CONVERSATIONS` and
+`MAX_SAVED_CONVERSATIONS` are gone from the contract, a new conversation is never refused as `file-full`, and New chat asks
+`main` nothing first, so Decision 6's twenty and its two sentences are retired. Decision 7's two shapes of
+`chat-history.json` are read once, by the move into ADR-0279's store (`historyMove.ts`), and nothing else reads them. A
+saved conversation is no longer loaded into the assistant when its PDF opens (ADR-0279 Decision 8), so a too-long mark
+saved with a conversation (the correction of 2026-11-10) is now what History shows of it, not what a reopen restores.

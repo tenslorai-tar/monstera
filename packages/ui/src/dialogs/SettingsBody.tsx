@@ -30,6 +30,8 @@ import {
   ASSISTANT_MODEL_NOT_OFFERED,
   SETTINGS_ACTION_CLEAR_HISTORY,
   SETTINGS_ACTION_CLEAR_HISTORY_DESCRIPTION,
+  SETTINGS_ACTION_CLEAR_HISTORY_ASK,
+  SETTINGS_ACTION_CLEAR_HISTORY_KEEP,
   SETTINGS_ACTION_CLEAR_BACKUPS,
   SETTINGS_ACTION_CLEAR_BACKUPS_DESCRIPTION,
   SETTINGS_ACTION_CLEAR_RECENT,
@@ -868,14 +870,21 @@ function ActionRow({
   label,
   done,
   onRun,
+  ask,
 }: {
   readonly title: MessageKey;
   readonly description: MessageKey;
   readonly label: MessageKey;
   readonly done: boolean;
   readonly onRun: () => void;
+  /**
+   * The question an action that cannot be undone asks FIRST, in the row, with its two answers (ADR-0279 Decision 3):
+   * the action runs only on `yes`. Absent, the button runs it at once.
+   */
+  readonly ask?: { readonly question: MessageKey; readonly yes: MessageKey; readonly keep: MessageKey };
 }): ReactElement {
   const { _ } = useLingui();
+  const [asking, setAsking] = useState(false);
   return (
     <div className="m-settings-row">
       <div className="m-settings-row__text">
@@ -883,7 +892,33 @@ function ActionRow({
         <span className="m-settings-row__note">{_(done ? SETTINGS_ACTION_CLEARED : description)}</span>
       </div>
       <div className="m-settings-row__control">
-        <Button label={label} onClick={onRun} />
+        {ask !== undefined && asking ? (
+          <span aria-label={_(ask.question)} className="m-settings-row__ask" role="group">
+            <span>{_(ask.question)}</span>
+            <Button
+              label={ask.yes}
+              onClick={() => {
+                setAsking(false);
+                onRun();
+              }}
+              variant="danger"
+            />
+            <Button
+              label={ask.keep}
+              onClick={() => {
+                setAsking(false);
+              }}
+            />
+          </span>
+        ) : (
+          <Button
+            label={label}
+            onClick={() => {
+              if (ask === undefined) onRun();
+              else setAsking(true);
+            }}
+          />
+        )}
       </div>
     </div>
   );
@@ -1234,6 +1269,11 @@ export default function SettingsBody({
 
               {page?.id === 'privacy' && (
                 <ActionRow
+                  ask={{
+                    question: SETTINGS_ACTION_CLEAR_HISTORY_ASK,
+                    yes: SETTINGS_ACTION_CLEAR_HISTORY,
+                    keep: SETTINGS_ACTION_CLEAR_HISTORY_KEEP,
+                  }}
                   description={SETTINGS_ACTION_CLEAR_HISTORY_DESCRIPTION}
                   done={cleared}
                   label={SETTINGS_ACTION_CLEAR_HISTORY}

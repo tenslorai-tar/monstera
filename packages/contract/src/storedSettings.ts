@@ -92,11 +92,14 @@ export const LOG_DETAIL_STORED: StoredSetting<z.ZodEnum<{ [Detail in (typeof LOG
   fallback: 'problems',
 };
 
-/** The assistant's chats are kept: off (ADR-0093, the owner's specification). */
+/**
+ * The assistant's chats are kept: ON (ADR-0279 decision h, the owner's of 2026-11-12, replacing ADR-0093's off). Only a
+ * setting a person set is stored, so a switch nobody touched takes this and one turned off stays off.
+ */
 export const CHAT_HISTORY_STORED: StoredSetting<z.ZodBoolean> = {
   id: CHAT_HISTORY_SETTING_ID,
   schema: z.boolean(),
-  fallback: false,
+  fallback: true,
 };
 
 /** The model chosen per provider; a provider absent is the provider's default model (ADR-0117). */

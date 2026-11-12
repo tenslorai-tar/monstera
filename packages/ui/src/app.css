@@ -3673,12 +3673,6 @@ optgroup {
   gap: var(--space-8);
 }
 
-/* WITH HISTORY OFF, the line that says New chat clears the conversation stands against New chat, at the end. */
-.m-assistant__history-off {
-  margin-inline-start: auto;
-  text-align: end;
-}
-
 /* THE HISTORY (ADR-0192): a bar with its way back, then the saved conversations, each a block with its own two buttons. */
 .m-assistant-history {
   display: flex;
@@ -3744,7 +3738,9 @@ optgroup {
 }
 
 .m-assistant-history__actions,
-.m-assistant-history__ask {
+/* AN ACTION THAT ASKS FIRST, in History and in a Settings row (ADR-0279 Decision 3): one shape for the question. */
+.m-assistant-history__ask,
+.m-settings-row__ask {
   display: flex;
   flex-wrap: wrap;
   align-items: center;

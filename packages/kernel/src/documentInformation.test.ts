@@ -1,4 +1,4 @@
-import { PDFDict, PDFDocument, PDFName, PDFRawStream, PDFString, StandardFonts, decodePDFRawStream } from '@cantoo/pdf-lib';
+import { PDFDict, PDFDocument, PDFHexString, PDFName, PDFRawStream, PDFString, StandardFonts, decodePDFRawStream } from '@cantoo/pdf-lib';
 import type { DocumentInformationFields } from '@monstera/contract';
 import { type Element, Window } from 'happy-dom';
 import { describe, expect, it } from 'vitest';
@@ -189,6 +189,33 @@ describe('setDocumentInformation — Info and XMP written together, read back by
     expect(facts.encryption).toBe('None');
     expect(facts.permissions).toStrictEqual({ print: true, copy: true, edit: true, annotate: true });
     expect([facts.pageCount, facts.firstPage]).toStrictEqual([1, { width: 300, height: 200 }]);
+  });
+
+  // ADR-0279'S GUARD: the first /ID string as its bytes, a 0x00 and a 0xff among them, which a text read would lose.
+  const FIRST = '00ff10a5c3e8000102030405060708ff';
+  const withId = async (): Promise<Uint8Array> => {
+    const document = await PDFDocument.create({ updateMetadata: false });
+    document.addPage([300, 200]);
+    document.context.trailerInfo.ID = document.context.obj([PDFHexString.of(FIRST), PDFHexString.of('11'.repeat(16))]);
+    return wholeFile(document, { useObjectStreams: false });
+  };
+
+  it('answers the PDF’s permanent id, the FIRST /ID string as hex, and Monstera’s own save keeps it', async () => {
+    const bytes = await withId();
+    expect((await shown(bytes)).permanentId).toBe(FIRST);
+    const session = await mupdfWriter.open(bytes);
+    try {
+      await applySetDocumentInformation(session, { kind: 'setDocumentInformation', fields: NEW });
+      expect((await shown(await mupdfWriter.serialise(session))).permanentId).toBe(FIRST);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('CONTROL: a PDF with no /ID answers null, and adds none', async () => {
+    const bytes = await documentOf('neither');
+    expect(new TextDecoder('latin1').decode(bytes)).not.toContain('/ID');
+    expect((await shown(bytes)).permanentId).toBeNull();
   });
 });
 

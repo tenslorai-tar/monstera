@@ -11,14 +11,12 @@ const SAVED = [
   { role: 'assistant' as const, text: 'Earlier answer' },
 ];
 
-/** The key `main` gave the saved conversation a case loads, and the keys it gives new ones, in order. */
-const LOADED_KEY = 'c'.repeat(64);
+/** The keys `main` gives new conversations, in order. */
 const newKey = (count: number): string => String(count % 10).repeat(64);
 
 function recording(
-  saved: readonly { role: 'user' | 'assistant'; text: string }[],
-  /** `main`'s answer to a NEW conversation's save: a key, or `file-full` once the file keeps its twenty. */
-  fresh: 'key' | 'file-full' = 'key',
+  /** `main`'s answer to a save: a key, or `history-locked` where this account cannot open the history saved here. */
+  answer: 'key' | 'locked' = 'key',
 ): {
   client: ContractClient;
   sent: { id: string; params: unknown }[];
@@ -27,13 +25,12 @@ function recording(
   let minted = 0;
   const client = createClient(channels, (id, params) => {
     sent.push({ id, params });
-    if (id === 'ai.history.load') return Promise.resolve(ok({ turns: saved, conversation: saved.length === 0 ? null : LOADED_KEY }));
     if (id === 'ai.history.save') {
+      if (answer === 'locked') return Promise.resolve({ ok: false, error: { code: 'history-locked' } });
       const { conversation: named, turns } = params as { conversation: string | null; turns: readonly unknown[] };
       if (named !== null) return Promise.resolve(ok({ saved: true, conversation: named }));
       // AN EMPTY NEW CONVERSATION stores nothing and is given no key, as `main` answers it.
       if (turns.length === 0) return Promise.resolve(ok({ saved: false, conversation: null }));
-      if (fresh === 'file-full') return Promise.resolve({ ok: false, error: { code: 'file-full' } });
       minted += 1;
       return Promise.resolve(ok({ saved: true, conversation: newKey(minted) }));
     }
@@ -69,33 +66,34 @@ async function settle(): Promise<void> {
   await Promise.resolve();
 }
 
-describe('keeping a conversation saved (ADR-0093)', () => {
-  it('loads the saved conversation into an EMPTY one, and does not save it straight back', async () => {
+/** A conversation asked and saved once, so it holds `main`'s first key: where a case that continues one starts. */
+async function savedOnce(store: ReturnType<typeof createDocumentStore>, clock: ReturnType<typeof manual>): Promise<void> {
+  store.getState().converse(SAVED);
+  clock.flush();
+  await settle();
+}
+
+describe('keeping a conversation saved (ADR-0279)', () => {
+  it('opening a PDF LOADS NOTHING (Decision 8): no history is asked for, and the conversation starts empty', async () => {
     const store = createDocumentStore(DOC, asDocVersion(1));
-    const { client, sent } = recording(SAVED);
+    const { client, sent } = recording();
     const clock = manual();
     syncConversation(client, DOC, store, () => true, clock.schedule);
     await settle();
-    expect(store.getState().conversation.map((turn) => turn.text)).toStrictEqual(['Earlier question', 'Earlier answer']);
     clock.flush();
-    expect(sent.filter((call) => call.id === 'ai.history.save')).toHaveLength(0);
+    expect(sent).toStrictEqual([]);
+    expect(store.getState().conversation).toStrictEqual([]);
+    // CONTROL: the same sync saves once there is something to save, so its silence above is the decision.
+    store.getState().converse([{ role: 'user', text: 'Q' }]);
+    clock.flush();
+    expect(named(sent)).toStrictEqual([null]);
   });
 
-  it('CONTROL: a conversation already started is not replaced by the saved one', async () => {
+  it('saves ONCE when the conversation settles, not once per change', () => {
     const store = createDocumentStore(DOC, asDocVersion(1));
-    store.getState().converse([{ role: 'user', text: 'New question' }]);
-    const { client } = recording(SAVED);
-    syncConversation(client, DOC, store, () => true, manual().schedule);
-    await settle();
-    expect(store.getState().conversation.map((turn) => turn.text)).toStrictEqual(['New question']);
-  });
-
-  it('saves ONCE when the conversation settles, not once per change', async () => {
-    const store = createDocumentStore(DOC, asDocVersion(1));
-    const { client, sent } = recording([]);
+    const { client, sent } = recording();
     const clock = manual();
     syncConversation(client, DOC, store, () => true, clock.schedule);
-    await settle();
     store.getState().converse([{ role: 'user', text: 'Q' }]);
     store.getState().converse([{ role: 'user', text: 'Q' }, { role: 'assistant', text: 'A' }]);
     store.getState().converse([{ role: 'user', text: 'Q' }, { role: 'assistant', text: 'A, whole' }]);
@@ -113,12 +111,11 @@ describe('keeping a conversation saved (ADR-0093)', () => {
     });
   });
 
-  it('STOPPING FLUSHES a save still settling — the close does not lose the last answer', async () => {
+  it('STOPPING FLUSHES a save still settling — the close does not lose the last answer', () => {
     const store = createDocumentStore(DOC, asDocVersion(1));
-    const { client, sent } = recording([]);
+    const { client, sent } = recording();
     const clock = manual();
     const stop = syncConversation(client, DOC, store, () => true, clock.schedule);
-    await settle();
     store.getState().converse([{ role: 'user', text: 'Q' }, { role: 'assistant', text: 'A' }]);
     stop();
     expect(sent.filter((call) => call.id === 'ai.history.save')).toHaveLength(1);
@@ -139,12 +136,11 @@ describe('keeping a conversation saved (ADR-0093)', () => {
     expect(seen).toStrictEqual([`opened ${DOC}`, `closed ${DOC} held=true`]);
   });
 
-  it('with the setting OFF, neither loads nor saves', async () => {
+  it('with the setting OFF, nothing is saved', () => {
     const store = createDocumentStore(DOC, asDocVersion(1));
-    const { client, sent } = recording(SAVED);
+    const { client, sent } = recording();
     const clock = manual();
     syncConversation(client, DOC, store, () => false, clock.schedule);
-    await settle();
     store.getState().converse([{ role: 'user', text: 'Q' }]);
     clock.flush();
     expect(sent).toHaveLength(0);
@@ -174,11 +170,11 @@ describe('keeping a conversation saved (ADR-0093)', () => {
 
   it('NEW CHAT saves a NEW conversation and never names the old one again; the old one is not replaced (ADR-0277)', async () => {
     const store = createDocumentStore(DOC, asDocVersion(1));
-    const { client, sent } = recording(SAVED);
+    const { client, sent } = recording();
     const clock = manual();
     syncConversation(client, DOC, store, () => true, clock.schedule);
-    await settle();
-    // CONTINUING the loaded conversation names its key.
+    await savedOnce(store, clock);
+    // CONTINUING it names its key.
     store.getState().converse([...store.getState().conversation, { role: 'user', text: 'More?' }]);
     clock.flush();
     await settle();
@@ -190,17 +186,17 @@ describe('keeping a conversation saved (ADR-0093)', () => {
     store.getState().converse([{ role: 'user', text: 'A fresh question' }, { role: 'assistant', text: 'A fresh answer' }]);
     clock.flush();
     await settle();
-    // THE NEW ONE'S FIRST SAVE NAMES NONE, its next names the key it was given, and the loaded key is never named after.
+    // THE NEW ONE'S FIRST SAVE NAMES NONE, its next names the key it was given, and the first key is never named after.
     // (The empty conversation New chat left stores nothing, as main answers a save of no turns.)
-    expect(named(sent)).toStrictEqual([LOADED_KEY, null, null, newKey(1)]);
+    expect(named(sent)).toStrictEqual([null, newKey(1), null, null, newKey(2)]);
   });
 
   it('NEW CHAT pressed while the last answer is still settling saves that answer in the OLD conversation first', async () => {
     const store = createDocumentStore(DOC, asDocVersion(1));
-    const { client, sent } = recording(SAVED);
+    const { client, sent } = recording();
     const clock = manual();
     syncConversation(client, DOC, store, () => true, clock.schedule);
-    await settle();
+    await savedOnce(store, clock);
     // AN ANSWER LANDS and New chat is pressed before the settle time passes — as on *Start a new conversation*, which
     // appears with the answer that fills a conversation (the stage audit of f32c8c39..0d48e788).
     store.getState().converse([...SAVED, { role: 'user', text: 'Last question' }, { role: 'assistant', text: 'Last answer' }]);
@@ -210,18 +206,17 @@ describe('keeping a conversation saved (ADR-0093)', () => {
     const saves = sent.filter((call) => call.id === 'ai.history.save').map((call) => call.params as { conversation: string | null; turns: readonly { text: string }[] });
     // THE CALL MADE: the old conversation, under its own key, with the answer. CONTROL: the one settle timer per store was
     // cancelled by New chat's change, so only the empty new conversation was saved and the answer was never kept.
-    expect(saves[0]?.conversation).toBe(LOADED_KEY);
-    expect(saves[0]?.turns.map((turn) => turn.text)).toStrictEqual(['Earlier question', 'Earlier answer', 'Last question', 'Last answer']);
-    expect(saves).toHaveLength(2);
-    expect(saves[1]?.conversation).toBeNull();
+    expect(saves[1]?.conversation).toBe(newKey(1));
+    expect(saves[1]?.turns.map((turn) => turn.text)).toStrictEqual(['Earlier question', 'Earlier answer', 'Last question', 'Last answer']);
+    expect(saves).toHaveLength(3);
+    expect(saves[2]?.conversation).toBeNull();
   });
 
   it('a new conversation’s waiting save is ITS OWN latest state, never the next conversation’s', async () => {
     const store = createDocumentStore(DOC, asDocVersion(1));
-    const { client, sent } = recording([]);
+    const { client, sent } = recording();
     const clock = manual();
     syncConversation(client, DOC, store, () => true, clock.schedule);
-    await settle();
     store.getState().converse([{ role: 'user', text: 'First' }]);
     clock.flush();
     // ITS FIRST SAVE IN FLIGHT, a second change waits for the key; then New chat and a question there.
@@ -240,23 +235,22 @@ describe('keeping a conversation saved (ADR-0093)', () => {
 
   it('CONTROL: without New chat, an emptied and refilled conversation is the SAME one', async () => {
     const store = createDocumentStore(DOC, asDocVersion(1));
-    const { client, sent } = recording(SAVED);
+    const { client, sent } = recording();
     const clock = manual();
     syncConversation(client, DOC, store, () => true, clock.schedule);
-    await settle();
+    await savedOnce(store, clock);
     store.getState().converse([]);
     store.getState().converse([{ role: 'user', text: 'Edited' }]);
     clock.flush();
     await settle();
-    expect(named(sent)).toStrictEqual([LOADED_KEY]);
+    expect(named(sent)).toStrictEqual([null, newKey(1)]);
   });
 
   it('a new conversation’s second save WAITS for the first one’s key, so it is never added twice', async () => {
     const store = createDocumentStore(DOC, asDocVersion(1));
-    const { client, sent } = recording([]);
+    const { client, sent } = recording();
     const clock = manual();
     const stop = syncConversation(client, DOC, store, () => true, clock.schedule);
-    await settle();
     store.getState().converse([{ role: 'user', text: 'Q' }]);
     clock.flush();
     // A SECOND CHANGE before the first save's answer, flushed by the close.
@@ -267,18 +261,28 @@ describe('keeping a conversation saved (ADR-0093)', () => {
     expect(named(sent)).toStrictEqual([null, newKey(1)]);
   });
 
-  it('a file at its twenty is SAID: the refusal lands on the store, and a later save that goes clears it', async () => {
+  it('history LOCKED to another account is SAID: the refusal lands on the store and New chat keeps it, so it is said once', async () => {
     const store = createDocumentStore(DOC, asDocVersion(1));
-    const { client } = recording([], 'file-full');
+    const { client } = recording('locked');
     const clock = manual();
     syncConversation(client, DOC, store, () => true, clock.schedule);
-    await settle();
     store.getState().converse([{ role: 'user', text: 'Q' }]);
     clock.flush();
     await settle();
-    expect(store.getState().historyRefused).toBe('file-full');
-    // A NEW CONVERSATION starts afresh, unrefused until main says otherwise.
+    expect(store.getState().historyRefused).toBe('locked');
+    // A NEW CONVERSATION changes nothing about this computer's history, so the one line stays rather than coming back.
     store.getState().startConversation();
+    expect(store.getState().historyRefused).toBe('locked');
+  });
+
+  it('CONTROL: a save that goes leaves nothing to say', async () => {
+    const store = createDocumentStore(DOC, asDocVersion(1));
+    const { client } = recording('key');
+    const clock = manual();
+    syncConversation(client, DOC, store, () => true, clock.schedule);
+    store.getState().converse([{ role: 'user', text: 'Q' }]);
+    clock.flush();
+    await settle();
     expect(store.getState().historyRefused).toBeNull();
   });
 
@@ -292,6 +296,19 @@ describe('keeping a conversation saved (ADR-0093)', () => {
     const saved = savedTurns([turn]);
     expect(saved).toStrictEqual([{ role: 'user', text: 'What do these say?', attached: ['notes.txt', 'photo.jpg'] }]);
     expect(JSON.stringify(saved)).not.toContain('h-notes');
+    expect(savedTurnsSchema.safeParse(saved).success).toBe(true);
+  });
+
+  it('a question the provider refused as TOO LONG, and an answer cut at its bound, are saved WITH their marks', () => {
+    const refused: ConversationTurn[] = [
+      { role: 'user', text: 'Earlier question' },
+      { role: 'assistant', text: 'A long answer', cut: true },
+      { role: 'user', text: 'The question the model refused', refused: 'too-long' },
+    ];
+    const saved = savedTurns(refused);
+    expect(saved[2]).toStrictEqual({ role: 'user', text: 'The question the model refused', refused: 'too-long' });
+    expect(saved[1]).toStrictEqual({ role: 'assistant', text: 'A long answer', cut: true });
+    // THE SCHEMA MAIN SAVES WITH accepts the marks, so the save is not refused for carrying them.
     expect(savedTurnsSchema.safeParse(saved).success).toBe(true);
   });
 });

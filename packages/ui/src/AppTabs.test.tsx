@@ -163,6 +163,8 @@ function client(): { readonly client: ContractClient; readonly sent: Sent[] } {
     if (id === 'document.adoptOldBackups') return Promise.resolve(ok({ kind: 'adopted' as const, moved: 0 }));
     // E3's prompt asks once per mount; not due, so no banner sits over the tabs these cases drive.
     if (id === 'app.reviewPrompt') return Promise.resolve(ok({ due: false }));
+    // THE AI ASSISTANT ASKS ONCE AS IT OPENS whether to say chat history is on (ADR-0279 decision h): not these cases'.
+    if (id === 'ai.history.note') return Promise.resolve(ok({ show: false }));
     throw new Error(`this fixture has no answer for ${id}`);
   });
   return { client: built, sent };

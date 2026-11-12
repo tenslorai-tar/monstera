@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { constants as fileConstants, createReadStream } from 'node:fs';
+import { constants as fileConstants, createReadStream, statSync } from 'node:fs';
 import { copyFile, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { type Server, connect, createServer } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -321,7 +321,9 @@ import type { OpenInBrowser } from './docusignSignIn.js';
 import type { EditWatchSurface } from './externalEditWatch.js';
 import type { OpenExternalEditor } from './openExternalEditor.js';
 import type { SecretStoreSurface } from './secretStore.js';
-import { type ChatHistory, noChatHistory } from './chatHistory.js';
+import { createDocumentHistory, noDocumentHistory } from './documentHistory.js';
+import { IDLE_SECONDS, type PermanentIdRead, createHistoryCheck, driveHistoryCheck } from './historyCheck.js';
+import type { HistoryStore } from './historyStore.js';
 import { type SettingsSurface, createEphemeralSettings, createJsonFile } from './settingsFile.js';
 import { writePrefix } from './signedVersionFile.js';
 import { type StartReading, startEditingHosts } from './editingHosts.js';
@@ -724,11 +726,17 @@ export interface ShellComposition {
    */
   readonly secrets?: SecretStoreSurface;
   /**
-   * Saved assistant conversations (ADR-0093), encrypted with the same cipher as `secrets`. Absent is
-   * a machine that can keep none — the position every unit test is in, and the answer
-   * `ai.history.save` then gives while the setting is on.
+   * Saved assistant conversations (ADR-0279), one file per PDF sealed under one key the same cipher as `secrets` wraps.
+   * Absent is a machine that can keep none — the position every unit test is in, and the answer `ai.history.save` then
+   * gives while the setting is on.
    */
-  readonly chatHistory?: ChatHistory;
+  readonly historyStore?: HistoryStore;
+  /**
+   * How many seconds the person has left the computer alone — Electron's `powerMonitor`, passed in from `entry.ts`. With
+   * {@link historyStore}, it starts the chat history's 24-hour check, which runs only while this is at least its
+   * `IDLE_SECONDS` and no document is opening (ADR-0279 Decision 6). Absent, the check never runs.
+   */
+  readonly systemIdleSeconds?: () => number;
   /**
    * The system clipboard's text writer — Electron's, passed in from `entry.ts` because this module
    * imports no Electron. Absent, `window.copyText` answers `copied: false`.
@@ -999,7 +1007,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     editWatch,
     settings,
     secrets,
-    chatHistory,
+    historyStore,
+    systemIdleSeconds,
     writeClipboardText,
     cloud: cloudComposition,
     fontList,
@@ -2243,8 +2252,43 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     recentPictures.drop(paths);
   });
 
-  const openedDocument = engineHost.openedDocument;
+  /** Documents whose sessions are being built: the chat history check never runs while one is (ADR-0279 Decision 6). */
+  let opening = 0;
+  const openedDocument = (docId: DocId): Promise<void> => {
+    opening += 1;
+    const sessions = engineHost.openedDocument(docId);
+    const done = (): void => {
+      opening -= 1;
+    };
+    void sessions.then(done, done);
+    return sessions;
+  };
   const unlockDocument = engineHost.unlockDocument;
+
+  // THE 24-HOUR CHECK, only with a store and a way to read idle time; it opens closed PDFs only through the host.
+  const stopHistoryCheck =
+    historyStore === undefined || systemIdleSeconds === undefined
+      ? () => undefined
+      : driveHistoryCheck(
+          createHistoryCheck({
+            store: historyStore,
+            stat: async (path) => {
+              try {
+                const found = await stat(path);
+                return { size: found.size, mtimeMs: found.mtimeMs };
+              } catch {
+                // NOT FOUND OR NOT READABLE, which an unplugged drive is too: the check's own answer for both is `null`.
+                return null;
+              }
+            },
+            permanentIdOf: engineHost.permanentIdAt,
+            idle: () => opening === 0 && systemIdleSeconds() >= IDLE_SECONDS,
+            now: () => Date.now(),
+          }),
+          (cause) => {
+            failures({ event: 'history-check-failed', detail: cause instanceof Error ? cause.message : String(cause) });
+          },
+        );
 
   /**
    * The window the title bar overlay is painted on, attached by the shell once it exists.
@@ -2390,7 +2434,25 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       // with no OS keyring answers, and a graph built without one is in the
       // same position rather than in a broken one. Resolved once, above.
       secrets: secretStore,
-      chatHistory: chatHistory ?? noChatHistory(),
+      // BY `DocId` (ADR-0279): each open PDF's guard is its `/ID`, read by the engine host like the document's other
+      // information, or its size and write time where it has none.
+      chatHistory:
+        historyStore === undefined
+          ? noDocumentHistory()
+          : createDocumentHistory({
+              store: historyStore,
+              placeKeyOf: (docId) => documents.historyKeyOf(docId),
+              permanentIdOf: async (docId) => (await commands.documentInformation(docId)).information.permanentId,
+              stat: (place) => {
+                try {
+                  const found = statSync(place);
+                  return { size: found.size, mtimeMs: found.mtimeMs };
+                } catch {
+                  // A FILE THAT CANNOT BE STATTED has no stamp; the caller says so rather than inventing one.
+                  return null;
+                }
+              },
+            }),
       // NO PICKER IS A CANCELLED EXPORT, not a write to a guessed path.
       pickSettingsFile: pickSettingsFile ?? (() => Promise.resolve(null)),
       openSettingsFile: openSettingsFile ?? (() => Promise.resolve(null)),
@@ -2529,6 +2591,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
      */
     shutdown: async () => {
       stopWatchingMemory();
+      stopHistoryCheck();
       for (const docId of documents.openDocIds()) {
         await documents.close(docId);
       }
@@ -2726,6 +2789,11 @@ function engineSessionOpener(
   readonly closeHost: () => Promise<void>;
   /** How a protect replaces the document's plaintext copies, through this host (ADR-0171 Decision 8). */
   readonly copies: ProtectedCopies;
+  /**
+   * A CLOSED PDF's first `/ID` string, for the chat history's 24-hour check (ADR-0279 Decision 6): a copy of the file
+   * opened in a session of its own and ended, as a protect's sealing of a copy is, so `main` never parses it.
+   */
+  readonly permanentIdAt: (path: string) => Promise<PermanentIdRead>;
   /**
    * Builds one document's sessions — the same call `openedDocument` and the
    * death path make, returned so recycling uses it rather than a second one.
@@ -3859,6 +3927,33 @@ function engineSessionOpener(
     }
   };
 
+  /**
+   * A closed PDF's `/ID`, by {@link openInArea}'s one route: a copy into a fresh granted pair, opened with no key, read,
+   * and ended whatever happens. A PDF that needs a password answers `locked`, which the check counts as present; any
+   * other failure is `failed`, the PDF that cannot be read.
+   */
+  const permanentIdAt = async (path: string): Promise<PermanentIdRead> => {
+    let end: (() => Promise<void>) | undefined;
+    try {
+      const opened = await openInArea(
+        async (destination) => {
+          await copyFile(path, destination);
+          return (await stat(destination)).size;
+        },
+        { keys: [], standing: 'as-copied' },
+      );
+      end = opened.end;
+      return { kind: 'read', id: (await readDocumentInformationThroughHost(opened.session)).permanentId };
+    } catch (thrown) {
+      if (thrown instanceof EngineDocumentLocked) return { kind: 'locked' };
+      // NOT SWALLOWED: `failed` is the answer the check acts on, a PDF that cannot be read, and the cause is said.
+      failures({ event: 'history-id-unread', detail: `${path}: ${thrown instanceof Error ? thrown.message : String(thrown)}` });
+      return { kind: 'failed' };
+    } finally {
+      if (end !== undefined) await end();
+    }
+  };
+
   const unlockDocument = async (docId: DocId, password: string): Promise<UnlockOutcome> => {
     // THE LANE'S VERSION STAMP IS DISCARDED, deliberately. Unlocking changes no
     // bytes and bumps no version — it gives the engine a session it could not
@@ -3983,6 +4078,7 @@ function engineSessionOpener(
         failures({ event: 'copy-unsealed', detail: `${path}: ${cause instanceof Error ? cause.message : String(cause)}` });
       },
     },
+    permanentIdAt,
     rebuildSessions: create,
     restoreSessions: buildSessions,
     unlockDocument,

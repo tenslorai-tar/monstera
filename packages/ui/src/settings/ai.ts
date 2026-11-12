@@ -163,8 +163,8 @@ export const AI_SETUP_AT_START_SETTING: SettingDefinition<z.ZodBoolean> = {
 /**
  * Whether assistant conversations are saved between sessions
  * ([ADR-0093](../../../../docs/DECISIONS/0093-chat-history-is-off-by-default-encrypted-in-main-and-keyed-by-the-file.md)).
- * **Off by default**, the owner's specification; `main` reads the same id on every save and refuses
- * while it is off, so this control is the choice and not the enforcement.
+ * **On by default** since ADR-0279 decision h (the owner's, 2026-11-12, replacing ADR-0093's off); `main` reads the same
+ * id on every save and refuses while it is off, so this control is the choice and not the enforcement.
  */
 export const CHAT_HISTORY_SETTING: SettingDefinition<z.ZodBoolean> = {
   // THE ID, SCHEMA AND DEFAULT ARE THE CONTRACT'S, which `main` reads through too (`storedSettings.ts`).

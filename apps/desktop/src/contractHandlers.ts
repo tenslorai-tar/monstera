@@ -19,6 +19,7 @@ import {
   type ASK_UNREAD_REASONS,
   askShareOf,
   CLOUD_PROVIDER_IDS,
+  HISTORY_PAGE,
   MAX_ASK_ATTACHMENTS,
   MAX_DOCUMENT_NAME_LENGTH,
   MAX_PICKED_DOCUMENTS,
@@ -110,7 +111,8 @@ import {
 import { shareTitle } from './sharing.js';
 import type { Assistant } from './assistant.js';
 import { type AttachmentReaders, classifyAttachments, readAttachments, textSourcesIn } from './askAttachments.js';
-import type { ChatHistory } from './chatHistory.js';
+import type { DocumentHistory } from './documentHistory.js';
+import { HistoryLockedError } from './historyStore.js';
 import type { CrashReports } from './crashReports.js';
 import type { LaunchDocuments } from './launchDocuments.js';
 import type { UpdateCheck } from './updateCheck.js';
@@ -345,8 +347,8 @@ export function createContractHandlers(deps: {
    * and one refuses to be written at all where the machine cannot encrypt.
    */
   readonly secrets: SecretStoreSurface;
-  /** Saved assistant conversations (ADR-0093), encrypted with the secrets' cipher. */
-  readonly chatHistory: ChatHistory;
+  /** Saved assistant conversations by `DocId` (ADR-0279), sealed under one key the secrets' cipher wraps. */
+  readonly chatHistory: DocumentHistory;
   /** Where a settings export goes, or `null` when the person cancelled the picker. */
   readonly pickSettingsFile: () => Promise<string | null>;
   /** The settings file a person chose to import, or `null` when they cancelled the picker. */
@@ -553,12 +555,12 @@ export function createContractHandlers(deps: {
     'app.reviewPrompt': () => Promise.resolve(ok({ due: deps.reviewPrompt.due() })),
     'app.review': async ({ action }) => ok({ opened: await deps.reviewPrompt.answer(action) }),
     'document.openRecent': openRecentHandler(deps),
-    'document.close': closeHandler({ documents: deps.documents, recent: deps.recent }),
+    'document.close': closeHandler({ documents: deps.documents, recent: deps.recent, chatHistory: deps.chatHistory }),
     'document.unsaved': unsavedHandler(deps.documents),
     'document.execute': executeCommandHandler(deps.commands),
     'document.undo': undoHandler(deps.commands),
     'document.redo': redoHandler(deps.commands),
-    'document.save': saveHandler(deps.commands),
+    'document.save': saveHandler(deps.commands, deps.chatHistory),
     'document.deleteHeldCopies': async ({ docId }) => {
       try {
         return ok({ held: [...(await deps.commands.deleteHeldCopies(docId))] });
@@ -738,48 +740,69 @@ export function createContractHandlers(deps: {
       // CHECKED ONLY WHERE THE PROVIDER ANSWERED A LIST: with nothing to ask, the key is kept on trust.
       return ok({ accepted: true, checked: listed.source === 'fetched' } as const);
     },
-    // CHAT HISTORY (ADR-0093). `main` reads the setting ITSELF on every load and save: a renderer that
-    // asked with the setting off gets nothing and stores nothing, whatever it believed.
-    'ai.history.load': ({ docId }) => {
-      const key = deps.documents.historyKeyOf(docId);
-      if (key === undefined) return Promise.resolve(err({ code: 'document-not-open' } as const));
-      const on = storedSetting(deps.settings.read(), CHAT_HISTORY_STORED);
-      const newest = on ? deps.chatHistory.load(key) : null;
-      return Promise.resolve(
-        ok(newest === null ? { turns: [], conversation: null } : { turns: [...newest.turns], conversation: newest.conversation }),
-      );
-    },
-    'ai.history.save': ({ docId, conversation, turns }) => {
-      const key = deps.documents.historyKeyOf(docId);
-      if (key === undefined) return Promise.resolve(err({ code: 'document-not-open' } as const));
-      if (!storedSetting(deps.settings.read(), CHAT_HISTORY_STORED)) {
-        return Promise.resolve(ok({ saved: false, conversation: null }));
+    // CHAT HISTORY (ADR-0279), by `DocId`: `documentHistory.ts` holds each open PDF's place and guard, so nothing here
+    // names either. `main` reads the setting ITSELF on every save: a renderer that asked with it off stores nothing.
+    'ai.history.save': async ({ docId, conversation, turns }) => {
+      if (!deps.documents.isOpen(docId)) return err({ code: 'document-not-open' } as const);
+      if (!storedSetting(deps.settings.read(), CHAT_HISTORY_STORED)) return ok({ saved: false, conversation: null });
+      // LOCKED BEFORE UNAVAILABLE: a key this account cannot unwrap is its own fact, said once by the renderer with
+      // what to do (the correction of 2026-11-12), and never the machine having no secure store.
+      if (deps.chatHistory.locked()) return err({ code: 'history-locked' } as const);
+      if (!deps.chatHistory.available()) return err({ code: 'secret-storage-unavailable' } as const);
+      try {
+        // THE FILE'S NAME AND THE MOMENT go into the card (ADR-0192): main's own reads, which the renderer supplies neither of.
+        const outcome = await deps.chatHistory.save(docId, conversation, turns, deps.commands.nameOf(docId) ?? null, new Date());
+        if (outcome === undefined) return err({ code: 'document-not-open' } as const);
+        return ok({ saved: outcome.conversation !== null, conversation: outcome.conversation });
+      } catch (thrown) {
+        // MATCHED ON THE CLASS: a key that stopped unwrapping between the check above and the save is the same fact.
+        if (thrown instanceof HistoryLockedError) return err({ code: 'history-locked' } as const);
+        throw thrown;
       }
-      if (!deps.chatHistory.available()) return Promise.resolve(err({ code: 'secret-storage-unavailable' } as const));
-      // THE FILE'S NAME AND THE MOMENT go into the entry (ADR-0192): main's own reads, so the History says which file a
-      // conversation was about and when, and the renderer supplies neither.
-      const outcome = deps.chatHistory.save(key, conversation, turns, deps.commands.nameOf(docId) ?? null, new Date());
-      if ('refused' in outcome) return Promise.resolve(err({ code: outcome.refused }));
-      return Promise.resolve(ok({ saved: outcome.conversation !== null, conversation: outcome.conversation }));
     },
-    // HOW MANY THE FILE KEEPS (ADR-0277 Decision 6), so a new conversation at the bound is said before it is begun.
-    'ai.history.count': ({ docId }) => {
-      const key = deps.documents.historyKeyOf(docId);
-      if (key === undefined) return Promise.resolve(err({ code: 'document-not-open' } as const));
-      return Promise.resolve(ok({ count: deps.chatHistory.count(key) }));
+    // HISTORY (ADR-0279 Decision 2): this PDF's section only, a page at a time, and NOT behind the setting — what was
+    // saved while it was on stays readable and removable while it is off, as clearing already does.
+    'ai.history.list': async ({ docId, from }) => {
+      const cards = await deps.chatHistory.list(docId);
+      if (cards === undefined) return err({ code: 'document-not-open' } as const);
+      const page = cards.slice(from, from + HISTORY_PAGE);
+      const next = from + HISTORY_PAGE < cards.length ? from + HISTORY_PAGE : null;
+      return ok({
+        conversations: page.map((card) => ({
+          key: card.key,
+          name: card.name,
+          savedAt: card.savedAt,
+          turns: card.messages,
+          preview: card.preview,
+        })),
+        next,
+      });
     },
-    // THE HISTORY (ADR-0192): listed, read and removed by the digest, which names no path, and NOT behind the setting —
-    // what was saved while it was on stays readable and removable while it is off, as clearing already does.
-    'ai.history.list': () =>
+    'ai.history.read': async ({ docId, key }) => {
+      const found = await deps.chatHistory.read(docId, key);
+      if (found === undefined) return err({ code: 'document-not-open' } as const);
+      return ok({ conversation: found === null ? null : { savedAt: found.savedAt, turns: [...found.turns] } });
+    },
+    'ai.history.remove': async ({ docId, key }) => {
+      const removed = await deps.chatHistory.remove(docId, key);
+      if (removed === undefined) return err({ code: 'document-not-open' } as const);
+      return ok({ removed });
+    },
+    'ai.history.clearFile': async ({ docId }) =>
+      (await deps.chatHistory.clearFile(docId)) ? ok({}) : err({ code: 'document-not-open' } as const),
+    'ai.history.clear': () => Promise.resolve(ok({ cleared: deps.chatHistory.clearAll() })),
+    // THE NOTE THAT HISTORY IS ON (ADR-0279 decision h), claimed only where it is TRUE: on, keepable and not locked.
+    // Each condition is read before the claim, so a note that could not be true is owed rather than spent.
+    'ai.history.note': () =>
       Promise.resolve(
-        ok({ conversations: [...deps.chatHistory.list()] }),
+        ok({
+          show:
+            storedSetting(deps.settings.read(), CHAT_HISTORY_STORED) &&
+            deps.chatHistory.available() &&
+            !deps.chatHistory.locked() &&
+            deps.chatHistory.claimNote(),
+        }),
       ),
-    'ai.history.read': ({ key }) => {
-      const found = deps.chatHistory.read(key);
-      return Promise.resolve(ok({ conversation: found === null ? null : { ...found, turns: [...found.turns] } }));
-    },
-    'ai.history.remove': ({ key }) => Promise.resolve(ok({ removed: deps.chatHistory.remove(key) })),
-    'ai.history.clear': () => Promise.resolve(ok({ cleared: deps.chatHistory.clear() })),
     // THE PAPERCLIP (ADR-0135): main runs the picker, mints a handle per path and answers what a chip draws. The handle
     // is the only thing the renderer can name the file by, and only an ask turns it back into a path.
     'ai.attach': async () => {
@@ -1109,11 +1132,14 @@ function readRangeHandler(documents: DocumentService): ContractHandlers['documen
  * that does not cover the four, rather than by a default branch that would
  * silently absorb a fifth verdict the kernel grows later.
  */
-function saveHandler(commands: DocumentCommands): ContractHandlers['document.save'] {
+function saveHandler(commands: DocumentCommands, chatHistory: Pick<DocumentHistory, 'saved'>): ContractHandlers['document.save'] {
   return async ({ docId, breakSignatures, whole }): Promise<Awaited<ReturnType<ContractHandlers['document.save']>>> => {
     try {
       const outcome = await commands.save(docId, { breakSignatures, ...(whole === true ? { whole } : {}) });
       if (outcome.kind === 'saved') {
+        // THE CHAT HISTORY RE-LINK (ADR-0279 Decision 5): new bytes at the same place continue the same section. After
+        // the answer's facts are read and before it is sent, so a save right after this one carries the new guard.
+        await chatHistory.saved(docId);
         const cleared = outcome.cleared;
         return ok({
           kind: 'saved',
@@ -3833,6 +3859,7 @@ function duplicatePagesHandler(
 function closeHandler(deps: {
   readonly documents: DocumentService;
   readonly recent: RecentFiles;
+  readonly chatHistory: Pick<DocumentHistory, 'closed'>;
 }): ContractHandlers['document.close'] {
   return async ({ docId }): Promise<Awaited<ReturnType<ContractHandlers['document.close']>>> => {
     const wasOpen = deps.documents.openDocIds().includes(docId);
@@ -3841,6 +3868,7 @@ function closeHandler(deps: {
     // leave behind, and a document dropped from it while main still held it
     // would be one a recovery never offered.
     deps.recent.closed(docId);
+    deps.chatHistory.closed(docId);
     return ok({ closed: wasOpen });
   };
 }
@@ -4120,6 +4148,8 @@ interface OpenPathParts {
   readonly recentPictures: RecentPictures;
   /** Links a document opened from a cloud working copy to its cloud file, by the copy's path; a no-op for any other. */
   readonly cloud: Pick<CloudStorage, 'link'>;
+  /** Told of each document this sequence opened, with its place, so its chat history guard is read (ADR-0279). */
+  readonly chatHistory: Pick<DocumentHistory, 'opened'>;
 }
 
 /**
@@ -4188,6 +4218,9 @@ async function openPath(
     // sessions promise settles either way, and a capture reports its own failure.
     const opened = outcome.docId;
     void sessions.then(() => deps.recentPictures.capture(opened, path));
+    // ITS CHAT HISTORY GUARD (ADR-0279 Decision 5), read once its sessions exist, since an `/ID` is read by the host.
+    // Nothing of its history is read: opening a PDF reads none (Decision 8).
+    deps.chatHistory.opened(opened, path, sessions);
     return { outcome, sessions };
   }
 

@@ -3,7 +3,7 @@ import type { CapabilityRegistry, DocumentService } from '@monstera/kernel';
 import { describe, expect, it } from 'vitest';
 
 import { createAssistant } from './assistant.js';
-import { noChatHistory } from './chatHistory.js';
+import { noDocumentHistory } from './documentHistory.js';
 import { unconfiguredCloud } from './cloudSession.js';
 import { type AppInfo, createContractHandlers } from './contractHandlers.js';
 import type { DocumentCommands } from './documentCommands.js';
@@ -165,16 +165,16 @@ function handlers(regionalLocale?: () => string, physicalMemory?: () => number) 
     openSettingsFile: () => {
       throw new Error('registration cases must not reach the file picker');
     },
-    // EVERY OPERATION THROWS, this fixture's rule; `noChatHistory()` would answer a load quietly.
+    // EVERY OPERATION THROWS, this fixture's rule; `noDocumentHistory()` would answer a list quietly.
     chatHistory: {
-      ...noChatHistory(),
+      ...noDocumentHistory(),
       available: () => {
         throw new Error('registration cases must not reach the chat history');
       },
-      load: () => {
+      list: () => {
         throw new Error('registration cases must not reach the chat history');
       },
-      clear: () => {
+      clearAll: () => {
         throw new Error('registration cases must not reach the chat history');
       },
     },

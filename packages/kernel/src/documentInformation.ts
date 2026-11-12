@@ -125,8 +125,27 @@ export function readDocumentInformation(session: MupdfSession): Promise<Document
       },
       pageCount: pages,
       firstPage: bounds === null ? null : { width: Math.abs(bounds[2] - bounds[0]), height: Math.abs(bounds[3] - bounds[1]) },
+      permanentId: permanentIdOf(document),
     };
   });
+}
+
+/** The longest `/ID` string answered, in bytes: writers use 16; past this it is not an id anyone wrote to be one. */
+const MAX_PERMANENT_ID_BYTES = 64;
+
+/**
+ * The FIRST string of the trailer's `/ID`, as lower-case hex, or `null` (ADR-0279's guard). Its bytes, never its text:
+ * an id is binary, and read as text a byte that is no character would be lost. The first string is the one a writer
+ * keeps across saves; the second changes with each.
+ */
+function permanentIdOf(document: mupdf.PDFDocument): string | null {
+  const id = document.getTrailer().get('ID');
+  if (!id.isArray() || id.length < 1) return null;
+  const first = id.get(0);
+  if (!first.isString()) return null;
+  const bytes = first.asByteString();
+  if (bytes.length === 0 || bytes.length > MAX_PERMANENT_ID_BYTES) return null;
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 /**

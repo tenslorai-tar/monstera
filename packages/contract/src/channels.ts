@@ -652,6 +652,13 @@ export const savedTurnSchema = z
     model: z.string().max(MAX_MODEL_ID).optional(),
     /** The names of the files an asked turn carried (ADR-0135) — never a handle, which means nothing after a restart. */
     attached: z.array(z.string().max(MAX_DOCUMENT_NAME_LENGTH)).max(MAX_ASK_ATTACHMENTS).optional(),
+    /**
+     * An asked turn the provider refused as too long for its model (ADR-0277 Decision 5). SAVED, so a reopened
+     * conversation is still full by `conversationRoom` and the refused question is not sent again.
+     */
+    refused: z.literal('too-long').optional(),
+    /** An answer `main` stopped at its bound (ADR-0277 Decision 3), saved so its note stays under it after a reopen. */
+    cut: z.literal(true).optional(),
   })
   .strict();
 
@@ -663,38 +670,30 @@ export const savedTurnsSchema = z
 export type SavedTurn = z.infer<typeof savedTurnSchema>;
 
 /**
- * How many files' conversations the store keeps, and so the most a list of them can hold (ADR-0093 Decision 5). Here and
- * not in `main`, because the list's schema is bounded by it and `main`'s eviction is the other half: one number, two readers.
+ * How many conversations one answer of `ai.history.list` carries (ADR-0279). NOT a cap on what is kept, which has none:
+ * a PDF's file may hold more, and History asks for the next page from where this one ended. Here because the list's
+ * schema is bounded by it and `main` pages by it: one number, two readers.
  */
-export const MAX_SAVED_CONVERSATIONS = 200;
-
-/**
- * How many conversations one file keeps (ADR-0277 Decision 6), so the store stays bounded:
- * {@link MAX_SAVED_CONVERSATIONS} files of this many conversations, each within {@link MAX_CONVERSATION_TEXT}. A file
- * at this many is never trimmed: a new conversation there is refused (`file-full`) and the person is asked to remove one.
- */
-export const MAX_FILE_CONVERSATIONS = 20;
+export const HISTORY_PAGE = 200;
 
 /** How long the first question quoted beside a saved conversation may be (ADR-0192): a preview, not a transcript. */
 export const MAX_HISTORY_PREVIEW = 160;
 
 /**
- * What a saved conversation is as the History lists it (ADR-0192): the digest that finds it (opaque to the renderer, and
- * naming no path), the file's name where the entry recorded one, when it was saved where it recorded that, how many turns it
- * has, and its first question.
- */
-/**
- * A saved conversation's key, and a file's: sixty-four hex characters, the length of the SHA-256 that keys a file
- * (ADR-0093) and of the random id a conversation is given (ADR-0277). Opaque to the renderer, and naming no path.
+ * A saved conversation's key: sixty-four hex characters, the random id a conversation is given (ADR-0277). Opaque to
+ * the renderer, and naming no path.
  */
 export const historyKeySchema = z.string().length(64).regex(/^[0-9a-f]+$/u);
 
+/**
+ * What a saved conversation is as History lists it (ADR-0192, ADR-0279): its key, the file's name as it was when the
+ * conversation was saved, when it was saved where that was recorded, how many turns it has, and its first question.
+ * Every entry is the open PDF's, so none names a file.
+ */
 export const savedConversationSchema = z
   .object({
     /** The conversation's own key, which `ai.history.read` and `ai.history.remove` name. */
     key: historyKeySchema,
-    /** The file's key, shared by that file's conversations, so the History can show them together (ADR-0277). */
-    file: historyKeySchema,
     name: z.string().max(MAX_DOCUMENT_NAME_LENGTH).nullable(),
     /** An ISO 8601 instant, or `null` for an entry saved before entries recorded one. */
     savedAt: z.string().max(40).nullable(),
@@ -6778,87 +6777,92 @@ export const channels = {
   ),
 
   /**
-   * A document's newest saved conversation (ADR-0093, ADR-0277), by `DocId`: `main` finds the file's entries by a digest
-   * of its path, which never crosses. `conversation` is the key the next save continues it under; `null`, with no turns,
-   * when nothing is saved, when saving is off, or when this machine cannot decrypt what was.
-   */
-  'ai.history.load': channel(
-    'The newest saved assistant conversation for an open document, if chat history is on.',
-    z.object({ docId: docIdSchema }).strict(),
-    z.object({ turns: savedTurnsSchema, conversation: historyKeySchema.nullable() }),
-    ['document-not-open'],
-  ),
-
-  /**
-   * Saves a document's conversation (ADR-0277 Decision 6): `conversation` names the saved one it continues, which is
-   * replaced, or is `null` for a NEW one, which is added beside the file's others and whose key is answered. Nothing is
-   * removed by a save: an empty new conversation stores nothing, and an empty one that was saved keeps what it held, for
-   * removing is the History's. `saved: false` when chat history is off, since `main` reads the setting itself; `file-full`
-   * for a new conversation when the file already keeps `MAX_FILE_CONVERSATIONS`, which is never made room for in silence.
+   * Saves a document's conversation (ADR-0279): `conversation` names the saved one it continues, or is `null` for a NEW
+   * one, whose key is answered. Nothing is removed by a save and nothing is capped; an empty new conversation stores
+   * nothing. `main` finds the PDF's file by a digest of its place, which never crosses, and reads the setting itself, so
+   * `saved: false` when chat history is off. `history-locked` where the history saved on this computer is sealed under a
+   * key this Windows account cannot unwrap (the correction of 2026-11-12): kept, never replaced, and said once.
    */
   'ai.history.save': channel(
     'Saves an open document’s assistant conversation, when chat history is on.',
     z.object({ docId: docIdSchema, conversation: historyKeySchema.nullable(), turns: savedTurnsSchema }).strict(),
     z.object({ saved: z.boolean(), conversation: historyKeySchema.nullable() }),
-    ['document-not-open', 'secret-storage-unavailable', 'file-full'],
+    ['document-not-open', 'secret-storage-unavailable', 'history-locked'],
   ),
 
   /**
-   * How many conversations an open document's file keeps (ADR-0277 Decision 6), so starting a new one can say, before
-   * anything is lost, that the file is at `MAX_FILE_CONVERSATIONS`. Not behind the setting, as the History is not.
+   * The open PDF's saved conversations (ADR-0279 Decision 2), newest saved first, {@link HISTORY_PAGE} at a time from
+   * `from`; `next` is where the following page starts, `null` after the last. Only this PDF's file is read, and only the
+   * section of the PDF now at its place. Not behind *Save chat history*: what was saved while it was on stays readable
+   * while it is off. Empty where nothing is saved or this machine cannot decrypt what was.
    */
-  'ai.history.count': channel(
-    'How many saved assistant conversations an open document’s file keeps.',
-    z.object({ docId: docIdSchema }).strict(),
-    z.object({ count: z.number().int().nonnegative().max(MAX_FILE_CONVERSATIONS) }),
+  'ai.history.list': channel(
+    'The saved assistant conversations about an open document, newest first, one page at a time.',
+    z.object({ docId: docIdSchema, from: z.number().int().nonnegative() }).strict(),
+    z.object({
+      conversations: z.array(savedConversationSchema).max(HISTORY_PAGE),
+      next: z.number().int().positive().nullable(),
+    }),
     ['document-not-open'],
   ),
 
   /**
-   * Every saved conversation (ADR-0192, ADR-0277): the files newest saved first, and each file's conversations newest
-   * saved first beside one another — what the Assistant's History lists. It does not wait on *Save chat history*: what
-   * was saved while it was on stays readable while it is off. Empty where nothing is saved or this machine cannot
-   * decrypt what was.
-   */
-  'ai.history.list': channel(
-    'Every saved assistant conversation, each file’s together and newest first, with the file name where one was recorded.',
-    z.object({}).strict(),
-    z.object({
-      conversations: z.array(savedConversationSchema).max(MAX_SAVED_CONVERSATIONS * MAX_FILE_CONVERSATIONS),
-    }),
-  ),
-
-  /**
-   * One saved conversation by the key `ai.history.list` gave (ADR-0192), to be SHOWN: it opens no file, since the store
-   * keeps no path. `null` for a key nothing is saved under — removed since the list was read, or one that will not decrypt.
+   * One of the open PDF's saved conversations by the key `ai.history.list` gave (ADR-0192), to be SHOWN. `null` for a key
+   * nothing is saved under — removed since the list was read, or one that will not decrypt.
    */
   'ai.history.read': channel(
-    'One saved assistant conversation by its key, to be shown read-only.',
-    z.object({ key: savedConversationSchema.shape.key }).strict(),
+    'One saved assistant conversation about an open document, by its key, to be shown read-only.',
+    z.object({ docId: docIdSchema, key: savedConversationSchema.shape.key }).strict(),
     z.object({
       conversation: z
         .object({
-          name: savedConversationSchema.shape.name,
           savedAt: savedConversationSchema.shape.savedAt,
           turns: savedTurnsSchema,
         })
         .strict()
         .nullable(),
     }),
+    ['document-not-open'],
   ),
 
-  /** Removes one saved conversation by its key (ADR-0192); `removed` is false for a key nothing was saved under. */
+  /**
+   * Removes one of the open PDF's saved conversations by its key (ADR-0279 Decision 7): the file is rewritten without its
+   * records, off the main thread, so its words leave the disk. `removed` is false for a key nothing was saved under.
+   */
   'ai.history.remove': channel(
-    'Removes one saved assistant conversation by its key.',
-    z.object({ key: savedConversationSchema.shape.key }).strict(),
+    'Removes one saved assistant conversation about an open document, by its key.',
+    z.object({ docId: docIdSchema, key: savedConversationSchema.shape.key }).strict(),
     z.object({ removed: z.boolean() }),
+    ['document-not-open'],
   ),
 
-  /** Removes every saved conversation — Settings › Privacy's *Clear chat history* (ADR-0093). */
+  /** History's *Clear all* (ADR-0279 Decision 3): removes the open PDF's history file. */
+  'ai.history.clearFile': channel(
+    'Removes every saved assistant conversation about an open document.',
+    z.object({ docId: docIdSchema }).strict(),
+    z.object({}).strict(),
+    ['document-not-open'],
+  ),
+
+  /**
+   * Removes every saved conversation, and the key they were sealed with — Settings › Privacy's *Clear chat history*
+   * (ADR-0093, ADR-0279 Decision 3 and its correction of 2026-11-12).
+   */
   'ai.history.clear': channel(
     'Removes every saved assistant conversation.',
     z.object({}).strict(),
     z.object({ cleared: z.number().int().nonnegative() }),
+  ),
+
+  /**
+   * Whether the AI assistant shows the note that chat history is on (ADR-0279 decision h): `show: true` exactly once on
+   * this computer, recorded by `main` in the same call, so two windows cannot both show it. `false`, recording nothing,
+   * while chat history is off, cannot be kept here or is locked to another account, since the note would be untrue.
+   */
+  'ai.history.note': channel(
+    'Whether the assistant shows, once, the note that chat history is on.',
+    z.object({}).strict(),
+    z.object({ show: z.boolean() }),
   ),
 
   /**

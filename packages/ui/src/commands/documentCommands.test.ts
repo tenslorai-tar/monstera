@@ -6822,6 +6822,7 @@ describe('protectDocumentCommand', () => {
       permissions: { print: true, copy: true, edit: true, annotate: true },
       pageCount: 1,
       firstPage: { width: 612, height: 792 },
+      permanentId: null,
     };
 
     function answering(read: unknown = ok({ version: asDocVersion(1), information: READ })): {
