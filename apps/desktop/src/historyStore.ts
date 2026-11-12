@@ -1,12 +1,24 @@
 import { randomBytes } from 'node:crypto';
-import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+  appendFileSync,
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  readSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  truncateSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 
 import type { SavedTurn } from '@monstera/contract';
 import {
   CARD,
   GUARD,
-  HEAD,
   type Head,
   type HistoryCard,
   type HistoryDrop,
@@ -17,13 +29,15 @@ import {
   cardRecordSchema,
   frame,
   guardKey,
-  headsOf,
   keptUnder,
   previewOf,
+  recordsIn,
   seal,
   sectionsOf,
   turnsRecordSchema,
   unseal,
+  type WholeRecords,
+  wholeRecords,
 } from '@monstera/nodemode';
 
 export { frame, sameGuard, type HistoryCard, type HistoryGuard, type HistorySection } from '@monstera/nodemode';
@@ -43,9 +57,9 @@ import { replaceWithRetry } from './settingsFile.js';
  * gives, so no path is in the clear and the key 1.1.2610.0's store used names the same file. Inside, records appended one
  * after another, each `[type u8][id, 32 bytes][length u32 LE][payload]`, the payload sealed with AES-256-GCM under ONE
  * data key (a 12-byte nonce, the 16-byte tag, the ciphertext). The type and the id are in the clear so a reader steps
- * over what it does not need; everything a person wrote, and the PDF's place, is sealed. A torn last record, one whose
- * length runs past the file, ends the read and loses nothing before it; a record that does not open is never shown or
- * counted.
+ * over what it does not need; everything a person wrote, and the PDF's place, is sealed. A torn record, part of one a
+ * crash or a full disk left, is stepped past wherever it is and only its own bytes are lost (`wholeRecords`, the owner's
+ * answer of 2026-11-12); a record that does not open is never shown or counted.
  *
  * - **GUARD** (id: a random record id): the PDF's place and how it is recognised, its first `/ID` string or, where it has
  *   none, its size and write time; on a re-link after Monstera's own save, also the guard it replaces.
@@ -59,6 +73,11 @@ import { replaceWithRetry } from './settingsFile.js';
  * is recognised by is WRITTEN at its open (`recordGuard`, only where its file exists, which is a stat) and carried in
  * every card, and what the turns were at the last save is held in memory for the session. Which conversations belong to
  * the PDF now at the place is worked out where the file is read anyway: History's list.
+ *
+ * **One read a write does make, once a session for a file:** a write never lands behind a torn record (the owner's
+ * answer of 2026-11-12), so the first write this session makes to a file it did not leave at its present size walks that
+ * file's record heads to find where the last whole one ends (`appendTo`). Heads only, never a payload, unless the walk
+ * finds a torn record; every later write to that file reads nothing.
  *
  * ## Sections (the owner's correction of 2026-11-12)
  *
@@ -77,29 +96,21 @@ const NOTE_FILE = 'note-shown';
 const EXTENSION = '.mhist';
 
 /**
- * Every whole record's head in the file at `path`, read by seeking, with a reader for a payload: History's list reads its
- * cards and steps over the turns without reading them. `null` where there is no file.
+ * The whole records in the file at `path` ({@link wholeRecords}, read by seeking), with a reader for a payload: History's
+ * list reads its cards and steps over the turns without reading them. `null` where there is no file.
  */
-function withHeads<T>(path: string, use: (heads: readonly Head[], payload: (head: Head) => Buffer) => T): T | null {
+function withRecords<T>(path: string, key: Buffer, use: (records: WholeRecords, payload: (head: Head) => Buffer) => T): T | null {
   if (!existsSync(path)) return null;
   const fd = openSync(path, 'r');
   try {
-    const size = statSync(path).size;
-    const head = Buffer.alloc(HEAD);
-    const heads: Head[] = [];
-    for (let start = 0; start + HEAD <= size; ) {
-      readSync(fd, head, 0, HEAD, start);
-      const length = head.readUInt32LE(1 + ID_BYTES);
-      // A TORN TAIL: a record whose payload runs past the file ends the read; nothing before it is lost.
-      if (start + HEAD + length > size) break;
-      heads.push({ type: head.readUInt8(0), id: head.subarray(1, 1 + ID_BYTES).toString('hex'), start, at: start + HEAD, length });
-      start += HEAD + length;
-    }
-    return use(heads, (each) => {
-      const bytes = Buffer.alloc(each.length);
-      readSync(fd, bytes, 0, each.length, each.at);
+    const readAt = (position: number, length: number): Buffer => {
+      const bytes = Buffer.alloc(length);
+      readSync(fd, bytes, 0, length, position);
       return bytes;
-    });
+    };
+    const payload = (head: Head): Buffer => readAt(head.at, head.length);
+    const records = wholeRecords(readAt, statSync(path).size, (head) => unseal(key, payload(head)) !== undefined);
+    return use(records, payload);
   } finally {
     closeSync(fd);
   }
@@ -248,16 +259,53 @@ export function createHistoryStore(
   /** The guard written for each place this session, so a save writes one only where none was. */
   const written = new Map<string, string>();
 
-  const appendGuard = (key: Buffer, placeKey: string, place: string, guard: HistoryGuard, previous: HistoryGuard | null): void => {
+  /**
+   * Where each file's last whole record ends, as this session last left it: a file still that size has nothing torn at
+   * its tail, so an append to it reads nothing.
+   */
+  const ends = new Map<string, number>();
+
+  /**
+   * Appends whole records to the file at `path`, and NEVER BEHIND A TORN ONE (the owner's answer of 2026-11-12): where
+   * the file is not the size this session left it, its records are walked once ({@link wholeRecords}) and a torn tail,
+   * the part of a record a crash or a full disk left, is cut off first. Only those bytes are lost, and they never were a
+   * record. A write that fails part way is cut back the same way before the failure is thrown, so this session leaves no
+   * torn record behind it either.
+   */
+  const appendTo = (path: string, key: Buffer, bytes: Buffer): void => {
     mkdirSync(folder, { recursive: true });
-    appendFileSync(fileOf(placeKey), frame(GUARD, randomBytes(ID_BYTES), seal(key, { place, guard, previous })));
+    const size = existsSync(path) ? statSync(path).size : 0;
+    let end = ends.get(path);
+    if (end !== size) {
+      end = size === 0 ? 0 : (withRecords(path, key, (records) => records.end) ?? 0);
+      if (end < size) truncateSync(path, end);
+    }
+    try {
+      appendFileSync(path, bytes);
+    } catch (cause) {
+      // THE NEXT APPEND WALKS THE FILE AGAIN, so a tail this could not cut is dealt with there.
+      ends.delete(path);
+      try {
+        if (existsSync(path)) truncateSync(path, end);
+      } catch (uncut) {
+        throw new AggregateError([cause, uncut], 'the conversation was not saved, and what was written of it could not be cut off', {
+          cause: uncut,
+        });
+      }
+      throw cause;
+    }
+    ends.set(path, end + bytes.length);
+  };
+
+  const appendGuard = (key: Buffer, placeKey: string, place: string, guard: HistoryGuard, previous: HistoryGuard | null): void => {
+    appendTo(fileOf(placeKey), key, frame(GUARD, randomBytes(ID_BYTES), seal(key, { place, guard, previous })));
     written.set(placeKey, guardKey(guard));
   };
 
   const readPath = <T>(path: string, use: (heads: readonly Head[], open: (head: Head) => unknown) => T): T | null => {
     const key = keyFor(false);
     if (key === null) return null;
-    return withHeads(path, (heads, payload) => use(heads, (head) => unseal(key, payload(head))));
+    return withRecords(path, key, (records, payload) => use(records.heads, (head) => unseal(key, payload(head))));
   };
   const read = <T>(placeKey: string, use: (heads: readonly Head[], open: (head: Head) => unknown) => T): T | null =>
     readPath(fileOf(placeKey), use);
@@ -317,16 +365,20 @@ export function createHistoryStore(
     } finally {
       closeSync(fd);
     }
-    const later = headsOf(tail).filter(keep);
+    const later = recordsIn(tail, key).heads.filter(keep);
     const kept = Buffer.concat(later.map((head) => tail.subarray(head.start, head.at + head.length)));
     // NO CONVERSATION LEFT, in the rewrite or the tail: the file goes, its guards with it.
     if (result.cardsKept === 0 && !later.some((head) => head.type === CARD)) {
       rmSync(writing, { force: true });
       rmSync(path, { force: true });
+      ends.delete(path);
       return result.plan.conversations;
     }
     if (kept.length > 0) appendFileSync(writing, kept);
+    // THE REWRITE IS WHOLE RECORDS, the worker's and the tail's, so it ends where its size says.
+    const size = statSync(writing).size;
     replaceWithRetry(writing, path);
+    ends.set(path, size);
     return result.plan.conversations;
   };
 
@@ -372,8 +424,9 @@ export function createHistoryStore(
       if (from === now.length && from === before.length && before.length > 0) return { conversation: id };
       if (written.get(placeKey) !== guardKey(guard)) appendGuard(key, placeKey, place, guard, null);
       const bytesId = Buffer.from(id, 'hex');
-      appendFileSync(
+      appendTo(
         fileOf(placeKey),
+        key,
         Buffer.concat([
           frame(TURNS, bytesId, seal(key, { from, turns: turns.slice(from) })),
           frame(CARD, bytesId, seal(key, { guard, name, savedAt: savedAt.toISOString(), messages: turns.length, preview: previewOf(turns) })),
@@ -403,9 +456,9 @@ export function createHistoryStore(
       const key = keyFor(true);
       if (key === null) throw new Error('this machine has no usable credential store, so the conversation was not moved');
       const id = Buffer.from(conversation, 'hex');
-      mkdirSync(folder, { recursive: true });
-      appendFileSync(
+      appendTo(
         file ?? fileOf(placeKey),
+        key,
         Buffer.concat([
           frame(TURNS, id, seal(key, { from: 0, turns })),
           frame(CARD, id, seal(key, { guard: null, name, savedAt, messages: turns.length, preview: previewOf(turns) })),
@@ -475,6 +528,7 @@ export function createHistoryStore(
 
     clearFile(placeKey) {
       rmSync(fileOf(placeKey), { force: true });
+      ends.delete(fileOf(placeKey));
       written.delete(placeKey);
     },
 
@@ -496,6 +550,7 @@ export function createHistoryStore(
       // makes a new one (ADR-0279's correction of 2026-11-12).
       rmSync(keyPath, { force: true });
       dataKey = undefined;
+      ends.clear();
       written.clear();
       savedTurns.clear();
       return count;

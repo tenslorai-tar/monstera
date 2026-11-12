@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 
-import { CARD, headsOf, keptUnder, planRemoval, unseal } from './historyRecords.js';
+import { CARD, keptUnder, planRemoval, recordsIn, unseal } from './historyRecords.js';
 import type { HistoryRewriteData, HistoryRewriteResult } from './historyRewriteProtocol.js';
 
 /**
@@ -14,7 +14,8 @@ import type { HistoryRewriteData, HistoryRewriteResult } from './historyRewriteP
 export function runHistoryRewrite(data: HistoryRewriteData): HistoryRewriteResult {
   const key = Buffer.from(data.key);
   const bytes = readFileSync(data.path);
-  const heads = headsOf(bytes);
+  // WHOLE RECORDS ONLY: a torn record's bytes are left out of what is written, and whatever is whole after it is kept.
+  const { heads } = recordsIn(bytes, key);
   const plan = planRemoval(heads, (head) => unseal(key, bytes.subarray(head.at, head.at + head.length)), data.drop);
   if (plan === null) return { kind: 'nothing' };
   const kept = heads.filter(keptUnder(plan));

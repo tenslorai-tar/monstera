@@ -111,22 +111,112 @@ export interface Head {
   readonly length: number;
 }
 
-/** Every whole record's head in `bytes`, in order; a torn tail ends the list. */
-export function headsOf(bytes: Buffer): Head[] {
+/** `length` bytes of a file from `position`, all of them: the one thing {@link wholeRecords} asks of where it reads. */
+export type ReadAt = (position: number, length: number) => Buffer;
+
+/** A file's whole records, as {@link wholeRecords} finds them. */
+export interface WholeRecords {
+  /** Every whole record's head, in file order. */
+  readonly heads: readonly Head[];
+  /**
+   * Where the last whole record ends. Short of the file's size only where a torn record is its tail: what a write cuts
+   * the file back to before it appends, and what a rewrite has read up to.
+   */
+  readonly end: number;
+}
+
+/** How far the search for the record after torn bytes reads at once. */
+const SCAN = 64 * 1024;
+
+/**
+ * The head at `offset` in `bytes`, which start at `position` in a file of `size` bytes, where a record can start there: a
+ * type this format has, a payload long enough to be sealed, and all of it inside the file. `null` anywhere else.
+ */
+function headIn(bytes: Buffer, offset: number, position: number, size: number): Head | null {
+  if (offset + HEAD > bytes.length) return null;
+  const type = bytes.readUInt8(offset);
+  const length = bytes.readUInt32LE(offset + 1 + ID_BYTES);
+  if (type !== GUARD && type !== CARD && type !== TURNS) return null;
+  if (length < NONCE + TAG || position + HEAD + length > size) return null;
+  return { type, id: bytes.subarray(offset + 1, offset + 1 + ID_BYTES).toString('hex'), start: position, at: position + HEAD, length };
+}
+
+/**
+ * Every WHOLE record in a file of `size` bytes, and where the last one ends: THE ONE READING of a history file, for
+ * `main`'s reader and writer and for Delete's worker (B3a), so the three cannot disagree about where a record is.
+ *
+ * ## A torn record is stepped past, wherever it is
+ *
+ * A write cut short by a crash or a full disk leaves part of a record. At the tail it is the bytes after the last whole
+ * record. In the middle, where an earlier build appended behind it, its head names a length the bytes after it do not
+ * hold, so a walk that trusts the length reads the next records as its payload and loses every one of them. So the walk
+ * trusts lengths only while they end exactly at the end of the file, which a file with no torn record always does and is
+ * all a read normally costs. Where they do not, it walks again and asks `opens` of each record: one that opens, or is
+ * followed by one that opens or by the end, is whole; anything else is torn bytes, and the next record is the first place
+ * after them where one starts and opens. The payload's authentication tag is what decides, so the bytes of a torn record
+ * are the only ones lost, and they were never a record.
+ *
+ * @param opens whether a record's payload opens under the data key; asked only of a file with a torn record in it
+ */
+export function wholeRecords(readAt: ReadAt, size: number, opens: (head: Head) => boolean): WholeRecords {
   const heads: Head[] = [];
-  for (let start = 0; start + HEAD <= bytes.length; ) {
-    const recordLength = bytes.readUInt32LE(start + 1 + ID_BYTES);
-    if (start + HEAD + recordLength > bytes.length) break;
-    heads.push({
-      type: bytes.readUInt8(start),
-      id: bytes.subarray(start + 1, start + 1 + ID_BYTES).toString('hex'),
-      start,
-      at: start + HEAD,
-      length: recordLength,
-    });
-    start += HEAD + recordLength;
+  let at = 0;
+  for (let head = at + HEAD <= size ? headIn(readAt(at, HEAD), 0, at, size) : null; head !== null; ) {
+    heads.push(head);
+    at = head.at + head.length;
+    head = at + HEAD <= size ? headIn(readAt(at, HEAD), 0, at, size) : null;
   }
-  return heads;
+  if (at === size) return { heads, end: at };
+  return mended(readAt, size, opens);
+}
+
+/** {@link wholeRecords} for a file with a torn record in it. */
+function mended(readAt: ReadAt, size: number, opens: (head: Head) => boolean): WholeRecords {
+  const headAt = (position: number): Head | null => (position + HEAD <= size ? headIn(readAt(position, HEAD), 0, position, size) : null);
+  const opensAt = (position: number): boolean => {
+    const head = headAt(position);
+    return head !== null && opens(head);
+  };
+  const heads: Head[] = [];
+  let at = 0;
+  let end = 0;
+  while (at < size) {
+    const head = headAt(at);
+    const after = head === null ? -1 : head.at + head.length;
+    // WHOLE: it opens, or it does not (a record this key never sealed) and a whole record or the end follows it.
+    if (head !== null && (opens(head) || after === size || opensAt(after))) {
+      heads.push(head);
+      at = after;
+      end = after;
+      continue;
+    }
+    const next = nextRecord(readAt, size, at + 1, opens);
+    // NOTHING WHOLE AFTER IT: the torn bytes are the file's tail.
+    if (next === -1) break;
+    at = next;
+  }
+  return { heads, end };
+}
+
+/** The first place from `from` on where a record starts and opens, read {@link SCAN} bytes at a time; -1 where none does. */
+function nextRecord(readAt: ReadAt, size: number, from: number, opens: (head: Head) => boolean): number {
+  for (let window = from; window + HEAD <= size; window += SCAN) {
+    const bytes = readAt(window, Math.min(SCAN + HEAD - 1, size - window));
+    for (let offset = 0; offset < SCAN && window + offset + HEAD <= size; offset += 1) {
+      const head = headIn(bytes, offset, window + offset, size);
+      if (head !== null && opens(head)) return window + offset;
+    }
+  }
+  return -1;
+}
+
+/** {@link wholeRecords} over a file held in memory, a record whole where it opens under `key`. */
+export function recordsIn(bytes: Buffer, key: Buffer): WholeRecords {
+  return wholeRecords(
+    (position, length) => bytes.subarray(position, position + length),
+    bytes.length,
+    (head) => unseal(key, bytes.subarray(head.at, head.at + head.length)) !== undefined,
+  );
 }
 
 /** The sections of one file, worked out from its guards and cards (see the store's comment). */
