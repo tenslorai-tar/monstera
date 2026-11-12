@@ -280,9 +280,10 @@ one engine:
   2026-11-12). The `catalogue` host is the same body as the compose host is, with its
   own principal and containment verdict; it owes the probe, a granted area's `open`
   and `close`, and `engine/keep-catalogue`. `main` hands it the two font folders and
-  ADR-0237's fingerprint and never reads the file it writes. The file lives in a
-  granted area that only this host may write and the hosts that set text may read;
-  each of them loads it on first need, checked against a schema and against the
+  ADR-0237's fingerprint; it writes the file into its own session area, and `main`
+  copies it by name into a kept area that no host may write and the hosts that set
+  text may read, never parsing it (ADR-0293's correction of 2026-11-12). Each of
+  those hosts loads it on first need, checked against a schema and against the
   folders it was itself handed, and reads the folders itself where the file is
   absent or refused.
 

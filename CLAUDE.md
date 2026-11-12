@@ -378,9 +378,10 @@ is wrong** — fix the boundary, not the test.
   `marked` aborted Node on a crafted Markdown file. **A fourth host, `catalogue`,
   is not a writer either and holds no document**
   ([ADR-0293](docs/DECISIONS/0293-the-font-catalogue-is-read-once-by-a-host-that-holds-no-document-and-kept.md)):
-  it reads the font folders once per ADR-0237 fingerprint and keeps the catalogue in
-  an area only it may write, so a host a document reaches can read it and never
-  write it, and a compromise still ends with its host.
+  it reads the font folders once per ADR-0237 fingerprint into its own session area,
+  and `main` copies the file by name into a kept area that no host may write and the
+  text hosts may read, never parsing it; so a host a document reaches can read it and
+  never write it, and a compromise still ends with its host.
 
   **IT IS BUILT, 2026-09-09.** This read *"that is owed, not built —
   `hostBody.ts` takes `CommandExecution<'mupdf'>` today"*, and it stopped being
