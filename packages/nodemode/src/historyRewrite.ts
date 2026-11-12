@@ -15,10 +15,12 @@ export function runHistoryRewrite(data: HistoryRewriteData): HistoryRewriteResul
   const key = Buffer.from(data.key);
   const bytes = readFileSync(data.path);
   // WHOLE RECORDS ONLY: a torn record's bytes are left out of what is written, and whatever is whole after it is kept.
-  const { heads } = recordsIn(bytes, key);
+  const { heads, end } = recordsIn(bytes, key);
   const plan = planRemoval(heads, (head) => unseal(key, bytes.subarray(head.at, head.at + head.length)), data.drop);
   if (plan === null) return { kind: 'nothing' };
   const kept = heads.filter(keptUnder(plan));
   writeFileSync(data.writing, Buffer.concat(kept.map((head) => bytes.subarray(head.start, head.at + head.length))));
-  return { kind: 'written', read: bytes.length, plan, cardsKept: kept.filter((head) => head.type === CARD).length };
+  // WHERE THE LAST WHOLE RECORD READ ENDS, not how many bytes were read: a save `main` was appending while this read can
+  // show as part of a record at the end, which is left out above, and `main` must add it whole from here.
+  return { kind: 'written', read: end, plan, cardsKept: kept.filter((head) => head.type === CARD).length };
 }

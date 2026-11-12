@@ -10,8 +10,9 @@ export interface HistoryRewriteData {
 }
 
 /**
- * What it answers: nothing to drop; the kept records written beside the file, with how many bytes it read and the plan,
- * so `main` filters a later tail the same way; or a failure, with the file untouched.
+ * What it answers: nothing to drop; the kept records written beside the file, with `read`, where the last whole record it
+ * read ends (where `main` reads the later tail from, never the number of bytes read), and the plan, so `main` filters that
+ * tail the same way; or a failure, with the file untouched.
  */
 export type HistoryRewriteResult =
   | { readonly kind: 'nothing' }

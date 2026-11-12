@@ -29,7 +29,10 @@ vi.mock('node:fs', async (importOriginal) => {
       return (real.openSync as (...args: unknown[]) => number)(path, flags, ...rest);
     },
     appendFileSync: (path: string, data: Buffer, ...rest: unknown[]) => {
-      if (!filling.next) return (real.appendFileSync as (...args: unknown[]) => void)(path, data, ...rest);
+      if (!filling.next) {
+        (real.appendFileSync as (...args: unknown[]) => void)(path, data, ...rest);
+        return;
+      }
       filling.next = false;
       const part = data.subarray(0, Math.floor(data.length / 2));
       real.appendFileSync(path, part);
@@ -436,6 +439,30 @@ describe('Delete really deletes (ADR-0279, the owner’s answers, Decision 7)', 
     // CONTROL: the removal happened, and the save made during it is still there.
     expect(store.list(PLACE_KEY, ID).map((card) => card.key)).not.toContain(gone);
     expect(store.read(PLACE_KEY, during)?.turns).toStrictEqual([{ role: 'user', text: 'Asked meanwhile' }]);
+  });
+
+  it('a save the worker READ HALF OF is still there after the rename: main picks up from the last whole record', async () => {
+    const directory = folder();
+    let during = '';
+    const holder: { store?: ReturnType<typeof createHistoryStore> } = {};
+    // THE WORKER'S READ MEETS A SAVE PART WAY THROUGH ITS WRITE: the save is appended, and the worker is given the file as
+    // it stood with the save's last seven bytes not yet there.
+    const racing: HistoryRewriter = (data) => {
+      during = holder.store?.save(PLACE_KEY, PLACE, ID, null, [{ role: 'user', text: 'Asked while it read' }], null, AT).conversation ?? '';
+      const bytes = readFileSync(data.path);
+      const seen = join(directory, 'seen-by-the-worker');
+      writeFileSync(seen, bytes.subarray(0, bytes.length - 7));
+      return inProcess({ ...data, path: seen });
+    };
+    const store = storeWith(directory, fakeCipher(), undefined, racing);
+    holder.store = store;
+    const gone = store.save(PLACE_KEY, PLACE, ID, null, [{ role: 'user', text: 'Remove me' }], null, AT).conversation ?? '';
+    const kept = store.save(PLACE_KEY, PLACE, ID, null, TURNS, null, AT).conversation ?? '';
+    expect(await store.remove(PLACE_KEY, gone)).toBe(true);
+    // CONTROL: the removal happened, so the rename ran with the worker's read.
+    expect(store.list(PLACE_KEY, ID).map((card) => card.key).sort()).toStrictEqual([kept, during].sort());
+    expect(store.read(PLACE_KEY, during)?.turns).toStrictEqual([{ role: 'user', text: 'Asked while it read' }]);
+    expect(chainsToEnd(readFileSync(store.pathOf(PLACE_KEY)))).toBe(true);
   });
 
   it('removing a section keeps the other document’s, and the file goes with the last', async () => {
