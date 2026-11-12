@@ -156,6 +156,7 @@ import { HELD_COPIES_DIALOG_ID, HELD_COPIES_RESULT } from '../dialogs/heldCopies
 import { KEPT_BACKUPS_DIALOG_ID } from '../dialogs/keptBackups.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
 import { SAVE_TOO_DEEP_DIALOG_ID, SAVE_TOO_DEEP_RESULT } from '../dialogs/saveTooDeep.js';
+import { APPEND_REFUSED_DIALOG_ID, APPEND_REFUSED_RESULT, type AppendRefusedAnswer } from '../dialogs/appendRefused.js';
 import { SIGNATURE_BREAK_DIALOG_ID, SIGNATURE_BREAK_RESULT } from '../dialogs/signatureBreak.js';
 import { FLATTEN_FORM_DIALOG_ID, FLATTEN_FORM_RESULT } from '../dialogs/flattenForm.js';
 import { RESET_FORM_DIALOG_ID, RESET_FORM_RESULT } from '../dialogs/resetForm.js';
@@ -3174,6 +3175,15 @@ export async function saveDocument(
     }
     answer = await deps.client['document.save']({ docId, breakSignatures: true });
   }
+  // A SIGNED DOCUMENT'S FILE COULD NOT TAKE THE APPEND (ADR-0291 question 4): nothing was written. Asked of a person only,
+  // as the signature question is; *Save anyway* writes it whole through this same save, and a copy is written whole.
+  if (answer.ok && answer.value.kind === 'append-refused') {
+    if (attendance === 'unattended') return false;
+    const chosen = await askAppendRefused(deps, docId, false);
+    if (chosen === 'copy') await saveWholeCopy(deps, docId);
+    if (chosen !== 'anyway') return false;
+    answer = await deps.client['document.save']({ docId, breakSignatures: true, whole: true });
+  }
   if (!answer.ok) {
     reportProblem(deps, answer.error);
     return false;
@@ -3211,6 +3221,9 @@ export async function saveDocument(
     if (attendance === 'attended') await sayTooDeep(deps, docId, answer.value.bookmarks);
     return false;
   }
+  // NOT REACHABLE after *Save anyway*, which is offered only where main writes the file whole: main answers it again only
+  // for a certified document, where the window never offered it. Narrowed rather than cast.
+  if (answer.value.kind === 'append-refused') return false;
   // FLATTENED HERE, where both fields exist, rather than in the dialog. The
   // channel answers two shapes describing one thing; the dialog's schema
   // takes one enum, so its body switches once and a sixth outcome is a
@@ -3257,6 +3270,59 @@ export async function sayTooDeep(
     case 'refused':
     case 'onto-source':
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: copyProblemOf(answer.value.kind) });
+      return;
+    case 'append-refused':
+      // THE COPY WITHOUT BOOKMARKS COULD NOT TAKE THE APPEND EITHER (ADR-0291 question 4): asked as any copy is.
+      if ((await askAppendRefused(deps, docId, true)) === 'copy') await saveWholeCopy(deps, docId);
+      return;
+  }
+}
+
+/**
+ * Asks how to save a signed document whose file could not take an appended save (ADR-0291 question 4) — THE ONE WAY
+ * every write of a document asks it (B3a): Save, Save a copy and a read-only file's copy. `copying` where a copy was
+ * refused, which offers only a whole copy. *Save anyway* is offered only on a document main reads as uncertified, and a
+ * read that fails offers it nowhere: the copy is always offered, so nobody is refused.
+ */
+export async function askAppendRefused(
+  deps: Pick<DocumentCommandDeps, 'ask' | 'client'>,
+  docId: DocId,
+  copying: boolean,
+): Promise<AppendRefusedAnswer | undefined> {
+  const read = await deps.client['document.certification']({ docId });
+  const certified = !read.ok || read.value.certification !== null;
+  const chosen = APPEND_REFUSED_RESULT.safeParse(await deps.ask(APPEND_REFUSED_DIALOG_ID, { certified, copying }));
+  return chosen.success ? chosen.data : undefined;
+}
+
+/**
+ * Writes a copy WHOLE where the person picks, past an append the file could not take (ADR-0291 question 4), and says
+ * the outcome as Save a copy does. Its signatures do not verify in it, and a certified document's copy is uncertified.
+ */
+export async function saveWholeCopy(deps: Pick<DocumentCommandDeps, 'ask'> & ConfirmWrittenDeps, docId: DocId): Promise<void> {
+  const answer = await deps.client['document.saveCopy']({ docId, whole: true });
+  if (!answer.ok) {
+    reportProblem(deps, answer.error);
+    return;
+  }
+  switch (answer.value.kind) {
+    case 'copied':
+      confirmWritten(deps, TOAST_COPY_SAVED, answer.value.written);
+      return;
+    case 'cancelled':
+      return;
+    case 'too-deep':
+      await sayTooDeep(deps, docId, answer.value.bookmarks);
+      return;
+    case 'write-failed':
+      void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: 'write-failed' });
+      return;
+    case 'refused':
+    case 'onto-source':
+      void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: copyProblemOf(answer.value.kind) });
+      return;
+    case 'append-refused':
+      // NOT REACHABLE: a whole copy appends nothing. Narrowed rather than cast, and says nothing it cannot name.
       return;
   }
 }
@@ -4829,6 +4895,11 @@ export function saveCopyCommand(deps: DocumentCommandDeps & WritesAFile & Settle
       if (answer.value.kind === 'cancelled') return;
       if (answer.value.kind === 'too-deep') {
         await sayTooDeep(deps, context.docId, answer.value.bookmarks);
+        return;
+      }
+      // AN APPEND THE FILE COULD NOT TAKE (ADR-0291 question 4): only a whole copy is offered.
+      if (answer.value.kind === 'append-refused') {
+        if ((await askAppendRefused(deps, context.docId, true)) === 'copy') await saveWholeCopy(deps, context.docId);
         return;
       }
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, {

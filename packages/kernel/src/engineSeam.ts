@@ -409,6 +409,12 @@ export interface SerialiseOptions {
    * written exactly as without this.
    */
   readonly certification?: 'removed';
+  /**
+   * `never`: the bytes are written WHOLE where a signature would have them appended. Asked only by a person who chose
+   * to save past an append the file could not take (ADR-0291 question 4), and it breaks the signature, which is why it
+   * is asked. Absent: a signed document's save appends, as ADR-0008 rule 2 has it.
+   */
+  readonly append?: 'never';
 }
 
 export interface EngineWriter<TSession> {

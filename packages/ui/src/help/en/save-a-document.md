@@ -4,7 +4,7 @@ title: Save your changes
 summary: Save writes your changes back to the file you opened.
 keywords: [save, ctrl+s, store, write, keep changes, unsaved, dot, backup, restore, previous version, earlier version, bak]
 commands: [document.save, document.restore-version]
-contexts: [home, dialog.save-problem, dialog.save-too-deep, dialog.kept-backups, dialog.restore-version]
+contexts: [home, dialog.save-problem, dialog.save-too-deep, dialog.kept-backups, dialog.restore-version, dialog.append-refused]
 ---
 Your changes stay in Monstera until you save. Saving writes them into the file you opened.
 
@@ -27,6 +27,7 @@ Your changes stay in Monstera until you save. Saving writes them into the file y
 - A save after a redaction, Sanitize or flattening a form keeps no backup, since the backup would hold what was removed. It also permanently deletes the older backups Monstera made of the file and its undo copies, and the message after saving says so. After that, undo cannot go back past the save. A file beside it that is named like a backup but that Monstera did not make is never deleted: Monstera names it in **Some older copies were kept**, so you can decide.
 - Saving can happen on a timer if you turn on autosave. See "Save automatically".
 - Saving a digitally signed document keeps its signatures: your changes are added after them. A few changes need the whole file rewritten, such as a redaction, flattening a form, a new password or an edit to the text, and those break the signatures. Monstera asks before it makes one, in **This change will break signatures**: choose **Work on a copy** to make the change on a copy saved where you choose, which leaves the signed document exactly as it is, or **Change this document**. Close the window to leave the document unchanged. Autosave never breaks a signature; such a save waits for you. To stop being asked, turn off **Warn before a change breaks a signature** in **Settings**, on the **Saving** page.
+- Rarely, a signed file cannot take your changes after its signatures without being damaged. Then nothing is saved, the file stays as it was, and Monstera asks in **Your changes could not be added after the signature**. Choose **Save a copy…** to write the whole document to a copy where you choose, which leaves this file and its signatures as they are. Or choose **Save anyway** to write the whole document into this file, which keeps your changes and stops its signatures verifying. A certified document offers only the copy, and that copy is no longer certified.
 
 <!--
 Screenshots to capture:

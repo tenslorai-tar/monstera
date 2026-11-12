@@ -496,6 +496,11 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
   ],
   'dialog.signed-edit': [{ state: 'opened', props: {} }],
   'dialog.certified-edit': [{ state: 'opened', props: { level: 'form-fill', signer: 'Grace Hopper' } }],
+  // ADR-0291 question 4: a save of an uncertified document offers Save anyway; a certified one and a copy, the copy alone.
+  'dialog.append-refused': [
+    { state: 'save', props: { certified: false, copying: false } },
+    { state: 'certified', props: { certified: true, copying: false } },
+  ],
   'dialog.save-too-deep': [
     { state: 'bookmarks', props: { bookmarks: true } },
     { state: 'structure', props: { bookmarks: false } },

@@ -158,6 +158,9 @@ import {
   type StagedMarks,
   type StagedOutline,
   type StagedCertification,
+  type StagedAppend,
+  AppendRefused,
+  KEPT_FILE_WHOLE,
   type Staging,
   AS_HELD,
   KEPT_FILE,
@@ -919,6 +922,15 @@ export type PlaceImageOutcome =
   | { readonly kind: 'absent' };
 
 /** What a save came to: the pipeline's outcomes, or a save held back because it would break signatures. */
+/**
+ * What a save is asked: whether breaking the document's signatures was agreed, and `whole` where the person chose to
+ * write the file whole past an append it could not take (ADR-0291 question 4).
+ */
+export interface SaveRequest {
+  readonly breakSignatures: boolean;
+  readonly whole?: true;
+}
+
 export type SaveRequestOutcome =
   /**
    * Saved — and, where the save was a removal's, which older copies it deleted and which it kept; and, for every save,
@@ -4718,8 +4730,8 @@ export class DocumentCommands {
     return this.#documents.nameOf(docId);
   }
 
-  async saveCopy(docId: DocId, outline: StagedOutline = 'kept'): Promise<DocumentCopyOutcome | undefined> {
-    return (await this.#writeCopy(docId, () => undefined, outline))?.outcome;
+  async saveCopy(docId: DocId, outline: StagedOutline = 'kept', append: StagedAppend = 'when-signed'): Promise<DocumentCopyOutcome | undefined> {
+    return (await this.#writeCopy(docId, () => undefined, outline, 'kept', append))?.outcome;
   }
 
   /**
@@ -4736,8 +4748,11 @@ export class DocumentCommands {
    * A copy of the document to WORK ON, written where the person chooses (cloud-4 7b): {@link saveCopy}'s picker and
    * write exactly, and the path the copy went to, which the handler opens.
    */
-  async copyToWorkOn(docId: DocId): Promise<{ readonly outcome: DocumentCopyOutcome; readonly destination: string } | undefined> {
-    return this.#writeCopy(docId, () => undefined);
+  async copyToWorkOn(
+    docId: DocId,
+    append: StagedAppend = 'when-signed',
+  ): Promise<{ readonly outcome: DocumentCopyOutcome; readonly destination: string } | undefined> {
+    return this.#writeCopy(docId, () => undefined, 'kept', 'kept', append);
   }
 
   /**
@@ -4824,8 +4839,11 @@ export class DocumentCommands {
       },
       'kept',
       // THE COPY A CHANGE IS MADE ON IS NO LONGER CERTIFIED (ADR-0291 Decision 5): written whole, without `/Perms /DocMDP`,
-      // so the change it is opened for is not refused there too. An uncertified document is written as it always was.
+      // so the change it is opened for is not refused there too.
       'removed',
+      // AND IT IS WRITTEN WHOLE, signed or not (ADR-0291 question 4): this route exists because the change breaks the
+      // document's signatures, so an append kept them for nothing and could be refused for nothing.
+      'never',
     );
   }
 
@@ -4870,6 +4888,12 @@ export class DocumentCommands {
     outline: StagedOutline = 'kept',
     /** `removed` writes it without its certification: the copy a certified document's change is made on (ADR-0291). */
     certification: StagedCertification = 'kept',
+    /**
+     * `never` writes it whole where a signature would have it appended: the copy offered past an append the file could
+     * not take (ADR-0291 question 4). A certified document's whole copy is written without its certification too,
+     * since its certifying signature no longer verifies over it.
+     */
+    append: StagedAppend = 'when-signed',
   ): Promise<{ readonly outcome: DocumentCopyOutcome; readonly destination: string } | undefined> {
     // THE NAME IS READ BEFORE THE LANE and the document may close while the
     // dialog is up — which is fine, because a filename is all that was taken
@@ -4900,6 +4924,13 @@ export class DocumentCommands {
 
       inLane(context.version);
 
+      // A WHOLE COPY OF A CERTIFIED DOCUMENT IS WRITTEN UNCERTIFIED (ADR-0291 question 4, Decision 5's reason): its
+      // certifying signature no longer verifies over a file written whole, so a copy that kept the claim would be one
+      // that claims a seal it broke. Read from the lane's own facts.
+      const signed = sessions.mupdf;
+      const uncertified =
+        append === 'never' && signed !== undefined && (await this.#signaturesKept(signed)).certification !== null ? 'removed' : certification;
+
       // THE SAME FLUSH A SAVE USES, so a copy and a save cannot disagree about
       // what this document currently is (B3a). `writeDocumentCopy` is handed no
       // `DocumentContext`, so it cannot stamp the document clean.
@@ -4908,12 +4939,14 @@ export class DocumentCommands {
           this.#save.deps,
           this.#checkFor(docId),
           // A FILE A PERSON KEEPS, with or without its outline (ADR-0287).
-          () => this.#save.stage(docId, sessions, { outline, marks: 'engraved', certification }),
+          () => this.#save.stage(docId, sessions, { outline, marks: 'engraved', certification: uncertified, append }),
           destination,
           backupsFor(context),
         );
       } catch (error) {
         if (error instanceof StructureTooDeep) return { kind: 'too-deep', bookmarks: error.throughOutline };
+        // AN APPEND THE FILE COULD NOT TAKE is answered too, nothing written (ADR-0291 question 4).
+        if (error instanceof AppendRefused) return { kind: 'append-refused' };
         throw error;
       }
     });
@@ -7446,7 +7479,7 @@ export class DocumentCommands {
    * signatures — the same decision that save then takes (`signaturesKeptBySave`) — and a *no* answers
    * `breaks-signatures` with nothing written. In the lane, so no command can land between the question and the write.
    */
-  async save(docId: DocId, request: { readonly breakSignatures: boolean }): Promise<SaveRequestOutcome> {
+  async save(docId: DocId, request: SaveRequest): Promise<SaveRequestOutcome> {
     return (await this.#saveThen(docId, request, false)).outcome;
   }
 
@@ -7465,7 +7498,7 @@ export class DocumentCommands {
 
   async #saveThen(
     docId: DocId,
-    request: { readonly breakSignatures: boolean },
+    request: SaveRequest,
     take: boolean,
   ): Promise<{ readonly outcome: SaveRequestOutcome; readonly image: StagedImage | null }> {
     // LISTS AND NOT NULLABLE LOCALS: the lane writes them from a closure, which control-flow analysis cannot see.
@@ -7487,6 +7520,9 @@ export class DocumentCommands {
       if (!request.breakSignatures && !next.kept && !context.signaturesBreakAgreed) {
         return { kind: 'breaks-signatures', signatures: next.signatures };
       }
+      // WRITTEN WHOLE ONLY WHERE NOTHING IS CERTIFIED (ADR-0291 question 4): the window offers *Save anyway* on an
+      // uncertified document alone, and a certified one asked for it is answered as before, so no route breaks a seal.
+      if (request.whole === true && next.certification !== null) return { kind: 'append-refused' };
 
       // THE DOCUMENT'S FACT, read before the save clears it: whether a removal ran since the file was written
       // (ADR-0139). Never the engine session's mark, which an undo's restore, an adopt or a host restart drops — the
@@ -7497,8 +7533,9 @@ export class DocumentCommands {
       const saved = await saveDocument(
         this.#save.deps,
         context,
-        // THE FILE A PERSON KEEPS: Monstera's placed signatures, pictures and barcodes drawn by the page (ADR-0287).
-        () => this.#save.stage(docId, sessions, KEPT_FILE),
+        // THE FILE A PERSON KEEPS: Monstera's placed signatures, pictures and barcodes drawn by the page (ADR-0287);
+        // written whole where the person chose to save past an append the file could not take (ADR-0291 question 4).
+        () => this.#save.stage(docId, sessions, request.whole === true ? KEPT_FILE_WHOLE : KEPT_FILE),
         backupsFor(context),
       );
       // WHY IT WAS NOT WRITTEN, asked of the file now, inside the lane, so the person is told the remedy that fits.

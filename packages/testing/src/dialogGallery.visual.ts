@@ -47,6 +47,7 @@ const THROUGH_THE_APPLICATION = [
 
 /** Every other registered dialog, photographed here. Read from the gallery's samples, 2026-10-17: 92 ids, 110 in all. */
 const FROM_THE_GALLERY = [
+  'dialog.append-refused',
   'dialog.apply-redactions',
   'dialog.boxed-characters',
   'dialog.camera-capture',

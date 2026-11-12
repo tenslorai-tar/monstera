@@ -132,6 +132,12 @@ export const SIGN_AGAIN_EXPLAINS = messageKey('dialog.sign-again.explains');
 export const SIGN_AGAIN_UNREADABLE = messageKey('dialog.sign-again.unreadable');
 export const SIGN_AGAIN_CONTINUE = messageKey('dialog.sign-again.continue');
 export const SIGNED_EDIT_TITLE = messageKey('dialog.signed-edit.title');
+/** A signed document's save that its file could not take as an appended save (ADR-0291 question 4). */
+export const APPEND_REFUSED_TITLE = messageKey('dialog.append-refused.title');
+export const APPEND_REFUSED_EXPLAINS = messageKey('dialog.append-refused.explains');
+export const APPEND_REFUSED_WHOLE_BREAKS = messageKey('dialog.append-refused.whole-breaks');
+export const APPEND_REFUSED_COPY = messageKey('dialog.append-refused.copy');
+export const APPEND_REFUSED_ANYWAY = messageKey('dialog.append-refused.anyway');
 export const SIGNED_EDIT_EXPLAINS = messageKey('dialog.signed-edit.explains');
 export const SIGNED_EDIT_COPY = messageKey('dialog.signed-edit.copy');
 export const SIGNED_EDIT_THIS = messageKey('dialog.signed-edit.this');
@@ -3777,6 +3783,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SIGN_AGAIN_UNREADABLE]: 'One signature in this document could not be read, so Monstera cannot say whether it stays valid.',
   [SIGN_AGAIN_CONTINUE]: 'Continue',
   [SIGNED_EDIT_TITLE]: 'This change will break signatures',
+  [APPEND_REFUSED_TITLE]: 'Your changes could not be added after the signature',
+  [APPEND_REFUSED_EXPLAINS]:
+    'This document is digitally signed, so Monstera adds your changes after the signed part to keep the signature. This file could not take them that way without being damaged, so nothing was saved and the file is as it was.',
+  [APPEND_REFUSED_WHOLE_BREAKS]:
+    'Saving the whole document instead keeps your changes, and its signatures will no longer verify. A copy leaves this file and its signatures as they are.',
+  [APPEND_REFUSED_COPY]: 'Save a copy…',
+  [APPEND_REFUSED_ANYWAY]: 'Save anyway',
   [SIGNED_EDIT_EXPLAINS]:
     'This document is digitally signed. This change rewrites the whole file, so its signatures will no longer verify. Work on a copy to keep the signed document exactly as it is: the copy is saved where you choose and opens with this change made.',
   [SIGNED_EDIT_COPY]: 'Work on a copy',

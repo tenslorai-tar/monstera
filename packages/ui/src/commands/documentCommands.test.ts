@@ -917,6 +917,70 @@ describe('save', () => {
     });
   });
 
+  describe('a signed document’s file that could NOT TAKE THE APPEND (ADR-0291 question 4)', () => {
+    /**
+     * Main answers `append-refused` to a save that is not whole and `saved` to one that is, `copied` to a whole copy, and
+     * the document's certification as the case says.
+     */
+    const refusingClient = (certification: { level: 'form-fill'; signer: string } | null = null) => {
+      const sent: { id: string; params: unknown }[] = [];
+      const client = createClient(channels, (id, params) => {
+        if (id === 'document.certification') return Promise.resolve(ok({ certification, signed: true }));
+        sent.push({ id, params });
+        if (id === 'document.saveCopy') return Promise.resolve(ok({ kind: 'copied', bytes: 10, written: WRITTEN }));
+        const whole = (params as { whole?: true }).whole === true;
+        return Promise.resolve(ok(whole ? { kind: 'saved', version: asDocVersion(3), cleared: null, held: [] } : { kind: 'append-refused' }));
+      });
+      return { client, sent };
+    };
+    const choosing = (answer: unknown) => {
+      const shown: { id: string; props: unknown }[] = [];
+      const ask = (id: string, props: unknown): Promise<unknown> => {
+        shown.push({ id, props });
+        return Promise.resolve(id === 'dialog.append-refused' ? answer : undefined);
+      };
+      return { shown, ask };
+    };
+
+    it('SAVE ANYWAY writes the file whole, agreed to break its signatures, and the save lands', async () => {
+      const { client, sent } = refusingClient();
+      const { shown, ask } = choosing('anyway');
+      const { toast, onSaved, wrote } = saving();
+      expect(await saveDocument({ client, ask, toast, onSaved, warnSignatureBreak: () => true }, DOC, 'attended')).toBe(true);
+      expect(shown).toStrictEqual([{ id: 'dialog.append-refused', props: { certified: false, copying: false } }]);
+      expect(sent).toStrictEqual([
+        { id: 'document.save', params: { docId: DOC, breakSignatures: false } },
+        { id: 'document.save', params: { docId: DOC, breakSignatures: true, whole: true } },
+      ]);
+      expect(wrote).toStrictEqual([{ docId: DOC, version: asDocVersion(3) }]);
+    });
+
+    it('SAVE A COPY writes a whole copy and confirms it, and the document’s own file is not written', async () => {
+      const { client, sent } = refusingClient();
+      const { ask } = choosing('copy');
+      const { toast, onSaved, said, wrote } = saving();
+      expect(await saveDocument({ client, ask, toast, onSaved, warnSignatureBreak: () => true }, DOC, 'attended')).toBe(false);
+      expect(sent.map((one) => one.params)).toStrictEqual([{ docId: DOC, breakSignatures: false }, { docId: DOC, whole: true }]);
+      expect(said.map((one) => one.message)).toStrictEqual([TOAST_COPY_SAVED]);
+      expect(wrote).toStrictEqual([]);
+    });
+
+    it('a CERTIFIED document is told so, which offers no Save anyway; CONTROL: Cancel and an autosave write nothing', async () => {
+      const certified = refusingClient({ level: 'form-fill', signer: 'Grace Hopper' });
+      const asked = choosing(undefined);
+      const { toast, onSaved } = saving();
+      expect(await saveDocument({ client: certified.client, ask: asked.ask, toast, onSaved, warnSignatureBreak: () => true }, DOC, 'attended')).toBe(false);
+      expect(asked.shown).toStrictEqual([{ id: 'dialog.append-refused', props: { certified: true, copying: false } }]);
+      expect(certified.sent.map((one) => one.id)).toStrictEqual(['document.save']);
+
+      const unattended = refusingClient();
+      const timer = choosing('anyway');
+      expect(await saveDocument({ client: unattended.client, ask: timer.ask, toast, onSaved, warnSignatureBreak: () => true }, DOC, 'unattended')).toBe(false);
+      expect(timer.shown).toStrictEqual([]);
+      expect(unattended.sent.map((one) => one.id)).toStrictEqual(['document.save']);
+    });
+  });
+
   describe('a save that would BREAK SIGNATURES (saving.warn-signature-break)', () => {
     /** Main answers `breaks-signatures` to a save that has not agreed, and `saved` to one that has. */
     const signedClient = (): { client: ContractClient; sent: unknown[] } => {

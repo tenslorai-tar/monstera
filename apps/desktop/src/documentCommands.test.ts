@@ -2059,7 +2059,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
         }
       };
       // THE ROUTE ASKED FOR A FILE A PERSON KEEPS, and the file on disk has no stamp layer.
-      expect(t.stagings.at(-1)).toStrictEqual({ outline: 'kept', marks: 'engraved', certification: 'kept' });
+      expect(t.stagings.at(-1)).toStrictEqual({ outline: 'kept', marks: 'engraved', certification: 'kept', append: 'when-signed' });
       expect(await stampsIn(new Uint8Array(readFileSync(t.path)))).toBe(0);
       // CONTROL: the session still holds the stamp, so it moves until the document is closed.
       expect(await stampsIn(await t.serialised())).toBe(1);
@@ -2264,11 +2264,33 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
         const t = await aSavableDocument(certified('no-changes'), ledger(), destination);
 
         expect((await t.commands.copyForEditing(t.saved, rotateOnce))?.outcome.kind).toBe('copied');
-        expect(t.stagings.at(-1)).toStrictEqual({ outline: 'kept', marks: 'engraved', certification: 'removed' });
+        // WHOLE as well as uncertified: the change it is made for breaks the signatures, so nothing is appended.
+        expect(t.stagings.at(-1)).toStrictEqual({ outline: 'kept', marks: 'engraved', certification: 'removed', append: 'never' });
 
         // CONTROL: the person's own copy of the certified document is the document as certified.
         expect(await t.commands.saveCopy(t.saved)).toMatchObject({ kind: 'copied' });
-        expect(t.stagings.at(-1)).toStrictEqual({ outline: 'kept', marks: 'engraved', certification: 'kept' });
+        expect(t.stagings.at(-1)).toStrictEqual({ outline: 'kept', marks: 'engraved', certification: 'kept', append: 'when-signed' });
+      });
+
+      it('PAST A REFUSED APPEND (question 4): a whole copy of a certified document is written uncertified, and Save anyway is refused', async () => {
+        const destination = join(directory, `whole-copy-${String(savables + 1)}.pdf`);
+        const t = await aSavableDocument(certified('form-fill'), ledger(), destination);
+        expect(await t.commands.saveCopy(t.saved, 'kept', 'never')).toMatchObject({ kind: 'copied' });
+        expect(t.stagings.at(-1)).toStrictEqual({ outline: 'kept', marks: 'engraved', certification: 'removed', append: 'never' });
+
+        // SAVE ANYWAY IS NOT TAKEN on a certified document: answered as before, and nothing staged.
+        const staged = t.stagings.length;
+        expect(await t.commands.save(t.saved, { breakSignatures: true, whole: true })).toStrictEqual({ kind: 'append-refused' });
+        expect(t.stagings).toHaveLength(staged);
+      });
+
+      it('CONTROL: on an uncertified signed document, Save anyway is staged whole, and a whole copy keeps what it holds', async () => {
+        const destination = join(directory, `whole-plain-${String(savables + 1)}.pdf`);
+        const t = await aSavableDocument(() => Promise.resolve({ signatures: 1, kept: true, certification: null }), ledger(), destination);
+        expect(await t.commands.save(t.saved, { breakSignatures: true, whole: true })).toMatchObject({ kind: 'saved' });
+        expect(t.stagings.at(-1)).toStrictEqual({ outline: 'kept', marks: 'engraved', certification: 'kept', append: 'never' });
+        expect(await t.commands.saveCopy(t.saved, 'kept', 'never')).toMatchObject({ kind: 'copied' });
+        expect(t.stagings.at(-1)).toStrictEqual({ outline: 'kept', marks: 'engraved', certification: 'kept', append: 'never' });
       });
 
       it('SAVE THIS SIGNED VERSION cuts the saved file back to the signature, and writes only a cut that verifies (Decision 7)', async () => {

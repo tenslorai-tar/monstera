@@ -227,6 +227,26 @@ describe('appended saves of a signed document, any number from one session', () 
     }
   }, 60_000);
 
+  it('SAVE ANYWAY (ADR-0291 Q4): `append: never` writes a signed document WHOLE, which breaks its signature', async () => {
+    const signed = await applySignDocument(unsigned, { ...command, bytes: certificate });
+    const session = await mupdfWriter.open(signed);
+    try {
+      await withDocument(session, (document) => {
+        document.findPage(0).put('Rotate', 90);
+      });
+      const whole = await mupdfWriter.serialise(session, { append: 'never' });
+      // NOT APPENDED: the signed file is not its first bytes, and the signature no longer covers what it signed.
+      expect(Buffer.from(whole.subarray(0, signed.byteLength)).equals(Buffer.from(signed))).toBe(false);
+      expect(plainPages(whole)).toBe(PAGES);
+      expect(await covering(whole)).toStrictEqual([false]);
+      // CONTROL: the same session saved as it holds appends, as every case above has it.
+      const appended = await mupdfWriter.serialise(session);
+      expect(Buffer.from(appended.subarray(0, signed.byteLength)).equals(Buffer.from(signed))).toBe(true);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  }, 60_000);
+
   it('a protected document whose PAGE TREE IS IN AN ENCRYPTED OBJECT STREAM, signed, saves three times (ADR-0291 Q4)', async () => {
     // THE SHAPE qpdf writes with --encrypt and --object-streams=generate, built byte by byte; its signature added by
     // MuPDF's own append, so the object streams stay as written. A value in a /Sig field is what the save counts.

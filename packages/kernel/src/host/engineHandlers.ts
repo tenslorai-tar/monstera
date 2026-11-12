@@ -874,16 +874,18 @@ export function createEngineHandlers({
       };
     },
 
-    'engine/serialise': async ({ session, into, outline, marks, certification }) => {
+    'engine/serialise': async ({ session, into, outline, marks, certification, append }) => {
       const held = sessions.lookup(session);
       if (held === undefined) return gone;
       try {
         // `marks: 'engraved'` for a file a person keeps (ADR-0287); absent, the session's bytes as held.
         // `certification: 'removed'` for the copy a certified document's change is made on (ADR-0291).
+        // `append: 'never'` for a person who chose to save past a refused append (ADR-0291 question 4).
         const bytes = await writer.serialise(held.session, {
           ...(outline === undefined ? {} : { outline }),
           ...(marks === undefined ? {} : { marks }),
           ...(certification === undefined ? {} : { certification }),
+          ...(append === undefined ? {} : { append }),
         });
         const written = await files.writeOutput(held.outputDirectory, into, bytes);
         return { ok: true, value: { bytes: written } };
@@ -893,6 +895,9 @@ export function createEngineHandlers({
         if (error instanceof Error && error.name === 'StructureTooDeep') {
           return failed((error as { readonly throughOutline?: boolean }).throughOutline === true ? 'outline-too-deep' : 'structure-too-deep', error);
         }
+        // AN APPENDED SAVE THE FILE COULD NOT TAKE (ADR-0291 question 4), by NAME for the same reason: said as its own
+        // outcome, so the person is asked how to save rather than told something went wrong.
+        if (error instanceof Error && error.name === 'AppendRefused') return failed('append-refused', error);
         return failed('serialise-failed', error);
       }
     },

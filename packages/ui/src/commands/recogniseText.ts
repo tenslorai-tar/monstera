@@ -36,6 +36,8 @@ import {
   hasDocument,
   reportProblem,
   sayTooDeep,
+  askAppendRefused,
+  saveWholeCopy,
 } from './documentCommands.js';
 import { copyProblemOf } from './copyProblem.js';
 
@@ -567,6 +569,12 @@ export function exportSearchableCommand(
       }
       if (copied.value.kind === 'too-deep') {
         await sayTooDeep(deps, docId, copied.value.bookmarks);
+        return;
+      }
+      // AN APPEND THE FILE COULD NOT TAKE (ADR-0291 question 4), asked as Save a copy asks it; the recognition stands.
+      if (copied.value.kind === 'append-refused') {
+        if ((await askAppendRefused(deps, docId, true)) === 'copy') await saveWholeCopy(deps, docId);
+        void deps.ask(OCR_OUTCOME_DIALOG_ID, walked);
         return;
       }
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, {

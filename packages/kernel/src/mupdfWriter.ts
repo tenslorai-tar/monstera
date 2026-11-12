@@ -10,6 +10,7 @@ import type {
 } from './engineSeam.js';
 import { carriesCertification, savedUncertified } from './docMdp.js';
 import { DocumentLocked } from './engineSeam.js';
+import { AppendRefused } from './appendRefused.js';
 import { openPdfFile, pagesWithoutRepair } from './mupdfOpen.js';
 import { savedEngraved } from './engraveOnSave.js';
 import { FULL_SAVE_TERMS, savedBuffer, savedWithoutOutline } from './saveDepth.js';
@@ -670,12 +671,12 @@ function rebasedOn(session: MupdfSession, previous: mupdf.PDFDocument, bytes: By
   // reads no pages without it (`pagesWithoutRepair`, measured 2026-11-12), and every save of such a file was refused.
   const pages = pagesWithoutRepair(bytes, heldPasswords.get(session));
   if (pages !== previous.countPages()) {
-    throw new Error(`The appended save wrote a file whose own chain reads ${String(pages)} pages, so it was not used.`);
+    throw new AppendRefused(`its own chain reads ${String(pages)} pages`);
   }
   const { document, access } = openPdfFile(bytes, heldPasswords.get(session));
   if (!(document instanceof mupdf.PDFDocument) || access === 0 || document.countPages() !== previous.countPages()) {
     document.destroy();
-    throw new Error('The appended save wrote a file this build cannot open again with its pages, so it was not used.');
+    throw new AppendRefused('this build cannot open it again with its pages');
   }
   documents.set(session, document);
   previous.destroy();
@@ -825,8 +826,10 @@ export const mupdfWriter: EngineWriter<MupdfSession> = {
       // A COPY WRITTEN UNCERTIFIED (ADR-0291 Decision 5) is a WHOLE save, never an appended one: an earlier revision
       // would still hold the certification. Only where there is one to take out; otherwise the save is as held.
       const uncertified = options?.certification === 'removed' && carriesCertification(document);
-      const terms = uncertified ? whole : held;
-      const appends = heldAppends && !uncertified;
+      // AND A PERSON WHO CHOSE TO SAVE PAST A REFUSED APPEND (ADR-0291 question 4) is written whole too.
+      const writtenWhole = uncertified || options?.append === 'never';
+      const terms = writtenWhole ? whole : held;
+      const appends = heldAppends && !writtenWhole;
       // MEASURED BEFORE A COLLECTING SAVE, and refused in words where it would pass the engine's stack (`saveDepth.ts`).
       const written = (): mupdf.Buffer =>
         options?.outline === 'left-out' ? savedWithoutOutline(document, terms) : savedBuffer(document, terms);

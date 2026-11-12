@@ -450,6 +450,14 @@ export const WRITTEN = { written: fileHandleSchema } as const;
 export const tooDeepToSaveSchema = z.object({ kind: z.literal('too-deep'), bookmarks: z.boolean() });
 
 /**
+ * NOTHING WAS WRITTEN: a signed document's save appends to keep its signature, and the file that append wrote did not
+ * read back as the document, so it was not used ([ADR-0291](../../../docs/DECISIONS/0291-a-certified-document-is-locked-to-what-its-certifier-allowed-and-worked-on-as-a-copy.md)
+ * question 4). The person is asked: a copy written whole, the file written whole, or neither. A save and a copy answer
+ * it alike.
+ */
+export const appendRefusedSchema = z.object({ kind: z.literal('append-refused') });
+
+/**
  * NOTHING WAS WRITTEN: the destination a person chose for a copy is the file the document being copied was opened
  * from. Its own member, never `refused` with a count, because *another open document* names a document the person
  * cannot find. Every channel that writes a copy of an open document answers it, defined once here.
@@ -2878,6 +2886,12 @@ export const channels = {
        * who has been told and agreed — or who turned the warning off.
        */
       breakSignatures: z.boolean(),
+      /**
+       * `true`: written WHOLE where a signature would have the save appended, which breaks it. Sent only by a person
+       * who was told the append could not be taken and chose *Save anyway* (ADR-0291 question 4), with
+       * `breakSignatures: true`. A certified document is not written whole this way, and answers `append-refused` again.
+       */
+      whole: z.literal(true).exactOptional(),
     }),
     z.discriminatedUnion('kind', [
       z.object({
@@ -2910,6 +2924,7 @@ export const channels = {
       /** The filesystem refused, and why, so the person is told the remedy that fits (cloud-4 7b). */
       z.object({ kind: z.literal('write-failed'), cause: z.enum(SAVE_WRITE_CAUSES) }),
       tooDeepToSaveSchema,
+      appendRefusedSchema,
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),
@@ -3702,6 +3717,11 @@ export const channels = {
       docId: docIdSchema,
       /** The copy without the document's bookmarks: what is offered where the bookmarks made it too deep to save. */
       withoutBookmarks: z.literal(true).exactOptional(),
+      /**
+       * The copy written WHOLE, where an append could not be taken (ADR-0291 question 4): the signatures in it no longer
+       * verify, and a certified document's copy is written without its certification, as Work on a copy's is.
+       */
+      whole: z.literal(true).exactOptional(),
     }),
     z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative(), ...WRITTEN }),
@@ -3710,6 +3730,7 @@ export const channels = {
       COPY_ONTO_SOURCE,
       z.object({ kind: z.literal('write-failed') }),
       tooDeepToSaveSchema,
+      appendRefusedSchema,
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),
@@ -3780,7 +3801,13 @@ export const channels = {
    */
   'document.workOnCopy': channel(
     'Writes a copy of an open document where the user picks, and opens the copy.',
-    z.object({ docId: docIdSchema }).strict(),
+    z
+      .object({
+        docId: docIdSchema,
+        /** The copy written WHOLE, where an append could not be taken (ADR-0291 question 4), `saveCopy`'s `whole`. */
+        whole: z.literal(true).exactOptional(),
+      })
+      .strict(),
     z.discriminatedUnion('kind', [
       openedSchema,
       z.object({ kind: z.literal('cancelled') }),
@@ -3790,8 +3817,9 @@ export const channels = {
       openAbsentSchema,
       openAtCapacitySchema,
       openReadRefusedSchema,
-      // THE COPY IS A SAVE OF THE DOCUMENT, so it is refused for its depth as a save is.
+      // THE COPY IS A SAVE OF THE DOCUMENT, so it is refused for its depth as a save is, and for an append it cannot take.
       tooDeepToSaveSchema,
+      appendRefusedSchema,
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),

@@ -177,6 +177,8 @@ export {
   type SessionAreaSurface,
   AS_HELD,
   KEPT_FILE,
+  KEPT_FILE_WHOLE,
+  type StagedAppend,
   type StagedCertification,
   type StagedMarks,
   type StagedOutline,
@@ -186,6 +188,7 @@ export {
 } from './host/remoteLifecycle.js';
 // A SAVE REFUSED FOR ITS DEPTH, before it was attempted, whichever side of the pipe measured it (the owner's item 20).
 export { SAVE_DEPTH_MAX, StructureTooDeep } from './saveDepth.js';
+export { AppendRefused } from './appendRefused.js';
 // THE ONE READ OF A HOST'S OUTPUT, held to its announced count before anything is read (CR-SEC-08): main's session
 // areas are this, and the kernel's adapters take it through `takeAnnounced`.
 export { copyAnnounced, readAnnounced, type WorkingFile } from './host/announcedOutput.js';
@@ -531,6 +534,7 @@ export {
   copyRefusalOf,
   type DocumentCopyOutcome,
   type TooDeepToSave,
+  type AppendNotTaken,
   type SaveOutcome,
   type WriteTargetCheck,
   type SplitOutcome,
