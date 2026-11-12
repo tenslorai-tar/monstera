@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
-import { type ContractClient, channels, createClient } from '@monstera/contract';
+import { type ContractClient, clientOver } from '@monstera/contract';
 import { type MessageKey, ok } from '@monstera/shared';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
@@ -32,7 +32,7 @@ async function drawn(due: boolean, opened = true): Promise<Drawn> {
   const sent: { id: string; params: unknown }[] = [];
   const said: { kind: ToastKind; message: MessageKey }[] = [];
   const settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
-  const client: ContractClient = createClient(channels, (id, params) => {
+  const client: ContractClient = clientOver((id, params) => {
     sent.push({ id, params });
     if (id === 'app.reviewPrompt') return Promise.resolve(ok({ due }));
     if (id === 'app.review') return Promise.resolve(ok({ opened }));

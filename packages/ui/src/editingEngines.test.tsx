@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { channels, createClient } from '@monstera/contract';
+import { clientOver } from '@monstera/contract';
 import { ok } from '@monstera/shared';
 import { renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -9,7 +9,7 @@ import { useEditingEnginesStarted } from './editingEngines.js';
 /** A client that counts `app.prepareEditing`. */
 function counting() {
   const asked: string[] = [];
-  const client = createClient(channels, (id) => {
+  const client = clientOver((id) => {
     asked.push(id);
     if (id === 'app.prepareEditing') return Promise.resolve(ok({ started: true }));
     throw new Error(`no answer for ${id}`);

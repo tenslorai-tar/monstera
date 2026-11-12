@@ -1,4 +1,4 @@
-import type { ChannelParams, ContractClient } from '@monstera/contract';
+import type { ChannelId, ChannelParams, ContractClient } from '@monstera/contract';
 
 import { afterSentCommands } from './documentCommands.js';
 
@@ -43,7 +43,7 @@ export const READS_THE_DOCUMENT_OUT = [
   // THE SIGNED VERSION (ADR-0291 Decision 7) is cut from the FILE, which a Save pressed before it writes, so it waits
   // for that save as a copy does.
   'document.saveSignedVersion',
-] as const satisfies readonly { [K in keyof ContractClient]: ChannelParams<K> extends { readonly docId: unknown } ? K : never }[keyof ContractClient][];
+] as const satisfies readonly { [K in ChannelId]: ChannelParams<K> extends { readonly docId: unknown } ? K : never }[ChannelId][];
 
 /**
  * `client`, with each of {@link READS_THE_DOCUMENT_OUT} sent only once the commands already in that document's lane

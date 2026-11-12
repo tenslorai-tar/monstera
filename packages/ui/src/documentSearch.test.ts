@@ -1,4 +1,4 @@
-import { type ContractClient, channels, createClient } from '@monstera/contract';
+import { type ContractClient, clientOver } from '@monstera/contract';
 import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -25,7 +25,7 @@ function clientOverPages(
   } = {},
 ): { client: ContractClient; asked: number[] } {
   const asked: number[] = [];
-  const client = createClient(channels, (id, params) => {
+  const client = clientOver((id, params) => {
     if (id !== 'document.searchPage') throw new Error(`unexpected channel ${id}`);
     const { page } = params as { page: number };
     asked.push(page);
@@ -180,7 +180,7 @@ describe('searchDocument', () => {
 
   it('passes the matching options through to every page', async () => {
     const sent: unknown[] = [];
-    const client = createClient(channels, (id, params) => {
+    const client = clientOver((id, params) => {
       sent.push(params);
       if (id !== 'document.searchPage') throw new Error(`unexpected channel ${id}`);
       return Promise.resolve(ok({ version: asDocVersion(1), matches: [], truncated: false }));

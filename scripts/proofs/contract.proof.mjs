@@ -2018,9 +2018,17 @@ export const handlers: ContractHandlers = {
 `,
   },
   {
-    name: 'a client stub missing a channel does not compile',
+    // REWRITTEN 2026-11-12 FOR ADR-0294, and this was the case below until then: *a client stub missing a channel does
+    // not compile*, its fixture every channel but `document.execute`, its reason that channel missing in `ClientApi<`.
+    // That kept the browser shim honest while the shim wrote its client by hand. It no longer does: it builds through
+    // `clientOver` from its handler map, whose every channel the handler case above requires. What the type now holds is
+    // that NO client is written by hand, so the fixture has EVERY channel and is refused for the one thing it cannot
+    // name: the mark only `closedHereClient` sets. A literal one channel short still fails, for both reasons at once,
+    // which TypeScript reports under another code; that is not what this case is about any more.
+    name: 'a client written by hand does not compile, even with every channel: only clientOver builds one (ADR-0294)',
     expect: 'reject',
-    code: 'TS2741',
+    // TS2322, the assignment to the intersection, with the missing mark beneath it; the reason below pins the mark.
+    code: 'TS2322',
     // STOPS AT THE TYPE CONSTRUCTOR, as its handler sibling above already did.
     // It used to require `'ClientApi<{…}>'` with the closing bracket, and that
     // broke the day `document.undo` landed — not because the reason changed,
@@ -2032,7 +2040,8 @@ export const handlers: ContractHandlers = {
     // budget. What this case is about is which type demanded the member, and
     // `ClientApi<` pins that exactly. The depth control below is untouched and
     // is what still fires if elision stops handling nesting.
-    because: /Property ''document\.execute'' is missing in type '\{…\}' but required in type 'ClientApi</u,
+    // THE BRAND, by its own name: every channel is present, so the one missing member is the mark (ADR-0294).
+    because: /Property '\[BUILT\]' is missing in type /u,
     // THE NESTED-DUMP CONTROL, and it needed no synthetic fixture — this
     // diagnostic already nests: `ClientApi<{ … Channel<ZodObject<{ … }>> }>`.
     // Collapsing only the innermost level leaves `installChannel` visible in
@@ -2049,8 +2058,9 @@ export const handlers: ContractHandlers = {
     // what happened the day it landed.
     source: `
 import type { ContractClient } from '@monstera/contract';
-import { ok, asDocVersion } from '@monstera/shared';
+import { ok, err, asDocVersion } from '@monstera/shared';
 export const shim: ContractClient = {
+  'document.execute': () => Promise.resolve(err({ code: 'document-busy' as const })),
   'app.info': () => Promise.resolve(ok({ version: '1.0.0', installChannel: 'development', userName: 'A. Tester', cloudProviders: [], mediaFoundation: true, regionalLocale: 'en-GB', physicalMemory: 0 })),
   'app.ocrLanguages': () => Promise.resolve(ok({ languages: [] })),
   'app.fontFamilies': () => Promise.resolve(ok({ listed: false, families: [], more: 0 })),

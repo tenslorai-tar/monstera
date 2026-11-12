@@ -1,4 +1,4 @@
-import { type ContractClient, MAX_CHAT_TURNS, channels, createClient, savedTurnsSchema } from '@monstera/contract';
+import { type ContractClient, MAX_CHAT_TURNS, channels, savedTurnsSchema, clientOver } from '@monstera/contract';
 import { asDocId, asDocVersion, asFileHandle, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -23,7 +23,7 @@ function recording(
 } {
   const sent: { id: string; params: unknown }[] = [];
   let minted = 0;
-  const client = createClient(channels, (id, params) => {
+  const client = clientOver((id, params) => {
     sent.push({ id, params });
     if (id === 'ai.history.save') {
       if (answer === 'locked') return Promise.resolve({ ok: false, error: { code: 'history-locked' } });
@@ -61,9 +61,14 @@ function manual(): { schedule: (run: () => void) => () => void; flush: () => voi
   };
 }
 
+/**
+ * Every answer in flight delivered: a MACROTASK, which the event loop runs only once every pending microtask has run. It
+ * waited two microtask ticks until ADR-0294's client added one to every call that names a document, which is the shape
+ * of a wait that counts the code's own steps rather than waiting for what it is about. This file's clock is its own
+ * (`manual`), so the timer here is a real one.
+ */
 async function settle(): Promise<void> {
-  await Promise.resolve();
-  await Promise.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 /** A conversation asked and saved once, so it holds `main`'s first key: where a case that continues one starts. */

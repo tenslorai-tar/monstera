@@ -1,4 +1,4 @@
-import { type ContractClient, channels, createClient } from '@monstera/contract';
+import { type ContractClient, clientOver } from '@monstera/contract';
 import { asDocId, asDocVersion, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -45,7 +45,7 @@ describe('File › Start screen and File › Exit (ADR-0107)', () => {
 describe('Help › Check for updates (ADR-0107)', () => {
   it('asks main to open the Store’s UPDATES page — the one page named, and nothing else crosses', async () => {
     const sent: unknown[] = [];
-    const client: ContractClient = createClient(channels, (id, params) => {
+    const client: ContractClient = clientOver((id, params) => {
       sent.push({ id, params });
       return Promise.resolve(ok({ opened: true }));
     });

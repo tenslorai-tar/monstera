@@ -1,4 +1,4 @@
-import { type ContractClient, channels, createClient } from '@monstera/contract';
+import { type ContractClient, clientOver } from '@monstera/contract';
 import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -21,7 +21,7 @@ function recording(answers: Readonly<Record<string, unknown>>): {
   readonly sent: { id: string; params: unknown }[];
 } {
   const sent: { id: string; params: unknown }[] = [];
-  const client = createClient(channels, (id, params) => {
+  const client = clientOver((id, params) => {
     sent.push({ id, params });
     const answer = answers[id];
     if (answer === undefined) throw new Error(`this case does not answer ${id}`);

@@ -2,8 +2,7 @@
 import {
   type ChannelResult,
   type ContractClient,
-  channels,
-  createClient,
+  clientOver,
 } from '@monstera/contract';
 import { type DocId, asDocId, asDocVersion, ok } from '@monstera/shared';
 import { act, renderHook, waitFor } from '@testing-library/react';
@@ -98,7 +97,7 @@ function unlockingClient(answers: readonly UnlockAnswer[]): {
 } {
   const queued = [...answers];
   const unlocks: { docId: DocId; password: string }[] = [];
-  const client = createClient(channels, (id, params) => {
+  const client = clientOver((id, params) => {
     if (id !== 'document.unlock') {
       return Promise.reject(new Error(`this fixture answers document.unlock only, not ${id}`));
     }

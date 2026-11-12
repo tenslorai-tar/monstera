@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { type ContractClient, channels, createClient } from '@monstera/contract';
+import { type ContractClient, clientOver } from '@monstera/contract';
 import { asDocId, asDocVersion, ok } from '@monstera/shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -39,7 +39,7 @@ const VERSION = asDocVersion(2);
 
 /** A client that answers no range — nothing here reaches the transport. */
 function idleClient(): ContractClient {
-  return createClient(channels, () =>
+  return clientOver(() =>
     Promise.resolve(ok({ kind: 'bytes', bytes: new Uint8Array(0) })),
   );
 }
@@ -148,7 +148,7 @@ describe('openDocumentView', () => {
     // view actually built, rather than by calling the option back — the point is
     // the wiring, and invoking the callback directly would assert nothing about
     // it.
-    const stale = createClient(channels, () =>
+    const stale = clientOver(() =>
       Promise.resolve(ok({ kind: 'stale', version: asDocVersion(99), byteLength: 2048 })),
     );
     await openDocumentView({
@@ -186,7 +186,7 @@ describe('openDocumentView', () => {
       order.push('told');
     });
     await openDocumentView({
-      client: createClient(channels, () => Promise.reject(failure)),
+      client: clientOver(() => Promise.reject(failure)),
       docId: DOC,
       version: VERSION,
       byteLength: 1024,

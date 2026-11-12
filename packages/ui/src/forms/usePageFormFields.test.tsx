@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { type ChannelResult, type ContractClient, channels, createClient } from '@monstera/contract';
+import { type ChannelResult, type ContractClient, clientOver } from '@monstera/contract';
 import { type DocId, type DocVersion, asDocId, asDocVersion, ok } from '@monstera/shared';
 import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
@@ -39,7 +39,7 @@ function field(over: Partial<ChannelField>): ChannelField {
  */
 function heldClient(): { client: ContractClient; answer: (version: number, fields: readonly ChannelField[]) => Promise<void> } {
   const waiting: ((value: unknown) => void)[] = [];
-  const client = createClient(channels, (id) => {
+  const client = clientOver((id) => {
     if (id !== 'document.formFields') throw new Error(`unexpected channel ${id}`);
     return new Promise((resolve) => {
       waiting.push(resolve);

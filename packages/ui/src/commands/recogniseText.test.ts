@@ -3,8 +3,7 @@ import {
   type ContractClient,
   type OcrLanguages,
   type PageAdjustmentOutcome,
-  channels,
-  createClient,
+  clientOver as rendererClient,
 } from '@monstera/contract';
 import { asDocId, asDocVersion, asFileHandle, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
@@ -125,7 +124,7 @@ function clientOver(
   const adjusted: number[] = [];
   const revealed: unknown[] = [];
   let copies = 0;
-  const client = createClient(channels, (id, params) => {
+  const client = rendererClient((id, params) => {
     if (id === 'document.pageAdjustment') {
       const { page, adjustment } = params as { page: number; adjustment: string };
       if (adjustment !== 'crop-to-sheet') throw new Error(`a scan command read ${adjustment}`);

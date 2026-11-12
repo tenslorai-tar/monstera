@@ -28,7 +28,7 @@ import type { PreloadChannelId } from './bridge.js';
 import { SHOWN_SCHEME_MAX } from './followedLinks.js';
 import { listedAnnotationSchema } from './listedAnnotation.js';
 import { MAX_PAGE_INDEX, pageSetSchema } from './pageSet.js';
-import { channel, type Channel, type ClientApi, type Handlers, type ParamsOf, type ResultOf } from './channel.js';
+import { channel, type Channel, type Handlers, type ParamsOf, type ResultOf } from './channel.js';
 import { AI_ANSWER_REFUSALS, MAX_WEB_SOURCES, answerIdSchema, subscriptionIdSchema } from './events.js';
 import { NATIVE_COMPONENT_IDS } from './nativeComponentIds.js';
 import { TRANSLATION_LANGUAGE_IDS } from './translationLanguages.js';
@@ -7567,8 +7567,6 @@ export type ChannelResult<K extends ChannelId> = ResultOf<Channels, K>;
 /** The main-process side. Exhaustive: omitting a channel is a compile error. */
 export type ContractHandlers = Handlers<Channels>;
 
-/** The renderer side, and the shape the browser shim must implement in full. */
-export type ContractClient = ClientApi<Channels>;
 
 /** Channel ids as a runtime array, for iterating registrations. */
 export const channelIds = Object.keys(channels) as readonly ChannelId[];

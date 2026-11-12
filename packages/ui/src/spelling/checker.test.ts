@@ -1,4 +1,4 @@
-import { type ContractClient, channels, createClient } from '@monstera/contract';
+import { type ContractClient, clientOver } from '@monstera/contract';
 import { err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -17,7 +17,7 @@ const WORDS = '4\ndocument\npage\nspelling\nannotation\n';
  * list nobody read.
  */
 function clientWith(answer: 'dictionary' | 'unknown' | 'refused'): ContractClient {
-  return createClient(channels, (id) => {
+  return clientOver((id) => {
     if (id !== 'spelling.dictionary') throw new Error(`unexpected channel ${id}`);
     // `internal` WITH AN INCIDENT ID, which is the only refusal this channel
     // can make: it declares no failure codes, so a handler that threw is the
@@ -83,7 +83,7 @@ describe('the dictionary is built once and held', () => {
   /** A client that counts how often it is asked for the dictionary, answering `answers` in turn. */
   function counting(answers: readonly ('dictionary' | 'unknown')[]): { client: ContractClient; asked: () => number } {
     let asked = 0;
-    const client = createClient(channels, (id) => {
+    const client = clientOver((id) => {
       if (id !== 'spelling.dictionary') throw new Error(`unexpected channel ${id}`);
       const answer = answers[Math.min(asked, answers.length - 1)];
       asked += 1;

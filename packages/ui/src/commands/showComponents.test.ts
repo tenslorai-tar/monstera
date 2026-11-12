@@ -1,4 +1,4 @@
-import { type ContractClient, channels, createClient } from '@monstera/contract';
+import { type ContractClient, clientOver } from '@monstera/contract';
 import { err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -29,7 +29,7 @@ interface Sent {
 
 function client(): { readonly client: ContractClient; readonly sent: Sent[] } {
   const sent: Sent[] = [];
-  const built = createClient(channels, (id, params) => {
+  const built = clientOver((id, params) => {
     sent.push({ id, params });
     if (id === 'app.components') {
       const { verify } = params as { verify: boolean };
@@ -78,7 +78,7 @@ describe('showComponentsCommand', () => {
     const opened: unknown[] = [];
     await showComponentsCommand({
       // THE CHANNEL'S OWN FAILURE SHAPE: `internal` is the one a channel with no declared failures can answer.
-      client: createClient(channels, () => Promise.resolve(err({ code: 'internal' as const, incident: 'i-1' }))),
+      client: clientOver(() => Promise.resolve(err({ code: 'internal' as const, incident: 'i-1' }))),
       ask: (_id, props) => {
         opened.push(props);
         return Promise.resolve(undefined);

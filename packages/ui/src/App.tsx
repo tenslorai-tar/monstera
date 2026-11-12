@@ -8,6 +8,7 @@ import {
   annotationFontOf,
   CHAT_HISTORY_SETTING_ID,
   type ContractClient,
+  DOCUMENT_CLOSED_HERE,
   DOCUSIGN_INTEGRATION_KEY_SETTING_ID,
   type SecretSettingId,
   type CommandOfKind,
@@ -2249,7 +2250,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
    *
    * The renderer tracks no dirty flag of its own — that would be a second opinion about what
    * main holds (B3a), and the stale answer is *clean*, which closes without asking.
-   * `document-not-open` means nothing is there to lose; any other failure is read as unsaved,
+   * `document-not-open` and `document-closed-here` mean nothing is there to lose; any other failure is read as unsaved,
    * which fails towards a question rather than towards a loss.
    *
    * @returns whether every document named was released — `false` after a Cancel, a dismissed
@@ -2272,9 +2273,12 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
           const tab = tabs.find((candidate) => candidate.docId === docId);
           if (tab === undefined) continue;
           const answer = await client['document.unsaved']({ docId });
+          // NOTHING TO LOSE where no document is there: `main` lost it, or this window already sent its close
+          // (`document-closed-here`, ADR-0294), which must read the same, or a document this window closed would be
+          // asked about as unsaved.
           let unsaved = answer.ok
             ? answer.value.unsaved
-            : answer.error.code !== 'document-not-open';
+            : answer.error.code !== 'document-not-open' && answer.error.code !== DOCUMENT_CLOSED_HERE;
           // A SAVED DOCUMENT STILL CARRYING MARKS asks about them here (the owner's item N1): the file on disk is the
           // session, so the count is the file's, and closing is the last moment anyone is asked. *Apply* leaves the
           // document unsaved, and the question below then asks whether to keep that. A document with unsaved changes
@@ -5002,8 +5006,9 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
           // failure can be one page's, and for it the mode stays on for the pages that read: the refused page says so
           // itself (`EditTextLayer`'s note), where leaving would take every other page's editing away with it. Keyed
           // on `engine-unavailable` alone, a poisoned document kept the mode on with every page saying other pages
-          // could be edited (VVVVVVV-20).
-          if (answer.error.code !== 'internal') setToolId(undefined);
+          // could be edited (VVVVVVV-20). NOT for a document this window closed (ADR-0294): the tool is the
+          // application's, and the person closed a document, not the tool, so the next document keeps it.
+          if (answer.error.code !== 'internal' && answer.error.code !== DOCUMENT_CLOSED_HERE) setToolId(undefined);
         }
         return undefined;
       },

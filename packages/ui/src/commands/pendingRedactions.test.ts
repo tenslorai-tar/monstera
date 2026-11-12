@@ -1,4 +1,4 @@
-import { type AnnotationStamp, type ContractClient, channels, createClient } from '@monstera/contract';
+import { type AnnotationStamp, type ContractClient, clientOver } from '@monstera/contract';
 import { type DocId, asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -95,7 +95,7 @@ function documentWith(
 ): { readonly client: ContractClient; readonly sent: { id: string; params: unknown }[] } {
   const sent: { id: string; params: unknown }[] = [];
   const first = Math.floor(marks / 2);
-  const client = createClient(channels, (id, params) => {
+  const client = clientOver((id, params) => {
     sent.push({ id, params });
     if (id === 'document.annotations') {
       if (options.refuseRead === true) return Promise.resolve(err({ code: 'document-busy' }));
@@ -369,7 +369,7 @@ describe('every save, export, print and send asks before it does anything', () =
     const sent: string[] = [];
     const asked: string[] = [];
     const settled: { docId: DocId; occasion: PendingRedactionOccasion }[] = [];
-    const client = createClient(channels, (id) => {
+    const client = clientOver((id) => {
       sent.push(id);
       return Promise.resolve(err({ code: 'document-busy' }));
     });

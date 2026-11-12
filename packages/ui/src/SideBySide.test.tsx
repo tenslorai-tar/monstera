@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
-import { type ContractClient, channels, createClient } from '@monstera/contract';
+import { type ContractClient, clientOver } from '@monstera/contract';
 import { type DocId, asDocId, asDocVersion, ok } from '@monstera/shared';
 import { act, fireEvent, render as renderBare, screen } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
@@ -71,7 +71,7 @@ function Messages({ children }: { children: ReactNode }): ReactElement {
 /** Each document's one line of text, through the contract's own schemas. */
 function clientFor(lines: ReadonlyMap<DocId, string>): { client: ContractClient; read: string[] } {
   const read: string[] = [];
-  const client = createClient(channels, (id, params) => {
+  const client = clientOver((id, params) => {
     const docId = (params as { docId: DocId }).docId;
     if (id === 'document.annotations') return Promise.resolve(ok({ version: VERSION, next: null, truncated: false, annotations: [] }));
     if (id === 'document.viewModel') {

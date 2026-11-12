@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
-import { NO_FORMS_LEFT, blocksOfEdit, channels, createClient } from '@monstera/contract';
+import { NO_FORMS_LEFT, blocksOfEdit, clientOver } from '@monstera/contract';
 import { asDocId, asDocVersion, ok, tokensOf } from '@monstera/shared';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
@@ -32,7 +32,7 @@ function Wrapped({ children }: { readonly children: ReactNode }): ReactElement {
 function drawn(lines: readonly string[]): { readonly sent: unknown[]; readonly settings: SettingsStore } {
   const sent: unknown[] = [];
   const box = (line: number): { x0: number; y0: number; x1: number; y1: number } => ({ x0: 0, y0: line * 20, x1: 500, y1: line * 20 + 12 });
-  const client = createClient(channels, (id, raw) => {
+  const client = clientOver((id, raw) => {
     const params = raw as Record<string, unknown>;
     switch (id) {
       case 'spelling.dictionary':

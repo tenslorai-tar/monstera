@@ -1,4 +1,4 @@
-import { type ContractClient, channels, createClient } from '@monstera/contract';
+import { type ContractClient, clientOver } from '@monstera/contract';
 import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -36,7 +36,7 @@ function clientCounting(
   )[],
 ): { client: ContractClient; asked: number[] } {
   const asked: number[] = [];
-  const client = createClient(channels, (id, params) => {
+  const client = clientOver((id, params) => {
     if (id !== 'document.pageWordCount') throw new Error(`unexpected channel ${id}`);
     const page = (params as { page: number }).page;
     asked.push(page);
@@ -246,7 +246,7 @@ describe('the word count command', () => {
     // produces and the only one that reaches this branch.
     const controller = new AbortController();
     const asked: number[] = [];
-    const client = createClient(channels, (id, params) => {
+    const client = clientOver((id, params) => {
       if (id !== 'document.pageWordCount') throw new Error(`unexpected channel ${id}`);
       asked.push((params as { page: number }).page);
       controller.abort();

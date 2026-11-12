@@ -1,4 +1,4 @@
-import { type ContractClient, channels, createClient } from '@monstera/contract';
+import { type ContractClient, clientOver } from '@monstera/contract';
 import { type MessageKey, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -36,7 +36,7 @@ async function run(
   const sent: { id: string; params: unknown }[] = [];
   const said: { kind: ToastKind; message: MessageKey }[] = [];
   const asked: string[] = [];
-  const client: ContractClient = createClient(channels, (id, params) => {
+  const client: ContractClient = clientOver((id, params) => {
     sent.push({ id, params });
     if (id !== 'app.review') throw new Error(`this case does not answer ${id}`);
     if (answer === 'rejected') return Promise.reject(new Error('the transport is gone'));
@@ -97,7 +97,7 @@ describe('rateUsCommand', () => {
 
   it('is the menu row’s second button, in violet beside Donate, and Help’s — and needs no document', () => {
     const command = rateUsCommand({
-      client: createClient(channels, () => Promise.reject(new Error('unused'))),
+      client: clientOver(() => Promise.reject(new Error('unused'))),
       toast: () => undefined,
       ask: () => Promise.resolve(undefined),
     });

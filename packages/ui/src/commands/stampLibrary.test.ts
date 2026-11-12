@@ -1,4 +1,4 @@
-import { type ContractClient, channels, createClient } from '@monstera/contract';
+import { type ContractClient, clientOver } from '@monstera/contract';
 import { ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -7,7 +7,7 @@ import { keepPicture, stampLibrary } from './stampLibrary.js';
 /** A client whose library answers `added` for `library.addPicture`, and records every call. */
 function libraryAnswering(added: unknown): { readonly client: ContractClient; readonly calls: string[] } {
   const calls: string[] = [];
-  const client = createClient(channels, (id) => {
+  const client = clientOver((id) => {
     calls.push(id);
     if (id === 'library.addPicture') return Promise.resolve(ok(added));
     if (id === 'library.list') {

@@ -1,4 +1,4 @@
-import { AI_PROVIDER_IDS, AZURE_KEY_SETTING_ID, type AiModelListAnswer, channels, createClient } from '@monstera/contract';
+import { AI_PROVIDER_IDS, AZURE_KEY_SETTING_ID, type AiModelListAnswer, clientOver } from '@monstera/contract';
 import { type FileHandle, asFileHandle, err, messageKey, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -92,7 +92,7 @@ function harness(options: {
   const replies: unknown[] = [];
   let changed = 0;
   let recentCleared = 0;
-  const client = createClient(channels, (id, params) => {
+  const client = clientOver((id, params) => {
     sent.push({ id, params });
     if (id === 'settings.loadSecrets') {
       return Promise.resolve(

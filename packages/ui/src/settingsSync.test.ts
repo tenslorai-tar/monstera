@@ -1,4 +1,4 @@
-import { type ContractClient, channels, createClient } from '@monstera/contract';
+import { type ContractClient, clientOver } from '@monstera/contract';
 import { INTERNAL_FAILURE, err, ok } from '@monstera/shared';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -17,7 +17,7 @@ import { hydrateSettings, persistSettings } from './settingsSync.js';
  * `packages/ui` may not import `@monstera/testing` — the boundary lint says so,
  * and the reason is the one §1 gives: the renderer stays browser-only, and the
  * shim is a Node-side fixture. So the store below is this file's own, and
- * `createClient(channels, …)` is what makes the payloads travel through the real
+ * `clientOver(…)` is what makes the payloads travel through the real
  * schemas. A schema that refused what `settings.save` sends would fail here.
  *
  * ## The store is a `Map`, and it is the RESTART this file is about
@@ -43,7 +43,7 @@ function persistentClient(seeded: Readonly<Record<string, unknown>> = {}): {
   readonly stored: () => Readonly<Record<string, unknown>>;
 } {
   let held: Record<string, unknown> = { ...seeded };
-  const client = createClient(channels, (id, params) => {
+  const client = clientOver((id, params) => {
     if (id === 'settings.load') return Promise.resolve(ok({ stored: { ...held } }));
     if (id === 'settings.save') {
       held = { ...(params as { values: Record<string, unknown> }).values };
@@ -76,7 +76,7 @@ describe('settings sync', () => {
     // A promise resolved by hand is the fixture, because "answers eventually" is
     // the shape a real IPC round trip has and an immediate mock does not.
     let answer: ((value: unknown) => void) | undefined;
-    const client = createClient(channels, () => new Promise((resolve) => (answer = resolve)));
+    const client = clientOver(() => new Promise((resolve) => (answer = resolve)));
     const store = freshStore();
 
     const hydrating = hydrateSettings(client, store);
@@ -189,7 +189,7 @@ describe('settings sync', () => {
     // failure carrying an incident id. That is what a full disk looks like from
     // here.
     const shown: { id: string; props: unknown }[] = [];
-    const client = createClient(channels, (id) =>
+    const client = clientOver((id) =>
       id === 'settings.save'
         ? Promise.resolve(err({ code: INTERNAL_FAILURE, incident: 'incident-1' }))
         : Promise.resolve(ok({ stored: {} })),

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { channels, createClient } from '@monstera/contract';
+import { clientOver } from '@monstera/contract';
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
@@ -32,7 +32,7 @@ vi.mock('./documentView.js', () => ({
 }));
 
 const DOC = { docId: asDocId('doc-retry'), version: asDocVersion(3), byteLength: 1024 };
-const client = createClient(channels, () => Promise.reject(new Error('this fixture answers nothing')));
+const client = clientOver(() => Promise.reject(new Error('this fixture answers nothing')));
 const ignoreVersion = (): void => undefined;
 const noPassword = (): Promise<undefined> => Promise.resolve(undefined);
 

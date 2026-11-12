@@ -1,4 +1,4 @@
-import { type ContractClient, channels, createClient } from '@monstera/contract';
+import { type ContractClient, clientOver } from '@monstera/contract';
 import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -14,7 +14,7 @@ const DOC = asDocId('00000000-0000-4000-8000-0000000000e1');
 /** A client whose walk answers at `version()` — or refuses while `refusing` — and counts each asking. */
 function walking(version: () => number, refusing: () => boolean = () => false): { client: ContractClient; asked: () => number } {
   let asked = 0;
-  const client = createClient(channels, (id) => {
+  const client = clientOver((id) => {
     if (id !== 'document.annotations') return Promise.resolve(ok({}));
     asked += 1;
     if (refusing()) return Promise.resolve(err({ code: 'document-not-open' }));

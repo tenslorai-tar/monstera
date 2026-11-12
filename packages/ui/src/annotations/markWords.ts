@@ -1,5 +1,5 @@
-import type { Channels, ContractClient, FailureOf } from '@monstera/contract';
-import type { DocId, DocVersion, Failure } from '@monstera/shared';
+import type { ContractClient, RendererFailure } from '@monstera/contract';
+import type { DocId, DocVersion } from '@monstera/shared';
 
 import type { AnnotationSelection, SelectedAnnotation } from './selectTool.js';
 
@@ -15,7 +15,7 @@ export type WordsToEdit =
   | { readonly kind: 'too-long' }
   | {
       readonly kind: 'problem';
-      readonly problem: Failure<FailureOf<Channels, 'document.annotationWords'>> | { readonly code: 'stale-target' };
+      readonly problem: RendererFailure<'document.annotationWords'> | { readonly code: 'stale-target' };
     };
 
 /** One mark as the walk listed it, at the version the walk was read at: what its words are read by. */

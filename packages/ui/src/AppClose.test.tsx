@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
-import { type ContractClient, type EventId, channels, createClient } from '@monstera/contract';
+import { type ContractClient, type EventId, clientOver } from '@monstera/contract';
 import { type DocId, asDocId, asDocVersion, ok } from '@monstera/shared';
 import { act, fireEvent, render as renderBare, screen, within } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
@@ -70,7 +70,7 @@ function client(options: {
     { kind: 'opened' as const, docId: FIRST, version: asDocVersion(1), byteLength: 1024, name: 'report.pdf' },
     { kind: 'opened' as const, docId: SECOND, version: asDocVersion(1), byteLength: 2048, name: 'notes.pdf' },
   ];
-  const built = createClient(channels, (id, params) => {
+  const built = clientOver((id, params) => {
     sent.push({ id, params });
     const docId = (params as { docId?: DocId }).docId;
     switch (id) {

@@ -1,4 +1,4 @@
-import { type AiProviderId, MAX_ANSWER_TEXT, MAX_TRANSLATE_TEXT, blockEditOf, channels, createClient } from '@monstera/contract';
+import { type AiProviderId, MAX_ANSWER_TEXT, MAX_TRANSLATE_TEXT, blockEditOf, clientOver } from '@monstera/contract';
 import { asDocId, asDocVersion, err, ok, type MessageKey } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -72,7 +72,7 @@ async function run(options: {
   };
   const calls = new Map<string, number>();
   const controller = new AbortController();
-  const client = createClient(channels, (id, params) => {
+  const client = clientOver((id, params) => {
     sent.push({ id, params });
     // THE STATUS BAR'S CANCEL, pressed while this call is in flight.
     if (id === options.cancelOn) controller.abort();

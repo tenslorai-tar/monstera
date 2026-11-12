@@ -1,4 +1,4 @@
-import { type ContractClient, type DispatchableCommand, channels, createClient } from '@monstera/contract';
+import { type ContractClient, type DispatchableCommand, clientOver } from '@monstera/contract';
 import { type DocId, type DocVersion, asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -29,7 +29,7 @@ interface Main {
 function fakeMain(): Main {
   let version = START;
   const calls: Main['calls'] = [];
-  const client = createClient(channels, async (id, params) => {
+  const client = clientOver(async (id, params) => {
     if (id !== 'document.execute') throw new Error(`this fixture has no answer for ${id}`);
     // AN ANSWER THAT TAKES A TURN OF ITS OWN, as one through main does, so commands sent together overlap.
     await new Promise((resolve) => setTimeout(resolve, 1));

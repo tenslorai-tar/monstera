@@ -1,4 +1,4 @@
-import { type ContractClient, channels, createClient } from '@monstera/contract';
+import { type ContractClient, channels, clientOver } from '@monstera/contract';
 import { asDocId, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -19,7 +19,7 @@ function held(): { readonly client: ContractClient; readonly reached: string[]; 
   const gate = new Promise<void>((settle) => {
     release = settle;
   });
-  const client = createClient(channels, async (id, params) => {
+  const client = clientOver(async (id, params) => {
     const docId = (params as { readonly docId?: string }).docId ?? '';
     reached.push(`${id} ${docId}`);
     if (id === 'document.execute') {
@@ -80,7 +80,7 @@ describe('inWriteOrder', () => {
 
   it('a signed document’s Work on a copy, sent from inside the lane, is answered rather than waiting for itself', async () => {
     const reached: string[] = [];
-    const client = createClient(channels, (id) => {
+    const client = clientOver((id) => {
       reached.push(id);
       // THE SIGNED DOCUMENT: main answers the command without touching it, and the copy route is taken.
       if (id === 'document.execute') return Promise.resolve(err({ code: 'breaks-signatures' }));

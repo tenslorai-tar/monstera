@@ -2,6 +2,7 @@ import {
   type Channels,
   type ContractClient,
   type DispatchableCommand,
+  DOCUMENT_CLOSED_HERE,
   type FailureOf,
   MAX_TEXT_LAYER_LINES,
 } from '@monstera/contract';
@@ -436,7 +437,8 @@ function settle(store: DocumentStore, run: number, notice?: MessageKey): void {
 function sentenceFor(deps: SpellingDeps, outcome: ReplaceOutcome | { readonly kind: 'not-found' }): MessageKey | undefined {
   if (outcome.kind === 'not-found' || outcome.kind === 'bad-pattern') return problemMessage({ code: 'text-not-in-place' });
   if (outcome.kind !== 'refused') return undefined;
-  if (outcome.problem.code === 'internal') {
+  // THE DOOR'S, like `internal`: it shows its reference, and for a document this window closed it shows nothing (ADR-0294).
+  if (outcome.problem.code === 'internal' || outcome.problem.code === DOCUMENT_CLOSED_HERE) {
     reportProblem(deps.commands, outcome.problem);
     return undefined;
   }
@@ -452,14 +454,15 @@ async function pointOf(
   deps: SpellingDeps,
   docId: DocId,
   occurrence: SpellingOccurrence & { readonly place: { readonly kind: 'text' } },
-): Promise<{ readonly x: number; readonly y: number } | MessageKey> {
+): Promise<{ readonly x: number; readonly y: number } | MessageKey | null> {
   const { page, line, offset } = occurrence.place;
   const layer = await deps.client['document.pageTextLayer']({ docId, page, limit: MAX_TEXT_LAYER_LINES });
-  if (!layer.ok) return problemMessage(layer.error);
+  // `null`: THE DOCUMENT THIS WINDOW CLOSED (ADR-0294). There is nothing to say and no review to settle.
+  if (!layer.ok) return layer.error.code === DOCUMENT_CLOSED_HERE ? null : problemMessage(layer.error);
   const lines = layer.value.lines;
   if (lines[line]?.text !== occurrence.context) return SPELLING_CHANGED;
   const boxes = await deps.client['document.pageWordBoxes']({ docId, page });
-  if (!boxes.ok) return problemMessage(boxes.error);
+  if (!boxes.ok) return boxes.error.code === DOCUMENT_CLOSED_HERE ? null : problemMessage(boxes.error);
   if (boxes.value.version !== layer.value.version) return SPELLING_CHANGED;
   const paired = pairWordBoxes(lines, boxes.value.lines)[line];
   // THE TOKEN AT THE OFFSET, by the same segmenter the boxes were cut by: one box per token `tokensOf` cuts.
@@ -541,6 +544,7 @@ export async function replaceWord(deps: SpellingDeps, store: DocumentStore, repl
   let command: DispatchableCommand | MessageKey;
   if (isText(current)) {
     const point = await pointOf(deps, docId, current);
+    if (point === null) return;
     if (typeof point !== 'string') {
       // PAGE TEXT THROUGH THE BLOCK WRITER (ADR-0267 Decision 3): the block at the word's point, that one occurrence.
       const outcome = await replaceWordAt(deps.commands, docId, current.place.page, current.word, replacement, point);

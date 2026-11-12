@@ -5,7 +5,9 @@ import {
   type ChannelResult,
   type Channels,
   type ContractClient,
+  DOCUMENT_CLOSED_HERE,
   type DispatchableCommand,
+  type DocumentClosedHere,
   type FailureOf,
   type FormDataFormat,
   type FormDataImportFormat,
@@ -725,8 +727,11 @@ export async function triedAgainAfterMemory(
 
 export function reportProblem(
   deps: Pick<DocumentCommandDeps, 'ask'>,
-  failure: z.infer<typeof COMMAND_PROBLEM_DIALOG.props>,
+  failure: z.infer<typeof COMMAND_PROBLEM_DIALOG.props> | { readonly code: DocumentClosedHere },
 ): void {
+  // A REFUSAL FOR A DOCUMENT THIS WINDOW CLOSED IS SAID BY NOTHING (ADR-0294): the person closed it, and the answer is
+  // their own close. The dialog's props do not take the code, so this is the one place it can be handed and not shown.
+  if (failure.code === DOCUMENT_CLOSED_HERE) return;
   // VOIDED, and the promise is genuinely nothing: this dialog declares no
   // result, so it can only ever settle `undefined` on dismissal. Awaiting it
   // would hold the command open until the user closed a message.
@@ -994,6 +999,8 @@ async function sendInLane(
   // document* sends the same command again, stamp and all, agreed; *Work on a copy* sends it to a copy; Cancel, or a
   // dismissed picker on the way to a copy, leaves the document as it was and lets the caller keep what was typed.
   if (!answer.ok && answer.error.code === 'breaks-signatures') {
+    // HELD NARROWED, since `answer` is sent again below and the branch that keeps the words must hand on this refusal.
+    const refused = answer.error;
     const asked = deps.signatures.warn()
       ? SIGNED_EDIT_RESULT.safeParse(await deps.ask(SIGNED_EDIT_DIALOG_ID, {}))
       : ({ success: true, data: 'this' } as const);
@@ -1001,7 +1008,7 @@ async function sendInLane(
       agreed = true;
       answer = await deps.client['document.execute']({ docId, command: sent, breakSignatures: true, ...joins });
     } else {
-      if (!asked.success || !(await editOnCopy(deps, docId, sent))) options.keep?.(answer.error);
+      if (!asked.success || !(await editOnCopy(deps, docId, sent))) options.keep?.(refused);
       return false;
     }
   }
@@ -1023,6 +1030,12 @@ async function sendInLane(
     // AGREED, main applies rather than asking (`DocumentCommands.execute`), so a second question is a defect of main's
     // and not a refusal a person could act on.
     const failure = answer.error;
+    // THE DOCUMENT THIS WINDOW CLOSED (ADR-0294) goes to the door, which shows nothing, and never to `keep`: the editor
+    // that would hold the words left with the document.
+    if (failure.code === DOCUMENT_CLOSED_HERE) {
+      reportProblem(deps, failure);
+      return false;
+    }
     if (failure.code === 'breaks-signatures') throw new Error('main asked again about an edit sent agreed');
     // NEVER HERE: the loop above answers every `out-of-memory` with its own window. Named so the type says so.
     if (failure.code === 'out-of-memory') return false;

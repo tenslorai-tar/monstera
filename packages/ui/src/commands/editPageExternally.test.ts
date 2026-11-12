@@ -1,4 +1,4 @@
-import { type ContractClient, channels, createClient } from '@monstera/contract';
+import { type ContractClient, clientOver } from '@monstera/contract';
 import { asDocId, asDocVersion, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -46,7 +46,7 @@ function recording(queues: Readonly<Record<string, readonly unknown[]>>): {
 } {
   const remaining = new Map(Object.entries(queues).map(([id, answers]) => [id, [...answers]]));
   const sent: { id: string; params: unknown }[] = [];
-  const client = createClient(channels, (id, params) => {
+  const client = clientOver((id, params) => {
     sent.push({ id, params });
     const answer = remaining.get(id)?.shift();
     if (answer === undefined) throw new Error(`this case has no further answer for ${id}`);

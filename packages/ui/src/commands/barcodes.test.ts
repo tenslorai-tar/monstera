@@ -1,4 +1,4 @@
-import { type ContractClient, channels, createClient } from '@monstera/contract';
+import { type ContractClient, clientOver } from '@monstera/contract';
 import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -54,7 +54,7 @@ const WHERE = { x0: 100, y0: 200, x1: 180, y1: 280 };
 describe('Read barcodes', () => {
   function clientAnswering(outcome: 'read' | 'refused'): { client: ContractClient; asked: unknown[] } {
     const asked: unknown[] = [];
-    const client = createClient(channels, (id, params) => {
+    const client = clientOver((id, params) => {
       if (id !== 'document.pageBarcodes') throw new Error(`unexpected channel ${id}`);
       asked.push(params);
       return Promise.resolve(
@@ -108,7 +108,7 @@ describe('Read barcodes', () => {
       calls: { id: string; params: unknown }[];
     } {
       const calls: { id: string; params: unknown }[] = [];
-      const client = createClient(channels, (id, params) => {
+      const client = clientOver((id, params) => {
         calls.push({ id, params });
         if (id === 'window.copyText') return Promise.resolve(ok({ copied: true }));
         if (id === 'document.openBarcodeLink') return Promise.resolve(ok({ kind: 'opened' as const }));
@@ -261,7 +261,7 @@ describe('placing a barcode', () => {
   function clientPlacing(answers: readonly ('refused' | 'placed')[]): { client: ContractClient; sent: unknown[] } {
     const queue = [...answers];
     const sent: unknown[] = [];
-    const client = createClient(channels, (id, params) => {
+    const client = clientOver((id, params) => {
       if (id !== 'document.placeBarcode') throw new Error(`unexpected channel ${id}`);
       sent.push(params);
       return Promise.resolve(

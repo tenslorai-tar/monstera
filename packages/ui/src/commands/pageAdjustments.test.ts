@@ -1,4 +1,4 @@
-import { type Command, type PageAdjustmentOutcome, channels, createClient } from '@monstera/contract';
+import { type Command, type PageAdjustmentOutcome, clientOver as rendererClient } from '@monstera/contract';
 import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -34,7 +34,7 @@ function contextWith(pageCount: number): CommandContext {
 function clientOver(answers: Readonly<Record<number, PageAdjustmentOutcome | 'busy' | 'gone'>>) {
   const read: { page: number; adjustment: string }[] = [];
   const dispatched: Command[] = [];
-  const client = createClient(channels, (id, params) => {
+  const client = rendererClient((id, params) => {
     if (id === 'document.pageAdjustment') {
       const { page, adjustment } = params as { page: number; adjustment: string };
       read.push({ page, adjustment });

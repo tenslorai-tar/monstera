@@ -1,4 +1,4 @@
-import { type ContractClient, channels, createClient } from '@monstera/contract';
+import { type ContractClient, clientOver } from '@monstera/contract';
 import { ok } from '@monstera/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -23,7 +23,7 @@ describe('withWorkProgress', () => {
 
   function fakeMain(answer: () => Answer): { client: ContractClient; sent: { id: string; params: unknown }[] } {
     const sent: { id: string; params: unknown }[] = [];
-    const client = createClient(channels, (id, params) => {
+    const client = clientOver((id, params) => {
       sent.push({ id, params });
       if (id === 'work.progress') return Promise.resolve(ok(answer()));
       if (id === 'work.cancel') return Promise.resolve(ok({ cancelled: true }));

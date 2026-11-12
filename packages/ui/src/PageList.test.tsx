@@ -3,8 +3,7 @@ import { I18nProvider } from '@lingui/react';
 import {
   type ContractClient,
   MAX_TEXT_LAYER_LINES,
-  channels,
-  createClient,
+  clientOver,
 } from '@monstera/contract';
 import { asDocId, asDocVersion, ok } from '@monstera/shared';
 import { render as renderBare, act, fireEvent } from '@testing-library/react';
@@ -251,7 +250,7 @@ function clientAnswering(
 ): { client: ContractClient; asked: unknown[]; textAsked: unknown[] } {
   const asked: unknown[] = [];
   const textAsked: unknown[] = [];
-  const client = createClient(channels, (id, params) => {
+  const client = clientOver((id, params) => {
     if (id === 'document.pageTextLayer') {
       textAsked.push(params);
       return Promise.resolve(ok({ version: VERSION, lines, truncated: false, kind }));
@@ -1071,7 +1070,7 @@ describe('PageList', () => {
     let answering = VERSION;
     const turns = new Map([[1, 0], [2, 90]]);
     const asked: unknown[] = [];
-    const client = createClient(channels, (id, params) => {
+    const client = clientOver((id, params) => {
       if (id === 'document.pageTextLayer') {
         return Promise.resolve(ok({ version: answering, lines: [], truncated: false, kind: 'text' as const }));
       }

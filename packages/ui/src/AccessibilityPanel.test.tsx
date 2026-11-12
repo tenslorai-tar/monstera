@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
-import { channels, createClient } from '@monstera/contract';
+import { clientOver } from '@monstera/contract';
 import { asDocId, asDocVersion, ok } from '@monstera/shared';
 import { act, render, screen, within } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
@@ -46,7 +46,7 @@ function Wrapped({ children }: { readonly children: ReactNode }): ReactElement {
 
 function drawn(version = 1): { readonly store: ReturnType<typeof createDocumentStore> } {
   const store = createDocumentStore(DOC, asDocVersion(version), 2);
-  const client = createClient(channels, (id) => {
+  const client = clientOver((id) => {
     if (id === 'document.accessibilityCheck') {
       return Promise.resolve(ok({ version: asDocVersion(version), rules: RULES, humanChecks: ['reading-order'] }));
     }

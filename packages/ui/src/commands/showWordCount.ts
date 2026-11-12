@@ -1,4 +1,4 @@
-import type { ContractClient } from '@monstera/contract';
+import { type ContractClient, DOCUMENT_CLOSED_HERE } from '@monstera/contract';
 
 import { WORD_COUNT_DIALOG_ID } from '../dialogs/wordCount.js';
 import { GROUP_PROOFING, WORD_COUNT_COMMAND_TITLE, WORD_COUNT_PROGRESS } from '../messages/en.js';
@@ -113,6 +113,9 @@ export function showWordCountCommand(deps: {
           // pressed. Asserted on the reports rather than on the dialog, which
           // is absent either way.
           if (aborted()) return;
+          // A DOCUMENT THIS WINDOW CLOSED (ADR-0294) ends the count with no dialog: there is no document left for its
+          // numbers to describe. Every other refusal stops the walk and the dialog says the totals are incomplete.
+          if (!answer.ok && answer.error.code === DOCUMENT_CLOSED_HERE) return;
           if (!answer.ok) break;
           // THE FIRST PAGE FIXES THE VERSION this count is about, and every later
           // page must agree. Comparing against the context's version instead would

@@ -1,4 +1,4 @@
-import { type DispatchableCommand, channels, createClient } from '@monstera/contract';
+import { type DispatchableCommand, clientOver } from '@monstera/contract';
 import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -77,7 +77,7 @@ interface Run {
 
 async function run(command: DispatchableCommand, walk: unknown): Promise<Run> {
   const record: Run = { calls: [], applied: [], selection: PICKED };
-  const client = createClient(channels, (id) => {
+  const client = clientOver((id) => {
     record.calls.push(id);
     if (id === 'document.execute') return Promise.resolve(ok({ version: AFTER, byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
     if (id === 'document.annotations') {

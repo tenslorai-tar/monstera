@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
-import { type ContractClient, channels, createClient } from '@monstera/contract';
+import { type ContractClient, clientOver } from '@monstera/contract';
 import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
@@ -51,7 +51,7 @@ function clientAnswering(
         }
       : row,
   );
-  const client = createClient(channels, (id, params) => {
+  const client = clientOver((id, params) => {
     if (id !== 'document.annotations') throw new Error(`unexpected channel ${id}`);
     asked.push(params);
     return Promise.resolve(

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { type FontFamilyEntry, channels, createClient } from '@monstera/contract';
+import { type FontFamilyEntry, clientOver } from '@monstera/contract';
 import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
@@ -128,7 +128,7 @@ describe('the faces an open block is drawn in', () => {
   });
 
   it('draws a run in PDF.js’s face, then the chain’s, then its kind; a run PDF.js loaded nothing for, in the chain’s', () => {
-    noteFamilies([entry('Carlito'), entry('Arimo')], createClient(channels, () => Promise.reject(new Error('no main here'))));
+    noteFamilies([entry('Carlito'), entry('Arimo')], clientOver(() => Promise.reject(new Error('no main here'))));
     const css = faceCssOf(runFacesOf(BLOCK, READ), BLOCK, 'sans', new Set(['carlito', 'arimo']));
     expect(css(styleOfRun(0))).toBe('"g_d0_f1", "Carlito", var(--m-face-sans)');
     // CONTROL: the Type 3 run has no face of its own, so a new word in it is drawn where the writer will write it.

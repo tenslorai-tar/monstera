@@ -1,4 +1,4 @@
-import { type ContractClient, channels, createClient } from '@monstera/contract';
+import { type ContractClient, clientOver } from '@monstera/contract';
 import { ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -10,7 +10,7 @@ import { SettingsStore } from '../settingsStore.js';
 import { keepWord, lookUp, MAX_MENU_SUGGESTIONS } from './personalWords.js';
 
 /** A dictionary small enough to state in full; a case asserting a word is wrong names the whole vocabulary. */
-const client: ContractClient = createClient(channels, () =>
+const client: ContractClient = clientOver(() =>
   Promise.resolve(
     ok({
       kind: 'dictionary',

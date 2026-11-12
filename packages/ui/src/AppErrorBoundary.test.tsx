@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
-import { type ContractClient, channels, createClient } from '@monstera/contract';
+import { type ContractClient, clientOver } from '@monstera/contract';
 import { asDocId, asDocVersion, ok } from '@monstera/shared';
 import { act, render as renderBare, screen } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
@@ -120,7 +120,7 @@ const ANSWERS: Readonly<Record<string, unknown>> = {
 };
 
 function client(): ContractClient {
-  return createClient(channels, (id) => {
+  return clientOver((id) => {
     const answer = ANSWERS[id];
     if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
     return Promise.resolve(ok(answer));

@@ -65,7 +65,6 @@ export {
   type ChannelParams,
   type ChannelResult,
   type Channels,
-  type ContractClient,
   type ContractHandlers,
   // Invariant L11's mechanism. Exported so a caller can size its reads under
   // the bound rather than discover it as a refusal.
@@ -239,6 +238,15 @@ export {
 export { MAX_ANNOTATION_CONTENTS, listedAnnotationSchema } from './listedAnnotation.js';
 export { CONVERSION_CHANNELS, type ConversionChannel } from './conversionChannels.js';
 export { acceptAnswer, createClient, issuesInOurWords, wrapHandler, wrapHandlers } from './boundary.js';
+// THE RENDERER'S CLIENT TYPE and its one builder (ADR-0294): the contract's client plus this window's own code.
+export {
+  clientOver,
+  closedHereClient,
+  type ContractClient,
+  DOCUMENT_CLOSED_HERE,
+  type DocumentClosedHere,
+  type RendererFailure,
+} from './closedHere.js';
 export { FOLLOWED_SCHEMES, SHOWN_SCHEME_MAX, isFollowable, schemeOf, shownSchemeOf } from './followedLinks.js';
 export { BRIDGE_KEY, type MonsteraBridge, PRELOAD_CHANNEL_IDS, type PreloadChannelId } from './bridge.js';
 export {

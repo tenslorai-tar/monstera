@@ -1,4 +1,4 @@
-import { channels, createClient } from '@monstera/contract';
+import { clientOver } from '@monstera/contract';
 import { asDocId, asDocVersion, asFileHandle, messageKey, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -46,7 +46,7 @@ function harness(answer: unknown): {
   const opened: { id: string; props: unknown }[] = [];
   const applied: unknown[] = [];
   const said: { kind: string; message: string; action: ToastAction | undefined }[] = [];
-  const client = createClient(channels, (id, params) => {
+  const client = clientOver((id, params) => {
     sent.push({ id, params });
     // A TOAST'S SHOW IN FOLDER asks main to reveal, and main answers whether it did.
     if (id === 'file.reveal') return Promise.resolve(ok({ revealed: true }));

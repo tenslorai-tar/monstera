@@ -1,4 +1,4 @@
-import { NO_FORMS_LEFT, channels, createClient } from '@monstera/contract';
+import { NO_FORMS_LEFT, clientOver } from '@monstera/contract';
 import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -48,7 +48,7 @@ const mark = (page: number, index: number) => ({
 const BLOCKS_PART = { next: null, truncated: false, formsLeft: NO_FORMS_LEFT, unaddressable: 0, rewrite: 'operators' as const };
 
 function client(versions: { objects: number; marks: number; blocks: number }, asked: Record<string, unknown>[] = [], refused?: string) {
-  return createClient(channels, (id, params) => {
+  return clientOver((id, params) => {
     asked.push({ id, ...(params as object) });
     if (id === refused) return Promise.resolve(err({ code: 'engine-unavailable' as const }));
     if (id === 'document.pageObjects') {

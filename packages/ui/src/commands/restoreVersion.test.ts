@@ -1,4 +1,4 @@
-import { type ContractClient, channels, createClient } from '@monstera/contract';
+import { type ContractClient, clientOver } from '@monstera/contract';
 import { asDocId, asDocVersion, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -31,7 +31,7 @@ const VERSIONS = [
 
 function harness(answers: Readonly<Record<string, unknown>>, dialogAnswer: unknown) {
   const sent: { id: string; params: unknown }[] = [];
-  const client: ContractClient = createClient(channels, (id, params) => {
+  const client: ContractClient = clientOver((id, params) => {
     sent.push({ id, params });
     const answer = answers[id];
     if (answer === undefined) throw new Error(`this case does not answer ${id}`);

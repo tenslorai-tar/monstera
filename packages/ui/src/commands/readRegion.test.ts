@@ -1,4 +1,4 @@
-import { type ContractClient, channels, createClient } from '@monstera/contract';
+import { type ContractClient, clientOver } from '@monstera/contract';
 import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -57,7 +57,7 @@ function rig(before: readonly Placed[], after: readonly Placed[], execute: 'ok' 
   const toasts: unknown[] = [];
   let landed = false;
   let onReport: DialogReports | undefined;
-  const client = createClient(channels, (id, params) => {
+  const client = clientOver((id, params) => {
     sent.push({ id, params });
     if (id === 'document.pageTextLayer') {
       const lines = layer(landed ? after : before);

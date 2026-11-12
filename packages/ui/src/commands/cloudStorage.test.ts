@@ -1,4 +1,4 @@
-import { type ContractClient, channels, createClient } from '@monstera/contract';
+import { type ContractClient, clientOver } from '@monstera/contract';
 import { type DocId, type DocVersion, asDocId, asDocVersion, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -30,7 +30,7 @@ interface Sent {
 
 function client(answers: Readonly<Record<string, unknown>>): { client: ContractClient; sent: Sent[] } {
   const sent: Sent[] = [];
-  const built = createClient(channels, (id, params) => {
+  const built = clientOver((id, params) => {
     sent.push({ id, params });
     const answer = answers[id];
     if (answer === undefined) throw new Error(`this case does not answer ${id}`);
@@ -60,7 +60,7 @@ const BOTH = (): readonly ('onedrive' | 'google-drive')[] => ['onedrive', 'googl
 
 describe('cloud storage in a build that carries no client values (Part 0.2)', () => {
   const NONE = (): readonly ('onedrive' | 'google-drive')[] => [];
-  const built = createClient(channels, () => Promise.resolve(ok({})));
+  const built = clientOver(() => Promise.resolve(ok({})));
   const ask = (): Promise<unknown> => Promise.resolve(undefined);
 
   it('hides Cloud storage and Save back where the build reaches no provider, and before app.info has answered', () => {
@@ -113,7 +113,7 @@ describe('Cloud storage…', () => {
     // THE ORDER is the property: raised before the request goes, ended after its answer. A note raised after
     // the answer, or never ended, reads the same in a case that only asks whether one was raised.
     const log: string[] = [];
-    const built = createClient(channels, (id) => {
+    const built = clientOver((id) => {
       if (id === 'cloud.open') log.push('cloud.open sent');
       const answers: Record<string, unknown> = {
         'cloud.status': STATUS,
@@ -145,7 +145,7 @@ describe('Cloud storage…', () => {
 
   it('CHOOSE A FILE IN GOOGLE DRIVE sends cloud.pick, says it is WAITING before it goes, and opens the chosen file as a tab', async () => {
     const log: string[] = [];
-    const built = createClient(channels, (id, params) => {
+    const built = clientOver((id, params) => {
       if (id === 'cloud.pick') log.push(`cloud.pick sent ${JSON.stringify(params)}`);
       const answers: Record<string, unknown> = {
         'cloud.status': { providers: [{ provider: 'onedrive', state: 'not-configured' }, { provider: 'google-drive', state: 'signed-out' }] },

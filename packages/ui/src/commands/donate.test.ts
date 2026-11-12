@@ -1,4 +1,4 @@
-import { type ContractClient, channels, createClient } from '@monstera/contract';
+import { type ContractClient, clientOver } from '@monstera/contract';
 import { ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -29,7 +29,7 @@ interface Sent {
 
 function client(): { readonly client: ContractClient; readonly sent: Sent[] } {
   const sent: Sent[] = [];
-  const built = createClient(channels, (id, params) => {
+  const built = clientOver((id, params) => {
     sent.push({ id, params });
     if (id === 'app.openWebPage') return Promise.resolve(ok({ opened: true }));
     throw new Error(`this case does not answer ${id}`);

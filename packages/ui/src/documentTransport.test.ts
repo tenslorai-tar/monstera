@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { type ContractClient, MAX_RANGE_BYTES, channels, createClient } from '@monstera/contract';
+import { type ContractClient, MAX_RANGE_BYTES, channels, clientOver as rendererClient } from '@monstera/contract';
 import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -44,7 +44,7 @@ function countingBytes(length: number): Uint8Array {
  * two is not the same.
  */
 function clientOver(held: Uint8Array | null, at: number): ContractClient {
-  return createClient(channels, (id, params) => {
+  return rendererClient((id, params) => {
     if (id !== 'document.readRange') {
       throw new Error(`this fixture answers document.readRange only, not ${id}`);
     }
@@ -129,7 +129,7 @@ describe('DocumentRangeTransport', () => {
     const bytes = countingBytes(length);
     const reads: { begin: number; end: number }[] = [];
     const inner = clientOver(bytes, VERSION);
-    const client = createClient(channels, (id, params) => {
+    const client = rendererClient((id, params) => {
       const { begin, end } = params as { begin: number; end: number };
       reads.push({ begin, end });
       if (id !== 'document.readRange') throw new Error(`this fixture answers document.readRange only, not ${id}`);
@@ -167,7 +167,7 @@ describe('DocumentRangeTransport', () => {
     const bytes = countingBytes(length);
     let asked = 0;
     // THE FIRST PIECE AT THE BOUND VERSION, THE SECOND STALE: halves of two versions must never reach the parser.
-    const client = createClient(channels, (_id, params) => {
+    const client = rendererClient((_id, params) => {
       const { begin, end } = params as { begin: number; end: number };
       asked += 1;
       if (asked === 1) return Promise.resolve(ok({ kind: 'bytes', bytes: bytes.slice(begin, end) }));
@@ -263,7 +263,7 @@ describe('DocumentRangeTransport', () => {
   it('a read the channel REJECTS aborts the transport and tells the owner, rather than leaving PDF.js waiting (CR-COR-12)', async () => {
     const bytes = countingBytes(600);
     const failure = new Error('the channel went away');
-    const rejecting = createClient(channels, () => Promise.reject(failure));
+    const rejecting = rendererClient(() => Promise.reject(failure));
     const onRangeFailed = vi.fn();
     const transport = new DocumentRangeTransport({
       client: rejecting,
@@ -289,7 +289,7 @@ describe('DocumentRangeTransport', () => {
     for (const code of ['document-not-open', 'internal'] as const) {
       // `internal` CARRIES AN INCIDENT on the wire, as main sends it; without one the envelope is malformed, and that
       // case passed only because zod's old message happened to contain the word (exposed by X4, 50682806).
-      const refusing = createClient(channels, () =>
+      const refusing = rendererClient(() =>
         Promise.resolve(err(code === 'internal' ? { code, incident: 'ab01' } : { code })),
       );
       const onRangeFailed = vi.fn();

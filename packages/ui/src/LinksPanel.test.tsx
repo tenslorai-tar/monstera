@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
-import { type ContractClient, channels, createClient } from '@monstera/contract';
+import { type ContractClient, clientOver } from '@monstera/contract';
 import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { act, fireEvent, render } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
@@ -27,7 +27,7 @@ function clientAnswering(
   // Every channel the panel reached, recorded BEFORE the refusal below, so a case can assert a press sent nothing
   // even where the throw would land in a click handler and read as nothing having happened.
   const sent: string[] = [];
-  const client = createClient(channels, (id, params) => {
+  const client = clientOver((id, params) => {
     sent.push(id);
     if (id !== 'document.pageLinks') throw new Error(`unexpected channel ${id}`);
     asked.push(params);
@@ -80,7 +80,7 @@ describe('LinksPanel', () => {
   it('reads a page’s links in PARTS whole, and says when the host stopped', async () => {
     // JOURNAL, *No document-size refusals*, table A row 7: past 4,096 links the page's every link was unreadable.
     const asked: unknown[] = [];
-    const client = createClient(channels, (id, params) => {
+    const client = clientOver((id, params) => {
       if (id !== 'document.pageLinks') throw new Error(`unexpected channel ${id}`);
       asked.push(params);
       const from = (params as { from: number }).from;

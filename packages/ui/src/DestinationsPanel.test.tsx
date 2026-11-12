@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
-import { type ContractClient, channels, createClient } from '@monstera/contract';
+import { type ContractClient, clientOver } from '@monstera/contract';
 import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { act, render } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
@@ -28,7 +28,7 @@ function clientAnswering(
   const asked: unknown[] = [];
   // IN PARTS OF `part` when a case asks, as `main` cuts them: the last part carries the walk's flag.
   const size = options.part ?? destinations.length;
-  const client = createClient(channels, (id, params) => {
+  const client = clientOver((id, params) => {
     if (id !== 'document.destinations') throw new Error(`unexpected channel ${id}`);
     asked.push(params);
     const from = (params as { from: number }).from;

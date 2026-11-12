@@ -3,8 +3,7 @@ import { I18nProvider } from '@lingui/react';
 import {
   type ChannelResult,
   type ContractClient,
-  channels,
-  createClient,
+  clientOver,
 } from '@monstera/contract';
 import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { act, fireEvent, render, screen } from '@testing-library/react';
@@ -45,7 +44,7 @@ function clientAnswering(
   const asked: unknown[] = [];
   // THE RECTANGLE, FILLED IN HERE: this panel reads none, and `null` is a value the channel really answers.
   const rows = fields.map((row) => (typeof row === 'object' && row !== null ? { rect: null, ...row } : row));
-  const client = createClient(channels, (id, params) => {
+  const client = clientOver((id, params) => {
     if (id !== 'document.formFields') throw new Error(`unexpected channel ${id}`);
     asked.push(params);
     return Promise.resolve(

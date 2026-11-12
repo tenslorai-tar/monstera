@@ -1,4 +1,4 @@
-import { type ContractClient, blocksReplaced, commandsOf, wordsOf } from '@monstera/contract';
+import { type ContractClient, type DocumentClosedHere, blocksReplaced, commandsOf, wordsOf } from '@monstera/contract';
 import { type DocId, type TextFrame, type TextMatchOptions, compileQuery, intoTextFrame, lineText, paragraphsOfLines } from '@monstera/shared';
 
 import type { CommandProblem } from '../dialogs/problemMessages.js';
@@ -21,7 +21,8 @@ export type ReplaceOutcome =
   | { readonly kind: 'replaced'; readonly pages: number }
   | { readonly kind: 'bad-pattern' }
   | { readonly kind: 'held'; readonly pages: number }
-  | { readonly kind: 'refused'; readonly pages: number; readonly problem: CommandProblem };
+  // A REFUSAL FOR A DOCUMENT THIS WINDOW CLOSED is carried as such (ADR-0294), so whoever says the outcome says nothing.
+  | { readonly kind: 'refused'; readonly pages: number; readonly problem: CommandProblem | { readonly code: DocumentClosedHere } };
 
 /** A page's blocks read whole at one version (ADR-0130), as Edit text reads them. */
 export async function readPageBlocks(client: ContractClient, docId: DocId, page: number) {

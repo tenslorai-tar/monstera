@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
-import { type ContractClient, channels, createClient } from '@monstera/contract';
+import { type ContractClient, clientOver } from '@monstera/contract';
 import { asDocId, asDocVersion, ok } from '@monstera/shared';
 import { act, cleanup, fireEvent, render as renderBare, screen, waitFor } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
@@ -76,7 +76,7 @@ function answeringClient(): ContractClient {
     'document.certification': { certification: null, signed: false },
     'document.adoptOldBackups': { kind: 'adopted', moved: 0 },
   };
-  return createClient(channels, (id) => {
+  return clientOver((id) => {
     calls.push(id);
     const answer = answers[id];
     if (answer === undefined) return Promise.reject(new Error(`this fixture has no answer for ${id}`));

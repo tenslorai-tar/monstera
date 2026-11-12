@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
-import { type ContractClient, channels, createClient } from '@monstera/contract';
+import { type ContractClient, clientOver } from '@monstera/contract';
 import { type DocId, asDocId, asDocVersion, ok } from '@monstera/shared';
 import { act, fireEvent, render as renderBare, screen, within } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
@@ -97,7 +97,7 @@ function client(): { readonly client: ContractClient; readonly sent: Sent[] } {
     { kind: 'already-open' as const, docId: FIRST },
   ];
 
-  const built = createClient(channels, (id, params) => {
+  const built = clientOver((id, params) => {
     sent.push({ id, params });
     // THE OPEN COMMAND IS THE SEVERAL-FILES CHANNEL (ADR-0182): one file per ask here, an empty list for a dismissal.
     if (id === 'document.openSeveral') {
@@ -289,7 +289,7 @@ describe('the Organize grid, driven through App (ADR-0104)', () => {
     const executed: unknown[] = [];
     let version = 1;
     const answers = client();
-    const built = createClient(channels, (id, params) => {
+    const built = clientOver((id, params) => {
       if (id === 'document.execute') {
         executed.push((params as { command: unknown }).command);
         version += 1;

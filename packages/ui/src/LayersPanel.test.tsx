@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
-import { type ContractClient, channels, createClient } from '@monstera/contract';
+import { type ContractClient, clientOver } from '@monstera/contract';
 import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { act, render } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
@@ -54,7 +54,7 @@ function clientAnswering(
 ): { client: ContractClient; asked: unknown[]; executed: unknown[] } {
   const asked: unknown[] = [];
   const executed: unknown[] = [];
-  const client = createClient(channels, (id, params) => {
+  const client = clientOver((id, params) => {
     if (id === 'document.execute') {
       executed.push(params);
       return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 1024, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
@@ -87,7 +87,7 @@ describe('LayersPanel', () => {
     // JOURNAL, *No document-size refusals*, table A row 6. A panel that asked once would show the first part as the
     // document's layers, which is the 1,024 cap arriving one layer up.
     const asked: unknown[] = [];
-    const client = createClient(channels, (id, params) => {
+    const client = clientOver((id, params) => {
       if (id !== 'document.layers') throw new Error(`unexpected channel ${id}`);
       asked.push(params);
       const from = (params as { from: number }).from;

@@ -13,8 +13,8 @@ import {
   CHAT_HISTORY_SETTING_ID,
   IncidentLog,
   channels,
-  createClient,
   wrapHandler,
+  clientOver,
 } from '@monstera/contract';
 import { asDocId, asDocVersion, ok } from '@monstera/shared';
 import { I18nProvider } from '@lingui/react';
@@ -95,7 +95,7 @@ function recording(
     () => Promise.resolve(ok({ started: true, sent: null })),
     new IncidentLog(() => undefined),
   );
-  const client = createClient(channels, (id, params) => {
+  const client = clientOver((id, params) => {
     sent.push({ id, params });
     if (id === 'ai.ask' && boundary) return throughBoundary(params);
     if (id === 'ai.models') {
@@ -488,7 +488,7 @@ describe('the assistant tab', () => {
       const removed: string[] = [];
       let clears = 0;
       let held = [...initial];
-      const client = createClient(channels, (id, params) => {
+      const client = clientOver((id, params) => {
         sent.push({ id, params });
         if (id === 'ai.models') return Promise.resolve({ ok: true, value: { source: 'fetched', models: [] } });
         if (id === 'ai.history.list') {
@@ -674,7 +674,7 @@ describe('the assistant tab', () => {
       readonly answer: (models: readonly { id: string; label: string }[]) => Promise<void>;
     } {
       const waiting: ((value: unknown) => void)[] = [];
-      const client = createClient(channels, (id) => {
+      const client = clientOver((id) => {
         if (id === 'ai.history.note') return Promise.resolve({ ok: true, value: { show: false } });
         if (id !== 'ai.models') throw new Error(`this case does not answer ${id}`);
         return new Promise((resolve) => {

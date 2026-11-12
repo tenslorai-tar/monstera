@@ -1,4 +1,4 @@
-import { type ContractClient, channels, createClient } from '@monstera/contract';
+import { type ContractClient, clientOver } from '@monstera/contract';
 import { asDocId, asDocVersion, ok } from '@monstera/shared';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -25,7 +25,7 @@ const TYPED = { mark: { kind: 'typed', text: 'Ada Lovelace', font: 'great-vibes'
 /** A client answering `document.placeSignature` with `answer`, recording every call and its params. */
 function answering(answer: unknown): { readonly client: ContractClient; readonly calls: [string, unknown][] } {
   const calls: [string, unknown][] = [];
-  const client = createClient(channels, (id, params) => {
+  const client = clientOver((id, params) => {
     calls.push([id, params]);
     if (id === 'document.placeSignature') return Promise.resolve(ok(answer));
     if (id === 'library.list') return Promise.resolve(ok({ entries: [] }));
@@ -195,7 +195,7 @@ describe('chooseSignature', () => {
   it('UPLOAD’S PICK asks main to hold a picture, then asks AGAIN with it shown — its blob let go once the dialog is done', async () => {
     const bytes = Uint8Array.of(0x89, 0x50, 0x4e, 0x47);
     const calls: string[] = [];
-    const client = createClient(channels, (id) => {
+    const client = clientOver((id) => {
       calls.push(id);
       if (id === 'library.list') return Promise.resolve(ok({ entries: [] }));
       return Promise.resolve(
@@ -240,7 +240,7 @@ describe('chooseSignature', () => {
 
   it('CONTROL: a picked picture DISMISSED with the dialog is let go of, and one that does not decode holds no look', async () => {
     const bytes = new Uint8Array([7]);
-    const client = createClient(channels, (id) =>
+    const client = clientOver((id) =>
       Promise.resolve(
         ok(id === 'library.list' ? { entries: [] } : { kind: 'picked', handle: 'held-7', name: 'Mine.png', mediaType: 'image/png', bytes }),
       ),
@@ -262,7 +262,7 @@ describe('chooseSignature', () => {
 
   it('CONTROL: a CANCELLED pick asks again with no picture — and a refused one says why first', async () => {
     let answer: unknown = { kind: 'cancelled' };
-    const client = createClient(channels, (id) =>
+    const client = clientOver((id) =>
       Promise.resolve(ok(id === 'library.list' ? { entries: [] } : answer)),
     );
     const ask = vi.fn().mockResolvedValueOnce({ upload: 'pick', keep: true }).mockResolvedValueOnce(undefined);
@@ -282,7 +282,7 @@ describe('chooseSignature', () => {
 
   it('a scanned PDF Upload could not use says WHY — no ink, or a password — and asks again (G3d)', async () => {
     for (const kind of ['scan-blank', 'scan-locked'] as const) {
-      const client = createClient(channels, (id) => Promise.resolve(ok(id === 'library.list' ? { entries: [] } : { kind })));
+      const client = clientOver((id) => Promise.resolve(ok(id === 'library.list' ? { entries: [] } : { kind })));
       const ask = vi
         .fn()
         .mockResolvedValueOnce({ upload: 'pick', keep: true })
@@ -298,7 +298,7 @@ describe('chooseSignature', () => {
   it('a KEPT TYPED signature chosen by its id answers its name and face, and CONTROL: a kept drawing stays its id', async () => {
     const TYPED_ID = '00000000-0000-4000-8000-0000000000b1';
     const DRAWN_ID = '00000000-0000-4000-8000-0000000000b2';
-    const client = createClient(channels, (id) =>
+    const client = clientOver((id) =>
       Promise.resolve(
         ok(
           id === 'library.list'

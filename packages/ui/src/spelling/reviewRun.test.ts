@@ -1,4 +1,4 @@
-import { NO_FORMS_LEFT, blocksOfEdit, channels, createClient } from '@monstera/contract';
+import { NO_FORMS_LEFT, blocksOfEdit, clientOver } from '@monstera/contract';
 import { asDocId, asDocVersion, err, ok, tokensOf } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -117,7 +117,7 @@ function harness(script: Script): {
     script.version += 1;
     return ok({ version: version(), byteLength: 1, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 });
   };
-  const client = createClient(channels, (id, raw) => {
+  const client = clientOver((id, raw) => {
     const params = raw as Record<string, unknown>;
     switch (id) {
       case 'spelling.dictionary':

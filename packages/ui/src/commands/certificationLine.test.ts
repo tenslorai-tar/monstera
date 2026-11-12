@@ -1,4 +1,4 @@
-import { type ChannelResult, channels, createClient } from '@monstera/contract';
+import { type ChannelResult, clientOver } from '@monstera/contract';
 import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -13,7 +13,7 @@ const DOC = asDocId('00000000-0000-4000-8000-0000000000e1');
 
 function answering(answer: ChannelResult<'document.certification'> | 'not-open') {
   const asked: unknown[] = [];
-  const client = createClient(channels, (id, params) => {
+  const client = clientOver((id, params) => {
     if (id !== 'document.certification') throw new Error(`this case does not answer ${id}`);
     asked.push(params);
     return Promise.resolve(answer === 'not-open' ? err({ code: 'document-not-open' as const }) : ok(answer));

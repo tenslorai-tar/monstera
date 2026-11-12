@@ -1,4 +1,4 @@
-import { MAX_ANNOTATION_TEXT, channels, createClient } from '@monstera/contract';
+import { MAX_ANNOTATION_TEXT, clientOver } from '@monstera/contract';
 import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
 
 import {
@@ -512,7 +512,7 @@ describe('editSelectionCommand', () => {
     const written: WriteRequest[] = [];
     const read: { id: string; params: unknown }[] = [];
     const asked: { id: string; props: unknown }[] = [];
-    const client = createClient(channels, (id, params) => {
+    const client = clientOver((id, params) => {
       read.push({ id, params });
       return Promise.resolve(ok(words));
     });
@@ -987,7 +987,7 @@ describe('copyAnnotationsCommand', () => {
     const asked: { id: string; props: unknown }[] = [];
     const copied: number[] = [];
     const toasts: unknown[][] = [];
-    const client = createClient(channels, (id, params) => {
+    const client = clientOver((id, params) => {
       sent.push({ id, params });
       return Promise.resolve(ok(answer));
     });
@@ -1056,7 +1056,7 @@ describe('copyAnnotationsCommand', () => {
       selection: () => SELECTION,
       onDelete: () => undefined,
       onPlace: () => undefined,
-      client: createClient(channels, () => Promise.resolve(err({ code: 'internal', incident: 'inc-7' }))),
+      client: clientOver(() => Promise.resolve(err({ code: 'internal', incident: 'inc-7' }))),
       ask: (id, props) => {
         asked.push({ id, props });
         return Promise.resolve(undefined);
@@ -1089,7 +1089,7 @@ describe('copyAnnotationsCommand', () => {
       [{ kind: 'stale' }, false],
     ] as const) {
       const sent: unknown[] = [];
-      const client = createClient(channels, (id) => {
+      const client = clientOver((id) => {
         sent.push(id);
         return Promise.resolve(ok(answer));
       });

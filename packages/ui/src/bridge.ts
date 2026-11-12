@@ -6,8 +6,7 @@ import {
   type EventId,
   type MonsteraBridge,
   acceptAnswer,
-  channels,
-  createClient,
+  clientOver,
   preloadChannels,
   subscribeToEvent,
 } from '@monstera/contract';
@@ -105,7 +104,9 @@ export function createRendererClient(
   bridge: MonsteraBridge | undefined = globalThis[BRIDGE_KEY],
 ): ContractClient {
   if (bridge === undefined) throw new BridgeUnavailableError();
-  return createClient(channels, async (id, params) => bridge.invoke(id, params));
+  // THROUGH `clientOver`, the one builder of a `ContractClient` (ADR-0294): a refusal for a document this window
+  // closed is answered as this window's own code, which the one door shows nothing for.
+  return clientOver(async (id, params) => bridge.invoke(id, params));
 }
 
 /**

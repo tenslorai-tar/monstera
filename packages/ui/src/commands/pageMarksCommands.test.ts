@@ -1,4 +1,4 @@
-import { type AnnotationStamp, type ContractClient, type PageMarksRead, channels, createClient } from '@monstera/contract';
+import { type AnnotationStamp, type ContractClient, type PageMarksRead, clientOver } from '@monstera/contract';
 import { asDocId, asDocVersion, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -60,7 +60,7 @@ function marksWith(overrides: Partial<PageMarksRead>): PageMarksRead {
 /** A client answering the marks read with `marks`, the font read with {@link FONTS}, and every command applied. */
 function recording(marks: PageMarksRead): { readonly client: ContractClient; readonly sent: { id: string; params: unknown }[] } {
   const sent: { id: string; params: unknown }[] = [];
-  const client = createClient(channels, (id, params) => {
+  const client = clientOver((id, params) => {
     sent.push({ id, params });
     if (id === 'document.pageMarks') return Promise.resolve(ok({ version: asDocVersion(1), marks }));
     if (id === 'app.fontFamilies') return Promise.resolve(ok(FONTS));

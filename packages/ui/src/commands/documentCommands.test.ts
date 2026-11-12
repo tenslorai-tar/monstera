@@ -4,8 +4,7 @@ import {
   type DispatchableCommand,
   type LibraryEntry,
   MAX_BLOCK_FACE_RUNS,
-  channels,
-  createClient,
+  clientOver,
 } from '@monstera/contract';
 import { type DocId, type DocVersion, type MessageKey, asDocId, asDocVersion, asFileHandle, err, ok } from '@monstera/shared';
 import { describe, expect, it, vi } from 'vitest';
@@ -252,7 +251,7 @@ const CONTEXT: CommandContext = {
 function sourcesClient(): { readonly client: ContractClient; readonly executed: unknown[] } {
   const counts: Readonly<Record<string, number>> = { 'doc-0': 4, 'doc-2': 7, 'doc-9': 5 };
   const executed: unknown[] = [];
-  const client = createClient(channels, (id, params) => {
+  const client = clientOver((id, params) => {
     if (id === 'document.viewModel') {
       const { docId } = params as { readonly docId: string };
       const pageCount = counts[docId];
@@ -299,7 +298,7 @@ const signatures: SignedEditing = {
  * nothing ships.
  */
 function clientAnswering(id: string, answer: unknown): ContractClient {
-  return createClient(channels, (asked) => {
+  return clientOver((asked) => {
     if (asked !== id) throw new Error(`this fixture answers ${id}, not ${asked}`);
     return Promise.resolve(ok(answer));
   });
@@ -307,7 +306,7 @@ function clientAnswering(id: string, answer: unknown): ContractClient {
 
 /** A client whose one channel reports a declared failure. */
 function clientFailing(code: string): ContractClient {
-  return createClient(channels, () => Promise.resolve(err({ code })));
+  return clientOver(() => Promise.resolve(err({ code })));
 }
 
 /**
@@ -661,7 +660,7 @@ describe('memory that ran out, proven', () => {
   /** A client answering `out-of-memory` to the first `count` executes and applying the next, counting every send. */
   function outOfMemoryThen(count: number): { readonly client: ContractClient; readonly sends: () => number } {
     let sends = 0;
-    const client = createClient(channels, (asked) => {
+    const client = clientOver((asked) => {
       if (asked !== 'document.execute') throw new Error(`this fixture answers document.execute, not ${asked}`);
       sends += 1;
       return Promise.resolve(
@@ -701,7 +700,7 @@ describe('memory that ran out, proven', () => {
 
   it('CONTROL: an internal failure opens Something went wrong with its reference, not the memory window', async () => {
     const { shown, onApplied, ask } = recorder();
-    const client = createClient(channels, () => Promise.resolve(err({ code: 'internal', incident: 'i7' })));
+    const client = clientOver(() => Promise.resolve(err({ code: 'internal', incident: 'i7' })));
 
     await rotatePageCommand({ client, onApplied, ask, stamp, signatures }).run(CONTEXT);
 
@@ -750,7 +749,7 @@ describe('redo', () => {
 describe('move page up / down — Organize › Arrange', () => {
   function recordingExecute(): { client: ContractClient; sent: { id: string; params: unknown }[] } {
     const sent: { id: string; params: unknown }[] = [];
-    const client = createClient(channels, (id, params) => {
+    const client = clientOver((id, params) => {
       sent.push({ id, params });
       return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
     });
@@ -841,7 +840,7 @@ describe('save', () => {
     // `saveCommand` therefore takes no `onApplied` — there is no shape in which
     // it can report a move, rather than a rule about not calling one (B5).
     let asked: string | undefined;
-    const client = createClient(channels, (id) => {
+    const client = clientOver((id) => {
       asked = id;
       return Promise.resolve(ok({ kind: 'saved', version: asDocVersion(2), cleared: null, held: [] }));
     });
@@ -877,7 +876,7 @@ describe('save', () => {
     /** Main answers `too-deep` to the save and `copied` to a copy without bookmarks. */
     const deepClient = (copy: unknown): { client: ContractClient; sent: { id: string; params: unknown }[] } => {
       const sent: { id: string; params: unknown }[] = [];
-      const client = createClient(channels, (id, params) => {
+      const client = clientOver((id, params) => {
         sent.push({ id, params });
         return Promise.resolve(ok(id === 'document.save' ? { kind: 'too-deep', bookmarks: true } : copy));
       });
@@ -924,7 +923,7 @@ describe('save', () => {
      */
     const refusingClient = (certification: { level: 'form-fill'; signer: string } | null = null) => {
       const sent: { id: string; params: unknown }[] = [];
-      const client = createClient(channels, (id, params) => {
+      const client = clientOver((id, params) => {
         if (id === 'document.certification') return Promise.resolve(ok({ certification, signed: true }));
         sent.push({ id, params });
         if (id === 'document.saveCopy') return Promise.resolve(ok({ kind: 'copied', bytes: 10, written: WRITTEN }));
@@ -985,7 +984,7 @@ describe('save', () => {
     /** Main answers `breaks-signatures` to a save that has not agreed, and `saved` to one that has. */
     const signedClient = (): { client: ContractClient; sent: unknown[] } => {
       const sent: unknown[] = [];
-      const client = createClient(channels, (_id, params) => {
+      const client = clientOver((_id, params) => {
         sent.push(params);
         const agreed = (params as { breakSignatures: boolean }).breakSignatures;
         return Promise.resolve(
@@ -1062,7 +1061,7 @@ describe('save', () => {
     }
     const removalClient = (cleared: Cleared | null): { client: ContractClient; sent: string[] } => {
       const sent: string[] = [];
-      const client = createClient(channels, (id) => {
+      const client = clientOver((id) => {
         sent.push(id);
         return Promise.resolve(ok({ kind: 'saved', version: asDocVersion(4), cleared, held: [] }));
       });
@@ -1105,7 +1104,7 @@ describe('save', () => {
     const heldClient = (held: string[], retries: string[][]): { client: ContractClient; sent: string[] } => {
       const sent: string[] = [];
       let retry = 0;
-      const client = createClient(channels, (id) => {
+      const client = clientOver((id) => {
         sent.push(id);
         if (id === 'document.deleteHeldCopies') return Promise.resolve(ok({ held: retries[retry++] ?? [] }));
         return Promise.resolve(ok({ kind: 'saved', version: asDocVersion(4), cleared: null, held }));
@@ -1237,7 +1236,7 @@ describe('save', () => {
     // The assertion is which DIALOG, and that is the case. Both are dialogs and
     // both leave the document unsaved, so the end state cannot separate them —
     // only the id can.
-    const client = createClient(channels, () =>
+    const client = clientOver(() =>
       Promise.resolve(err({ code: 'document-busy' as const })),
     );
     const shown: { id: string; props: unknown }[] = [];
@@ -1254,7 +1253,7 @@ describe('save', () => {
     // the only case where the props are more than a code. A command that passed
     // the code alone would render a dialog with nothing to quote, and every
     // other case here would still pass — the sentence is the same.
-    const client = createClient(channels, () =>
+    const client = clientOver(() =>
       Promise.resolve(err({ code: 'internal' as const, incident: 'inc-42' })),
     );
     const shown: { id: string; props: unknown }[] = [];
@@ -1300,7 +1299,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     readonly sent: { id: string; params: unknown }[];
   } {
     const sent: { id: string; params: unknown }[] = [];
-    const client = createClient(channels, (id, params) => {
+    const client = clientOver((id, params) => {
       sent.push({ id, params });
       const answer = answers[id];
       if (answer !== undefined) return Promise.resolve(ok(answer));
@@ -1506,7 +1505,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     // dismissed. A toast is not a dialog, and `opened` is still asserted empty below.
     const sent: { id: string; params: unknown }[] = [];
     const opened: { id: string; props: unknown }[] = [];
-    const client = createClient(channels, (id, params) => {
+    const client = clientOver((id, params) => {
       sent.push({ id, params });
       return Promise.resolve(ok({ kind: 'copied', bytes: 2048, written: WRITTEN }));
     });
@@ -1542,7 +1541,7 @@ describe('delete pages — the mutation-dialog gate', () => {
 
     for (const kind of answers) {
       const opened: unknown[] = [];
-      const client = createClient(channels, () =>
+      const client = clientOver(() =>
         Promise.resolve(
           ok(kind === 'cancelled' ? { kind } : { kind, openElsewhere: 1 }),
         ),
@@ -1573,7 +1572,7 @@ describe('delete pages — the mutation-dialog gate', () => {
 
   it('a copy onto the document’s OWN FILE says that, not that another document is writing to it (the owner, 2026-11-10)', async () => {
     const opened: { id: string; props: unknown }[] = [];
-    const client = createClient(channels, () => Promise.resolve(ok({ kind: 'onto-source' })));
+    const client = clientOver(() => Promise.resolve(ok({ kind: 'onto-source' })));
     await saveCopyCommand({
       settleMarks: NOTHING_MARKED,
       client,
@@ -1597,7 +1596,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     // tests if each is asserted alone. Driving all three in one case and
     // comparing the SET is what separates them.
     const sent: { id: string; params: unknown }[] = [];
-    const client = createClient(channels, (id, params) => {
+    const client = clientOver((id, params) => {
       sent.push({ id, params });
       return Promise.resolve(ok({ kind: 'copied', bytes: 512, written: WRITTEN }));
     });
@@ -1629,7 +1628,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     // a different entry in this same menu. A renderer that folded this into
     // `contested` would tell them another tab holds the file.
     const opened: { id: string; props: unknown }[] = [];
-    const client = createClient(channels, () =>
+    const client = clientOver(() =>
       Promise.resolve(ok({ kind: 'unrepresentable' as const })),
     );
 
@@ -1656,7 +1655,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     // three and comparing the SET is what separates them from three controls
     // that all read JSON.
     const sent: { id: string; params: unknown }[] = [];
-    const client = createClient(channels, (id, params) => {
+    const client = clientOver((id, params) => {
       sent.push({ id, params });
       return Promise.resolve(
         ok({ kind: 'imported', version: asDocVersion(2), byteLength: 99, historyDropped: 0, filled: 1, skipped: [], more: 0 }),
@@ -1694,7 +1693,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     };
     for (const [name, answer] of Object.entries(answers)) {
       const { toast, said } = saving();
-      const client = createClient(channels, () => Promise.resolve(answer));
+      const client = clientOver(() => Promise.resolve(answer));
       await importFormDataJsonCommand({ client, stamp, signatures, onApplied: () => undefined, ask: () => Promise.resolve(undefined), toast }).run(CONTEXT);
       saidFor[name] = said;
     }
@@ -1709,7 +1708,7 @@ describe('delete pages — the mutation-dialog gate', () => {
   it('SAYS which fields an import left alone and why, and opens that only when it left some (control: a clean import opens nothing)', async () => {
     const asked: { id: string; props: unknown }[] = [];
     const run = async (value: Record<string, unknown>): Promise<void> => {
-      const client = createClient(channels, () =>
+      const client = clientOver(() =>
         Promise.resolve(
           ok({ kind: 'imported' as const, version: asDocVersion(3), byteLength: 10, historyDropped: 0, ...value } as never),
         ),
@@ -1756,7 +1755,7 @@ describe('delete pages — the mutation-dialog gate', () => {
   it('says a file naming none of the form’s fields is the wrong file, in its own sentence and without a toast', async () => {
     const asked: { id: string; props: unknown }[] = [];
     const { toast, said } = saving();
-    const client = createClient(channels, () => Promise.resolve(ok({ kind: 'matched-nothing' as const, named: 7 })));
+    const client = clientOver(() => Promise.resolve(ok({ kind: 'matched-nothing' as const, named: 7 })));
     await importFormDataJsonCommand({
       client,
       stamp,
@@ -1779,7 +1778,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     // form before it was filled, which is the display-only failure with the
     // work already done.
     const applied: unknown[] = [];
-    const client = createClient(channels, () =>
+    const client = clientOver(() =>
       Promise.resolve(
         ok({ kind: 'imported', version: asDocVersion(7), byteLength: 4096, historyDropped: 0, filled: 1, skipped: [], more: 0 }),
       ),
@@ -1805,7 +1804,7 @@ describe('delete pages — the mutation-dialog gate', () => {
 
     for (const kind of ['cancelled', 'unreadable'] as const) {
       const opened: unknown[] = [];
-      const client = createClient(channels, () => Promise.resolve(ok({ kind })));
+      const client = clientOver(() => Promise.resolve(ok({ kind })));
       await importFormDataFdfCommand({
         client,
         stamp,
@@ -1825,7 +1824,7 @@ describe('delete pages — the mutation-dialog gate', () => {
 
   it('CARRIES THE LIMIT for a file that is too large, because a number is the actionable part', async () => {
     const opened: { id: string; props: unknown }[] = [];
-    const client = createClient(channels, () =>
+    const client = clientOver(() =>
       Promise.resolve(ok({ kind: 'too-large' as const, limitBytes: 8 * 1024 * 1024, fileBytes: 9_400_000 })),
     );
 
@@ -1855,9 +1854,9 @@ describe('delete pages — the mutation-dialog gate', () => {
     const detecting = (
       onPage: (page: number) => readonly Record<string, unknown>[],
       existing: readonly string[] = [],
-    ): { client: ReturnType<typeof createClient<typeof channels>>; sent: { id: string; params: unknown }[] } => {
+    ): { client: ContractClient; sent: { id: string; params: unknown }[] } => {
       const sent: { id: string; params: unknown }[] = [];
-      const client = createClient(channels, (id, params) => {
+      const client = clientOver((id, params) => {
         sent.push({ id, params });
         if (id === 'document.flatFieldCandidates') {
           const { page } = params as { page: number };
@@ -2101,7 +2100,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     // THE UI HALF OF THE WIRED PAIR for join and split. Its kernel half is `proof:pdfiumcommand`'s join and split cases:
     // two blocks read back as one, one as two, and the same split without its movement read back as one again.
     const sent: { id: string; params: unknown }[] = [];
-    const client = createClient(channels, (id, params) => {
+    const client = clientOver((id, params) => {
       sent.push({ id, params });
       return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
     });
@@ -2136,7 +2135,7 @@ describe('delete pages — the mutation-dialog gate', () => {
   it('A NEW BOX is sent as `inserts` on the block wire, with no block, and nothing for words that are only white space', async () => {
     // THE UI HALF OF THE WIRED PAIR for an added box. Its kernel half is `proof:pdfiumcommand`'s added-box cases.
     const sent: { id: string; params: unknown }[] = [];
-    const client = createClient(channels, (id, params) => {
+    const client = clientOver((id, params) => {
       sent.push({ id, params });
       return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
     });
@@ -2237,7 +2236,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     // read's (7) and not the tab's, because `#refuseIfStale` asks whether the
     // page is the one the outlines described.
     const sent: { id: string; params: unknown }[] = [];
-    const client = createClient(channels, (id, params) => {
+    const client = clientOver((id, params) => {
       sent.push({ id, params });
       return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
     });
@@ -2288,7 +2287,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     };
     const growing = { ...BLOCK, push: { below: [1], room: 300 } } as TextBlock;
     const sent: unknown[] = [];
-    const client = createClient(channels, (_id, params) => {
+    const client = clientOver((_id, params) => {
       sent.push((params as { command: unknown }).command);
       return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
     });
@@ -2305,7 +2304,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     // THE UI HALF OF THE WIRED PAIR for text inside a form. Its kernel half is `formText.test.ts`, which edits a word in a
     // form's stream through MuPDF and leaves the page's content byte for byte. CONTROL: the page's own block sends none.
     const sent: unknown[] = [];
-    const client = createClient(channels, (_id, params) => {
+    const client = clientOver((_id, params) => {
       sent.push((params as { command: unknown }).command);
       return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
     });
@@ -2323,7 +2322,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     // text through the real library with this flag and refuse the same indices without it. The case above is its control:
     // the same edit from a plain read sends no `unpack`, which the strict command would also take.
     const sent: unknown[] = [];
-    const client = createClient(channels, (_id, params) => {
+    const client = clientOver((_id, params) => {
       sent.push((params as { command: unknown }).command);
       return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
     });
@@ -2340,7 +2339,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     // rewrites the Chromium print's Type 3 heading through MuPDF and saves it. Only the kind differs from the case
     // above, which is its control: a commit that ignored the read's writer would send `editTextBlock` here.
     const sent: { id: string; params: unknown }[] = [];
-    const client = createClient(channels, (id, params) => {
+    const client = clientOver((id, params) => {
       sent.push({ id, params });
       return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
     });
@@ -2380,7 +2379,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     // commit that sent anyway would regenerate the page for no change — which
     // the kernel refuses, so the person would meet a problem for clicking away.
     const sent: string[] = [];
-    const client = createClient(channels, (id) => {
+    const client = clientOver((id) => {
       sent.push(id);
       return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
     });
@@ -2411,7 +2410,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     // THE UI HALF OF THE WIRED PAIR for a placement. Its kernel half is `proof:pdfiumcommand`'s placement cases. The words
     // are exactly the page's, which the case above sends nothing for: a block that was moved is not unchanged.
     const sent: { id: string; params: unknown }[] = [];
-    const client = createClient(channels, (id, params) => {
+    const client = clientOver((id, params) => {
       sent.push({ id, params });
       return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
     });
@@ -2432,7 +2431,7 @@ describe('delete pages — the mutation-dialog gate', () => {
 
   it('A BLOCK ONLY MOVED goes to the OPERATOR writer on a page PDFium writes, its words carried as they were (R11)', async () => {
     const sent: { id: string; params: unknown }[] = [];
-    const client = createClient(channels, (id, params) => {
+    const client = clientOver((id, params) => {
       sent.push({ id, params });
       return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
     });
@@ -2455,7 +2454,7 @@ describe('delete pages — the mutation-dialog gate', () => {
 
   it('A FONT THAT CANNOT CARRY THE WORDS is the editor’s to say — no dialog opens for it', async () => {
     const asked: string[] = [];
-    const client = createClient(channels, () =>
+    const client = clientOver(() =>
       Promise.resolve(err({ code: 'text-not-writable' as const, detail: { characters: '中' } })),
     );
     const outcome = await commitTextBlock(
@@ -2484,7 +2483,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     // THE DEFECT: any refusal but the font's opened the problem dialog and closed the editor, and the words a person
     // typed were gone. Swallowed is not the fix either: the refusal comes back whole, for the editor to say.
     const asked: string[] = [];
-    const client = createClient(channels, () =>
+    const client = clientOver(() =>
       Promise.resolve(err({ code: 'edit-refused' as const, detail: { step: 'generate' as const, engineError: 6 } })),
     );
     const outcome = await commitTextBlock(
@@ -2512,7 +2511,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     // Without this the case above passes on a dispatcher that stopped reporting refusals anywhere — the silent
     // control this project calls a defect. Only the editor keeps them.
     const asked: string[] = [];
-    const client = createClient(channels, () =>
+    const client = clientOver(() =>
       Promise.resolve(err({ code: 'edit-refused' as const, detail: { step: 'generate' as const, engineError: 6 } })),
     );
     const applied = await applyDocumentCommand(
@@ -2538,7 +2537,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     // that reached the person as *internal* with the editor stuck. Now it is the outcome the editor closes on.
     const asked: string[] = [];
     let applied = 0;
-    const client = createClient(channels, () => Promise.resolve(err({ code: 'text-unchanged' as const })));
+    const client = clientOver(() => Promise.resolve(err({ code: 'text-unchanged' as const })));
     const outcome = await commitTextBlock(
       {
         client,
@@ -2563,7 +2562,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     expect(applied).toBe(0);
     // CONTROL: the writer's OTHER answer for an edit it wrote nothing for, words that differ, keeps the words with the
     // set-text refusal — so the case above is not an editor that closes on every refusal.
-    const differ = createClient(channels, () =>
+    const differ = clientOver(() =>
       Promise.resolve(err({ code: 'edit-refused' as const, detail: { step: 'set-text' as const, engineError: 0 } })),
     );
     const kept = await commitTextBlock(
@@ -2579,7 +2578,7 @@ describe('delete pages — the mutation-dialog gate', () => {
 
   it('a STALE read is kept for the editor as well', async () => {
     const asked: string[] = [];
-    const client = createClient(channels, () => Promise.resolve(err({ code: 'stale-target' as const })));
+    const client = clientOver(() => Promise.resolve(err({ code: 'stale-target' as const })));
     const outcome = await commitTextBlock(
       {
         client,
@@ -2603,7 +2602,7 @@ describe('delete pages — the mutation-dialog gate', () => {
 
   it('A SIGNED DOCUMENT LEFT AS IT WAS keeps the words: Cancel on the signatures question is `held` (ADR-0149)', async () => {
     const asked: string[] = [];
-    const client = createClient(channels, () => Promise.resolve(err({ code: 'breaks-signatures' as const })));
+    const client = clientOver(() => Promise.resolve(err({ code: 'breaks-signatures' as const })));
     const outcome = await commitTextBlock(
       {
         client,
@@ -2649,7 +2648,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     const asked: string[] = [];
     const pages: unknown[] = [];
     const read = await readPageContentBoxes(
-      createClient(channels, (id, params) => {
+      clientOver((id, params) => {
         const from = (params as { from: number }).from;
         asked.push(`${id}@${String(from)}`);
         if (id === 'document.pageObjects') pages.push((params as { page: unknown }).page);
@@ -2687,7 +2686,7 @@ describe('delete pages — the mutation-dialog gate', () => {
 
   it('EDIT TEXT’s read counts a clipped picture by what SHOWS (E3)', async () => {
     const read = await readPageContentBoxes(
-      createClient(channels, (id) =>
+      clientOver((id) =>
         Promise.resolve(
           id === 'document.annotations'
             ? ok({ version: asDocVersion(4), annotations: [], next: null, truncated: false })
@@ -2714,7 +2713,7 @@ describe('delete pages — the mutation-dialog gate', () => {
 
   it('EDIT TEXT’s read answers NOTHING for two walks at different versions, or a refused walk, rather than boxes of either', async () => {
     const answering = (objects: unknown, annotations: unknown) =>
-      createClient(channels, (id) => Promise.resolve(id === 'document.annotations' ? annotations : objects));
+      clientOver((id) => Promise.resolve(id === 'document.annotations' ? annotations : objects));
     const content = ok({ version: asDocVersion(4), objects: [], next: null, truncated: false });
     const marks = (version: number) => ok({ version: asDocVersion(version), annotations: [], next: null, truncated: false });
     const refusal = err({ code: 'engine-unavailable' as const });
@@ -2732,7 +2731,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     // guard rather than a flag beside it.
     // A PROPOSAL ON OFFER, so a command that created what it was shown on any answer would send it.
     const sent: string[] = [];
-    const client = createClient(channels, (id) => {
+    const client = clientOver((id) => {
       sent.push(id);
       if (id === 'document.formFields') {
         return Promise.resolve(ok({ version: asDocVersion(1), fields: [], next: null, truncated: false }));
@@ -3459,7 +3458,7 @@ describe('delete pages — the mutation-dialog gate', () => {
   });
 
   it('CONTROL: a REFUSED import shows no tab, and a dismissed one sends nothing', async () => {
-    const refusing = createClient(channels, (id, params) => {
+    const refusing = clientOver((id, params) => {
       if (id === 'document.viewModel') return Promise.resolve(ok({ version: asDocVersion(1), pageCount: 4, rotations: [0], direction: 'L2R' as const }));
       void params;
       return Promise.resolve(err({ code: 'document-busy' }));
@@ -4441,7 +4440,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       versionAt: (page: number) => number = () => 5,
     ): { readonly client: ContractClient; readonly sent: { id: string; params: unknown }[] } {
       const sent: { id: string; params: unknown }[] = [];
-      const client = createClient(channels, (id, params) => {
+      const client = clientOver((id, params) => {
         sent.push({ id, params });
         if (id === 'document.pageTables') {
           const { page } = params as { page: number };
@@ -4719,7 +4718,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       const exporting = new Promise<unknown>((resolve) => {
         finish = resolve;
       });
-      const client = createClient(channels, (id, params) => {
+      const client = clientOver((id, params) => {
         if (id === 'document.pageTables') {
           return Promise.resolve(ok({ version: asDocVersion(5), pageCount: 10, tables: [], truncated: false }));
         }
@@ -4787,7 +4786,7 @@ describe('delete pages — the mutation-dialog gate', () => {
 
   it('CONTROL: an export answered before main ever says running shows no notice — a moment’s work is not announced', async () => {
     const totals: number[] = [];
-    const client = createClient(channels, (id) => {
+    const client = clientOver((id) => {
       if (id === 'document.pageTables') {
         return Promise.resolve(ok({ version: asDocVersion(5), pageCount: 10, tables: [], truncated: false }));
       }
@@ -4833,7 +4832,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       const asked: { id: string; props: unknown }[] = [];
       const said: MessageKey[] = [];
       let reads = 0;
-      const client = createClient(channels, (id, params) => {
+      const client = clientOver((id, params) => {
         sent.push({ id, params });
         if (id === 'document.pageTables') {
           reads += 1;
@@ -5104,7 +5103,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     } {
       const events: string[] = [];
       const walks: unknown[] = [];
-      const client = createClient(channels, (id) => {
+      const client = clientOver((id) => {
         events.push(`channel ${id}`);
         return Promise.resolve(ok({ kind: 'copied', bytes: 12, leftOut: [], leftOutMore: 0, otherLeftOut: 0, tagsDropped: false, written: WRITTEN }));
       });
@@ -5318,7 +5317,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     // before reading would delete whatever the dialog last answered with,
     // which on a second run is a plausible list of real pages.
     const sent: { id: string; params: unknown }[] = [];
-    const client = createClient(channels, (id, params) => {
+    const client = clientOver((id, params) => {
       sent.push({ id, params });
       return Promise.resolve(
         ok(
@@ -5435,7 +5434,7 @@ describe('generate table of contents', () => {
     readonly sent: { id: string; params: unknown }[];
   } {
     const sent: { id: string; params: unknown }[] = [];
-    const client = createClient(channels, (id, params) => {
+    const client = clientOver((id, params) => {
       sent.push({ id, params });
       if (id === 'document.destinations') {
         return Promise.resolve(ok({ version: asDocVersion(1), destinations, next: null, truncated: false }));
@@ -5547,7 +5546,7 @@ describe('generate table of contents', () => {
     // THE SECOND READ ANSWERS ANOTHER VERSION: the first read's rows are against a document that is no longer this one.
     let reads = 0;
     const sent: string[] = [];
-    const client = createClient(channels, (id) => {
+    const client = clientOver((id) => {
       sent.push(id);
       if (id === 'document.destinations') {
         reads += 1;
@@ -5620,7 +5619,7 @@ describe('protectDocumentCommand', () => {
     readonly sent: { id: string; params: unknown }[];
   } {
     const sent: { id: string; params: unknown }[] = [];
-    const client = createClient(channels, (id, params) => {
+    const client = clientOver((id, params) => {
       sent.push({ id, params });
       return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
     });
@@ -5744,7 +5743,7 @@ describe('protectDocumentCommand', () => {
         created: null,
         blend: 'normal',
       });
-      const client = createClient(channels, (id, params) => {
+      const client = clientOver((id, params) => {
         sent.push({ id, params });
         if (id === 'document.annotations') {
           return Promise.resolve(
@@ -5890,7 +5889,7 @@ describe('protectDocumentCommand', () => {
       // THE DECISION is that a refusal is never the route past the confirmation: the dialog is asked, its props carry
       // no count, and the dismissal dispatches nothing.
       const sent: string[] = [];
-      const client = createClient(channels, (id) => {
+      const client = clientOver((id) => {
         sent.push(id);
         return Promise.resolve(err({ code: 'document-not-open' }));
       });
@@ -5963,7 +5962,7 @@ describe('protectDocumentCommand', () => {
     } {
       const sent: { id: string; params: unknown }[] = [];
       const library: { id: string; params: unknown }[] = [];
-      const client = createClient(channels, (id, params) => {
+      const client = clientOver((id, params) => {
         // THE LANE'S READ the dialog asks whether it may certify (ADR-0291, question 3), from the same count, kept out
         // of `sent` for the same reason.
         if (id === 'document.certification') {
@@ -6538,7 +6537,7 @@ describe('protectDocumentCommand', () => {
       readonly sent: { id: string; params: unknown }[];
     } {
       const sent: { id: string; params: unknown }[] = [];
-      const client = createClient(channels, (id, params) => {
+      const client = clientOver((id, params) => {
         sent.push({ id, params });
         return Promise.resolve(ok(answer));
       });
@@ -6713,7 +6712,7 @@ describe('protectDocumentCommand', () => {
         ],
         unreadable: false,
       };
-      const client = createClient(channels, () => Promise.resolve(ok(answer)));
+      const client = clientOver(() => Promise.resolve(ok(answer)));
       const shown: { id: string; props: unknown }[] = [];
 
       await signaturesCommand({
@@ -6736,7 +6735,7 @@ describe('protectDocumentCommand', () => {
       // command that opened nothing would be one that appears not to have run,
       // and this is the case that stops the one above from being *show a
       // dialog only when there is something in it*.
-      const client = createClient(channels, () =>
+      const client = clientOver(() =>
         Promise.resolve(ok({ signatures: [], unreadable: false })),
       );
       const shown: { id: string; props: unknown }[] = [];
@@ -6775,7 +6774,7 @@ describe('protectDocumentCommand', () => {
       async function choosing(answer: unknown, outcome: { kind: string }): Promise<{ sent: { id: string; params: unknown }[]; toasts: string[] }> {
         const sent: { id: string; params: unknown }[] = [];
         const toasts: string[] = [];
-        const client = createClient(channels, (id, params) => {
+        const client = clientOver((id, params) => {
           sent.push({ id, params });
           if (id === 'document.signatures') return Promise.resolve(ok({ signatures: [SIGNATURE], unreadable: false }));
           return Promise.resolve(ok(outcome as never));
@@ -6830,7 +6829,7 @@ describe('protectDocumentCommand', () => {
       readonly sent: { id: string; params: unknown }[];
     } {
       const sent: { id: string; params: unknown }[] = [];
-      const client = createClient(channels, (id, params) => {
+      const client = clientOver((id, params) => {
         sent.push({ id, params });
         if (id === 'document.information') return Promise.resolve(read);
         if (id === 'document.fonts') return Promise.resolve(ok({ version: asDocVersion(1), fonts: [{ name: 'Arial', partial: true }], truncated: false }));
@@ -7085,7 +7084,7 @@ describe('protectDocumentCommand', () => {
     it('CONTROL: a REFUSED flatten says its problem, never that the form was flattened', async () => {
       const said: unknown[] = [];
       const asked: string[] = [];
-      const client = createClient(channels, () => Promise.resolve(err({ code: 'document-busy' as const })));
+      const client = clientOver(() => Promise.resolve(err({ code: 'document-busy' as const })));
       await flattenFormCommand({
         client,
         toast: (_kind, message) => said.push(message),
@@ -7283,7 +7282,7 @@ describe('protectDocumentCommand', () => {
 describe('applyDocumentCommand stamps a creation command at the moment it is sent (ADR-0103)', () => {
   function sending(): { readonly client: ContractClient; readonly sent: unknown[] } {
     const sent: unknown[] = [];
-    const client = createClient(channels, (id, params) => {
+    const client = clientOver((id, params) => {
       // THE COMMANDS SENT, and nothing a command READS first: a stamp dialog reads the font list before it opens.
       if (id === 'app.fontFamilies') return Promise.resolve(ok(FONTS));
       sent.push((params as { command: unknown }).command);
@@ -7550,7 +7549,7 @@ describe('every file write confirms, and its Show in folder reveals the file the
     const said: Said[] = [];
     const asked: string[] = [];
     const queued = [...dialogAnswers];
-    const client = createClient(channels, (id, params) => {
+    const client = clientOver((id, params) => {
       sent.push({ id, params });
       if (id === 'file.reveal') return Promise.resolve(ok({ revealed: true }));
       const answer = answers[id];
@@ -7742,7 +7741,7 @@ describe('a change main answers certified for (ADR-0291)', () => {
   /** Main for a certified document: `certified` whatever is sent, and `editCopy` answering `copy`. */
   function certifiedMain(copy: unknown = { kind: 'cancelled' }): { client: ContractClient; sent: { id: string; params: unknown }[] } {
     const sent: { id: string; params: unknown }[] = [];
-    const client = createClient(channels, (id, params) => {
+    const client = clientOver((id, params) => {
       sent.push({ id, params });
       if (id === 'document.editCopy') return Promise.resolve(ok(copy as never));
       if (id !== 'document.execute') throw new Error(`this fixture has no answer for ${id}`);
@@ -7849,7 +7848,7 @@ describe('an edit main answers breaks-signatures for (ADR-0149)', () => {
     sent: { id: string; params: unknown }[];
   } {
     const sent: { id: string; params: unknown }[] = [];
-    const client = createClient(channels, (id, params) => {
+    const client = clientOver((id, params) => {
       sent.push({ id, params });
       if (id === 'document.editCopy') return Promise.resolve(ok(copy as never));
       if (id !== 'document.execute') throw new Error(`this fixture has no answer for ${id}`);
@@ -8054,7 +8053,7 @@ describe('an edit main answers breaks-signatures for (ADR-0149)', () => {
 
   it('CONTROL: an edit main applies at once is never asked about, and is sent exactly once', async () => {
     const sent: unknown[] = [];
-    const client = createClient(channels, (id, params) => {
+    const client = clientOver((id, params) => {
       sent.push({ id, params });
       return Promise.resolve(ok(APPLIED));
     });
@@ -8094,7 +8093,7 @@ describe('readBlockFaces', () => {
 
   it('names each run ONCE, maps every place to its run, and asks about a block in a form in that form', async () => {
     const asked: unknown[] = [];
-    const client = createClient(channels, (_id, params) => {
+    const client = clientOver((_id, params) => {
       asked.push(params);
       return Promise.resolve(ok({ version: asDocVersion(4), fonts: [font(false)], runs: [0, null, 0] }));
     });
@@ -8109,7 +8108,7 @@ describe('readBlockFaces', () => {
 
   it('asks ONCE per block and read, however often the block is opened, and again for a new read (ADR-0274)', async () => {
     let asks = 0;
-    const client = createClient(channels, () => {
+    const client = clientOver(() => {
       asks += 1;
       return Promise.resolve(ok({ version: asDocVersion(4), fonts: [font(false)], runs: [0] }));
     });
@@ -8124,7 +8123,7 @@ describe('readBlockFaces', () => {
 
   it('a block past one read asks in reads of MAX_BLOCK_FACE_RUNS, and the second read’s places follow the first’s fonts', async () => {
     const asked: number[][] = [];
-    const client = createClient(channels, (_id, params) => {
+    const client = clientOver((_id, params) => {
       const { indices } = params as { indices: number[] };
       asked.push(indices);
       return Promise.resolve(ok({ version: asDocVersion(4), fonts: [font(asked.length === 1)], runs: indices.map(() => 0) }));
@@ -8155,7 +8154,7 @@ describe('commands that need the page count', () => {
     const asked: string[] = [];
     const command = insertBlankPageCommand({
       // NOTHING IS SENT: the dialog is dismissed, so a client that refuses every call is the honest one.
-      client: createClient(channels, () => Promise.reject(new Error('nothing is sent when the dialog is dismissed'))),
+      client: clientOver(() => Promise.reject(new Error('nothing is sent when the dialog is dismissed'))),
       ask: (id) => {
         asked.push(id);
         return Promise.resolve(undefined);

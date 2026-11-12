@@ -1,4 +1,4 @@
-import { type ContractClient, channels, createClient, type UpdateStatus } from '@monstera/contract';
+import { type ContractClient, type UpdateStatus, clientOver } from '@monstera/contract';
 import { asDocId, asDocVersion, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -38,7 +38,7 @@ const EVERY: readonly UpdateStatus[] = [
 /** A client that records every call and answers each with `answer(id)`. */
 function recording(answer: (id: string) => unknown = () => ({ opened: true })): { client: ContractClient; sent: unknown[] } {
   const sent: unknown[] = [];
-  const client = createClient(channels, (id, params) => {
+  const client = clientOver((id, params) => {
     sent.push({ id, params });
     return Promise.resolve(ok(answer(id)));
   });

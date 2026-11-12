@@ -1,4 +1,4 @@
-import { channels, createClient } from '@monstera/contract';
+import { clientOver } from '@monstera/contract';
 import { type DocId, asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -32,7 +32,7 @@ function recorded(newer: 'first' | 'second' | 'neither' | 'refused' = 'neither')
 } {
   const shown: (readonly [DocId, DocId])[] = [];
   const asked: unknown[] = [];
-  const client = createClient(channels, (id, params) => {
+  const client = clientOver((id, params) => {
     if (id !== 'document.newerOf') throw new Error(`this case does not answer ${id}`);
     asked.push(params);
     return Promise.resolve(newer === 'refused' ? err({ code: 'document-not-open' as const }) : ok({ newer }));

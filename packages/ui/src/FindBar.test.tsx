@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
-import { type ContractClient, MAX_QUERY_LENGTH, NO_FORMS_LEFT, blocksOfEdit, channels, createClient } from '@monstera/contract';
+import { type ContractClient, MAX_QUERY_LENGTH, NO_FORMS_LEFT, blocksOfEdit, clientOver } from '@monstera/contract';
 import { type DocVersion, asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { act, fireEvent, render } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
@@ -45,13 +45,13 @@ const MATCHED = [0, 2];
 /**
  * A client whose per-page answer depends on the page asked for.
  *
- * Built through `createClient(channels, …)`, so every answer invented here
+ * Built through `clientOver(…)`, so every answer invented here
  * crosses the real schemas: a shape the channel cannot carry fails in this file
  * rather than in the product.
  */
 function clientAnswering(readFrom: (page: number) => DocVersion = () => V1): { client: ContractClient; asked: number[] } {
   const asked: number[] = [];
-  const client = createClient(channels, (id, params) => {
+  const client = clientOver((id, params) => {
     if (id !== 'document.searchPage') throw new Error(`unexpected channel ${id}`);
     const page = (params as { page: number }).page;
     asked.push(page);
@@ -336,7 +336,7 @@ describe('FindBar replace-all', () => {
     const painted: PaintSpy = vi.fn();
     // EVERY PAGE holds one block, read at the version the last write produced (ADR-0267: the block writer, page by page).
     let version = 1;
-    const client = createClient(channels, (id, params) => {
+    const client = clientOver((id, params) => {
       sent.push({ id, params });
       if (id === 'document.searchPage') {
         return Promise.resolve(
@@ -724,7 +724,7 @@ describe('Find answers and the version on screen', () => {
     // EACH PAGE ANSWERS WHEN THE CASE SAYS, so the version can move between two of them.
     const asked: number[] = [];
     const answers: (() => void)[] = [];
-    const client = createClient(channels, (id, params) => {
+    const client = clientOver((id, params) => {
       if (id !== 'document.searchPage') throw new Error(`unexpected channel ${id}`);
       const page = (params as { page: number }).page;
       asked.push(page);

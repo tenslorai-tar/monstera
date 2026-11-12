@@ -5,8 +5,7 @@ import {
   AI_SETUP_AT_START_SETTING_ID,
   type ContractClient,
   NO_FORMS_LEFT,
-  channels,
-  createClient,
+  clientOver,
 } from '@monstera/contract';
 import { type DocId, asDocId, asDocVersion, asFileHandle, err, messageKey, ok } from '@monstera/shared';
 import { act, cleanup, fireEvent, render as renderBare, screen, within } from '@testing-library/react';
@@ -255,7 +254,7 @@ function recordingClient(answer: unknown): {
   readonly calls: string[];
 } {
   const calls: string[] = [];
-  const client = createClient(channels, (id) => {
+  const client = clientOver((id) => {
     calls.push(id);
     return Promise.resolve(ok(OTHER_ANSWERS[id] ?? answer));
   });
@@ -339,7 +338,7 @@ function answeringClient(answers: Readonly<Record<string, unknown>>): {
   readonly sent: Sent[];
 } {
   const sent: Sent[] = [];
-  const client = createClient(channels, (id, params) => {
+  const client = clientOver((id, params) => {
     sent.push({ id, params });
     const answer = answers[id];
     if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
@@ -805,7 +804,7 @@ describe('App', () => {
   it('the rating prompt is MOUNTED, and drawn only when main says one is due', async () => {
     // What each answer sends is `ReviewPrompt.test.tsx`'; this is that the shell mounts it at all, against
     // the not-due answer every other case here gets.
-    const client = createClient(channels, (id) =>
+    const client = clientOver((id) =>
       Promise.resolve(ok(id === 'app.reviewPrompt' ? { due: true } : (OTHER_ANSWERS[id] ?? { kind: 'cancelled' }))),
     );
     render(<App client={client} settings={freshSettings()} />);
@@ -823,7 +822,7 @@ describe('App', () => {
     const pending = new Promise((settle) => {
       answer = settle;
     });
-    const client = createClient(channels, (id) => {
+    const client = clientOver((id) => {
       if (id === 'cloud.open') return pending.then((value) => ok(value));
       if (id === 'cloud.status') return Promise.resolve(ok({ providers: [{ provider: 'onedrive', state: 'signed-in' }] }));
       // A BUILD THAT REACHES A PROVIDER: without it the cloud commands are hidden (ADR-0091, corrected 2026-10-14).
@@ -1172,7 +1171,7 @@ describe('App', () => {
       ['Tenslor Inc. (opens tenslor.com in your browser)', 'publisher'],
     ] as const) {
       const sent: Sent[] = [];
-      const client = createClient(channels, (id, params) => {
+      const client = clientOver((id, params) => {
         sent.push({ id, params });
         if (id === 'app.info') return Promise.resolve(ok({ version: '1.2.3', installChannel: 'store', userName: 'A. Tester', cloudProviders: ['onedrive', 'google-drive'], mediaFoundation: true, regionalLocale: 'en-GB', physicalMemory: 0 }));
         if (id === 'app.openWebPage') return Promise.resolve(ok({ opened: true }));
@@ -1202,7 +1201,7 @@ describe('App', () => {
 
   it('the start screen’s "Tenslor Inc." opens the © holder’s site BY NAME, and only on a press (R5)', async () => {
     const sent: Sent[] = [];
-    const client = createClient(channels, (id, params) => {
+    const client = clientOver((id, params) => {
       sent.push({ id, params });
       if (id === 'app.openWebPage') return Promise.resolve(ok({ opened: true }));
       return Promise.resolve(ok(OTHER_ANSWERS[id] ?? { kind: 'cancelled' }));
@@ -1223,7 +1222,7 @@ describe('App', () => {
     /** A client whose update check found `status`, recording what the page sends. */
     const updating = (status: unknown): { client: ContractClient; sent: Sent[] } => {
       const sent: Sent[] = [];
-      const client = createClient(channels, (id, params) => {
+      const client = clientOver((id, params) => {
         sent.push({ id, params });
         if (id === 'app.updateStatus') return Promise.resolve(ok({ status }));
         if (id === 'app.info') return Promise.resolve(ok({ version: '1.3.0', installChannel: 'store', userName: 'A. Tester', cloudProviders: ['onedrive', 'google-drive'], mediaFoundation: true, regionalLocale: 'en-GB', physicalMemory: 0 }));
@@ -2149,7 +2148,7 @@ describe('App', () => {
       // immediately-resolving client the two-page walk finishes before any
       // click could land, and the case would assert about a completed search.
       const pending: (() => void)[] = [];
-      const client = createClient(channels, (id, _params) => {
+      const client = clientOver((id, _params) => {
         if (id === 'document.searchPage') {
           return new Promise((resolve) => {
             pending.push(() => {
@@ -2211,7 +2210,7 @@ describe('App', () => {
       // The one refusal on this channel that is about what the user typed. A
       // person types `(` on the way to `(a)`, and telling them the document is
       // unavailable is both wrong and unactionable.
-      const client = createClient(channels, (id, _params) => {
+      const client = clientOver((id, _params) => {
         if (id === 'document.searchPage') {
           return Promise.resolve(err({ code: 'search-pattern-invalid' }));
         }
@@ -2502,7 +2501,7 @@ describe('App', () => {
       // wrote. A fixed answer would make the second edit land on the version already saved, and
       // the dot could never come back for the save-back half of the case.
       let version = 1;
-      const client = createClient(channels, (id) => {
+      const client = clientOver((id) => {
         if (id === 'document.execute') {
           version += 1;
           return Promise.resolve(ok({ version: asDocVersion(version), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
@@ -2561,7 +2560,7 @@ describe('App', () => {
         vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
         let version = 1;
         const sent: Sent[] = [];
-        const client = createClient(channels, (id, params) => {
+        const client = clientOver((id, params) => {
           sent.push({ id, params });
           if (id === 'document.execute') {
             version += 1;
@@ -2677,7 +2676,7 @@ describe('App', () => {
       // The sentence matters more than the dialog. Refusing is what STRANDS the
       // work rather than destroying it, so a message that only reported a
       // failure would invite the one action that loses it.
-      const client = createClient(channels, (id) => {
+      const client = clientOver((id) => {
         if (id === 'document.execute') {
           return Promise.resolve(err({ code: 'document-poisoned' as const }));
         }
@@ -2710,7 +2709,7 @@ describe('App', () => {
       // first, so the screen cannot separate once from twice — the CALLS are counted instead.
       vi.mocked(reportProblem).mockClear();
       const blockReads: string[] = [];
-      const client = createClient(channels, (id) => {
+      const client = clientOver((id) => {
         if (id === 'document.textBlocks') {
           blockReads.push(id);
           return Promise.resolve(err({ code: 'engine-unavailable' as const }));
@@ -2855,7 +2854,7 @@ describe('App', () => {
 
     it('the EDIT SECTION shown asks main to start the editing engine, once while it stays shown, and nothing before (ADR-0264 Decision 9)', async () => {
       const asked: string[] = [];
-      const client = createClient(channels, (id) => {
+      const client = clientOver((id) => {
         asked.push(id);
         // THE MODE'S READS refused as an installation with no editing engine refuses them: this case is about the start.
         if (id === 'document.textBlocks' || id === 'document.pageObjects') return Promise.resolve(err({ code: 'engine-unavailable' as const }));
@@ -2899,7 +2898,7 @@ describe('App', () => {
       // 1.3 to 2.3 s behind it on the owner's document 2 (2026-10-25). CONTROL, by construction: choosing the tool makes
       // the viewer ask nothing, so a view model asked after the press and before the blocks is the read's own.
       const calls: { readonly id: string; readonly params: unknown }[] = [];
-      const client = createClient(channels, (id, params) => {
+      const client = clientOver((id, params) => {
         calls.push({ id, params });
         if (id === 'document.textBlocks') return Promise.resolve(err({ code: 'document-poisoned' as const }));
         const answers: Readonly<Record<string, unknown>> = OPEN_DOCUMENT_ANSWERS;
@@ -2925,7 +2924,7 @@ describe('App', () => {
     it('EDIT TEXT: a POISONED document ends the mode, since every page of it refuses (VVVVVVV-20)', async () => {
       vi.mocked(reportProblem).mockClear();
       const blockReads: string[] = [];
-      const client = createClient(channels, (id) => {
+      const client = clientOver((id) => {
         if (id === 'document.textBlocks') {
           blockReads.push(id);
           return Promise.resolve(err({ code: 'document-poisoned' as const }));
@@ -2960,7 +2959,7 @@ describe('App', () => {
     it('EDIT TEXT: a page whose read FAILS for a reason of its own says so on that page and the mode STAYS on', async () => {
       vi.mocked(reportProblem).mockClear();
       const blockReads: string[] = [];
-      const client = createClient(channels, (id) => {
+      const client = clientOver((id) => {
         if (id === 'document.textBlocks') {
           blockReads.push(id);
           // UNDECLARED: every refusal the channel declares is the document's, so only this can be one page's.
@@ -3040,7 +3039,7 @@ describe('App', () => {
       // THE WIRED PAIR'S MISSING HALF: `editText/EditTextLayer.test.tsx` proves the button calls `onRecognise`, and the kernel proof
       // proves a recognised scan is edited; this is the line between them, which only the shell holds.
       const asked: string[] = [];
-      const client = createClient(channels, (id) => {
+      const client = clientOver((id) => {
         asked.push(id);
         if (id === 'document.textBlocks') {
           return Promise.resolve(
@@ -3666,7 +3665,7 @@ describe('App', () => {
 
     /** A client whose `document.open` answers one outcome. */
     function openAnswering(outcome: unknown): ContractClient {
-      return createClient(channels, (id) => {
+      return clientOver((id) => {
         if (id === 'document.openSeveral') return Promise.resolve(ok(severalOf(outcome)));
         const answer = OTHER_ANSWERS[id];
         if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
@@ -3696,7 +3695,7 @@ describe('App', () => {
 
     /** A client whose Open dialog returns these files, each with the outcome main opened it with. */
     function pickingSeveral(files: readonly { readonly name: string; readonly outcome: unknown }[]): ContractClient {
-      return createClient(channels, (id) => {
+      return clientOver((id) => {
         if (id === 'document.openSeveral') return Promise.resolve(ok({ opened: files }));
         const answer = (OPEN_DOCUMENT_ANSWERS as Readonly<Record<string, unknown>>)[id] ?? OTHER_ANSWERS[id];
         if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
@@ -3807,7 +3806,7 @@ describe('App', () => {
     });
 
     it('SAYS SO when main answered the open with a failure, where it used to say nothing', async () => {
-      const client = createClient(channels, (id) => {
+      const client = clientOver((id) => {
         if (id === 'document.openSeveral') return Promise.resolve(err({ code: 'internal' as const, incident: 'incident-1' }));
         const answer = OTHER_ANSWERS[id];
         if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
@@ -3824,7 +3823,7 @@ describe('App', () => {
     /** A client whose `document.open` answers each outcome in turn, and a document's answers otherwise. */
     function openAnsweringInTurn(outcomes: readonly unknown[]): ContractClient {
       let asked = 0;
-      return createClient(channels, (id) => {
+      return clientOver((id) => {
         if (id === 'document.openSeveral') return Promise.resolve(ok(severalOf(outcomes[asked++])));
         const answer = (OPEN_DOCUMENT_ANSWERS as Readonly<Record<string, unknown>>)[id] ?? OTHER_ANSWERS[id];
         if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
@@ -4181,7 +4180,7 @@ describe('App', () => {
       // MAIN'S LIST, which a clear empties as main's store does — so a view that reads it again after a clear sees what
       // main would answer, and a view that did not read again still shows the old cards.
       let held = recent;
-      const client = createClient(channels, (id, params) => {
+      const client = clientOver((id, params) => {
         sent.push({ id, params });
         const own = answeredBy[id];
         if (own !== undefined) return own();
@@ -4220,7 +4219,7 @@ describe('App', () => {
 
     it('a card shows the picture main kept, asked for by the list’s handle, and the placeholder otherwise', async () => {
       const sent: Sent[] = [];
-      const client = createClient(channels, (id, params) => {
+      const client = clientOver((id, params) => {
         sent.push({ id, params });
         if (id === 'document.recent') {
           return Promise.resolve(
@@ -4708,7 +4707,7 @@ describe('App', () => {
       // A handle from a list held across a reload resolves to nothing this run minted. The reader gets a sentence, and
       // the list is read again — main still keeps the file, and the fresh read carries a handle this run knows.
       const sent: Sent[] = [];
-      const client = createClient(channels, (id, params) => {
+      const client = clientOver((id, params) => {
         sent.push({ id, params });
         if (id === 'document.recent') {
           return Promise.resolve(
@@ -4822,7 +4821,7 @@ describe('the first-run AI setup (E5 onboarding)', () => {
    * either loaded (`hydrate`) or not yet — the two facts the offer waits for.
    */
   async function started(stored: readonly string[], hydrate: Readonly<Record<string, unknown>> | null): Promise<SettingsStore> {
-    const client = createClient(channels, (id) => {
+    const client = clientOver((id) => {
       if (id === 'settings.loadSecrets') return Promise.resolve(ok({ stored, available: true }));
       if (id === 'app.info') return Promise.resolve(ok({ version: '0.0.0', installChannel: 'development', userName: 'A. Tester', cloudProviders: ['onedrive', 'google-drive'], mediaFoundation: true, regionalLocale: 'en-GB', physicalMemory: 0 }));
       const answer = OTHER_ANSWERS[id];
@@ -4921,7 +4920,7 @@ describe('the menu bar, in the shell (ADR-0107)', () => {
   it('a READ-ONLY file is said as it opens, and Save a copy opens the copy in a tab BESIDE it (cloud-4 7b)', async () => {
     const COPY = asDocId('doc-annual-copy');
     const sent: Sent[] = [];
-    const client = createClient(channels, (id, params) => {
+    const client = clientOver((id, params) => {
       sent.push({ id, params });
       if (id === 'document.fileAccess') {
         return Promise.resolve(ok({ access: (params as { docId: DocId }).docId === DOC ? 'read-only' : 'writable' }));
@@ -5102,7 +5101,7 @@ describe('the command line’s documents (a file association, Open with)', () =>
     const LATER = asDocId('doc-2');
     let asks = 0;
     const sent: Sent[] = [];
-    const client = createClient(channels, (id, params) => {
+    const client = clientOver((id, params) => {
       sent.push({ id, params });
       if (id === 'document.openWaiting') {
         asks += 1;
@@ -5421,7 +5420,7 @@ describe('a window reloaded after its renderer ended', () => {
 
   it('CONTROL: any other ending is Something went wrong with its reference, and the document comes back at once', async () => {
     const answers: Record<string, unknown> = { ...OPEN_DOCUMENT_ANSWERS, 'document.held': HELD };
-    const client = createClient(channels, (id) => {
+    const client = clientOver((id) => {
       if (id === 'app.rendererEnded') return Promise.resolve(err({ code: 'internal', incident: 'i9' }));
       const answer = answers[id];
       if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);

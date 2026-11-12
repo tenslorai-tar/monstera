@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
-import { type ContractClient, channels, createClient } from '@monstera/contract';
+import { type ContractClient, clientOver } from '@monstera/contract';
 import { asDocId, asDocVersion, ok } from '@monstera/shared';
 import { act, fireEvent, render } from '@testing-library/react';
 import { type ReactElement, type ReactNode, useEffect } from 'react';
@@ -77,7 +77,7 @@ function clientAnswering(turns: Readonly<Record<number, number>>): {
   readonly asked: unknown[];
 } {
   const asked: unknown[] = [];
-  const client = createClient(channels, (id, params) => {
+  const client = clientOver((id, params) => {
     if (id !== 'document.viewModel') throw new Error(`unexpected channel ${id}`);
     asked.push(params);
     const pages = (params as { pages: readonly number[] }).pages;

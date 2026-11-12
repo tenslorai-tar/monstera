@@ -1,4 +1,4 @@
-import { channels, createClient } from '@monstera/contract';
+import { clientOver } from '@monstera/contract';
 import { ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -7,7 +7,7 @@ import { fontListOf, readFontListWhenIdle } from './fontList.js';
 /** A client that counts `app.fontFamilies` and answers one family. */
 function counting() {
   const asked: string[] = [];
-  const client = createClient(channels, (id) => {
+  const client = clientOver((id) => {
     asked.push(id);
     if (id === 'app.fontFamilies') {
       return Promise.resolve(ok({ listed: true, families: [{ name: 'Tinos', origin: 'bundled', embedding: 'subset', bold: true, italic: true }], more: 0 }));

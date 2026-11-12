@@ -1,4 +1,4 @@
-import { type ContractClient, channels, createClient } from '@monstera/contract';
+import { type ContractClient, clientOver } from '@monstera/contract';
 import { type CompareBox, type ComparePage, type DocId, asDocId, asDocVersion, comparePair, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -41,7 +41,7 @@ function clientFor(
 ): { client: ContractClient; reads: string[]; wordReads: string[] } {
   const reads: string[] = [];
   const wordReads: string[] = [];
-  const client = createClient(channels, (id, params) => {
+  const client = clientOver((id, params) => {
     const docId = (params as { docId: DocId }).docId;
     const pages = documents.get(docId) ?? [];
     if (id === 'document.pageWordBoxes') {

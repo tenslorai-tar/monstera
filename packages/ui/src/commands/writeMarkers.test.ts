@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { channels, createClient } from '@monstera/contract';
+import { clientOver } from '@monstera/contract';
 import { asDocId, asDocVersion, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -26,7 +26,7 @@ function marks(): { inFlight: string | undefined; done: number } {
 describe('the write markers', () => {
   it('count a write in flight from its send until it has applied, and the finished count only grows', async () => {
     let answer: (() => void) | undefined;
-    const client = createClient(channels, () =>
+    const client = clientOver(() =>
       new Promise((resolve) => {
         answer = () => {
           resolve(ok({ version: asDocVersion(2), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
@@ -51,7 +51,7 @@ describe('the write markers', () => {
   });
 
   it('count a refused write as finished too, so a walk waiting on it is not left waiting', async () => {
-    const client = createClient(channels, () => Promise.reject(new Error('the transport failed')));
+    const client = clientOver(() => Promise.reject(new Error('the transport failed')));
     const before = marks().done;
     await applyDocumentCommand(
       { client, ask: () => Promise.resolve(undefined), onApplied: () => undefined, signatures, stamp: () => ({ author: '', created: '2026-10-15T00:00:00.000Z' }) },

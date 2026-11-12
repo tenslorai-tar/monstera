@@ -1,4 +1,4 @@
-import { type ContractClient, channels, createClient } from '@monstera/contract';
+import { type ContractClient, clientOver } from '@monstera/contract';
 import { ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -32,7 +32,7 @@ function client(check: { problem?: 'unauthorised' | 'unreachable'; checked?: boo
   readonly sent: Sent[];
 } {
   const sent: Sent[] = [];
-  const built = createClient(channels, (id, params) => {
+  const built = clientOver((id, params) => {
     sent.push({ id, params });
     if (id === 'settings.loadSecrets') return Promise.resolve(ok({ stored: [], available: true }));
     if (id === 'app.openWebPage') return Promise.resolve(ok({ opened: true }));

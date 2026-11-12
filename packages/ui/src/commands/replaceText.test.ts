@@ -1,4 +1,4 @@
-import { NO_FORMS_LEFT, blocksOfEdit, channels, createClient } from '@monstera/contract';
+import { NO_FORMS_LEFT, blocksOfEdit, clientOver } from '@monstera/contract';
 import { type TextFrame, asDocId, asDocVersion, fromTextFrame, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -35,7 +35,7 @@ const TURNED_BLOCK = block(1, 'cat', { x0: 100, y0: -305, x1: 118, y1: -295 }, T
 function harness(): { readonly deps: DocumentCommandDeps; readonly sent: Record<string, unknown>[] } {
   const sent: Record<string, unknown>[] = [];
   let version = 1;
-  const client = createClient(channels, (id, raw) => {
+  const client = clientOver((id, raw) => {
     const params = raw as Record<string, unknown>;
     switch (id) {
       case 'document.textBlocks':

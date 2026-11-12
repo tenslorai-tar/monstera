@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
-import { type ContractClient, channels, createClient } from '@monstera/contract';
+import { type ContractClient, clientOver } from '@monstera/contract';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
@@ -34,7 +34,7 @@ function client(
   const sent: { id: string; params: unknown }[] = [];
   return {
     sent,
-    client: createClient(channels, (id, params) => {
+    client: clientOver((id, params) => {
       sent.push({ id, params });
       if (id === 'crashReport.pending') return Promise.resolve({ ok: true, value: { report } });
       if (id === 'crashReport.share') return Promise.resolve({ ok: true, value: { outcome } });

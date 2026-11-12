@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { channels, createClient } from '@monstera/contract';
+import { clientOver } from '@monstera/contract';
 import { type DocVersion, asDocId, asDocVersion } from '@monstera/shared';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -76,7 +76,7 @@ async function finishOpen(version: number): Promise<StubView> {
   return view;
 }
 
-const client = createClient(channels, () => Promise.reject(new Error('no channel is called by these cases')));
+const client = clientOver(() => Promise.reject(new Error('no channel is called by these cases')));
 const DOC = asDocId('doc-swapped');
 const moved = (): void => undefined;
 const noPassword = (): Promise<undefined> => Promise.resolve(undefined);

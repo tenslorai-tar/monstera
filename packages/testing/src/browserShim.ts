@@ -42,7 +42,7 @@ import {
   type NativeComponentId,
   SECRET_SETTING_IDS,
   channels,
-  createClient,
+  clientOver,
   isFollowable,
   shownSchemeOf,
   wrapHandlers,
@@ -3109,7 +3109,8 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       ? String(params.docId)
       : undefined;
 
-  const client = createClient(channels, async (id, params) => {
+  // THROUGH `clientOver`, as the application's client is (ADR-0294), so a case sees what the window does.
+  const client = clientOver(async (id, params) => {
     const answer = async () => {
       // A CHANNEL MAIN TAKES TIME OVER, where a case says so: the first-open case holds the view model back the way the
       // engine host does on a large scan, so the frames between the click and the first page are long enough to read.
