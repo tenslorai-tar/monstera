@@ -113,6 +113,20 @@ person the signed version back in either case.
    unsigned document?
 4. The proposal for the refused appended save above.
 
+## Addition, 2026-11-12 — Decision 6's toast cannot carry it, found while building
+
+Decision 6 said the notice at open is a toast, and Decision 5 that a notice on the copy's tab says it is not certified.
+A toast cannot do either. `ShowToast` takes a message key and no values, so it cannot name the certifier; it leaves
+after four seconds (`TOAST_LIFETIME`); and `toasts.ts` says a toast reports an action the person just took, which an
+open is not. So neither notice is built, and the surface is the owner's to choose:
+
+1. a window at open, as a read-only file already has (`sayWhenUnwritable`), naming the certifier and what may change;
+2. a line that stays while the document is open, which is a new surface;
+3. a toast without the name, with a *Check signatures* action that names it.
+
+Until then the certified window says, at the moment the copy is chosen, that the copy is a new document and no longer
+carries the certification. Decisions 1 to 5 are built; Decision 7 is next.
+
 ## Amendment only
 
 Nothing is built on this in the commit that records it. `signedVersion.test.ts`, the measurement above, lands with it
