@@ -184,3 +184,25 @@ hold a signature*, beside `signatureFacts`, which the lane already reads for eve
 the document's lane instead, from that one read and beside the certification check, before the bus: `signDocument` with
 `certify` on a document holding a signature answers `already-signed`, one of `SIGN_REFUSALS`, so the channel and the
 sign problem dialog take it from the one list.
+
+## Addition, 2026-11-12 — question 4's cause, found, and it was ours
+
+**Which documents made `rebasedOn` refuse: a signed document protected by a user password whose page tree sits in an
+encrypted object stream.** Measured with qpdf (`--encrypt u o 256 -- --object-streams=generate`, the shape many
+producers write) and with a file built byte by byte to the same shape (`lockedPageTreeFixture.ts`, RC4 revision 2):
+every appended save was refused, three in three, as *"its own chain reads 0 pages"*.
+
+**The file was not damaged, and MuPDF's append was not wrong.** The check read the file it had just written without the
+password, on the stated ground that *a page tree's dictionaries are not encrypted*. Inside an object stream they are,
+and `mupdfOpen.ts` already said so: two opinions about one fact (B3a). With the password the same file reads every page,
+and its appended revision is whole. Fixed at the root: `pagesWithoutRepair` in `mupdfOpen.ts` is the one reading (the
+password's one attempt, none of the rebuild), and `rebasedOn` reads through it with the session's password. Shapes that
+were measured and never refused: a signed file with trailing bytes after its end, object streams without a password,
+and protection without object streams.
+
+**The refused save is built as proposed, for what is left**: no known file reaches it now. The save answers
+`append-refused`, and the window offers *Save a copy…* (written whole; a certified document's copy uncertified, for
+Decision 5's reason), *Save anyway* (written whole, breaking the signatures, on an uncertified document only) and
+Cancel. A copy made for a change that breaks signatures is written whole from the start, so it cannot be refused.
+Not built: an export or a print of a signed document still appends when it serialises, so a refusal there would read as
+the failure it did before; none is known to reach it.
