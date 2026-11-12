@@ -892,6 +892,34 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-11-13 — The first letter is not held on this branch, and click until editable is slower than it was
+
+Items 28/64. `editOpenCost.mjs --file 2 --rounds 7`, the release's commit `5dead873` (its own worktree) and this branch
+at `80b65fe4`, run back to back by one script, the release first. Free memory at the start of each half: 4,579 and
+4,495 MiB, and 4,667 MiB at the end; neither half's log names memory-low. Every control passed in both halves: the
+planted 150 ms task read 150 ms; a press behind a planted task was stamped 560 and 549 ms before its handler; and the
+first-letter clock's control, run here for the first time (a stand-in surface that shows a typed letter after a set
+delay): a letter held 1,200 ms read 1,214 and 1,212 ms, one shown at once 28 and 74 ms. The release half lost round 5 to
+Playwright's own *"Resulting promise was garbage collected"*, so it has six rounds. Reports:
+`_review/walks/edit-open-cost/2026-11-12T23-24-05` (release) and `2026-11-12T23-26-58` (this branch).
+
+| reading | release `5dead873`, 6 rounds | this branch `80b65fe4`, 7 rounds |
+|---|---|---|
+| the first typed letter, key to shown | 284 ms (26–334), held in 0 of 6 | 55 ms (20–59), held in 0 of 7 |
+| first press until the box shows selected | 706 ms (698–3,568) | 430 ms (368–2,337) |
+| click until editable, ADR-0271's 300 ms row | 19 ms (15–152) | **143 ms (49–281)** |
+| the renderer's work opening the block | 1,016 ms (949–6,878) | 911 ms (859–4,460) |
+| first read of the blocks | 1,733 ms (1,455–4,669) | 1,961 ms (1,462–3,205) |
+
+**The 1.5 s first-letter hold was seen in none of 13 rounds**, now on a clock proven to see one. **Click until editable
+is still inside its 300 ms row and is no longer about 20 ms**: 17 ms (16–19) on this branch in the pair of 2026-11-12
+after the font-name fix, 143 ms now, while the release in this same pair reads 19 ms. Something between that pair and
+`80b65fe4` added about 125 ms between the press that opens the words and the editor taking them. **Open, not yet
+investigated:** the range holds the three merged cloud branches and the closed-document rule, and a profile of that
+press on both builds is the next reading.
+
+---
+
 ## 2026-11-12 — Stage audit of `75a59036..658e14df` — findings HHHHHHHHH-1 to HHHHHHHHH-21
 
 Owed before ADR-0294's build could be committed: that commit, 88 files, would have carried the unaudited range to

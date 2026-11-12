@@ -136,6 +136,42 @@ await recordLongTasks();
   process.stdout.write(`control: a press that waited behind a planted task was stamped ${String(Math.round(lag))} ms before its handler ran\n`);
 }
 
+/**
+ * THE FIRST-LETTER CLOCK'S CONTROL: a stand-in surface on the start screen that shows a typed letter `heldMs` after its
+ * key, read by the same clock the rounds use. A letter held 1,200 ms must read as held, and one shown at once must not,
+ * so a clock blind to a hold (the release read 0 held in 7 with nothing to say it could see one) and a clock that always
+ * reads one are both refused before anything is measured.
+ *
+ * @param {number} heldMs
+ */
+async function letterThroughStandIn(heldMs) {
+  await page.evaluate((delay) => {
+    const dom = /** @type {{ createElement: (tag: string) => any, body: { append: (node: unknown) => void } }} */ (Reflect.get(globalThis, 'document'));
+    const later = /** @type {(run: () => void, ms: number) => void} */ (Reflect.get(globalThis, 'setTimeout'));
+    const surface = dom.createElement('div');
+    surface.setAttribute('data-kit-surface', '');
+    surface.setAttribute('data-stand-in', '');
+    surface.tabIndex = 0;
+    surface.textContent = 'words';
+    surface.addEventListener('keydown', (/** @type {{ key: string, preventDefault: () => void }} */ event) => {
+      event.preventDefault();
+      later(() => {
+        surface.textContent = `${String(surface.textContent)}${event.key}`;
+      }, delay);
+    });
+    dom.body.append(surface);
+    surface.focus();
+  }, heldMs);
+  await armFirstLetterClock();
+  await page.keyboard.type('x');
+  const read = await firstLetterReading();
+  await page.evaluate(() => {
+    const dom = /** @type {{ querySelector: (selector: string) => { remove: () => void } | null }} */ (Reflect.get(globalThis, 'document'));
+    dom.querySelector('[data-stand-in]')?.remove();
+  });
+  return read;
+}
+
 /** @type {{ firstRead: number, selected: number, editable: number, firstLetter: number, wall: number, total: number, worst: number, count: number }[]} */
 const readings = [];
 
@@ -251,6 +287,15 @@ const firstLetterReading = () => page.evaluate(() => /** @type {Promise<number |
 
 /** A first letter that took this long was held: well past a frame, and below the hold's own 1,500 ms bound. */
 const HELD_MS = 1000;
+
+{
+  const held = await letterThroughStandIn(1200);
+  const shown = await letterThroughStandIn(0);
+  if (held === null || held < HELD_MS || shown === null || shown >= 200) {
+    throw new Error(`the first-letter clock read a letter held 1,200 ms as ${String(held)} ms and one shown at once as ${String(shown)} ms, so it cannot tell a held letter from one that is not`);
+  }
+  process.stdout.write(`control: a letter held 1,200 ms read ${String(Math.round(held))} ms, one shown at once ${String(Math.round(shown))} ms\n`);
+}
 
 for (let round = 1; round <= rounds; round += 1) {
   await step(`round ${String(round)}`, async () => {
