@@ -1,29 +1,45 @@
 // @ts-check
 /**
  * What the 100 ms of Delete's rename on a 400 MiB history file is (ADR-0279, the wiring's item 9, and the owner's
- * question of 2026-11-12): the rename itself, or Windows freeing the file it replaces, or a scanner reading that file.
+ * question of 2026-11-12), measured on DELETE'S OWN SHAPE: a new file just written, renamed over an old file that has
+ * sat, through the store's own `replaceWithRetry`.
  *
- * Four timings per round, in one process and one folder, the order rotated each round so no variant is always first:
- * - INTO A FREE NAME: a new 400 MiB file renamed to a name nothing holds;
- * - OVER THE OLD FILE: a new 400 MiB file renamed over an old 400 MiB one, as `replaceWithRetry` does;
- * - ASIDE THEN IN: the old file renamed to a side name and the new one renamed in, both synchronous with nothing
- *   between, timed together, and then the side file's removal timed alone (what would run off the main thread);
- * - OVER A SMALL FILE: a new 400 MiB file renamed over a 1 KiB one, which separates replacing a file from replacing a
- *   large one;
- * - INTO A FREE NAME, SETTLED: the first, once the new file has sat for `--settle` ms (5,000), which separates the
- *   rename from whatever follows a large file just written.
+ * The first version of this instrument (658e14df) wrote the old file just before replacing it and timed a bare
+ * `renameSync`, so it measured neither the file Delete replaces nor the call Delete makes (HHHHHHHHH-16). Here:
+ * - every rename goes through the built `replaceWithRetry`, with a `rename` that counts its attempts and the codes of the
+ *   ones that failed, so a retry's 40 ms pauses are seen rather than folded into a time;
+ * - the OLD file is written and then left for `--settle` ms (5,000) before the round's new file is written, as the file
+ *   Delete replaces has sat since the last save;
+ * - the NEW file is renamed the moment it is written, as Delete's is.
+ *
+ * Four timings per round, the order rotated each round so no variant is always first:
+ * - NEW OVER SETTLED OLD: Delete's own shape;
+ * - NEW INTO A FREE NAME: the same new file with nothing to replace, so the difference is the old file's share;
+ * - SETTLED NEW OVER SETTLED OLD: both have sat, so the difference from the first is the new file's share;
+ * - SETTLED NEW INTO A FREE NAME.
  * The files are random bytes, as sealed records are. Free memory is printed at the start and after each round.
  *
- * Its control: a rename of a 1 KiB file into a free name must read under 20 ms, or the clock or the disk is not in a
- * state where a 100 ms difference means anything.
+ * Its controls, before anything is read:
+ * - RESOLUTION: the clock and `timed` must read a 1 KiB rename under 20 ms and the same rename with a planted 100 ms
+ *   inside it between 100 and 130 ms, so a 100 ms difference is one this instrument can see;
+ * - the attempt counter must count one attempt for that 1 KiB rename, so a count of one below means one attempt.
  *
- * Usage: node scripts/research/renameOverCost.mjs [--rounds 5] [--mib 400]
+ * Usage: node scripts/research/renameOverCost.mjs [--rounds 5] [--mib 400] [--settle 5000]
  */
 
 import { randomBytes } from 'node:crypto';
-import { closeSync, mkdtempSync, openSync, renameSync, rmSync, writeSync } from 'node:fs';
+import { closeSync, existsSync, mkdtempSync, openSync, renameSync, rmSync, writeSync } from 'node:fs';
 import { freemem, tmpdir, totalmem } from 'node:os';
 import { join } from 'node:path';
+
+import { HISTORY_DELETE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
+import { repoRoot } from '../lib/gitScope.mjs';
+
+// THE BUILT RETRY IS THE SUBJECT. `settingsFile.js` is built by the same compile as `historyStore.js`, whose edge this
+// checks, so a stale store is the sign of a stale retry too.
+refuseStaleBuild(repoRoot(), HISTORY_DELETE, 2);
+// LITERAL SPECIFIER, so `proof:electronimports` can read what this loads.
+const { replaceWithRetry } = await import('../../apps/desktop/dist/settingsFile.js');
 
 const option = (/** @type {string} */ name, /** @type {number} */ fallback) => {
   const at = process.argv.indexOf(name);
@@ -31,9 +47,12 @@ const option = (/** @type {string} */ name, /** @type {number} */ fallback) => {
 };
 const ROUNDS = option('--rounds', 5);
 const MIB = option('--mib', 400);
+const SETTLE_MS = option('--settle', 5000);
 const mib = (/** @type {number} */ bytes) => `${(bytes / 1024 / 1024).toFixed(0)} MiB`;
+const BIG = MIB * 1024 * 1024;
 
 const folder = mkdtempSync(join(tmpdir(), 'monstera-rename-over-'));
+const at = (/** @type {string} */ name) => join(folder, name);
 const CHUNK = randomBytes(16 * 1024 * 1024);
 /** @param {string} path @param {number} bytes */
 function fill(path, bytes) {
@@ -44,77 +63,97 @@ function fill(path, bytes) {
     closeSync(fd);
   }
 }
-/** @param {() => void} run */
-function timed(run) {
+/** A synchronous wait: nothing else runs in this process meanwhile. */
+const sit = (/** @type {number} */ ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
+/**
+ * `replaceWithRetry(from, to)` timed, with every attempt its `rename` made counted and each failure's code kept.
+ *
+ * @param {string} from @param {string} to @param {number} [planted] ms added inside the first attempt
+ */
+function replaced(from, to, planted = 0) {
+  /** @type {string[]} */
+  const failures = [];
+  let attempts = 0;
   const started = performance.now();
-  run();
-  return performance.now() - started;
+  replaceWithRetry(from, to, (/** @type {string} */ a, /** @type {string} */ b) => {
+    attempts += 1;
+    if (attempts === 1 && planted > 0) sit(planted);
+    try {
+      renameSync(a, b);
+    } catch (cause) {
+      failures.push(String(/** @type {NodeJS.ErrnoException} */ (cause).code));
+      throw cause;
+    }
+  });
+  return { ms: performance.now() - started, attempts, failures };
 }
-const at = (/** @type {string} */ name) => join(folder, name);
-const BIG = MIB * 1024 * 1024;
-/** How long a file sits between being written and being renamed, in the settled variant. */
-const SETTLE_MS = option('--settle', 5000);
 
-/** @type {Record<string, number[]>} */
-const readings = { 'into a free name': [], 'into a free name, settled': [], 'over the old file': [], 'aside then in': [], 'removing the aside file': [], 'over a small file': [] };
+/** @typedef {{ ms: number, attempts: number, failures: string[] }} Reading */
+/** @type {Record<string, Reading[]>} */
+const readings = {
+  'new over settled old': [],
+  'new into a free name': [],
+  'settled new over settled old': [],
+  'settled new into a free name': [],
+};
 
+/** Each variant: what is written and when, then the one timed replace. */
 const variants = {
-  'into a free name': () => {
+  'new over settled old': () => {
+    fill(at('old'), BIG);
+    sit(SETTLE_MS);
     fill(at('new'), BIG);
-    readings['into a free name']?.push(timed(() => renameSync(at('new'), at('free'))));
-    rmSync(at('free'), { force: true });
+    readings['new over settled old']?.push(replaced(at('new'), at('old')));
   },
-  'over the old file': () => {
+  'new into a free name': () => {
+    fill(at('new'), BIG);
+    readings['new into a free name']?.push(replaced(at('new'), at('free')));
+  },
+  'settled new over settled old': () => {
     fill(at('old'), BIG);
     fill(at('new'), BIG);
-    readings['over the old file']?.push(timed(() => renameSync(at('new'), at('old'))));
-    rmSync(at('old'), { force: true });
+    sit(SETTLE_MS);
+    readings['settled new over settled old']?.push(replaced(at('new'), at('old')));
   },
-  'aside then in': () => {
-    fill(at('old'), BIG);
+  'settled new into a free name': () => {
     fill(at('new'), BIG);
-    readings['aside then in']?.push(
-      timed(() => {
-        renameSync(at('old'), at('aside'));
-        renameSync(at('new'), at('old'));
-      }),
-    );
-    readings['removing the aside file']?.push(timed(() => rmSync(at('aside'), { force: true })));
-    rmSync(at('old'), { force: true });
+    sit(SETTLE_MS);
+    readings['settled new into a free name']?.push(replaced(at('new'), at('free')));
   },
-  // THE FRESHNESS QUESTION (measured 2026-11-12: a rename into a free name cost 214 to 435 ms, so the old file was not
-  // the cost): the same rename once the new file has sat for SETTLE_MS. Synchronous wait, so nothing else runs.
-  'into a free name, settled': () => {
-    fill(at('new'), BIG);
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, SETTLE_MS);
-    readings['into a free name, settled']?.push(timed(() => renameSync(at('new'), at('free'))));
-    rmSync(at('free'), { force: true });
-  },
-  'over a small file': () => {
-    fill(at('old'), 1024);
-    fill(at('new'), BIG);
-    readings['over a small file']?.push(timed(() => renameSync(at('new'), at('old'))));
-    rmSync(at('old'), { force: true });
-  },
+};
+const clear = () => {
+  for (const name of ['old', 'new', 'free']) if (existsSync(at(name))) rmSync(at(name));
 };
 
 try {
   process.stdout.write(`free memory at the start: ${mib(freemem())} of ${mib(totalmem())}\n`);
+
+  // RESOLUTION: a plain 1 KiB replace, and the same with a planted 100 ms, must read apart by about that.
   fill(at('tiny'), 1024);
-  const tiny = timed(() => renameSync(at('tiny'), at('tiny-moved')));
-  if (tiny >= 20) throw new Error(`a 1 KiB rename into a free name took ${tiny.toFixed(1)} ms, so a 100 ms difference cannot be read here`);
-  process.stdout.write(`control: a 1 KiB rename into a free name took ${tiny.toFixed(1)} ms\n`);
+  const plain = replaced(at('tiny'), at('tiny-moved'));
+  fill(at('tiny'), 1024);
+  const marked = replaced(at('tiny'), at('tiny-moved'), 100);
+  if (plain.ms >= 20 || marked.ms < 100 || marked.ms > 130) {
+    throw new Error(`resolution: a 1 KiB replace read ${plain.ms.toFixed(1)} ms and with a planted 100 ms ${marked.ms.toFixed(1)} ms, so a 100 ms difference cannot be read here`);
+  }
+  if (plain.attempts !== 1) throw new Error(`the attempt counter read ${String(plain.attempts)} attempts for one rename, so its counts mean nothing`);
+  process.stdout.write(`control: a 1 KiB replace ${plain.ms.toFixed(1)} ms, with a planted 100 ms ${marked.ms.toFixed(1)} ms, ${String(plain.attempts)} attempt\n`);
 
   const names = /** @type {(keyof typeof variants)[]} */ (Object.keys(variants));
   for (let round = 0; round < ROUNDS; round += 1) {
     const order = [...names.slice(round % names.length), ...names.slice(0, round % names.length)];
-    for (const name of order) variants[name]();
+    for (const name of order) {
+      variants[name]();
+      clear();
+    }
     process.stdout.write(`round ${String(round + 1)} (${order.join(' → ')}); free memory ${mib(freemem())}\n`);
   }
   for (const [name, values] of Object.entries(readings)) {
-    const sorted = [...values].sort((a, b) => a - b);
+    const sorted = values.map((value) => value.ms).sort((a, b) => a - b);
     const median = sorted[Math.floor(sorted.length / 2)] ?? Number.NaN;
-    process.stdout.write(`${name}: median ${median.toFixed(1)} ms (each: ${values.map((value) => value.toFixed(1)).join(', ')})\n`);
+    const each = values.map((value) => `${value.ms.toFixed(1)}${value.attempts > 1 ? ` (${String(value.attempts)} attempts: ${value.failures.join(', ')})` : ''}`);
+    process.stdout.write(`${name}: median ${median.toFixed(1)} ms (each: ${each.join(', ')})\n`);
   }
 } finally {
   rmSync(folder, { recursive: true, force: true });

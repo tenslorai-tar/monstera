@@ -384,3 +384,59 @@ No change was made; the route stays available, and it would need start-up to han
 **Unexplained, recorded and not chased (the owner, 2026-11-12):** the second worker Delete on 400 MiB, 12,460 ms with a
 433 ms gap, in a run that started with 4,430 MiB free; the probe's one `existsSync` of 231 ms, whose free memory was not
 recorded; and the two settled renames of 1,442 and 1,553 ms.
+
+## Correction, 2026-11-12 (later) — what the 100 ms is, measured on Delete's own shape
+
+The addition above measured the wrong rename, found in the stage audit of `75a59036..658e14df` (finding HHHHHHHHH-16).
+Its instrument wrote the OLD file a moment before replacing it, where Delete replaces a file that has sat since the last
+save; it timed a bare `renameSync`, where Delete calls `replaceWithRetry`, which pauses 40 ms after each transient
+failure, up to four times; and its control (a 1 KiB rename under 20 ms) showed the clock was quiet, not that it could
+read a 100 ms difference. So its *"the old file's own share is about 100 ms"*, and its *"the probe's 103 to 118 ms is
+the size of that share"*, were read from a file and a call that are not Delete's. The text above stands as what was
+believed then.
+
+**Measured again** with `scripts/research/renameOverCost.mjs` as rewritten: every rename through the built
+`replaceWithRetry`, with a `rename` that counts its attempts; the old file left 5,000 ms after it is written; the new
+file renamed the moment it is written, as Delete's is. Its resolution control: a 1 KiB replace read 2.2 ms, and the same
+with a planted 100 ms read 114.8 ms. Five rounds on 400 MiB files of random bytes, the order rotated; free memory
+3,118 MiB at the start and 3,172 to 3,419 MiB after each round.
+
+| the replace | median | each |
+|---|---|---|
+| a new file over a settled old file (Delete's shape) | 402 ms | 484, 600, 401, 402, 384 |
+| a new file into a free name | 331 ms | 331, 2, 329, 333, 335 |
+| a settled new file over a settled old file | 104 ms | 1,367, 104, 66, 90, 701 |
+| a settled new file into a free name | 2.4 ms | 330, 2.3, 2.4, 2.7, 1.8 |
+
+**No replace was retried**: every one of the twenty made one attempt, so the retry's pauses are none of the cost.
+**Replacing the old file costs about 70 to 100 ms** (402 against 331 with a new file just written, 104 against 2.4 with
+both settled), and that share is the only part the owner's route of renaming the old file aside first would take away.
+**A new file just written costs about 330 ms to rename wherever it goes**, and about 2 ms once it has sat. Delete's own
+rename read 103 to 118 ms in the probe, which is the settled-new-over-settled-old row and not Delete's shape; why
+Delete's freshly written file reads as settled there is not established. The owner's decision stands: no change is made.
+
+### The first write of a session, which the torn-record fix added (HHHHHHHHH-2, the owner's answer of 2026-11-12)
+
+Decision 1 above says *"a save appends; it reads nothing"*. Since `3cf64def` a write never lands behind a torn record,
+so the FIRST write a session makes to a file it did not leave at its present size walks that file's record heads to find
+where the last whole one ends, and cuts a torn tail. That first write may be the guard a PDF's open records, so it is on
+the open's path. Every later write to that file reads nothing. Read with `scripts/research/historyFirstWriteCost.mjs`,
+the built store on files made by its own `save`, each figure one synchronous call on `main`; its control, a planted
+100 ms read 102 to 112 ms. Three runs:
+
+| file | first write (the walk) | next write (reads nothing) | first write over a torn tail |
+|---|---|---|---|
+| 20 conversations, 40 MiB | 10.0; 9.8 and 8.0 settled; 24.4 and 8.6 settled ms | 3.5; 3.0 and 2.7; 3.5 and 3.1 ms | 229, 241, 238 ms |
+| 200 conversations, 400 MiB | 654; 20.2 and 20.3 settled; 36.9 and **952** settled ms | **539**; 2.7 and 2.8; 3.4 and **863** ms | 2,578, 2,283, 3,446 ms |
+
+Free memory at the start of the three runs: 3,110, 3,230 and 3,322 MiB; after the 400 MiB file, 2,154, 2,260 and
+2,264 MiB. The first run had no settled reading.
+
+**The walk costs about 10 to 40 ms on these files.** A torn tail, which only a crash or a full disk leaves, costs 2.3
+to 3.4 s once, on `main`, at the next session's first write to that file: every record is opened to find the last whole
+one. That is stated here, not decided; moving that pass off `main` is the owner's to weigh.
+
+**Unexplained, recorded and not chased:** twice in three runs an append to the 400 MiB file that READ NOTHING took
+539 and 863 ms, against about 3 ms otherwise, and the first write beside each of them read 654 and 952 ms. So that
+cost is the append's, not the walk's. A save to a large file makes the same append, so it is not the torn-record fix's
+own cost; it was not measured on the code before that fix.
