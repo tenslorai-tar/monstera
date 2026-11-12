@@ -32,6 +32,8 @@ function Wrapped({ children }: { children: ReactNode }): ReactElement {
 function opened(
   placed: boolean,
   kept: readonly KeptSignature[] = [],
+  /** Whether the document already holds a signature (ADR-0291, question 3). */
+  signed = false,
 ): { readonly answers: SignDocumentAnswer[]; readonly library: unknown[] } {
   const answers: SignDocumentAnswer[] = [];
   // A CHANGE TO THE LIBRARY is an answer too, kept apart so the signing cases read only signing answers.
@@ -41,6 +43,7 @@ function opened(
       <SignDocumentBody
         placed={placed}
         kept={kept}
+        signed={signed}
         resolve={(answer) => {
           if ('library' in answer) library.push(answer);
           else answers.push(answer);
@@ -93,6 +96,24 @@ describe('SignDocumentBody', () => {
     fireEvent.click(SIGN());
 
     expect(answers).toStrictEqual([{ passphrase: '' }]);
+  });
+
+  it('ALREADY SIGNED: no certification is offered, one line says why, and the answer certifies nothing (ADR-0291)', () => {
+    const { answers } = opened(false, [], true);
+    expect(document.querySelector('[data-sign-certify]')).toBeNull();
+    expect(document.querySelector('[data-sign-certify-signed]')?.textContent).toBe(
+      'I signed this. The document is already signed, and only its first signature can certify it.',
+    );
+    fireEvent.click(SIGN());
+    expect(answers).toStrictEqual([{ passphrase: '' }]);
+  });
+
+  it('CONTROL: an unsigned document offers it, and a choice of it is answered', () => {
+    const { answers } = opened(false);
+    expect(document.querySelector('[data-sign-certify-signed]')).toBeNull();
+    choose('[data-sign-certify]', 'no-changes');
+    fireEvent.click(SIGN());
+    expect(answers).toStrictEqual([{ passphrase: '', certify: 'no-changes' }]);
   });
 
   it('a chosen timestamp authority is answered by its id, beside the sentence saying what is sent', () => {

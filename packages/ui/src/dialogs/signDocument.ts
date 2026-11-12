@@ -118,9 +118,10 @@ export const SIGN_DOCUMENT_DIALOG = declareDialog({
    * `placed` is whether a rectangle was drawn first. The ribbon's *Sign
    * document* opens this without one, for an invisible signature; the place
    * signature tool opens it with one, and only then does the body ask how the
-   * signature looks. `kept` is the signature library, offered as a look.
+   * signature looks. `kept` is the signature library, offered as a look. `signed` is whether the document already
+   * holds a signature, where *This signature says* offers no certification and says why (ADR-0291, question 3).
    */
-  props: z.object({ placed: z.boolean(), kept: z.array(KEPT_SIGNATURE).readonly() }).strict(),
+  props: z.object({ placed: z.boolean(), kept: z.array(KEPT_SIGNATURE).readonly(), signed: z.boolean() }).strict(),
   result: SIGN_DOCUMENT_ANSWERS,
   component: lazy(() => import('./SignDocumentBody.js')),
 });

@@ -630,10 +630,12 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     },
   ],
   'dialog.sign-document': [
-    { state: 'opened', props: { placed: false, kept: [] } },
+    { state: 'opened', props: { placed: false, kept: [], signed: false } },
+    // ALREADY SIGNED (ADR-0291, question 3): no certification is offered, and one line says why.
+    { state: 'signed', props: { placed: false, kept: [], signed: true } },
     {
       state: 'filled',
-      props: { placed: false, kept: [] },
+      props: { placed: false, kept: [], signed: false },
       steps: [
         type('Certificate password (leave empty if it has none)', 'example-passphrase'),
         type('Signed by (optional)', 'Alex Example'),
@@ -642,11 +644,11 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
       ],
     },
     // A visible signature was drawn on the page, so the dialog also asks how it looks.
-    { state: 'placed', props: { placed: true, kept: [] } },
-    { state: 'kept', props: { placed: true, kept: [KEPT_TYPED, KEPT_DRAWN] } },
+    { state: 'placed', props: { placed: true, kept: [], signed: false } },
+    { state: 'kept', props: { placed: true, kept: [KEPT_TYPED, KEPT_DRAWN], signed: false } },
     {
       state: 'refused',
-      props: { placed: false, kept: [] },
+      props: { placed: false, kept: [], signed: false },
       steps: [type('Reason (optional)', prose(MAX_SIGNATURE_FIELD))],
     },
   ],

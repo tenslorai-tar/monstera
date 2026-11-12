@@ -5900,6 +5900,11 @@ describe('protectDocumentCommand', () => {
       const sent: { id: string; params: unknown }[] = [];
       const library: { id: string; params: unknown }[] = [];
       const client = createClient(channels, (id, params) => {
+        // THE LANE'S READ the dialog asks whether it may certify (ADR-0291, question 3), from the same count, kept out
+        // of `sent` for the same reason.
+        if (id === 'document.certification') {
+          return Promise.resolve(ok({ certification: null, signed: already.count > 0 || already.unreadable === true }));
+        }
         // THE SIGNATURE READ the notice asks, kept out of `sent` for the library's reason: the cases read the signing channel.
         if (id === 'document.signatures') {
           return Promise.resolve(
@@ -6134,7 +6139,7 @@ describe('protectDocumentCommand', () => {
         PLACEMENT,
       );
 
-      expect(asked).toStrictEqual([{ id: 'dialog.sign-document', props: { placed: true, kept: [] } }]);
+      expect(asked).toStrictEqual([{ id: 'dialog.sign-document', props: { placed: true, kept: [], signed: false } }]);
       // THE TYPED LOOK CROSSES AS ITS OUTLINE, made by the one module that sets names (ADR-0150).
       const outlined = await outlinedMarkOf(TYPED);
       if (outlined.kind !== 'ready') throw new Error(outlined.kind);
@@ -6210,7 +6215,7 @@ describe('protectDocumentCommand', () => {
         },
       }).run(CONTEXT);
 
-      expect(asked).toStrictEqual([{ id: 'dialog.sign-document', props: { placed: false, kept: [] } }]);
+      expect(asked).toStrictEqual([{ id: 'dialog.sign-document', props: { placed: false, kept: [], signed: false } }]);
       expect(sent).toStrictEqual([{ id: 'document.sign', params: { docId: DOC, passphrase: '' } }]);
     });
 
@@ -6234,7 +6239,9 @@ describe('protectDocumentCommand', () => {
 
         expect(asked).toStrictEqual([
           { id: 'dialog.sign-again', props: { count: 2, unreadable: false } },
-          { id: 'dialog.sign-document', props: { placed: false, kept: [] } },
+          // ALREADY SIGNED, so the dialog is told and offers no certification (ADR-0291, question 3); the cases above,
+          // on an unsigned document, are told `false`, which is the control.
+          { id: 'dialog.sign-document', props: { placed: false, kept: [], signed: true } },
         ]);
         expect(sent).toStrictEqual([{ id: 'document.sign', params: { docId: DOC, passphrase: '' } }]);
       });
@@ -6355,6 +6362,7 @@ describe('protectDocumentCommand', () => {
               { id: KEPT_TYPED.id, look: TYPED },
               { id: KEPT_PICTURE.id, look: { kind: 'picture', name: 'ink', src: 'blob:kept-1' } },
             ],
+            signed: false,
           },
         ]);
         expect(revoked).toStrictEqual(['blob:kept-1']);

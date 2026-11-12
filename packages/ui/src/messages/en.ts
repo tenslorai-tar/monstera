@@ -3329,6 +3329,8 @@ export const SIGN_DOCUMENT_CONTACT = messageKey('dialog.sign-document.contact');
 export const SIGN_DOCUMENT_TOO_LONG = messageKey('dialog.sign-document.too-long');
 export const SIGN_DOCUMENT_APPLY = messageKey('dialog.sign-document.apply');
 export const SIGN_DOCUMENT_CERTIFY = messageKey('dialog.sign-document.certify');
+/** Why a signed document offers no certification (ADR-0291, question 3): a certification is the first signature. */
+export const SIGN_DOCUMENT_CERTIFY_SIGNED = messageKey('dialog.sign-document.certify-signed');
 export const SIGN_DOCUMENT_CERTIFY_NONE = messageKey('dialog.sign-document.certify-none');
 export const SIGN_DOCUMENT_CERTIFY_LOCKED = messageKey('dialog.sign-document.certify-locked');
 export const SIGN_DOCUMENT_CERTIFY_FORMS = messageKey('dialog.sign-document.certify-forms');
@@ -7168,6 +7170,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SIGN_DOCUMENT_TOO_LONG]: '“{field}” is longer than the document can carry. Shorten it to sign.',
   [SIGN_DOCUMENT_APPLY]: 'Choose certificate and sign',
   [SIGN_DOCUMENT_CERTIFY]: 'This signature says',
+  [SIGN_DOCUMENT_CERTIFY_SIGNED]: 'I signed this. The document is already signed, and only its first signature can certify it.',
   [SIGN_DOCUMENT_CERTIFY_NONE]: 'I approve this document',
   [SIGN_DOCUMENT_CERTIFY_LOCKED]: 'I am the author — nothing may be changed',
   [SIGN_DOCUMENT_CERTIFY_FORMS]: 'I am the author — forms may be filled in',

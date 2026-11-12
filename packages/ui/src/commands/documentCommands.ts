@@ -5470,6 +5470,10 @@ export async function signDocument(
     );
     if (!go.success) return;
   }
+  // WHETHER IT MAY BE CERTIFIED (ADR-0291, question 3), from the lane's own read, so the dialog offers exactly what the
+  // lane allows. A read that fails offers it: the lane still refuses a signed document, and not knowing refuses no one.
+  const certificationRead = await deps.client['document.certification']({ docId });
+  const holdsSignature = certificationRead.ok && certificationRead.value.signed;
   const library: LibraryPageDeps = { client: deps.client, ask: deps.ask, urls };
   // THE SIGNATURE LIBRARY, offered only where a signature is SEEN — a placement. Adding or removing a kept one is an
   // answer, after which the library is read again and the dialog asked again (`SIGN_DOCUMENT_ANSWERS`).
@@ -5481,7 +5485,7 @@ export async function signDocument(
     offered = kept;
     let answered: SignDocumentAnswers | undefined;
     try {
-      answered = (await deps.ask(SIGN_DOCUMENT_DIALOG_ID, { placed: placement !== undefined, kept })) as
+      answered = (await deps.ask(SIGN_DOCUMENT_DIALOG_ID, { placed: placement !== undefined, kept, signed: holdsSignature })) as
         | SignDocumentAnswers
         | undefined;
     } finally {
