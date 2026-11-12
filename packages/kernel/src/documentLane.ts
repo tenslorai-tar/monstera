@@ -7,6 +7,9 @@
  * (ADR-0274's table), first come first served had a finish wait behind the read on open, the check after a save and the
  * font list's read: 3.8 s against M1's 1.50 s. A running read is never interrupted, since no native call has a safe point to stop at, so a write waits
  * for at most the one read already running.
+ *
+ * ONE QUESTION DOES NOT WAIT FOR THAT READ ({@link DocumentLane.afterWrites}, ADR-0292): a synchronous question about
+ * the document's state in `main`, which no read changes. It waits for the writes before it, and a write after it waits for it.
  */
 
 /** What an entry is to the lane's order. */
@@ -20,6 +23,8 @@ interface Waiting {
 export class DocumentLane {
   readonly #waiting: Waiting[] = [];
   #busy = false;
+  /** The kind of the entry running, or `null` while none is. */
+  #running: LaneEntryKind | null = null;
   readonly #whenIdle: (() => void)[] = [];
 
   /**
@@ -47,6 +52,23 @@ export class DocumentLane {
     return answer;
   }
 
+  /**
+   * Answers `ask` once no write is running and no write queued before it is waiting, never waiting for a running READ
+   * (ADR-0292): at once where that holds, else as a write-ordered entry, so the writes before it run first and a write
+   * after it waits for it. `ask` is synchronous, so it cannot interleave with anything once it starts.
+   */
+  afterWrites<T>(ask: () => T): Promise<T> {
+    const writeAhead = this.#running === 'write' || this.#waiting.some((entry) => entry.kind === 'write');
+    if (!writeAhead) {
+      try {
+        return Promise.resolve(ask());
+      } catch (error) {
+        return Promise.reject(error instanceof Error ? error : new Error(String(error)));
+      }
+    }
+    return this.enter('write', () => Promise.resolve().then(ask));
+  }
+
   /** Settles once every entry accepted so far has run: what a close waits for before it tears the document down. */
   drained(): Promise<void> {
     if (!this.#busy && this.#waiting.length === 0) return Promise.resolve();
@@ -65,8 +87,10 @@ export class DocumentLane {
       return;
     }
     this.#busy = true;
+    this.#running = entry.kind;
     void entry.start().finally(() => {
       this.#busy = false;
+      this.#running = null;
       this.#next();
     });
   }

@@ -3806,17 +3806,16 @@ function closeHandler(deps: {
 }
 
 /**
- * Whether a document has changes its file does not, read IN ITS LANE.
- *
- * `DocumentContext.isDirty` is the one reader of `savedVersion !== version`, and the lane is
- * what keeps a command that is bumping from producing a stale **clean** — the answer that
- * closes without asking. Matched on the class for the two declared codes, like every other
- * per-document handler here.
+ * Whether a document has changes its file does not, asked through `DocumentService.state`
+ * (ADR-0292): after every write running or queued before it, so a command that is bumping
+ * cannot produce a stale **clean** (the answer that closes without asking), and never after a
+ * running read, so a tab's × does not wait for the read on open. Matched on the class for the
+ * two declared codes, like every other per-document handler here.
  */
 function unsavedHandler(documents: DocumentService): ContractHandlers['document.unsaved'] {
   return async ({ docId }): Promise<Awaited<ReturnType<ContractHandlers['document.unsaved']>>> => {
     try {
-      const { value } = await documents.run(docId, (context) => Promise.resolve(context.isDirty()));
+      const { value } = await documents.state(docId, (state) => state.isDirty());
       return ok({ unsaved: value });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });

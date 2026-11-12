@@ -698,11 +698,13 @@ export interface DocumentContext {
    *
    * ## Why there is no service-level `isDirty(docId)`
    *
-   * Reading dirtiness outside the lane can race a command that bumps, and the
+   * Reading dirtiness beside a WRITE can race a command that bumps, and the
    * stale answer is **clean** — which closes a document without prompting and
    * loses work. That is the same reasoning that removed `versionOf`, with a
-   * worse consequence, so dirtiness is a query like any other: it runs in the
-   * lane and its result carries the version it was computed at.
+   * worse consequence, so dirtiness is asked inside the lane, or through
+   * `DocumentService.state`, which waits for every write running or queued
+   * before it and never for a read, since no read can move the version
+   * (ADR-0292). Either way its result carries the version it was computed at.
    */
   isDirty(): boolean;
 }
@@ -713,6 +715,24 @@ export interface DocumentContext {
  * The stamp comes from the lane, not from the caller, so a late result is
  * recognisable rather than plausible.
  */
+/**
+ * What {@link DocumentService.state} hands a question: the version and whether it is unsaved, as `main` holds them.
+ * NOTHING ELSE, so a question asked beside a running read cannot reach what that read is using (ADR-0292).
+ */
+export interface DocumentState {
+  readonly version: DocVersion;
+  /** {@link DocumentContext.isDirty}'s rule. */
+  isDirty(): boolean;
+}
+
+/**
+ * A read entry asked to move the version: refused, because {@link DocumentService.state} answers beside a running read
+ * on the ground that no read moves it (ADR-0292 Decision 2).
+ */
+function readMovesNothing(docId: DocId, mutator: string): Error {
+  return new Error(`A read of document ${docId.slice(0, 8)}… called ${mutator}, which only a write may: a read never moves the version.`);
+}
+
 export interface Versioned<T> {
   readonly value: T;
   /**
@@ -2224,6 +2244,31 @@ export class DocumentService {
     return this.#enter(docId, 'read', forVersion, work);
   }
 
+  /**
+   * Answers `ask` about the document's state in `main` ([ADR-0292](../../../docs/DECISIONS/0292-whether-a-document-is-unsaved-is-answered-beside-a-running-read.md)):
+   * once no write is running and no write queued before this is waiting, and BESIDE A RUNNING READ, which it never waits
+   * for. A write queued after it waits for it. `ask` is synchronous and holds {@link DocumentState} alone, so it cannot
+   * reach a session, the image or the log; and no read can move the version (a read entry's context refuses the four
+   * mutators), so what it reads beside a read is what the read leaves.
+   *
+   * @throws if the document is not open, if called from inside the index lane or from inside this document's own lane
+   */
+  state<T>(docId: DocId, ask: (state: DocumentState) => T): Promise<Versioned<T>> {
+    if (this.#insideIndexLane.getStore() === true) {
+      throw new Error('Lane ordering violation: a document\'s state was asked from inside the index lane, which waits on its writes.');
+    }
+    if (this.#executingDocument.getStore() === docId) {
+      throw new Error('Lane reentry: work running in a document\'s lane asked its state, which would wait on the work that asked.');
+    }
+    const record = this.#records.get(docId);
+    if (record === undefined) throw new DocumentNotOpenError(docId, 'answer its state');
+    return record.lane.afterWrites(() => {
+      const version = record.version;
+      const value = ask({ version, isDirty: () => record.savedVersion !== record.version });
+      return { value, version };
+    });
+  }
+
   async #enter<T>(
     docId: DocId,
     kind: LaneEntryKind,
@@ -2286,6 +2331,7 @@ export class DocumentService {
           // `commandBus.ts`, which is a compile-time property — checking it at
           // runtime would be the guard B5 says to prefer a type over.
           bumpVersion: () => {
+            if (kind === 'read') throw readMovesNothing(docId, 'bumpVersion');
             if (movedSinceBump) {
               movedSinceBump = false;
               return record.version;
@@ -2353,6 +2399,7 @@ export class DocumentService {
             return image.byteLength;
           },
           replaceCanonicalImage: async (_writer, image) => {
+            if (kind === 'read') throw readMovesNothing(docId, 'replaceCanonicalImage');
             requireSoleOwnership(image, record.path);
             // BY THE RULE OPEN TAKES (ADR-0165), at this replacement as at every other: an image that fits under the
             // ceiling is held in memory, and one that does not is written to the document's file and served from it,
@@ -2371,7 +2418,10 @@ export class DocumentService {
             imageMoved();
             return image.byteLength;
           },
-          replaceCanonicalImageFrom: (_writer, fill) => this.#replaceFromFile(record, fill, imageMoved),
+          replaceCanonicalImageFrom: (_writer, fill) => {
+            if (kind === 'read') throw readMovesNothing(docId, 'replaceCanonicalImageFrom');
+            return this.#replaceFromFile(record, fill, imageMoved);
+          },
           log: record.log,
           // A GETTER, so it answers about the image the document has NOW rather
           // than the one it had when this entry started. A command rewrites the
@@ -2383,6 +2433,7 @@ export class DocumentService {
             return lengthOf(record.image);
           },
           markSaved: async () => {
+            if (kind === 'read') throw readMovesNothing(docId, 'markSaved');
             record.savedVersion = record.version;
             // THE FILE NOW HOLDS THE DOCUMENT, removal included, so nothing on disk holds what was removed.
             record.removedSinceSave = false;

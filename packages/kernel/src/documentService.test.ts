@@ -2241,3 +2241,72 @@ describe('replacing the image from a file', () => {
     await service.close(docId);
   });
 });
+
+describe('DocumentService.state, and a read that cannot move the version (ADR-0292)', () => {
+  /** A promise and its resolver, holding a lane entry open on purpose. */
+  function gate(): { promise: Promise<void>; release: () => void } {
+    let release = (): void => undefined;
+    const promise = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return { promise, release };
+  }
+
+  it('refuses each of the four mutators to a read entry', async () => {
+    const registry = new CapabilityRegistry();
+    const service = newService(registry);
+    const docId = mustOpen(await service.open(registry.mint(original())));
+    await expect(service.read(docId, (context) => Promise.resolve(context.bumpVersion(COMMAND_WRITER_FOR_TEST)))).rejects.toThrow(/only a write may/u);
+    await expect(service.read(docId, (context) => context.markSaved(SAVE_WRITER_FOR_TEST))).rejects.toThrow(/only a write may/u);
+    await expect(service.read(docId, (context) => context.replaceCanonicalImage(COMMAND_WRITER_FOR_TEST, new Uint8Array(4)))).rejects.toThrow(/only a write may/u);
+    await expect(
+      service.read(docId, (context) => context.replaceCanonicalImageFrom(COMMAND_WRITER_FOR_TEST, () => Promise.resolve(0))),
+    ).rejects.toThrow(/only a write may/u);
+    // NOTHING MOVED: still the version it opened at, and clean.
+    expect(await service.state(docId, (state) => ({ version: state.version, dirty: state.isDirty() }))).toMatchObject({ value: { version: 1, dirty: false } });
+    await service.close(docId);
+  });
+
+  it('CONTROL: a write entry still moves the version, and the question then reads it unsaved', async () => {
+    const registry = new CapabilityRegistry();
+    const service = newService(registry);
+    const docId = mustOpen(await service.open(registry.mint(original())));
+    const moved = await service.run(docId, (context) => Promise.resolve(context.bumpVersion(COMMAND_WRITER_FOR_TEST)));
+    expect(moved.value).toBe(2);
+    expect(await service.state(docId, (state) => state.isDirty())).toStrictEqual({ value: true, version: 2 });
+    await service.close(docId);
+  });
+
+  it('answers whether a document is unsaved while a read is running, and after a running write', async () => {
+    const registry = new CapabilityRegistry();
+    const service = newService(registry);
+    const docId = mustOpen(await service.open(registry.mint(original())));
+
+    const reading = gate();
+    const read = service.read(docId, () => reading.promise);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // BESIDE THE READ, which has not ended.
+    expect(await service.state(docId, (state) => state.isDirty())).toStrictEqual({ value: false, version: 1 });
+    reading.release();
+    await read;
+
+    const writing = gate();
+    const write = service.run(docId, async (context) => {
+      await writing.promise;
+      return context.bumpVersion(COMMAND_WRITER_FOR_TEST);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    let answered = false;
+    const asked = service.state(docId, (state) => state.isDirty()).then((value) => {
+      answered = true;
+      return value;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // NEVER BESIDE A WRITE, whose stale answer would be clean.
+    expect(answered).toBe(false);
+    writing.release();
+    await write;
+    expect(await asked).toStrictEqual({ value: true, version: 2 });
+    await service.close(docId);
+  });
+});

@@ -135,3 +135,88 @@ describe('DocumentLane (ADR-0274)', () => {
     expect(drained).toBe(true);
   });
 });
+
+describe('DocumentLane.afterWrites (ADR-0292)', () => {
+  it('answers beside a running read, without waiting for it to end', async () => {
+    const lane = new DocumentLane();
+    const log: string[] = [];
+    const read = entry(log, 'read on open');
+    const reading = lane.enter('read', read.work);
+    await settle();
+    const answer = await lane.afterWrites(() => 'clean');
+    // THE READ IS STILL RUNNING when the question has answered.
+    expect(answer).toBe('clean');
+    expect(log).toStrictEqual(['start read on open']);
+    read.release();
+    await reading;
+  });
+
+  it('CONTROL: the same question entered as a write, the route before ADR-0292, waits for the running read', async () => {
+    const lane = new DocumentLane();
+    const log: string[] = [];
+    const read = entry(log, 'read on open');
+    const reading = lane.enter('read', read.work);
+    await settle();
+    let answered = false;
+    const asked = lane.enter('write', () => Promise.resolve('clean')).then((value) => {
+      answered = true;
+      return value;
+    });
+    await settle();
+    // Without the read's end the write-entered question has not answered, so the case above could see the wait.
+    expect(answered).toBe(false);
+    read.release();
+    expect(await asked).toBe('clean');
+    await reading;
+  });
+
+  it('waits for a running write, and reads what that write left', async () => {
+    const lane = new DocumentLane();
+    const log: string[] = [];
+    let dirty = false;
+    const write = entry(log, 'command');
+    const writing = lane.enter('write', async () => {
+      await write.work();
+      // THE VERSION MOVES AT THE WRITE'S END, which a question answered before it would miss and read as clean.
+      dirty = true;
+    });
+    await settle();
+    let answered = false;
+    const asked = lane.afterWrites(() => dirty).then((value) => {
+      answered = true;
+      return value;
+    });
+    await settle();
+    expect(answered).toBe(false);
+    write.release();
+    await writing;
+    expect(await asked).toBe(true);
+  });
+
+  it('waits for a write queued ahead of it behind a running read, and a write after it waits for it', async () => {
+    const lane = new DocumentLane();
+    const log: string[] = [];
+    const read = entry(log, 'read');
+    const before = entry(log, 'write before');
+    const reading = lane.enter('read', read.work);
+    const writing = lane.enter('write', before.work);
+    await settle();
+    const asked = lane.afterWrites(() => {
+      log.push('question');
+      return 'answered';
+    });
+    const after = entry(log, 'write after');
+    const later = lane.enter('write', after.work);
+    await settle();
+    expect(log).toStrictEqual(['start read']);
+    read.release();
+    await settle();
+    before.release();
+    await writing;
+    expect(await asked).toBe('answered');
+    await settle();
+    after.release();
+    await Promise.all([reading, later]);
+    expect(log).toStrictEqual(['start read', 'end read', 'start write before', 'end write before', 'question', 'start write after', 'end write after']);
+  });
+});
