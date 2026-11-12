@@ -78,3 +78,23 @@ document reaches.
 - **Deferring the catalogue until a new word needs a face.** The owner's decision: a face that switches while the person
   types is what the owner notices.
 - **A copy of the host body for the reader.** §3: a second host is a generalisation of the first, never a copy.
+
+## Correction, 2026-11-12 — no host writes the kept area, and `main` places the file by copying it
+
+Decision 4 gave the catalogue host modify on the kept area and had it remove the other fingerprints' files. Read
+against the area machinery before building it, that needs a directory granted to four principals and a second kind of
+area handed to a host, where an ordinary one already does the job:
+
+- **The catalogue host writes into the ordinary area it is handed**, as every host's output goes (ADR-0023 Decision 7):
+  a session pair granted to its own principal alone, and swept at startup. `engine/keep-catalogue` takes the session and
+  the fingerprint and answers the file's name and the faces it holds.
+- **`main` copies that file into the kept area, by the name the fingerprint gives it, and removes the other
+  fingerprints' files by name.** A copy, not a rename: a new file takes the kept area's inheritable ACEs, where a
+  moved one keeps the output directory's. `main` opens it only as bytes to copy and never parses it; it reads no
+  font. The kept area's DACL grants the user full control and read to the three hosts that set text, and nothing to
+  the catalogue host.
+- **So no host can write the kept area**, the catalogue host included, which is narrower than Decision 4 and is what
+  its own reason asks for. The text hosts' side (Decision 6) is unchanged.
+- **The fingerprint is `main`'s, computed once a launch** in the background from ADR-0237's listing; a host started
+  before it is known is handed none and reads the folders, as every host does today. A font changed during a launch is
+  seen at the next one, as a host's catalogue is today seen at its next start.
