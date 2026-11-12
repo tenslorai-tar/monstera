@@ -375,7 +375,12 @@ is wrong** — fix the boundary, not the test.
   containment probe, its granted area's `open` and `close`, and its own channels —
   and none of `apply`, `capture` or `invert`, which carry a writer's command union.
   Threat model §2 keeps document parsing of any kind out of `main`, and measured,
-  `marked` aborted Node on a crafted Markdown file.
+  `marked` aborted Node on a crafted Markdown file. **A fourth host, `catalogue`,
+  is not a writer either and holds no document**
+  ([ADR-0293](docs/DECISIONS/0293-the-font-catalogue-is-read-once-by-a-host-that-holds-no-document-and-kept.md)):
+  it reads the font folders once per ADR-0237 fingerprint and keeps the catalogue in
+  an area only it may write, so a host a document reaches can read it and never
+  write it, and a compromise still ends with its host.
 
   **IT IS BUILT, 2026-09-09.** This read *"that is owed, not built —
   `hostBody.ts` takes `CommandExecution<'mupdf'>` today"*, and it stopped being
