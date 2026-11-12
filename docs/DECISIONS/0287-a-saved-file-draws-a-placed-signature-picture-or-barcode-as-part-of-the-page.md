@@ -164,3 +164,28 @@ The appended-save fault was also seen in the application after the person's FIRS
 one mechanism: a serialise with no change since the session opened writes nothing, and placing a picture is followed
 by main's image refresh, which is the session's first appended write, so the person's Save is its second. ADR-0008's
 note of this date has the measurement.
+
+## Addition, 2026-11-12 — word stamps, typewriter text and text boxes join the table (the owner's Group 6)
+
+The owner's Group 6: *"Stamps, typewriter text and text boxes become part of the page in a saved file, as signatures,
+placed pictures and barcodes already do. Comments, highlights, shapes and pen drawings stay as layers."* Each joins
+`ENGRAVED_ON_SAVE` as a row, as Decision 1 said a later kind would, and no new seam is added.
+
+1. **A row names the key that tells its kind apart.** A stamp is told by its `/Name`; a typewriter and a text box are
+   both `/FreeText` with no `/Name`, told apart by `/IT`: `/FreeTextTypeWriter` for typewriter text, and no `/IT` for a
+   text box, which is how the text-box command writes it. A callout names `/IT /FreeTextCallout` and stays a layer.
+   The eight word stamps are one row each, taken from `BUILT_IN_STAMP_NAME`, so a ninth stamp joins with no edit here.
+   Names are compared by their value, because `FOR REVIEW` carries a space.
+2. **The placement's scale is written to six places.** Measured 2026-11-12: a word stamp's 190-unit appearance fitted
+   to a 200-point `/Rect` drew its far border up to 16 of 255 apart from its layer at four places, and identically at
+   six. A text box and typewriter text fit at a scale of exactly 1, which is why the four places never showed before.
+   `matrixNumber` beside `contentNumber` is the one rule; every other stream keeps four places.
+3. **The cases**, `engraveOnSave.test.ts`: each kind on a page at 0 and 90 degrees, held against engraved, with the
+   session keeping its layer; another producer's stamp and text box stay layers, and the same two carrying our mark do
+   not; a callout, a note, a highlight, a square and an ink stroke stay layers beside an engraved stamp; Redact removes
+   an engraved text box, typewriter text and word stamp after a reopen. With the six places put back to four, the 16
+   stamp cases fail; with the table's three new kinds removed, 21 cases fail.
+
+**What it costs a person, stated:** after a save and reopen, a stamp, typed text or a text box is page content. It can
+no longer be selected, moved or edited as a mark, and Redact is how it is taken away. Inside the session that made it,
+it stays a layer until the document closes, as a signature does.

@@ -1,5 +1,14 @@
 import { PDFDocument, PDFName, PDFString, degrees } from '@cantoo/pdf-lib';
-import { type AnnotationRect, type DrawableSignature, outlineOpCodes, placedMarkOf } from '@monstera/contract';
+import {
+  type AnnotationDraft,
+  type AnnotationRect,
+  BUILT_IN_STAMPS,
+  BUILT_IN_STAMP_NAME,
+  type CommandOfKind,
+  type DrawableSignature,
+  outlineOpCodes,
+  placedMarkOf,
+} from '@monstera/contract';
 import { zlibSync } from 'fflate';
 import forge from 'node-forge';
 import { describe, expect, it } from 'vitest';
@@ -335,8 +344,76 @@ describe('a plain signature is part of the page in a saved file', () => {
   });
 });
 
+/** Each annotation on page `index` after a reopen, as its subtype and the key that tells its kind apart. */
+function kinds(bytes: ByteImage, index = 0): string[] {
+  return opened(bytes, (document) => {
+    const annots = document.findPage(index).get('Annots');
+    const out: string[] = [];
+    const name = (value: mupdf.PDFObject): string => (value.isName() ? value.asName() : '-');
+    if (annots.isArray()) annots.forEach((each) => out.push(`${name(each.get('Subtype'))}/${name(each.get('Name'))}/${name(each.get('IT'))}`));
+    return out;
+  });
+}
+
+const added = (annotation: CommandOfKind<'addAnnotation'>['annotation']) => async (session: MupdfSession) => {
+  await applyAddAnnotation(session, { kind: 'addAnnotation', page: 0, stamp: STAMP, annotation });
+};
+
+type Draft<T extends AnnotationDraft['type']> = Extract<AnnotationDraft, { type: T }>;
+const WORDS = { colour: [0.1, 0.1, 0.4], opacity: 1, fontSize: 14, font: 'sans', direction: 'left-to-right' } satisfies Omit<Draft<'text-box'>, 'type' | 'rect' | 'text'>;
+const TEXT_BOX: Draft<'text-box'> = { type: 'text-box', rect: BOX, text: 'Received 12 November', ...WORDS };
+const TYPEWRITER: Draft<'typewriter'> = { type: 'typewriter', rect: { x0: 60, y0: 300, x1: 300, y1: 330 }, text: 'Paid in full', ...WORDS };
+const CALLOUT: Draft<'callout'> = { type: 'callout', rect: { x0: 200, y0: 400, x1: 360, y1: 450 }, at: { x: 120, y: 520 }, text: 'See here', ...WORDS };
+const APPROVED: Draft<'stamp'> = { type: 'stamp', stamp: 'approved', rect: BOX, colour: [0.8, 0, 0], opacity: 1 };
+
+describe('a word stamp, typewriter text and a text box are part of the page in a saved file (Group 6)', () => {
+  const cases = [
+    ...BUILT_IN_STAMPS.map((stamp) => ({
+      label: `the ${stamp} stamp`,
+      place: added({ type: 'stamp', stamp, rect: BOX, colour: [0.8, 0, 0], opacity: 1 }),
+      kind: `Stamp/${BUILT_IN_STAMP_NAME[stamp]}/-`,
+    })),
+    { label: 'typewriter text', place: added(TYPEWRITER), kind: 'FreeText/-/FreeTextTypeWriter' },
+    { label: 'a text box', place: added(TEXT_BOX), kind: 'FreeText/-/-' },
+  ];
+  for (const { label, place, kind } of cases) for (const turn of [0, 90]) {
+    it(`${label}, on a page turned ${String(turn)}`, async () => {
+      const result = await onSession(await pageOf({ turn }), async (session) => {
+        await place(session);
+        const held = await mupdfWriter.serialise(session);
+        const engraved = await mupdfWriter.serialise(session, { marks: 'engraved' });
+        return { held, engraved, after: kinds(await mupdfWriter.serialise(session)) };
+      });
+      // CONTROL: the held save is the layer, and it draws something.
+      expect(kinds(result.held)).toStrictEqual([kind]);
+      const layer = render(result.held);
+      expect(painted(layer), 'the layer draws something').toBeGreaterThan(200);
+      expect(kinds(result.engraved), 'no layer is left for it').toStrictEqual([]);
+      expect(difference(layer, render(result.engraved)).differing, 'the page draws what the layer drew').toBe(0);
+      expect(result.after, 'the session keeps its layer after the save').toStrictEqual([kind]);
+    });
+  }
+
+  it('another producer’s stamp and text box, with no mark of ours, stay layers', async () => {
+    const withMarks = async (ours: boolean): Promise<string[]> => {
+      const document = await PDFDocument.create();
+      const page = document.addPage([400, 600]);
+      const appearance = document.context.register(document.context.stream('0 0 1 rg 0 0 100 50 re f', { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 100, 50] }));
+      const mark = (extra: Record<string, unknown>) =>
+        document.context.register(
+          document.context.obj({ Type: 'Annot', Rect: [100, 100, 200, 150], AP: { N: appearance }, T: PDFString.of('Other'), ...(ours ? { Monstera_Authored: true } : {}), ...extra }),
+        );
+      page.node.set(PDFName.of('Annots'), document.context.obj([mark({ Subtype: 'Stamp', Name: 'Approved' }), mark({ Subtype: 'FreeText', Contents: PDFString.of('theirs') })]));
+      return kinds(await onSession(await document.save({ useObjectStreams: false }), (session) => mupdfWriter.serialise(session, { marks: 'engraved' })));
+    };
+    expect(await withMarks(false)).toStrictEqual(['Stamp/Approved/-', 'FreeText/-/-']);
+    // CONTROL: the same two WITH our private mark are engraved, so the mark is what decided.
+    expect(await withMarks(true)).toStrictEqual([]);
+  });
+});
+
 describe('what stays a layer', () => {
-  it('a stamp, a comment and a highlight on the same page stay layers; the picture beside them is engraved', async () => {
+  it('a callout, a comment, a highlight, a shape and a pen drawing stay layers; the stamp and the picture beside them are engraved', async () => {
     const result = await saves(await pageOf({ content: 'BT /F1 12 Tf 50 500 Td (Hello there) Tj ET' }), async (session) => {
       await picture()(session);
       await applyAddAnnotation(session, {
@@ -345,6 +422,9 @@ describe('what stays a layer', () => {
         stamp: STAMP,
         annotation: { type: 'stamp', stamp: 'approved', rect: { x0: 50, y0: 400, x1: 200, y1: 450 }, colour: [0.8, 0, 0], opacity: 1 },
       });
+      await added(CALLOUT)(session);
+      await added({ type: 'square', rect: { x0: 20, y0: 20, x1: 80, y1: 60 }, colour: [1, 0, 0], opacity: 1, borderWidth: 2 })(session);
+      await added({ type: 'ink', points: [{ x: 300, y: 50 }, { x: 330, y: 80 }, { x: 360, y: 50 }], colour: [0, 0, 1], opacity: 1, borderWidth: 2 })(session);
       await applyAddAnnotation(session, {
         kind: 'addAnnotation',
         page: 0,
@@ -358,13 +438,15 @@ describe('what stays a layer', () => {
         annotation: { type: 'highlight', over: 'area', rect: { x0: 40, y0: 490, x1: 160, y1: 515 }, colour: [1, 1, 0], opacity: 0.5 },
       });
     });
-    const held = subtypes(result.held, 0);
-    expect(held).toContain('Stamp/Image');
-    const engraved = subtypes(result.engraved, 0);
-    expect(engraved).not.toContain('Stamp/Image');
-    // EVERY OTHER ANNOTATION THE HELD SAVE HAS, the engraved one has too.
-    expect([...engraved].sort()).toStrictEqual(held.filter((each) => each !== 'Stamp/Image').sort());
-    expect(engraved.length).toBeGreaterThanOrEqual(3);
+    const held = kinds(result.held);
+    const gone = ['Stamp/Image/-', 'Stamp/Approved/-'];
+    // CONTROL: the held save carries both marks as layers.
+    for (const each of gone) expect(held).toContain(each);
+    const engraved = kinds(result.engraved);
+    // EVERY OTHER ANNOTATION THE HELD SAVE HAS, the engraved one has too: the callout, square, ink, highlight and note.
+    expect([...engraved].sort()).toStrictEqual(held.filter((each) => !gone.includes(each)).sort());
+    expect(engraved).toContain('FreeText/-/FreeTextCallout');
+    expect(engraved.length).toBeGreaterThanOrEqual(6);
   });
 
   it('another producer’s stamp named Image, with no mark of ours, stays a layer', async () => {
@@ -405,6 +487,30 @@ describe('after the save', () => {
     expect(painted(render(saved)), 'CONTROL: the engraved picture is drawn').toBeGreaterThan(500);
     expect(painted(render(redacted))).toBe(0);
   });
+
+  const redacted: readonly (readonly [string, AnnotationDraft])[] = [
+    ['a text box', TEXT_BOX],
+    ['typewriter text', { ...TYPEWRITER, rect: BOX }],
+    ['a word stamp', APPROVED],
+  ];
+  for (const [label, mark] of redacted) {
+    it(`Redact over engraved ${label}, after a reopen, removes it`, async () => {
+      const saved = (await saves(await pageOf(), added(mark))).engraved;
+      const redacted = await onSession(saved, async (session) => {
+        await applyAddAnnotation(session, {
+          kind: 'addAnnotation',
+          page: 0,
+          stamp: STAMP,
+          annotation: { type: 'redact', over: 'region', rect: { x0: 90, y0: 90, x1: 310, y1: 190 }, colour: [0.85, 0.15, 0.15], opacity: 1 },
+        });
+        await applyApplyRedactions(session, { kind: 'applyRedactions', pages: 'all', cover: 'none', images: 'pixels', keepTitle: false, keepBookmarks: false });
+        return mupdfWriter.serialise(session);
+      });
+      expect(kinds(saved), 'CONTROL: no layer is left, so only the page draws it').toStrictEqual([]);
+      expect(painted(render(saved)), 'CONTROL: the engraved mark is drawn').toBeGreaterThan(200);
+      expect(painted(render(redacted))).toBe(0);
+    });
+  }
 
   it('a document with a certificate signature: the picture stays a layer, the save appends, and the signature still covers its revision', async () => {
     // A REAL SIGNATURE, by the signing writer, with a throwaway self-signed credential.

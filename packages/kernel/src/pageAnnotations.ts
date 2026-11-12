@@ -2695,14 +2695,32 @@ const PICTURE_STAMP_NAME = 'Image';
 
 /**
  * THE KINDS A SAVED FILE DRAWS AS PART OF THE PAGE (ADR-0287, the owner's decision of 2026-11-06), beside the commands
- * that create them: each is a subtype and a `/Name`, and every one is also Monstera's own by {@link authoredObject}.
- * The names are the ones those commands have always written, so a file Monstera saved earlier is recognised. A later
- * kind (a stamp, typewriter text, a text box) joins as a row here; `engraveOnSave.ts` reads nothing else.
+ * that create them: each is a subtype and the key that tells its kind apart, and every one is also Monstera's own by
+ * {@link authoredObject}. The values are the ones those commands have always written, so a file Monstera saved earlier
+ * is recognised. Word stamps, typewriter text and text boxes joined on 2026-11-12 (the owner's Group 6); comments,
+ * highlights, shapes, pen drawings and callouts stay layers. `engraveOnSave.ts` reads nothing else.
  */
-const ENGRAVED_ON_SAVE: readonly { readonly subtype: string; readonly name: string; readonly kind: string }[] = [
-  { subtype: 'Stamp', name: SIGNATURE_STAMP_NAME, kind: 'a plain signature, typed, drawn or a picture (ADR-0133)' },
-  { subtype: 'Stamp', name: PICTURE_STAMP_NAME, kind: 'a picture from Place image, and a barcode, placed as one' },
+const ENGRAVED_ON_SAVE: readonly EngravedKind[] = [
+  { subtype: 'Stamp', by: 'Name', value: SIGNATURE_STAMP_NAME, kind: 'a plain signature, typed, drawn or a picture (ADR-0133)' },
+  { subtype: 'Stamp', by: 'Name', value: PICTURE_STAMP_NAME, kind: 'a picture from Place image, and a barcode, placed as one' },
+  // THE WORD STAMPS, by the names the stamp tool writes (`BUILT_IN_STAMP_NAME`), so a ninth stamp joins with no row.
+  ...Object.values(BUILT_IN_STAMP_NAME).map((value) => ({ subtype: 'Stamp', by: 'Name', value, kind: 'a word stamp from Stamp' }) as const),
+  { subtype: 'FreeText', by: 'IT', value: 'FreeTextTypeWriter', kind: 'typewriter text' },
+  // A TEXT BOX IS THE FREETEXT WITH NO `/IT`, which is how the text-box row writes it; a callout names its `/IT` and
+  // stays a layer.
+  { subtype: 'FreeText', by: 'IT', value: null, kind: 'a text box' },
 ];
+
+/**
+ * One kind {@link ENGRAVED_ON_SAVE} names: a subtype, and the one key that separates it from the subtype's other kinds,
+ * `/Name` for a stamp and `/IT` for a FreeText, with `null` meaning the key is absent.
+ */
+interface EngravedKind {
+  readonly subtype: string;
+  readonly by: 'Name' | 'IT';
+  readonly value: string | null;
+  readonly kind: string;
+}
 
 /**
  * A picture this build places, added to the document and written COMPRESSED, with its soft mask (ADR-0287 Decision 7).
@@ -2733,9 +2751,14 @@ function addedCompressed(document: PDFDocument, image: Image): PDFObject {
  */
 export function engravedOnSave(object: PDFObject): boolean {
   if (!object.isDictionary() || !authoredObject(object)) return false;
-  const subtype = String(object.get('Subtype'));
-  const name = String(object.get('Name'));
-  return ENGRAVED_ON_SAVE.some((each) => subtype === `/${each.subtype}` && name === `/${each.name}`);
+  const subtype = nameOf(object.get('Subtype'));
+  // BY `asName`, NOT THE PRINTED NAME: `FOR REVIEW` carries a space, which a printed name writes as `#20`.
+  return ENGRAVED_ON_SAVE.some((each) => subtype === each.subtype && nameOf(object.get(each.by)) === each.value);
+}
+
+/** A name object's name, or `null` for anything else (an absent key reads as null). */
+function nameOf(value: PDFObject): string | null {
+  return value.isName() ? value.asName() : null;
 }
 
 /**

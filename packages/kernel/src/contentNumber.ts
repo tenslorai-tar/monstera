@@ -13,3 +13,13 @@
 export function contentNumber(value: number): string {
   return value.toFixed(4);
 }
+
+/**
+ * A `cm` operand that SCALES, to six places. A scale multiplies across the whole mark, so its rounding is not one
+ * hundred-thousandth of a point but that times the mark's width: measured 2026-11-12, a word stamp whose 190-unit
+ * appearance is fitted to a 200-point `/Rect` (scale 1.0526315…) drew its far border edge up to 16 of 255 apart from its
+ * layer at four places, and identically at six.
+ */
+export function matrixNumber(value: number): string {
+  return value.toFixed(6);
+}

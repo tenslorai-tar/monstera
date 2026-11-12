@@ -23,8 +23,8 @@ A stamp puts a word such as APPROVED or DRAFT on a page, in capitals inside a bo
 - Each stamp has its own colour: green for APPROVED and FINAL, red for NOT APPROVED and VOID, blue for the rest. If you choose a colour in the **Properties** tab, every stamp uses that colour instead.
 - To keep a picture of your own as a stamp, choose **Add a picture…** in the **Choose a stamp** window and pick a PNG or JPEG of up to 2 MB. It appears under **Your stamps** from then on; pick it and choose **Add stamp** to place it. **Remove …** beside a picture takes it out of your stamps. Up to 16 are kept, on this computer only.
 - For a one-off picture you do not want to keep, use **Image** in the same group.
-- When you save, a picture stamp from **Your stamps** is saved as part of the page, like a picture placed with **Image**, so every PDF app shows it, including phone apps that do not show stamps. You can still move, resize or delete it until you close the document; after you open the saved file again it cannot be selected or moved. Word stamps such as APPROVED or DRAFT stay separate stamps in the saved file, which some phone apps do not show.
-- Undo with **Ctrl+Z**. To remove a stamp later, select it and press **Delete**.
+- When you save, every stamp you added, the word stamps such as APPROVED or DRAFT and the pictures from **Your stamps**, is saved as part of the page, like a picture placed with **Image**, so every PDF app shows it, including phone apps that do not show stamps. You can still move, resize or delete it until you close the document; after you open the saved file again it cannot be selected or moved, and **Redact** takes it away. A stamp that was already in a PDF made by another app stays as it was.
+- Undo with **Ctrl+Z**. To remove a stamp before you close the document, select it and press **Delete**.
 
 <!--
 Screenshots to capture:

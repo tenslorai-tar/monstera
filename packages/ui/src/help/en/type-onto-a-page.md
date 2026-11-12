@@ -24,6 +24,7 @@ The Typewriter adds your text straight onto the page with no border, which is ha
 - Font size and colour come from the **Properties** tab. The typeface is **Annotation font** in **Settings**, on the **Editing defaults** page.
 - Hebrew, Arabic and other languages work too, with the letters in the right order. For a language written from the right, choose **Right to left** under **Text direction** on the same page, so the lines start at the right edge.
 - For text inside a bordered box, use "Add a text box".
+- When you save, typed text is saved as part of the page, so every PDF app shows it, including phone apps that do not show comments. You can still move, change or delete it until you close the document. After you open the saved file again, it is part of the page and cannot be selected or changed; to take it away, use **Redact**.
 - Undo with **Ctrl+Z**.
 
 <!--
