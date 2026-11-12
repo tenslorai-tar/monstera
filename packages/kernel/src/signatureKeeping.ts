@@ -1,6 +1,6 @@
-import type { CommandKind } from '@monstera/contract';
+import type { CertificationLevel, CommandKind } from '@monstera/contract';
 
-import { declaredCommands, type WriterOfRecord } from './commandDeclarations.js';
+import { ALLOWED_UNDER, declaredCommands, type WriterOfRecord } from './commandDeclarations.js';
 
 /**
  * Which commands break a digital signature, derived in ONE place from what already decides it
@@ -37,4 +37,12 @@ const REWRITES_WHOLE: Readonly<Record<WriterOfRecord, boolean>> = {
 export function breaksSignatures(kind: CommandKind): boolean {
   const declared = declaredCommands[kind];
   return REWRITES_WHOLE[declared.writer] || declared.purpose === 'removal';
+}
+
+/**
+ * Whether a document certified at `level` lets `kind` change it (ADR-0291 Decision 2): what the command declares it
+ * changes, against the level's row of {@link ALLOWED_UNDER}. A document with no certification (`null`) lets everything.
+ */
+export function allowedByCertification(kind: CommandKind, level: CertificationLevel | null): boolean {
+  return level === null || ALLOWED_UNDER[level].has(declaredCommands[kind].changes);
 }
