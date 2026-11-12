@@ -13,3 +13,14 @@
 export function contentNumber(value: number): string {
   return value.toFixed(4);
 }
+
+/**
+ * A `cm` operand that SCALES, to six places. A scale multiplies across the whole mark, so its rounding is not one
+ * ten-thousandth of a point but that times the mark's width. Measured 2026-11-12 (`engraveOnSave.test.ts`): a resize
+ * keeps a signature's or picture's `/BBox` and moves its `/Rect`, so a 200 by 80 appearance fitted to a 247.37 by 116.13
+ * box drew a typed signature's edges up to 18 of 255 apart from its layer at four places, and a picture on a page turned
+ * 90 up to 235; at six places neither differs.
+ */
+export function matrixNumber(value: number): string {
+  return value.toFixed(6);
+}
