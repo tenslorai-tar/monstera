@@ -50,6 +50,7 @@ const FROM_THE_GALLERY = [
   'dialog.apply-redactions',
   'dialog.boxed-characters',
   'dialog.camera-capture',
+  'dialog.certified-edit',
   'dialog.close-unsaved',
   'dialog.cloud-outcome',
   'dialog.cloud-storage',
