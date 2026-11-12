@@ -163,6 +163,7 @@ import { TAB_ORDER_DIALOG_ID, TAB_ORDER_RESULT } from '../dialogs/tabOrder.js';
 import { PAGE_BACKGROUND_DIALOG_ID, PAGE_BACKGROUND_RESULT } from '../dialogs/pageBackground.js';
 import { SIGN_AGAIN_DIALOG_ID, SIGN_AGAIN_RESULT } from '../dialogs/signAgain.js';
 import { SIGNED_EDIT_DIALOG_ID, SIGNED_EDIT_RESULT } from '../dialogs/signedEdit.js';
+import { CERTIFIED_EDIT_DIALOG_ID, CERTIFIED_EDIT_RESULT } from '../dialogs/certifiedEdit.js';
 import type { OpenedDocument } from './importMarkdown.js';
 import type { PendingRedactionOccasion } from '../dialogs/pendingRedactions.js';
 import { WATERMARK_PAGES_DIALOG_ID } from '../dialogs/watermarkPages.js';
@@ -969,6 +970,15 @@ async function sendInLane(
   const joins = options.joinsStep === undefined ? {} : { joinsStep: options.joinsStep };
   let answer = await deps.client['document.execute']({ docId, command: sent, ...joins });
   let agreed = false;
+
+  // A CERTIFIED DOCUMENT'S CERTIFIER DOES NOT ALLOW THIS CHANGE (ADR-0291): main answered without touching it. The one
+  // way forward is a copy, which is no longer certified; there is no agreeing past it, so the setting that turns the
+  // signature warning off does not reach here. Cancel, or a dismissed picker, keeps what was typed (ADR-0149's addition).
+  if (!answer.ok && answer.error.code === 'certified') {
+    const asked = CERTIFIED_EDIT_RESULT.safeParse(await deps.ask(CERTIFIED_EDIT_DIALOG_ID, answer.error.detail));
+    if (!asked.success || !(await editOnCopy(deps, docId, sent))) options.keep?.(answer.error);
+    return false;
+  }
 
   // A SIGNED DOCUMENT IS ASKED ABOUT BEFORE IT CHANGES (ADR-0149): main answered without touching it. *Change this
   // document* sends the same command again, stamp and all, agreed; *Work on a copy* sends it to a copy; Cancel, or a

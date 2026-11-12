@@ -15,6 +15,8 @@ export {
   EDIT_STEPS,
   FIELD_EDIT_REASONS,
   type FieldEditReason,
+  CERTIFICATION_LEVELS,
+  type CertificationLevel,
   type EditStep,
   type Failure,
   type FailureDetails,

@@ -1,5 +1,6 @@
 import type { SERVICE_PROBLEMS } from '@monstera/contract';
 import {
+  type CertificationLevel,
   type EditStep,
   type FailureDetails,
   type FieldEditReason,
@@ -9,6 +10,10 @@ import {
 
 import {
   ANTHROPIC_OUT_OF_CREDIT,
+  CERTIFIED_BY_LABEL,
+  CERTIFIED_FORM_FILL,
+  CERTIFIED_FORM_FILL_AND_ANNOTATE,
+  CERTIFIED_NO_CHANGES,
   EDIT_REFUSED_GENERATE,
   EDIT_REFUSED_MATRIX,
   EDIT_REFUSED_CROPPED,
@@ -82,6 +87,7 @@ export type CommandProblem =
   | { readonly code: 'text-unchanged' }
   | { readonly code: 'edit-refused'; readonly detail: FailureDetails['edit-refused'] }
   | { readonly code: 'field-edit-refused'; readonly detail: FailureDetails['field-edit-refused'] }
+  | { readonly code: 'certified'; readonly detail: FailureDetails['certified'] }
   | { readonly code: 'copy-absent' }
   | { readonly code: 'copy-at-capacity' }
   | { readonly code: 'copy-busy' }
@@ -101,6 +107,7 @@ export type CommandProblem =
  */
 export function problemMessage(problem: CommandProblem): MessageKey {
   if (problem.code === 'field-edit-refused') return FIELD_EDIT_MESSAGE[problem.detail.reason];
+  if (problem.code === 'certified') return CERTIFIED_MESSAGE[problem.detail.level];
   if (problem.code !== 'edit-refused') return CODE_MESSAGE[problem.code];
   const { step, engineError } = problem.detail;
   return step === 'open' && engineError === PDFIUM_PASSWORD_ERROR ? EDIT_REFUSED_PASSWORD : STEP_MESSAGE[step];
@@ -132,8 +139,20 @@ export function problemParticulars(
     const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(problem.detail.characters);
     return { label: TEXT_EDIT_CHARACTERS_LABEL, value: Array.from(graphemes, (part) => part.segment).join(' ') };
   }
+  // THE CERTIFIER, where a name could be read (ADR-0291); a certification naming nobody says its sentence alone.
+  if (problem.code === 'certified') return problem.detail.signer === '' ? undefined : { label: CERTIFIED_BY_LABEL, value: problem.detail.signer };
   return undefined;
 }
+
+/**
+ * One sentence per certification level (ADR-0291), each saying what the certifier allows and that nothing was changed:
+ * the problem dialog's, and the certified window's above its offer of a copy.
+ */
+export const CERTIFIED_MESSAGE: Readonly<Record<CertificationLevel, MessageKey>> = {
+  'no-changes': CERTIFIED_NO_CHANGES,
+  'form-fill': CERTIFIED_FORM_FILL,
+  'form-fill-and-annotate': CERTIFIED_FORM_FILL_AND_ANNOTATE,
+};
 
 /** One sentence per reason a change to a form field was refused (ADR-0193), each saying nothing was changed. */
 const FIELD_EDIT_MESSAGE: Readonly<Record<FieldEditReason, MessageKey>> = {
@@ -185,7 +204,7 @@ const STEP_MESSAGE: Readonly<Record<EditStep, MessageKey>> = {
  * one will open, and a missing key must land on the table rather than on a
  * return path that quietly yields `undefined`.
  */
-const CODE_MESSAGE: Readonly<Record<Exclude<CommandProblem['code'], 'edit-refused' | 'field-edit-refused'>, MessageKey>> = {
+const CODE_MESSAGE: Readonly<Record<Exclude<CommandProblem['code'], 'edit-refused' | 'field-edit-refused' | 'certified'>, MessageKey>> = {
   'document-not-open': PROBLEM_NOT_OPEN,
   'document-busy': PROBLEM_BUSY,
   'document-poisoned': PROBLEM_POISONED,

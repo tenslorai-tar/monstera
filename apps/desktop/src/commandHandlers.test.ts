@@ -3,7 +3,7 @@ import { asDocId } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import { executeCommandHandler } from './commandHandlers.js';
-import type { DocumentCommands } from './documentCommands.js';
+import { CertifiedChangeError, type DocumentCommands } from './documentCommands.js';
 
 /**
  * `document.execute`'s answer when the engine host's call ends (ADR-0253): a memory kill is the declared `out-of-memory`
@@ -30,5 +30,15 @@ describe('a host that ends during a command', () => {
     await expect(
       executeCommandHandler(endingWith({ code: 'connection-lost', detail: 'the pipe closed' }))(request),
     ).rejects.toBeInstanceOf(HostConnectionLost);
+  });
+});
+
+describe('a change a certified document does not allow (ADR-0291)', () => {
+  it('answers certified with the level and the certifier, nothing else', async () => {
+    const commands: Pick<DocumentCommands, 'execute'> = {
+      execute: () => Promise.reject(new CertifiedChangeError('rotatePages', { level: 'form-fill', signer: 'Grace Hopper' })),
+    };
+    const answer = await executeCommandHandler(commands as DocumentCommands)(request);
+    expect(answer).toStrictEqual({ ok: false, error: { code: 'certified', detail: { level: 'form-fill', signer: 'Grace Hopper' } } });
   });
 });

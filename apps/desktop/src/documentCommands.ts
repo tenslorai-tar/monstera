@@ -165,6 +165,8 @@ import {
   type SplitOutcome,
   type MupdfSession,
   type SignatureFacts,
+  type Certification,
+  allowedByCertification,
   type ReadSignature,
   SignatureAppearanceRefusedError,
   SignatureCredentialRefusedError,
@@ -1440,6 +1442,24 @@ export class SignaturesWouldBreakError extends Error {
       `${kind} would rewrite a document carrying ${String(signatures)} signature(s) whole, which breaks them; ` +
         'nothing was changed, and the person is asked first (ADR-0149).',
     );
+  }
+}
+
+/**
+ * A change a certified document's certifier does not allow, refused before anything changed
+ * ([ADR-0291](../../../docs/DECISIONS/0291-a-certified-document-is-locked-to-what-its-certifier-allowed-and-worked-on-as-a-copy.md)).
+ *
+ * Not a fault: the handler answers it as the declared `certified`, with the level and the certifier, and the renderer
+ * offers the copy.
+ */
+export class CertifiedChangeError extends Error {
+  override readonly name = 'CertifiedChangeError';
+
+  constructor(
+    kind: CommandKind,
+    readonly certification: Certification,
+  ) {
+    super(`${kind} is not a change a document certified ${certification.level} allows; nothing was changed (ADR-0291).`);
   }
 }
 
@@ -4111,6 +4131,17 @@ export class DocumentCommands {
       // from *this writer has no session*, and only the bus can tell the second
       // one apart from a byte-image writer that never has a stored session.
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      // A CERTIFIED DOCUMENT IS HELD TO WHAT ITS CERTIFIER ALLOWED (ADR-0291), asked here, in the lane before the bus,
+      // and BEFORE the signature question below: that one is a warning a person may agree past, and this is not, so
+      // `breakSignatures` does not pass it. Asked of the document's own session for every command, since a level that
+      // allows a fill and refuses a page turn is a question about the kind and the document together.
+      const certifiedSession = sessions.mupdf;
+      if (certifiedSession === undefined) throw new MissingSessionError(docId, 'mupdf');
+      const { certification } = await this.#signaturesKept(certifiedSession);
+      if (certification !== null && !allowedByCertification(command.kind, certification.level)) {
+        throw new CertifiedChangeError(command.kind, certification);
+      }
 
       // A SIGNED DOCUMENT IS ASKED ABOUT BEFORE THE EDIT, never at the save after it (ADR-0149). A command that
       // rewrites the document whole breaks every signature in it, and by the save the image is already rewritten —

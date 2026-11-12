@@ -44,6 +44,7 @@ import {
   outlineOpCodes,
   type PageSet,
   type WordMode,
+  type CertificationLevel,
 } from '@monstera/contract';
 import {
   type AtomicWriteSurface,
@@ -223,6 +224,7 @@ import {
   type SaveSource,
   type SnapshotSource,
   SignaturesWouldBreakError,
+  CertifiedChangeError,
   type EngineSessionSource,
   type ProtectedCopies,
   type Applied,
@@ -2192,6 +2194,58 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
         await t.commands.execute(t.saved, sanitize);
 
         expect(await t.version()).not.toBe(version);
+      });
+    });
+
+    /**
+     * ADR-0291: a certified document is held to what its certifier allowed, asked in the lane before the bus and before
+     * ADR-0149's question. The rotation is the case the owner named: an appending change ADR-0149 never asks about.
+     */
+    describe('a change a certified document’s certifier does not allow (ADR-0291)', () => {
+      const certified =
+        (level: CertificationLevel): DocumentCommandsParts['signaturesKept'] =>
+        () =>
+          Promise.resolve({ signatures: 1, kept: true, certification: { level, signer: 'Grace Hopper' } });
+
+      it('a rotation of a document certified no-changes is REFUSED, with nothing changed and nothing to undo', async () => {
+        const t = await aSavableDocument(certified('no-changes'));
+        const version = await t.version();
+        const bytes = await t.serialised();
+
+        const refused = t.commands.execute(t.saved, rotateOnce);
+        await expect(refused).rejects.toBeInstanceOf(CertifiedChangeError);
+        await expect(refused).rejects.toMatchObject({ certification: { level: 'no-changes', signer: 'Grace Hopper' } });
+
+        expect(await t.version()).toBe(version);
+        expect(Buffer.from(await t.serialised()).equals(Buffer.from(bytes))).toBe(true);
+        expect(await t.commands.undo(t.saved)).toBeUndefined();
+      });
+
+      it('AGREEING to break signatures does not pass it: the lock is not a warning', async () => {
+        const t = await aSavableDocument(certified('no-changes'));
+        const version = await t.version();
+
+        await expect(t.commands.execute(t.saved, sanitize, { breakSignatures: true })).rejects.toBeInstanceOf(CertifiedChangeError);
+        expect(await t.version()).toBe(version);
+      });
+
+      it('CONTROL: the same rotation runs on a document with an ordinary signature, and the level decides', async () => {
+        const plain = await aSavableDocument(() => Promise.resolve({ signatures: 1, kept: true, certification: null }));
+        const before = await plain.version();
+        await plain.commands.execute(plain.saved, rotateOnce);
+        expect(await plain.version()).not.toBe(before);
+
+        // A LEVEL THAT ALLOWS COMMENTS lets an annotation through and still refuses the rotation.
+        const annotating = await aSavableDocument(certified('form-fill-and-annotate'));
+        await expect(annotating.commands.execute(annotating.saved, rotateOnce)).rejects.toBeInstanceOf(CertifiedChangeError);
+        const at = await annotating.version();
+        await annotating.commands.execute(annotating.saved, {
+          kind: 'addAnnotation',
+          page: 0,
+          stamp: { author: 'Priya Raman', created: '2026-11-12T09:00:00.000Z' },
+          annotation: { type: 'square', rect: { x0: 10, y0: 10, x1: 60, y1: 40 }, colour: [1, 0, 0], opacity: 1, borderWidth: 1 },
+        });
+        expect(await annotating.version()).not.toBe(at);
       });
     });
 

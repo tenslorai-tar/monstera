@@ -2713,6 +2713,9 @@ export const channels = {
       // document, a copy of a radio option. Nothing was written; the reason is the sentence.
       'field-edit-refused',
       'breaks-signatures',
+      // `certified` IS A CERTIFIED DOCUMENT'S LOCK (ADR-0291): its certifier's level does not allow this change, and
+      // nothing changed. Not a question with a *yes*: the dispatcher offers the copy, and agreement does not pass it.
+      'certified',
       // `command-looped` IS A COMMAND THE ENGINE WAS STOPPED ON THREE TIMES (ADR-0221): main will not send it again for
       // this document. The document is open and its changes are kept; the person is told which action could not be done.
       'command-looped',

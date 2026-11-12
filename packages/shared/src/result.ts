@@ -106,6 +106,15 @@ export const FIELD_EDIT_REASONS = [
 export type FieldEditReason = (typeof FIELD_EDIT_REASONS)[number];
 
 /**
+ * What a certifying signature allows to change afterwards, by the words this build uses for `/DocMDP`'s `/P` 1, 2 and
+ * 3 (ISO 32000-1 §12.8.2.2). One list for the signer that writes a certification, the reader that obeys one and the
+ * refusal that says it ([ADR-0291](../../../docs/DECISIONS/0291-a-certified-document-is-locked-to-what-its-certifier-allowed-and-worked-on-as-a-copy.md)).
+ * Here rather than in the contract because {@link FailureDetails} carries it, and this package imports nothing.
+ */
+export const CERTIFICATION_LEVELS = ['no-changes', 'form-fill', 'form-fill-and-annotate'] as const;
+export type CertificationLevel = (typeof CERTIFICATION_LEVELS)[number];
+
+/**
  * The number `FPDF_GetLastError` answers when a document needs a password: `FPDF_ERR_PASSWORD`, read from PDFium
  * 155.0.8044.0's `fpdfview.h` (line 609, `.tools/pdfium/155.0.8044.0/include`) on 2026-10-05. At step `open` it means
  * the document is protected, which the person is told as such (ADR-0169 Decision 7).
@@ -133,6 +142,8 @@ export interface FailureDetails {
    * of it only where the available figure was under the low line.
    */
   readonly 'out-of-memory': { readonly totalBytes: number; readonly availableBytes: number; readonly othersUsingMost: boolean };
+  /** What the document's certifier allows, and the name they signed under, `''` where none can be read (ADR-0291). */
+  readonly certified: { readonly level: CertificationLevel; readonly signer: string };
 }
 
 /** The codes of `C` that carry no detail, as one member — or nothing, when every code of `C` carries one. */

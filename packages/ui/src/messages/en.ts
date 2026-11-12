@@ -135,6 +135,14 @@ export const SIGNED_EDIT_TITLE = messageKey('dialog.signed-edit.title');
 export const SIGNED_EDIT_EXPLAINS = messageKey('dialog.signed-edit.explains');
 export const SIGNED_EDIT_COPY = messageKey('dialog.signed-edit.copy');
 export const SIGNED_EDIT_THIS = messageKey('dialog.signed-edit.this');
+// A CERTIFIED DOCUMENT'S LOCK (ADR-0291): one sentence per level, said by the window that offers the copy and by the
+// problem dialog for a surface with no copy to offer, so the two read alike.
+export const CERTIFIED_NO_CHANGES = messageKey('problem.certified.no-changes');
+export const CERTIFIED_FORM_FILL = messageKey('problem.certified.form-fill');
+export const CERTIFIED_FORM_FILL_AND_ANNOTATE = messageKey('problem.certified.form-fill-and-annotate');
+export const CERTIFIED_BY_LABEL = messageKey('problem.certified.by');
+export const CERTIFIED_EDIT_TITLE = messageKey('dialog.certified-edit.title');
+export const CERTIFIED_EDIT_EXPLAINS = messageKey('dialog.certified-edit.explains');
 export const SAVE_TOO_DEEP_TITLE = messageKey('dialog.save-too-deep.title');
 export const SAVE_TOO_DEEP_EXPLAINS = messageKey('dialog.save-too-deep.explains');
 export const SAVE_TOO_DEEP_BOOKMARKS = messageKey('dialog.save-too-deep.bookmarks');
@@ -3757,6 +3765,15 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'This document is digitally signed. This change rewrites the whole file, so its signatures will no longer verify. Work on a copy to keep the signed document exactly as it is: the copy is saved where you choose and opens with this change made.',
   [SIGNED_EDIT_COPY]: 'Work on a copy',
   [SIGNED_EDIT_THIS]: 'Change this document',
+  [CERTIFIED_NO_CHANGES]: 'This document is certified, and its certifier allows no changes to it. Nothing was changed.',
+  [CERTIFIED_FORM_FILL]:
+    'This document is certified, and its certifier allows only filling in its form and signing it. Nothing was changed.',
+  [CERTIFIED_FORM_FILL_AND_ANNOTATE]:
+    'This document is certified, and its certifier allows only filling in its form, signing it and adding comments. Nothing was changed.',
+  [CERTIFIED_BY_LABEL]: 'Certified by',
+  [CERTIFIED_EDIT_TITLE]: 'This document is certified',
+  [CERTIFIED_EDIT_EXPLAINS]:
+    'Work on a copy to make this change. The copy is saved where you choose and opens with the change made. It is a new document and no longer carries the certification, and this document stays exactly as it was certified.',
   [SAVE_TOO_DEEP_TITLE]: 'This file can’t be saved',
   [SAVE_TOO_DEEP_EXPLAINS]:
     'This PDF is built in a way that is too deeply nested for Monstera to save. Nothing was written, and your file and your changes are as they were.',

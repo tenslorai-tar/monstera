@@ -493,6 +493,7 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'with-selection', props: { selected: 3 } },
   ],
   'dialog.signed-edit': [{ state: 'opened', props: {} }],
+  'dialog.certified-edit': [{ state: 'opened', props: { level: 'form-fill', signer: 'Grace Hopper' } }],
   'dialog.save-too-deep': [
     { state: 'bookmarks', props: { bookmarks: true } },
     { state: 'structure', props: { bookmarks: false } },

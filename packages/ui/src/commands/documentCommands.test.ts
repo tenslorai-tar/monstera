@@ -7605,6 +7605,87 @@ describe('every file write confirms, and its Show in folder reveals the file the
  * one dispatcher asks the person. Main's half — that nothing changed, and that agreed it applies — is
  * `apps/desktop/src/documentCommands.test.ts`' *an edit that would break a signature*.
  */
+describe('a change main answers certified for (ADR-0291)', () => {
+  const ROTATE: DispatchableCommand = { kind: 'rotatePages', pages: [0], quarterTurns: 1 };
+  const DETAIL = { level: 'no-changes', signer: 'Grace Hopper' } as const;
+
+  /** Main for a certified document: `certified` whatever is sent, and `editCopy` answering `copy`. */
+  function certifiedMain(copy: unknown = { kind: 'cancelled' }): { client: ContractClient; sent: { id: string; params: unknown }[] } {
+    const sent: { id: string; params: unknown }[] = [];
+    const client = createClient(channels, (id, params) => {
+      sent.push({ id, params });
+      if (id === 'document.editCopy') return Promise.resolve(ok(copy as never));
+      if (id !== 'document.execute') throw new Error(`this fixture has no answer for ${id}`);
+      return Promise.resolve(err({ code: 'certified' as const, detail: DETAIL }));
+    });
+    return { client, sent };
+  }
+
+  function answering(answer: unknown): { ask: (id: string, props: unknown) => Promise<unknown>; asked: { id: string; props: unknown }[] } {
+    const asked: { id: string; props: unknown }[] = [];
+    return {
+      asked,
+      ask: (id, props) => {
+        asked.push({ id, props });
+        return Promise.resolve(id === 'dialog.certified-edit' ? answer : undefined);
+      },
+    };
+  }
+
+  it('asks the certified window with the level and the certifier, and WORK ON A COPY sends the command to a copy', async () => {
+    const copy = { kind: 'edited', docId: asDocId('doc-copy'), version: 2, byteLength: 2048, name: 'copy.pdf', historyDropped: 0, boxed: [], more: 0 };
+    const { client, sent } = certifiedMain(copy);
+    const { ask, asked } = answering('copy');
+    const opened: unknown[] = [];
+
+    const moved = await applyDocumentCommand(
+      { client, ask, stamp, signatures: { warn: () => true, onOpened: (document) => opened.push(document) }, onApplied: () => undefined },
+      DOC,
+      ROTATE,
+    );
+
+    expect(moved).toBe(false);
+    expect(asked).toStrictEqual([{ id: 'dialog.certified-edit', props: DETAIL }]);
+    expect(sent).toStrictEqual([
+      { id: 'document.execute', params: { docId: DOC, command: ROTATE } },
+      { id: 'document.editCopy', params: { docId: DOC, command: ROTATE } },
+    ]);
+    expect(opened).toHaveLength(1);
+  });
+
+  it('NEVER sends the command again agreed, and the warning turned off does not skip the window', async () => {
+    const { client, sent } = certifiedMain();
+    const { ask, asked } = answering(undefined);
+    const kept: string[] = [];
+
+    const moved = await applyDocumentCommand(
+      { client, ask, stamp, signatures: { warn: () => false, onOpened: () => undefined }, onApplied: () => undefined },
+      DOC,
+      ROTATE,
+      {
+        keep: (error) => {
+          kept.push(error.code);
+          return true;
+        },
+      },
+    );
+
+    expect(moved).toBe(false);
+    // CANCEL: one send, no agreed resend, and the caller is told so it keeps what was typed.
+    expect(sent).toStrictEqual([{ id: 'document.execute', params: { docId: DOC, command: ROTATE } }]);
+    expect(asked.map((each) => each.id)).toStrictEqual(['dialog.certified-edit']);
+    expect(kept).toStrictEqual(['certified']);
+  });
+
+  it('CONTROL: the signed-edit question is not the one asked, so the certified window is the answer’s own', async () => {
+    const { client } = certifiedMain();
+    const { ask, asked } = answering(undefined);
+    await applyDocumentCommand({ client, ask, stamp, signatures: { warn: () => true, onOpened: () => undefined }, onApplied: () => undefined }, DOC, ROTATE);
+    expect(asked.map((each) => each.id)).not.toContain('dialog.signed-edit');
+    expect(asked.map((each) => each.id)).not.toContain('dialog.command-problem');
+  });
+});
+
 describe('an edit main answers breaks-signatures for (ADR-0149)', () => {
   const SANITIZE: DispatchableCommand = { kind: 'sanitizeDocument', parts: ['javascript'] };
   const COPY = asDocId('doc-copy');

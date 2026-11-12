@@ -49,6 +49,7 @@ const SAMPLE_DETAIL: { readonly [C in keyof FailureDetails]: FailureDetails[C] }
   'field-edit-refused': { reason: 'encrypted' },
   'command-looped': { command: 'watermarkPages' },
   'out-of-memory': { totalBytes: 8 * 1024 ** 3, availableBytes: 400 * 1024 ** 2, othersUsingMost: true },
+  certified: { level: 'no-changes', signer: 'Grace Hopper' },
 };
 
 /** A declared failure as it would arrive: the code, and its detail where it declares one. */

@@ -91,6 +91,9 @@ export const COMMAND_PROBLEM_DIALOG = declareDialog({
     z.object({ code: z.literal('edit-refused'), detail: FAILURE_DETAIL_SCHEMAS['edit-refused'] }).strict(),
     // A CHANGE TO A FORM FIELD THAT COULD NOT BE MADE (ADR-0193): the sentence is the reason's.
     z.object({ code: z.literal('field-edit-refused'), detail: FAILURE_DETAIL_SCHEMAS['field-edit-refused'] }).strict(),
+    // A CERTIFIED DOCUMENT'S LOCK (ADR-0291), for a surface that has no copy to offer; the one dispatcher asks its own
+    // window instead. The sentence is the level's, and the certifier is the reference.
+    z.object({ code: z.literal('certified'), detail: FAILURE_DETAIL_SCHEMAS.certified }).strict(),
     // A COPY MADE FOR AN EDIT OF A SIGNED DOCUMENT (ADR-0149) that was written and could not be opened: gone before
     // the open, no free disk space to hold it in (ADR-0165), or its read refused — another program holding it, or no
     // permission. The file is where the person put it, without the edit.

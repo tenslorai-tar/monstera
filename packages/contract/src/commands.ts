@@ -1,11 +1,23 @@
 import type { DocId, DocVersion } from '@monstera/shared';
-import { DEFAULT_TEXT_LINE_HEIGHT, MAX_TEXT_LINE_HEIGHT, MAX_TEXT_PADDING, MIN_TEXT_LINE_HEIGHT, sameTextFrame, type TextFrame } from '@monstera/shared';
+import {
+  CERTIFICATION_LEVELS,
+  DEFAULT_TEXT_LINE_HEIGHT,
+  MAX_TEXT_LINE_HEIGHT,
+  MAX_TEXT_PADDING,
+  MIN_TEXT_LINE_HEIGHT,
+  sameTextFrame,
+  type TextFrame,
+} from '@monstera/shared';
+
+// THE LEVELS ARE SHARED'S, because a refusal's detail carries one (ADR-0291); re-exported where the payload uses them.
+export { CERTIFICATION_LEVELS, type CertificationLevel } from '@monstera/shared';
 import { z } from 'zod';
 
 import { isFollowable, schemeOf } from './followedLinks.js';
 import { MAX_PAGE_INDEX, MAX_PAGE_SET_ENTRIES, pageSetOfAtMost, pageSetSchema, pairedPageSetSchema } from './pageSet.js';
 import {
   DOCUMENT_PASSWORD_MAX_CHARS,
+  MAX_SIGNATURE_FIELD,
   OCR_ENGINES,
   docIdSchema,
   docVersionSchema,
@@ -3883,14 +3895,9 @@ export const flattenFormFieldsSchema = z.object({
   version: docVersionSchema,
 }).strict();
 
-/**
- * How long a signature's descriptive fields may be.
- *
- * `/Reason`, `/Location`, `/ContactInfo` and the signer's name go into the
- * signature dictionary as PDF strings. None scales with the document; the bound
- * exists because every string that crosses here is bounded.
- */
-export const MAX_SIGNATURE_FIELD = 256;
+// HOW LONG A SIGNATURE'S DESCRIPTIVE FIELDS MAY BE is `schemas.ts`' now, since a refusal's detail names a certifier
+// (ADR-0291) and that module cannot import this one; re-exported here, where every other reader finds it.
+export { MAX_SIGNATURE_FIELD } from './schemas.js';
 
 /**
  * The faces a typed signature may be set in, in the order a person is offered them
@@ -4541,14 +4548,8 @@ export const placeSignaturePictureSchema = z
   })
   .strict();
 
-/**
- * What a certifying signature allows to change afterwards, by the words this build uses for `/DocMDP`'s `/P` 1, 2 and
- * 3 (ISO 32000-1 §12.8.2.2). One list for the signer that writes a certification and the reader that obeys one
- * ([ADR-0291](../../../docs/DECISIONS/0291-a-certified-document-is-locked-to-what-its-certifier-allowed-and-worked-on-as-a-copy.md)).
- */
-export const CERTIFICATION_LEVELS = ['no-changes', 'form-fill', 'form-fill-and-annotate'] as const;
+/** `@monstera/shared`'s `CERTIFICATION_LEVELS` as a schema (ADR-0291): the Sign payload, the host's answer and the refusal. */
 export const certificationLevelSchema = z.enum(CERTIFICATION_LEVELS);
-export type CertificationLevel = z.infer<typeof certificationLevelSchema>;
 
 /**
  * Signs the document with a PKCS#12 certificate the user picked.

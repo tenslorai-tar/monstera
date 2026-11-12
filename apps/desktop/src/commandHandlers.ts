@@ -7,6 +7,7 @@ import {
   type DocumentCommands,
   DocumentPoisonedError,
   SignaturesWouldBreakError,
+  CertifiedChangeError,
   serviceReasonOf,
 } from './documentCommands.js';
 import { editRefusalOf } from './editRefusals.js';
@@ -68,6 +69,10 @@ export function executeCommandHandler(
       // A QUESTION FOR THE PERSON, not a fault (ADR-0149): the edit would break a signed document's signatures and
       // nothing changed. The count stays main-side; the dispatcher asks and sends the command again, or a copy.
       if (thrown instanceof SignaturesWouldBreakError) return err({ code: 'breaks-signatures' });
+      // A CERTIFIED DOCUMENT'S LOCK (ADR-0291): nothing changed; the level and the certifier go to the person.
+      if (thrown instanceof CertifiedChangeError) {
+        return err({ code: 'certified', detail: { level: thrown.certification.level, signer: thrown.certification.signer } });
+      }
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
       // A COMMAND THE ENGINE WAS STOPPED ON THREE TIMES (ADR-0221): the document is open and intact, and the one thing
