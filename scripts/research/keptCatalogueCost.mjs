@@ -58,7 +58,7 @@ process.stdout.write(`written: ${(performance.now() - started).toFixed(0)} ms, $
 
 for (let round = 1; round <= 5; round += 1) {
   started = performance.now();
-  /** @type {{ faces: (Record<string, unknown> & { unicodes: number[] })[] }} */
+  /** @type {{ faces: { id: string, unicodes: number[] }[] }} */
   const kept = JSON.parse(readFileSync(file, 'utf8'));
   const faces = kept.faces.map((face) => ({ ...face, unicodes: setOf(face.unicodes) }));
   const took = performance.now() - started;
@@ -67,7 +67,7 @@ for (let round = 1; round <= 5; round += 1) {
     faces.length === read.faces.length &&
     faces.every((face, at) => {
       const original = read.faces[at];
-      return original !== undefined && face['id'] === original.id && face.unicodes.size === original.unicodes.size && [...original.unicodes].every((code) => face.unicodes.has(code));
+      return original !== undefined && face.id === original.id && face.unicodes.size === original.unicodes.size && [...original.unicodes].every((code) => face.unicodes.has(code));
     });
   if (!same) throw new Error('the faces loaded back differ from the faces read, so the load time is of another catalogue');
   process.stdout.write(`load ${String(round)}: ${took.toFixed(0)} ms, the same ${String(faces.length)} faces\n`);
