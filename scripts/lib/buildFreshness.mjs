@@ -485,6 +485,16 @@ export const HISTORY_STORE = [
 ];
 
 /**
+ * `historyDeleteCost.mjs`: the built history store in `main`, and the rewrite worker it starts from `packages/nodemode`.
+ *
+ * @type {readonly BuildEdge[]}
+ */
+export const HISTORY_DELETE = [
+  ['apps/desktop/src', 'apps/desktop/dist/historyStore.js', 'tsc'],
+  ['packages/nodemode/src', 'packages/nodemode/dist/historyRewriteWorker.js', 'tsc'],
+];
+
+/**
  * What `inlineImages.proof.mjs` runs: the shim's inline-image rewrite through the built native binding, and PDFium's
  * edit through the built adapter (ADR-0126).
  *
