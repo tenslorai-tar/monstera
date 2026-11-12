@@ -1269,6 +1269,30 @@ describe('the composition point owns DocumentService.run -> CommandBus.execute',
     expect(held.commandBarred(docId, 'deletePages')).toBe(false);
   });
 
+  it('the lane’s signature read is made INSIDE the command’s ledger, so a host frozen under it strikes the command (ADR-0221, ADR-0291)', async () => {
+    const held = engine();
+    const runningDuringRead: (string | undefined)[] = [];
+    const commands = new DocumentCommands({
+      ...INERT,
+      documents: service,
+      bus: bus(),
+      engine: held,
+      signaturesKept: () => {
+        // WHAT A DEADLINE HERE WOULD BE COUNTED AGAINST: the command the engine says it is running.
+        runningDuringRead.push(held.runningCommand(docId));
+        return Promise.resolve({ signatures: 0, kept: true, certification: null });
+      },
+    });
+
+    await commands.execute(docId, rotateOnce);
+
+    // Measured on CI before this was moved: the read ran with no command running, so the freeze `hostDeadline.mjs`
+    // makes landed on it as a death against the document, and two poisoned it.
+    expect(runningDuringRead).toStrictEqual([rotateOnce.kind]);
+    // CONTROL: once the command has ended, nothing is running.
+    expect(held.runningCommand(docId)).toBeUndefined();
+  });
+
   it('CONTROL: the same document, unpoisoned, reaches the engine and applies', async () => {
     // Without this the case above is satisfied by an `execute` that refuses
     // everything, and by a supervisor whose `poisoned` answers a count for a

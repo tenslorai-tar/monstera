@@ -4142,39 +4142,41 @@ export class DocumentCommands {
       // one apart from a byte-image writer that never has a stored session.
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
-      // A CERTIFIED DOCUMENT IS HELD TO WHAT ITS CERTIFIER ALLOWED (ADR-0291), asked here, in the lane before the bus,
-      // and BEFORE the signature question below: that one is a warning a person may agree past, and this is not, so
-      // `breakSignatures` does not pass it. Asked of the document's own session for every command, since a level that
-      // allows a fill and refuses a page turn is a question about the kind and the document together.
-      const certifiedSession = sessions.mupdf;
-      if (certifiedSession === undefined) throw new MissingSessionError(docId, 'mupdf');
-      const { certification } = await this.#signaturesKept(certifiedSession);
-      if (certification !== null && !allowedByCertification(command.kind, certification.level)) {
-        throw new CertifiedChangeError(command.kind, certification);
-      }
-
-      // A SIGNED DOCUMENT IS ASKED ABOUT BEFORE THE EDIT, never at the save after it (ADR-0149). A command that
-      // rewrites the document whole breaks every signature in it, and by the save the image is already rewritten —
-      // MuPDF then reopens it, finds the signature dictionaries, will append, and answers *kept*. So the question is
-      // asked here, inside the lane, before the bus has touched anything, of the document's own session.
-      if (breaksSignatures(command.kind) && !context.signaturesBreakAgreed) {
-        if (options.breakSignatures === true) {
-          context.agreeToBreakSignatures();
-        } else {
-          const session = sessions.mupdf;
-          if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
-          const { signatures } = await this.#signaturesKept(session);
-          if (signatures > 0) throw new SignaturesWouldBreakError(command.kind, signatures);
-        }
-      }
-
-      // THE PAGES A COMMAND THAT PLACES ON PAGES WILL LEAVE, because they display nothing (ADR-0254): read in this lane,
-      // before the bus, by the writers' own rule, so the pages named are the pages the command leaves.
-      skipped.pages = await this.#pagesShowingNothing(docId, sessions, command);
       // A COMMAND THAT HAS ENDED THE ENGINE THREE TIMES IS NOT SENT AGAIN (ADR-0221), and the refusal is decided here,
       // before the host, so the fourth attempt costs nothing. Read inside the lane for the poison check's reason.
-      const { trimmed, entry, drawn } = await ledgered(this.#engine, docId, command.kind, () =>
-        this.#bus.execute<K>(
+      //
+      // EVERY HOST CALL MADE FOR THIS COMMAND IS INSIDE ITS LEDGER, the reads before the bus as well as the bus. A
+      // deadline is counted against the command whose call the host was running; a read made for the command outside
+      // the ledger was running no command, so a host that froze under it was a death against the DOCUMENT, and two
+      // poisoned it where ADR-0221 bars the command (measured on CI, `hostDeadline.mjs`, after ADR-0291's read joined
+      // the lane: the freeze landed on `engine/signatures-kept`).
+      const { trimmed, entry, drawn } = await ledgered(this.#engine, docId, command.kind, async () => {
+        // THE DOCUMENT'S SIGNATURES AND ITS CERTIFICATION, in one host read, asked of its own session.
+        const signed = sessions.mupdf;
+        if (signed === undefined) throw new MissingSessionError(docId, 'mupdf');
+        const facts = await this.#signaturesKept(signed);
+
+        // A CERTIFIED DOCUMENT IS HELD TO WHAT ITS CERTIFIER ALLOWED (ADR-0291), before the bus and BEFORE the signature
+        // question below: that one is a warning a person may agree past, and this is not, so `breakSignatures` does not
+        // pass it. Asked for every command, since a level that allows a fill and refuses a page turn is a question about
+        // the kind and the document together.
+        if (facts.certification !== null && !allowedByCertification(command.kind, facts.certification.level)) {
+          throw new CertifiedChangeError(command.kind, facts.certification);
+        }
+
+        // A SIGNED DOCUMENT IS ASKED ABOUT BEFORE THE EDIT, never at the save after it (ADR-0149). A command that
+        // rewrites the document whole breaks every signature in it, and by the save the image is already rewritten —
+        // MuPDF then reopens it, finds the signature dictionaries, will append, and answers *kept*. So the question is
+        // asked here, before the bus has touched anything.
+        if (breaksSignatures(command.kind) && !context.signaturesBreakAgreed) {
+          if (options.breakSignatures === true) context.agreeToBreakSignatures();
+          else if (facts.signatures > 0) throw new SignaturesWouldBreakError(command.kind, facts.signatures);
+        }
+
+        // THE PAGES A COMMAND THAT PLACES ON PAGES WILL LEAVE, because they display nothing (ADR-0254): read before the
+        // bus, by the writers' own rule, so the pages named are the pages the command leaves.
+        skipped.pages = await this.#pagesShowingNothing(docId, sessions, command);
+        return this.#bus.execute<K>(
           sessions,
           context,
           command,
@@ -4183,8 +4185,8 @@ export class DocumentCommands {
           // name*, and the payload is the contract's (ADR-0040 Decision 4).
           this.#byteImage(docId, sourceIdsOf(command)),
           options.joinsStep,
-        ),
-      );
+        );
+      });
       // A DEFECT THE WRITE'S OWN CHECKS FOUND in a write that was kept (ADR-0270): to the log, never to the person.
       for (const note of drawn.noted) this.#engine.writerDefect(docId, command.kind, note);
       // A PROTECT MOVES THE HOLDER, in the lane and after the bus recorded it, so every later open of a copy has the
