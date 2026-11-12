@@ -15,11 +15,14 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, win32 } from 'node:path';
 
+import { BLOCK_FACES_READ, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { bindNativeEngine } from '../lib/nativeEngine.mjs';
 import { fontsDirectory } from '../provision/fonts.mjs';
 
 const ROOT = repoRoot();
+// THE BUILD THESE FIGURES ARE OF is the sources' own, or nothing is timed.
+refuseStaleBuild(ROOT, BLOCK_FACES_READ, 2);
 if (bindNativeEngine(ROOT) === null) throw new Error('the MuPDF shim is not built here');
 // A LITERAL SPECIFIER per module, so the import scans can read what this loads.
 const { bindEditFolders, loadEditFaces, editFaces } = await import('../../packages/kernel/dist/editFaces.js');

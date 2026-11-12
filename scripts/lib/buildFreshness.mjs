@@ -415,6 +415,14 @@ export const FONT_CATALOGUE_APART = [
 ];
 
 /**
+ * What `blockFacesCost.mjs` runs: the read on open (`blockFaces.js`) and the modules it opens a page through, across the
+ * kernel, over the native engine.
+ *
+ * @type {BuildEdge[]}
+ */
+export const BLOCK_FACES_READ = [['packages/kernel/src', 'packages/kernel/dist/index.js', 'tsc'], ...NATIVE_ENGINE];
+
+/**
  * How every thread that ends is started and answered, which `apartStart.proof.mjs` runs from a child. `apartEntry.js`
  * is started by path from `apart.js`, so the guard walks to it.
  *

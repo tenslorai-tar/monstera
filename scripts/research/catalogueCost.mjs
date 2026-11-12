@@ -15,10 +15,13 @@
 import { readdirSync, statSync } from 'node:fs';
 import { join, win32 } from 'node:path';
 
+import { FONT_CATALOGUE_APART, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { fontsDirectory } from '../provision/fonts.mjs';
 
 const ROOT = repoRoot();
+// THE BUILD THESE FIGURES ARE OF is the sources' own, or nothing is timed.
+refuseStaleBuild(ROOT, FONT_CATALOGUE_APART, 4);
 // A LITERAL SPECIFIER per module, so the import scans can read what this loads.
 const { fontFoldersOf } = await import('../../packages/kernel/dist/fontCatalogue.js');
 const { readCatalogueApart } = await import('../../packages/kernel/dist/fontCatalogueApart.js');

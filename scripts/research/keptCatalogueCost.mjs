@@ -12,10 +12,13 @@
 import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join, resolve, win32 } from 'node:path';
 
+import { FONT_CATALOGUE_APART, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { fontsDirectory } from '../provision/fonts.mjs';
 
 const ROOT = repoRoot();
+// THE BUILD THESE FIGURES ARE OF is the sources' own, or nothing is timed.
+refuseStaleBuild(ROOT, FONT_CATALOGUE_APART, 4);
 const scratch = process.argv[2];
 if (scratch === undefined) throw new Error('usage: node scripts/research/keptCatalogueCost.mjs <scratch folder outside the repository>');
 if (resolve(scratch).toLowerCase().startsWith(ROOT.toLowerCase())) throw new Error('the scratch folder is inside the repository, and the file names the machine’s fonts');
