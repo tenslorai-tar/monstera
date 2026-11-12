@@ -27,6 +27,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 import { fileURLToPath } from 'node:url';
 import { expect } from '@playwright/test';
 import { _electron } from 'playwright';
+import { endProcesses, listProcesses, treeOf } from '../lib/childProcesses.mjs';
 import { entryScript } from '../lib/isMain.mjs';
 import { developmentEnvironment } from '../lib/launchEnvironment.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
@@ -419,12 +420,19 @@ async function walkOn(walk, app, page, output, runCommand, build) {
    * failed with an editor holding refused words left that question up, and the walk of 2026-11-02 waited on it for two
    * hours with its report unwritten. The walk's documents are its own copies, so the process is ended and the question
    * that held it is printed and recorded, because a close the app held is itself something a step left behind.
+   *
+   * ENDED MEANS THE APP'S WHOLE TREE, read before the close. The process Playwright launched is one of several, and
+   * ending it ends it alone: on 2026-11-12 a held close ended that one, printed that the app was ended, and left its five
+   * processes running, so the walk waited on them for an hour and 41 minutes. Once the launched process is gone its
+   * children can no longer be shown to be its (`childProcesses.mjs`), so the tree is read while it runs.
    */
   const finish = async () => {
     const passed = steps.filter((each) => each.outcome === 'passed').length;
     await writeFile(join(output, 'report.json'), `${JSON.stringify({ walk, build, steps }, null, 2)}\n`);
     const closing = Date.now();
     const shell = app.process();
+    const tree = shell.pid === undefined ? [] : treeOf(shell.pid, listProcesses());
+    if (tree.length === 0) process.stdout.write(`\nTHE APP'S PROCESS TREE could not be read before the close, so what is left running after it is not known\n`);
     // ENDED IS THE PROCESS'S OWN WORD, never the close call's: a close that threw was read as closed until a development
     // app from a walk at 20:04 on 2026-11-02 was found still open an hour later.
     const ended = () => shell.exitCode !== null || shell.signalCode !== null;
@@ -438,18 +446,17 @@ async function walkOn(walk, app, page, output, runCommand, build) {
       }),
     ]);
     if (settled !== 'held' && !ended()) await new Promise((resolve) => setTimeout(resolve, 2000));
-    const closed = settled !== 'held' && ended();
-    if (settled !== 'held' && !closed) {
-      process.stdout.write(`\nCLOSE ${String(settled).toUpperCase()} and the app's process had not ended, so it was ended\n`);
-      shell.kill();
-    }
     if (settled === 'held') {
       const asked = await page.locator('[role=dialog], [role=alertdialog]').allInnerTexts().catch(() => /** @type {string[]} */ ([]));
       const held = asked.map((text) => text.replaceAll(/\s+/gu, ' ').slice(0, 200)).join(' | ') || 'no dialog on screen';
       await writeFile(join(output, 'report.json'), `${JSON.stringify({ walk, build, steps, closeHeld: held }, null, 2)}\n`);
-      process.stdout.write(`\nCLOSE HELD by the app for ${String(CLOSE_HELD_MS / 1000)} s, so the process was ended: ${held}\n`);
-      app.process().kill();
+      process.stdout.write(`\nCLOSE HELD by the app for ${String(CLOSE_HELD_MS / 1000)} s: ${held}\n`);
     }
+    // WHATEVER OF THE TREE IS STILL RUNNING is ended, by each process's own id, and the line says what was and what was not.
+    const { ended: endedHere, left } = await endProcesses(tree);
+    if (endedHere.length > 0) process.stdout.write(`\nCLOSE ${String(settled).toUpperCase()}, and ${String(endedHere.length)} of the app's ${String(tree.length)} processes were still running, so they were ended\n`);
+    if (left.length > 0) process.stdout.write(`\nTHE APP IS STILL RUNNING: ${left.map((each) => `${String(each.pid)} ${each.name}`).join(', ')} did not end within 10 s\n`);
+    const closed = settled !== 'held' && ended() && endedHere.length === 0 && left.length === 0;
     process.stdout.write(`\nClosed in ${String(Date.now() - closing)} ms. Screenshots and report.json: ${output}\n`);
     process.stdout.write(`WALK ${walk}: ${String(passed)} of ${String(steps.length)} steps passed\n`);
     process.exitCode = passed === steps.length && closed ? 0 : 1;

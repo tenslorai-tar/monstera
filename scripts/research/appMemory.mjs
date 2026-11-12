@@ -50,6 +50,7 @@ import { join, resolve } from 'node:path';
 
 import { chromium } from '@playwright/test';
 
+import { endTree } from '../lib/childProcesses.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { buildScanFixture } from '../perf/largeFixture.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
@@ -121,12 +122,9 @@ function launch(documents) {
 async function end(child, userData) {
   ending = true;
   const exited = child.exitCode !== null ? Promise.resolve() : new Promise((done) => child.once('exit', done));
-  if (child.pid !== undefined) {
-    try {
-      execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
-    } catch {
-      // Already gone: the state this wanted.
-    }
+  if (child.pid !== undefined && child.exitCode === null) {
+    const { left } = await endTree(child.pid);
+    if (left.length > 0) console.error(`THE APPLICATION IS STILL RUNNING: ${left.map((each) => String(each.pid)).join(', ')} did not end`);
   }
   await exited;
   for (let i = 0; i < 60 && portListeners().length > 0; i += 1) await new Promise((done) => setTimeout(done, 500));

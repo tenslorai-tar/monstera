@@ -35,10 +35,12 @@
  * gets there.
  */
 
-import { execFileSync, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
+import { endTree } from '../lib/childProcesses.mjs';
 
 /** The application's own page, as `window.ts` loads it. */
 const RENDERER_PAGE = /^file:\/\/\/.*\/renderer\/index\.html$/u;
@@ -156,11 +158,9 @@ export async function startsToWindow({ command, args = [], timeoutMs = 60_000 })
     };
   } finally {
     if (exitCode === undefined && child.pid !== undefined) {
-      try {
-        execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
-      } catch {
-        // Already gone: taskkill exits non-zero for a PID with no process, which is the state this wanted.
-      }
+      // EACH OF THE TREE BY ITS OWN ID (`childProcesses.mjs`' `endProcesses`), and what did not end is said.
+      const { left } = await endTree(child.pid);
+      if (left.length > 0) console.error(`THE APPLICATION IS STILL RUNNING: ${left.map((each) => String(each.pid)).join(', ')} did not end`);
       await exited;
     }
     // THE PROFILE IS RELEASED as the tree finishes tearing down, after the launched process's own exit — so a folder

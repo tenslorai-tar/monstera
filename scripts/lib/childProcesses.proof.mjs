@@ -10,18 +10,22 @@
  * Usage: node scripts/lib/childProcesses.proof.mjs
  */
 
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { childrenAmong, descendantsAmong, parseListing } from './childProcesses.mjs';
+import { childrenAmong, descendantsAmong, endTree, listProcesses, parseListing, stillRunning, treeOf } from './childProcesses.mjs';
 import { repoRoot } from './gitScope.mjs';
 import { createRoster } from './passRoster.mjs';
 import { formatError } from './reportError.mjs';
 
+/** THE LIVE TREE CASES need Windows' process listing; elsewhere they are named as not run. */
+const LIVE = process.platform === 'win32';
+const LIVE_CASES = 2;
+
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 11 });
+const roster = createRoster(failures, { cases: 15 + (LIVE ? LIVE_CASES : 0) });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -51,7 +55,7 @@ const SELF = listed(US, 9999, STARTED, 'electron.exe');
 const HOST = listed(5100, US, STARTED + 20_000_000n, 'electron.exe');
 const SECOND_HOST = listed(5200, US, STARTED + 40_000_000n, 'electron.exe');
 
-function main() {
+async function main() {
   const reused = [SELF, WORKER_A, WORKER_B, HOST];
   check(
     'a process that records our pid as its parent but was created BEFORE us is not counted',
@@ -144,14 +148,101 @@ function main() {
     `found in ${JSON.stringify(spelling)} across ${String(files.length)} files; outside the helper: ${JSON.stringify(elsewhere)}`,
   );
 
+  // THE TREE TO END is the rule's tree, with each process's creation time, so a survivor is the same process.
+  const toEnd = treeOf(US, tree).map((each) => each.pid).sort((a, b) => a - b);
+  check(
+    'the tree to end is the rule’s tree: the root, the host and its child, never a process older than the root',
+    JSON.stringify(toEnd) === JSON.stringify([US, HOST.pid, 5101].sort((a, b) => a - b)),
+    `would end ${JSON.stringify(toEnd)}`,
+  );
+  const reusedId = listed(HOST.pid, 1, STARTED + 900_000_000n, 'notepad.exe');
+  check(
+    'a target whose id now belongs to a newer process is not still running, so a stranger is never ended in its place',
+    stillRunning([HOST], [reusedId]).length === 0,
+    `read ${JSON.stringify(stillRunning([HOST], [reusedId]).map((each) => each.pid))} as still running`,
+  );
+  check(
+    'CONTROL: the same id with the same creation time is still running',
+    stillRunning([HOST], [HOST]).length === 1,
+    'the target itself was not read as running',
+  );
+
+  // NO SCRIPT ENDS A PROCESS TREE BY ITS OWN SPELLING (B3a): `taskkill /T` follows the recorded parent id the rule above
+  // refuses. The positive control is the spelling the walks used, which the pattern must find; the files are the list
+  // the scan above already read and found the helper in.
+  const TASKKILL = /['"]taskkill['"]/u;
+  const spelt = ['execFileSync(', "'task", "kill', ['/PID', pid, '/T', '/F'])"].join('');
+  const killing = files.filter((file) => TASKKILL.test(readFileSync(join(root, file), 'utf8')));
+  check(
+    'no file runs taskkill; every tree is ended by `endProcesses` (positive control: the walks’ own spelling is found)',
+    TASKKILL.test(spelt) && killing.length === 0,
+    `pattern finds the walks’ spelling: ${String(TASKKILL.test(spelt))}; found in ${JSON.stringify(killing)}`,
+  );
+
+  if (LIVE) await liveTree();
+  else process.stdout.write(`NOT RUN on ${process.platform}: the ${String(LIVE_CASES)} live tree cases, which read Windows' process listing\n`);
+
   process.stdout.write(
     failures.length > 0 ? `${String(failures.length)} child-process failure(s):\n\n  - ${failures.join('\n\n  - ')}\n\n` : roster.format('child-process case'),
   );
   return failures.length > 0 ? 1 : 0;
 }
 
+/**
+ * A parent node process that starts a child node process and prints its id, the shape of an Electron app whose launched
+ * process is one of several. Started fresh for each case.
+ *
+ * THE CHILD IS DETACHED, which is the app's shape and not node's default: libuv puts every process node starts in a job
+ * object that ends them when the parent's handle closes, so an undetached child ends with its parent (measured
+ * 2026-11-12, the first run of this case). Chromium's processes are in no such job, which is why the walk's survived.
+ *
+ * @returns {Promise<{ parent: import('node:child_process').ChildProcess, child: number }>}
+ */
+function startPair() {
+  const grandchild = 'setInterval(() => undefined, 1000);';
+  const program = [
+    "const { spawn } = require('node:child_process');",
+    `const child = spawn(process.execPath, ['-e', ${JSON.stringify(grandchild)}], { stdio: 'ignore', detached: true });`,
+    'process.stdout.write(String(child.pid));',
+    'setInterval(() => undefined, 1000);',
+  ].join(' ');
+  const parent = spawn(process.execPath, ['-e', program], { stdio: ['ignore', 'pipe', 'ignore'] });
+  return new Promise((resolve, reject) => {
+    parent.stdout?.once('data', (chunk) => resolve({ parent, child: Number(String(chunk)) }));
+    parent.once('error', reject);
+  });
+}
+
+/** @param {number} pid */
+const running = (pid) => listProcesses({ filter: `ProcessId=${String(pid)}` }).length > 0;
+
+async function liveTree() {
+  // CONTROL, the defect itself: ending the launched process alone leaves its child running.
+  const alone = await startPair();
+  alone.parent.kill();
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  const survived = running(alone.child);
+  // The orphan is out of the rule's reach now (its parent is gone), so it is ended by the id it printed.
+  if (survived) process.kill(alone.child);
+  check(
+    'CONTROL: ending only the launched process leaves its child running, which is what held the walk of 2026-11-12',
+    survived,
+    `child ${String(alone.child)} ended with its parent, so this case cannot separate the fix from the bug on this machine`,
+  );
+
+  const pair = await startPair();
+  const { ended, left } = await endTree(pair.parent.pid ?? -1);
+  const gone = !running(pair.parent.pid ?? -1) && !running(pair.child);
+  if (!gone) process.kill(pair.child);
+  check(
+    'ending the tree ends the launched process AND its child, and says it ended both',
+    gone && left.length === 0 && ended.some((each) => each.pid === pair.child),
+    `ended ${JSON.stringify(ended.map((each) => each.pid))}, left ${JSON.stringify(left.map((each) => each.pid))}, child ${String(pair.child)}`,
+  );
+}
+
 try {
-  process.exit(main());
+  process.exit(await main());
 } catch (error) {
   process.stderr.write(`${formatError(error)}\n`);
   process.exit(1);

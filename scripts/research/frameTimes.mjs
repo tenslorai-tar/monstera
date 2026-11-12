@@ -78,6 +78,7 @@ import { join, resolve } from 'node:path';
 
 import { chromium } from '@playwright/test';
 
+import { endTree } from '../lib/childProcesses.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { buildScanFixture } from '../perf/largeFixture.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
@@ -450,11 +451,9 @@ async function end(child, userData) {
   // port's listener, checked against the owner's own PIDs when it was found.
   const root = build === 'installed' ? appPid : child.pid;
   if (root !== undefined) {
-    try {
-      execFileSync('taskkill', ['/PID', String(root), '/T', '/F'], { stdio: 'ignore' });
-    } catch {
-      // Already gone: taskkill exits non-zero for a PID with no process, which is the state this wanted.
-    }
+    // EACH OF THE TREE BY ITS OWN ID (`childProcesses.mjs`' `endProcesses`): a root already gone has no tree to read.
+    const { left } = await endTree(root);
+    if (left.length > 0) console.error(`THE APPLICATION IS STILL RUNNING: ${left.map((each) => String(each.pid)).join(', ')} did not end`);
   }
   await exited;
   // THE PORT IS THE NEXT RUN'S PRECONDITION, so the teardown waits for it to be released rather than for a guess.

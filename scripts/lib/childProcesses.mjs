@@ -174,6 +174,78 @@ export function childProcessIds(pid = process.pid) {
 }
 
 /**
+ * `root` and every process below it as `listing` shows them, each edge decided by {@link childrenAmong}'s rule: the
+ * processes {@link endProcesses} is to end. Read it while `root` is running — once `root` has ended nothing can be shown
+ * to be its child, so its children are out of reach, which is why a caller reads the tree BEFORE anything may end it.
+ *
+ * @param {number} root
+ * @param {readonly ListedProcess[]} listing
+ * @returns {ListedProcess[]}
+ */
+export function treeOf(root, listing) {
+  const below = descendantsAmong(root, listing);
+  return listing.filter((each) => below.has(each.pid));
+}
+
+/**
+ * Which of `targets` are still running in `listing`. A process is the same one only when its id AND its creation time
+ * match: an id Windows has given to a new process since is not a target that survived.
+ *
+ * @param {readonly ListedProcess[]} targets
+ * @param {readonly ListedProcess[]} listing
+ * @returns {ListedProcess[]}
+ */
+export function stillRunning(targets, listing) {
+  return targets.filter((target) => target.created !== null && listing.some((each) => each.pid === target.pid && each.created === target.created));
+}
+
+/**
+ * Ends each of `targets` that is still running, and waits until none is, or `timeoutMs` passes.
+ *
+ * ## Each process by its own id, never `taskkill /T`
+ *
+ * Ending a process ends that process: Windows does not end its children with it. A walk that ended the one process
+ * Playwright launched left the application's own five processes running, and the walk waited on them for an hour and 41
+ * minutes (2026-11-12). `taskkill /T` follows the recorded parent id, which {@link childrenAmong} exists because Windows
+ * reuses — so it can end a stranger. So the tree is read by the rule, and each member is ended by id.
+ *
+ * Termination is requested, not finished, when the call returns, so this re-reads until the targets are gone. What is
+ * left is RETURNED, never thrown, and never claimed ended: the caller says what happened.
+ *
+ * @param {readonly ListedProcess[]} targets
+ * @param {{ timeoutMs?: number }} [options]
+ * @returns {Promise<{ ended: ListedProcess[], left: ListedProcess[] }>}
+ */
+export async function endProcesses(targets, options = {}) {
+  const running = stillRunning(targets, listProcesses());
+  for (const each of running) {
+    try {
+      process.kill(each.pid);
+    } catch (error) {
+      // ESRCH: it ended between the listing and this call, which is the state this wanted. Anything else is reported.
+      if (!(error instanceof Error && 'code' in error && error.code === 'ESRCH')) throw error;
+    }
+  }
+  const until = Date.now() + (options.timeoutMs ?? 10_000);
+  let left = running.length === 0 ? [] : stillRunning(running, listProcesses());
+  while (left.length > 0 && Date.now() < until) {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    left = stillRunning(left, listProcesses());
+  }
+  return { ended: running.filter((each) => !left.includes(each)), left };
+}
+
+/**
+ * Ends `root` and every process below it ({@link treeOf}, then {@link endProcesses}). `root` must still be running.
+ *
+ * @param {number} root
+ * @param {{ timeoutMs?: number }} [options]
+ */
+export function endTree(root, options = {}) {
+  return endProcesses(treeOf(root, listProcesses()), options);
+}
+
+/**
  * What a child count was made of, for a failure message: each child, and each process left out as older than `pid`.
  *
  * @param {number} [pid]
