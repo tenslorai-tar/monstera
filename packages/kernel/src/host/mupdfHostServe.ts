@@ -10,6 +10,7 @@ import {
 import { readPageBarcodes } from '../barcodeReader.js';
 import { bindEditFolders } from '../editFaces.js';
 import { readCatalogueApart } from '../fontCatalogueApart.js';
+import { catalogueReadingFrom, noteKeptRefused } from './keptArguments.js';
 import { localMupdfExecution } from '../mupdfSpecs.js';
 import { accessFor, mupdfWriter, signaturesKeptBySave } from '../mupdfWriter.js';
 import { readSignatures } from '../signatureRead.js';
@@ -67,7 +68,8 @@ const fontsPath = process.argv[4] === undefined || process.argv[4].length === 0 
 const installedPath = process.argv[5] === undefined || process.argv[5].length === 0 ? null : process.argv[5];
 // READ APART when they are read (`fontCatalogueApart.ts`), which also keeps HarfBuzz's catalogue read out of this
 // process: the thread loads its own.
-if (fontsPath !== null) bindEditFolders(fontsPath, installedPath, readCatalogueApart);
+// AND FROM THE KEPT CATALOGUE where `main` named one (ADR-0293 Decision 6), the folders read where it is absent or refused.
+if (fontsPath !== null) bindEditFolders(fontsPath, installedPath, catalogueReadingFrom(process.argv, readCatalogueApart, noteKeptRefused));
 
 /**
  * MuPDF's channel set and its handlers, composed HERE rather than in the body

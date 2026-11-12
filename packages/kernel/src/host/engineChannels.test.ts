@@ -1,6 +1,7 @@
 import { ENGINE_ANSWER_FILE_MAX_BYTES, FAILURE_CODE_MAX_CHARS, channels } from '@monstera/contract';
 import { describe, expect, it } from 'vitest';
 
+import { catalogueChannels } from './catalogueChannels.js';
 import { composeChannels } from './composeChannels.js';
 import { pdfiumChannels } from './pdfiumChannels.js';
 import {
@@ -31,7 +32,7 @@ describe('every code a host channel declares fits the wire’s bound (CR-SEC-13)
   it('MuPDF’s, PDFium’s and the import host’s, so the bound never refuses a real answer', () => {
     const failuresOf = (map: Readonly<Record<string, { readonly failures: readonly string[] }>>): string[] =>
       Object.values(map).flatMap((definition) => [...definition.failures]);
-    const codes = [...failuresOf(engineChannels), ...failuresOf(pdfiumChannels), ...failuresOf(composeChannels)];
+    const codes = [...failuresOf(engineChannels), ...failuresOf(pdfiumChannels), ...failuresOf(composeChannels), ...failuresOf(catalogueChannels)];
     // THE POSITIVE CONTROL: codes were found, so an empty walk cannot read as "none too long".
     expect(codes.length).toBeGreaterThan(10);
     expect(codes.filter((code) => code.length > FAILURE_CODE_MAX_CHARS)).toStrictEqual([]);

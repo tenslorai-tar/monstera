@@ -14,6 +14,7 @@ import {
 import { bindEditFaces } from '../editFaces.js';
 import { faceSourceOf, fontFoldersOf } from '../fontCatalogue.js';
 import { readCatalogueApart } from '../fontCatalogueApart.js';
+import { catalogueReadingFrom, noteKeptRefused } from './keptArguments.js';
 import { cryptoBytes } from '../token.js';
 import { probeContainment } from './containment.js';
 import type { HostArea } from './engineHandlers.js';
@@ -39,7 +40,11 @@ const fontsPath = process.argv[4] === undefined || process.argv[4].length === 0 
 // character no bundled face carries goes to an installed face whose licence allows editing before it is drawn as a box.
 const installedPath = process.argv[5] === undefined || process.argv[5].length === 0 ? null : process.argv[5];
 // READ APART, so what HarfBuzz keeps from reading every installed font ends with the thread that read it.
-if (fontsPath !== null) bindEditFaces(() => faceSourceOf(fontFoldersOf(fontsPath, installedPath), readCatalogueApart));
+// AND FROM THE KEPT CATALOGUE where `main` named one (ADR-0293 Decision 6), the folders read where it is absent or refused.
+if (fontsPath !== null) {
+  const reading = catalogueReadingFrom(process.argv, readCatalogueApart, noteKeptRefused);
+  bindEditFaces(() => faceSourceOf(fontFoldersOf(fontsPath, installedPath), reading));
+}
 
 /**
  * PDFium's channel set and its handlers

@@ -7,6 +7,7 @@ import { ENGINE_HOST_MAX_IN_FLIGHT } from '@monstera/contract/host';
 import { composerApart } from '../composeApart.js';
 import { type FaceSource, faceSourceOf, fontFoldersOf } from '../fontCatalogue.js';
 import { readCatalogueApart } from '../fontCatalogueApart.js';
+import { catalogueReadingFrom, noteKeptRefused } from './keptArguments.js';
 import { composeImages } from '../imageCompose.js';
 import { type OpenedPdf, openPdfFile } from '../mupdfOpen.js';
 import { MupdfOpenRefused, PDFDocument, keepInlineImages, rewriteImages } from '../mupdfRaw.js';
@@ -53,7 +54,8 @@ let catalogue: FaceSource | null = null;
 function faces(): FaceSource {
   if (catalogue === null) {
     if (fontsPath === null) throw new Error('the compose host was started without its fonts folder');
-    catalogue = faceSourceOf(fontFoldersOf(fontsPath, installedPath), readCatalogueApart);
+    // AND FROM THE KEPT CATALOGUE where `main` named one (ADR-0293 Decision 6), the folders read where it is absent or refused.
+    catalogue = faceSourceOf(fontFoldersOf(fontsPath, installedPath), catalogueReadingFrom(process.argv, readCatalogueApart, noteKeptRefused));
   }
   return catalogue;
 }

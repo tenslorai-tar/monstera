@@ -27,6 +27,7 @@ const ENTRIES = [
   { entry: 'hostEntry.ts', serves: './mupdfHostServe.js' },
   { entry: 'pdfiumHostEntry.ts', serves: './pdfiumHostServe.js' },
   { entry: 'composeHostEntry.ts', serves: './composeHostServe.js' },
+  { entry: 'catalogueHostEntry.ts', serves: './catalogueHostServe.js' },
 ] as const;
 
 /** Every specifier a source imports statically, `import type` excluded since it is erased. */

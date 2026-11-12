@@ -15,6 +15,7 @@ import {
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
+import { catalogueChannels } from './catalogueChannels.js';
 import { composeChannels } from './composeChannels.js';
 import { engineChannels } from './engineChannels.js';
 import { pdfiumChannels } from './pdfiumChannels.js';
@@ -27,7 +28,7 @@ import { pdfiumChannels } from './pdfiumChannels.js';
  * defect waiting for its document; this is the line that goes red the day it is declared rather than the day a person's
  * file finds it.
  */
-const HOSTS = { 'MuPDF host': engineChannels, 'PDFium host': pdfiumChannels, 'compose host': composeChannels };
+const HOSTS = { 'MuPDF host': engineChannels, 'PDFium host': pdfiumChannels, 'compose host': composeChannels, 'catalogue host': catalogueChannels };
 
 const violationsOf = (channels: ChannelMap) =>
   hostRouteViolations(channels, ENGINE_HOST_FRAME_MAX_BYTES, ENGINE_ANSWER_FILE_MAX_BYTES);
@@ -49,6 +50,7 @@ const PAST_THE_ROUTE: Readonly<Record<keyof typeof HOSTS, readonly string[]>> = 
   'MuPDF host': ['engine/invert', 'engine/applyPdfLib', 'engine/apply-file'],
   'PDFium host': ['engine/invert'],
   'compose host': [],
+  'catalogue host': [],
 };
 
 describe('the engine hosts’ declared routes', () => {

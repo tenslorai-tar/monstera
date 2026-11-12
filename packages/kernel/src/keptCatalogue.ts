@@ -131,6 +131,8 @@ export function catalogueFromKept(text: string, fingerprint: string, folders: re
     return { refused: 'it is not JSON' };
   }
   if (parsed.fingerprint !== fingerprint) return { refused: 'it was kept for other fonts' };
+  // NO FACE IS NEVER A CATALOGUE: taken, it would leave a host choosing among nothing where the folders hold faces.
+  if (parsed.faces.length === 0) return { refused: 'it holds no face' };
   const faces: CatalogueFace[] = [];
   for (const face of parsed.faces) {
     const folder = folders.find((each) => each.origin === (face.origin === 'last' ? 'bundled' : face.origin));
@@ -171,12 +173,14 @@ export function keptOrRead(area: string, fingerprint: string, read: CatalogueRea
 }
 
 /**
- * The catalogue host's one job (ADR-0293 Decision 4): `read` the folders, write the file whole beside its name and
- * rename it into place, then remove every other fingerprint's file. Answers how many faces it kept.
+ * The catalogue host's one job (ADR-0293, its correction of 2026-11-12): `read` the folders, write the file whole beside
+ * its name in `area`, the host's own output directory, and rename it into place, then remove every other fingerprint's
+ * file there. Answers how many faces it kept; a read that found none writes nothing and answers 0.
  */
 export function keepCatalogue(area: string, fingerprint: string, folders: readonly FontFolder[], read: CatalogueReading): number {
   const name = keptCatalogueName(fingerprint);
   const catalogue = read(folders);
+  if (catalogue.faces.length === 0) return 0;
   const partial = join(area, `${name}.partial`);
   writeFileSync(partial, keptCatalogueText(catalogue, fingerprint));
   renameSync(partial, join(area, name));

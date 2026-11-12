@@ -117,6 +117,7 @@ describe('a kept catalogue (ADR-0293)', () => {
     ['a face whose id is not its path and index', () => keptWith((kept) => (kept.faces[0] = { ...kept.faces[0], faceIndex: 3 })), 'id'],
     ['a face whose characters are not ordered ranges', () => keptWith((kept) => (kept.faces[0] = { ...kept.faces[0], unicodes: [0x61, 0x61, 0x41, 0x41] })), 'ordered'],
     ['text that is not JSON', () => '{', 'JSON'],
+    ['no face at all', () => keptWith((kept) => (kept.faces = [])), 'no face'],
   ];
 
   for (const [name, text, why] of REFUSED) {
@@ -144,6 +145,12 @@ describe('a kept catalogue (ADR-0293)', () => {
   it('names a file by a SHA-256 fingerprint and by nothing else, so no fingerprint is a path', () => {
     expect(keptCatalogueName(FINGERPRINT)).toBe(`${FINGERPRINT}.catalogue.json`);
     for (const bad of ['..', `..${'a'.repeat(62)}`, 'A'.repeat(64), 'a'.repeat(63), `${'a'.repeat(63)}/`]) expect(() => keptCatalogueName(bad)).toThrow(/SHA-256/u);
+  });
+
+  it('writes nothing for a read that found no face, and answers 0', () => {
+    const made = area();
+    expect(keepCatalogue(made, FINGERPRINT, FOLDERS, () => ({ faces: [], unreadable: [{ path: INSTALLED, reason: 'denied' }] }))).toBe(0);
+    expect(readdirSync(made)).toStrictEqual([]);
   });
 
   it('is written whole under its name, and the files of other fingerprints are removed', () => {
