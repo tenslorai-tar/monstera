@@ -310,3 +310,28 @@ owner has read it.
 9. **Delete runs on a worker thread**, as Decision 7 says: `historyRewriteWorker.ts` in `packages/nodemode` opens every
    record and writes the kept ones beside the file; `main` appends what was saved meanwhile and renames. The local agent's
    measurement of a large file on Windows decides whether the 3.1 to 3.9 s figure now stays off the main thread.
+
+## The owner's answers to the wiring's findings, 2026-11-12
+
+- **5 (a PDF that needs a password):** kept as built. Its history is never removed while the PDF needs a password.
+- **The locked-history line** is approved as written. *Clear chat history* is on Settings › Privacy, as it says:
+  `SettingsBody.tsx` draws it on the page whose id is `privacy`, and `SettingsBody.test.tsx` opens that page to press it.
+- **8 (decision h): built, on by default, with this note shown once in the AI assistant**, the owner's words: *"Chat
+  history is on. Conversations about this file are kept on this computer, encrypted for your Windows account. You can
+  turn it off in Settings › AI."* A person who turned it off stays off: persistence sends only the settings a person
+  set (`settingsStore.ts`' `exportable`), so a switch nobody touched is unset, takes the new default, and one turned off
+  is stored off.
+
+### Where *shown once* is remembered
+
+**In `main`'s history folder, as a file named `note-shown`, written by `main`.** The history store is the one writer of
+that folder (B3), and the note is about what it keeps. `ai.history.note` answers `show: true` exactly once, writing the
+file in the same call, so two windows cannot both show it. It answers `false` without writing while chat history is off,
+while this machine cannot keep it (no secure store) and while it is locked to another account, because the note would
+then say something untrue; the note is still owed until it can be true. *Clear chat history* leaves `note-shown` in
+place: it removes conversations and their key, and a person who cleared them has read the note.
+
+Rejected: **a setting**. A setting is drawn in the Settings window (`SettingDefinition` has no hidden form) and is
+exported and imported with the rest, so a person could see a switch for a note and a settings file could bring it back.
+**The renderer's own storage** (a remembered flag in the window): it is per window, and the renderer holds no state of
+its own that outlives it.
