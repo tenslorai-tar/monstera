@@ -47,7 +47,7 @@ vi.mock('node:fs', async (importOriginal) => {
   };
 });
 
-import { runHistoryRewrite } from '@monstera/nodemode';
+import { type Head, runHistoryRewrite, unseal, wholeRecords } from '@monstera/nodemode';
 
 import type { HistoryRewriter } from './historyRewriter.js';
 import { type HistoryGuard, HistoryLockedError, createHistoryStore as storeWith, frame } from './historyStore.js';
@@ -235,6 +235,38 @@ describe('one history file per PDF (ADR-0279)', () => {
       expect(chainsToEnd(rewritten)).toBe(true);
       expect(rewritten.includes(tear)).toBe(false);
     }
+  });
+
+  it('a TORN TAIL is cut on the cheap walk: no whole record before it is opened, and a tear in the MIDDLE still walks in full', () => {
+    const directory = folder();
+    const store = createHistoryStore(directory, fakeCipher());
+    for (const text of ['One', 'Two', 'Three']) store.save(PLACE_KEY, PLACE, ID, null, [{ role: 'user', text }], null, AT);
+    const whole = readFileSync(store.pathOf(PLACE_KEY));
+    // THE DATA KEY, as the fake cipher wrapped it: this account's prefix, then the key in hex.
+    const key = Buffer.from(Buffer.from(readFileSync(join(directory, 'history', 'key'), 'utf8'), 'base64').toString('utf8').slice('me|'.length), 'hex');
+    const walk = (bytes: Buffer) => {
+      const opened: number[] = [];
+      const found = wholeRecords(
+        (position, length) => bytes.subarray(position, position + length),
+        bytes.length,
+        (head: Head) => {
+          opened.push(head.start);
+          return unseal(key, bytes.subarray(head.at, head.at + head.length)) !== undefined;
+        },
+      );
+      return { ...found, opened };
+    };
+    // THE TAIL a crash or a full disk leaves mid-append: a head naming 500 bytes, and 80 of them.
+    const torn = walk(Buffer.concat([whole, frame(3, randomBytes(32), randomBytes(500)).subarray(0, 37), randomBytes(80)]));
+    expect(torn.end).toBe(whole.length);
+    expect(torn.heads).toHaveLength(walk(whole).heads.length);
+    expect(torn.opened.filter((start) => start < whole.length)).toStrictEqual([]);
+    // THE SAME HEAD IN THE MIDDLE, whole records after it: the shape the tail has, so it must not be cut there.
+    const at = walk(whole).heads[2]?.start ?? 0;
+    expect(at).toBeGreaterThan(0);
+    const middle = walk(Buffer.concat([whole.subarray(0, at), frame(3, randomBytes(32), randomBytes(1_000_000)).subarray(0, 37), randomBytes(80), whole.subarray(at)]));
+    expect(middle.heads).toHaveLength(walk(whole).heads.length);
+    expect(middle.opened).toContain(0);
   });
 
   it('a write never lands behind a TORN tail: the torn bytes are cut first, and only they are lost', () => {

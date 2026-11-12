@@ -440,3 +440,25 @@ one. That is stated here, not decided; moving that pass off `main` is the owner'
 539 and 863 ms, against about 3 ms otherwise, and the first write beside each of them read 654 and 952 ms. So that
 cost is the append's, not the walk's. A save to a large file makes the same append, so it is not the torn-record fix's
 own cost; it was not measured on the code before that fix.
+
+### The torn tail is cut on the cheap walk (the owner's decision, 2026-11-13)
+
+**The owner's decision: the pass stays on `main`, and is made rare.** Since `3cf64def` every append goes through
+`appendTo`, which cuts a torn tail before it writes, so this build can leave a tear only at the end. So the walk now
+ends at a torn tail without opening any record before it (`tornTailAt` in `historyRecords.ts`), and the full walk that
+opens every record is kept for a chain that breaks anywhere else, which only damage from outside the application or an
+earlier build that appended blindly can leave.
+
+**The test as first stated was not sound, and is not what was built.** *The chain runs cleanly and its last head
+overruns the end* is also the shape of a tear in the MIDDLE whose head names more bytes than the file has left: cut
+there, every whole record after it goes. Measured with that mutation: the middle-tear case listed one conversation of
+two, and the walk kept two records of seven. So a tail is cut only where, besides that shape, no record that opens
+starts anywhere after it. The search reads only the bytes after the walk's end, so it costs the torn tail's size, not
+the file's.
+
+Read with `historyFirstWriteCost.mjs` on the build of this change, free memory 4,585 MiB at the start: a first write over
+a torn tail costs **22.8 ms on 40 MiB and 21.5 ms on 400 MiB**, against the **229 to 241 ms and 2,283 to 3,446 ms**
+above, which was the full walk. That is the cost of a first write to a whole file (21 to 24 ms on 400 MiB in the same
+run). The cases: a torn tail is cut with no whole record before it opened, and the same head in the middle still walks in
+full and keeps every record. Mutated: with the tail sent down the full walk, the first fails, having opened all seven
+records; with the cut made on the shape alone, the middle cases fail.

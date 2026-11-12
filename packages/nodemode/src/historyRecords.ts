@@ -151,7 +151,9 @@ function headIn(bytes: Buffer, offset: number, position: number, size: number): 
  * record. In the middle, where an earlier build appended behind it, its head names a length the bytes after it do not
  * hold, so a walk that trusts the length reads the next records as its payload and loses every one of them. So the walk
  * trusts lengths only while they end exactly at the end of the file, which a file with no torn record always does and is
- * all a read normally costs. Where they do not, it walks again and asks `opens` of each record: one that opens, or is
+ * all a read normally costs. Where the walk stops at a TORN TAIL, the one shape this build's writes can leave, it ends
+ * there, having opened only the bytes after it ({@link tornTailAt}). Anywhere else, it walks again and asks `opens` of
+ * each record: one that opens, or is
  * followed by one that opens or by the end, is whole; anything else is torn bytes, and the next record is the first place
  * after them where one starts and opens. The payload's authentication tag is what decides, so the bytes of a torn record
  * are the only ones lost, and they were never a record.
@@ -167,7 +169,30 @@ export function wholeRecords(readAt: ReadAt, size: number, opens: (head: Head) =
     head = at + HEAD <= size ? headIn(readAt(at, HEAD), 0, at, size) : null;
   }
   if (at === size) return { heads, end: at };
+  // A TORN TAIL, the one shape this build's writes can leave (`appendTo` cuts a torn tail before it appends, so a crash
+  // or a full disk mid-append tears only the end): cut there, opening only the bytes after the walk's end.
+  if (tornTailAt(readAt, size, at, opens)) return { heads, end: at };
   return mended(readAt, size, opens);
+}
+
+/**
+ * Whether the walk's end `at` is a TORN TAIL: what follows is part of a head, or a head of a type this format has whose
+ * payload runs past the end, AND no record that opens starts anywhere after it.
+ *
+ * THE SECOND HALF IS WHAT MAKES IT SOUND. A record torn in the middle, by an earlier build that appended behind it or by
+ * damage from outside the application, can have a head that names more bytes than the file has left: the same shape. Cut
+ * on the shape alone, every whole record after it would go, the one loss this function exists to prevent. Searching only
+ * the bytes after `at` costs the torn tail's size, not the file's; anything that opens there sends the read down the full
+ * walk ({@link mended}), as a chain that breaks before the end does.
+ */
+function tornTailAt(readAt: ReadAt, size: number, at: number, opens: (head: Head) => boolean): boolean {
+  // PART OF A HEAD: fewer bytes are left than a head and a sealed payload need, so no record can follow.
+  if (at + HEAD + NONCE + TAG > size) return true;
+  const bytes = readAt(at, HEAD);
+  const type = bytes.readUInt8(0);
+  const length = bytes.readUInt32LE(1 + ID_BYTES);
+  const overruns = (type === GUARD || type === CARD || type === TURNS) && length >= NONCE + TAG && at + HEAD + length > size;
+  return overruns && nextRecord(readAt, size, at + 1, opens) === -1;
 }
 
 /** {@link wholeRecords} for a file with a torn record in it. */
