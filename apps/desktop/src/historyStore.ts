@@ -104,9 +104,28 @@ function withHeads<T>(path: string, use: (heads: readonly Head[], payload: (head
   }
 }
 
+/**
+ * A save refused because the history saved here is locked to another account's key ({@link HistoryStore.locked}): its
+ * own class, so the handler can tell the person this and not a generic failure.
+ */
+export class HistoryLockedError extends Error {
+  constructor() {
+    super('the chat history saved on this computer cannot be opened by this account, so the conversation was not saved');
+    this.name = 'HistoryLockedError';
+  }
+}
+
 export interface HistoryStore {
   /** Whether conversations can be kept on this machine at all: the keys' own cipher. */
   available(): boolean;
+  /**
+   * Whether this machine's saved history is LOCKED to it: a data key is stored and this Windows account cannot unwrap it
+   * (after an administrator resets the account's password, or with history restored from another computer). The key is
+   * never replaced, since that would lose every conversation sealed under it; a save then refuses with
+   * {@link HistoryLockedError} so the person is told, and *Clear chat history* starts again (ADR-0279's correction of
+   * 2026-11-12).
+   */
+  locked(): boolean;
   /**
    * At a PDF's open: the guard it is recognised by, written where its file exists (a stat, no read), and held for the
    * session so a save carries it.
@@ -215,6 +234,9 @@ export function createHistoryStore(
     return made;
   };
 
+  /** A key is stored, the cipher works, and the key does not unwrap: the state no save may write over. */
+  const isLocked = (): boolean => cipher.available() && existsSync(keyPath) && keyFor(false) === null;
+
   /** What this session last saved of each conversation, a turn per entry as JSON: the `from` of the next save. */
   const savedTurns = new Map<string, string[]>();
   /** The guard written for each place this session, so a save writes one only where none was. */
@@ -305,6 +327,8 @@ export function createHistoryStore(
   return {
     available: () => cipher.available(),
 
+    locked: isLocked,
+
     recordGuard(placeKey, place, guard) {
       if (written.get(placeKey) === guardKey(guard)) return;
       // WHERE THE FILE EXISTS ONLY, a stat: a PDF with no history gets no file for being opened.
@@ -326,7 +350,10 @@ export function createHistoryStore(
 
     save(placeKey, place, guard, conversation, turns, name, savedAt) {
       const key = keyFor(true);
-      if (key === null) throw new Error('this machine has no usable credential store, so the conversation was not saved');
+      if (key === null) {
+        if (isLocked()) throw new HistoryLockedError();
+        throw new Error('this machine has no usable credential store, so the conversation was not saved');
+      }
       if (conversation === null && turns.length === 0) return { conversation: null };
       const id = conversation ?? mint();
       const now = turns.map((turn) => JSON.stringify(turn));
@@ -456,6 +483,11 @@ export function createHistoryStore(
       }
       // THE LEDGER GOES WITH THEM: it names sections that no longer exist, and keeps a place in it.
       rmSync(ledgerPath, { force: true });
+      // AND THE KEY: nothing is sealed under it any more, and where it could not be unwrapped (another account's, after a
+      // password reset or a restore from another computer) this is the one way the person starts again. The next save
+      // makes a new one (ADR-0279's correction of 2026-11-12).
+      rmSync(keyPath, { force: true });
+      dataKey = undefined;
       written.clear();
       savedTurns.clear();
       return count;

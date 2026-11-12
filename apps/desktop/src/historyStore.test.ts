@@ -27,7 +27,7 @@ vi.mock('node:fs', async (importOriginal) => {
   };
 });
 
-import { type HistoryGuard, createHistoryStore, frame } from './historyStore.js';
+import { type HistoryGuard, HistoryLockedError, createHistoryStore, frame } from './historyStore.js';
 import type { SecretCipher } from './secretStore.js';
 
 /**
@@ -165,6 +165,48 @@ describe('one history file per PDF (ADR-0279)', () => {
     expect(() => other.save(PLACE_KEY, PLACE, ID, null, TURNS, null, AT)).toThrow(/not saved/u);
     // CONTROL: the first account still reads it.
     expect(createHistoryStore(directory, fakeCipher('me')).list(PLACE_KEY, ID)).toHaveLength(1);
+  });
+});
+
+describe('history LOCKED to another account (ADR-0279’s correction of 2026-11-12)', () => {
+  it('a save is refused AS LOCKED, the key is kept byte for byte, and Clear chat history starts again', () => {
+    const directory = folder();
+    createHistoryStore(directory, fakeCipher('me')).save(PLACE_KEY, PLACE, ID, null, TURNS, null, AT);
+    const keyPath = join(directory, 'history', 'key');
+    const key = readFileSync(keyPath);
+    // AFTER A PASSWORD RESET, OR HISTORY RESTORED FROM ANOTHER COMPUTER: the stored key does not unwrap for this account.
+    const other = createHistoryStore(directory, fakeCipher('someone-else'));
+    expect(other.locked()).toBe(true);
+    expect(() => other.save(PLACE_KEY, PLACE, ID, null, TURNS, null, AT)).toThrow(HistoryLockedError);
+    // NOTHING SAVED IS LOST: the key is never replaced.
+    expect(readFileSync(keyPath).equals(key)).toBe(true);
+    // CLEAR CHAT HISTORY removes the file and the key, and the next save makes a new key and works.
+    other.clearAll();
+    expect(existsSync(keyPath)).toBe(false);
+    expect(existsSync(other.pathOf(PLACE_KEY))).toBe(false);
+    expect(other.locked()).toBe(false);
+    const saved = other.save(PLACE_KEY, PLACE, ID, null, TURNS, null, AT).conversation ?? '';
+    expect(other.read(PLACE_KEY, saved)?.turns).toStrictEqual(TURNS);
+  });
+
+  it('CONTROL: no key yet, and the cipher off, are NOT locked, and their saves are not refused as locked', () => {
+    const fresh = createHistoryStore(folder(), fakeCipher());
+    expect(fresh.locked()).toBe(false);
+    expect(fresh.save(PLACE_KEY, PLACE, ID, null, TURNS, null, AT).conversation).toMatch(/^[0-9a-f]{64}$/u);
+    expect(fresh.locked()).toBe(false);
+    // THE CIPHER OFF is the other refusal, said differently: it is not this person's history being locked.
+    const directory = folder();
+    createHistoryStore(directory, fakeCipher()).save(PLACE_KEY, PLACE, ID, null, TURNS, null, AT);
+    const off = createHistoryStore(directory, { ...fakeCipher(), available: () => false });
+    expect(off.locked()).toBe(false);
+    let thrown: unknown;
+    try {
+      off.save(PLACE_KEY, PLACE, ID, null, TURNS, null, AT);
+    } catch (cause) {
+      thrown = cause;
+    }
+    expect(thrown).toBeInstanceOf(Error);
+    expect(thrown).not.toBeInstanceOf(HistoryLockedError);
   });
 });
 
