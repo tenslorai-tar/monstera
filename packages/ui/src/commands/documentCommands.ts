@@ -77,7 +77,7 @@ import { SIGN_PROBLEM_DIALOG_ID } from '../dialogs/signProblem.js';
 import { DOCUSIGN_NOTICE_DIALOG_ID } from '../dialogs/docusignNotice.js';
 import { DOCUSIGN_SEND_DIALOG_ID } from '../dialogs/docusignSend.js';
 import type { DocusignSendAnswer } from '../dialogs/docusignSend.js';
-import { SIGNATURES_DIALOG_ID } from '../dialogs/signatures.js';
+import { SIGNATURES_DIALOG_ID, SIGNATURES_RESULT } from '../dialogs/signatures.js';
 import type { CropPagesAnswer } from '../dialogs/cropPagesResult.js';
 import { DELETE_PAGES_DIALOG_ID } from '../dialogs/deletePages.js';
 import type { DeletePagesAnswer } from '../dialogs/deletePagesResult.js';
@@ -156,6 +156,7 @@ import { HELD_COPIES_DIALOG_ID, HELD_COPIES_RESULT } from '../dialogs/heldCopies
 import { KEPT_BACKUPS_DIALOG_ID } from '../dialogs/keptBackups.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
 import { SAVE_TOO_DEEP_DIALOG_ID, SAVE_TOO_DEEP_RESULT } from '../dialogs/saveTooDeep.js';
+import { APPEND_REFUSED_DIALOG_ID, APPEND_REFUSED_RESULT, type AppendRefusedAnswer } from '../dialogs/appendRefused.js';
 import { SIGNATURE_BREAK_DIALOG_ID, SIGNATURE_BREAK_RESULT } from '../dialogs/signatureBreak.js';
 import { FLATTEN_FORM_DIALOG_ID, FLATTEN_FORM_RESULT } from '../dialogs/flattenForm.js';
 import { RESET_FORM_DIALOG_ID, RESET_FORM_RESULT } from '../dialogs/resetForm.js';
@@ -163,6 +164,7 @@ import { TAB_ORDER_DIALOG_ID, TAB_ORDER_RESULT } from '../dialogs/tabOrder.js';
 import { PAGE_BACKGROUND_DIALOG_ID, PAGE_BACKGROUND_RESULT } from '../dialogs/pageBackground.js';
 import { SIGN_AGAIN_DIALOG_ID, SIGN_AGAIN_RESULT } from '../dialogs/signAgain.js';
 import { SIGNED_EDIT_DIALOG_ID, SIGNED_EDIT_RESULT } from '../dialogs/signedEdit.js';
+import { CERTIFIED_EDIT_DIALOG_ID, CERTIFIED_EDIT_RESULT } from '../dialogs/certifiedEdit.js';
 import type { OpenedDocument } from './importMarkdown.js';
 import type { PendingRedactionOccasion } from '../dialogs/pendingRedactions.js';
 import { WATERMARK_PAGES_DIALOG_ID } from '../dialogs/watermarkPages.js';
@@ -362,6 +364,8 @@ import {
   TOAST_SAVED_CLEARED,
   TOAST_SAVED_CLEARED_BACKUPS,
   TOAST_HELD_COPIES_DELETED,
+  TOAST_SIGNED_VERSION_NOT_FOUND,
+  TOAST_SIGNED_VERSION_SAVED,
   TOAST_NOTHING_MARKED,
   TOAST_SMALLER_COPY_SAVED,
   UNDO_TITLE,
@@ -385,6 +389,7 @@ import type { ZoomDirection, ZoomMode } from '../zoom.js';
 import type { TextBlock } from '../textBlock.js';
 import { shownOf } from '../objectRead.js';
 import { copyProblemOf } from './copyProblem.js';
+import type { CertificationLine } from '../documentStores.js';
 
 /**
  * The three commands that act on the open document.
@@ -522,8 +527,13 @@ export interface PagePlanning {
 export interface SignedEditing {
   /** Whether a change that would break a signature asks first: the save's switch, `saving.warn-signature-break`. */
   readonly warn: () => boolean;
-  /** Adds the copy an edit was made on as a tab, as an open does. */
-  readonly onOpened: (document: OpenedDocument) => void;
+  /**
+   * Adds the copy an edit was made on as a tab, as an open does; `line` is what its certification line says, where the
+   * copy was made from a certified document (ADR-0291's amendment): the copy is the one that knows it is one.
+   */
+  readonly onOpened: (document: OpenedDocument, line?: CertificationLine) => void;
+  /** Reads a document's certification line again, after a signing that may have certified it. */
+  readonly reread: (docId: DocId) => void;
 }
 
 /**
@@ -970,6 +980,16 @@ async function sendInLane(
   let answer = await deps.client['document.execute']({ docId, command: sent, ...joins });
   let agreed = false;
 
+  // A CERTIFIED DOCUMENT'S CERTIFIER DOES NOT ALLOW THIS CHANGE (ADR-0291): main answered without touching it. The one
+  // way forward is a copy, which is no longer certified; there is no agreeing past it, so the setting that turns the
+  // signature warning off does not reach here. Cancel, or a dismissed picker, keeps what was typed (ADR-0149's addition).
+  if (!answer.ok && answer.error.code === 'certified') {
+    const asked = CERTIFIED_EDIT_RESULT.safeParse(await deps.ask(CERTIFIED_EDIT_DIALOG_ID, answer.error.detail));
+    const copyLine = { kind: 'uncertified-copy', signer: answer.error.detail.signer } as const;
+    if (!asked.success || !(await editOnCopy(deps, docId, sent, copyLine))) options.keep?.(answer.error);
+    return false;
+  }
+
   // A SIGNED DOCUMENT IS ASKED ABOUT BEFORE IT CHANGES (ADR-0149): main answered without touching it. *Change this
   // document* sends the same command again, stamp and all, agreed; *Work on a copy* sends it to a copy; Cancel, or a
   // dismissed picker on the way to a copy, leaves the document as it was and lets the caller keep what was typed.
@@ -1067,7 +1087,13 @@ function tellUnsealed(
  * @returns whether a copy is open for the edit. `false` is none — the picker dismissed, or the write or the open
  * refused, each said here but the dismissal — so the caller may keep what the person typed, which went nowhere.
  */
-async function editOnCopy(deps: DocumentCommandDeps, docId: DocId, command: RenderableCommand): Promise<boolean> {
+async function editOnCopy(
+  deps: DocumentCommandDeps,
+  docId: DocId,
+  command: RenderableCommand,
+  /** The copy's certification line, where the copy is made because the original is certified. */
+  line?: CertificationLine,
+): Promise<boolean> {
   const answer = await deps.client['document.editCopy']({ docId, command });
   if (!answer.ok) {
     reportProblem(deps, answer.error);
@@ -1077,12 +1103,15 @@ async function editOnCopy(deps: DocumentCommandDeps, docId: DocId, command: Rend
   switch (outcome.kind) {
     case 'edited':
     case 'edit-refused': {
-      deps.signatures.onOpened({
-        docId: outcome.docId,
-        version: outcome.version,
-        byteLength: outcome.byteLength,
-        name: outcome.name,
-      });
+      deps.signatures.onOpened(
+        {
+          docId: outcome.docId,
+          version: outcome.version,
+          byteLength: outcome.byteLength,
+          name: outcome.name,
+        },
+        line,
+      );
       // THE COPY IS OPEN EITHER WAY, and a refusal of the edit there is said over it: the file is where the person
       // put it, unchanged, and closing its tab is theirs.
       if (outcome.kind === 'edit-refused') {
@@ -3146,6 +3175,15 @@ export async function saveDocument(
     }
     answer = await deps.client['document.save']({ docId, breakSignatures: true });
   }
+  // A SIGNED DOCUMENT'S FILE COULD NOT TAKE THE APPEND (ADR-0291 question 4): nothing was written. Asked of a person only,
+  // as the signature question is; *Save anyway* writes it whole through this same save, and a copy is written whole.
+  if (answer.ok && answer.value.kind === 'append-refused') {
+    if (attendance === 'unattended') return false;
+    const chosen = await askAppendRefused(deps, docId, false);
+    if (chosen === 'copy') await saveWholeCopy(deps, docId);
+    if (chosen !== 'anyway') return false;
+    answer = await deps.client['document.save']({ docId, breakSignatures: true, whole: true });
+  }
   if (!answer.ok) {
     reportProblem(deps, answer.error);
     return false;
@@ -3183,6 +3221,9 @@ export async function saveDocument(
     if (attendance === 'attended') await sayTooDeep(deps, docId, answer.value.bookmarks);
     return false;
   }
+  // NOT REACHABLE after *Save anyway*, which is offered only where main writes the file whole: main answers it again only
+  // for a certified document, where the window never offered it. Narrowed rather than cast.
+  if (answer.value.kind === 'append-refused') return false;
   // FLATTENED HERE, where both fields exist, rather than in the dialog. The
   // channel answers two shapes describing one thing; the dialog's schema
   // takes one enum, so its body switches once and a sixth outcome is a
@@ -3229,6 +3270,59 @@ export async function sayTooDeep(
     case 'refused':
     case 'onto-source':
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: copyProblemOf(answer.value.kind) });
+      return;
+    case 'append-refused':
+      // THE COPY WITHOUT BOOKMARKS COULD NOT TAKE THE APPEND EITHER (ADR-0291 question 4): asked as any copy is.
+      if ((await askAppendRefused(deps, docId, true)) === 'copy') await saveWholeCopy(deps, docId);
+      return;
+  }
+}
+
+/**
+ * Asks how to save a signed document whose file could not take an appended save (ADR-0291 question 4) — THE ONE WAY
+ * every write of a document asks it (B3a): Save, Save a copy and a read-only file's copy. `copying` where a copy was
+ * refused, which offers only a whole copy. *Save anyway* is offered only on a document main reads as uncertified, and a
+ * read that fails offers it nowhere: the copy is always offered, so nobody is refused.
+ */
+export async function askAppendRefused(
+  deps: Pick<DocumentCommandDeps, 'ask' | 'client'>,
+  docId: DocId,
+  copying: boolean,
+): Promise<AppendRefusedAnswer | undefined> {
+  const read = await deps.client['document.certification']({ docId });
+  const certified = !read.ok || read.value.certification !== null;
+  const chosen = APPEND_REFUSED_RESULT.safeParse(await deps.ask(APPEND_REFUSED_DIALOG_ID, { certified, copying }));
+  return chosen.success ? chosen.data : undefined;
+}
+
+/**
+ * Writes a copy WHOLE where the person picks, past an append the file could not take (ADR-0291 question 4), and says
+ * the outcome as Save a copy does. Its signatures do not verify in it, and a certified document's copy is uncertified.
+ */
+export async function saveWholeCopy(deps: Pick<DocumentCommandDeps, 'ask'> & ConfirmWrittenDeps, docId: DocId): Promise<void> {
+  const answer = await deps.client['document.saveCopy']({ docId, whole: true });
+  if (!answer.ok) {
+    reportProblem(deps, answer.error);
+    return;
+  }
+  switch (answer.value.kind) {
+    case 'copied':
+      confirmWritten(deps, TOAST_COPY_SAVED, answer.value.written);
+      return;
+    case 'cancelled':
+      return;
+    case 'too-deep':
+      await sayTooDeep(deps, docId, answer.value.bookmarks);
+      return;
+    case 'write-failed':
+      void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: 'write-failed' });
+      return;
+    case 'refused':
+    case 'onto-source':
+      void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: copyProblemOf(answer.value.kind) });
+      return;
+    case 'append-refused':
+      // NOT REACHABLE: a whole copy appends nothing. Narrowed rather than cast, and says nothing it cannot name.
       return;
   }
 }
@@ -4803,6 +4897,11 @@ export function saveCopyCommand(deps: DocumentCommandDeps & WritesAFile & Settle
         await sayTooDeep(deps, context.docId, answer.value.bookmarks);
         return;
       }
+      // AN APPEND THE FILE COULD NOT TAKE (ADR-0291 question 4): only a whole copy is offered.
+      if (answer.value.kind === 'append-refused') {
+        if ((await askAppendRefused(deps, context.docId, true)) === 'copy') await saveWholeCopy(deps, context.docId);
+        return;
+      }
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
         outcome: copyProblemOf(answer.value.kind),
       });
@@ -5319,9 +5418,12 @@ export async function readPageContentBoxes(
  * answer is decide whether to trust the document, which is a judgement rather
  * than a command.
  */
-export function signaturesCommand(deps: DocumentCommandDeps): UiCommand {
+/** *Check signatures*' id, which the certification line runs it by (ADR-0291's amendment). */
+export const CHECK_SIGNATURES_COMMAND_ID = 'document.check-signatures';
+
+export function signaturesCommand(deps: DocumentCommandDeps & { readonly toast: ShowToast }): UiCommand {
   return {
-    id: 'document.check-signatures',
+    id: CHECK_SIGNATURES_COMMAND_ID,
     feedback: RESULT_DIALOG,
     icon: 'BadgeCheck',
     title: SIGNATURES_COMMAND_TITLE,
@@ -5337,10 +5439,35 @@ export function signaturesCommand(deps: DocumentCommandDeps): UiCommand {
       // SHOWN EVEN WHEN THE LIST IS EMPTY. *This document is not signed* is the
       // answer a person asked for, and a command that opened nothing would be
       // one that appears not to have run.
-      void deps.ask(SIGNATURES_DIALOG_ID, {
-        signatures: read.value.signatures.map((signature) => ({ ...signature })),
-        unreadable: read.value.unreadable,
-      });
+      const docId = context.docId;
+      const chosen = SIGNATURES_RESULT.safeParse(
+        await deps.ask(SIGNATURES_DIALOG_ID, {
+          signatures: read.value.signatures.map((signature) => ({ ...signature })),
+          unreadable: read.value.unreadable,
+        }),
+      );
+      // CLOSED, which is reading it: nothing more to do.
+      if (!chosen.success) return;
+      // SAVE THIS SIGNED VERSION (ADR-0291 Decision 7): main cuts the saved file back to where the signature ends.
+      const saved = await deps.client['document.saveSignedVersion']({ docId, signedThrough: chosen.data.signedThrough });
+      if (!saved.ok) {
+        reportProblem(deps, saved.error);
+        return;
+      }
+      switch (saved.value.kind) {
+        case 'saved':
+          deps.toast('done', TOAST_SIGNED_VERSION_SAVED);
+          return;
+        case 'cancelled':
+          return;
+        case 'not-found':
+          deps.toast('problem', TOAST_SIGNED_VERSION_NOT_FOUND);
+          return;
+        case 'onto-source':
+        case 'write-failed':
+          void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: copyProblemOf(saved.value.kind) });
+          return;
+      }
     },
   };
 }
@@ -5376,6 +5503,9 @@ export function signDocumentCommand(deps: DocumentCommandDeps & WritesAFile): Ui
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
       await signDocument(deps, context.docId);
+      // A SIGNING MAY HAVE CERTIFIED IT, so its line is read again once the attempt ends (ADR-0291's amendment); a read
+      // after one that changed nothing answers what the line already says.
+      deps.signatures.reread(context.docId);
     },
   };
 }
@@ -5411,6 +5541,10 @@ export async function signDocument(
     );
     if (!go.success) return;
   }
+  // WHETHER IT MAY BE CERTIFIED (ADR-0291, question 3), from the lane's own read, so the dialog offers exactly what the
+  // lane allows. A read that fails offers it: the lane still refuses a signed document, and not knowing refuses no one.
+  const certificationRead = await deps.client['document.certification']({ docId });
+  const holdsSignature = certificationRead.ok && certificationRead.value.signed;
   const library: LibraryPageDeps = { client: deps.client, ask: deps.ask, urls };
   // THE SIGNATURE LIBRARY, offered only where a signature is SEEN — a placement. Adding or removing a kept one is an
   // answer, after which the library is read again and the dialog asked again (`SIGN_DOCUMENT_ANSWERS`).
@@ -5422,7 +5556,7 @@ export async function signDocument(
     offered = kept;
     let answered: SignDocumentAnswers | undefined;
     try {
-      answered = (await deps.ask(SIGN_DOCUMENT_DIALOG_ID, { placed: placement !== undefined, kept })) as
+      answered = (await deps.ask(SIGN_DOCUMENT_DIALOG_ID, { placed: placement !== undefined, kept, signed: holdsSignature })) as
         | SignDocumentAnswers
         | undefined;
     } finally {

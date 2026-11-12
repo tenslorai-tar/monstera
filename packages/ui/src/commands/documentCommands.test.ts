@@ -285,6 +285,7 @@ const stamp = (): AnnotationStamp => ({ author: 'A. Tester', created: '2026-09-2
  */
 const signatures: SignedEditing = {
   warn: () => true,
+  reread: () => undefined,
   onOpened: () => {
     throw new Error('a case opened a copy for an edit without asking for one');
   },
@@ -913,6 +914,70 @@ describe('save', () => {
       expect(await saveDocument({ client, ask, toast, onSaved, warnSignatureBreak: () => true }, DOC, 'unattended')).toBe(false);
       expect(shown).toStrictEqual([]);
       expect(sent.map((one) => one.id)).toStrictEqual(['document.save']);
+    });
+  });
+
+  describe('a signed document’s file that could NOT TAKE THE APPEND (ADR-0291 question 4)', () => {
+    /**
+     * Main answers `append-refused` to a save that is not whole and `saved` to one that is, `copied` to a whole copy, and
+     * the document's certification as the case says.
+     */
+    const refusingClient = (certification: { level: 'form-fill'; signer: string } | null = null) => {
+      const sent: { id: string; params: unknown }[] = [];
+      const client = createClient(channels, (id, params) => {
+        if (id === 'document.certification') return Promise.resolve(ok({ certification, signed: true }));
+        sent.push({ id, params });
+        if (id === 'document.saveCopy') return Promise.resolve(ok({ kind: 'copied', bytes: 10, written: WRITTEN }));
+        const whole = (params as { whole?: true }).whole === true;
+        return Promise.resolve(ok(whole ? { kind: 'saved', version: asDocVersion(3), cleared: null, held: [] } : { kind: 'append-refused' }));
+      });
+      return { client, sent };
+    };
+    const choosing = (answer: unknown) => {
+      const shown: { id: string; props: unknown }[] = [];
+      const ask = (id: string, props: unknown): Promise<unknown> => {
+        shown.push({ id, props });
+        return Promise.resolve(id === 'dialog.append-refused' ? answer : undefined);
+      };
+      return { shown, ask };
+    };
+
+    it('SAVE ANYWAY writes the file whole, agreed to break its signatures, and the save lands', async () => {
+      const { client, sent } = refusingClient();
+      const { shown, ask } = choosing('anyway');
+      const { toast, onSaved, wrote } = saving();
+      expect(await saveDocument({ client, ask, toast, onSaved, warnSignatureBreak: () => true }, DOC, 'attended')).toBe(true);
+      expect(shown).toStrictEqual([{ id: 'dialog.append-refused', props: { certified: false, copying: false } }]);
+      expect(sent).toStrictEqual([
+        { id: 'document.save', params: { docId: DOC, breakSignatures: false } },
+        { id: 'document.save', params: { docId: DOC, breakSignatures: true, whole: true } },
+      ]);
+      expect(wrote).toStrictEqual([{ docId: DOC, version: asDocVersion(3) }]);
+    });
+
+    it('SAVE A COPY writes a whole copy and confirms it, and the document’s own file is not written', async () => {
+      const { client, sent } = refusingClient();
+      const { ask } = choosing('copy');
+      const { toast, onSaved, said, wrote } = saving();
+      expect(await saveDocument({ client, ask, toast, onSaved, warnSignatureBreak: () => true }, DOC, 'attended')).toBe(false);
+      expect(sent.map((one) => one.params)).toStrictEqual([{ docId: DOC, breakSignatures: false }, { docId: DOC, whole: true }]);
+      expect(said.map((one) => one.message)).toStrictEqual([TOAST_COPY_SAVED]);
+      expect(wrote).toStrictEqual([]);
+    });
+
+    it('a CERTIFIED document is told so, which offers no Save anyway; CONTROL: Cancel and an autosave write nothing', async () => {
+      const certified = refusingClient({ level: 'form-fill', signer: 'Grace Hopper' });
+      const asked = choosing(undefined);
+      const { toast, onSaved } = saving();
+      expect(await saveDocument({ client: certified.client, ask: asked.ask, toast, onSaved, warnSignatureBreak: () => true }, DOC, 'attended')).toBe(false);
+      expect(asked.shown).toStrictEqual([{ id: 'dialog.append-refused', props: { certified: true, copying: false } }]);
+      expect(certified.sent.map((one) => one.id)).toStrictEqual(['document.save']);
+
+      const unattended = refusingClient();
+      const timer = choosing('anyway');
+      expect(await saveDocument({ client: unattended.client, ask: timer.ask, toast, onSaved, warnSignatureBreak: () => true }, DOC, 'unattended')).toBe(false);
+      expect(timer.shown).toStrictEqual([]);
+      expect(unattended.sent.map((one) => one.id)).toStrictEqual(['document.save']);
     });
   });
 
@@ -5899,6 +5964,11 @@ describe('protectDocumentCommand', () => {
       const sent: { id: string; params: unknown }[] = [];
       const library: { id: string; params: unknown }[] = [];
       const client = createClient(channels, (id, params) => {
+        // THE LANE'S READ the dialog asks whether it may certify (ADR-0291, question 3), from the same count, kept out
+        // of `sent` for the same reason.
+        if (id === 'document.certification') {
+          return Promise.resolve(ok({ certification: null, signed: already.count > 0 || already.unreadable === true }));
+        }
         // THE SIGNATURE READ the notice asks, kept out of `sent` for the library's reason: the cases read the signing channel.
         if (id === 'document.signatures') {
           return Promise.resolve(
@@ -5912,6 +5982,7 @@ describe('protectDocumentCommand', () => {
                 notAfter: '',
                 coversDocument: true,
                 coversWholeFile: true,
+                signedThrough: 18360,
               })),
               unreadable: already.unreadable === true,
             }),
@@ -6132,7 +6203,7 @@ describe('protectDocumentCommand', () => {
         PLACEMENT,
       );
 
-      expect(asked).toStrictEqual([{ id: 'dialog.sign-document', props: { placed: true, kept: [] } }]);
+      expect(asked).toStrictEqual([{ id: 'dialog.sign-document', props: { placed: true, kept: [], signed: false } }]);
       // THE TYPED LOOK CROSSES AS ITS OUTLINE, made by the one module that sets names (ADR-0150).
       const outlined = await outlinedMarkOf(TYPED);
       if (outlined.kind !== 'ready') throw new Error(outlined.kind);
@@ -6208,7 +6279,7 @@ describe('protectDocumentCommand', () => {
         },
       }).run(CONTEXT);
 
-      expect(asked).toStrictEqual([{ id: 'dialog.sign-document', props: { placed: false, kept: [] } }]);
+      expect(asked).toStrictEqual([{ id: 'dialog.sign-document', props: { placed: false, kept: [], signed: false } }]);
       expect(sent).toStrictEqual([{ id: 'document.sign', params: { docId: DOC, passphrase: '' } }]);
     });
 
@@ -6232,7 +6303,9 @@ describe('protectDocumentCommand', () => {
 
         expect(asked).toStrictEqual([
           { id: 'dialog.sign-again', props: { count: 2, unreadable: false } },
-          { id: 'dialog.sign-document', props: { placed: false, kept: [] } },
+          // ALREADY SIGNED, so the dialog is told and offers no certification (ADR-0291, question 3); the cases above,
+          // on an unsigned document, are told `false`, which is the control.
+          { id: 'dialog.sign-document', props: { placed: false, kept: [], signed: true } },
         ]);
         expect(sent).toStrictEqual([{ id: 'document.sign', params: { docId: DOC, passphrase: '' } }]);
       });
@@ -6353,6 +6426,7 @@ describe('protectDocumentCommand', () => {
               { id: KEPT_TYPED.id, look: TYPED },
               { id: KEPT_PICTURE.id, look: { kind: 'picture', name: 'ink', src: 'blob:kept-1' } },
             ],
+            signed: false,
           },
         ]);
         expect(revoked).toStrictEqual(['blob:kept-1']);
@@ -6634,6 +6708,7 @@ describe('protectDocumentCommand', () => {
             notAfter: '2027-01-01T00:00:00.000Z',
             coversDocument: false,
             coversWholeFile: true,
+            signedThrough: 18360,
           },
         ],
         unreadable: false,
@@ -6645,6 +6720,7 @@ describe('protectDocumentCommand', () => {
         client,
         stamp,
         signatures,
+        toast: () => undefined,
         onApplied: () => undefined,
         ask: (id, props) => {
           shown.push({ id, props });
@@ -6669,6 +6745,7 @@ describe('protectDocumentCommand', () => {
         client,
         stamp,
         signatures,
+        toast: () => undefined,
         onApplied: () => undefined,
         ask: (id, props) => {
           shown.push({ id, props });
@@ -6679,6 +6756,58 @@ describe('protectDocumentCommand', () => {
       expect(shown).toStrictEqual([
         { id: 'dialog.signatures', props: { signatures: [], unreadable: false } },
       ]);
+    });
+
+    describe('Save this signed version (ADR-0291 Decision 7)', () => {
+      const SIGNATURE = {
+        signer: 'Grace Hopper',
+        organisation: '',
+        reason: '',
+        location: '',
+        notBefore: '2026-01-01T00:00:00.000Z',
+        notAfter: '2027-01-01T00:00:00.000Z',
+        coversDocument: true,
+        coversWholeFile: false,
+        signedThrough: 18360,
+      };
+
+      /** Main reading one signature and answering the save with `outcome`; records what was sent and toasted. */
+      async function choosing(answer: unknown, outcome: { kind: string }): Promise<{ sent: { id: string; params: unknown }[]; toasts: string[] }> {
+        const sent: { id: string; params: unknown }[] = [];
+        const toasts: string[] = [];
+        const client = createClient(channels, (id, params) => {
+          sent.push({ id, params });
+          if (id === 'document.signatures') return Promise.resolve(ok({ signatures: [SIGNATURE], unreadable: false }));
+          return Promise.resolve(ok(outcome as never));
+        });
+        await signaturesCommand({
+          client,
+          stamp,
+          signatures,
+          toast: (kind) => toasts.push(kind),
+          onApplied: () => undefined,
+          ask: (id) => Promise.resolve(id === 'dialog.signatures' ? answer : undefined),
+        }).run(CONTEXT);
+        return { sent, toasts };
+      }
+
+      it('the answer is sent to main by where the signature ends, and a saved version is confirmed', async () => {
+        const { sent, toasts } = await choosing({ signedThrough: 18360 }, { kind: 'saved' });
+        expect(sent.map((call) => call.id)).toStrictEqual(['document.signatures', 'document.saveSignedVersion']);
+        expect(sent[1]?.params).toStrictEqual({ docId: CONTEXT.docId, signedThrough: 18360 });
+        expect(toasts).toStrictEqual(['done']);
+      });
+
+      it('a version the saved file does not hold is said, with nothing written', async () => {
+        const { toasts } = await choosing({ signedThrough: 18360 }, { kind: 'not-found' });
+        expect(toasts).toStrictEqual(['problem']);
+      });
+
+      it('CONTROL: a window closed sends nothing to main', async () => {
+        const { sent, toasts } = await choosing(undefined, { kind: 'saved' });
+        expect(sent.map((call) => call.id)).toStrictEqual(['document.signatures']);
+        expect(toasts).toStrictEqual([]);
+      });
     });
   });
 
@@ -7605,6 +7734,99 @@ describe('every file write confirms, and its Show in folder reveals the file the
  * one dispatcher asks the person. Main's half — that nothing changed, and that agreed it applies — is
  * `apps/desktop/src/documentCommands.test.ts`' *an edit that would break a signature*.
  */
+describe('a change main answers certified for (ADR-0291)', () => {
+  const ROTATE: DispatchableCommand = { kind: 'rotatePages', pages: [0], quarterTurns: 1 };
+  const DETAIL = { level: 'no-changes', signer: 'Grace Hopper' } as const;
+
+  /** Main for a certified document: `certified` whatever is sent, and `editCopy` answering `copy`. */
+  function certifiedMain(copy: unknown = { kind: 'cancelled' }): { client: ContractClient; sent: { id: string; params: unknown }[] } {
+    const sent: { id: string; params: unknown }[] = [];
+    const client = createClient(channels, (id, params) => {
+      sent.push({ id, params });
+      if (id === 'document.editCopy') return Promise.resolve(ok(copy as never));
+      if (id !== 'document.execute') throw new Error(`this fixture has no answer for ${id}`);
+      return Promise.resolve(err({ code: 'certified' as const, detail: DETAIL }));
+    });
+    return { client, sent };
+  }
+
+  function answering(answer: unknown): { ask: (id: string, props: unknown) => Promise<unknown>; asked: { id: string; props: unknown }[] } {
+    const asked: { id: string; props: unknown }[] = [];
+    return {
+      asked,
+      ask: (id, props) => {
+        asked.push({ id, props });
+        return Promise.resolve(id === 'dialog.certified-edit' ? answer : undefined);
+      },
+    };
+  }
+
+  it('asks the certified window with the level and the certifier, and WORK ON A COPY sends the command to a copy', async () => {
+    const copy = { kind: 'edited', docId: asDocId('doc-copy'), version: 2, byteLength: 2048, name: 'copy.pdf', historyDropped: 0, boxed: [], more: 0 };
+    const { client, sent } = certifiedMain(copy);
+    const { ask, asked } = answering('copy');
+    const opened: unknown[] = [];
+
+    const moved = await applyDocumentCommand(
+      {
+        client,
+        ask,
+        stamp,
+        signatures: { warn: () => true, reread: () => undefined, onOpened: (document, line) => opened.push({ document, line }) },
+        onApplied: () => undefined,
+      },
+      DOC,
+      ROTATE,
+    );
+
+    expect(moved).toBe(false);
+    expect(asked).toStrictEqual([{ id: 'dialog.certified-edit', props: DETAIL }]);
+    expect(sent).toStrictEqual([
+      { id: 'document.execute', params: { docId: DOC, command: ROTATE } },
+      { id: 'document.editCopy', params: { docId: DOC, command: ROTATE } },
+    ]);
+    // THE COPY OPENS WITH ITS LINE (ADR-0291's amendment): not certified, the original's certifier named.
+    expect(opened).toStrictEqual([
+      {
+        document: { docId: asDocId('doc-copy'), version: 2, byteLength: 2048, name: 'copy.pdf' },
+        line: { kind: 'uncertified-copy', signer: 'Grace Hopper' },
+      },
+    ]);
+  });
+
+  it('NEVER sends the command again agreed, and the warning turned off does not skip the window', async () => {
+    const { client, sent } = certifiedMain();
+    const { ask, asked } = answering(undefined);
+    const kept: string[] = [];
+
+    const moved = await applyDocumentCommand(
+      { client, ask, stamp, signatures: { warn: () => false, reread: () => undefined, onOpened: () => undefined }, onApplied: () => undefined },
+      DOC,
+      ROTATE,
+      {
+        keep: (error) => {
+          kept.push(error.code);
+          return true;
+        },
+      },
+    );
+
+    expect(moved).toBe(false);
+    // CANCEL: one send, no agreed resend, and the caller is told so it keeps what was typed.
+    expect(sent).toStrictEqual([{ id: 'document.execute', params: { docId: DOC, command: ROTATE } }]);
+    expect(asked.map((each) => each.id)).toStrictEqual(['dialog.certified-edit']);
+    expect(kept).toStrictEqual(['certified']);
+  });
+
+  it('CONTROL: the signed-edit question is not the one asked, so the certified window is the answer’s own', async () => {
+    const { client } = certifiedMain();
+    const { ask, asked } = answering(undefined);
+    await applyDocumentCommand({ client, ask, stamp, signatures: { warn: () => true, reread: () => undefined, onOpened: () => undefined }, onApplied: () => undefined }, DOC, ROTATE);
+    expect(asked.map((each) => each.id)).not.toContain('dialog.signed-edit');
+    expect(asked.map((each) => each.id)).not.toContain('dialog.command-problem');
+  });
+});
+
 describe('an edit main answers breaks-signatures for (ADR-0149)', () => {
   const SANITIZE: DispatchableCommand = { kind: 'sanitizeDocument', parts: ['javascript'] };
   const COPY = asDocId('doc-copy');
@@ -7649,9 +7871,22 @@ describe('an edit main answers breaks-signatures for (ADR-0149)', () => {
   }
 
   /** The copy's opener, recording what it was handed. */
-  function opening(warn = true): { signatures: SignedEditing; opened: unknown[] } {
+  function opening(warn = true): { signatures: SignedEditing; opened: unknown[]; lines: unknown[] } {
     const opened: unknown[] = [];
-    return { opened, signatures: { warn: () => warn, onOpened: (document) => opened.push(document) } };
+    // THE CERTIFICATION LINE each copy was opened with (ADR-0291's amendment), apart, so `opened` keeps its meaning.
+    const lines: unknown[] = [];
+    return {
+      opened,
+      lines,
+      signatures: {
+        warn: () => warn,
+        reread: () => undefined,
+        onOpened: (document, line) => {
+          opened.push(document);
+          lines.push(line);
+        },
+      },
+    };
   }
 
   it('CHANGE THIS DOCUMENT sends the SAME command again, agreed, and the document moves', async () => {
@@ -7690,7 +7925,7 @@ describe('an edit main answers breaks-signatures for (ADR-0149)', () => {
     const { client, sent } = signedMain(copy);
     const { ask, asked } = answering('copy');
     const applied: Applied[] = [];
-    const { signatures: signed, opened } = opening();
+    const { signatures: signed, opened, lines } = opening();
 
     const moved = await applyDocumentCommand(
       { client, ask, stamp, signatures: signed, onApplied: (next) => applied.push(next) },
@@ -7706,6 +7941,8 @@ describe('an edit main answers breaks-signatures for (ADR-0149)', () => {
       { id: 'document.editCopy', params: { docId: DOC, command: SANITIZE } },
     ]);
     expect(opened).toStrictEqual([{ docId: COPY, version: 2, byteLength: 2048, name: 'signed copy.pdf' }]);
+    // CONTROL for the certified route's line: a SIGNED document's copy is opened with none, since nothing certified it.
+    expect(lines).toStrictEqual([undefined]);
     expect(asked).toStrictEqual(['dialog.signed-edit']);
   });
 

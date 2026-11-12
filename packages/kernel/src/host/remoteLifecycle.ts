@@ -3,6 +3,7 @@ import type { AnnotationDataFormat, ClientApi, EncodedFormDataFormat, FormPath, 
 import type { ByteImage, LockedReason, MupdfSession, SerialiseOptions } from '../engineSeam.js';
 import type { PageImageRequest } from '../pageImages.js';
 import type { RegionRequest, RegionSnapshot } from '../pageSnapshot.js';
+import { AppendRefused } from '../appendRefused.js';
 import { StructureTooDeep } from '../saveDepth.js';
 import { type StagedImage, placeStaged } from '../savePipeline.js';
 import type { WorkingFile } from './announcedOutput.js';
@@ -108,17 +109,34 @@ export type StagedOutline = 'kept' | 'left-out';
  */
 export type StagedMarks = 'as-held' | 'engraved';
 
-/** What a staged copy is: both halves REQUIRED, so no caller writes a file without saying which (ADR-0287 Decision 6). */
+/**
+ * Whether a staged copy keeps the document's certification (`kept`) or is written without it (`removed`), the copy a
+ * certified document's change is made on (ADR-0291 Decision 5).
+ */
+export type StagedCertification = 'kept' | 'removed';
+
+/**
+ * Whether a signed document's save appends (`when-signed`, ADR-0008 rule 2, which keeps the signature) or is written
+ * whole (`never`), the choice a person makes past an append the file could not take (ADR-0291 question 4).
+ */
+export type StagedAppend = 'when-signed' | 'never';
+
+/** What a staged copy is: every part REQUIRED, so no caller writes a file without saying which (ADR-0287 Decision 6). */
 export interface Staging {
   readonly outline: StagedOutline;
   readonly marks: StagedMarks;
+  readonly certification: StagedCertification;
+  readonly append: StagedAppend;
 }
 
 /** The staging an undo checkpoint, a refreshed image and a host's own copy take: the session exactly as held. */
-export const AS_HELD: Staging = { outline: 'kept', marks: 'as-held' };
+export const AS_HELD: Staging = { outline: 'kept', marks: 'as-held', certification: 'kept', append: 'when-signed' };
 
 /** The staging a file a person keeps takes, with its outline. */
-export const KEPT_FILE: Staging = { outline: 'kept', marks: 'engraved' };
+export const KEPT_FILE: Staging = { outline: 'kept', marks: 'engraved', certification: 'kept', append: 'when-signed' };
+
+/** A file a person keeps, written WHOLE: what they chose past a refused append, knowing it breaks the signature. */
+export const KEPT_FILE_WHOLE: Staging = { ...KEPT_FILE, append: 'never' };
 
 /**
  * The host's refusal of a serialise as `main` throws it: the document's depth as the same {@link StructureTooDeep} a
@@ -127,6 +145,8 @@ export const KEPT_FILE: Staging = { outline: 'kept', marks: 'engraved' };
  */
 function serialiseRefusal(code: string): Error {
   if (code === 'outline-too-deep' || code === 'structure-too-deep') return new StructureTooDeep(code === 'outline-too-deep');
+  // AN APPEND THE FILE COULD NOT TAKE, as the local writer throws it (ADR-0291 question 4).
+  if (code === 'append-refused') return new AppendRefused('the engine host found it would not read back');
   return new EngineSerialiseFailed(code);
 }
 
@@ -413,7 +433,7 @@ export function remoteMupdfLifecycle(
    * moves them and checks the count against what moved; discarding removes them if they were never placed — a whole
    * copy of the document where the contained host may read it, otherwise.
    */
-  const stage = async (session: MupdfSession, { outline, marks }: Staging): Promise<StagedImage> => {
+  const stage = async (session: MupdfSession, { outline, marks, certification, append }: Staging): Promise<StagedImage> => {
     const area = sessions.areaFor(session);
     const into = areas.mintName();
     const answer = await client['engine/serialise']({
@@ -421,6 +441,8 @@ export function remoteMupdfLifecycle(
       into,
       ...(outline === 'left-out' ? { outline } : {}),
       ...(marks === 'engraved' ? { marks } : {}),
+      ...(certification === 'removed' ? { certification } : {}),
+      ...(append === 'never' ? { append } : {}),
     });
     if (!answer.ok) throw serialiseRefusal(answer.error.code);
     const byteLength = answer.value.bytes;

@@ -331,6 +331,7 @@ test('check-signatures-1', async ({ page }) => {
           notAfter: '2028-01-05T00:00:00.000Z',
           coversDocument: true,
           coversWholeFile: true,
+          signedThrough: 18360,
         },
       ],
       unreadable: false,

@@ -48,6 +48,8 @@ import {
   imagePagesFor,
   placeImage,
   signDocument,
+  type SignedEditing,
+  CHECK_SIGNATURES_COMMAND_ID,
   snapshotRegion,
   findCommand,
   movePageCommand,
@@ -255,6 +257,7 @@ import { OPEN_PROBLEM_DIALOG_ID } from './dialogs/openProblem.js';
 import { COMPONENT_CANNOT_START_DIALOG_ID } from './dialogs/componentCannotStart.js';
 import { PERMISSION_PASSWORD_REPLACED_DIALOG_ID } from './dialogs/permissionPasswordReplaced.js';
 import { sayWhenUnwritable } from './commands/readOnlyFile.js';
+import { readCertificationLine } from './commands/certificationLine.js';
 import { convertScanCommand } from './commands/convertScan.js';
 import { adoptOldBackups, restoreVersionCommand } from './commands/restoreVersion.js';
 import {
@@ -506,6 +509,7 @@ import { ContextPanel } from './surfaces/ContextPanel.js';
 import { DocumentBody } from './surfaces/DocumentBody.js';
 import { PanelPresence } from './panelPresence.js';
 import { DocumentPanel, type DocumentPanelProps } from './surfaces/DocumentPanel.js';
+import { CertificationLine, type LineCommand } from './surfaces/CertificationLine.js';
 import { composing, controlOwnsChord, dispatchChord, fieldOwnsChord, shortcutsFor } from './surfaces/shortcuts.js';
 import { RecentFiles } from './RecentFiles.js';
 import { CrashReportOffer } from './CrashReportOffer.js';
@@ -1219,7 +1223,9 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       // so re-opening an open document activates its tab rather than throwing.
       if (stores.get(document.docId) === undefined) {
         // AT THE ZOOM THE PERSON CHOSE TO START AT (Settings › Viewing); from here on the zoom is this document's.
-        stores.open(document.docId, document.version, startingZoomMode(startingZoom));
+        const minted = stores.open(document.docId, document.version, startingZoomMode(startingZoom));
+        // ITS CERTIFICATION LINE, read as it is shown (ADR-0291's amendment): every open passes here, a copy too.
+        void readCertificationLine(client, document.docId, minted);
       }
       setTabs((current) =>
         current.some((tab) => tab.docId === document.docId)
@@ -1240,7 +1246,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       );
       activate(document.docId);
     },
-    [activate, startingZoom, stores],
+    [activate, client, startingZoom, stores],
   );
 
   /**
@@ -1282,7 +1288,22 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
 
   // AN EDIT THAT WOULD BREAK A SIGNATURE (ADR-0149): whether to ask, by the save's switch, and how the copy it can be
   // made on opens. One object, stable while the store and the opener are, so every command bag takes the same one.
-  const signatures = useMemo(() => ({ warn: warnSignatureBreak, onOpened: opened }), [opened, warnSignatureBreak]);
+  // A COPY MADE BECAUSE ITS ORIGINAL IS CERTIFIED carries that original's line onto its own store (ADR-0291's amendment),
+  // and a signing reads its document's line again.
+  const signatures = useMemo<SignedEditing>(
+    () => ({
+      warn: warnSignatureBreak,
+      onOpened: (document, line) => {
+        opened(document);
+        if (line !== undefined) stores.get(document.docId)?.getState().certificationShown(line);
+      },
+      reread: (docId) => {
+        const store = stores.get(docId);
+        if (store !== undefined) void readCertificationLine(client, docId, store);
+      },
+    }),
+    [client, opened, stores, warnSignatureBreak],
+  );
 
   // AUTOSAVE (`autosave.ts`), off unless the Saving page turns it on. The pass reads the tabs through a ref, so a
   // version moving does not restart the timer; the ref is written in an effect, never during render.
@@ -1890,7 +1911,9 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       if ('sign' in handle) {
         const at = { page: handle.page, rect: handle.rect };
         if (handle.sign === 'certificate') {
-          void signDocument({ client, ask, onApplied: applied, toast }, activeId, { ...at, field: handle.name });
+          void signDocument({ client, ask, onApplied: applied, toast }, activeId, { ...at, field: handle.name }).then(() => {
+            signatures.reread(activeId);
+          });
           return;
         }
         void (async (): Promise<void> => {
@@ -1910,7 +1933,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
         version: handle.version,
       });
     },
-    [activeId, applied, applyCarryingFields, ask, client, stamp, stores, toast],
+    [activeId, applied, applyCarryingFields, ask, client, signatures, stamp, stores, toast],
   );
 
   /**
@@ -3634,9 +3657,11 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
   const onPlaceSignature = useCallback(
     (page: number, rect: AnnotationRect): void => {
       if (activeId === undefined) return;
-      void signDocument({ client, ask, onApplied: applied, toast }, activeId, { page, rect });
+      void signDocument({ client, ask, onApplied: applied, toast }, activeId, { page, rect }).then(() => {
+        signatures.reread(activeId);
+      });
     },
-    [activeId, applied, ask, client, toast],
+    [activeId, applied, ask, client, signatures, toast],
   );
 
   /**
@@ -4355,7 +4380,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
         sanitizeDocumentCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
         documentPropertiesCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
         signDocumentCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
-        signaturesCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        signaturesCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
         docusignSendCommand({
           client,
           onApplied: applied,
@@ -5302,6 +5327,20 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
    * LAYOUT, so a document brought forward is already laid out exactly as it will be shown and nothing re-fits.
    * The rest is the layer's own store or nothing (`DocumentLayer`).
    */
+  // THE CERTIFICATION LINE'S BUTTON (ADR-0291's amendment): the registered *Check signatures*, run with the context of
+  // the document on show, its title the command's own — never a second way to check. Stable, so no layer re-renders.
+  const checkSignatures = useMemo<LineCommand | undefined>(() => {
+    const target = registry.get(CHECK_SIGNATURES_COMMAND_ID);
+    if (target === undefined) return undefined;
+    return {
+      title: target.title,
+      run: () => {
+        const at = commandContextRef.current;
+        if (at !== undefined) void target.run(at);
+      },
+    };
+  }, [registry]);
+
   const background = useMemo<BackgroundLayer>(
     () => ({
       client,
@@ -5498,6 +5537,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
           store={stores.get(tab.docId)}
           background={tab.docId === open.docId ? undefined : background}
           onArrived={tab.docId === arriving ? arrived : undefined}
+          checkSignatures={tab.docId === open.docId ? checkSignatures : undefined}
           parked={parked.has(tab.docId)}
         >
         {/* THE ELEMENT ONLY FOR THE LAYER ON SHOW: a layer behind draws its own, and handed this one too it would
@@ -6061,6 +6101,7 @@ const DocumentLayer = memo(function DocumentLayer({
   onArrived,
   parked,
   children,
+  checkSignatures,
 }: {
   readonly tab: OpenDocument;
   readonly store: DocumentStore | undefined;
@@ -6079,6 +6120,8 @@ const DocumentLayer = memo(function DocumentLayer({
   readonly parked: boolean;
   /** The `PageCanvas` element `App` builds for the document on show, and only for it. */
   readonly children?: ReactElement | undefined;
+  /** The certification line's *Check signatures*, for the layer on show; behind, the line is hidden with the layer. */
+  readonly checkSignatures?: LineCommand | undefined;
 }): ReactElement {
   const state = useSyncExternalStore(store?.subscribe ?? NO_DOCUMENT_SUBSCRIBE, () => store?.getState());
   const behind = background !== undefined;
@@ -6094,6 +6137,8 @@ const DocumentLayer = memo(function DocumentLayer({
       aria-hidden={behind ? true : undefined}
       inert={behind}
     >
+      {/* THE CERTIFICATION LINE (ADR-0291's amendment), this document's own, above its pages: a row that does not grow. */}
+      {state?.certificationLine == null ? null : <CertificationLine check={checkSignatures} line={state.certificationLine} />}
       <ErrorBoundary
         fallback={({ reset }) => (
           <ViewProblem

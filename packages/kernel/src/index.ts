@@ -177,6 +177,9 @@ export {
   type SessionAreaSurface,
   AS_HELD,
   KEPT_FILE,
+  KEPT_FILE_WHOLE,
+  type StagedAppend,
+  type StagedCertification,
   type StagedMarks,
   type StagedOutline,
   type Staging,
@@ -185,6 +188,7 @@ export {
 } from './host/remoteLifecycle.js';
 // A SAVE REFUSED FOR ITS DEPTH, before it was attempted, whichever side of the pipe measured it (the owner's item 20).
 export { SAVE_DEPTH_MAX, StructureTooDeep } from './saveDepth.js';
+export { AppendRefused } from './appendRefused.js';
 // THE ONE READ OF A HOST'S OUTPUT, held to its announced count before anything is read (CR-SEC-08): main's session
 // areas are this, and the kernel's adapters take it through `takeAnnounced`.
 export { copyAnnounced, readAnnounced, type WorkingFile } from './host/announcedOutput.js';
@@ -214,7 +218,7 @@ export { barcodeRect } from './barcodePlacement.js';
 // imports `node-forge` at module scope, so a VALUE export from this barrel would
 // put an ASN.1 parser into `main` — the one process invariant 25 keeps document
 // parsing out of.
-export type { ReadSignature } from './signatureRead.js';
+export type { Certification, ReadSignature, SignatureFacts } from './signatureRead.js';
 // TYPES ONLY, and the rule is sharper here than for the line above:
 // `ocrRecognise.ts` instantiates 2.8 MB of Tesseract on its first call, and the
 // recognition itself runs in the engine host. Main composes the reader and passes
@@ -534,6 +538,7 @@ export {
   copyRefusalOf,
   type DocumentCopyOutcome,
   type TooDeepToSave,
+  type AppendNotTaken,
   type SaveOutcome,
   type WriteTargetCheck,
   type SplitOutcome,
@@ -707,7 +712,7 @@ export {
 // nowhere a composition could reach, and the root registered none — so signing, certifying and visible signatures were
 // refused as an unregistered writer in the running application while every test that built its own bus passed.
 export { NO_TIMESTAMPS, signpdfExecutionWith } from './documentSign.js';
-export { breaksSignatures } from './signatureKeeping.js';
+export { allowedByCertification, breaksSignatures } from './signatureKeeping.js';
 export type { RequestTimestamp, SignatureHost } from './documentSign.js';
 export type { PlaceholderRequest, PreparedSignature } from './signatureHole.js';
 export { serialiseIntoFile } from './checkpointFile.js';

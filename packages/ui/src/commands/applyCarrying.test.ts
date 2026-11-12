@@ -93,6 +93,7 @@ async function run(command: DispatchableCommand, walk: unknown): Promise<Run> {
       // NOT SIGNED (ADR-0149): a copy opened for an edit is a defect of the case.
       signatures: {
         warn: () => true,
+        reread: () => undefined,
         onOpened: () => {
           throw new Error('a case opened a copy for an edit without asking for one');
         },

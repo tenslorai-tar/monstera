@@ -242,9 +242,10 @@ const ENGINE: FakePeer = (channel, params) => {
       return { ok: true, value: {} };
     // EVERY SAVE ASKS THIS FIRST since item 6 (the answer also says whether the save is a removal's, which keeps no
     // backup), and the default below sends no reply — so a save through this peer waited for ever. Answered as an
-    // unsigned document with no removal: an ordinary save.
+    // unsigned document with no removal: an ordinary save. EVERY COMMAND asks it too since ADR-0291, for the
+    // certification, which an unsigned document does not carry.
     case 'engine/signatures-kept':
-      return { ok: true, value: { signatures: 0, kept: true } };
+      return { ok: true, value: { signatures: 0, kept: true, certification: null } };
     default:
       return null;
   }

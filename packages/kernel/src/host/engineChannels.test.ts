@@ -11,6 +11,7 @@ import {
   ENGINE_LAYERS_MAX,
   ENGINE_PAGE_LINKS_MAX,
   ENGINE_SIGNATURES_MAX,
+  ENGINE_SIGNATURE_FIELD_MAX,
   SMALLEST_ANNOTATION_BYTES,
   SMALLEST_DESTINATION_BYTES,
   SMALLEST_LAYER_BYTES,
@@ -173,12 +174,26 @@ describe('the document-wide lists’ hostile-host bounds', () => {
 describe('a save of a document with more signatures than a list carries', () => {
   it('the count of 300 crosses from the host, and the save’s warning carries it', () => {
     expect(300).toBeGreaterThan(ENGINE_SIGNATURES_MAX);
-    expect(engineChannels['engine/signatures-kept'].result.safeParse({ signatures: 300, kept: false }).success).toBe(true);
+    expect(engineChannels['engine/signatures-kept'].result.safeParse({ signatures: 300, kept: false, certification: null }).success).toBe(true);
     expect(channels['document.save'].result.safeParse({ kind: 'breaks-signatures', signatures: 300 }).success).toBe(true);
     // CONTROL: the count is still a count — a fraction or a negative is refused, on both channels.
     for (const signatures of [-1, 2.5]) {
-      expect(engineChannels['engine/signatures-kept'].result.safeParse({ signatures, kept: false }).success).toBe(false);
+      expect(engineChannels['engine/signatures-kept'].result.safeParse({ signatures, kept: false, certification: null }).success).toBe(false);
       expect(channels['document.save'].result.safeParse({ kind: 'breaks-signatures', signatures }).success).toBe(false);
     }
+  });
+});
+
+/** THE CERTIFICATION crosses with the same answer (ADR-0291): a level by its word, and the certifier's shown name. */
+describe('a certification crossing from the host', () => {
+  const answer = (certification: unknown) => engineChannels['engine/signatures-kept'].result.safeParse({ signatures: 1, kept: true, certification });
+  it('each level crosses, with a name or with none', () => {
+    for (const level of ['no-changes', 'form-fill', 'form-fill-and-annotate']) expect(answer({ level, signer: 'Grace Hopper' }).success, level).toBe(true);
+    expect(answer({ level: 'no-changes', signer: '' }).success).toBe(true);
+  });
+  it('CONTROL: a number for a level, a name past the bound, and a missing field are refused', () => {
+    expect(answer({ level: 1, signer: 'Grace Hopper' }).success).toBe(false);
+    expect(answer({ level: 'no-changes', signer: 'x'.repeat(ENGINE_SIGNATURE_FIELD_MAX + 1) }).success).toBe(false);
+    expect(engineChannels['engine/signatures-kept'].result.safeParse({ signatures: 1, kept: true }).success).toBe(false);
   });
 });

@@ -38,7 +38,7 @@ const deps = (client: ContractClient) => ({
   onApplied: () => undefined,
   ask: () => Promise.resolve(undefined),
   stamp: () => ({ author: '', created: '2026-10-16T00:00:00.000Z' }),
-  signatures: { warn: () => true, onOpened: () => undefined },
+  signatures: { warn: () => true, reread: () => undefined, onOpened: () => undefined },
   toast: () => undefined,
 });
 

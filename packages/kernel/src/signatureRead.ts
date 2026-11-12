@@ -1,15 +1,17 @@
 import type { X509Certificate } from 'node:crypto';
 
+import type { CertificationLevel } from '@monstera/contract';
 import { MAX_SIGNATURE_FIELD } from '@monstera/contract/host';
 
 import type * as mupdf from './mupdfRaw.js';
 import forge from 'node-forge';
 
-import { withDocument } from './mupdfWriter.js';
+import { levelOfDocMdp } from './docMdp.js';
+import { type NextSave, signaturesKeptBySave, withDocument } from './mupdfWriter.js';
 import { shownName } from './shownName.js';
 import { signatureValues } from './signatureFields.js';
 import type { MupdfSession } from './engineSeam.js';
-import { checkSigner, readContentInfo } from './signedDataCheck.js';
+import { checkSigner, readContentInfo, signerCertificate } from './signedDataCheck.js';
 import type { SignedData, SignerCheck } from './signedDataCheck.js';
 
 /**
@@ -84,6 +86,12 @@ export interface ReadSignature {
    * that folded them would report an intact signature over half a document.
    */
   readonly coversWholeFile: boolean;
+  /**
+   * Where the bytes this signature signed end: its `/ByteRange`'s `c + d`, a property of the signature dictionary and
+   * so the same in the file and in any later revision of it. A file signed and then appended to holds the signed file
+   * as its first this-many bytes, which is what *Save this signed version* cuts back to (ADR-0291 Decision 7).
+   */
+  readonly signedThrough: number;
 }
 
 /** Why a document's signatures could not be read at all. */
@@ -150,15 +158,11 @@ function readOne(signature: mupdf.PDFObject, bytes: Uint8Array): ReadSignature |
   // verified with. node-forge's reads RSA only, and a panel that named only RSA
   // signers would be GGGGGG-2 again, in the heading rather than the tick.
   const x509 = checked.certificate?.x509 ?? null;
-  // `/Name` FIRST, then the certificate's CN. A signature dictionary's own
-  // name is what the signer chose to display; the CN is what their certificate
-  // says they are, and the second is the fallback rather than the answer.
-  const stated = signature.get('Name').asString();
   // SHOWN WITHIN THE WIRE'S BOUND, each a stranger's string: one `/Reason` past it made the answer's schema refuse
   // every signature the document carries (JOURNAL, *No document-size refusals*, table A row 14). Shortened with an
   // ellipsis, the mark of *there is more*; the document's own string is untouched.
   return {
-    signer: shownName(stated === '' ? subjectField(x509, 'CN') : stated, MAX_SIGNATURE_FIELD),
+    signer: signerName(signature, x509),
     organisation: shownName(subjectField(x509, 'O'), MAX_SIGNATURE_FIELD),
     reason: shownName(signature.get('Reason').asString(), MAX_SIGNATURE_FIELD),
     location: shownName(signature.get('Location').asString(), MAX_SIGNATURE_FIELD),
@@ -166,7 +170,84 @@ function readOne(signature: mupdf.PDFObject, bytes: Uint8Array): ReadSignature |
     notAfter: x509?.validToDate.toISOString() ?? '',
     coversDocument: checked.verified,
     coversWholeFile: rangeCoversWholeFile([a, b, c, d], contentBytes, bytes),
+    signedThrough: c + d,
   };
+}
+
+/**
+ * The name a signature is shown under: `/Name` FIRST, then the certificate's CN. A signature dictionary's own name is
+ * what the signer chose to display; the CN is what their certificate says they are, and the second is the fallback
+ * rather than the answer. Within the wire's bound. The one rule, for every signature read and for a certification's.
+ */
+function signerName(signature: mupdf.PDFObject, x509: X509Certificate | null): string {
+  const stated = signature.get('Name').asString();
+  return shownName(stated === '' ? subjectField(x509, 'CN') : stated, MAX_SIGNATURE_FIELD);
+}
+
+/** What a document's certification allows, and who certified it (ADR-0291 Decision 1). */
+export interface Certification {
+  readonly level: CertificationLevel;
+  /** {@link signerName}'s answer, or `''` where neither `/Name` nor a readable certificate names anyone. */
+  readonly signer: string;
+}
+
+/**
+ * The document's certification, or `null` when it carries none (ADR-0291 Decision 1).
+ *
+ * The catalogue's `/Perms /DocMDP` names the certifying signature dictionary; its `/Reference` entry whose
+ * `/TransformMethod` is `/DocMDP` holds `/TransformParams /P`. A `/Perms /DocMDP` that names no dictionary, or names one
+ * with no such entry, is still a certification, read as `no-changes` by {@link levelOfDocMdp}'s rule. Whether the
+ * certifying signature still verifies is not asked: the level is what the certifier declared.
+ */
+export function certificationOf(document: mupdf.PDFDocument): Certification | null {
+  const perms = document.getTrailer().get('Root').get('Perms');
+  if (!perms.isDictionary()) return null;
+  const signature = perms.get('DocMDP');
+  if (signature.isNull()) return null;
+  if (!signature.isDictionary()) return { level: 'no-changes', signer: '' };
+  const references: mupdf.PDFObject[] = [];
+  const listed = signature.get('Reference');
+  if (listed.isArray()) {
+    listed.forEach((reference) => {
+      references.push(reference);
+    });
+  }
+  const docMdp = references.find((reference) => reference.isDictionary() && String(reference.get('TransformMethod')) === '/DocMDP');
+  const p = docMdp?.get('TransformParams').get('P');
+  const level = docMdp === undefined ? 'no-changes' : levelOfDocMdp(p?.isNumber() === true ? p.asNumber() : undefined);
+  return { level, signer: signerName(signature, certifierCertificate(signature)) };
+}
+
+/**
+ * The certificate a signature's signer names, read without verifying anything, or `null`.
+ *
+ * NULL FOR A SIGNATURE THIS BUILD CANNOT PARSE, and that is an answer rather than a swallowed fault: the certifier's name
+ * is then unknown, which {@link Certification}'s `signer` says as `''`, and the lock it carries is unchanged by it.
+ * Check signatures is where an unreadable signature is reported.
+ */
+function certifierCertificate(signature: mupdf.PDFObject): X509Certificate | null {
+  const contents = signature.get('Contents');
+  if (contents.isNull()) return null;
+  let signed: SignedData | null;
+  try {
+    signed = readContentInfo(pkcs7Asn1(contents.asByteString()));
+  } catch (error) {
+    if (error instanceof Error) return null;
+    throw error;
+  }
+  return signed === null ? null : (signerCertificate(signed)?.x509 ?? null);
+}
+
+/** What main's lane asks before a command and before a save: {@link NextSave}, and the certification (ADR-0291). */
+export interface SignatureFacts extends NextSave {
+  readonly certification: Certification | null;
+}
+
+/** {@link signaturesKeptBySave}'s answer with the document's {@link certificationOf}, in one read. */
+export async function signatureFacts(session: MupdfSession): Promise<SignatureFacts> {
+  const next = await signaturesKeptBySave(session);
+  const certification = await withDocument(session, (document) => certificationOf(document));
+  return { ...next, certification };
 }
 
 const LESS_THAN = 0x3c;

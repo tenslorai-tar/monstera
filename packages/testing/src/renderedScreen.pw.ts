@@ -3593,6 +3593,7 @@ test('the SIGNATURES dialog keeps a 256-character unbroken name inside itself, a
     notAfter: '2027-01-01T00:00:00Z',
     coversDocument: true,
     coversWholeFile: true,
+    signedThrough: 18360,
   };
   await bridge(page, {
     opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'signed.pdf' }],

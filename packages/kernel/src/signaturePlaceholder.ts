@@ -1,6 +1,7 @@
 import { PDFArray, PDFDict, PDFHexString, PDFName, PDFNumber, PDFString } from '@cantoo/pdf-lib';
 import type { PDFDocument, PDFPage, PDFRef } from '@cantoo/pdf-lib';
 
+import { DOC_MDP_LEVELS } from './docMdp.js';
 import type { ByteImage } from './engineSeam.js';
 import { PngPixelsRefused, checkPngPixels } from './imageDimensions.js';
 import { type ReadableRevision, appendedUnderKey } from './mupdfWriter.js';
@@ -43,19 +44,6 @@ import { SignatureAppearanceRefusedError } from './signingRefusals.js';
 /** ADR-0054 Decision 3's slot: a `/**********` name, ten asterisks. */
 const BYTE_RANGE_SLOT = '*'.repeat(10);
 
-/**
- * `/DocMDP`'s `/P`, by the word the payload carries.
- *
- * ISO 32000-2 table 257. Keyed on the contract's own enum, so a level added
- * there without a number here is a compile error rather than a certification
- * that silently permits everything.
- */
-const DOC_MDP_LEVELS: Readonly<Record<'no-changes' | 'form-fill' | 'form-fill-and-annotate', number>> =
-  {
-    'no-changes': 1,
-    'form-fill': 2,
-    'form-fill-and-annotate': 3,
-  };
 
 /** `/Filter` and `/SubFilter`, the two names a reader dispatches on. */
 const ADOBE_PPKLITE = 'Adobe.PPKLite';

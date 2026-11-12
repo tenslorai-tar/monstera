@@ -1027,6 +1027,9 @@ export interface BrowserShimOptions {
    */
   readonly signatures?: ChannelResult<'document.signatures'>;
 
+  /** What `document.certification` answers for every open document: uncertified and unsigned unless a case says. */
+  readonly certification?: ChannelResult<'document.certification'>;
+
   /** The fonts `document.fonts` names: none unless a case gives some, which is what a document with no text answers. */
   readonly documentFonts?: readonly { readonly name: string; readonly partial: boolean }[];
 
@@ -1468,6 +1471,21 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       return Promise.resolve(
         ok(options.signatures ?? { signatures: [], unreadable: false }),
       );
+    },
+
+    /**
+     * Saves a signature's signed version (ADR-0291 Decision 7): `cancelled`, the picker dismissed, which is the answer
+     * that writes nothing. The shim holds no file to cut back.
+     */
+    'document.saveSignedVersion': ({ docId }) => {
+      if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' as const }));
+      return Promise.resolve(ok({ kind: 'cancelled' as const }));
+    },
+
+    /** The document's certification (ADR-0291's amendment): none, unless a case certifies the shim's documents. */
+    'document.certification': ({ docId }) => {
+      if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' as const }));
+      return Promise.resolve(ok(options.certification ?? { certification: null, signed: false }));
     },
 
     'document.fonts': ({ docId }) => {

@@ -1,4 +1,5 @@
 import {
+  CERTIFICATION_LEVELS,
   EDIT_STEPS,
   FIELD_EDIT_REASONS,
   type FailureDetails,
@@ -114,6 +115,15 @@ export const UNWRITABLE_CHARACTERS_MAX_UNITS = 128;
 /** The largest number `FPDF_GetLastError` can answer: it returns a C `unsigned long`, and Windows' is 32 bits. */
 export const ENGINE_ERROR_MAX = 0xffff_ffff;
 
+/**
+ * How long a signature's descriptive fields may be.
+ *
+ * `/Reason`, `/Location`, `/ContactInfo` and the signer's name go into the
+ * signature dictionary as PDF strings. None scales with the document; the bound
+ * exists because every string that crosses here is bounded.
+ */
+export const MAX_SIGNATURE_FIELD = 256;
+
 /** How long the command kind a `command-looped` refusal names may be (ADR-0221). */
 const COMMAND_KIND_MAX_CHARS = 64;
 
@@ -137,6 +147,8 @@ export const FAILURE_DETAIL_SCHEMAS = {
       othersUsingMost: z.boolean(),
     })
     .strict(),
+  // A CERTIFIED DOCUMENT'S REFUSAL (ADR-0291): the level by its word, and the certifier as Check signatures shows them.
+  certified: z.object({ level: z.enum(CERTIFICATION_LEVELS), signer: z.string().max(MAX_SIGNATURE_FIELD) }).strict(),
 } as const satisfies { readonly [C in keyof FailureDetails]: z.ZodType<FailureDetails[C]> };
 
 /** Compiles only when `Listed` is assignable to `Whole`: `engineChannels.ts`' `Covers`, for one check here. */

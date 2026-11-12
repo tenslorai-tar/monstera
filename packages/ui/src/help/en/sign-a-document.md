@@ -27,6 +27,7 @@ A digital signature proves who signed a document and shows whether it has change
 ## Good to know
 
 - Your certificate never leaves this computer, and its password is not kept.
+- A document that is already signed cannot be certified, because only its first signature can do that. The window says so in place of the "I am the author" choices.
 - A timestamp proves when you signed. Only a fingerprint of the signature is sent to the timestamp service, never the document. These services are reached without encryption, so someone watching the network could see that a timestamp was requested.
 - If the timestamp service cannot be reached or refuses, the document is not signed; try another service or sign without one.
 - This signature is invisible on the page. To show one, see "Add a visible signature".

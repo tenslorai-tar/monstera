@@ -103,6 +103,7 @@ async function run(options: {
     // NOT SIGNED (ADR-0149): a copy opened for this translation is a defect of the case.
     signatures: {
       warn: () => true,
+      reread: () => undefined,
       onOpened: () => {
         throw new Error('the case opened a copy for an edit without asking for one');
       },

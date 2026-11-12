@@ -157,6 +157,10 @@ import {
   type StagedImage,
   type StagedMarks,
   type StagedOutline,
+  type StagedCertification,
+  type StagedAppend,
+  AppendRefused,
+  KEPT_FILE_WHOLE,
   type Staging,
   AS_HELD,
   KEPT_FILE,
@@ -164,7 +168,9 @@ import {
   stagedBytes,
   type SplitOutcome,
   type MupdfSession,
-  type NextSave,
+  type SignatureFacts,
+  type Certification,
+  allowedByCertification,
   type ReadSignature,
   SignatureAppearanceRefusedError,
   SignatureCredentialRefusedError,
@@ -221,6 +227,7 @@ import { readFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 
 import type { BackupProvenance } from './backupLedger.js';
+import { holdsPrefix, writePrefix } from './signedVersionFile.js';
 import { adoptLegacyBackups } from './legacyBackups.js';
 import { type EditableSources, editablePages, emptyReport } from './editablePowerPoint.js';
 import { DocusignOutcomeRefused, type DocusignSession } from './docusignSession.js';
@@ -915,6 +922,15 @@ export type PlaceImageOutcome =
   | { readonly kind: 'absent' };
 
 /** What a save came to: the pipeline's outcomes, or a save held back because it would break signatures. */
+/**
+ * What a save is asked: whether breaking the document's signatures was agreed, and `whole` where the person chose to
+ * write the file whole past an append it could not take (ADR-0291 question 4).
+ */
+export interface SaveRequest {
+  readonly breakSignatures: boolean;
+  readonly whole?: true;
+}
+
 export type SaveRequestOutcome =
   /**
    * Saved — and, where the save was a removal's, which older copies it deleted and which it kept; and, for every save,
@@ -1443,6 +1459,37 @@ export class SignaturesWouldBreakError extends Error {
   }
 }
 
+/**
+ * A change a certified document's certifier does not allow, refused before anything changed
+ * ([ADR-0291](../../../docs/DECISIONS/0291-a-certified-document-is-locked-to-what-its-certifier-allowed-and-worked-on-as-a-copy.md)).
+ *
+ * Not a fault: the handler answers it as the declared `certified`, with the level and the certifier, and the renderer
+ * offers the copy.
+ */
+export class CertifiedChangeError extends Error {
+  override readonly name = 'CertifiedChangeError';
+
+  constructor(
+    kind: CommandKind,
+    readonly certification: Certification,
+  ) {
+    super(`${kind} is not a change a document certified ${certification.level} allows; nothing was changed (ADR-0291).`);
+  }
+}
+
+/**
+ * A certification asked of a document that already holds a signature (ADR-0291's amendment of 2026-11-12, question 3):
+ * a certification is the first signature (ISO 32000-1 §12.8.2.2.1). Refused before anything changed; `sign` answers
+ * it as `already-signed`. The Sign dialog does not offer it there, so this is the route that bypasses the dialog.
+ */
+export class CertifyingSignedDocumentError extends Error {
+  override readonly name = 'CertifyingSignedDocumentError';
+
+  constructor(readonly signatures: number) {
+    super(`a certification was asked of a document holding ${String(signatures)} signature(s); nothing was changed (ADR-0291).`);
+  }
+}
+
 /*
  * THE SECOND-COMMAND TRIGGER FIRED ON 2026-09-03, and this is what it produced.
  *
@@ -1497,6 +1544,11 @@ export type DocumentFlush = (
  */
 /** The commands that place on every page they name, and leave one that displays nothing (ADR-0254). */
 const PLACES_ON_PAGES = new Set<Command['kind']>(['headerFooterPages', 'batesNumberPages', 'watermarkPages', 'setPageBackground']);
+
+/** Whether `command` is a signing that certifies (ADR-0291, question 3): read on the union, where `kind` narrows. */
+function certifies(command: Command): boolean {
+  return command.kind === 'signDocument' && command.certify !== undefined;
+}
 
 /** Whether `command` is one of {@link PLACES_ON_PAGES}, narrowed to the four, whose `pages` say which pages it names. */
 function placesOnPages(
@@ -2615,7 +2667,13 @@ export interface DocumentCommandsParts {
    */
   readonly signatures: (session: MupdfSession) => Promise<readonly ReadSignature[]>;
   /** How many signatures, and whether the next save keeps them — the writer's own decision. See {@link save}. */
-  readonly signaturesKept: (session: MupdfSession) => Promise<NextSave>;
+  readonly signaturesKept: (session: MupdfSession) => Promise<SignatureFacts>;
+  /**
+   * Whether the file at `path`, cut back to its first `end` bytes, holds a signature that ends there and verifies over
+   * all of it (ADR-0291 Decision 7). Composed where the engine host is, because only a host may open a document's
+   * bytes: the cut is read in a session of its own, which is closed before this answers.
+   */
+  readonly signedVersionVerifies: (path: string, end: number) => Promise<boolean>;
   readonly restore: DocumentRestore;
   /** How a removal's save opens the document's sessions again from the file it wrote (ADR-0164). */
   readonly renew: DocumentRenew;
@@ -2925,7 +2983,8 @@ export class DocumentCommands {
   readonly #documentInformation: DocumentInformationReader;
   readonly #pageMarks: DocumentPageMarksReader;
   readonly #signatures: (session: MupdfSession) => Promise<readonly ReadSignature[]>;
-  readonly #signaturesKept: (session: MupdfSession) => Promise<NextSave>;
+  readonly #signaturesKept: (session: MupdfSession) => Promise<SignatureFacts>;
+  readonly #signedVersionVerifies: (path: string, end: number) => Promise<boolean>;
   readonly #restore: DocumentRestore;
   readonly #renew: DocumentRenew;
   readonly #recentPicture: Pick<RecentPictures, 'retake'>;
@@ -3035,6 +3094,7 @@ export class DocumentCommands {
     this.#pageMarks = parts.pageMarks;
     this.#signatures = parts.signatures;
     this.#signaturesKept = parts.signaturesKept;
+    this.#signedVersionVerifies = parts.signedVersionVerifies;
     this.#restore = parts.restore;
     this.#renew = parts.renew;
     this.#recentPicture = parts.recentPicture;
@@ -3598,6 +3658,22 @@ export class DocumentCommands {
     }).then(({ value }) => value);
   }
 
+  /**
+   * The document's certification and whether it holds a signature (ADR-0291's amendment of 2026-11-12): the line at
+   * open, and the Sign dialog's question. THE LANE'S OWN READ, `signaturesKept`, inside the lane for `signatures`'
+   * reason, so what a person reads and what the lane refuses cannot be two answers.
+   */
+  async certification(docId: DocId): Promise<{ readonly certification: Certification | null; readonly signed: boolean }> {
+    return this.#documents.read(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+      const session = this.#engine.sessions(docId)?.mupdf;
+      if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+      const facts = await this.#signaturesKept(session);
+      return { certification: facts.certification, signed: facts.signatures > 0 };
+    }).then(({ value }) => value);
+  }
+
   async layers(docId: DocId): Promise<DocumentLayers> {
     const { version, value } = await this.#documents.read(docId, async () => {
       const failures = this.#engine.poisoned(docId);
@@ -4112,28 +4188,47 @@ export class DocumentCommands {
       // one apart from a byte-image writer that never has a stored session.
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
-      // A SIGNED DOCUMENT IS ASKED ABOUT BEFORE THE EDIT, never at the save after it (ADR-0149). A command that
-      // rewrites the document whole breaks every signature in it, and by the save the image is already rewritten —
-      // MuPDF then reopens it, finds the signature dictionaries, will append, and answers *kept*. So the question is
-      // asked here, inside the lane, before the bus has touched anything, of the document's own session.
-      if (breaksSignatures(command.kind) && !context.signaturesBreakAgreed) {
-        if (options.breakSignatures === true) {
-          context.agreeToBreakSignatures();
-        } else {
-          const session = sessions.mupdf;
-          if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
-          const { signatures } = await this.#signaturesKept(session);
-          if (signatures > 0) throw new SignaturesWouldBreakError(command.kind, signatures);
-        }
-      }
-
-      // THE PAGES A COMMAND THAT PLACES ON PAGES WILL LEAVE, because they display nothing (ADR-0254): read in this lane,
-      // before the bus, by the writers' own rule, so the pages named are the pages the command leaves.
-      skipped.pages = await this.#pagesShowingNothing(docId, sessions, command);
       // A COMMAND THAT HAS ENDED THE ENGINE THREE TIMES IS NOT SENT AGAIN (ADR-0221), and the refusal is decided here,
       // before the host, so the fourth attempt costs nothing. Read inside the lane for the poison check's reason.
-      const { trimmed, entry, drawn } = await ledgered(this.#engine, docId, command.kind, () =>
-        this.#bus.execute<K>(
+      //
+      // EVERY HOST CALL MADE FOR THIS COMMAND IS INSIDE ITS LEDGER, the reads before the bus as well as the bus. A
+      // deadline is counted against the command whose call the host was running; a read made for the command outside
+      // the ledger was running no command, so a host that froze under it was a death against the DOCUMENT, and two
+      // poisoned it where ADR-0221 bars the command (measured on CI, `hostDeadline.mjs`, after ADR-0291's read joined
+      // the lane: the freeze landed on `engine/signatures-kept`).
+      const { trimmed, entry, drawn } = await ledgered(this.#engine, docId, command.kind, async () => {
+        // THE DOCUMENT'S SIGNATURES AND ITS CERTIFICATION, in one host read, asked of its own session.
+        const signed = sessions.mupdf;
+        if (signed === undefined) throw new MissingSessionError(docId, 'mupdf');
+        const facts = await this.#signaturesKept(signed);
+
+        // A CERTIFIED DOCUMENT IS HELD TO WHAT ITS CERTIFIER ALLOWED (ADR-0291), before the bus and BEFORE the signature
+        // question below: that one is a warning a person may agree past, and this is not, so `breakSignatures` does not
+        // pass it. Asked for every command, since a level that allows a fill and refuses a page turn is a question about
+        // the kind and the document together.
+        if (facts.certification !== null && !allowedByCertification(command.kind, facts.certification.level)) {
+          throw new CertifiedChangeError(command.kind, facts.certification);
+        }
+
+        // A CERTIFICATION IS THE FIRST SIGNATURE (ADR-0291, question 3), read from the same facts, so this and the lock
+        // above cannot disagree about whether the document is signed.
+        if (certifies(command) && facts.signatures > 0) {
+          throw new CertifyingSignedDocumentError(facts.signatures);
+        }
+
+        // A SIGNED DOCUMENT IS ASKED ABOUT BEFORE THE EDIT, never at the save after it (ADR-0149). A command that
+        // rewrites the document whole breaks every signature in it, and by the save the image is already rewritten —
+        // MuPDF then reopens it, finds the signature dictionaries, will append, and answers *kept*. So the question is
+        // asked here, before the bus has touched anything.
+        if (breaksSignatures(command.kind) && !context.signaturesBreakAgreed) {
+          if (options.breakSignatures === true) context.agreeToBreakSignatures();
+          else if (facts.signatures > 0) throw new SignaturesWouldBreakError(command.kind, facts.signatures);
+        }
+
+        // THE PAGES A COMMAND THAT PLACES ON PAGES WILL LEAVE, because they display nothing (ADR-0254): read before the
+        // bus, by the writers' own rule, so the pages named are the pages the command leaves.
+        skipped.pages = await this.#pagesShowingNothing(docId, sessions, command);
+        return this.#bus.execute<K>(
           sessions,
           context,
           command,
@@ -4142,8 +4237,8 @@ export class DocumentCommands {
           // name*, and the payload is the contract's (ADR-0040 Decision 4).
           this.#byteImage(docId, sourceIdsOf(command)),
           options.joinsStep,
-        ),
-      );
+        );
+      });
       // A DEFECT THE WRITE'S OWN CHECKS FOUND in a write that was kept (ADR-0270): to the log, never to the person.
       for (const note of drawn.noted) this.#engine.writerDefect(docId, command.kind, note);
       // A PROTECT MOVES THE HOLDER, in the lane and after the bus recorded it, so every later open of a copy has the
@@ -4635,8 +4730,8 @@ export class DocumentCommands {
     return this.#documents.nameOf(docId);
   }
 
-  async saveCopy(docId: DocId, outline: StagedOutline = 'kept'): Promise<DocumentCopyOutcome | undefined> {
-    return (await this.#writeCopy(docId, () => undefined, outline))?.outcome;
+  async saveCopy(docId: DocId, outline: StagedOutline = 'kept', append: StagedAppend = 'when-signed'): Promise<DocumentCopyOutcome | undefined> {
+    return (await this.#writeCopy(docId, () => undefined, outline, 'kept', append))?.outcome;
   }
 
   /**
@@ -4653,8 +4748,11 @@ export class DocumentCommands {
    * A copy of the document to WORK ON, written where the person chooses (cloud-4 7b): {@link saveCopy}'s picker and
    * write exactly, and the path the copy went to, which the handler opens.
    */
-  async copyToWorkOn(docId: DocId): Promise<{ readonly outcome: DocumentCopyOutcome; readonly destination: string } | undefined> {
-    return this.#writeCopy(docId, () => undefined);
+  async copyToWorkOn(
+    docId: DocId,
+    append: StagedAppend = 'when-signed',
+  ): Promise<{ readonly outcome: DocumentCopyOutcome; readonly destination: string } | undefined> {
+    return this.#writeCopy(docId, () => undefined, 'kept', 'kept', append);
   }
 
   /**
@@ -4733,10 +4831,53 @@ export class DocumentCommands {
     docId: DocId,
     command: Command,
   ): Promise<{ readonly outcome: DocumentCopyOutcome; readonly destination: string } | undefined> {
-    return this.#writeCopy(docId, (version) => {
-      const named = targetVersionOf(command);
-      if (named !== undefined && named !== version) throw new StaleTargetError(command.kind, named, version);
-    });
+    return this.#writeCopy(
+      docId,
+      (version) => {
+        const named = targetVersionOf(command);
+        if (named !== undefined && named !== version) throw new StaleTargetError(command.kind, named, version);
+      },
+      'kept',
+      // THE COPY A CHANGE IS MADE ON IS NO LONGER CERTIFIED (ADR-0291 Decision 5): written whole, without `/Perms /DocMDP`,
+      // so the change it is opened for is not refused there too.
+      'removed',
+      // AND IT IS WRITTEN WHOLE, signed or not (ADR-0291 question 4): this route exists because the change breaks the
+      // document's signatures, so an append kept them for nothing and could be refused for nothing.
+      'never',
+    );
+  }
+
+  /**
+   * Saves, as a copy the person places, the document's FILE cut back to the bytes the signature ending at
+   * `signedThrough` signed (ADR-0291 Decision 7).
+   *
+   * THE FILE AS SAVED, NOT THE SESSION: a file damaged after it was signed is repaired on open, and a repaired document
+   * saves whole, so the session no longer holds the signed bytes as its prefix; the file on disk does. The cut is read
+   * in a session of its own and written only where a signature ending exactly there verifies over all of it, so a
+   * signature added in this session and not yet saved, or a file rewritten since, answers `not-found` with nothing
+   * written. The path is read in the lane; the file is cut outside it, since it changes nothing about the document.
+   */
+  async saveSignedVersion(
+    docId: DocId,
+    signedThrough: number,
+  ): Promise<{ readonly kind: 'saved' | 'cancelled' | 'not-found' | 'onto-source' | 'write-failed' }> {
+    const suggest = this.#documents.nameOf(docId);
+    if (suggest === undefined) throw new DocumentNotOpenError(docId, 'save a signed version');
+    const { value: path } = await this.#documents.read(docId, (context) => Promise.resolve(context.path));
+    if (!(await holdsPrefix(path, signedThrough))) return { kind: 'not-found' };
+    if (!(await this.#signedVersionVerifies(path, signedThrough))) return { kind: 'not-found' };
+
+    const destination = await this.#copy.pick(suffixed(suggest, 'signed version'));
+    if (destination === null) return { kind: 'cancelled' };
+    // NEVER OVER THE DOCUMENT'S OWN FILE: that would replace the file the signed version was cut from.
+    if (destination === path) return { kind: 'onto-source' };
+    try {
+      await writePrefix(path, signedThrough, destination);
+    } catch {
+      // THE CAUSE IS THE DISK'S, said as a copy's failed write is; the document and its file are untouched.
+      return { kind: 'write-failed' };
+    }
+    return { kind: 'saved' };
   }
 
   /** {@link saveCopy}'s pick and write, with `inLane` run first inside the lane against the version being copied. */
@@ -4745,6 +4886,14 @@ export class DocumentCommands {
     inLane: (version: DocVersion) => void,
     /** `left-out` writes the copy without the document's bookmarks (*Save a copy without bookmarks*, item 20). */
     outline: StagedOutline = 'kept',
+    /** `removed` writes it without its certification: the copy a certified document's change is made on (ADR-0291). */
+    certification: StagedCertification = 'kept',
+    /**
+     * `never` writes it whole where a signature would have it appended: the copy offered past an append the file could
+     * not take (ADR-0291 question 4). A certified document's whole copy is written without its certification too,
+     * since its certifying signature no longer verifies over it.
+     */
+    append: StagedAppend = 'when-signed',
   ): Promise<{ readonly outcome: DocumentCopyOutcome; readonly destination: string } | undefined> {
     // THE NAME IS READ BEFORE THE LANE and the document may close while the
     // dialog is up — which is fine, because a filename is all that was taken
@@ -4775,6 +4924,13 @@ export class DocumentCommands {
 
       inLane(context.version);
 
+      // A WHOLE COPY OF A CERTIFIED DOCUMENT IS WRITTEN UNCERTIFIED (ADR-0291 question 4, Decision 5's reason): its
+      // certifying signature no longer verifies over a file written whole, so a copy that kept the claim would be one
+      // that claims a seal it broke. Read from the lane's own facts.
+      const signed = sessions.mupdf;
+      const uncertified =
+        append === 'never' && signed !== undefined && (await this.#signaturesKept(signed)).certification !== null ? 'removed' : certification;
+
       // THE SAME FLUSH A SAVE USES, so a copy and a save cannot disagree about
       // what this document currently is (B3a). `writeDocumentCopy` is handed no
       // `DocumentContext`, so it cannot stamp the document clean.
@@ -4783,12 +4939,14 @@ export class DocumentCommands {
           this.#save.deps,
           this.#checkFor(docId),
           // A FILE A PERSON KEEPS, with or without its outline (ADR-0287).
-          () => this.#save.stage(docId, sessions, { outline, marks: 'engraved' }),
+          () => this.#save.stage(docId, sessions, { outline, marks: 'engraved', certification: uncertified, append }),
           destination,
           backupsFor(context),
         );
       } catch (error) {
         if (error instanceof StructureTooDeep) return { kind: 'too-deep', bookmarks: error.throughOutline };
+        // AN APPEND THE FILE COULD NOT TAKE is answered too, nothing written (ADR-0291 question 4).
+        if (error instanceof AppendRefused) return { kind: 'append-refused' };
         throw error;
       }
     });
@@ -7143,6 +7301,7 @@ export class DocumentCommands {
       }
       if (error instanceof SignatureCredentialRefusedError) return { kind: 'wrong-passphrase' };
       if (error instanceof SignatureTooLargeError) return { kind: 'signature-too-large' };
+      if (error instanceof CertifyingSignedDocumentError) return { kind: 'already-signed' };
       // THE AUTHORITY'S FAILURES, three sentences rather than one: unreachable is
       // *try again or choose another*, refused is *that service will not do this*,
       // and unverifiable is *it answered with something this build would not
@@ -7320,7 +7479,7 @@ export class DocumentCommands {
    * signatures — the same decision that save then takes (`signaturesKeptBySave`) — and a *no* answers
    * `breaks-signatures` with nothing written. In the lane, so no command can land between the question and the write.
    */
-  async save(docId: DocId, request: { readonly breakSignatures: boolean }): Promise<SaveRequestOutcome> {
+  async save(docId: DocId, request: SaveRequest): Promise<SaveRequestOutcome> {
     return (await this.#saveThen(docId, request, false)).outcome;
   }
 
@@ -7339,7 +7498,7 @@ export class DocumentCommands {
 
   async #saveThen(
     docId: DocId,
-    request: { readonly breakSignatures: boolean },
+    request: SaveRequest,
     take: boolean,
   ): Promise<{ readonly outcome: SaveRequestOutcome; readonly image: StagedImage | null }> {
     // LISTS AND NOT NULLABLE LOCALS: the lane writes them from a closure, which control-flow analysis cannot see.
@@ -7361,6 +7520,9 @@ export class DocumentCommands {
       if (!request.breakSignatures && !next.kept && !context.signaturesBreakAgreed) {
         return { kind: 'breaks-signatures', signatures: next.signatures };
       }
+      // WRITTEN WHOLE ONLY WHERE NOTHING IS CERTIFIED (ADR-0291 question 4): the window offers *Save anyway* on an
+      // uncertified document alone, and a certified one asked for it is answered as before, so no route breaks a seal.
+      if (request.whole === true && next.certification !== null) return { kind: 'append-refused' };
 
       // THE DOCUMENT'S FACT, read before the save clears it: whether a removal ran since the file was written
       // (ADR-0139). Never the engine session's mark, which an undo's restore, an adopt or a host restart drops — the
@@ -7371,8 +7533,9 @@ export class DocumentCommands {
       const saved = await saveDocument(
         this.#save.deps,
         context,
-        // THE FILE A PERSON KEEPS: Monstera's placed signatures, pictures and barcodes drawn by the page (ADR-0287).
-        () => this.#save.stage(docId, sessions, KEPT_FILE),
+        // THE FILE A PERSON KEEPS: Monstera's placed signatures, pictures and barcodes drawn by the page (ADR-0287);
+        // written whole where the person chose to save past an append the file could not take (ADR-0291 question 4).
+        () => this.#save.stage(docId, sessions, request.whole === true ? KEPT_FILE_WHOLE : KEPT_FILE),
         backupsFor(context),
       );
       // WHY IT WAS NOT WRITTEN, asked of the file now, inside the lane, so the person is told the remedy that fits.

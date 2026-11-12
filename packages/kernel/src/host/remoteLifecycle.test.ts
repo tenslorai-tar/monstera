@@ -56,10 +56,13 @@ import type { PlaceholderRequest } from '../signatureHole.js';
 import { SignatureAppearanceRefusedError } from '../signingRefusals.js';
 import {
   EngineOpenFailed,
+  EngineSerialiseFailed,
   EngineSerialiseMismatch,
+  KEPT_FILE,
   type SessionAreaSurface,
   remoteMupdfLifecycle,
 } from './remoteLifecycle.js';
+import { AppendRefused } from '../appendRefused.js';
 
 /**
  * The surface the adapter needs, plus what the CALLER of it needs.
@@ -1027,13 +1030,31 @@ describe('remoteMupdfLifecycle', () => {
 
   // A SAVE'S FLUSH STAGES: the bytes stay in the output directory until placed, and a discard removes them — the
   // case where the disk refused and nothing was placed, which would otherwise leave a copy the host may read.
+  it('AN APPEND THE FILE COULD NOT TAKE crosses the pipe as itself, and `append: never` reaches the writer (ADR-0291 Q4)', async () => {
+    const asked: unknown[] = [];
+    const refusing = joined(realAreas(), {
+      serialise: (_session, options) => {
+        asked.push(options);
+        return Promise.reject(new AppendRefused('its own chain reads 0 pages'));
+      },
+    });
+    const session = await refusing.open(flat);
+    await expect(refusing.lifecycle.stage(session, { ...KEPT_FILE, append: 'never' })).rejects.toBeInstanceOf(AppendRefused);
+    expect(asked).toStrictEqual([{ marks: 'engraved', append: 'never' }]);
+
+    // CONTROL: any other failure of the serialise is the host's, as before.
+    const failing = joined(realAreas(), { serialise: () => Promise.reject(new Error('something else')) });
+    const other = await failing.open(flat);
+    await expect(failing.lifecycle.stage(other, KEPT_FILE)).rejects.toBeInstanceOf(EngineSerialiseFailed);
+  });
+
   it('stages the serialised document in the output directory, and a discard removes it', async () => {
     const areas = realAreas();
     const { lifecycle, open } = joined(areas);
     const session = await open(flat);
     const output = areas.made[0]?.outputDirectory ?? '';
 
-    const staged = await lifecycle.stage(session, { outline: 'kept', marks: 'as-held' });
+    const staged = await lifecycle.stage(session, { outline: 'kept', marks: 'as-held', certification: 'kept', append: 'when-signed' });
     // CONTROL: staged means ON DISK, so a discard that did nothing could not pass the next assertion by default.
     expect(await readdir(output)).toHaveLength(1);
     expect(staged.byteLength).toBeGreaterThan(0);

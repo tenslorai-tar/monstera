@@ -673,6 +673,8 @@ export function createContractHandlers(deps: {
     'document.pageMarks': pageMarksHandler(deps.commands),
     'document.layers': layersHandler(deps.commands),
     'document.signatures': signaturesHandler(deps.commands),
+    'document.certification': certificationHandler(deps.commands),
+    'document.saveSignedVersion': saveSignedVersionHandler(deps.commands),
     'document.annotations': annotationsHandler(deps.commands),
     'document.formFields': formFieldsHandler(deps.commands),
     'document.flatFieldCandidates': flatFieldCandidatesHandler(deps.commands),
@@ -1108,9 +1110,9 @@ function readRangeHandler(documents: DocumentService): ContractHandlers['documen
  * silently absorb a fifth verdict the kernel grows later.
  */
 function saveHandler(commands: DocumentCommands): ContractHandlers['document.save'] {
-  return async ({ docId, breakSignatures }): Promise<Awaited<ReturnType<ContractHandlers['document.save']>>> => {
+  return async ({ docId, breakSignatures, whole }): Promise<Awaited<ReturnType<ContractHandlers['document.save']>>> => {
     try {
-      const outcome = await commands.save(docId, { breakSignatures });
+      const outcome = await commands.save(docId, { breakSignatures, ...(whole === true ? { whole } : {}) });
       if (outcome.kind === 'saved') {
         const cleared = outcome.cleared;
         return ok({
@@ -1125,6 +1127,7 @@ function saveHandler(commands: DocumentCommands): ContractHandlers['document.sav
       }
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed', cause: outcome.cause } as const);
       if (outcome.kind === 'too-deep') return ok({ kind: 'too-deep', bookmarks: outcome.bookmarks } as const);
+      if (outcome.kind === 'append-refused') return ok({ kind: 'append-refused' } as const);
       return ok({ kind: 'refused', reason: refusalReason(outcome.verdict) } as const);
     } catch (thrown) {
       // MATCHED ON THE CLASS, exactly as undo and execute do. Everything else
@@ -2787,9 +2790,10 @@ function saveCopyHandler(commands: DocumentCommands, mint: MintWritten): Contrac
   return async ({
     docId,
     withoutBookmarks,
+    whole,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.saveCopy']>>> => {
     try {
-      const outcome = await commands.saveCopy(docId, withoutBookmarks === true ? 'left-out' : 'kept');
+      const outcome = await commands.saveCopy(docId, withoutBookmarks === true ? 'left-out' : 'kept', whole === true ? 'never' : 'when-signed');
       // UNDEFINED IS THE USER DISMISSING THE DIALOG, and it is an outcome. The
       // kernel returns no value at all for it rather than a fourth member,
       // because nothing ran — see `DocumentCommands.saveCopy`.
@@ -2797,6 +2801,8 @@ function saveCopyHandler(commands: DocumentCommands, mint: MintWritten): Contrac
       if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes, written: mint(outcome.destination) } as const);
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
       if (outcome.kind === 'too-deep') return ok({ kind: 'too-deep', bookmarks: outcome.bookmarks } as const);
+      // AN APPEND THE FILE COULD NOT TAKE (ADR-0291 question 4): nothing written, and the person is asked.
+      if (outcome.kind === 'append-refused') return ok({ kind: 'append-refused' } as const);
       return ok(copyRefusalWire(outcome));
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
@@ -2828,10 +2834,10 @@ function saveCopyHandler(commands: DocumentCommands, mint: MintWritten): Contrac
 function workOnCopyHandler(
   deps: OpenPathParts & { readonly commands: DocumentCommands },
 ): ContractHandlers['document.workOnCopy'] {
-  return async ({ docId }): Promise<Awaited<ReturnType<ContractHandlers['document.workOnCopy']>>> => {
+  return async ({ docId, whole }): Promise<Awaited<ReturnType<ContractHandlers['document.workOnCopy']>>> => {
     let copied;
     try {
-      copied = await deps.commands.copyToWorkOn(docId);
+      copied = await deps.commands.copyToWorkOn(docId, whole === true ? 'never' : 'when-signed');
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
@@ -2841,6 +2847,8 @@ function workOnCopyHandler(
     if (copied === undefined) return ok({ kind: 'cancelled' } as const);
     if (copied.outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
     if (copied.outcome.kind === 'too-deep') return ok({ kind: 'too-deep', bookmarks: copied.outcome.bookmarks } as const);
+    // AN APPEND THE FILE COULD NOT TAKE (ADR-0291 question 4): nothing written, and the person is asked.
+    if (copied.outcome.kind === 'append-refused') return ok({ kind: 'append-refused' } as const);
     if (copied.outcome.kind === 'refused' || copied.outcome.kind === 'onto-source') {
       return ok(openedCopyRefusalWire(copied.outcome));
     }
@@ -2929,6 +2937,8 @@ function editCopyHandler(
     if (copied === undefined) return ok({ kind: 'cancelled' } as const);
     if (copied.outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
     if (copied.outcome.kind === 'too-deep') return ok({ kind: 'too-deep', bookmarks: copied.outcome.bookmarks } as const);
+    // UNREACHABLE: a copy made for a change is written whole (`copyForEditing`), so no append was there to refuse.
+    if (copied.outcome.kind === 'append-refused') throw new Error('a copy written whole for a change answered append-refused');
     if (copied.outcome.kind === 'refused' || copied.outcome.kind === 'onto-source') {
       return ok(openedCopyRefusalWire(copied.outcome));
     }
@@ -3408,6 +3418,36 @@ function signaturesHandler(
     try {
       const { signatures, unreadable } = await commands.signatures(docId);
       return ok({ signatures: signatures.map((signature) => ({ ...signature })), unreadable });
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      if (thrown instanceof MissingSessionError) return err({ code: 'engine-unavailable' });
+      throw thrown;
+    }
+  };
+}
+
+/** The document's certification, read at open (ADR-0291's amendment). The lane's refusals as `signaturesHandler`'s. */
+function certificationHandler(commands: DocumentCommands): ContractHandlers['document.certification'] {
+  return async ({ docId }) => {
+    try {
+      return ok(await commands.certification(docId));
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      if (thrown instanceof MissingSessionError) return err({ code: 'engine-unavailable' });
+      throw thrown;
+    }
+  };
+}
+
+/** A signature's signed version, saved as a copy (ADR-0291 Decision 7). The lane's refusals as `signaturesHandler`'s. */
+function saveSignedVersionHandler(commands: DocumentCommands): ContractHandlers['document.saveSignedVersion'] {
+  return async ({ docId, signedThrough }) => {
+    try {
+      return ok(await commands.saveSignedVersion(docId, signedThrough));
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });

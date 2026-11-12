@@ -23,6 +23,7 @@ Check signatures looks at each signature in the document and tells you whether t
 - These checks compare the signature with the content it covers. They do not tell you whether the signer's certificate is one you should trust.
 - A signature Monstera cannot read is reported as unreadable, which is not the same as invalid.
 - If there is no signature, the window says **This document is not signed.**
+- When something was added to the file after a signature, or the file no longer reads as that signer signed it (for example it was damaged later), the signature shows **Save this signed version…**. Choose it and pick where to save: the copy is the document exactly as that person signed it, and its signature verifies. Monstera takes it from the file as it is saved on disk and checks it first; if that version cannot be found there, nothing is written and Monstera says so. Changes you have not saved are not in it.
 
 <!--
 Screenshots to capture:

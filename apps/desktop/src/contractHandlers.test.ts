@@ -1119,6 +1119,47 @@ describe('document.saveBarcodeContact', () => {
   });
 });
 
+describe('an append the file could not take, at the channel (ADR-0291 question 4)', () => {
+  /** Commands whose save and copy answer `outcome`, recording what each was asked. */
+  function answering(outcome: unknown): { commands: DocumentCommands; asked: unknown[][] } {
+    const asked: unknown[][] = [];
+    const commands = {
+      save: (...args: unknown[]) => {
+        asked.push(['save', ...args]);
+        return Promise.resolve(outcome);
+      },
+      saveCopy: (...args: unknown[]) => {
+        asked.push(['saveCopy', ...args]);
+        return Promise.resolve(outcome);
+      },
+    } as unknown as DocumentCommands;
+    return { commands, asked };
+  }
+
+  it('Save and Save a copy answer it as itself, and Save anyway and a whole copy reach main as such', async () => {
+    const { commands, asked } = answering({ kind: 'append-refused' });
+    const { handlers } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands });
+    const refused = { ok: true, value: { kind: 'append-refused' } };
+    expect(await handlers['document.save']({ docId: A_DOC, breakSignatures: true, whole: true })).toStrictEqual(refused);
+    expect(await handlers['document.saveCopy']({ docId: A_DOC, whole: true })).toStrictEqual(refused);
+    expect(asked).toStrictEqual([
+      ['save', A_DOC, { breakSignatures: true, whole: true }],
+      ['saveCopy', A_DOC, 'kept', 'never'],
+    ]);
+  });
+
+  it('CONTROL: without `whole` neither is asked whole', async () => {
+    const { commands, asked } = answering({ kind: 'append-refused' });
+    const { handlers } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands });
+    await handlers['document.save']({ docId: A_DOC, breakSignatures: false });
+    await handlers['document.saveCopy']({ docId: A_DOC });
+    expect(asked).toStrictEqual([
+      ['save', A_DOC, { breakSignatures: false }],
+      ['saveCopy', A_DOC, 'kept', 'when-signed'],
+    ]);
+  });
+});
+
 /**
  * Decision C at the channel: rows of a workbook the PDF does not hold ride with the open, so the person is told — and a
  * document that arrived whole answers exactly what `document.open` does.

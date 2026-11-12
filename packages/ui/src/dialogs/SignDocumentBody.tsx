@@ -8,6 +8,7 @@ import { useId, useRef, useState } from 'react';
 import {
   SIGN_DOCUMENT_APPLY,
   SIGN_DOCUMENT_CERTIFY,
+  SIGN_DOCUMENT_CERTIFY_SIGNED,
   SIGN_DOCUMENT_CERTIFY_COMMENTS,
   SIGN_DOCUMENT_CERTIFY_FORMS,
   SIGN_DOCUMENT_CERTIFY_LOCKED,
@@ -141,8 +142,13 @@ const LOOK_TITLES: Readonly<Record<Look, MessageKey>> = {
 export default function SignDocumentBody({
   placed,
   kept,
+  signed,
   resolve,
-}: { readonly placed: boolean; readonly kept: readonly KeptSignature[] } & DialogAnswering<SignDocumentAnswers>): ReactElement {
+}: {
+  readonly placed: boolean;
+  readonly kept: readonly KeptSignature[];
+  readonly signed: boolean;
+} & DialogAnswering<SignDocumentAnswers>): ReactElement {
   const { _ } = useLingui();
   const [certify, setCertify] = useState<CertifyChoice>('approve');
   // NO TIMESTAMP TO BEGIN WITH, and that is a decision rather than a default: a
@@ -368,22 +374,30 @@ export default function SignDocumentBody({
       </DialogRow>
 
       <DialogRow label={SIGN_DOCUMENT_CERTIFY}>
-        {/* A NATIVE `<select>`, for `DocumentChoice`'s reason: §9.27's pinned
-            CSP admits no inline style, so the primitive set has no select. */}
-        <select
-          aria-label={_(SIGN_DOCUMENT_CERTIFY)}
-          data-sign-certify=""
-          onChange={(event) => {
-            setCertify(event.target.value as CertifyChoice);
-          }}
-          value={certify}
-        >
-          {CERTIFY_CHOICES.map((choice) => (
-            <option key={choice} value={choice}>
-              {_(CERTIFY_TITLES[choice])}
-            </option>
-          ))}
-        </select>
+        {signed ? (
+          // A CERTIFICATION IS THE FIRST SIGNATURE (ADR-0291, question 3): on a signed document this signature can only
+          // say *I signed this*, so the choice is not offered and one line says why. `certify` stays `approve`.
+          <p className="m-sign-document__note" data-sign-certify-signed="">
+            {_(SIGN_DOCUMENT_CERTIFY_SIGNED)}
+          </p>
+        ) : (
+          // A NATIVE `<select>`, for `DocumentChoice`'s reason: §9.27's pinned
+          // CSP admits no inline style, so the primitive set has no select.
+          <select
+            aria-label={_(SIGN_DOCUMENT_CERTIFY)}
+            data-sign-certify=""
+            onChange={(event) => {
+              setCertify(event.target.value as CertifyChoice);
+            }}
+            value={certify}
+          >
+            {CERTIFY_CHOICES.map((choice) => (
+              <option key={choice} value={choice}>
+                {_(CERTIFY_TITLES[choice])}
+              </option>
+            ))}
+          </select>
+        )}
       </DialogRow>
 
       <DialogRow label={SIGN_DOCUMENT_TIMESTAMP}>

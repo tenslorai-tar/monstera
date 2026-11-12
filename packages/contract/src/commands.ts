@@ -1,11 +1,23 @@
 import type { DocId, DocVersion } from '@monstera/shared';
-import { DEFAULT_TEXT_LINE_HEIGHT, MAX_TEXT_LINE_HEIGHT, MAX_TEXT_PADDING, MIN_TEXT_LINE_HEIGHT, sameTextFrame, type TextFrame } from '@monstera/shared';
+import {
+  CERTIFICATION_LEVELS,
+  DEFAULT_TEXT_LINE_HEIGHT,
+  MAX_TEXT_LINE_HEIGHT,
+  MAX_TEXT_PADDING,
+  MIN_TEXT_LINE_HEIGHT,
+  sameTextFrame,
+  type TextFrame,
+} from '@monstera/shared';
+
+// THE LEVELS ARE SHARED'S, because a refusal's detail carries one (ADR-0291); re-exported where the payload uses them.
+export { CERTIFICATION_LEVELS, type CertificationLevel } from '@monstera/shared';
 import { z } from 'zod';
 
 import { isFollowable, schemeOf } from './followedLinks.js';
 import { MAX_PAGE_INDEX, MAX_PAGE_SET_ENTRIES, pageSetOfAtMost, pageSetSchema, pairedPageSetSchema } from './pageSet.js';
 import {
   DOCUMENT_PASSWORD_MAX_CHARS,
+  MAX_SIGNATURE_FIELD,
   OCR_ENGINES,
   docIdSchema,
   docVersionSchema,
@@ -3883,14 +3895,9 @@ export const flattenFormFieldsSchema = z.object({
   version: docVersionSchema,
 }).strict();
 
-/**
- * How long a signature's descriptive fields may be.
- *
- * `/Reason`, `/Location`, `/ContactInfo` and the signer's name go into the
- * signature dictionary as PDF strings. None scales with the document; the bound
- * exists because every string that crosses here is bounded.
- */
-export const MAX_SIGNATURE_FIELD = 256;
+// HOW LONG A SIGNATURE'S DESCRIPTIVE FIELDS MAY BE is `schemas.ts`' now, since a refusal's detail names a certifier
+// (ADR-0291) and that module cannot import this one; re-exported here, where every other reader finds it.
+export { MAX_SIGNATURE_FIELD } from './schemas.js';
 
 /**
  * The faces a typed signature may be set in, in the order a person is offered them
@@ -4129,6 +4136,8 @@ export const SIGN_REFUSALS = [
   'timestamp-unverifiable',
   /** A kept signature was named that the library no longer holds — removed since the dialog opened. */
   'saved-signature-missing',
+  /** A certification asked of a document that already holds a signature; a certification is the first (ADR-0291). */
+  'already-signed',
 ] as const;
 
 /** One of {@link SIGN_REFUSALS}. */
@@ -4541,6 +4550,9 @@ export const placeSignaturePictureSchema = z
   })
   .strict();
 
+/** `@monstera/shared`'s `CERTIFICATION_LEVELS` as a schema (ADR-0291): the Sign payload, the host's answer and the refusal. */
+export const certificationLevelSchema = z.enum(CERTIFICATION_LEVELS);
+
 /**
  * Signs the document with a PKCS#12 certificate the user picked.
  *
@@ -4620,7 +4632,7 @@ export const signDocumentSchema = z.object({
    * the mapping is the format's and the kernel owns it, and a renderer sending
    * `2` would be sending a number whose meaning it had to know.
    */
-  certify: z.enum(['no-changes', 'form-fill', 'form-fill-and-annotate']).optional(),
+  certify: certificationLevelSchema.optional(),
   /**
    * Where the signature is SEEN, and how it looks.
    *

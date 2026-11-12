@@ -1,7 +1,8 @@
 import { PDFDocument as PdfLibDocument, StandardFonts } from '@cantoo/pdf-lib';
 import { describe, expect, it } from 'vitest';
 
-import { openPdfFile, startxrefBroken } from './mupdfOpen.js';
+import { lockedPageTree } from './lockedPageTreeFixture.js';
+import { openPdfFile, pagesWithoutRepair, startxrefBroken } from './mupdfOpen.js';
 import * as mupdf from './mupdfRaw.js';
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
 import { signatureFromScan } from './signatureScan.js';
@@ -38,14 +39,8 @@ async function selfPointingStream(): Promise<Uint8Array> {
   return Uint8Array.from([...bytes, ...latin1(tail)]);
 }
 
-const pagesWithoutRecovery = (image: Uint8Array): number => {
-  const document = mupdf.PDFDocument.openDocument(image, 'application/pdf');
-  try {
-    return document.countPages();
-  } finally {
-    document.destroy();
-  }
-};
+/** The chain as it stands, by the module's own reading (`pagesWithoutRepair`), for a file with no password. */
+const pagesWithoutRecovery = (image: Uint8Array): number => pagesWithoutRepair(image, undefined);
 
 describe.each([
   ['an XRef stream', selfPointingStream],
@@ -83,6 +78,29 @@ describe.each([
 
   it('is drawn by the other reader that takes a file as it is', async () => {
     expect(signatureFromScan(await fixture()).kind).not.toBe('unreadable');
+  });
+});
+
+describe('a chain read as it stands (pagesWithoutRepair), the appended save’s check', () => {
+  it('A PROTECTED FILE whose page tree is in an encrypted object stream reads its pages WITH its password', () => {
+    const file = lockedPageTree('open-me', 'own-me');
+    expect(pagesWithoutRepair(file, 'open-me')).toBe(1);
+    // WHY THE PASSWORD IS PASSED: without it the same file reads no pages, which is what refused every save of one.
+    expect(pagesWithoutRepair(file, undefined)).toBe(0);
+    // AND A WRONG ONE IS NOT TAKEN AS A READING.
+    expect(pagesWithoutRepair(file, 'wrong')).toBe(0);
+  });
+
+  it('CONTROL: a broken chain still reads no pages, a password given or not, where the rebuild would hide it', async () => {
+    const broken = await selfPointingStream();
+    expect(pagesWithoutRepair(broken, 'any')).toBe(0);
+    expect(pagesWithoutRepair(broken, undefined)).toBe(0);
+    const rebuilt = openPdfFile(broken, undefined).document;
+    try {
+      expect(rebuilt.countPages()).toBe(2);
+    } finally {
+      rebuilt.destroy();
+    }
   });
 });
 

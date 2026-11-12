@@ -277,6 +277,7 @@ function harness(script: Script): {
       stamp: () => ({ author: 'A. Tester', created: '2026-10-04T12:00:00.000Z' }),
       signatures: {
         warn: () => true,
+        reread: () => undefined,
         onOpened: () => {
           throw new Error('the case opened a copy for an edit without asking for one');
         },

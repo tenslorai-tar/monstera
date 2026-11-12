@@ -178,6 +178,7 @@ const SIGNATURES = [
     notAfter: '2027-01-15T00:00:00Z',
     coversDocument: true,
     coversWholeFile: true,
+    signedThrough: 18360,
   },
   {
     signer: 'Finance Office',
@@ -188,6 +189,7 @@ const SIGNATURES = [
     notAfter: '2026-12-31T00:00:00Z',
     coversDocument: true,
     coversWholeFile: false,
+    signedThrough: 18360,
   },
 ];
 
@@ -493,6 +495,12 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'with-selection', props: { selected: 3 } },
   ],
   'dialog.signed-edit': [{ state: 'opened', props: {} }],
+  'dialog.certified-edit': [{ state: 'opened', props: { level: 'form-fill', signer: 'Grace Hopper' } }],
+  // ADR-0291 question 4: a save of an uncertified document offers Save anyway; a certified one and a copy, the copy alone.
+  'dialog.append-refused': [
+    { state: 'save', props: { certified: false, copying: false } },
+    { state: 'certified', props: { certified: true, copying: false } },
+  ],
   'dialog.save-too-deep': [
     { state: 'bookmarks', props: { bookmarks: true } },
     { state: 'structure', props: { bookmarks: false } },
@@ -627,10 +635,12 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     },
   ],
   'dialog.sign-document': [
-    { state: 'opened', props: { placed: false, kept: [] } },
+    { state: 'opened', props: { placed: false, kept: [], signed: false } },
+    // ALREADY SIGNED (ADR-0291, question 3): no certification is offered, and one line says why.
+    { state: 'signed', props: { placed: false, kept: [], signed: true } },
     {
       state: 'filled',
-      props: { placed: false, kept: [] },
+      props: { placed: false, kept: [], signed: false },
       steps: [
         type('Certificate password (leave empty if it has none)', 'example-passphrase'),
         type('Signed by (optional)', 'Alex Example'),
@@ -639,11 +649,11 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
       ],
     },
     // A visible signature was drawn on the page, so the dialog also asks how it looks.
-    { state: 'placed', props: { placed: true, kept: [] } },
-    { state: 'kept', props: { placed: true, kept: [KEPT_TYPED, KEPT_DRAWN] } },
+    { state: 'placed', props: { placed: true, kept: [], signed: false } },
+    { state: 'kept', props: { placed: true, kept: [KEPT_TYPED, KEPT_DRAWN], signed: false } },
     {
       state: 'refused',
-      props: { placed: false, kept: [] },
+      props: { placed: false, kept: [], signed: false },
       steps: [type('Reason (optional)', prose(MAX_SIGNATURE_FIELD))],
     },
   ],
@@ -686,6 +696,7 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
           notAfter: '2027-01-15T00:00:00Z',
           coversDocument: at !== 3,
           coversWholeFile: at === 0,
+          signedThrough: 18360 + at * 1024,
         })),
         unreadable: false,
       },

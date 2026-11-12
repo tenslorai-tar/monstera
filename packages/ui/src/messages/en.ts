@@ -132,9 +132,31 @@ export const SIGN_AGAIN_EXPLAINS = messageKey('dialog.sign-again.explains');
 export const SIGN_AGAIN_UNREADABLE = messageKey('dialog.sign-again.unreadable');
 export const SIGN_AGAIN_CONTINUE = messageKey('dialog.sign-again.continue');
 export const SIGNED_EDIT_TITLE = messageKey('dialog.signed-edit.title');
+/** A signed document's save that its file could not take as an appended save (ADR-0291 question 4). */
+export const APPEND_REFUSED_TITLE = messageKey('dialog.append-refused.title');
+export const APPEND_REFUSED_EXPLAINS = messageKey('dialog.append-refused.explains');
+export const APPEND_REFUSED_WHOLE_BREAKS = messageKey('dialog.append-refused.whole-breaks');
+export const APPEND_REFUSED_COPY = messageKey('dialog.append-refused.copy');
+export const APPEND_REFUSED_ANYWAY = messageKey('dialog.append-refused.anyway');
 export const SIGNED_EDIT_EXPLAINS = messageKey('dialog.signed-edit.explains');
 export const SIGNED_EDIT_COPY = messageKey('dialog.signed-edit.copy');
 export const SIGNED_EDIT_THIS = messageKey('dialog.signed-edit.this');
+// A CERTIFIED DOCUMENT'S LOCK (ADR-0291): one sentence per level, said by the window that offers the copy and by the
+// problem dialog for a surface with no copy to offer, so the two read alike.
+export const CERTIFIED_NO_CHANGES = messageKey('problem.certified.no-changes');
+export const CERTIFIED_FORM_FILL = messageKey('problem.certified.form-fill');
+export const CERTIFIED_FORM_FILL_AND_ANNOTATE = messageKey('problem.certified.form-fill-and-annotate');
+export const CERTIFIED_BY_LABEL = messageKey('problem.certified.by');
+export const CERTIFIED_EDIT_TITLE = messageKey('dialog.certified-edit.title');
+/**
+ * The certification line at the top of a certified document, one per level, and the copy's (ADR-0291's amendment of
+ * 2026-11-12). `named` is `yes` where the certifier has a name to give.
+ */
+export const CERTIFICATION_LINE_NO_CHANGES = messageKey('document.certification-line.no-changes');
+export const CERTIFICATION_LINE_FORM_FILL = messageKey('document.certification-line.form-fill');
+export const CERTIFICATION_LINE_FORM_FILL_AND_ANNOTATE = messageKey('document.certification-line.form-fill-and-annotate');
+export const CERTIFICATION_LINE_COPY = messageKey('document.certification-line.copy');
+export const CERTIFIED_EDIT_EXPLAINS = messageKey('dialog.certified-edit.explains');
 export const SAVE_TOO_DEEP_TITLE = messageKey('dialog.save-too-deep.title');
 export const SAVE_TOO_DEEP_EXPLAINS = messageKey('dialog.save-too-deep.explains');
 export const SAVE_TOO_DEEP_BOOKMARKS = messageKey('dialog.save-too-deep.bookmarks');
@@ -3313,6 +3335,8 @@ export const SIGN_DOCUMENT_CONTACT = messageKey('dialog.sign-document.contact');
 export const SIGN_DOCUMENT_TOO_LONG = messageKey('dialog.sign-document.too-long');
 export const SIGN_DOCUMENT_APPLY = messageKey('dialog.sign-document.apply');
 export const SIGN_DOCUMENT_CERTIFY = messageKey('dialog.sign-document.certify');
+/** Why a signed document offers no certification (ADR-0291, question 3): a certification is the first signature. */
+export const SIGN_DOCUMENT_CERTIFY_SIGNED = messageKey('dialog.sign-document.certify-signed');
 export const SIGN_DOCUMENT_CERTIFY_NONE = messageKey('dialog.sign-document.certify-none');
 export const SIGN_DOCUMENT_CERTIFY_LOCKED = messageKey('dialog.sign-document.certify-locked');
 export const SIGN_DOCUMENT_CERTIFY_FORMS = messageKey('dialog.sign-document.certify-forms');
@@ -3333,6 +3357,8 @@ export const SIGN_PROBLEM_UNREADABLE = messageKey('dialog.sign-problem.unreadabl
 export const SIGN_PROBLEM_IMAGE_UNREADABLE = messageKey('dialog.sign-problem.image-unreadable');
 export const SIGN_PROBLEM_IMAGE_TOO_LARGE = messageKey('dialog.sign-problem.image-too-large');
 export const SIGN_PROBLEM_SAVED_MISSING = messageKey('dialog.sign-problem.saved-missing');
+/** A certification asked of a document that already holds a signature (ADR-0291, question 3). */
+export const SIGN_PROBLEM_ALREADY_SIGNED = messageKey('dialog.sign-problem.already-signed');
 export const SIGN_PROBLEM_SCAN_BLANK = messageKey('dialog.sign-problem.scan-blank');
 export const SIGN_PROBLEM_SCAN_LOCKED = messageKey('dialog.sign-problem.scan-locked');
 export const SIGN_PROBLEM_SIGNATURE_TOO_LARGE = messageKey('dialog.sign-problem.signature-too-large');
@@ -3373,6 +3399,10 @@ export const SIGNATURES_CHANGED = messageKey('dialog.signatures.changed');
 export const SIGNATURES_APPENDED = messageKey('dialog.signatures.appended');
 export const SIGNATURES_VALID_BETWEEN = messageKey('dialog.signatures.valid-between');
 export const SIGNATURES_NOT_TRUSTED = messageKey('dialog.signatures.not-trusted');
+// SAVE THIS SIGNED VERSION (ADR-0291 Decision 7): the file as this signature signed it, as a copy.
+export const SIGNATURES_SAVE_SIGNED_VERSION = messageKey('dialog.signatures.save-signed-version');
+export const TOAST_SIGNED_VERSION_SAVED = messageKey('toast.signed-version-saved');
+export const TOAST_SIGNED_VERSION_NOT_FOUND = messageKey('toast.signed-version-not-found');
 export const SIGNATURES_SIGNER = messageKey('dialog.signatures.signer');
 export const SIGNATURES_SIGNER_OF = messageKey('dialog.signatures.signer-of');
 export const SIGNATURES_STATUS = messageKey('dialog.signatures.status');
@@ -3753,10 +3783,34 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SIGN_AGAIN_UNREADABLE]: 'One signature in this document could not be read, so Monstera cannot say whether it stays valid.',
   [SIGN_AGAIN_CONTINUE]: 'Continue',
   [SIGNED_EDIT_TITLE]: 'This change will break signatures',
+  [APPEND_REFUSED_TITLE]: 'Your changes could not be added after the signature',
+  [APPEND_REFUSED_EXPLAINS]:
+    'This document is digitally signed, so Monstera adds your changes after the signed part to keep the signature. This file could not take them that way without being damaged, so nothing was saved and the file is as it was.',
+  [APPEND_REFUSED_WHOLE_BREAKS]:
+    'Saving the whole document instead keeps your changes, and its signatures will no longer verify. A copy leaves this file and its signatures as they are.',
+  [APPEND_REFUSED_COPY]: 'Save a copy…',
+  [APPEND_REFUSED_ANYWAY]: 'Save anyway',
   [SIGNED_EDIT_EXPLAINS]:
     'This document is digitally signed. This change rewrites the whole file, so its signatures will no longer verify. Work on a copy to keep the signed document exactly as it is: the copy is saved where you choose and opens with this change made.',
   [SIGNED_EDIT_COPY]: 'Work on a copy',
   [SIGNED_EDIT_THIS]: 'Change this document',
+  [CERTIFIED_NO_CHANGES]: 'This document is certified, and its certifier allows no changes to it. Nothing was changed.',
+  [CERTIFIED_FORM_FILL]:
+    'This document is certified, and its certifier allows only filling in its form and signing it. Nothing was changed.',
+  [CERTIFIED_FORM_FILL_AND_ANNOTATE]:
+    'This document is certified, and its certifier allows only filling in its form, signing it and adding comments. Nothing was changed.',
+  [CERTIFIED_BY_LABEL]: 'Certified by',
+  [CERTIFIED_EDIT_TITLE]: 'This document is certified',
+  [CERTIFICATION_LINE_NO_CHANGES]:
+    '{named, select, yes {Certified by {signer}, who allows no changes to it.} other {Certified. Its certifier allows no changes to it.}}',
+  [CERTIFICATION_LINE_FORM_FILL]:
+    '{named, select, yes {Certified by {signer}, who allows only filling in its forms and signing it.} other {Certified. Its certifier allows only filling in its forms and signing it.}}',
+  [CERTIFICATION_LINE_FORM_FILL_AND_ANNOTATE]:
+    '{named, select, yes {Certified by {signer}, who allows only filling in its forms, signing it and adding comments.} other {Certified. Its certifier allows only filling in its forms, signing it and adding comments.}}',
+  [CERTIFICATION_LINE_COPY]:
+    '{named, select, yes {This copy is not certified. The original, certified by {signer}, is unchanged.} other {This copy is not certified. The certified original is unchanged.}}',
+  [CERTIFIED_EDIT_EXPLAINS]:
+    'Work on a copy to make this change. The copy is saved where you choose and opens with the change made. It is a new document and no longer carries the certification, and this document stays exactly as it was certified.',
   [SAVE_TOO_DEEP_TITLE]: 'This file can’t be saved',
   [SAVE_TOO_DEEP_EXPLAINS]:
     'This PDF is built in a way that is too deeply nested for Monstera to save. Nothing was written, and your file and your changes are as they were.',
@@ -7129,6 +7183,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SIGN_DOCUMENT_TOO_LONG]: '“{field}” is longer than the document can carry. Shorten it to sign.',
   [SIGN_DOCUMENT_APPLY]: 'Choose certificate and sign',
   [SIGN_DOCUMENT_CERTIFY]: 'This signature says',
+  [SIGN_DOCUMENT_CERTIFY_SIGNED]: 'I signed this. The document is already signed, and only its first signature can certify it.',
   [SIGN_DOCUMENT_CERTIFY_NONE]: 'I approve this document',
   [SIGN_DOCUMENT_CERTIFY_LOCKED]: 'I am the author — nothing may be changed',
   [SIGN_DOCUMENT_CERTIFY_FORMS]: 'I am the author — forms may be filled in',
@@ -7155,6 +7210,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SIGN_PROBLEM_IMAGE_TOO_LARGE]: 'That picture is too large to place. Nothing has been changed.',
   [SIGN_PROBLEM_SAVED_MISSING]:
     'That kept signature is no longer in your library. Choose another look and sign again. Nothing has been changed.',
+  [SIGN_PROBLEM_ALREADY_SIGNED]:
+    'This document is already signed, so it cannot be certified. Only the first signature can certify a document. Nothing has been changed.',
   [INSERT_IMAGE_ABSENT]: 'That stamp is no longer in your library, so nothing was added.',
   [SIGN_PROBLEM_SIGNATURE_TOO_LARGE]:
     'The signature is too large to fit in the document. A certificate with a long chain can cause this. Nothing has been changed.',
@@ -7262,6 +7319,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SIGNATURES_CERTIFICATE]: 'Certificate',
   [SIGNATURES_NOT_TRUSTED]:
     'These checks compare the signature against the bytes it covers. They do not say whether the certificate itself is one you should trust.',
+  [SIGNATURES_SAVE_SIGNED_VERSION]: 'Save this signed version…',
+  [TOAST_SIGNED_VERSION_SAVED]: 'Signed version saved. It is the document exactly as this signature signed it.',
+  [TOAST_SIGNED_VERSION_NOT_FOUND]:
+    'This signature’s signed version could not be found in the file as it is saved, so nothing was written.',
 
   [GROUP_MARKS]: 'Marks',
   [GROUP_TEXT]: 'Text',

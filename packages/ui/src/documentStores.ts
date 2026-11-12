@@ -1,4 +1,4 @@
-import type { AskAbout, AskAmong, AskFile, AskSent, AskSides } from '@monstera/contract';
+import type { AskAbout, AskAmong, AskFile, AskSent, AskSides, CertificationLevel } from '@monstera/contract';
 import {
   type DocId,
   type DocVersion,
@@ -30,6 +30,11 @@ export interface AttachedFile {
 }
 
 /** One turn of a document's assistant conversation. */
+/** What a document's certification line says (ADR-0291's amendment of 2026-11-12). */
+export type CertificationLine =
+  | { readonly kind: 'certified'; readonly level: CertificationLevel; readonly signer: string }
+  | { readonly kind: 'uncertified-copy'; readonly signer: string };
+
 export interface ConversationTurn {
   readonly role: 'user' | 'assistant';
   readonly text: string;
@@ -241,6 +246,12 @@ export interface DocumentState {
    */
   readonly historyRefused: 'file-full' | null;
   /**
+   * What the certification line says of this document (ADR-0291's amendment of 2026-11-12), or `null` for none:
+   * `certified`, read from `main` when it is shown; `uncertified-copy`, set by *Work on a copy* on the copy it opened,
+   * naming the original's certifier. Per document, so a tab switch shows the other document's line or none.
+   */
+  readonly certificationLine: CertificationLine | null;
+  /**
    * Which documents this conversation asks about when two are side by side — *Left · Right ·
    * Both* (ADR-0089 Decision 5). The conversation's, so it lives and dies with the turns;
    * `undefined` until a person chooses, because no default is honest.
@@ -373,6 +384,12 @@ export interface DocumentActions {
   /** Records why this conversation is not being saved, or `null` once it is — the history sync is its one writer. */
   readonly historyRefusedAs: (why: 'file-full' | null) => void;
 
+  /**
+   * Records what the certification line says. A copy's line is never replaced by a read of the copy, which is
+   * uncertified and would answer none: the read keeps `uncertified-copy` where it is set.
+   */
+  readonly certificationShown: (line: CertificationLine | null) => void;
+
   /** Records the Left · Right · Both choice for this conversation. */
   readonly choseSides: (sides: AskSides) => void;
 
@@ -437,6 +454,7 @@ export function createDocumentStore(
     conversation: [],
     conversationSerial: 0,
     historyRefused: null,
+    certificationLine: null,
     sides: undefined,
     selectedPages: [],
     spelling: undefined,
@@ -537,6 +555,9 @@ export function createDocumentStore(
     },
     historyRefusedAs: (why) => {
       set({ historyRefused: why });
+    },
+    certificationShown: (line) => {
+      set((state) => (state.certificationLine?.kind === 'uncertified-copy' && line?.kind !== 'uncertified-copy' ? {} : { certificationLine: line }));
     },
     reviewSpelling: (review) => {
       set({ spelling: review });

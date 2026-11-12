@@ -89,7 +89,7 @@ function drawn(lines: readonly string[]): { readonly sent: unknown[]; readonly s
       onApplied: () => undefined,
       ask: () => Promise.resolve(undefined),
       stamp: () => ({ author: 'A. Tester', created: '2026-10-04T12:00:00.000Z' }),
-      signatures: { warn: () => true, onOpened: () => undefined },
+      signatures: { warn: () => true, reread: () => undefined, onOpened: () => undefined },
     },
     cropOf: () => [0, 0, 500, 700],
   };

@@ -5,7 +5,7 @@ import { OPEN_PROBLEM_DIALOG_ID } from '../dialogs/openProblem.js';
 import { READ_ONLY_FILE_DIALOG_ID, READ_ONLY_FILE_RESULT } from '../dialogs/readOnlyFile.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
 import { copyProblemOf } from './copyProblem.js';
-import { reportProblem, sayTooDeep } from './documentCommands.js';
+import { askAppendRefused, reportProblem, sayTooDeep } from './documentCommands.js';
 import type { ShowToast } from '../toasts.js';
 import type { OpenedDocument } from './importMarkdown.js';
 
@@ -51,7 +51,15 @@ export async function sayWhenUnwritable(
   const chosen = READ_ONLY_FILE_RESULT.safeParse(await deps.ask(READ_ONLY_FILE_DIALOG_ID, { access }));
   if (!chosen.success) return;
 
-  const copied = await deps.client['document.workOnCopy']({ docId });
+  await workOnCopy(deps, docId, false);
+}
+
+/**
+ * Writes the copy to work on and opens it, saying any outcome but `opened`. `whole` where the person chose a whole copy
+ * past an append the file could not take (ADR-0291 question 4), asked once: a whole copy appends nothing.
+ */
+async function workOnCopy(deps: Parameters<typeof sayWhenUnwritable>[0], docId: DocId, whole: boolean): Promise<void> {
+  const copied = await deps.client['document.workOnCopy']({ docId, ...(whole ? { whole: true as const } : {}) });
   if (!copied.ok) {
     reportProblem(deps, copied.error);
     return;
@@ -72,6 +80,10 @@ export async function sayWhenUnwritable(
       return;
     case 'too-deep':
       await sayTooDeep(deps, docId, outcome.bookmarks);
+      return;
+    // A SIGNED DOCUMENT'S COPY THAT COULD NOT TAKE THE APPEND (ADR-0291 question 4): a whole copy is offered, once.
+    case 'append-refused':
+      if (!whole && (await askAppendRefused(deps, docId, true)) === 'copy') await workOnCopy(deps, docId, true);
       return;
     // WRITTEN AND NOT OPENED, said as any open says it: the copy is where the person put it.
     case 'absent':

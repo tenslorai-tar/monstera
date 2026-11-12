@@ -10,13 +10,16 @@ import {
   SIGNATURES_NONE,
   SIGNATURES_NOT_TRUSTED,
   SIGNATURES_REASON,
+  SIGNATURES_SAVE_SIGNED_VERSION,
   SIGNATURES_SIGNER,
   SIGNATURES_SIGNER_OF,
   SIGNATURES_STATUS,
   SIGNATURES_UNREADABLE,
   SIGNATURES_VALID_BETWEEN,
 } from '../messages/en.js';
-import { DialogScroll, DialogSection } from '../primitives/Dialog.js';
+import { Button } from '../primitives/Button.js';
+import { DialogFooter, DialogScroll, DialogSection } from '../primitives/Dialog.js';
+import type { DialogAnswering } from '../registries/dialogs.js';
 import type { ShownSignature } from './signatures.js';
 
 /**
@@ -43,16 +46,18 @@ import type { ShownSignature } from './signatures.js';
 export default function SignaturesBody({
   signatures,
   unreadable,
+  resolve,
 }: {
   readonly signatures: readonly ShownSignature[];
   readonly unreadable: boolean;
-}): ReactElement {
+} & DialogAnswering<{ readonly signedThrough: number }>): ReactElement {
   const { _ } = useLingui();
 
   if (signatures.length === 0) {
     return (
       <div className="m-signatures">
         <p>{_(unreadable ? SIGNATURES_UNREADABLE : SIGNATURES_NONE)}</p>
+        <DialogFooter dismissal="close" />
       </div>
     );
   }
@@ -104,10 +109,21 @@ export default function SignaturesBody({
                 })}
               </dd>
             </dl>
+            {/* THE SIGNED VERSION, offered where the file holds more than this signature signed, or it no longer reads
+                as signed (ADR-0291 Decision 7). Main cuts the file back and saves the cut only where it verifies. */}
+            {signature.coversDocument && signature.coversWholeFile ? null : (
+              <Button
+                label={SIGNATURES_SAVE_SIGNED_VERSION}
+                onClick={() => {
+                  resolve({ signedThrough: signature.signedThrough });
+                }}
+              />
+            )}
           </DialogSection>
         ))}
       </DialogScroll>
       <p className="m-signatures__note">{_(SIGNATURES_NOT_TRUSTED)}</p>
+      <DialogFooter dismissal="close" />
     </>
   );
 }

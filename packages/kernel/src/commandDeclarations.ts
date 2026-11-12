@@ -1,4 +1,4 @@
-import type { CommandKind, CommandOfKind, NetworkOcrEngine } from '@monstera/contract';
+import type { CertificationLevel, CommandKind, CommandOfKind, NetworkOcrEngine } from '@monstera/contract';
 
 import type {
   CommandAsset,
@@ -295,6 +295,33 @@ export interface PurposeRouting {
 }
 
 /**
+ * WHAT A COMMAND CHANGES, by the words a certifier's level is stated in
+ * ([ADR-0291](../../../docs/DECISIONS/0291-a-certified-document-is-locked-to-what-its-certifier-allowed-and-worked-on-as-a-copy.md)
+ * Decision 2; ISO 32000-1 §12.8.2.2): `form-fill`, a field's VALUE (filling, resetting, importing values); `signature`,
+ * a certificate signature; `comment`, an annotation of any subtype (the format's unit, so a link and a placed picture
+ * are here); `document`, anything else, a field's definition and its visibility included.
+ *
+ * DECLARED, NOT DERIVED: filling a field and redefining one share a writer, a purpose and a walk, so nothing already
+ * declared answers it. Required on every kind, so a command added tomorrow is a compile error until it says.
+ */
+export type CommandChange = 'form-fill' | 'signature' | 'comment' | 'document';
+
+/** See {@link CommandChange}. */
+export interface ChangeRouting {
+  readonly changes: CommandChange;
+}
+
+/**
+ * What each certification level lets change (ADR-0291 Decision 2), the one table: `no-changes` nothing, `form-fill`
+ * values and signing, `form-fill-and-annotate` those and annotations. `document` is in none of them.
+ */
+export const ALLOWED_UNDER: Readonly<Record<CertificationLevel, ReadonlySet<CommandChange>>> = {
+  'no-changes': new Set(),
+  'form-fill': new Set(['form-fill', 'signature']),
+  'form-fill-and-annotate': new Set(['form-fill', 'signature', 'comment']),
+};
+
+/**
  * The pages a command changes, in the NEW version's numbering
  * ([ADR-0262](../../../docs/DECISIONS/0262-a-command-declares-the-pages-it-changes.md)): `'all'`, always legal — the
  * whole document may change or its pages move; `'none'` — nothing any page draws changes; or a rule from the command
@@ -325,6 +352,7 @@ export type CommandDeclaration<K extends CommandKind> = {
   ReadRouting<K> &
   AssetRouting<K> &
   PurposeRouting &
+  ChangeRouting &
   Invertibility &
   Reproducibility;
 
@@ -382,6 +410,7 @@ const declarations = {
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'document',
   },
   setLayerVisibility: {
     kind: 'setLayerVisibility',
@@ -419,6 +448,7 @@ const declarations = {
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'document',
   },
   movePage: {
     kind: 'movePage',
@@ -456,6 +486,7 @@ const declarations = {
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'document',
   },
   deletePages: {
     kind: 'deletePages',
@@ -492,6 +523,7 @@ const declarations = {
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'document',
   },
   duplicatePage: {
     kind: 'duplicatePage',
@@ -525,6 +557,7 @@ const declarations = {
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'document',
   },
   swapPages: {
     kind: 'swapPages',
@@ -555,6 +588,7 @@ const declarations = {
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'document',
   },
   insertBlankPage: {
     kind: 'insertBlankPage',
@@ -586,6 +620,7 @@ const declarations = {
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'document',
   },
   cropPages: {
     kind: 'cropPages',
@@ -618,6 +653,7 @@ const declarations = {
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'document',
   },
   watermarkPages: {
     kind: 'watermarkPages',
@@ -657,6 +693,7 @@ const declarations = {
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'document',
   },
   headerFooterPages: {
     kind: 'headerFooterPages',
@@ -687,6 +724,7 @@ const declarations = {
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'document',
   },
   batesNumberPages: {
     kind: 'batesNumberPages',
@@ -718,6 +756,7 @@ const declarations = {
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'document',
   },
   removePageMarks: {
     kind: 'removePageMarks',
@@ -738,6 +777,7 @@ const declarations = {
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'document',
   },
   setPageTransition: {
     kind: 'setPageTransition',
@@ -775,6 +815,7 @@ const declarations = {
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'document',
   },
   setPageBackground: {
     kind: 'setPageBackground',
@@ -806,6 +847,7 @@ const declarations = {
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'document',
   },
   resizePages: {
     kind: 'resizePages',
@@ -843,6 +885,7 @@ const declarations = {
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'document',
   },
   deskewPages: {
     kind: 'deskewPages',
@@ -884,6 +927,7 @@ const declarations = {
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'document',
   },
   enhancePages: {
     kind: 'enhancePages',
@@ -915,6 +959,7 @@ const declarations = {
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'document',
   },
   straightenScans: {
     kind: 'straightenScans',
@@ -938,6 +983,7 @@ const declarations = {
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'document',
   },
   ocrPage: {
     kind: 'ocrPage',
@@ -1037,6 +1083,7 @@ const declarations = {
     },
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'document',
   },
   generateToc: {
     kind: 'generateToc',
@@ -1085,6 +1132,7 @@ const declarations = {
     read: (access) => access.outline(),
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'document',
   },
   mergeDocument: {
     kind: 'mergeDocument',
@@ -1125,6 +1173,7 @@ const declarations = {
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'document',
   },
   replacePage: {
     kind: 'replacePage',
@@ -1155,6 +1204,7 @@ const declarations = {
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'document',
   },
   importPageAsLayer: {
     kind: 'importPageAsLayer',
@@ -1184,6 +1234,7 @@ const declarations = {
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'document',
   },
   addAnnotation: {
     kind: 'addAnnotation',
@@ -1226,6 +1277,7 @@ const declarations = {
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'comment',
   },
   removeAnnotation: {
     kind: 'removeAnnotation',
@@ -1267,6 +1319,7 @@ const declarations = {
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'comment',
   },
   placeAnnotation: {
     kind: 'placeAnnotation',
@@ -1303,6 +1356,7 @@ const declarations = {
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'comment',
   },
   reshapeAnnotation: {
     kind: 'reshapeAnnotation',
@@ -1324,6 +1378,7 @@ const declarations = {
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'comment',
   },
   placeImage: {
     kind: 'placeImage',
@@ -1366,6 +1421,7 @@ const declarations = {
     // the host READ on, and puts them back before the apply is called.
     asset: 'bytes',
     purpose: 'ordinary',
+    changes: 'comment',
   },
   // A PLAIN SIGNATURE (ADR-0133): `placeImage`'s classification on every axis, for its reasons — a `/Stamp` carrying
   // its own appearance, so it moves, resizes and deletes as any mark; undone by checkpoint because the inverse would be
@@ -1388,6 +1444,7 @@ const declarations = {
     // (`hostRoutes.test.ts`); a kept drawing at its own bound measured ten times the frame (finding DDDDDDD-1).
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'comment',
   },
   // The picture look: the one difference from the line above is the asset, for `placeImage`'s reason.
   placeSignaturePicture: {
@@ -1405,6 +1462,7 @@ const declarations = {
     reads: 'none',
     asset: 'bytes',
     purpose: 'ordinary',
+    changes: 'comment',
   },
   styleAnnotation: {
     kind: 'styleAnnotation',
@@ -1433,6 +1491,7 @@ const declarations = {
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'comment',
   },
   editAnnotationText: {
     kind: 'editAnnotationText',
@@ -1461,6 +1520,7 @@ const declarations = {
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'comment',
   },
   setAnnotationAuthor: {
     kind: 'setAnnotationAuthor',
@@ -1482,6 +1542,7 @@ const declarations = {
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'comment',
   },
   replyToAnnotation: {
     kind: 'replyToAnnotation',
@@ -1514,6 +1575,7 @@ const declarations = {
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'comment',
   },
   addLink: {
     kind: 'addLink',
@@ -1544,6 +1606,7 @@ const declarations = {
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'comment',
   },
   setLinkOutline: {
     kind: 'setLinkOutline',
@@ -1566,6 +1629,7 @@ const declarations = {
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'comment',
   },
   editLink: {
     kind: 'editLink',
@@ -1586,6 +1650,7 @@ const declarations = {
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'comment',
   },
   fillFormField: {
     kind: 'fillFormField',
@@ -1620,6 +1685,7 @@ const declarations = {
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'form-fill',
   },
   resetForm: {
     kind: 'resetForm',
@@ -1643,6 +1709,7 @@ const declarations = {
     asset: 'none',
     // It replaces values in place and unlinks nothing.
     purpose: 'ordinary',
+    changes: 'form-fill',
   },
   showHideFields: {
     kind: 'showHideFields',
@@ -1663,6 +1730,7 @@ const declarations = {
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'document',
   },
   resetWholeForm: {
     kind: 'resetWholeForm',
@@ -1682,6 +1750,7 @@ const declarations = {
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'form-fill',
   },
   deleteFormFields: {
     kind: 'deleteFormFields',
@@ -1719,6 +1788,7 @@ const declarations = {
     // flatten, encryption and metadata — a different claim from *this object is
     // gone from the page*.
     purpose: 'ordinary',
+    changes: 'document',
   },
   flattenFormFields: {
     kind: 'flattenFormFields',
@@ -1750,6 +1820,7 @@ const declarations = {
     // unlinks nine widgets and a plain save writes all nine back out, the
     // object count growing 49 to 55.
     purpose: 'removal',
+    changes: 'document',
   },
   setDocumentProtection: {
     kind: 'setDocumentProtection',
@@ -1796,6 +1867,7 @@ const declarations = {
     // (ADR-0139). The collection that also comes with the axis costs nothing here,
     // since a change of encryption rewrites every object anyway (`saveTermsOf`).
     purpose: 'removal',
+    changes: 'document',
   },
   applyRedactions: {
     kind: 'applyRedactions',
@@ -1832,6 +1904,7 @@ const declarations = {
     // exists to prevent — so this is the one place where getting the purpose
     // wrong produces a document that looks redacted and is not.
     purpose: 'removal',
+    changes: 'document',
   },
   markMatchesForRedaction: {
     kind: 'markMatchesForRedaction',
@@ -1860,6 +1933,7 @@ const declarations = {
     // is the command on the removal row. Declaring this one 'removal' would
     // garbage-collect on every save after a search that removed nothing.
     purpose: 'ordinary',
+    changes: 'comment',
   },
   sanitizeDocument: {
     kind: 'sanitizeDocument',
@@ -1885,6 +1959,7 @@ const declarations = {
     // it back out — so without this the JavaScript is still in the file and a
     // scan for it would find it.
     purpose: 'removal',
+    changes: 'document',
   },
   setDocumentInformation: {
     kind: 'setDocumentInformation',
@@ -1906,6 +1981,7 @@ const declarations = {
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'document',
   },
   signDocument: {
     kind: 'signDocument',
@@ -1940,6 +2016,7 @@ const declarations = {
     // collecting save would renumber a document whose byte ranges have just
     // been written to describe the file they are in.
     purpose: 'ordinary',
+    changes: 'signature',
   },
   createFormField: {
     kind: 'createFormField',
@@ -1987,6 +2064,7 @@ const declarations = {
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'document',
   },
   // THE THREE THAT CHANGE A FIELD THAT EXISTS (ADR-0193), `createFormField`'s writer and for its reason: the field's own
   // dictionary is the concern, and MuPDF has setters for a value and for few of the properties named here. The fill stays
@@ -2011,6 +2089,7 @@ const declarations = {
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'document',
   },
   duplicateFormField: {
     kind: 'duplicateFormField',
@@ -2027,6 +2106,7 @@ const declarations = {
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'document',
   },
   setTabOrder: {
     kind: 'setTabOrder',
@@ -2045,6 +2125,7 @@ const declarations = {
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'document',
   },
   importFormData: {
     kind: 'importFormData',
@@ -2081,6 +2162,7 @@ const declarations = {
     // IT REMOVES NOTHING. Every write here replaces a value in place; no object
     // is unlinked, so there is nothing for a collecting save to sweep.
     purpose: 'ordinary',
+    changes: 'form-fill',
   },
   importAnnotations: {
     kind: 'importAnnotations',
@@ -2105,6 +2187,7 @@ const declarations = {
     // A PICKED FILE'S BYTES, `importFormData`'s asset.
     asset: 'bytes',
     purpose: 'ordinary',
+    changes: 'comment',
   },
   replaceTextObject: {
     kind: 'replaceTextObject',
@@ -2156,6 +2239,7 @@ const declarations = {
     // should be asking here and is a fact about the regeneration rather than
     // about the classification.
     purpose: 'ordinary',
+    changes: 'document',
   },
   replaceAllText: {
     kind: 'replaceAllText',
@@ -2190,6 +2274,7 @@ const declarations = {
     // IT REMOVES NOTHING. Every write replaces an object's string in place and
     // the page's content stream is regenerated whole; no object is unlinked.
     purpose: 'ordinary',
+    changes: 'document',
   },
   replaceTextAt: {
     kind: 'replaceTextAt',
@@ -2212,6 +2297,7 @@ const declarations = {
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',
+    changes: 'document',
   },
   promoteFormObjects: {
     kind: 'promoteFormObjects',
@@ -2243,6 +2329,7 @@ const declarations = {
     // and this command's writer is PDFium, whose `FPDF_SaveAsCopy` has no
     // equivalent. Declaring it would name a mechanism that cannot run.
     purpose: 'ordinary',
+    changes: 'document',
   },
   editTextBlock: {
     kind: 'editTextBlock',
@@ -2274,6 +2361,7 @@ const declarations = {
     // that axis selects MuPDF's collecting save,
     // and `FPDF_SaveAsCopy` has none.
     purpose: 'ordinary',
+    changes: 'document',
   },
   // A PAGE WHOSE TEXT INCLUDES A TYPE 3 FONT, written by MuPDF into its own content
   // stream (ADR-0176). `editTextBlock`'s intent with another writer, because PDFium
@@ -2309,6 +2397,7 @@ const declarations = {
     // ORDINARY, so an incremental save: a removal's collecting save would rewrite
     // every object, where this changes one page's content and adds nothing else.
     purpose: 'ordinary',
+    changes: 'document',
   },
   // A PICTURE, A SHAPE OR A GROUP edited where the page draws it (ADR-0264): MuPDF splices the object's own bytes and
   // copies every other, where PDFium's regeneration wrote every text object again and refused a font (R20).
@@ -2332,6 +2421,7 @@ const declarations = {
     // ORDINARY, `editTextOperators`' reason: one page's content changes. A removal of a picture a person sees is an
     // edit of the page, not a redaction, `deleteFormFields`' reasoning.
     purpose: 'ordinary',
+    changes: 'document',
   },
 } satisfies CommandDeclarations;
 

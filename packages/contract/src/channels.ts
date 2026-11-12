@@ -450,6 +450,14 @@ export const WRITTEN = { written: fileHandleSchema } as const;
 export const tooDeepToSaveSchema = z.object({ kind: z.literal('too-deep'), bookmarks: z.boolean() });
 
 /**
+ * NOTHING WAS WRITTEN: a signed document's save appends to keep its signature, and the file that append wrote did not
+ * read back as the document, so it was not used ([ADR-0291](../../../docs/DECISIONS/0291-a-certified-document-is-locked-to-what-its-certifier-allowed-and-worked-on-as-a-copy.md)
+ * question 4). The person is asked: a copy written whole, the file written whole, or neither. A save and a copy answer
+ * it alike.
+ */
+export const appendRefusedSchema = z.object({ kind: z.literal('append-refused') });
+
+/**
  * NOTHING WAS WRITTEN: the destination a person chose for a copy is the file the document being copied was opened
  * from. Its own member, never `refused` with a count, because *another open document* names a document the person
  * cannot find. Every channel that writes a copy of an open document answers it, defined once here.
@@ -2713,6 +2721,9 @@ export const channels = {
       // document, a copy of a radio option. Nothing was written; the reason is the sentence.
       'field-edit-refused',
       'breaks-signatures',
+      // `certified` IS A CERTIFIED DOCUMENT'S LOCK (ADR-0291): its certifier's level does not allow this change, and
+      // nothing changed. Not a question with a *yes*: the dispatcher offers the copy, and agreement does not pass it.
+      'certified',
       // `command-looped` IS A COMMAND THE ENGINE WAS STOPPED ON THREE TIMES (ADR-0221): main will not send it again for
       // this document. The document is open and its changes are kept; the person is told which action could not be done.
       'command-looped',
@@ -2875,6 +2886,12 @@ export const channels = {
        * who has been told and agreed — or who turned the warning off.
        */
       breakSignatures: z.boolean(),
+      /**
+       * `true`: written WHOLE where a signature would have the save appended, which breaks it. Sent only by a person
+       * who was told the append could not be taken and chose *Save anyway* (ADR-0291 question 4), with
+       * `breakSignatures: true`. A certified document is not written whole this way, and answers `append-refused` again.
+       */
+      whole: z.literal(true).exactOptional(),
     }),
     z.discriminatedUnion('kind', [
       z.object({
@@ -2907,6 +2924,7 @@ export const channels = {
       /** The filesystem refused, and why, so the person is told the remedy that fits (cloud-4 7b). */
       z.object({ kind: z.literal('write-failed'), cause: z.enum(SAVE_WRITE_CAUSES) }),
       tooDeepToSaveSchema,
+      appendRefusedSchema,
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),
@@ -3699,6 +3717,11 @@ export const channels = {
       docId: docIdSchema,
       /** The copy without the document's bookmarks: what is offered where the bookmarks made it too deep to save. */
       withoutBookmarks: z.literal(true).exactOptional(),
+      /**
+       * The copy written WHOLE, where an append could not be taken (ADR-0291 question 4): the signatures in it no longer
+       * verify, and a certified document's copy is written without its certification, as Work on a copy's is.
+       */
+      whole: z.literal(true).exactOptional(),
     }),
     z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative(), ...WRITTEN }),
@@ -3707,6 +3730,7 @@ export const channels = {
       COPY_ONTO_SOURCE,
       z.object({ kind: z.literal('write-failed') }),
       tooDeepToSaveSchema,
+      appendRefusedSchema,
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),
@@ -3777,7 +3801,13 @@ export const channels = {
    */
   'document.workOnCopy': channel(
     'Writes a copy of an open document where the user picks, and opens the copy.',
-    z.object({ docId: docIdSchema }).strict(),
+    z
+      .object({
+        docId: docIdSchema,
+        /** The copy written WHOLE, where an append could not be taken (ADR-0291 question 4), `saveCopy`'s `whole`. */
+        whole: z.literal(true).exactOptional(),
+      })
+      .strict(),
     z.discriminatedUnion('kind', [
       openedSchema,
       z.object({ kind: z.literal('cancelled') }),
@@ -3787,8 +3817,9 @@ export const channels = {
       openAbsentSchema,
       openAtCapacitySchema,
       openReadRefusedSchema,
-      // THE COPY IS A SAVE OF THE DOCUMENT, so it is refused for its depth as a save is.
+      // THE COPY IS A SAVE OF THE DOCUMENT, so it is refused for its depth as a save is, and for an append it cannot take.
       tooDeepToSaveSchema,
+      appendRefusedSchema,
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),
@@ -4092,6 +4123,8 @@ export const channels = {
             notAfter: z.string().max(MAX_SIGNATURE_FIELD),
             coversDocument: z.boolean(),
             coversWholeFile: z.boolean(),
+            /** Where the bytes it signed end, which names it to *Save this signed version* (ADR-0291 Decision 7). */
+            signedThrough: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
           }),
         )
         .max(MAX_SIGNATURES)
@@ -4099,6 +4132,41 @@ export const channels = {
       /** A signature this build could not parse at all. */
       unreadable: z.boolean(),
     }),
+    ['document-not-open', 'document-busy', 'document-poisoned', 'engine-unavailable'],
+  ),
+
+  /**
+   * Whether the document is certified, by whom and to what, and whether it holds any signature
+   * ([ADR-0291](../../../docs/DECISIONS/0291-a-certified-document-is-locked-to-what-its-certifier-allowed-and-worked-on-as-a-copy.md)'s
+   * amendment of 2026-11-12). The lane's own read (`signatureFacts`), so the line a person reads and the lock cannot
+   * disagree; it verifies nothing, which `document.signatures` does. `certification` is the `certified` refusal's own
+   * detail, one schema for both.
+   */
+  'document.certification': channel(
+    'Reads whether an open document is certified, by whom, and whether it holds a signature.',
+    z.object({ docId: docIdSchema }).strict(),
+    z.object({ certification: FAILURE_DETAIL_SCHEMAS.certified.nullable(), signed: z.boolean() }),
+    ['document-not-open', 'document-busy', 'document-poisoned', 'engine-unavailable'],
+  ),
+
+  /**
+   * Saves, as a copy, the document's FILE cut back to the bytes one signature signed
+   * ([ADR-0291](../../../docs/DECISIONS/0291-a-certified-document-is-locked-to-what-its-certifier-allowed-and-worked-on-as-a-copy.md)
+   * Decision 7, measured first in `signedVersion.test.ts`). The signature is named by where its signed bytes end, which
+   * `document.signatures` reports. Main cuts the file as it is saved, not the session, so a file damaged after it was
+   * signed gives its signed version back; the cut is read in a session of its own and written only where a signature
+   * ending there verifies over all of it. `not-found` is that read's answer: nothing was written.
+   */
+  'document.saveSignedVersion': channel(
+    'Saves the document as one of its signatures signed it, as a copy the person places.',
+    z.object({ docId: docIdSchema, signedThrough: z.number().int().positive().max(Number.MAX_SAFE_INTEGER) }).strict(),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('saved') }).strict(),
+      z.object({ kind: z.literal('cancelled') }).strict(),
+      z.object({ kind: z.literal('not-found') }).strict(),
+      z.object({ kind: z.literal('onto-source') }).strict(),
+      z.object({ kind: z.literal('write-failed') }).strict(),
+    ]),
     ['document-not-open', 'document-busy', 'document-poisoned', 'engine-unavailable'],
   ),
 

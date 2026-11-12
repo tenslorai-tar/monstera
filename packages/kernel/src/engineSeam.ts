@@ -403,6 +403,18 @@ export interface SerialiseOptions {
    * drawn by the page, and the session keeps them as layers (ADR-0287). Absent: the bytes are the session as held.
    */
   readonly marks?: 'engraved';
+  /**
+   * `removed`: the bytes carry no certification, written whole so no earlier revision does either: the copy a certified
+   * document's change is worked on (ADR-0291 Decision 5). The session keeps it. A document with no certification is
+   * written exactly as without this.
+   */
+  readonly certification?: 'removed';
+  /**
+   * `never`: the bytes are written WHOLE where a signature would have them appended. Asked only by a person who chose
+   * to save past an append the file could not take (ADR-0291 question 4), and it breaks the signature, which is why it
+   * is asked. Absent: a signed document's save appends, as ADR-0008 rule 2 has it.
+   */
+  readonly append?: 'never';
 }
 
 export interface EngineWriter<TSession> {

@@ -10,6 +10,7 @@ import type {
   WriteTargetVerdict,
 } from './documentService.js';
 import type { ByteImage } from './engineSeam.js';
+import { AppendRefused } from './appendRefused.js';
 import { StructureTooDeep } from './saveDepth.js';
 
 /**
@@ -153,7 +154,16 @@ export type SaveOutcome =
     }
   /** The filesystem refused. The original is intact and the document still dirty. */
   | { readonly kind: 'write-failed'; readonly failure: AtomicWriteFailure }
-  | TooDeepToSave;
+  | TooDeepToSave
+  | AppendNotTaken;
+
+/**
+ * NOTHING WAS WRITTEN: a signed document's save appends to keep its signature, and the file that append wrote did not
+ * read back as the document, so it was not used (ADR-0291 question 4). The person is asked how to save instead.
+ */
+export interface AppendNotTaken {
+  readonly kind: 'append-refused';
+}
 
 /**
  * NOTHING WAS ATTEMPTED: the document nests deeper than the engine's save holds (`saveDepth.ts`, the owner's item 20).
@@ -164,12 +174,16 @@ export interface TooDeepToSave {
   readonly bookmarks: boolean;
 }
 
-/** The flush, with a refusal for the document's depth answered as {@link TooDeepToSave} rather than thrown. */
-async function flushed(flush: DocumentFlush): Promise<StagedImage | TooDeepToSave> {
+/**
+ * The flush, with a refusal for the document's depth answered as {@link TooDeepToSave} and an append the file could not
+ * take as {@link AppendNotTaken}, rather than thrown.
+ */
+async function flushed(flush: DocumentFlush): Promise<StagedImage | TooDeepToSave | AppendNotTaken> {
   try {
     return await flush();
   } catch (error) {
     if (error instanceof StructureTooDeep) return { kind: 'too-deep', bookmarks: error.throughOutline };
+    if (error instanceof AppendRefused) return { kind: 'append-refused' };
     throw error;
   }
 }
@@ -339,7 +353,7 @@ export function copyRefusalOf(verdict: CopyTargetVerdict): CopyRefusal | undefin
  * A copy of the open document's own bytes, as *Save a copy* answers it: {@link CopyOutcome}, or refused for its depth
  * before anything was written. {@link writeDocumentCopy} throws that refusal, and the one caller that names it maps it.
  */
-export type DocumentCopyOutcome = CopyOutcome | TooDeepToSave;
+export type DocumentCopyOutcome = CopyOutcome | TooDeepToSave | AppendNotTaken;
 
 /**
  * What a split produced.

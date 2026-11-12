@@ -442,6 +442,30 @@ optgroup {
   min-inline-size: 0;
 }
 
+/* THE CERTIFICATION LINE (ADR-0291's amendment of 2026-11-12): the layer's first row, which does not grow, so the page
+   area below takes what is left. In the layer, so it is hidden with a document behind and never says another's. */
+.m-certification-line {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  /* A PANEL OF ITS OWN, as v5 draws every piece of chrome on the ground: the panels' fill, edge and radius, and the
+     surface's own gap below it, so it does not sit flush on the panels under it. */
+  margin-block-end: var(--space-8);
+  padding: var(--space-4) var(--space-8) var(--space-4) var(--space-12);
+  background: var(--panel-bg);
+  border: 1px solid var(--border); /* decorative: the line's edge on the ground; its button draws its own focus ring */
+  border-radius: var(--radius-14);
+  box-shadow: var(--panel-edge);
+}
+
+.m-certification-line__text {
+  flex: 1;
+  margin: 0;
+  color: var(--text);
+  font-size: var(--font-chrome-11);
+}
+
 .m-document-layer[data-document-layer='background'] {
   position: absolute;
   inset: 0;

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { rm } from 'node:fs/promises';
+import { readFile, rm } from 'node:fs/promises';
 
 import { strFromU8, unzipSync } from 'fflate';
 import { tmpdir } from 'node:os';
@@ -44,6 +44,7 @@ import {
   outlineOpCodes,
   type PageSet,
   type WordMode,
+  type CertificationLevel,
 } from '@monstera/contract';
 import {
   type AtomicWriteSurface,
@@ -116,7 +117,9 @@ import {
   serialiseFormData,
   rasterisePageImage,
   snapshotRegion,
-  signaturesKeptBySave,
+  signatureFacts,
+  readSignatures,
+  applySignDocument,
   withDocument,
   composeWordDocument,
   DocumentLocked,
@@ -223,6 +226,8 @@ import {
   type SaveSource,
   type SnapshotSource,
   SignaturesWouldBreakError,
+  CertifiedChangeError,
+  CertifyingSignedDocumentError,
   type EngineSessionSource,
   type ProtectedCopies,
   type Applied,
@@ -957,7 +962,18 @@ const INERT = {
   signatures: () => Promise.reject(new Error('this case does not read signatures')),
   // EVERY SAVE ASKS, since item 6 — the answer also says whether the save is a removal's — so the inert answer is the
   // ordinary one: an unsigned document, and not a removal.
-  signaturesKept: () => Promise.resolve({ signatures: 0, kept: true }),
+  signaturesKept: () => Promise.resolve({ signatures: 0, kept: true, certification: null }),
+  // THE HOST'S CHECK OF A CUT, in process: the cut opened, read by the same reader, closed (ADR-0291 Decision 7).
+  signedVersionVerifies: async (path, end) => {
+    const cut = new Uint8Array((await readFile(path)).subarray(0, end));
+    const session = await mupdfWriter.open(cut);
+    try {
+      const read = await readSignatures(session, cut);
+      return read.some((signature) => signature.signedThrough === end && signature.coversDocument && signature.coversWholeFile);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  },
   restore: noRestore,
   renew: () => Promise.reject(new Error('INERT: this case saves no removal and must not renew a session')),
   // RESOLVES, unlike the refusing surfaces: a removal's save retakes the picture after its lane and does not await it,
@@ -1252,6 +1268,30 @@ describe('the composition point owns DocumentService.run -> CommandBus.execute',
     // CONTROL: the document is not poisoned, so another kind of command is not refused.
     expect(held.poisoned(docId)).toBeUndefined();
     expect(held.commandBarred(docId, 'deletePages')).toBe(false);
+  });
+
+  it('the lane’s signature read is made INSIDE the command’s ledger, so a host frozen under it strikes the command (ADR-0221, ADR-0291)', async () => {
+    const held = engine();
+    const runningDuringRead: (string | undefined)[] = [];
+    const commands = new DocumentCommands({
+      ...INERT,
+      documents: service,
+      bus: bus(),
+      engine: held,
+      signaturesKept: () => {
+        // WHAT A DEADLINE HERE WOULD BE COUNTED AGAINST: the command the engine says it is running.
+        runningDuringRead.push(held.runningCommand(docId));
+        return Promise.resolve({ signatures: 0, kept: true, certification: null });
+      },
+    });
+
+    await commands.execute(docId, rotateOnce);
+
+    // Measured on CI before this was moved: the read ran with no command running, so the freeze `hostDeadline.mjs`
+    // makes landed on it as a death against the document, and two poisoned it.
+    expect(runningDuringRead).toStrictEqual([rotateOnce.kind]);
+    // CONTROL: once the command has ended, nothing is running.
+    expect(held.runningCommand(docId)).toBeUndefined();
   });
 
   it('CONTROL: the same document, unpoisoned, reaches the engine and applies', async () => {
@@ -1813,7 +1853,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
      */
     async function aSavableDocument(
       /** What the writer says about the next save and the signatures — the real decision unless a case says otherwise. */
-      signaturesKept: DocumentCommandsParts['signaturesKept'] = signaturesKeptBySave,
+      signaturesKept: DocumentCommandsParts['signaturesKept'] = signatureFacts,
       /** Which backups Monstera made — the product's ledger on the real disk unless a case holds a file. */
       provenance: BackupProvenance = ledger(),
       /** Where *Save a copy*'s picker answers, for the cases that write one; a dismissed picker otherwise. */
@@ -2019,7 +2059,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
         }
       };
       // THE ROUTE ASKED FOR A FILE A PERSON KEEPS, and the file on disk has no stamp layer.
-      expect(t.stagings.at(-1)).toStrictEqual({ outline: 'kept', marks: 'engraved' });
+      expect(t.stagings.at(-1)).toStrictEqual({ outline: 'kept', marks: 'engraved', certification: 'kept', append: 'when-signed' });
       expect(await stampsIn(new Uint8Array(readFileSync(t.path)))).toBe(0);
       // CONTROL: the session still holds the stamp, so it moves until the document is closed.
       expect(await stampsIn(await t.serialised())).toBe(1);
@@ -2061,7 +2101,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       const asked: unknown[] = [];
       const { commands, saved, path, before } = await aSavableDocument((session) => {
         asked.push(session);
-        return Promise.resolve({ signatures: 2, kept: false });
+        return Promise.resolve({ signatures: 2, kept: false, certification: null });
       });
 
       expect(await commands.save(saved, { breakSignatures: false })).toStrictEqual({ kind: 'breaks-signatures', signatures: 2 });
@@ -2112,7 +2152,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
      * fire, which is what lets the third assertion separate *agreed once* from *never asked*.
      */
     describe('an edit that would break a signature (ADR-0149)', () => {
-      const signedAndBroken: DocumentCommandsParts['signaturesKept'] = () => Promise.resolve({ signatures: 1, kept: false });
+      const signedAndBroken: DocumentCommandsParts['signaturesKept'] = () => Promise.resolve({ signatures: 1, kept: false, certification: null });
 
       it('is REFUSED before any byte changes: the same version, the same session bytes, no history', async () => {
         const t = await aSavableDocument(signedAndBroken);
@@ -2186,12 +2226,157 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       });
 
       it('CONTROL: an unsigned document is not asked about the same removal', async () => {
-        const t = await aSavableDocument(() => Promise.resolve({ signatures: 0, kept: true }));
+        const t = await aSavableDocument(() => Promise.resolve({ signatures: 0, kept: true, certification: null }));
         const version = await t.version();
 
         await t.commands.execute(t.saved, sanitize);
 
         expect(await t.version()).not.toBe(version);
+      });
+    });
+
+    /**
+     * ADR-0291: a certified document is held to what its certifier allowed, asked in the lane before the bus and before
+     * ADR-0149's question. The rotation is the case the owner named: an appending change ADR-0149 never asks about.
+     */
+    describe('a change a certified document’s certifier does not allow (ADR-0291)', () => {
+      const certified =
+        (level: CertificationLevel): DocumentCommandsParts['signaturesKept'] =>
+        () =>
+          Promise.resolve({ signatures: 1, kept: true, certification: { level, signer: 'Grace Hopper' } });
+
+      it('a rotation of a document certified no-changes is REFUSED, with nothing changed and nothing to undo', async () => {
+        const t = await aSavableDocument(certified('no-changes'));
+        const version = await t.version();
+        const bytes = await t.serialised();
+
+        const refused = t.commands.execute(t.saved, rotateOnce);
+        await expect(refused).rejects.toBeInstanceOf(CertifiedChangeError);
+        await expect(refused).rejects.toMatchObject({ certification: { level: 'no-changes', signer: 'Grace Hopper' } });
+
+        expect(await t.version()).toBe(version);
+        expect(Buffer.from(await t.serialised()).equals(Buffer.from(bytes))).toBe(true);
+        expect(await t.commands.undo(t.saved)).toBeUndefined();
+      });
+
+      it('WORK ON A COPY stages the copy WITHOUT its certification; Save a copy keeps it (Decision 5)', async () => {
+        const destination = join(directory, `certified-copy-${String(savables + 1)}.pdf`);
+        const t = await aSavableDocument(certified('no-changes'), ledger(), destination);
+
+        expect((await t.commands.copyForEditing(t.saved, rotateOnce))?.outcome.kind).toBe('copied');
+        // WHOLE as well as uncertified: the change it is made for breaks the signatures, so nothing is appended.
+        expect(t.stagings.at(-1)).toStrictEqual({ outline: 'kept', marks: 'engraved', certification: 'removed', append: 'never' });
+
+        // CONTROL: the person's own copy of the certified document is the document as certified.
+        expect(await t.commands.saveCopy(t.saved)).toMatchObject({ kind: 'copied' });
+        expect(t.stagings.at(-1)).toStrictEqual({ outline: 'kept', marks: 'engraved', certification: 'kept', append: 'when-signed' });
+      });
+
+      it('PAST A REFUSED APPEND (question 4): a whole copy of a certified document is written uncertified, and Save anyway is refused', async () => {
+        const destination = join(directory, `whole-copy-${String(savables + 1)}.pdf`);
+        const t = await aSavableDocument(certified('form-fill'), ledger(), destination);
+        expect(await t.commands.saveCopy(t.saved, 'kept', 'never')).toMatchObject({ kind: 'copied' });
+        expect(t.stagings.at(-1)).toStrictEqual({ outline: 'kept', marks: 'engraved', certification: 'removed', append: 'never' });
+
+        // SAVE ANYWAY IS NOT TAKEN on a certified document: answered as before, and nothing staged.
+        const staged = t.stagings.length;
+        expect(await t.commands.save(t.saved, { breakSignatures: true, whole: true })).toStrictEqual({ kind: 'append-refused' });
+        expect(t.stagings).toHaveLength(staged);
+      });
+
+      it('CONTROL: on an uncertified signed document, Save anyway is staged whole, and a whole copy keeps what it holds', async () => {
+        const destination = join(directory, `whole-plain-${String(savables + 1)}.pdf`);
+        const t = await aSavableDocument(() => Promise.resolve({ signatures: 1, kept: true, certification: null }), ledger(), destination);
+        expect(await t.commands.save(t.saved, { breakSignatures: true, whole: true })).toMatchObject({ kind: 'saved' });
+        expect(t.stagings.at(-1)).toStrictEqual({ outline: 'kept', marks: 'engraved', certification: 'kept', append: 'never' });
+        expect(await t.commands.saveCopy(t.saved, 'kept', 'never')).toMatchObject({ kind: 'copied' });
+        expect(t.stagings.at(-1)).toStrictEqual({ outline: 'kept', marks: 'engraved', certification: 'kept', append: 'never' });
+      });
+
+      it('SAVE THIS SIGNED VERSION cuts the saved file back to the signature, and writes only a cut that verifies (Decision 7)', async () => {
+        const { default: forge } = await import('node-forge');
+        const keys = forge.pki.rsa.generateKeyPair(2048);
+        const cert = forge.pki.createCertificate();
+        cert.publicKey = keys.publicKey;
+        cert.serialNumber = '01';
+        cert.validity.notBefore = new Date(Date.now() - 86_400_000);
+        cert.validity.notAfter = new Date(Date.now() + 86_400_000);
+        cert.setSubject([{ name: 'commonName', value: 'Monstera Test' }]);
+        cert.setIssuer([{ name: 'commonName', value: 'Monstera Test' }]);
+        cert.sign(keys.privateKey, forge.md.sha256.create());
+        const p12 = forge.asn1.toDer(forge.pkcs12.toPkcs12Asn1(keys.privateKey, [cert], 'pass', { algorithm: '3des' })).getBytes();
+        const credential = Uint8Array.from(p12, (character: string) => character.charCodeAt(0));
+        const signed = await applySignDocument(await pdfBytes(), { kind: 'signDocument', bytes: credential, passphrase: 'pass', name: 'Grace Hopper' });
+
+        const destination = join(directory, `signed-version-${String(savables + 1)}.pdf`);
+        const t = await aSavableDocument(signatureFacts, ledger(), destination);
+        // THE FILE AS SAVED: the signed file with 40 bytes of rubbish after it, a tail no reader can make sense of.
+        writeFileSync(t.path, Buffer.concat([Buffer.from(signed), Buffer.alloc(40, 0x2a)]));
+
+        expect(await t.commands.saveSignedVersion(t.saved, signed.length)).toStrictEqual({ kind: 'saved' });
+        expect(Buffer.from(readFileSync(destination)).equals(Buffer.from(signed)), 'the copy is the signed file, byte for byte').toBe(true);
+
+        // CONTROL: one byte short holds no signature ending there that verifies, and nothing is written.
+        rmSync(destination);
+        expect(await t.commands.saveSignedVersion(t.saved, signed.length - 1)).toStrictEqual({ kind: 'not-found' });
+        expect(existsSync(destination)).toBe(false);
+      }, 60_000);
+
+      it('CERTIFYING A SIGNED DOCUMENT is refused in the lane, from the same read, with nothing changed (question 3)', async () => {
+        // NO CREDENTIAL IS READ: the refusal is made before the bus, and this harness registers no signer behind it.
+        const certify = { kind: 'signDocument', bytes: Uint8Array.of(1), passphrase: 'pass', certify: 'no-changes' } as const;
+
+        const signedAlready = await aSavableDocument(() => Promise.resolve({ signatures: 1, kept: true, certification: null }));
+        const version = await signedAlready.version();
+        const refused = signedAlready.commands.execute(signedAlready.saved, certify);
+        await expect(refused).rejects.toBeInstanceOf(CertifyingSignedDocumentError);
+        await expect(refused).rejects.toMatchObject({ signatures: 1 });
+        expect(await signedAlready.version()).toBe(version);
+
+        // CONTROL: the same certification of an UNSIGNED document passes the lane and REACHES THE BUS, which in this
+        // harness has no signer registered and says so: the count decided it, not the kind.
+        const unsigned = await aSavableDocument(() => Promise.resolve({ signatures: 0, kept: true, certification: null }));
+        await expect(unsigned.commands.execute(unsigned.saved, certify)).rejects.toMatchObject({ name: 'UnregisteredWriterError' });
+      });
+
+      it('THE LINE’S READ answers the lane’s own facts: who certified it, to what, and that it is signed', async () => {
+        const t = await aSavableDocument(certified('form-fill'));
+        expect(await t.commands.certification(t.saved)).toStrictEqual({
+          certification: { level: 'form-fill', signer: 'Grace Hopper' },
+          signed: true,
+        });
+        // CONTROL: an ordinary signature is signed and uncertified, and an unsigned document is neither.
+        const plain = await aSavableDocument(() => Promise.resolve({ signatures: 1, kept: true, certification: null }));
+        expect(await plain.commands.certification(plain.saved)).toStrictEqual({ certification: null, signed: true });
+        const unsigned = await aSavableDocument(() => Promise.resolve({ signatures: 0, kept: true, certification: null }));
+        expect(await unsigned.commands.certification(unsigned.saved)).toStrictEqual({ certification: null, signed: false });
+      });
+
+      it('AGREEING to break signatures does not pass it: the lock is not a warning', async () => {
+        const t = await aSavableDocument(certified('no-changes'));
+        const version = await t.version();
+
+        await expect(t.commands.execute(t.saved, sanitize, { breakSignatures: true })).rejects.toBeInstanceOf(CertifiedChangeError);
+        expect(await t.version()).toBe(version);
+      });
+
+      it('CONTROL: the same rotation runs on a document with an ordinary signature, and the level decides', async () => {
+        const plain = await aSavableDocument(() => Promise.resolve({ signatures: 1, kept: true, certification: null }));
+        const before = await plain.version();
+        await plain.commands.execute(plain.saved, rotateOnce);
+        expect(await plain.version()).not.toBe(before);
+
+        // A LEVEL THAT ALLOWS COMMENTS lets an annotation through and still refuses the rotation.
+        const annotating = await aSavableDocument(certified('form-fill-and-annotate'));
+        await expect(annotating.commands.execute(annotating.saved, rotateOnce)).rejects.toBeInstanceOf(CertifiedChangeError);
+        const at = await annotating.version();
+        await annotating.commands.execute(annotating.saved, {
+          kind: 'addAnnotation',
+          page: 0,
+          stamp: { author: 'Priya Raman', created: '2026-11-12T09:00:00.000Z' },
+          annotation: { type: 'square', rect: { x0: 10, y0: 10, x1: 60, y1: 40 }, colour: [1, 0, 0], opacity: 1, borderWidth: 1 },
+        });
+        expect(await annotating.version()).not.toBe(at);
       });
     });
 
@@ -2223,7 +2408,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
             ? Promise.reject(Object.assign(new Error('resource busy or locked'), { code: 'EBUSY' }))
             : nodeFileSurface.rename(from, to),
       };
-      const { commands, saved, path, before } = await aSavableDocument(signaturesKeptBySave, ledger(), null, {
+      const { commands, saved, path, before } = await aSavableDocument(signatureFacts, ledger(), null, {
         surface: holdingBackup,
       });
       const aside = `${path}.monstera-previous`;
@@ -2293,7 +2478,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       it('a copy written while the removal is pending keeps no backup of the file it replaces', async () => {
         const destination = join(directory, 'redacted copy.pdf');
         writeFileSync(destination, 'an earlier copy, made before the redaction');
-        const t = await aSavableDocument(signaturesKeptBySave, ledger(), destination);
+        const t = await aSavableDocument(signatureFacts, ledger(), destination);
         await t.commands.execute(t.saved, sanitize);
 
         expect(await t.commands.saveCopy(t.saved)).toMatchObject({ kind: 'copied' });
@@ -2303,7 +2488,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       it('CONTROL: the same copy with no removal pending leaves the backup a save would', async () => {
         const destination = join(directory, 'ordinary copy.pdf');
         writeFileSync(destination, 'an earlier copy');
-        const t = await aSavableDocument(signaturesKeptBySave, ledger(), destination);
+        const t = await aSavableDocument(signatureFacts, ledger(), destination);
         await t.commands.execute(t.saved, rotateOnce);
 
         expect(await t.commands.saveCopy(t.saved)).toMatchObject({ kind: 'copied' });
@@ -2313,7 +2498,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       it('a copy onto the document’s OWN FILE is refused as onto-source, the file untouched (the owner, 2026-11-10)', async () => {
         // THE REAL SERVICE AND THE REAL BINDING: the source is named by the command, through `#checkFor`, and the
         // composition-shaped `checkTarget` forwards it. A binding that dropped it would answer `refused` here.
-        const t = await aSavableDocument(signaturesKeptBySave, ledger(), ITS_OWN_FILE);
+        const t = await aSavableDocument(signatureFacts, ledger(), ITS_OWN_FILE);
         await t.commands.execute(t.saved, rotateOnce);
 
         expect(await t.commands.saveCopy(t.saved)).toStrictEqual({ kind: 'onto-source' });
@@ -2331,7 +2516,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
           holding ? Promise.reject(Object.assign(new Error('resource busy or locked'), { code: 'EBUSY' })) : rm(path, { force: true }),
         wait: () => Promise.resolve(),
       });
-      const { commands, saved, path, before } = await aSavableDocument(signaturesKeptBySave, held);
+      const { commands, saved, path, before } = await aSavableDocument(signatureFacts, held);
       await commands.execute(saved, rotateOnce);
       expect(await commands.save(saved, { breakSignatures: false })).toMatchObject({ previousKeptAt: `${path}.bak`, held: [] });
       expect(holdsReplaced(path, before)).toStrictEqual([`${basename(path)}.bak`]);
@@ -2359,7 +2544,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
           holding ? Promise.reject(Object.assign(new Error('resource busy or locked'), { code: 'EBUSY' })) : rm(path, { force: true }),
         wait: () => Promise.resolve(),
       });
-      const { commands, saved, path } = await aSavableDocument(signaturesKeptBySave, held);
+      const { commands, saved, path } = await aSavableDocument(signatureFacts, held);
       await commands.execute(saved, rotateOnce);
       await commands.save(saved, { breakSignatures: false });
       await commands.execute(saved, sanitize);
@@ -7992,7 +8177,7 @@ describe('a document opened with its password: no unprotected copy, and no passw
       };
       const commands = new DocumentCommands({
         ...LOCAL_READS,
-        signaturesKept: signaturesKeptBySave,
+        signaturesKept: signatureFacts,
         documents: own,
         bus: new CommandBus({ mupdf: localMupdfWriter }),
         engine: held,
@@ -8147,7 +8332,7 @@ describe('a protect in this session: the holder follows it', () => {
           return Promise.resolve();
         },
       },
-      signaturesKept: signaturesKeptBySave,
+      signaturesKept: signatureFacts,
       documents: own,
       bus: new CommandBus({ mupdf: localMupdfWriter }),
       engine: engineOf(held),

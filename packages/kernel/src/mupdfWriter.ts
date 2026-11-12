@@ -8,8 +8,10 @@ import type {
   SavePurpose,
   SerialiseOptions,
 } from './engineSeam.js';
+import { carriesCertification, savedUncertified } from './docMdp.js';
 import { DocumentLocked } from './engineSeam.js';
-import { openPdfFile } from './mupdfOpen.js';
+import { AppendRefused } from './appendRefused.js';
+import { openPdfFile, pagesWithoutRepair } from './mupdfOpen.js';
 import { savedEngraved } from './engraveOnSave.js';
 import { FULL_SAVE_TERMS, savedBuffer, savedWithoutOutline } from './saveDepth.js';
 import { signatureValues } from './signatureFields.js';
@@ -596,6 +598,8 @@ function copiedInto(into: mupdf.PDFDocument, from: mupdf.PDFObject, renumbered: 
 function saveTermsOf(session: MupdfSession): {
   readonly document: mupdf.PDFDocument;
   readonly terms: string;
+  /** The terms of a whole save of this session, whichever {@link terms} is: what a copy written uncertified takes. */
+  readonly whole: string;
   readonly signatures: number;
   readonly appends: boolean;
   readonly purpose: SavePurpose;
@@ -636,8 +640,9 @@ function saveTermsOf(session: MupdfSession): {
   const signatures = signatureValues(document).length;
   const appends =
     purpose === 'ordinary' && protection === undefined && signatures > 0 && document.canBeSavedIncrementally();
-  const terms = appends ? 'incremental' : [options[purpose], protection ?? ''].filter((term) => term !== '').join(',');
-  return { document, terms, signatures, appends, purpose };
+  const whole = [options[purpose], protection ?? ''].filter((term) => term !== '').join(',');
+  const terms = appends ? 'incremental' : whole;
+  return { document, terms, whole, signatures, appends, purpose };
 }
 
 /**
@@ -661,18 +666,17 @@ function saveTermsOf(session: MupdfSession): {
  * again is the fault this exists to stop.
  */
 function rebasedOn(session: MupdfSession, previous: mupdf.PDFDocument, bytes: ByteImage): void {
-  // READ PLAINLY FIRST, with no repair: `openPdfFile` rebuilds a broken chain on open, which would hide the very fault.
-  // A page tree's dictionaries are not encrypted, so a protected file's pages count without its password.
-  const plain = mupdf.PDFDocument.openDocument(bytes, 'application/pdf');
-  const pages = plain.countPages();
-  plain.destroy();
+  // READ AS ITS OWN CHAIN STANDS, with no rebuild: `openPdfFile` rebuilds a broken chain on open, which would hide the
+  // very fault. WITH THE SESSION'S PASSWORD: a protected file's page tree may sit in an encrypted object stream, which
+  // reads no pages without it (`pagesWithoutRepair`, measured 2026-11-12), and every save of such a file was refused.
+  const pages = pagesWithoutRepair(bytes, heldPasswords.get(session));
   if (pages !== previous.countPages()) {
-    throw new Error(`The appended save wrote a file whose own chain reads ${String(pages)} pages, so it was not used.`);
+    throw new AppendRefused(`its own chain reads ${String(pages)} pages`);
   }
   const { document, access } = openPdfFile(bytes, heldPasswords.get(session));
   if (!(document instanceof mupdf.PDFDocument) || access === 0 || document.countPages() !== previous.countPages()) {
     document.destroy();
-    throw new Error('The appended save wrote a file this build cannot open again with its pages, so it was not used.');
+    throw new AppendRefused('this build cannot open it again with its pages');
   }
   documents.set(session, document);
   previous.destroy();
@@ -818,10 +822,18 @@ export const mupdfWriter: EngineWriter<MupdfSession> = {
     // INSIDE `promised`, as the lookup always was: a session from elsewhere is refused as a REJECTION, never a
     // synchronous throw from a method that answers a promise (the writer's CONTROL cases).
     return promised(() => {
-      const { document, terms, appends } = saveTermsOf(session);
+      const { document, terms: held, whole, appends: heldAppends } = saveTermsOf(session);
+      // A COPY WRITTEN UNCERTIFIED (ADR-0291 Decision 5) is a WHOLE save, never an appended one: an earlier revision
+      // would still hold the certification. Only where there is one to take out; otherwise the save is as held.
+      const uncertified = options?.certification === 'removed' && carriesCertification(document);
+      // AND A PERSON WHO CHOSE TO SAVE PAST A REFUSED APPEND (ADR-0291 question 4) is written whole too.
+      const writtenWhole = uncertified || options?.append === 'never';
+      const terms = writtenWhole ? whole : held;
+      const appends = heldAppends && !writtenWhole;
       // MEASURED BEFORE A COLLECTING SAVE, and refused in words where it would pass the engine's stack (`saveDepth.ts`).
-      const save = (): mupdf.Buffer =>
+      const written = (): mupdf.Buffer =>
         options?.outline === 'left-out' ? savedWithoutOutline(document, terms) : savedBuffer(document, terms);
+      const save = (): mupdf.Buffer => (uncertified ? savedUncertified(document, written) : written());
       // A FILE A PERSON KEEPS draws Monstera's placed marks by the page (ADR-0287), and the session is put back after.
       // NOT ON AN APPENDED SAVE: it exists to keep a signature, and page content changed after one is reported by
       // every validator (Decision 5), so a signed document's marks stay layers.

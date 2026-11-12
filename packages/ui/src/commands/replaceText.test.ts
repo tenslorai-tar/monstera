@@ -60,6 +60,7 @@ function harness(): { readonly deps: DocumentCommandDeps; readonly sent: Record<
     stamp: () => ({ author: 'A. Tester', created: '2026-10-27T12:00:00.000Z' }),
     signatures: {
       warn: () => true,
+      reread: () => undefined,
       onOpened: () => {
         throw new Error('the case opened a copy');
       },

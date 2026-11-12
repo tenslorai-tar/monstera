@@ -2,6 +2,7 @@ import {
   type CommandKind,
   type CommandOfKind,
   accessibilitySpotsSchema,
+  certificationLevelSchema,
   listedAnnotationSchema,
   displayBoxSchema,
   documentFontSchema,
@@ -457,6 +458,8 @@ const engineSignatureSchema = z
     notAfter: z.string().max(ENGINE_SIGNATURE_FIELD_MAX),
     coversDocument: z.boolean(),
     coversWholeFile: z.boolean(),
+    // WHERE THE SIGNED BYTES END (ADR-0291 Decision 7): a byte offset, so a count a file can hold.
+    signedThrough: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   })
   .strict();
 
@@ -2192,6 +2195,10 @@ export function liveSessionChannels() {
           outline: z.literal('left-out').exactOptional(),
           /** `engraved`: a file a person keeps, Monstera's placed marks drawn by the page (ADR-0287). */
           marks: z.literal('engraved').exactOptional(),
+          /** `removed`: the bytes carry no certification, written whole (ADR-0291 Decision 5). */
+          certification: z.literal('removed').exactOptional(),
+          /** `never`: written whole where a signature would have them appended, a person's choice (ADR-0291 Q4). */
+          append: z.literal('never').exactOptional(),
         })
         .strict(),
       // A COUNT, NOT A NAME. Main already knows where it asked for the bytes;
@@ -2208,7 +2215,7 @@ export function liveSessionChannels() {
       // TWO REFUSALS OF THE DOCUMENT'S SHAPE, never the host's failure (`saveDepth.ts`): the save would nest deeper than
       // the engine's stack holds, and was not attempted. `outline-too-deep` where the outline is the deep chain, so main
       // can offer a copy without it; `structure-too-deep` for any other.
-      ['no-such-session', 'serialise-failed', 'structure-too-deep', 'outline-too-deep'],
+      ['no-such-session', 'serialise-failed', 'structure-too-deep', 'outline-too-deep', 'append-refused'],
     ),
   };
 }
@@ -3300,7 +3307,17 @@ export const engineChannels = {
     z.object({ session: sessionSchema }).strict(),
     // A COUNT, unbounded but for being an integer: it crosses as one number, and bounding it at the list's
     // ENGINE_SIGNATURES_MAX made every save of a document with more signatures fail (table A row 14).
-    z.object({ signatures: z.number().int().nonnegative(), kept: z.boolean() }).strict(),
+    // AND THE CERTIFICATION (ADR-0291), which main's lane asks before every command: what it allows, and who.
+    z
+      .object({
+        signatures: z.number().int().nonnegative(),
+        kept: z.boolean(),
+        certification: z
+          .object({ level: certificationLevelSchema, signer: z.string().max(ENGINE_SIGNATURE_FIELD_MAX) })
+          .strict()
+          .nullable(),
+      })
+      .strict(),
     ['no-such-session'],
   ),
 
@@ -3663,6 +3680,8 @@ export type EngineFailureCode =
   // before it was attempted (`saveDepth.ts`), with whether the outline is the deep chain.
   | 'structure-too-deep'
   | 'outline-too-deep'
+  // AN APPENDED SAVE THE FILE COULD NOT TAKE (ADR-0291 question 4): the document's, so never a host death.
+  | 'append-refused'
   // THE DOCUMENT'S FAULT, joining the two above for their reason. An extract
   // whose page list the document cannot satisfy, or a graft the engine refuses,
   // is a statement about that document — and it must not reach the supervisor

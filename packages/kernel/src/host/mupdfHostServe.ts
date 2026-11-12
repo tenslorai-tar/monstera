@@ -12,8 +12,8 @@ import { bindEditFolders } from '../editFaces.js';
 import { readCatalogueApart } from '../fontCatalogueApart.js';
 import { catalogueReadingFrom, noteKeptRefused } from './keptArguments.js';
 import { localMupdfExecution } from '../mupdfSpecs.js';
-import { accessFor, mupdfWriter, signaturesKeptBySave } from '../mupdfWriter.js';
-import { readSignatures } from '../signatureRead.js';
+import { accessFor, mupdfWriter } from '../mupdfWriter.js';
+import { readSignatures, signatureFacts } from '../signatureRead.js';
 import { readPageGeometry } from '../pageGeometry.js';
 import { readDestinations } from '../destinations.js';
 import { readLayers } from '../layers.js';
@@ -91,7 +91,7 @@ const engineHandlers = createEngineHandlers({
   writer: mupdfWriter,
   access: accessFor,
   signatures: readSignatures,
-  signaturesKept: signaturesKeptBySave,
+  signaturesKept: signatureFacts,
   files: hostFilesystem,
   probe: probeContainment,
   geometry: readPageGeometry,

@@ -1,6 +1,7 @@
 import { type DocId, type DocVersion, asDocId, asDocVersion } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
+import { AppendRefused } from './appendRefused.js';
 import type { AtomicWriteSurface } from './atomicWrite.js';
 import type { CommandLog } from './commandLog.js';
 import type {
@@ -321,6 +322,28 @@ describe('saveDocument', () => {
 
     expect(stampedAfter).toHaveLength(1);
     expect(stampedAfter[0]).toContain(`rename:${NAMES.temp}->${TARGET}`);
+  });
+
+  it('AN APPEND THE FILE COULD NOT TAKE is an outcome (ADR-0291 Q4): nothing written, nothing stamped, still dirty', async () => {
+    const files: Files = new Map([[TARGET, 'original']]);
+    const f = fake(files);
+    const document = held(4);
+
+    const outcome = await saveDocument(
+      deps(f.surface, { kind: 'sole-writer' }),
+      document.context,
+      () => Promise.reject(new AppendRefused('its own chain reads 0 pages')),
+      'keep',
+    );
+
+    expect(outcome).toStrictEqual({ kind: 'append-refused' });
+    expect(files.get(TARGET)).toBe('original');
+    expect(document.stamped()).toBeNull();
+    expect(document.context.isDirty()).toBe(true);
+    // CONTROL: any other failure of the flush is still thrown, so only the named refusal reads as an outcome.
+    await expect(
+      saveDocument(deps(f.surface, { kind: 'sole-writer' }), document.context, () => Promise.reject(new Error('the host died')), 'keep'),
+    ).rejects.toThrow('the host died');
   });
 
   it('THE INVARIANT: a failed write leaves the original, and does NOT stamp', async () => {
