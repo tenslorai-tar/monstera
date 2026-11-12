@@ -6,7 +6,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { ByteImage } from './engineSeam.js';
 import * as mupdf from './mupdfRaw.js';
 import { mupdfWriter } from './mupdfWriter.js';
-import { certificationOf, signatureFacts } from './signatureRead.js';
+import { certificationOf, readSignatures, signatureFacts } from './signatureRead.js';
 import { applySignDocument } from './signpdfWriter.js';
 
 /**
@@ -128,6 +128,31 @@ describe('a certification, read (ADR-0291 Decision 1)', () => {
     } finally {
       await mupdfWriter.close(asked);
       await mupdfWriter.close(plain);
+    }
+  }, 60_000);
+
+  it('a certification whose signature NO LONGER VERIFIES still locks (the owner’s answer of 2026-11-12)', async () => {
+    const certified = await sign(await blank(), 'Grace Hopper', 'no-changes');
+    // ONE BYTE INSIDE THE SIGNED RANGE: the page's width, 400 made 401, so the file still opens and its digest does not
+    // match what was signed.
+    const at = Buffer.from(certified).indexOf('/MediaBox [ 0 0 400');
+    expect(at, 'the page box is in the signed bytes').toBeGreaterThan(0);
+    const changed = Uint8Array.from(certified);
+    const digit = at + '/MediaBox [ 0 0 40'.length;
+    changed[digit] = '1'.charCodeAt(0);
+    const session = await mupdfWriter.open(changed);
+    try {
+      // CONTROL: the certifier's signature really does not verify over these bytes; it did over the unchanged ones.
+      expect((await readSignatures(session, changed)).map((each) => each.coversDocument)).toStrictEqual([false]);
+      expect((await signatureFacts(session)).certification).toStrictEqual({ level: 'no-changes', signer: 'Grace Hopper' });
+    } finally {
+      await mupdfWriter.close(session);
+    }
+    const intact = await mupdfWriter.open(certified);
+    try {
+      expect((await readSignatures(intact, certified)).map((each) => each.coversDocument)).toStrictEqual([true]);
+    } finally {
+      await mupdfWriter.close(intact);
     }
   }, 60_000);
 

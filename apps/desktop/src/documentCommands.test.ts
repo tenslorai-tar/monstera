@@ -227,6 +227,7 @@ import {
   type SnapshotSource,
   SignaturesWouldBreakError,
   CertifiedChangeError,
+  CertifyingSignedDocumentError,
   type EngineSessionSource,
   type ProtectedCopies,
   type Applied,
@@ -2298,6 +2299,23 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
         expect(await t.commands.saveSignedVersion(t.saved, signed.length - 1)).toStrictEqual({ kind: 'not-found' });
         expect(existsSync(destination)).toBe(false);
       }, 60_000);
+
+      it('CERTIFYING A SIGNED DOCUMENT is refused in the lane, from the same read, with nothing changed (question 3)', async () => {
+        // NO CREDENTIAL IS READ: the refusal is made before the bus, and this harness registers no signer behind it.
+        const certify = { kind: 'signDocument', bytes: Uint8Array.of(1), passphrase: 'pass', certify: 'no-changes' } as const;
+
+        const signedAlready = await aSavableDocument(() => Promise.resolve({ signatures: 1, kept: true, certification: null }));
+        const version = await signedAlready.version();
+        const refused = signedAlready.commands.execute(signedAlready.saved, certify);
+        await expect(refused).rejects.toBeInstanceOf(CertifyingSignedDocumentError);
+        await expect(refused).rejects.toMatchObject({ signatures: 1 });
+        expect(await signedAlready.version()).toBe(version);
+
+        // CONTROL: the same certification of an UNSIGNED document passes the lane and REACHES THE BUS, which in this
+        // harness has no signer registered and says so: the count decided it, not the kind.
+        const unsigned = await aSavableDocument(() => Promise.resolve({ signatures: 0, kept: true, certification: null }));
+        await expect(unsigned.commands.execute(unsigned.saved, certify)).rejects.toMatchObject({ name: 'UnregisteredWriterError' });
+      });
 
       it('AGREEING to break signatures does not pass it: the lock is not a warning', async () => {
         const t = await aSavableDocument(certified('no-changes'));

@@ -1465,6 +1465,19 @@ export class CertifiedChangeError extends Error {
   }
 }
 
+/**
+ * A certification asked of a document that already holds a signature (ADR-0291's amendment of 2026-11-12, question 3):
+ * a certification is the first signature (ISO 32000-1 §12.8.2.2.1). Refused before anything changed; `sign` answers
+ * it as `already-signed`. The Sign dialog does not offer it there, so this is the route that bypasses the dialog.
+ */
+export class CertifyingSignedDocumentError extends Error {
+  override readonly name = 'CertifyingSignedDocumentError';
+
+  constructor(readonly signatures: number) {
+    super(`a certification was asked of a document holding ${String(signatures)} signature(s); nothing was changed (ADR-0291).`);
+  }
+}
+
 /*
  * THE SECOND-COMMAND TRIGGER FIRED ON 2026-09-03, and this is what it produced.
  *
@@ -1519,6 +1532,11 @@ export type DocumentFlush = (
  */
 /** The commands that place on every page they name, and leave one that displays nothing (ADR-0254). */
 const PLACES_ON_PAGES = new Set<Command['kind']>(['headerFooterPages', 'batesNumberPages', 'watermarkPages', 'setPageBackground']);
+
+/** Whether `command` is a signing that certifies (ADR-0291, question 3): read on the union, where `kind` narrows. */
+function certifies(command: Command): boolean {
+  return command.kind === 'signDocument' && command.certify !== undefined;
+}
 
 /** Whether `command` is one of {@link PLACES_ON_PAGES}, narrowed to the four, whose `pages` say which pages it names. */
 function placesOnPages(
@@ -4162,6 +4180,12 @@ export class DocumentCommands {
         // the kind and the document together.
         if (facts.certification !== null && !allowedByCertification(command.kind, facts.certification.level)) {
           throw new CertifiedChangeError(command.kind, facts.certification);
+        }
+
+        // A CERTIFICATION IS THE FIRST SIGNATURE (ADR-0291, question 3), read from the same facts, so this and the lock
+        // above cannot disagree about whether the document is signed.
+        if (certifies(command) && facts.signatures > 0) {
+          throw new CertifyingSignedDocumentError(facts.signatures);
         }
 
         // A SIGNED DOCUMENT IS ASKED ABOUT BEFORE THE EDIT, never at the save after it (ADR-0149). A command that
@@ -7228,6 +7252,7 @@ export class DocumentCommands {
       }
       if (error instanceof SignatureCredentialRefusedError) return { kind: 'wrong-passphrase' };
       if (error instanceof SignatureTooLargeError) return { kind: 'signature-too-large' };
+      if (error instanceof CertifyingSignedDocumentError) return { kind: 'already-signed' };
       // THE AUTHORITY'S FAILURES, three sentences rather than one: unreachable is
       // *try again or choose another*, refused is *that service will not do this*,
       // and unverifiable is *it answered with something this build would not

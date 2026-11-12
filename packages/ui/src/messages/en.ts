@@ -3341,6 +3341,8 @@ export const SIGN_PROBLEM_UNREADABLE = messageKey('dialog.sign-problem.unreadabl
 export const SIGN_PROBLEM_IMAGE_UNREADABLE = messageKey('dialog.sign-problem.image-unreadable');
 export const SIGN_PROBLEM_IMAGE_TOO_LARGE = messageKey('dialog.sign-problem.image-too-large');
 export const SIGN_PROBLEM_SAVED_MISSING = messageKey('dialog.sign-problem.saved-missing');
+/** A certification asked of a document that already holds a signature (ADR-0291, question 3). */
+export const SIGN_PROBLEM_ALREADY_SIGNED = messageKey('dialog.sign-problem.already-signed');
 export const SIGN_PROBLEM_SCAN_BLANK = messageKey('dialog.sign-problem.scan-blank');
 export const SIGN_PROBLEM_SCAN_LOCKED = messageKey('dialog.sign-problem.scan-locked');
 export const SIGN_PROBLEM_SIGNATURE_TOO_LARGE = messageKey('dialog.sign-problem.signature-too-large');
@@ -7176,6 +7178,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SIGN_PROBLEM_IMAGE_TOO_LARGE]: 'That picture is too large to place. Nothing has been changed.',
   [SIGN_PROBLEM_SAVED_MISSING]:
     'That kept signature is no longer in your library. Choose another look and sign again. Nothing has been changed.',
+  [SIGN_PROBLEM_ALREADY_SIGNED]:
+    'This document is already signed, so it cannot be certified. Only the first signature can certify a document. Nothing has been changed.',
   [INSERT_IMAGE_ABSENT]: 'That stamp is no longer in your library, so nothing was added.',
   [SIGN_PROBLEM_SIGNATURE_TOO_LARGE]:
     'The signature is too large to fit in the document. A certificate with a long chain can cause this. Nothing has been changed.',

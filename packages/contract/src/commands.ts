@@ -4136,6 +4136,8 @@ export const SIGN_REFUSALS = [
   'timestamp-unverifiable',
   /** A kept signature was named that the library no longer holds — removed since the dialog opened. */
   'saved-signature-missing',
+  /** A certification asked of a document that already holds a signature; a certification is the first (ADR-0291). */
+  'already-signed',
 ] as const;
 
 /** One of {@link SIGN_REFUSALS}. */
