@@ -131,3 +131,47 @@ carries the certification. Decisions 1 to 5 are built; Decision 7 is next.
 
 Nothing is built on this in the commit that records it. `signedVersion.test.ts`, the measurement above, lands with it
 as its evidence; it tests the format and the existing reader, and changes no code.
+
+## Amendment, 2026-11-12 — the owner's answers, and the line that replaces Decision 6's toast
+
+The owner answered the open questions and the surface above the same day. Recorded before anything is built on it (B4).
+
+**Question 1: kept as built.** A document stays locked when its certifying signature no longer verifies; Work on a copy
+is the way out. Decision 1 already says so; `certification.test.ts` holds it from now with a case.
+
+**Question 2: kept as built.** A placed signature and Place image count as comments, because on a signed document they
+stay layers (ADR-0287 Decision 5). `commandDeclarations.ts` already classes `placeImage`, `placeSignatureMark` and
+`placeSignaturePicture` as `comment`. A barcode is placed through `placeImage`, so it is a comment too.
+
+**Question 3: certify only an unsigned document** (ISO 32000-1 §12.8.2.2.1: a certification is the first signature).
+Where the document already holds a signature, the Sign dialog does not offer *This signature says* and says why in one
+line. The dialog is the choice, not the enforcement: `signDocument` in the kernel refuses a certification on a document
+that holds a signature, so no other route can write one.
+
+**Question 4: the refused appended save is built as proposed**, and its cause is found: which documents make `rebasedOn`
+refuse, and whether the file was already damaged or Monstera's appended save writes it wrongly, reported with a real
+case. A cause that is ours is fixed at the root.
+
+**Decision 6 is replaced: a line that stays while the document is open.** The owner chose the second surface: it names
+the certifier and what may change, with a *Check signatures* button, and the copy says it is not certified by the same
+line (which replaces Decision 5's notice on the copy's tab).
+
+- **Read at open, through a new read of the lane's own reader.** `document.certification` answers
+  `{ certification: { level, signer } | null, signed: boolean }` from the session, by the reader Decision 1 built
+  (`signatureFacts`, the host's `engine/signatures-kept`), so the line and the lock cannot disagree about a document
+  (B3a). `signed` is whether any signature is held, which question 3's dialog asks at the moment Sign opens.
+- **Held in the document's store** (state is per document), set when the document is shown and again after it is
+  signed. The copy's store is marked by the Work on a copy route with the original's signer, which is the one place
+  that knows the copy is one.
+- **Drawn at the top of the document's own layer** (`DocumentLayer`, ADR-0129), a row that does not grow above the
+  page area. Behind, the layer is hidden with everything in it, so the line is always about the document on show and a
+  tab switch shows the other document's line, or none. The grid's rows are unchanged.
+- **Its button runs the registered *Check signatures* command** with the document's context, never a second way to
+  check (no second wiring place).
+- **Not dismissed.** It stays while the document is open, as the owner asked; it is one line, `role="status"`, read
+  once when it appears.
+
+Rejected: **a grid row of the surface's own** (`'notice notice'`): it moves every screen's rows and is drawn with no
+document, where the line has nothing to say. **Reading the certification in the renderer from the bytes**: the renderer
+holds no document bytes but ranges, and a second reader is a second opinion (B3a). **Folding it into
+`document.signatures`**: that read verifies every signature over the whole file, which an open should not pay for.
