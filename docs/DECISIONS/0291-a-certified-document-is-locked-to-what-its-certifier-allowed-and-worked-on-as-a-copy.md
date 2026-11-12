@@ -175,3 +175,12 @@ Rejected: **a grid row of the surface's own** (`'notice notice'`): it moves ever
 document, where the line has nothing to say. **Reading the certification in the renderer from the bytes**: the renderer
 holds no document bytes but ranges, and a second reader is a second opinion (B3a). **Folding it into
 `document.signatures`**: that read verifies every signature over the whole file, which an open should not pay for.
+
+## Correction, 2026-11-12 — question 3's refusal is the lane's, not the kernel's signer
+
+The amendment above says `signDocument` *in the kernel* refuses a certification on a signed document. The signer
+prepares its placeholder in pdf-lib over the image, so a check there would be a second reading of *does this document
+hold a signature*, beside `signatureFacts`, which the lane already reads for every command (B3a). The refusal is made in
+the document's lane instead, from that one read and beside the certification check, before the bus: `signDocument` with
+`certify` on a document holding a signature answers `already-signed`, one of `SIGN_REFUSALS`, so the channel and the
+sign problem dialog take it from the one list.
