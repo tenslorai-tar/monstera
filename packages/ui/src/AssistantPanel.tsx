@@ -106,6 +106,7 @@ import {
   ASSISTANT_LONG_NOTE,
   ASSISTANT_START_NEW,
   ASSISTANT_HISTORY_LOCKED,
+  ASSISTANT_HISTORY_ON_NOTE,
   ASSISTANT_NO_KEY,
   ASSISTANT_SEARCHES_THE_WEB,
   ASSISTANT_WEB_ALWAYS,
@@ -531,6 +532,19 @@ export function AssistantPanel({
       cancelled = true;
     };
   }, [client, provider]);
+
+  // THE NOTE THAT CHAT HISTORY IS ON, ONCE ON THIS COMPUTER (ADR-0279 decision h): `main` claims it and reads the setting
+  // itself, so this asks and shows a yes; it stays while this panel does, and the next panel is answered no.
+  const [historyNote, setHistoryNote] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    void client['ai.history.note']({}).then((result) => {
+      if (!cancelled && result.ok) setHistoryNote(result.value.show);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [client]);
 
   // A SELECTION BELONGS TO THE DOCUMENT IT WAS MADE IN, and it is DERIVED from the request that
   // carried it rather than copied into state: switching tabs makes it vanish by construction, so
@@ -1152,6 +1166,11 @@ export function AssistantPanel({
           </p>
         ) : null}
       </div>
+      {historyNote && (
+        <p className="m-assistant__state" data-assistant-history-note="">
+          {i18n._(ASSISTANT_HISTORY_ON_NOTE)}
+        </p>
+      )}
 
       <ol aria-label={i18n._(ASSISTANT_CONVERSATION_LABEL)} className="m-assistant__turns" ref={keepEnd}>
         {turns.map((turn, at) => (

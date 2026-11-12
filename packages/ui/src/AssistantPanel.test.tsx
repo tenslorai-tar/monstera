@@ -82,6 +82,8 @@ function recording(
    * no params, so only this sees a request `ai.ask`'s schema refuses.
    */
   boundary = false,
+  /** What `main` answers `ai.history.note`: whether this is the one time the note that history is on is shown. */
+  note = false,
 ): {
   readonly client: ContractClient;
   readonly sent: { id: string; params: unknown }[];
@@ -131,6 +133,7 @@ function recording(
     if (id === 'ai.attach') {
       return Promise.resolve({ ok: true, value: { files: [...(attaching.picked ?? [])], dropped: attaching.dropped ?? 0 } });
     }
+    if (id === 'ai.history.note') return Promise.resolve({ ok: true, value: { show: note } });
     if (id === 'ai.stop') return Promise.resolve({ ok: true, value: { stopped: true } });
     if (id === 'ai.openSource') return Promise.resolve({ ok: true, value: { opened: true } });
     if (id === 'window.copyText') return Promise.resolve({ ok: true, value: { copied } });
@@ -198,6 +201,7 @@ async function drawn(options: {
   readonly attaching?: Parameters<typeof recording>[6];
   readonly refusal?: Parameters<typeof recording>[7];
   readonly boundary?: boolean;
+  readonly note?: boolean;
 } = {}) {
   const wire = events();
   const settings = options.settings ?? new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
@@ -211,6 +215,7 @@ async function drawn(options: {
     options.attaching,
     options.refusal,
     options.boundary ?? false,
+    options.note ?? false,
   );
   // EVERY TOAST THE PANEL RAISES, in order: a copy's confirmation goes through the window's toast.
   const toasts: unknown[][] = [];
@@ -526,6 +531,7 @@ describe('the assistant tab', () => {
           held = [];
           return Promise.resolve({ ok: true, value: {} });
         }
+        if (id === 'ai.history.note') return Promise.resolve({ ok: true, value: { show: false } });
         throw new Error(`this case does not answer ${id}`);
       });
       const settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
@@ -669,6 +675,7 @@ describe('the assistant tab', () => {
     } {
       const waiting: ((value: unknown) => void)[] = [];
       const client = createClient(channels, (id) => {
+        if (id === 'ai.history.note') return Promise.resolve({ ok: true, value: { show: false } });
         if (id !== 'ai.models') throw new Error(`this case does not answer ${id}`);
         return new Promise((resolve) => {
           waiting.push(resolve);
@@ -2140,8 +2147,10 @@ describe('a new conversation keeps the old one, and history that cannot be saved
   it('NO CAP (ADR-0279): with history ON, New chat asks main nothing and begins a NEW conversation beside the old', async () => {
     const store = holding();
     const { sent } = await drawn({ focused: { docId: DOC, store, page: 0 }, settings: historyOn() });
+    // WHAT NEW CHAT SENDS, from the press: the panel's own ask at mount (the note that history is on) is not New chat's.
+    const before = sent.length;
     await press();
-    expect(sent.filter((entry) => entry.id.startsWith('ai.history.'))).toStrictEqual([]);
+    expect(sent.slice(before).filter((entry) => entry.id.startsWith('ai.history.'))).toStrictEqual([]);
     expect(store.getState().conversation).toStrictEqual([]);
     // A NEW SERIAL, which is what makes the history sync save a new conversation rather than empty the old one.
     expect(store.getState().conversationSerial).toBe(1);
@@ -2163,6 +2172,25 @@ describe('a new conversation keeps the old one, and history that cannot be saved
     await drawn({ focused: { docId: DOC, store: holding(), page: 0 }, settings: historyOn() });
     expect(screen.queryByText(HISTORY_LOCKED)).toBeNull();
     expect(document.querySelector('[data-assistant-history-locked]')).toBeNull();
+  });
+
+  const HISTORY_ON =
+    'Chat history is on. Conversations about this file are kept on this computer, encrypted for your Windows account. You can turn it off in Settings › AI.';
+
+  it('THE NOTE THAT HISTORY IS ON (decision h): asked of main once as the panel opens, and said where main answers yes', async () => {
+    const { sent } = await drawn({ focused: { docId: DOC, store: holding(), page: 0 }, note: true });
+    expect(sent.filter((entry) => entry.id === 'ai.history.note')).toStrictEqual([{ id: 'ai.history.note', params: {} }]);
+    expect(screen.getAllByText(HISTORY_ON)).toHaveLength(1);
+    // IT STAYS WHILE THE PANEL DOES: New chat does not take it away.
+    await press();
+    expect(screen.getAllByText(HISTORY_ON)).toHaveLength(1);
+  });
+
+  it('CONTROL: where main answers no, as every time after the first, the note is not there', async () => {
+    const { sent } = await drawn({ focused: { docId: DOC, store: holding(), page: 0 }, note: false });
+    expect(sent.some((entry) => entry.id === 'ai.history.note')).toBe(true);
+    expect(screen.queryByText(HISTORY_ON)).toBeNull();
+    expect(document.querySelector('[data-assistant-history-note]')).toBeNull();
   });
 });
 

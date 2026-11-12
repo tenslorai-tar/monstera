@@ -247,6 +247,7 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'ai.history.save': 'one DocId, one digest and at most MAX_CHAT_TURNS bounded turns in; a boolean and a digest out',
   'ai.history.clear': 'carries nothing and answers a count',
   'ai.history.clearFile': 'one DocId in; nothing out',
+  'ai.history.note': 'carries nothing and answers a boolean',
   // THE HISTORY (ADR-0279): a PAGE of the open PDF's conversations, never the store, and a conversation never a document.
   'ai.history.list': 'one DocId and an offset in; at most HISTORY_PAGE entries out, each a digest, a name, a date, a count and a bounded preview, and the next offset',
   'ai.history.read': 'one DocId and one digest in; at most MAX_CHAT_TURNS bounded turns out',

@@ -73,6 +73,7 @@ import { replaceWithRetry } from './settingsFile.js';
 export const HISTORY_DIRECTORY = 'history';
 const KEY_FILE = 'key';
 const LEDGER_FILE = 'ledger';
+const NOTE_FILE = 'note-shown';
 const EXTENSION = '.mhist';
 
 /**
@@ -189,6 +190,11 @@ export interface HistoryStore {
   clearFile(placeKey: string): void;
   /** Settings' *Clear chat history*: every file, answering how many conversations they held. */
   clearAll(): number;
+  /**
+   * The note that chat history is on, claimed (ADR-0279 decision h): `true` the one time it is claimed on this computer,
+   * `false` ever after. The claim is the file's creation, so two callers cannot both win. *Clear chat history* keeps it.
+   */
+  claimNote(): boolean;
 }
 
 /**
@@ -491,6 +497,18 @@ export function createHistoryStore(
       written.clear();
       savedTurns.clear();
       return count;
+    },
+
+    claimNote() {
+      mkdirSync(folder, { recursive: true });
+      try {
+        // `wx` CREATES OR FAILS: the file system decides which caller claimed it, not a read before the write.
+        writeFileSync(join(folder, NOTE_FILE), '', { flag: 'wx' });
+        return true;
+      } catch (thrown) {
+        if ((thrown as NodeJS.ErrnoException).code === 'EEXIST') return false;
+        throw thrown;
+      }
     },
   };
 }

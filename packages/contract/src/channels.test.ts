@@ -501,6 +501,7 @@ const handlers: ContractHandlers = {
   'ai.checkKey': () => Promise.resolve(ok({ accepted: false as const, problem: 'unauthorised' as const })),
   'ai.history.save': () => Promise.resolve(ok({ saved: false, conversation: null })),
   'ai.history.clear': () => Promise.resolve(ok({ cleared: 0 })),
+  'ai.history.note': () => Promise.resolve(ok({ show: false })),
   'ai.history.clearFile': () => Promise.resolve(ok({})),
   'ai.history.list': () => Promise.resolve(ok({ conversations: [], next: null })),
   'ai.history.read': () => Promise.resolve(ok({ conversation: null })),

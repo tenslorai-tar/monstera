@@ -860,6 +860,8 @@ export interface BrowserShimOptions {
   readonly aiAskStarts?: boolean;
   /** What a started `ai.ask` answers went with the question, for a case that draws the bubble's *Sent* line. Absent is none. */
   readonly aiAskSent?: ChannelResult<'ai.ask'>['sent'];
+  /** Whether `ai.history.note` answers that the note that chat history is on is shown. Absent is not shown. */
+  readonly aiHistoryNote?: boolean;
   /** What `ai.history.list` answers: the open PDF's saved conversations, in one page. Absent is none. */
   readonly aiConversations?: ChannelResult<'ai.history.list'>['conversations'];
   /** What `ai.models.held` answers per provider. A provider absent here answers `aiModels`, or the empty list. */
@@ -2882,6 +2884,8 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     // NOTHING SAVED: the shim keeps no conversation between pages.
     'ai.history.save': () => Promise.resolve(ok({ saved: false, conversation: null })),
     'ai.history.clear': () => Promise.resolve(ok({ cleared: 0 })),
+    // NO NOTE unless a case asks for it: every other rendered case keeps the panel it photographs.
+    'ai.history.note': () => Promise.resolve(ok({ show: options.aiHistoryNote ?? false })),
     'ai.history.clearFile': () => Promise.resolve(ok({})),
     // NOTHING KEPT unless a case seeds a list: History lists that, in one page, and nothing named reads or removes.
     'ai.history.list': () => Promise.resolve(ok({ conversations: [...(options.aiConversations ?? [])], next: null })),

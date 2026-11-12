@@ -789,6 +789,18 @@ export function createContractHandlers(deps: {
     'ai.history.clearFile': async ({ docId }) =>
       (await deps.chatHistory.clearFile(docId)) ? ok({}) : err({ code: 'document-not-open' } as const),
     'ai.history.clear': () => Promise.resolve(ok({ cleared: deps.chatHistory.clearAll() })),
+    // THE NOTE THAT HISTORY IS ON (ADR-0279 decision h), claimed only where it is TRUE: on, keepable and not locked.
+    // Each condition is read before the claim, so a note that could not be true is owed rather than spent.
+    'ai.history.note': () =>
+      Promise.resolve(
+        ok({
+          show:
+            storedSetting(deps.settings.read(), CHAT_HISTORY_STORED) &&
+            deps.chatHistory.available() &&
+            !deps.chatHistory.locked() &&
+            deps.chatHistory.claimNote(),
+        }),
+      ),
     // THE PAPERCLIP (ADR-0135): main runs the picker, mints a handle per path and answers what a chip draws. The handle
     // is the only thing the renderer can name the file by, and only an ask turns it back into a path.
     'ai.attach': async () => {

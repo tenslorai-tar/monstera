@@ -25,7 +25,7 @@ The AI assistant answers questions about your document using an AI provider you 
 
 - A page an answer names in any usual way, such as "[p. 3]", "[Page 3]", "(pp. 3–4)" or "on page 3", is a link.
 - Under an answer you can **Regenerate this answer**, **Edit your question and ask again**, **Copy this answer**, or **Add this answer to the page as a note**. **Stop** ends an answer early; **New chat**, the **+** at the top right, starts over.
-- Chats are saved only while **Save chat history** is on (**Settings**, **AI** page). They are kept on this computer, encrypted, with no limit on how many. Opening a file does not bring a chat back into the AI assistant; its saved chats are in **History**.
+- **Save chat history** is on unless you turn it off (**Settings**, **AI** page). Chats about each file are kept on this computer, encrypted for your Windows account, with no limit on how many. The first time you open the AI assistant, a note says so. If you turned it off yourself, it stays off. Opening a file does not bring a chat back into the AI assistant; its saved chats are in **History**.
 - Saved chats belong to the file where it is. If the file is moved, renamed or deleted, its chats are removed about a day after Monstera notices. Saving the file in Monstera keeps them.
 - Choose **History** at the top of the AI assistant to see the saved chats about this file, newest first, each with when it was saved, how many messages it has and its first question. **Open** shows a chat to read. **Delete** removes one chat and **Clear all** removes every chat about this file, each after asking.
 - To remove every saved chat for every file, choose **Clear chat history** on the **Privacy** page of **Settings**. It asks first.

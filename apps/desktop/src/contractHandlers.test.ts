@@ -2803,7 +2803,7 @@ describe('ai.history (ADR-0279)', () => {
     createHistoryStore(folder, cipher, undefined, (data) => Promise.resolve(runHistoryRewrite(data)));
 
   /** The handlers over the REAL store in a fresh folder, so what they are tested against is what ships. */
-  function withHistory(on: boolean, folder = mkdtempSync(join(tmpdir(), 'monstera-chat-history-')), cipher = xor()) {
+  function withHistory(on: boolean | 'never-set', folder = mkdtempSync(join(tmpdir(), 'monstera-chat-history-')), cipher = xor()) {
     folders.push(folder);
     const store = storeIn(folder, cipher);
     const history = createDocumentHistory({
@@ -2814,7 +2814,8 @@ describe('ai.history (ADR-0279)', () => {
     });
     history.opened(DOC, PLACE, Promise.resolve());
     const settings = createEphemeralSettings();
-    settings.write({ 'ai.save-history': on });
+    // NEVER SET is a person who has not touched the switch: persistence stores only what a person set.
+    if (on !== 'never-set') settings.write({ 'ai.save-history': on });
     const handlers = createContractHandlers({
       assistant: INERT_ASSISTANT,
       appInfo,
@@ -2975,6 +2976,40 @@ settings,
       ok: false,
       error: { code: 'secret-storage-unavailable' },
     });
+  });
+
+  // DECISION h (ADR-0279, the owner's of 2026-11-12): on by default, and its note said once where it is true.
+  it('ON BY DEFAULT: with the switch never set, a save is stored, and the note is shown once', async () => {
+    const { handlers, store, folder } = withHistory('never-set');
+    expect(keyOf(await handlers['ai.history.save']({ docId: DOC, conversation: null, turns: TURNS }))).toMatch(/^[0-9a-f]{64}$/u);
+    expect(store.list(FILE, GUARD)).toHaveLength(1);
+    await expect(handlers['ai.history.note']({})).resolves.toEqual({ ok: true, value: { show: true } });
+    await expect(handlers['ai.history.note']({})).resolves.toEqual({ ok: true, value: { show: false } });
+    // ONCE ON THIS COMPUTER, not once per start: the next start of the application reads the same folder.
+    await expect(withHistory('never-set', folder).handlers['ai.history.note']({})).resolves.toEqual({ ok: true, value: { show: false } });
+  });
+
+  it('CONTROL: turned OFF by the person, nothing is saved and the note is not shown, and NOT SPENT: on later, it is', async () => {
+    const folder = mkdtempSync(join(tmpdir(), 'monstera-chat-history-'));
+    const off = withHistory(false, folder);
+    await expect(off.handlers['ai.history.note']({})).resolves.toEqual({ ok: true, value: { show: false } });
+    // THE DECISION, read on the disk: an answer of no that had claimed the note would leave the next start nothing to show.
+    await expect(withHistory(true, folder).handlers['ai.history.note']({})).resolves.toEqual({ ok: true, value: { show: true } });
+  });
+
+  it('CONTROL: where it would be untrue (no secure store, or locked to another account) the note is not shown and not spent', async () => {
+    const unkept = mkdtempSync(join(tmpdir(), 'monstera-chat-history-'));
+    const noCipher = { ...xor(), available: () => false };
+    await expect(withHistory('never-set', unkept, noCipher).handlers['ai.history.note']({})).resolves.toEqual({ ok: true, value: { show: false } });
+    await expect(withHistory('never-set', unkept).handlers['ai.history.note']({})).resolves.toEqual({ ok: true, value: { show: true } });
+
+    const locked = mkdtempSync(join(tmpdir(), 'monstera-chat-history-'));
+    storeIn(locked, xor(0x5a)).save(FILE, PLACE, GUARD, null, TURNS, null, AT);
+    const other = withHistory('never-set', locked, xor(0x33));
+    await expect(other.handlers['ai.history.note']({})).resolves.toEqual({ ok: true, value: { show: false } });
+    // CLEARED, the store is this account's again, and the note is owed still.
+    await other.handlers['ai.history.clear']({});
+    await expect(other.handlers['ai.history.note']({})).resolves.toEqual({ ok: true, value: { show: true } });
   });
 });
 

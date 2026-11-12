@@ -2473,6 +2473,8 @@ export const ASSISTANT_START_NEW = messageKey('assistant.start-new');
  * cannot unwrap (ADR-0279's correction of 2026-11-12): after a password reset, or a restore from another computer.
  */
 export const ASSISTANT_HISTORY_LOCKED = messageKey('assistant.history-locked');
+/** The note that chat history is on, shown once on this computer (ADR-0279 decision h); the owner's words. */
+export const ASSISTANT_HISTORY_ON_NOTE = messageKey('assistant.history-on-note');
 /** A *Document only* ask to a model that searches the web for every answer, refused before sending (ADR-0108). */
 export const ASSISTANT_SEARCHES_THE_WEB = messageKey('assistant.searches-the-web');
 /** The *Document only / Document + web* switch, the Sources menu, and why a choice is disabled (ADR-0108). */
@@ -5611,6 +5613,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_START_NEW]: 'Start a new conversation',
   [ASSISTANT_HISTORY_LOCKED]:
     'Chat history cannot be saved on this computer, because the history saved here cannot be opened by this Windows account. To start again, choose Clear chat history in Settings › Privacy.',
+  [ASSISTANT_HISTORY_ON_NOTE]:
+    'Chat history is on. Conversations about this file are kept on this computer, encrypted for your Windows account. You can turn it off in Settings › AI.',
   [ASSISTANT_ANSWER_CUT]:
     'The answer was stopped at its length limit of {limit, plural, other {# characters}}. What is above is all of it up to there. Ask for the rest in a new question.',
   [ASSISTANT_SEARCHES_THE_WEB]:
@@ -5955,7 +5959,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_MODELS_LISTING]: 'Loading models…',
   [SETTINGS_AI_MODELS_ASKING]: 'Asking {provider} which models it offers…',
   [AI_SAVE_HISTORY_DESCRIPTION]:
-    'Off by default. Conversations are discarded when the document closes; saved ones are encrypted on this computer.',
+    'On by default. Conversations about each file are kept on this computer, encrypted for your Windows account. Off, a conversation is discarded when the document closes.',
   [AI_AZURE_OPENAI_ENDPOINT_DESCRIPTION]: 'Your own Azure OpenAI resource address. Needed only for that provider.',
   [INTEGRATIONS_DOCUSIGN_KEY_DESCRIPTION]:
     'Write-only. Kept on this computer, encrypted for your Windows account. How to make one in DocuSign: “Send a document for signing with DocuSign” in Help, under Before you start.',

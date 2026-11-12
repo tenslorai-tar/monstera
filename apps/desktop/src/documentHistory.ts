@@ -45,6 +45,8 @@ export interface DocumentHistory {
   remove(docId: DocId, conversation: string): Promise<boolean | undefined>;
   clearFile(docId: DocId): Promise<boolean>;
   clearAll(): number;
+  /** The note that chat history is on, claimed once on this computer (`HistoryStore.claimNote`). */
+  claimNote(): boolean;
 }
 
 export interface DocumentHistoryDependencies {
@@ -159,6 +161,7 @@ export function createDocumentHistory(deps: DocumentHistoryDependencies): Docume
     },
 
     clearAll: () => deps.store.clearAll(),
+    claimNote: () => deps.store.claimNote(),
   };
 }
 
@@ -176,5 +179,7 @@ export function noDocumentHistory(): DocumentHistory {
     remove: () => Promise.resolve(false),
     clearFile: () => Promise.resolve(true),
     clearAll: () => 0,
+    // NEVER CLAIMED: with no store nothing is kept, so a note saying it is would be untrue. `available` is false too.
+    claimNote: () => false,
   };
 }

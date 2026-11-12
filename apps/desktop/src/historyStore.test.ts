@@ -343,6 +343,32 @@ describe('Delete really deletes (ADR-0279, the owner’s answers, Decision 7)', 
   });
 });
 
+describe('the note that chat history is on is claimed once on this computer (ADR-0279 decision h)', () => {
+  it('the first claim wins and every later one, from this store or another on the same folder, does not', () => {
+    const directory = folder();
+    const store = createHistoryStore(directory, fakeCipher());
+    expect(store.claimNote()).toBe(true);
+    expect(store.claimNote()).toBe(false);
+    // A SECOND STORE, as a second start of the application reads the folder: still claimed.
+    expect(createHistoryStore(directory, fakeCipher()).claimNote()).toBe(false);
+  });
+
+  it('Clear chat history keeps the claim, and the claim is no conversation: nothing is listed or counted for it', () => {
+    const directory = folder();
+    const store = createHistoryStore(directory, fakeCipher());
+    store.save(PLACE_KEY, PLACE, ID, null, TURNS, null, AT);
+    expect(store.claimNote()).toBe(true);
+    expect(store.files()).toStrictEqual([PLACE_KEY]);
+    expect(store.clearAll()).toBe(1);
+    expect(store.claimNote()).toBe(false);
+  });
+
+  it('CONTROL: a store on another folder has its own claim', () => {
+    expect(createHistoryStore(folder(), fakeCipher()).claimNote()).toBe(true);
+    expect(createHistoryStore(folder(), fakeCipher()).claimNote()).toBe(true);
+  });
+});
+
 describe('a write the cipher cannot back', () => {
   it('a save throws and nothing is listed where the account’s store is unavailable', () => {
     const directory = folder();

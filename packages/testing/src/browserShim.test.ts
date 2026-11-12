@@ -193,6 +193,7 @@ describe('browser shim', () => {
       'ai.history.clear',
       'ai.history.clearFile',
       'ai.history.list',
+      'ai.history.note',
       'ai.history.read',
       'ai.history.remove',
       'ai.history.save',

@@ -6787,6 +6787,17 @@ export const channels = {
   ),
 
   /**
+   * Whether the AI assistant shows the note that chat history is on (ADR-0279 decision h): `show: true` exactly once on
+   * this computer, recorded by `main` in the same call, so two windows cannot both show it. `false`, recording nothing,
+   * while chat history is off, cannot be kept here or is locked to another account, since the note would be untrue.
+   */
+  'ai.history.note': channel(
+    'Whether the assistant shows, once, the note that chat history is on.',
+    z.object({}).strict(),
+    z.object({ show: z.boolean() }),
+  ),
+
+  /**
    * Asks the assistant, and streams the answer on `ai.delta` / `ai.done`
    * ([ADR-0082](../../../docs/DECISIONS/0082-main-may-push-on-declared-event-channels.md)).
    *
