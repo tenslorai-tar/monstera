@@ -254,9 +254,24 @@ export function createHistoryStore(
   /** A key is stored, the cipher works, and the key does not unwrap: the state no save may write over. */
   const isLocked = (): boolean => cipher.available() && existsSync(keyPath) && keyFor(false) === null;
 
-  /** What this session last saved of each conversation, a turn per entry as JSON: the `from` of the next save. */
-  const savedTurns = new Map<string, string[]>();
-  /** The guard written for each place this session, so a save writes one only where none was. */
+  /**
+   * What this session last saved of each conversation, a turn per entry as JSON, BY FILE: the `from` of the next save.
+   * It holds only while the file holds those records, so whatever takes a file's records (Clear all, a Delete) takes
+   * this file's entries with them, and the next save of a conversation writes it whole.
+   */
+  const savedTurns = new Map<string, Map<string, string[]>>();
+  const savedOf = (placeKey: string): Map<string, string[]> => {
+    let saved = savedTurns.get(placeKey);
+    if (saved === undefined) {
+      saved = new Map();
+      savedTurns.set(placeKey, saved);
+    }
+    return saved;
+  };
+  /**
+   * The guard written for each place this session, so a save writes one only where none was. Forgotten when a rewrite
+   * or a clear may have taken that record, so the next save writes it again.
+   */
   const written = new Map<string, string>();
 
   /**
@@ -351,6 +366,10 @@ export function createHistoryStore(
     const writing = `${path}.writing`;
     const result = await rewriter({ path, writing, key: new Uint8Array(key), drop });
     if (result.kind === 'nothing') return null;
+    // THE GUARD THIS SESSION WROTE may be among what is dropped (a section's guards, or the whole file with the last
+    // conversation), so the next save writes it again: one small record, where a missing one hides the section from the
+    // 24-hour check.
+    written.delete(placeKey);
     if (result.kind === 'failed') {
       rmSync(writing, { force: true });
       throw new Error(`the conversation could not be removed: ${result.message}`);
@@ -416,8 +435,12 @@ export function createHistoryStore(
       // removed by a save". Written, it would be a TURNS record from 0 holding none, which empties the saved one.
       if (turns.length === 0) return { conversation };
       const id = conversation ?? mint();
+      // WHAT THIS SESSION SAVED HOLDS WHILE THE FILE IS AS IT LEFT IT: a file cleared, removed or changed since is one whose
+      // records this session cannot count on, so each conversation is written whole again. A stat, no read.
+      const path = fileOf(placeKey);
+      if (ends.get(path) !== (existsSync(path) ? statSync(path).size : 0)) savedTurns.delete(placeKey);
       const now = turns.map((turn) => JSON.stringify(turn));
-      const before = savedTurns.get(id) ?? [];
+      const before = savedOf(placeKey).get(id) ?? [];
       let from = 0;
       while (from < before.length && from < now.length && before[from] === now[from]) from += 1;
       // NOTHING CHANGED since this session's last save of it: nothing is written.
@@ -432,7 +455,7 @@ export function createHistoryStore(
           frame(CARD, bytesId, seal(key, { guard, name, savedAt: savedAt.toISOString(), messages: turns.length, preview: previewOf(turns) })),
         ]),
       );
-      savedTurns.set(id, now);
+      savedOf(placeKey).set(id, now);
       return { conversation: id };
     },
 
@@ -485,13 +508,13 @@ export function createHistoryStore(
     },
 
     async remove(placeKey, conversation) {
-      savedTurns.delete(conversation);
+      savedOf(placeKey).delete(conversation);
       return (await rewrite(placeKey, { kind: 'conversation', key: conversation })) !== null;
     },
 
     async removeSection(placeKey, section) {
       const dropped = await rewrite(placeKey, { kind: 'section', section });
-      for (const conversation of dropped ?? []) savedTurns.delete(conversation);
+      for (const conversation of dropped ?? []) savedOf(placeKey).delete(conversation);
       return dropped !== null;
     },
 

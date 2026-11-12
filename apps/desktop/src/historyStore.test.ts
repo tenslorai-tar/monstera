@@ -477,6 +477,43 @@ describe('Delete really deletes (ADR-0279, the owner’s answers, Decision 7)', 
     expect(store.guards(PLACE_KEY)).toHaveLength(1);
   });
 
+  it('a conversation saved on after CLEAR ALL is written whole: the store does not count turns the file no longer holds', () => {
+    const more: SavedTurn[] = [...TURNS, { role: 'user', text: 'And the date?' }];
+    // TWO WAYS THE FILE LOSES WHAT THIS SESSION WROTE: History's Clear all, and the file removed by something else.
+    type Store = ReturnType<typeof createHistoryStore>;
+    const takes = [
+      (store: Store): void => {
+        store.clearFile(PLACE_KEY);
+      },
+      (store: Store): void => {
+        rmSync(store.pathOf(PLACE_KEY));
+      },
+    ];
+    for (const take of takes) {
+      const store = createHistoryStore(folder(), fakeCipher());
+      const key = store.save(PLACE_KEY, PLACE, ID, null, TURNS, null, AT).conversation ?? '';
+      take(store);
+      store.save(PLACE_KEY, PLACE, ID, key, more, null, AT);
+      expect(store.read(PLACE_KEY, key)?.turns).toStrictEqual(more);
+    }
+    // CONTROL: the same save with no clear between writes from where the turns changed, and reads back the same.
+    const kept = createHistoryStore(folder(), fakeCipher());
+    const other = kept.save(PLACE_KEY, PLACE, ID, null, TURNS, null, AT).conversation ?? '';
+    kept.save(PLACE_KEY, PLACE, ID, other, more, null, AT);
+    expect(kept.read(PLACE_KEY, other)?.turns).toStrictEqual(more);
+  });
+
+  it('after the LAST conversation is deleted and the file goes, the next save writes the PDF’s guard again', async () => {
+    const store = createHistoryStore(folder(), fakeCipher());
+    const gone = store.save(PLACE_KEY, PLACE, ID, null, TURNS, null, AT).conversation ?? '';
+    // CONTROL: before the Delete, the 24-hour check sees the section.
+    expect(store.guards(PLACE_KEY)).toHaveLength(1);
+    await store.remove(PLACE_KEY, gone);
+    expect(existsSync(store.pathOf(PLACE_KEY))).toBe(false);
+    store.save(PLACE_KEY, PLACE, ID, null, [{ role: 'user', text: 'A new one' }], null, AT);
+    expect(store.guards(PLACE_KEY)).toHaveLength(1);
+  });
+
   it('Clear all for one file removes that file; Clear chat history removes every file and counts what it held', () => {
     const directory = folder();
     const store = createHistoryStore(directory, fakeCipher());
