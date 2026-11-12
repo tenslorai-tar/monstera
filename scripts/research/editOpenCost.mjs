@@ -2,7 +2,7 @@
 /**
  * What Edit text costs before a person can type: the first read of a page's blocks, and opening a dense block.
  *
- *   node scripts/research/editOpenCost.mjs --corpus <folder> --file <n> [--rounds <n>] [--app-root <checkout>]
+ *   node scripts/research/editOpenCost.mjs --corpus <folder> --file <n> [--rounds <n>] [--app-root <checkout>] [--profile]
  *
  * `--file` is the document's place in the folder's `.pdf` files sorted by name, so no document's name is printed or
  * written. Nothing here prints a word of a document either: a block is chosen by its outline's size, never its text.
@@ -29,7 +29,7 @@
  *
  * Nothing here is a pass or a fail. It prints each reading's median and its spread (fastest to slowest).
  */
-import { readdirSync } from 'node:fs';
+import { readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { expect } from '@playwright/test';
@@ -56,7 +56,12 @@ if (chosen === undefined) throw new Error(`the folder holds ${String(files.lengt
 const documentPath = join(corpus, chosen);
 
 const walk = await startWalk('edit-open-cost', appRootOption(process.argv));
-const { page, open, section, finish, step } = walk;
+const { page, open, section, finish, step, output } = walk;
+const profiler = process.argv.includes('--profile') ? await page.context().newCDPSession(page) : undefined;
+if (profiler !== undefined) {
+  await profiler.send('Profiler.enable');
+  await profiler.send('Profiler.setSamplingInterval', { interval: 200 });
+}
 const { openBlock } = editTextOpening(page);
 
 /** Starts recording the renderer's long tasks into a list the script reads and empties. */
@@ -245,11 +250,18 @@ for (let round = 1; round <= rounds; round += 1) {
     await page.waitForTimeout(500);
     await takeLongTasks();
     await armEditableClock();
+    // `--profile`: a sampled CPU profile from just before the first press until the words are editable, written beside
+    // the walk's pictures as `round-<n>.cpuprofile` for `cpuProfileTop.mjs`. The first press's task is most of it.
+    await profiler?.send('Profiler.start');
     const from = await rendererNow();
     const started = Date.now();
     await openBlock(blocks.nth(largest), 'middle');
     const wall = Date.now() - started;
     const { selected, editable } = await editableReading();
+    if (profiler !== undefined) {
+      const { profile } = await profiler.send('Profiler.stop');
+      writeFileSync(join(output, `round-${String(round)}.cpuprofile`), JSON.stringify(profile));
+    }
     if (selected < 0) throw new Error('the box was never seen selected between the presses, so the first press has no reading');
     await page.waitForTimeout(2000);
     const tasks = (await takeLongTasks()).filter((task) => task.start >= from);
