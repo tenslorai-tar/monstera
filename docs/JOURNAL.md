@@ -892,6 +892,30 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-11-12 — A tab's × no longer waits for the read on open (ADR-0292), and why that read is long
+
+The close of 2026-11-11 is explained in two halves. **Why it waited:** `document.unsaved` ran as a lane write, which
+ADR-0274 lets wait for the one read already running, and the tab leaves the screen only once that answer is in
+(`releaseTabs` removes it before it awaits `document.close`). **Why the read is long:** the MuPDF host loads its font
+catalogue on its first block read and the hosts end when the last document closes. `catalogueCost.mjs`: one read of
+the two folders a host is handed, 521 faces from 455 MiB, 3.1–3.5 s, the same on each of three reads.
+`blockFacesCost.mjs`, through the host's own binding on six corpus documents: the first load 3.9–9.3 s, a warm read
+85–594 ms.
+
+ADR-0292 built (`0dcb5260`): the question is answered beside a running read, and no read can move the version. On
+the rebuilt app, `editOpenCost.mjs --file 2 --rounds 4`, `_review/walks/edit-open-cost/2026-11-12T10-32-06`,
+`logs/shell.log`: `document.unsaved` 1, 0, 0 and 0 ms, the last three logged before the `document.blockFaces` they ran
+beside (3.8–4.1 s). Before it, 0.7–1.5 s in the fast run of 2026-11-12 and 3.5–13.7 s on 2026-11-11.
+
+**Still open, the owner's route A:** the catalogue kept between host processes in the contained host's granted area.
+What opening a block needs of it was asked first: the editor does not wait for the read to open a block (editable about
+20 ms after the press, `runFaces.ts` takes PDF.js's faces as they arrive), but the faces count as settled only when the
+read answers, and until then letters typed after the press that put the caret are held, at most `HOLD_KEYS_MS`
+(1,500 ms, `BlockEditor.tsx`); and of the read's answer only `chosen` and `candidates` need the catalogue, `own` and
+`ink` do not (`blockFaces.ts`).
+
+---
+
 ## 2026-11-12 — Opening a block: as slow on the release, and a third of it was tidying every installed font's name
 
 Items 28/64. `editOpenCost.mjs`, document 2, 7 rounds each, the release's commit `5dead873` (1.1.2613.0, its own
