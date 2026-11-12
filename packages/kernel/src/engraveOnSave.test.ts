@@ -1,5 +1,6 @@
 import { PDFDocument, PDFName, PDFString, degrees } from '@cantoo/pdf-lib';
 import { type AnnotationRect, type DrawableSignature, outlineOpCodes, placedMarkOf } from '@monstera/contract';
+import { asDocVersion } from '@monstera/shared';
 import { zlibSync } from 'fflate';
 import forge from 'node-forge';
 import { describe, expect, it } from 'vitest';
@@ -10,6 +11,7 @@ import * as mupdf from './mupdfRaw.js';
 import { mupdfWriter } from './mupdfWriter.js';
 import {
   applyAddAnnotation,
+  applyPlaceAnnotation,
   applyPlaceImage,
   applyPlaceSignatureMark,
   applyPlaceSignaturePicture,
@@ -323,6 +325,35 @@ describe('a plain signature is part of the page in a saved file', () => {
       expect(difference(render(result.held), render(result.engraved)).differing).toBe(0);
       expect(painted(render(result.engraved))).toBeGreaterThan(100);
     });
+  }
+
+  // A RESIZE KEEPS THE /BBox AND MOVES THE /Rect, so the engraved `cm` scales by 247.37 / 200 and 116.13 / 80: the one
+  // shape where its rounding is multiplied across the mark. Four places drew the far edges up to 18 of 255 off for a
+  // signature and 235 for a picture on a turned page (measured 2026-11-12); creation alone fits at scale 1 and passes.
+  for (const turn of [0, 90]) {
+    for (const [label, place] of [
+      ['a picture', picture()],
+      ['a typed signature', signature(typed)],
+      ['a drawn signature', signature(drawn)],
+    ] as const) {
+      it(`${label}, resized after it was placed, on a page turned ${String(turn)}`, async () => {
+        const resized: AnnotationRect = { x0: 90, y0: 95, x1: 337.37, y1: 211.13 };
+        const result = await saves(await pageOf({ turn }), async (session) => {
+          await place(session);
+          await applyPlaceAnnotation(session, { kind: 'placeAnnotation', page: 0, placements: [{ index: 0, rect: resized }], version: asDocVersion(1) });
+        });
+        // CONTROL: the held file is the resized layer, its box unscaled, so the engraved `cm` really does scale.
+        opened(result.held, (document) => {
+          const annotation = document.findPage(0).get('Annots').get(0);
+          expect(String(annotation.get('Rect'))).toBe('[90 95 337.37 211.13]');
+          expect(String(annotation.get('AP').get('N').get('BBox'))).toBe(turn === 0 ? '[0 0 200 80]' : '[0 0 80 200]');
+        });
+        expect(subtypes(result.engraved, 0)).toStrictEqual([]);
+        const layer = render(result.held);
+        expect(painted(layer)).toBeGreaterThan(100);
+        expect(difference(layer, render(result.engraved)).differing, 'the engraved page draws what the resized layer drew').toBe(0);
+      });
+    }
   }
 
   it('a picture signature', async () => {

@@ -164,3 +164,16 @@ The appended-save fault was also seen in the application after the person's FIRS
 one mechanism: a serialise with no change since the session opened writes nothing, and placing a picture is followed
 by main's image refresh, which is the session's first appended write, so the person's Save is its second. ADR-0008's
 note of this date has the measurement.
+
+## Note, 2026-11-12 — the owner's decision: word stamps, typewriter text and text boxes stay annotations
+
+Decision 2 names *a stamp, typewriter text, a text box* as kinds that would join `ENGRAVED_ON_SAVE` later. The owner's
+decision of 2026-11-12, replacing that of 2026-11-06 for these three kinds: **they never join.** They stay annotations,
+editable after a save and a reopen, as other PDF editors keep them. The engraved kinds stay those Decision 2 lists: a
+plain signature, a Place image picture and a barcode. No command makes every mark part of the page; Sanitize's flatten
+is the way to do that.
+
+A branch that engraved the three (work/cloud-64-engrave, ba94b634) is not merged. One half of it is: building it found
+that the engraved `cm` wrote its scale to four places, and a resize keeps a mark's `/BBox` while moving its `/Rect`,
+so a resized signature drew its edges up to 18 of 255 off its layer and a picture on a turned page up to 235.
+`matrixNumber` (six places) is now Decision 1's placement rule, with its case in `engraveOnSave.test.ts`.

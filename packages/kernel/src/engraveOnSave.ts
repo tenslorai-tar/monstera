@@ -1,6 +1,6 @@
 import type { PDFDocument, PDFObject } from './mupdfRaw.js';
 
-import { contentNumber } from './contentNumber.js';
+import { matrixNumber } from './contentNumber.js';
 import { engravedOnSave } from './pageAnnotations.js';
 
 /**
@@ -129,7 +129,7 @@ function engrave(document: PDFDocument, restore: (() => void)[]): Engraved {
         state = `/${gs} gs `;
         withState = true;
       }
-      drawing += `q ${state}${placement(annotation, appearance).map(contentNumber).join(' ')} cm /${name} Do Q\n`;
+      drawing += `q ${state}${placement(annotation, appearance).map(matrixNumber).join(' ')} cm /${name} Do Q\n`;
       marks += 1;
     }
     resources.put('XObject', xobjects);
