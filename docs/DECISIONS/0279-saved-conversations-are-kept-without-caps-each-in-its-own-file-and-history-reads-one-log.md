@@ -260,3 +260,31 @@ Asked by the cloud agent building this ADR before any code, because each is a ch
    owner, 2026-11-12): with history on by default, anyone who has it off turned it off themselves. History's own empty
    line for saving off, *Save chat history is off, so nothing is kept for this file. Turn it on in Settings › AI.*,
    stays as the wording table gives it.
+
+## Correction, 2026-11-12 (later) — a data key this account cannot unwrap, answered by the owner's reviewer
+
+Decision 8 of *The owner's answers* seals everything under one data key wrapped by `safeStorage`. A key can be stored
+that this Windows account cannot unwrap: after an administrator resets the account's password, or with the history
+folder restored from another computer. The build kept that key and never replaced it, since a new key written over it
+would make every conversation sealed under it unreadable for good. That is right, and the reviewer's note of 2026-11-12
+keeps it. What it left was a person whose every save is refused with nothing said.
+
+1. **The key is kept and never replaced** (unchanged). `historyStore.ts`' `keyFor` answers no key rather than writing one
+   where a key file exists and does not unwrap.
+2. **The store names this state**: `locked()` is true where the cipher works, a key file exists and it does not unwrap,
+   and a save then throws `HistoryLockedError`, not the generic refusal a machine with no working cipher gets. The two are
+   different facts about the person's situation and are said differently.
+3. **The assistant says it once, plainly**, the first time a save is refused for this reason in a session, and not at
+   every answer after it. The wording proposed, sent to the owner before it ships:
+
+   > *Chat history cannot be saved on this computer, because the history saved here cannot be opened by this Windows
+   > account. To start again, choose Clear chat history in Settings › Privacy.*
+
+4. **Settings' *Clear chat history* removes the unreadable files AND the key**, asking first as Decision 3 already says.
+   It removes the key on every clear, locked or not: once every file is gone nothing is sealed under it, and keeping it
+   would leave a locked store locked. The next save makes a new key.
+
+The case is `historyStore.test.ts`' *history LOCKED to another account*: a key made by one account, a store under
+another refuses a save as locked, the key file is unchanged byte for byte, and after *Clear chat history* the key is
+gone and a save is read back whole. Its control asserts that a store with no key yet, and one whose cipher is off, are
+not locked and are not refused as locked. Reverting the refusal turns the first case red (measured, 2026-11-12).
