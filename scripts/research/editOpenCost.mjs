@@ -136,7 +136,7 @@ await recordLongTasks();
   process.stdout.write(`control: a press that waited behind a planted task was stamped ${String(Math.round(lag))} ms before its handler ran\n`);
 }
 
-/** @type {{ firstRead: number, selected: number, editable: number, wall: number, total: number, worst: number, count: number }[]} */
+/** @type {{ firstRead: number, selected: number, editable: number, firstLetter: number, wall: number, total: number, worst: number, count: number }[]} */
 const readings = [];
 
 /**
@@ -210,6 +210,48 @@ async function armEditableClock() {
 }
 const editableReading = () => page.evaluate(() => /** @type {Promise<{ selected: number, editable: number }>} */ (Reflect.get(globalThis, '__editable')));
 
+/**
+ * THE FIRST TYPED LETTER, from its key's own time stamp to the first frame showing it in the words: a letter typed while
+ * the block's faces are not settled is HELD (`BlockEditor.tsx`, at most `HOLD_KEYS_MS`, 1,500 ms) and shows when they
+ * settle or the hold ends, so a held letter reads as a second or more and one that is not as a frame or two. Armed
+ * before the key; answers once the words change, or `null` after five seconds.
+ */
+async function armFirstLetterClock() {
+  await page.evaluate(() => {
+    const clock = /** @type {{ now: () => number }} */ (Reflect.get(globalThis, 'performance'));
+    const dom = /** @type {{ querySelector: (selector: string) => { textContent: string | null } | null, addEventListener: (type: string, run: (event: { timeStamp: number }) => void, options: unknown) => void }} */ (
+      Reflect.get(globalThis, 'document')
+    );
+    const frame = /** @type {(run: () => void) => void} */ (Reflect.get(globalThis, 'requestAnimationFrame'));
+    const before = dom.querySelector('[data-kit-surface]')?.textContent ?? null;
+    let keyAt = -1;
+    dom.addEventListener(
+      'keydown',
+      (event) => {
+        keyAt = event.timeStamp;
+      },
+      { capture: true, once: true },
+    );
+    Reflect.set(
+      globalThis,
+      '__firstLetter',
+      new Promise((resolve) => {
+        const look = () => {
+          const now = dom.querySelector('[data-kit-surface]')?.textContent ?? null;
+          if (keyAt >= 0 && now !== before) return resolve(clock.now() - keyAt);
+          if (keyAt >= 0 && clock.now() - keyAt > 5000) return resolve(null);
+          frame(look);
+        };
+        frame(look);
+      }),
+    );
+  });
+}
+const firstLetterReading = () => page.evaluate(() => /** @type {Promise<number | null>} */ (Reflect.get(globalThis, '__firstLetter')));
+
+/** A first letter that took this long was held: well past a frame, and below the hold's own 1,500 ms bound. */
+const HELD_MS = 1000;
+
 for (let round = 1; round <= rounds; round += 1) {
   await step(`round ${String(round)}`, async () => {
     // THE TOOL IS THE APPLICATION'S, NOT THE DOCUMENT'S (`App.tsx`' tool slot), so it stays on across a closed tab and a
@@ -258,6 +300,12 @@ for (let round = 1; round <= rounds; round += 1) {
     await openBlock(blocks.nth(largest), 'middle');
     const wall = Date.now() - started;
     const { selected, editable } = await editableReading();
+    // THE FIRST LETTER, typed the moment the words are editable, as a quick typist's is: before the profile is taken,
+    // which would put its own wait between the two.
+    await armFirstLetterClock();
+    await page.keyboard.type('x');
+    const firstLetter = await firstLetterReading();
+    if (firstLetter === null) throw new Error('the first typed letter never showed in the words within five seconds');
     if (profiler !== undefined) {
       const { profile } = await profiler.send('Profiler.stop');
       writeFileSync(join(output, `round-${String(round)}.cpuprofile`), JSON.stringify(profile));
@@ -267,9 +315,9 @@ for (let round = 1; round <= rounds; round += 1) {
     const tasks = (await takeLongTasks()).filter((task) => task.start >= from);
     const total = tasks.reduce((sum, task) => sum + task.duration, 0);
     const worst = tasks.reduce((most, task) => Math.max(most, task.duration), 0);
-    readings.push({ firstRead, selected, editable, wall, total, worst, count: tasks.length });
+    readings.push({ firstRead, selected, editable, firstLetter, wall, total, worst, count: tasks.length });
     process.stdout.write(
-      `round ${String(round)}: first read ${String(firstRead)} ms; block ${String(largest + 1)} of ${String(handles.length)} (${String(Math.round(area))} px²): first press until selected ${String(Math.round(selected))} ms, click until editable ${String(Math.round(editable))} ms, open in ${String(wall)} ms, long tasks ${String(Math.round(total))} ms over ${String(tasks.length)} (worst ${String(Math.round(worst))} ms)\n`,
+      `round ${String(round)}: first read ${String(firstRead)} ms; block ${String(largest + 1)} of ${String(handles.length)} (${String(Math.round(area))} px²): first press until selected ${String(Math.round(selected))} ms, click until editable ${String(Math.round(editable))} ms, first letter shown ${String(Math.round(firstLetter))} ms${firstLetter > HELD_MS ? ' (HELD)' : ''}, open in ${String(wall)} ms, long tasks ${String(Math.round(total))} ms over ${String(tasks.length)} (worst ${String(Math.round(worst))} ms)\n`,
     );
     await page.keyboard.press('Escape');
     await nothingInFlight(page);
@@ -292,6 +340,7 @@ if (readings.length > 0) {
       `  first read of the blocks: ${summary(readings.map((each) => each.firstRead))}`,
       `  first press until the box shows selected (the window's clock): ${summary(readings.map((each) => each.selected))}`,
       `  click until editable (ADR-0271's 300 ms, the window's clock): ${summary(readings.map((each) => each.editable))}`,
+      `  the first typed letter, key to shown: ${summary(readings.map((each) => each.firstLetter))}; held (over ${String(HELD_MS)} ms) in ${String(readings.filter((each) => each.firstLetter > HELD_MS).length)} of ${String(readings.length)}`,
       `  opening the largest block, wall (with the 700 ms pause between the presses): ${summary(readings.map((each) => each.wall))}`,
       `  opening it, long tasks in all: ${summary(readings.map((each) => each.total))}`,
       `  opening it, the worst long task: ${summary(readings.map((each) => each.worst))}`,
