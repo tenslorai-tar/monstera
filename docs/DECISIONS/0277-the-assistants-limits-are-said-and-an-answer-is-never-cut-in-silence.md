@@ -167,3 +167,12 @@ questions and their answers, so twenty held 1,280 messages and 640 questions (th
 store's bound is unchanged in kind: `MAX_SAVED_CONVERSATIONS` files, each of at most `MAX_FILE_CONVERSATIONS`
 conversations within `MAX_CONVERSATION_TEXT` characters. The figure in the owner's list of 2026-11-10 was 1,280; the
 owner chose to record 10,240 with this history. ADR-0279 removes the per-file count once it is built.
+
+## Correction, 2026-11-12 — ADR-0279 is built, on its branch, and Decisions 6 and 7 go with it
+
+On `work/cloud-62-history-per-pdf`, ADR-0279's store replaces this ADR's: `MAX_FILE_CONVERSATIONS` and
+`MAX_SAVED_CONVERSATIONS` are gone from the contract, a new conversation is never refused as `file-full`, and New chat asks
+`main` nothing first, so Decision 6's twenty and its two sentences are retired. Decision 7's two shapes of
+`chat-history.json` are read once, by the move into ADR-0279's store (`historyMove.ts`), and nothing else reads them. A
+saved conversation is no longer loaded into the assistant when its PDF opens (ADR-0279 Decision 8), so a too-long mark
+saved with a conversation (the correction of 2026-11-10) is now what History shows of it, not what a reopen restores.

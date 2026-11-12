@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import { type EventId, type EventPayload, IncidentLog, isFollowable } from '@monstera/contract';
 import { sweepCheckpointDirectories } from '@monstera/kernel';
-import { BrowserWindow, app, clipboard, crashReporter, nativeImage, safeStorage, shell } from 'electron';
+import { BrowserWindow, app, clipboard, crashReporter, nativeImage, powerMonitor, safeStorage, shell } from 'electron';
 
 import { HOST_CALL_DEADLINE, HOST_IDLE_MS, HOST_MEMORY_SAMPLING } from './budget.js';
 import { MEMORY_PRESSURE } from './memoryPressure.js';
@@ -73,7 +73,8 @@ import { PRINT_PIXELS } from './documentCommands.js';
 import { documentPathsIn } from './launchDocuments.js';
 import { pngSizeWithin } from './pngHeader.js';
 import { STORE_URIS } from './webPages.js';
-import { createChatHistory } from './chatHistory.js';
+import { moveChatHistory } from './historyMove.js';
+import { createHistoryStore } from './historyStore.js';
 import { type SecretCipher, createSecretStore } from './secretStore.js';
 import { createJsonFile, createSettingsFile } from './settingsFile.js';
 import { WINDOW_STATE_FILE, windowMemory } from './windowState.js';
@@ -319,6 +320,17 @@ startShell(() => {
   const takenDirectory = join(app.getPath('sessionData'), 'taken');
   rmSync(takenDirectory, { recursive: true, force: true });
 
+  // SAVED CONVERSATIONS (ADR-0279), one file per PDF under one data key the keys' own cipher wraps, and the ONE move of
+  // what 1.1.2610.0 saved, here before the graph serves a history channel. A move that fails keeps the old file whole and
+  // is tried again at the next start (`historyMove.ts`); it is said, never thrown into the start.
+  const historyStore = createHistoryStore(app.getPath('userData'), OS_CIPHER);
+  try {
+    const moved = moveChatHistory(app.getPath('userData'), OS_CIPHER, historyStore);
+    if (moved !== null) log.write('chat-history-moved', `${String(moved)} saved conversation(s) moved into one file per PDF`);
+  } catch (cause) {
+    log.failures({ event: 'chat-history-not-moved', detail: cause instanceof Error ? cause.message : String(cause) });
+  }
+
   return createShellDependencies({
     checkpointDirectory,
     takenDirectory,
@@ -485,8 +497,9 @@ startShell(() => {
     // THE SECRETS, in their own document beside the settings and encrypted by
     // the OS through `OS_CIPHER` — the same trade `nativeImage` makes below.
     secrets: createSecretStore(app.getPath('userData'), OS_CIPHER),
-    // SAVED CONVERSATIONS (ADR-0093), under the same cipher as the keys — beside them and never in them.
-    chatHistory: createChatHistory(app.getPath('userData'), OS_CIPHER),
+    // SAVED CONVERSATIONS (ADR-0279), made above, and the idle time their 24-hour check runs in.
+    historyStore,
+    systemIdleSeconds: () => powerMonitor.getSystemIdleTime(),
     // THE CLIPBOARD'S WRITER, Electron's, for `window.copyText`: the renderer holds no clipboard
     // permission (§2), so the assistant's Copy is written here.
     writeClipboardText: (text) => {

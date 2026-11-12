@@ -15,8 +15,6 @@ import {
   MAX_ASK_DOCUMENTS,
   MAX_ANSWER_TEXT,
   MAX_CHAT_TEXT,
-  MAX_FILE_CONVERSATIONS,
-  CHAT_HISTORY_SETTING_ID,
   askShareOf,
   conversationIsLong,
   conversationRoom,
@@ -107,8 +105,7 @@ import {
   ASSISTANT_FULL_PROVIDER,
   ASSISTANT_LONG_NOTE,
   ASSISTANT_START_NEW,
-  ASSISTANT_FILE_FULL_NEW,
-  ASSISTANT_FILE_FULL_UNSAVED,
+  ASSISTANT_HISTORY_LOCKED,
   ASSISTANT_NO_KEY,
   ASSISTANT_SEARCHES_THE_WEB,
   ASSISTANT_WEB_ALWAYS,
@@ -175,7 +172,7 @@ import { Button } from './primitives/Button.js';
 import { ChoiceMenu } from './primitives/ChoiceMenu.js';
 import { IconButton } from './primitives/IconButton.js';
 import { useEndKept } from './primitives/useEndKept.js';
-import { AI_MODELS_SETTING, AI_PROVIDER_SETTING } from './settings/ai.js';
+import { AI_MODELS_SETTING, AI_PROVIDER_SETTING, CHAT_HISTORY_SETTING } from './settings/ai.js';
 import { heldModels, holdModels } from './assistantModels.js';
 import { AssistantHistory } from './AssistantHistory.js';
 import type { SettingsStore } from './settingsStore.js';
@@ -456,6 +453,7 @@ export function AssistantPanel({
   // the recogniser, and a choice survives the panel closing. The list itself is fetched here, per provider.
   const provider = useSetting(settings, AI_PROVIDER_SETTING);
   const chosenModels = useSetting(settings, AI_MODELS_SETTING);
+  const historySaving = useSetting(settings, CHAT_HISTORY_SETTING);
   // WITH THE CAPABILITIES, because a model that cannot see is not offered a picture (ADR-0090):
   // `false` where the provider says so, `null` where it does not say.
   // WHAT THE PROVIDER LAST ANSWERED, from this panel's own read or else the session's (`assistantModels.ts`), and
@@ -832,39 +830,18 @@ export function AssistantPanel({
   const question = draft.trim();
   const room = conversationRoom(editing === null ? turns : turns.slice(0, editing), question);
 
-  // A FILE AT ITS TWENTY, for the document whose New chat was refused (ADR-0277 Decision 6): held with that document's id,
-  // as an edit is, so another tab does not say it.
-  const [fileFullIn, setFileFullIn] = useState<DocId | null>(null);
   const historyRefused = useSyncExternalStore(focused.store.subscribe, () => focused.store.getState().historyRefused);
 
   /**
    * *New chat*, and *Start a new conversation* where one is full: a new conversation begins, *Document only*
-   * (ADR-0108), and the one before is kept where history keeps it (ADR-0277 Decision 6). With history on, a file that
-   * already keeps `MAX_FILE_CONVERSATIONS` is asked about FIRST: nothing begins, and the panel says to remove one in the
-   * History, so no conversation is lost or trimmed in silence.
+   * (ADR-0108), and the one before is kept where history keeps it. With no cap (ADR-0279) there is nothing to ask first.
    */
   const startNew = useCallback(() => {
-    const store = focused.store;
-    const docId = focused.docId;
-    const begin = (): void => {
-      store.getState().startConversation();
-      setEditing(null);
-      setProblem(null);
-      setWebChosen(null);
-      setFileFullIn(null);
-    };
-    if (settings.get(CHAT_HISTORY_SETTING_ID) !== true || store.getState().conversation.length === 0) {
-      begin();
-      return;
-    }
-    void client['ai.history.count']({ docId }).then((answer) => {
-      if (answer.ok && answer.value.count >= MAX_FILE_CONVERSATIONS) {
-        setFileFullIn(docId);
-        return;
-      }
-      begin();
-    });
-  }, [client, focused, setEditing, settings]);
+    focused.store.getState().startConversation();
+    setEditing(null);
+    setProblem(null);
+    setWebChosen(null);
+  }, [focused, setEditing]);
 
   /**
    * The paperclip: `main` runs the picker and answers handles. Files already attached stay; past eight, the rest are
@@ -1118,6 +1095,10 @@ export function AssistantPanel({
       <div className="m-assistant">
         <AssistantHistory
           client={client}
+          docId={focused.docId}
+          // THE TAB'S NAME, which every open tab carries here, for what Clear all says it removes.
+          name={openDocuments.find((each) => each.docId === focused.docId)?.name ?? ''}
+          saving={historySaving}
           onBack={() => {
             setHistoryOpen(false);
           }}
@@ -1162,16 +1143,12 @@ export function AssistantPanel({
       {problem !== null && (
         <p className="m-assistant__problem">{i18n._(PROBLEMS[problem], { limit: MAX_ANSWER_TEXT })}</p>
       )}
-      {/* A FILE AT ITS TWENTY SAVED CONVERSATIONS (ADR-0277 Decision 6), said where it stops something: a new conversation
-          not begun, or this one not being saved. Removing one in the History is the way on either way. */}
-      <div aria-live="polite" data-assistant-file-full-region="">
-        {fileFullIn === focused.docId ? (
-          <p className="m-assistant__problem" data-assistant-file-full="new">
-            {i18n._(ASSISTANT_FILE_FULL_NEW, { limit: MAX_FILE_CONVERSATIONS })}
-          </p>
-        ) : historyRefused === 'file-full' ? (
-          <p className="m-assistant__problem" data-assistant-file-full="unsaved">
-            {i18n._(ASSISTANT_FILE_FULL_UNSAVED, { limit: MAX_FILE_CONVERSATIONS })}
+      {/* HISTORY THIS ACCOUNT CANNOT OPEN (ADR-0279's correction of 2026-11-12): said once, as one line that stays while
+          saving is refused rather than one per answer, with the one way to start again. */}
+      <div aria-live="polite" data-assistant-history-locked-region="">
+        {historyRefused === 'locked' ? (
+          <p className="m-assistant__problem" data-assistant-history-locked="">
+            {i18n._(ASSISTANT_HISTORY_LOCKED)}
           </p>
         ) : null}
       </div>

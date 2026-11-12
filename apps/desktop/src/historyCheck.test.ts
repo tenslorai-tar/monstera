@@ -13,7 +13,7 @@ const HOUR = 60 * 60 * 1000;
 
 interface World {
   /** What is at each place now: a size and time and an id, or nothing. */
-  readonly disk: Map<string, { size: number; mtimeMs: number; id: string | null }>;
+  readonly disk: Map<string, { size: number; mtimeMs: number; id: string | null; locked?: true }>;
   readonly removed: string[];
   readonly parsed: string[];
   readonly stated: string[];
@@ -47,7 +47,10 @@ function world(sections: readonly (HistorySection & { readonly placeKey: string 
     },
     permanentIdOf: (path) => {
       state.parsed.push(path);
-      return Promise.resolve(state.disk.get(path)?.id ?? undefined);
+      const found = state.disk.get(path);
+      if (found === undefined) return Promise.resolve({ kind: 'failed' } as const);
+      if (found.locked === true) return Promise.resolve({ kind: 'locked' } as const);
+      return Promise.resolve({ kind: 'read', id: found.id } as const);
     },
     idle: () => state.idle,
     now: () => state.clock,
@@ -159,5 +162,19 @@ describe('it runs only while the person is not working, in batches, at most once
 
   it('GRACE_MS is the owner’s 24 hours', () => {
     expect(GRACE_MS).toBe(24 * HOUR);
+  });
+});
+
+describe('a PDF that needs a password is there, though its /ID cannot be read without one', () => {
+  it('its section is NEVER removed, pass after pass; CONTROL: the same PDF unreadable is removed after 24 hours', async () => {
+    const { state, passAt } = world([
+      section('p1', 's1', 'C:/locked.pdf', byId('aa')),
+      section('p2', 's2', 'C:/broken.pdf', byId('bb')),
+    ]);
+    state.disk.set('C:/locked.pdf', { size: 10, mtimeMs: 5, id: 'aa', locked: true });
+    for (const hours of [0, 24, 48, 72]) await passAt(hours);
+    // THE HOST WAS ASKED every pass, so the case reaches the locked answer rather than a stamp it had seen.
+    expect(state.parsed.filter((path) => path === 'C:/locked.pdf')).toHaveLength(4);
+    expect(state.removed).toStrictEqual(['p2/s2']);
   });
 });

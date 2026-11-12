@@ -4721,6 +4721,9 @@ export const documentInformationSchema = z
      */
     permanentId: z
       .string()
+      // THE BOUND SAID TWICE ON PURPOSE: the pattern already stops at 128 characters, but `payloadBounds.test.ts` reads a
+      // string's bound from its `.max()`, and a pattern's length is not something a schema walk can see.
+      .max(128)
       .regex(/^(?:[0-9a-f]{2}){1,64}$/u)
       .nullable(),
   })

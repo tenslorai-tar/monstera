@@ -5,8 +5,7 @@ import { join } from 'node:path';
 import type { SavedTurn } from '@monstera/contract';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { CHAT_HISTORY_FILE, createChatHistory } from './chatHistory.js';
-import { MIGRATED_FILE, moveChatHistory, movedKey } from './historyMove.js';
+import { CHAT_HISTORY_FILE, MIGRATED_FILE, moveChatHistory, movedKey } from './historyMove.js';
 import { type HistoryGuard, createHistoryStore } from './historyStore.js';
 import type { SecretCipher } from './secretStore.js';
 
@@ -37,25 +36,33 @@ afterEach(() => {
   for (const directory of made.splice(0)) rmSync(directory, { recursive: true, force: true });
 });
 
+/** One entry's blob as 1.1.2610.0 sealed it from ADR-0192 on: the turns with the file's name and the time. */
+const sealedEntry = (question: string, name: string, savedAt: string, account = 'me'): string =>
+  fakeCipher(account).encrypt(JSON.stringify({ v: 2, name, savedAt, turns: turnsOf(question) })).toString('base64');
+
 /**
- * What 1.1.2610.0 saved, written by its own store: two conversations about A, one about B, and one entry in the shape
- * before ADR-0277 (a file's one conversation keyed by the file, its blob the bare turns), plus a blob ANOTHER account
- * sealed, which cannot be moved.
+ * What 1.1.2610.0 saved, written in its own format (its store is gone, so the bytes are built here as it wrote them:
+ * `order` oldest first, `files` each file's keys newest first, `entries` each conversation's ciphertext): two
+ * conversations about A, one about B, one entry in the shape before ADR-0277 (a file's one conversation keyed by the file,
+ * its blob the bare turns), and a blob ANOTHER account sealed, which cannot be moved.
  */
 function oldStore(): { directory: string; keys: { a1: string; a2: string; b1: string } } {
   const directory = mkdtempSync(join(tmpdir(), 'monstera-move-'));
   made.push(directory);
-  const old = createChatHistory(directory, fakeCipher());
-  const a1 = old.save(A, null, turnsOf('first about A'), 'a.pdf', new Date('2026-10-01T09:00:00Z'));
-  const a2 = old.save(A, null, turnsOf('second about A'), 'a.pdf', new Date('2026-10-02T09:00:00Z'));
-  const b1 = old.save(B, null, turnsOf('about B'), 'b.pdf', new Date('2026-10-03T09:00:00Z'));
-  const path = join(directory, CHAT_HISTORY_FILE);
-  const raw = JSON.parse(readFileSync(path, 'utf8')) as { entries: Record<string, string>; files: Record<string, string[]> };
-  raw.entries[LEGACY] = fakeCipher().encrypt(JSON.stringify(turnsOf('the old shape'))).toString('base64');
-  raw.entries['d'.repeat(64)] = fakeCipher('someone-else').encrypt(JSON.stringify(turnsOf('not mine'))).toString('base64');
-  writeFileSync(path, JSON.stringify(raw));
-  const key = (outcome: ReturnType<typeof old.save>): string => ('conversation' in outcome ? (outcome.conversation ?? '') : '');
-  return { directory, keys: { a1: key(a1), a2: key(a2), b1: key(b1) } };
+  const keys = { a1: '1'.repeat(64), a2: '2'.repeat(64), b1: '3'.repeat(64) };
+  const raw = {
+    order: [A, B],
+    files: { [A]: [keys.a2, keys.a1], [B]: [keys.b1] },
+    entries: {
+      [keys.a1]: sealedEntry('first about A', 'a.pdf', '2026-10-01T09:00:00.000Z'),
+      [keys.a2]: sealedEntry('second about A', 'a.pdf', '2026-10-02T09:00:00.000Z'),
+      [keys.b1]: sealedEntry('about B', 'b.pdf', '2026-10-03T09:00:00.000Z'),
+      [LEGACY]: fakeCipher().encrypt(JSON.stringify(turnsOf('the old shape'))).toString('base64'),
+      ['d'.repeat(64)]: fakeCipher('someone-else').encrypt(JSON.stringify(turnsOf('not mine'))).toString('base64'),
+    },
+  };
+  writeFileSync(join(directory, CHAT_HISTORY_FILE), JSON.stringify(raw));
+  return { directory, keys };
 }
 
 describe('the move from 1.1.2610.0 (ADR-0279 Decision 8, the owner’s decision i)', () => {

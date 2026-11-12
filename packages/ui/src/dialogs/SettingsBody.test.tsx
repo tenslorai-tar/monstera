@@ -698,6 +698,17 @@ describe('SettingsBody', () => {
     const { reported, answers } = opened({});
 
     goTo('privacy');
+    // CLEAR CHAT HISTORY ASKS FIRST (ADR-0279 Decision 3): the first press reports nothing, Keep them reports nothing.
+    const before = reported.length;
+    fireEvent.click(screen.getByRole('button', { name: 'Clear chat history' }));
+    const question = 'Clear chat history? Every saved conversation, for every file, is removed from this computer. This cannot be undone.';
+    expect(screen.getByText(question)).toBeDefined();
+    expect(reported).toHaveLength(before);
+    fireEvent.click(screen.getByRole('button', { name: 'Keep them' }));
+    expect(reported).toHaveLength(before);
+    expect(screen.queryByText(question)).toBeNull();
+    // CONTROL: asked again and answered yes, it is reported.
+    fireEvent.click(screen.getByRole('button', { name: 'Clear chat history' }));
     fireEvent.click(screen.getByRole('button', { name: 'Clear chat history' }));
     expect(reported.at(-1)).toStrictEqual({ values: {}, secrets: {}, action: 'clear-chat-history' });
 

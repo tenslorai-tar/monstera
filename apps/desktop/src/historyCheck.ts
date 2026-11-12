@@ -55,12 +55,21 @@ export interface HistoryCheckDependencies {
   readonly store: Pick<HistoryStore, 'files' | 'guards' | 'removeSection' | 'ledger' | 'keepLedger'>;
   /** The PDF at `path`'s size and write time, or `null` where it cannot be found or read (an unplugged drive too). */
   readonly stat: (path: string) => Promise<{ readonly size: number; readonly mtimeMs: number } | null>;
-  /** The PDF at `path`'s first `/ID` string as hex, `null` where it has none, `undefined` where the host could not read it. */
-  readonly permanentIdOf: (path: string) => Promise<string | null | undefined>;
+  /** What the contained host read of the PDF at `path`'s first `/ID` string. */
+  readonly permanentIdOf: (path: string) => Promise<PermanentIdRead>;
   /** No input for {@link IDLE_SECONDS} and no document opening. */
   readonly idle: () => boolean;
   readonly now: () => number;
 }
+
+/**
+ * What the host read of a closed PDF's `/ID`: the id as hex or `null` where it has none; `locked` where the PDF needs a
+ * password to open, which the check does not have; `failed` where it could not be read at all.
+ */
+export type PermanentIdRead =
+  | { readonly kind: 'read'; readonly id: string | null }
+  | { readonly kind: 'locked' }
+  | { readonly kind: 'failed' };
 
 /** What one step did. */
 export type HistoryStep = 'busy' | 'not-due' | 'checked' | 'done';
@@ -86,8 +95,12 @@ export function createHistoryCheck(deps: HistoryCheckDependencies): HistoryCheck
     if (guard.kind === 'stamp') return found.size === guard.size && found.mtimeMs === guard.mtimeMs;
     if (entry.seen !== null && entry.seen.size === found.size && entry.seen.mtimeMs === found.mtimeMs) return true;
     // MOVED SINCE IT WAS LAST SEEN WITH ITS ID, or never seen: the one case that parses.
-    const id = await deps.permanentIdOf(place);
-    if (id !== guard.id) return false;
+    const read = await deps.permanentIdOf(place);
+    // A PDF THAT NEEDS A PASSWORD is THERE, and its `/ID` cannot be read without one, which the check never has. Counting
+    // it missing would remove the history of a file standing at its place a day later, so it counts as present, and what
+    // was seen is not moved: the next pass asks again. Asked of the owner (ADR-0279's correction of 2026-11-12, later).
+    if (read.kind === 'locked') return true;
+    if (read.kind === 'failed' || read.id !== guard.id) return false;
     entry.seen = { size: found.size, mtimeMs: found.mtimeMs };
     return true;
   };
@@ -127,5 +140,41 @@ export function createHistoryCheck(deps: HistoryCheckDependencies): HistoryCheck
       deps.store.keepLedger(ledger);
       return finished ? 'done' : 'checked';
     },
+  };
+}
+
+/** How often the driver asks whether a step can run: each ask is one idle read and, most days, `not-due`. */
+export const ASK_EVERY_MS = 60_000;
+
+/**
+ * Asks the check for steps every {@link ASK_EVERY_MS}, one batch after another while the person stays idle, and never two
+ * at once. A step that throws is said through `failed` and the next ask tries again. Answers the stop, which shutdown calls.
+ */
+export function driveHistoryCheck(
+  check: HistoryCheck,
+  failed: (cause: unknown) => void,
+  every: number = ASK_EVERY_MS,
+): () => void {
+  let running = false;
+  const ask = async (): Promise<void> => {
+    if (running) return;
+    running = true;
+    try {
+      for (let step = await check.step(); step === 'checked'; step = await check.step()) {
+        // each batch, until the pass ends, is due later, or the person comes back
+      }
+    } catch (cause) {
+      failed(cause);
+    } finally {
+      running = false;
+    }
+  };
+  const timer = setInterval(() => {
+    void ask();
+  }, every);
+  // NOT A REASON TO STAY ALIVE: a quit is never held for a check that can run tomorrow.
+  timer.unref();
+  return () => {
+    clearInterval(timer);
   };
 }

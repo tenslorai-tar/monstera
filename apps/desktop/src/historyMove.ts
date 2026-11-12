@@ -3,10 +3,98 @@ import { existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
-import { CHAT_HISTORY_FILE, readEveryConversation } from './chatHistory.js';
+import { MAX_DOCUMENT_NAME_LENGTH, type SavedTurn, savedTurnsSchema } from '@monstera/contract';
+import { z } from 'zod';
+
 import { HISTORY_DIRECTORY, type HistoryStore } from './historyStore.js';
 import type { SecretCipher } from './secretStore.js';
-import { replaceWithRetry } from './settingsFile.js';
+import { createJsonFile, replaceWithRetry } from './settingsFile.js';
+
+/** The file 1.1.2610.0 kept every saved conversation in, under the application's data folder. */
+export const CHAT_HISTORY_FILE = 'chat-history.json';
+
+/**
+ * What an entry of `chat-history.json` held inside its ciphertext from ADR-0192 on: the turns, with the file's name and
+ * when they were saved. An entry from before it is a bare array of turns, read as a conversation with neither.
+ */
+const entrySchema = z
+  .object({
+    v: z.literal(2),
+    name: z.string().max(MAX_DOCUMENT_NAME_LENGTH).nullable(),
+    savedAt: z.string().max(40).nullable(),
+    turns: savedTurnsSchema,
+  })
+  .strict();
+
+/** One conversation `chat-history.json` holds, as the move reads it. */
+export interface StoredConversation {
+  /** The file's key, the SHA-256 of its place: the new store's file name. */
+  readonly file: string;
+  /** The conversation's key in the old store. */
+  readonly key: string;
+  readonly name: string | null;
+  /** An ISO 8601 instant, or `null` for an entry saved before entries recorded one. */
+  readonly savedAt: string | null;
+  readonly turns: readonly SavedTurn[];
+}
+
+const strings = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((each): each is string => typeof each === 'string') : [];
+
+/** One entry's blob, decrypted and read in either shape, or `null` where it does not read. */
+function openEntry(cipher: SecretCipher, blob: string): Omit<StoredConversation, 'file' | 'key'> | null {
+  try {
+    const decoded: unknown = JSON.parse(cipher.decrypt(Buffer.from(blob, 'base64')));
+    const entry = entrySchema.safeParse(decoded);
+    if (entry.success) return { name: entry.data.name, savedAt: entry.data.savedAt, turns: entry.data.turns };
+    // THE SHAPE BEFORE ADR-0192: the turns alone, with no name and no date to say.
+    const legacy = savedTurnsSchema.safeParse(decoded);
+    return legacy.success ? { name: null, savedAt: null, turns: legacy.data } : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Every conversation `chat-history.json` holds that reads, in BOTH shapes 1.1.2610.0 read (ADR-0277 Decision 7): the
+ * one reader of that format, kept here because the move is now its only reader. `files` listed each file's conversation
+ * keys and `entries` held each one's ciphertext; an entry no file lists is its own file's one conversation, keyed by the
+ * file, which is every entry of the shape before ADR-0277. A blob that does not decrypt is left out, never counted.
+ * `null` where there is no file.
+ */
+export function readEveryConversation(directory: string, cipher: SecretCipher): readonly StoredConversation[] | null {
+  if (!existsSync(join(directory, CHAT_HISTORY_FILE))) return null;
+  const raw = createJsonFile(directory, CHAT_HISTORY_FILE).read();
+  const entries: Record<string, string> = {};
+  const rawEntries = raw['entries'];
+  if (typeof rawEntries === 'object' && rawEntries !== null && !Array.isArray(rawEntries)) {
+    for (const [key, value] of Object.entries(rawEntries)) {
+      if (typeof value === 'string') entries[key] = value;
+    }
+  }
+  const files: Record<string, string[]> = {};
+  const rawFiles = raw['files'];
+  if (typeof rawFiles === 'object' && rawFiles !== null && !Array.isArray(rawFiles)) {
+    for (const [file, value] of Object.entries(rawFiles)) {
+      // A KEY NAMING NO ENTRY, or named twice, is dropped from the list rather than trusted.
+      const listed = [...new Set(strings(value))].filter((key) => key in entries);
+      if (listed.length > 0) files[file] = listed;
+    }
+  }
+  const listedKeys = new Set(Object.values(files).flat());
+  for (const key of Object.keys(entries)) {
+    if (!listedKeys.has(key)) files[key] = [...(files[key] ?? []), key];
+  }
+  const found: StoredConversation[] = [];
+  for (const [file, keys] of Object.entries(files)) {
+    for (const key of keys) {
+      const blob = entries[key];
+      const conversation = blob === undefined ? null : openEntry(cipher, blob);
+      if (conversation !== null) found.push({ file, key, ...conversation });
+    }
+  }
+  return found;
+}
 
 /**
  * The move of what 1.1.2610.0 saved into ADR-0279's store, ONCE, losing nothing (the owner's decision i; ADR-0279

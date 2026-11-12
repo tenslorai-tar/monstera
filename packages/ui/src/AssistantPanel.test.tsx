@@ -4,12 +4,12 @@ import {
   type AskFile,
   type AskSent,
   type ContractClient,
+  type SavedConversation,
   MAX_ASK_ATTACHMENTS,
   MAX_ASK_DOCUMENTS,
   MAX_ANSWER_TEXT,
   MAX_CHAT_TEXT,
   MAX_CONVERSATION_TEXT,
-  MAX_FILE_CONVERSATIONS,
   CHAT_HISTORY_SETTING_ID,
   IncidentLog,
   channels,
@@ -82,8 +82,6 @@ function recording(
    * no params, so only this sees a request `ai.ask`'s schema refuses.
    */
   boundary = false,
-  /** How many saved conversations `main` says the document's file keeps (ADR-0277 Decision 6). */
-  historyCount = 0,
 ): {
   readonly client: ContractClient;
   readonly sent: { id: string; params: unknown }[];
@@ -98,7 +96,6 @@ function recording(
   const client = createClient(channels, (id, params) => {
     sent.push({ id, params });
     if (id === 'ai.ask' && boundary) return throughBoundary(params);
-    if (id === 'ai.history.count') return Promise.resolve(ok({ count: historyCount }));
     if (id === 'ai.models') {
       return Promise.resolve({
         ok: true,
@@ -201,7 +198,6 @@ async function drawn(options: {
   readonly attaching?: Parameters<typeof recording>[6];
   readonly refusal?: Parameters<typeof recording>[7];
   readonly boundary?: boolean;
-  readonly historyCount?: number;
 } = {}) {
   const wire = events();
   const settings = options.settings ?? new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
@@ -215,7 +211,6 @@ async function drawn(options: {
     options.attaching,
     options.refusal,
     options.boundary ?? false,
-    options.historyCount ?? 0,
   );
   // EVERY TOAST THE PANEL RAISES, in order: a copy's confirmation goes through the window's toast.
   const toasts: unknown[][] = [];
@@ -465,26 +460,42 @@ describe('the assistant tab', () => {
     expect(screen.getByRole('button', { name: 'Send' }).hasAttribute('disabled')).toBe(false);
   });
 
-  describe('the HISTORY lists saved conversations, opens one to read and deletes one after asking (ADR-0192)', () => {
+  describe('History lists THIS FILE’s conversations, opens one to read, deletes one and clears all after asking (ADR-0279)', () => {
     const KEY_A = 'a'.repeat(64);
     const KEY_B = 'b'.repeat(64);
-    const ENTRIES = [
-      { key: KEY_A, file: 'f'.repeat(64), name: 'contract.pdf', savedAt: '2026-10-07T09:30:00.000Z', turns: 2, preview: 'Who signs?' },
-      { key: KEY_B, file: 'e'.repeat(64), name: null, savedAt: null, turns: 1, preview: 'An older question' },
+    const ENTRIES: readonly SavedConversation[] = [
+      { key: KEY_A, name: 'contract.pdf', savedAt: '2026-10-07T09:30:00.000Z', turns: 2, preview: 'Who signs?' },
+      { key: KEY_B, name: null, savedAt: null, turns: 1, preview: 'An older question' },
     ];
+    const DOC_ID = asDocId('00000000-0000-4000-8000-0000000000f2');
 
-    /** The panel over a store the case holds: what is listed, what reads, what is removed. */
-    function stored(initial: readonly (typeof ENTRIES)[number][] = ENTRIES): {
-      readonly sent: string[];
+    /** The panel over a store the case holds: what is listed, what reads, what is removed, and what each call named. */
+    function stored(
+      initial: readonly (typeof ENTRIES)[number][] = ENTRIES,
+      saving = true,
+      pages?: readonly (readonly (typeof ENTRIES)[number][])[],
+    ): {
+      readonly sent: { id: string; params: unknown }[];
       readonly removed: string[];
+      readonly cleared: () => number;
     } {
-      const sent: string[] = [];
+      const sent: { id: string; params: unknown }[] = [];
       const removed: string[] = [];
+      let clears = 0;
       let held = [...initial];
       const client = createClient(channels, (id, params) => {
-        sent.push(id);
+        sent.push({ id, params });
         if (id === 'ai.models') return Promise.resolve({ ok: true, value: { source: 'fetched', models: [] } });
-        if (id === 'ai.history.list') return Promise.resolve({ ok: true, value: { conversations: held } });
+        if (id === 'ai.history.list') {
+          const { from } = params as { from: number };
+          // A CASE'S PAGES, each answered at its own offset, with the next offset until the last.
+          if (pages !== undefined) {
+            const at = pages.findIndex((_, index) => pages.slice(0, index).reduce((sum, page) => sum + page.length, 0) === from);
+            const page = pages[at] ?? [];
+            return Promise.resolve({ ok: true, value: { conversations: page, next: at + 1 < pages.length ? from + page.length : null } });
+          }
+          return Promise.resolve({ ok: true, value: { conversations: held, next: null } });
+        }
         if (id === 'ai.history.read') {
           const key = (params as { key: string }).key;
           const found = held.find((entry) => entry.key === key);
@@ -495,7 +506,6 @@ describe('the assistant tab', () => {
                 found === undefined
                   ? null
                   : {
-                      name: found.name,
                       savedAt: found.savedAt,
                       turns: [
                         { role: 'user', text: found.preview },
@@ -511,80 +521,89 @@ describe('the assistant tab', () => {
           held = held.filter((entry) => entry.key !== key);
           return Promise.resolve({ ok: true, value: { removed: true } });
         }
+        if (id === 'ai.history.clearFile') {
+          clears += 1;
+          held = [];
+          return Promise.resolve({ ok: true, value: {} });
+        }
         throw new Error(`this case does not answer ${id}`);
       });
-      const docId = asDocId('00000000-0000-4000-8000-0000000000f2');
+      const settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
+      settings.set(CHAT_HISTORY_SETTING_ID, saving);
       render(
         <Wrapped>
           <Host
             client={client}
-            focused={{ docId, store: createDocumentStore(docId, asDocVersion(1)), page: 0 }}
-            settings={new SettingsStore(new SettingsRegistry(ALL_SETTINGS))}
+            focused={{ docId: DOC_ID, store: createDocumentStore(DOC_ID, asDocVersion(1)), page: 0 }}
+            openDocuments={[{ docId: DOC_ID, name: 'contract.pdf' }]}
+            settings={settings}
             storedSecrets={[ANTHROPIC_KEY]}
             subscribe={events().subscribe}
             toast={() => undefined}
           />
         </Wrapped>,
       );
-      return { sent, removed };
+      return { sent, removed, cleared: () => clears };
     }
 
     const settle = async (): Promise<void> => {
-      for (let turn = 0; turn < 4; turn += 1) {
+      for (let turn = 0; turn < 6; turn += 1) {
         await act(async () => {
           await Promise.resolve();
         });
       }
     };
-
-    it('a History button is at the top; it lists each saved conversation with its file, when, how many messages and its first question', async () => {
-      stored();
+    const openHistory = async (): Promise<void> => {
       await settle();
       fireEvent.click(screen.getByRole('button', { name: 'History' }));
       await settle();
+    };
+    const OPEN = /^Open the conversation saved /u;
+    const DELETE = /^Delete the conversation saved /u;
+    /** One of several buttons by its place, or a failure that names the case rather than a click on nothing. */
+    const pick = (found: readonly HTMLElement[], at = 0): HTMLElement => {
+      const button = found.at(at);
+      if (button === undefined) throw new Error('no such button');
+      return button;
+    };
+
+    it('lists THIS document’s conversations, each headed by WHEN it was saved, with how many messages and its first question', async () => {
+      const { sent } = stored();
+      await openHistory();
+      // ASKED BY THIS DOCUMENT, from the first page.
+      expect(sent.filter((call) => call.id === 'ai.history.list').map((call) => call.params)).toStrictEqual([{ docId: DOC_ID, from: 0 }]);
       const list = document.querySelector('[data-assistant-history="list"]');
-      expect(list?.textContent).toContain('contract.pdf');
       expect(list?.textContent).toContain('2 messages');
       expect(list?.textContent).toContain('Who signs?');
-      // AN ENTRY SAVED BEFORE NAMES WERE RECORDED says so, and shows no date.
+      // EVERY ENTRY IS THIS FILE'S, so none is headed by the file's name; one 1.1.2610.0 saved with no time is headed so.
+      expect([...document.querySelectorAll('.m-assistant-history__name')].map((each) => each.textContent)).not.toContain('contract.pdf');
       expect(list?.textContent).toContain('Earlier conversation');
-      expect(list?.textContent).toContain('1 message');
-      // CONTROL: the live conversation's composer is not drawn while the History has the panel.
+      expect(screen.getAllByRole('button', { name: OPEN })).toHaveLength(2);
+      expect(document.querySelector('[data-assistant-history-bounds]')?.textContent).toBe(
+        'Conversations about this file, kept on this computer. If the file is moved, renamed or deleted, they are removed about a day after Monstera notices.',
+      );
+      // CONTROL: the live conversation's composer is not drawn while History has the panel.
       expect(document.querySelector('.m-assistant__composer')).toBeNull();
     });
 
-    it('lists one file’s conversations TOGETHER, in main’s order, each its own Open and Delete, and SAYS the bounds (ADR-0277)', async () => {
-      const LEASE = 'd'.repeat(64);
-      stored([
-        { key: '1'.repeat(64), file: LEASE, name: 'lease.pdf', savedAt: '2026-10-30T09:00:00.000Z', turns: 1, preview: 'Rent?' },
-        { key: '2'.repeat(64), file: LEASE, name: 'lease.pdf', savedAt: '2026-10-29T09:00:00.000Z', turns: 2, preview: 'Who signs?' },
-      ]);
-      await settle();
-      fireEvent.click(screen.getByRole('button', { name: 'History' }));
-      await settle();
-      const items = [...document.querySelectorAll('.m-assistant-history__item')].map((item) => item.textContent);
-      expect(items).toHaveLength(2);
-      expect(items[0]).toContain('Rent?');
-      expect(items[1]).toContain('Who signs?');
-      expect(screen.getAllByRole('button', { name: 'Open lease.pdf' })).toHaveLength(2);
-      expect(screen.getAllByRole('button', { name: 'Delete lease.pdf' })).toHaveLength(2);
-      expect(document.querySelector('[data-assistant-history-bounds]')?.textContent).toBe(
-        'Each file keeps up to 20 conversations, and conversations are kept for up to 200 files. When a new file would be one too many, the file saved longest ago is removed with its conversations.',
-      );
+    it('EVERY PAGE is read until main says there is no next one, and nothing is listed twice', async () => {
+      const first = Array.from({ length: 3 }, (_, at) => ({ key: String(at).repeat(64), name: null, savedAt: '2026-10-07T09:30:00.000Z', turns: 1, preview: `Q${String(at)}` }));
+      const second = [{ key: '9'.repeat(64), name: null, savedAt: '2026-10-06T09:30:00.000Z', turns: 1, preview: 'Q9' }];
+      const { sent } = stored([], true, [first, second]);
+      await openHistory();
+      expect(sent.filter((call) => call.id === 'ai.history.list').map((call) => (call.params as { from: number }).from)).toStrictEqual([0, 3]);
+      expect(document.querySelectorAll('.m-assistant-history__item')).toHaveLength(4);
     });
 
     it('Open shows the conversation READ-ONLY by its key, and Back to History returns to the list', async () => {
       const { sent } = stored();
+      await openHistory();
+      fireEvent.click(pick(screen.getAllByRole('button', { name: OPEN })));
       await settle();
-      fireEvent.click(screen.getByRole('button', { name: 'History' }));
-      await settle();
-      fireEvent.click(screen.getByRole('button', { name: 'Open contract.pdf' }));
-      await settle();
-      expect(sent).toContain('ai.history.read');
+      expect(sent.find((call) => call.id === 'ai.history.read')?.params).toStrictEqual({ docId: DOC_ID, key: KEY_A });
       const shown = document.querySelector('[data-assistant-history="conversation"]');
-      expect(shown?.textContent).toContain('Who signs?');
       expect(shown?.textContent).toContain('The tenant and the landlord sign.');
-      expect(shown?.textContent).toContain('It does not open the file.');
+      expect(shown?.textContent).toContain('A saved conversation about this file, shown to read.');
       // NOTHING TO TYPE IN: it is a record, not a conversation.
       expect(document.querySelector('textarea')).toBeNull();
       fireEvent.click(screen.getByRole('button', { name: 'Back to History' }));
@@ -594,32 +613,48 @@ describe('the assistant tab', () => {
 
     it('Delete ASKS first, Keep it removes nothing, and Delete it removes that one and shows the rest', async () => {
       const { removed } = stored();
-      await settle();
-      fireEvent.click(screen.getByRole('button', { name: 'History' }));
-      await settle();
-      fireEvent.click(screen.getByRole('button', { name: 'Delete contract.pdf' }));
+      await openHistory();
+      fireEvent.click(pick(screen.getAllByRole('button', { name: DELETE })));
       expect(screen.getByText('Delete this conversation?')).toBeTruthy();
       expect(removed).toStrictEqual([]);
-      // KEPT: the question goes and nothing was removed.
       fireEvent.click(screen.getByRole('button', { name: 'Keep it' }));
       expect(removed).toStrictEqual([]);
       expect(screen.queryByText('Delete this conversation?')).toBeNull();
 
-      fireEvent.click(screen.getByRole('button', { name: 'Delete contract.pdf' }));
+      fireEvent.click(pick(screen.getAllByRole('button', { name: DELETE })));
       fireEvent.click(screen.getByRole('button', { name: 'Delete it' }));
       await settle();
       expect(removed).toStrictEqual([KEY_A]);
-      const list = document.querySelector('[data-assistant-history="list"]');
-      expect(list?.textContent).not.toContain('contract.pdf');
-      expect(list?.textContent).toContain('Earlier conversation');
+      expect(document.querySelectorAll('.m-assistant-history__item')).toHaveLength(1);
     });
 
-    it('an empty store says so and points at the setting; Back returns to the conversation', async () => {
-      stored([]);
+    it('Clear all ASKS first, naming the file; Keep them clears nothing, and Clear all removes this file’s conversations', async () => {
+      const { cleared } = stored();
+      await openHistory();
+      fireEvent.click(screen.getByRole('button', { name: 'Clear all' }));
+      const question =
+        'Clear all conversations for this file? Every saved conversation about contract.pdf is removed from this computer. This cannot be undone.';
+      expect(screen.getByText(question)).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Keep them' }));
+      expect(cleared()).toBe(0);
+      expect(screen.queryByText(question)).toBeNull();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Clear all' }));
+      fireEvent.click(pick(screen.getAllByRole('button', { name: 'Clear all' }), -1));
       await settle();
-      fireEvent.click(screen.getByRole('button', { name: 'History' }));
-      await settle();
-      expect(screen.getByText(/No conversations are saved/u)).toBeTruthy();
+      expect(cleared()).toBe(1);
+      expect(screen.getByText('No conversations are saved for this file.')).toBeTruthy();
+    });
+
+    it('an empty list with saving OFF says why; CONTROL: with it on, the plain empty line; Back returns to the conversation', async () => {
+      stored([], false);
+      await openHistory();
+      expect(screen.getByText('Save chat history is off, so nothing is kept for this file. Turn it on in Settings › AI.')).toBeTruthy();
+      cleanup();
+      stored([], true);
+      await openHistory();
+      expect(screen.getByText('No conversations are saved for this file.')).toBeTruthy();
+      expect(screen.queryByText(/Save chat history is off/u)).toBeNull();
       fireEvent.click(screen.getByRole('button', { name: 'Back to the conversation' }));
       expect(document.querySelector('[data-assistant-history]')).toBeNull();
       expect(document.querySelector('.m-assistant__composer')).not.toBeNull();
@@ -2068,10 +2103,11 @@ describe('a full conversation is said, with a new one a press away (ADR-0277 Dec
   });
 });
 
-describe('a new conversation keeps the old one, and a file at twenty is said (ADR-0277 Decision 6)', () => {
+describe('a new conversation keeps the old one, and history that cannot be saved is said (ADR-0279)', () => {
   const DOC = asDocId('00000000-0000-4000-8000-0000000000cb');
-  const FILE_FULL_NEW =
-    'This file already keeps 20 saved conversations, the most one file keeps, so a new one was not started. Remove one in the History, then start a new conversation.';
+  /** The owner's wording, sent before it ships (ADR-0279's correction of 2026-11-12, later). */
+  const HISTORY_LOCKED =
+    'Chat history cannot be saved on this computer, because the history saved here cannot be opened by this Windows account. To start again, choose Clear chat history in Settings › Privacy.';
   const historyOn = (): SettingsStore => {
     const settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
     settings.set(CHAT_HISTORY_SETTING_ID, true);
@@ -2101,44 +2137,32 @@ describe('a new conversation keeps the old one, and a file at twenty is said (AD
     expect(document.querySelector('[data-assistant-history-off]')).toBeNull();
   });
 
-  it(`with history ON and the file at ${String(MAX_FILE_CONVERSATIONS)}, New chat begins NOTHING and says to remove one`, async () => {
+  it('NO CAP (ADR-0279): with history ON, New chat asks main nothing and begins a NEW conversation beside the old', async () => {
     const store = holding();
-    const { sent } = await drawn({ focused: { docId: DOC, store, page: 0 }, settings: historyOn(), historyCount: MAX_FILE_CONVERSATIONS });
+    const { sent } = await drawn({ focused: { docId: DOC, store, page: 0 }, settings: historyOn() });
     await press();
-    expect(sent.filter((entry) => entry.id === 'ai.history.count')).toHaveLength(1);
-    expect(screen.getByText(FILE_FULL_NEW).closest('[aria-live="polite"]')).not.toBeNull();
-    // THE CONVERSATION IS UNTOUCHED, and no new one began.
-    expect(store.getState().conversation.map((turn) => turn.text)).toStrictEqual(['Who signs?', 'Both parties.']);
-    expect(store.getState().conversationSerial).toBe(0);
-  });
-
-  it('CONTROL: one short of the bound, New chat begins a NEW conversation, which the history saves beside the old', async () => {
-    const store = holding();
-    await drawn({ focused: { docId: DOC, store, page: 0 }, settings: historyOn(), historyCount: MAX_FILE_CONVERSATIONS - 1 });
-    await press();
+    expect(sent.filter((entry) => entry.id.startsWith('ai.history.'))).toStrictEqual([]);
     expect(store.getState().conversation).toStrictEqual([]);
     // A NEW SERIAL, which is what makes the history sync save a new conversation rather than empty the old one.
     expect(store.getState().conversationSerial).toBe(1);
-    expect(screen.queryByText(FILE_FULL_NEW)).toBeNull();
   });
 
-  it('with history OFF, New chat asks main nothing and begins a new conversation', async () => {
+  it('history this account CANNOT OPEN is said once, in one line, with the way to start again', async () => {
     const store = holding();
-    const { sent } = await drawn({ focused: { docId: DOC, store, page: 0 }, historyCount: MAX_FILE_CONVERSATIONS });
-    await press();
-    expect(sent.some((entry) => entry.id === 'ai.history.count')).toBe(false);
-    expect(store.getState().conversationSerial).toBe(1);
-  });
-
-  it('a conversation the file has no room to save is SAID, not left unsaved in silence', async () => {
-    const store = holding();
-    store.getState().historyRefusedAs('file-full');
+    store.getState().historyRefusedAs('locked');
     await drawn({ focused: { docId: DOC, store, page: 0 }, settings: historyOn() });
-    expect(
-      screen.getByText(
-        'This file already keeps 20 saved conversations, the most one file keeps, so this one is not being saved. Remove one in the History and it will be saved.',
-      ),
-    ).not.toBeNull();
+    const said = screen.getAllByText(HISTORY_LOCKED);
+    expect(said).toHaveLength(1);
+    expect(said[0]?.closest('[aria-live="polite"]')).not.toBeNull();
+    // ONCE: New chat keeps it as the one line rather than taking it away to say it again at the next answer.
+    await press();
+    expect(screen.getAllByText(HISTORY_LOCKED)).toHaveLength(1);
+  });
+
+  it('CONTROL: with nothing refused, the line is not there', async () => {
+    await drawn({ focused: { docId: DOC, store: holding(), page: 0 }, settings: historyOn() });
+    expect(screen.queryByText(HISTORY_LOCKED)).toBeNull();
+    expect(document.querySelector('[data-assistant-history-locked]')).toBeNull();
   });
 });
 

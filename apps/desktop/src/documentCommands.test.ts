@@ -143,7 +143,7 @@ const CHECKPOINTS = join(tmpdir(), `monstera-commands-checkpoints-${String(proce
 
 import { executeCommandHandler } from './commandHandlers.js';
 import { createAssistant } from './assistant.js';
-import { noChatHistory } from './chatHistory.js';
+import { noDocumentHistory } from './documentHistory.js';
 import { unconfiguredCloud } from './cloudSession.js';
 import { NO_ATTACHMENTS } from './askAttachments.js';
 import { createContractHandlers } from './contractHandlers.js';
@@ -1626,7 +1626,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
         rendererEnding: NO_RENDERER_ENDING,
           settings: { read: () => ({}), write: () => undefined },
           secrets: { available: () => false, read: () => ({}), write: () => undefined },
-          chatHistory: noChatHistory(),
+          chatHistory: noDocumentHistory(),
           pickSettingsFile: () => Promise.resolve(null), openSettingsFile: () => Promise.resolve(null),
           revealLog: () => Promise.resolve(false),
           revealPath: () => Promise.resolve(false),
@@ -3100,7 +3100,7 @@ describe('search is E2s first consumer, through the composition point', () => {
         rendererEnding: NO_RENDERER_ENDING,
         settings: { read: () => ({}), write: () => undefined },
         secrets: { available: () => false, read: () => ({}), write: () => undefined },
-        chatHistory: noChatHistory(),
+        chatHistory: noDocumentHistory(),
         pickSettingsFile: () => Promise.resolve(null), openSettingsFile: () => Promise.resolve(null),
         revealLog: () => Promise.resolve(false),
         revealPath: () => Promise.resolve(false),

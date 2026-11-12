@@ -66,12 +66,14 @@ export async function modulesLoadedByPath(desktopDist) {
   // `faceProgramWorker.js` the one an edit makes a face's program in (`faceProgramApart.ts`, ADR-0239): a package that
   // lacked either would refuse every word an edit sets in a face it chose. `composeWorker.js` is where a Markdown or CSV
   // import is composed (`composeApart.ts`): without it every one fails. `apartEntry.js` is where each of those three
-  // threads starts (`apart.ts`), so without it all three are refused.
+  // threads starts (`apart.ts`), so without it all three are refused. `historyRewriteWorker.js` is where Delete rewrites a
+  // chat history file off the main thread (`historyRewriter.ts`, ADR-0279 Decision 7): without it every Delete fails.
   return [
     ...hosts,
     'preload.cjs',
     'readerWorker.js',
     'memorySamplerWorker.js',
+    'historyRewriteWorker.js',
     'fontCatalogueWorker.js',
     'faceProgramWorker.js',
     'composeWorker.js',

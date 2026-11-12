@@ -1,6 +1,7 @@
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { type Locator, type Page, expect, test } from '@playwright/test';
 
+import { asksHeard, converse } from './assistantConverse.js';
 import { blockedPages } from './blockedPages.js';
 import { documentDrawn } from './documentDrawn.js';
 import { bridge } from './pageBridge.js';
@@ -15,10 +16,8 @@ import { bridge } from './pageBridge.js';
 
 const DOC = asDocId('00000000-0000-4000-8000-0000000000c7');
 
-/** Sixty-four turns, a question and its answer in turn: far more than the pane shows. */
-const TURNS = Array.from({ length: 64 }, (_, at) =>
-  at % 2 === 0 ? { role: 'user' as const, text: `Question ${String(at / 2 + 1)}?` } : { role: 'assistant' as const, text: 'An answer.' },
-);
+/** Thirty-two questions and their answers, sixty-four turns: far more than the pane shows. */
+const EXCHANGES = Array.from({ length: 32 }, (_, at) => ({ question: `Question ${String(at + 1)}?`, answer: 'An answer.' }));
 
 /** How far a box may sit past the list's bottom edge and still be wholly in view: a layout rounds to a fraction. */
 const ROUNDING = 0.5;
@@ -26,20 +25,27 @@ const ROUNDING = 0.5;
 async function openConversation(page: Page): Promise<Locator> {
   await page.setViewportSize({ width: 1440, height: 900 });
   const bytes = await blockedPages([612, 792], 1);
-  await bridge(page, {
-    opens: [{ kind: 'opened', docId: DOC, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'chat.pdf' }],
-    documentBytes: new Map([[DOC, bytes]]),
-    settings: { 'appearance.context-panel-open': true, 'appearance.context-panel-tab': 'assistant', 'ai.save-history': true },
-    secrets: { 'ai.anthropic-key': 'a-fixture-key' },
-    aiModels: { source: 'fetched', models: [{ id: 'fixture-model', label: 'Fixture', capabilities: { vision: null, streaming: null } }] },
-    aiHistory: { conversation: 'c'.repeat(64), turns: TURNS },
-  });
+  const asks = asksHeard();
+  await bridge(
+    page,
+    {
+      opens: [{ kind: 'opened', docId: DOC, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'chat.pdf' }],
+      documentBytes: new Map([[DOC, bytes]]),
+      settings: { 'appearance.context-panel-open': true, 'appearance.context-panel-tab': 'assistant', 'ai.save-history': true },
+      secrets: { 'ai.anthropic-key': 'a-fixture-key' },
+      aiModels: { source: 'fetched', models: [{ id: 'fixture-model', label: 'Fixture', capabilities: { vision: null, streaming: null } }] },
+      aiAskStarts: true,
+    },
+    asks.observe,
+  );
   await page.goto('/');
   await page.getByRole('button', { name: 'Open PDF…' }).click();
-  const list = page.locator('.m-assistant__turns');
-  await expect(list.locator('.m-assistant__turn')).toHaveCount(TURNS.length);
   // THE WINDOW SETTLED FIRST, so the height changes below are the cases' own and not the status bar arriving.
   await documentDrawn(page);
+  const pane = page.locator('.m-assistant');
+  await converse(page, pane, asks.latest, EXCHANGES);
+  const list = page.locator('.m-assistant__turns');
+  await expect(list.locator('.m-assistant__turn')).toHaveCount(EXCHANGES.length * 2);
   return list;
 }
 

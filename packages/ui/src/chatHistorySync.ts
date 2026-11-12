@@ -4,14 +4,13 @@ import type { DocId } from '@monstera/shared';
 import type { ConversationTurn, DocumentStore } from './documentStores.js';
 
 /**
- * Keeps one document's conversation in step with its saved copy
- * ([ADR-0093](../../../docs/DECISIONS/0093-chat-history-is-off-by-default-encrypted-in-main-and-keyed-by-the-file.md)).
+ * Keeps one document's conversation saved
+ * ([ADR-0279](../../../docs/DECISIONS/0279-saved-conversations-are-kept-without-caps-each-in-its-own-file-and-history-reads-one-log.md)).
  *
- * ## Loaded once, into an EMPTY conversation only
+ * ## Nothing is loaded
  *
- * A saved conversation arrives while a person may already have asked something; replacing what
- * they are reading with the older one would lose it. So the load lands only if the conversation is
- * still empty when it answers.
+ * Opening a PDF reads no history and the assistant starts empty (ADR-0279 Decision 8): a saved conversation is found in
+ * History, which lists this PDF's own. So this only saves.
  *
  * ## Saved when an answer is WHOLE, not per delta
  *
@@ -21,10 +20,10 @@ import type { ConversationTurn, DocumentStore } from './documentStores.js';
  *
  * ## A new conversation is saved as a NEW one
  *
- * A file keeps several conversations (ADR-0277 Decision 6). Each save names the saved conversation it continues, by the
+ * A PDF keeps every conversation, with no cap (ADR-0279). Each save names the saved conversation it continues, by the
  * key `main` gave it, so *New chat* (the store's `startConversation`, which moves its serial) begins one beside the old
- * rather than replacing it, and an emptied conversation never deletes one. A file already at its bound refuses a new
- * one, and that refusal is recorded on the store for the panel to say.
+ * rather than replacing it, and an emptied conversation never deletes one. History saved on this computer that this
+ * Windows account cannot open refuses every save; that refusal is recorded on the store for the panel to say, once.
  *
  * ## What is saved is what the contract allows, the NEWEST of it
  *
@@ -39,8 +38,7 @@ export const SETTLE_MS = 800;
  * The saved form of a conversation: newest turns, bounded, session-only fields dropped.
  *
  * THE TURN'S MARKS ARE THE CONVERSATION'S STATE and are kept: a question the provider refused as too long, and an
- * answer cut at its bound. Dropped, a reopened conversation read as one with room, and the refused question was sent
- * again (the owner's list, 2026-11-10). {@link restoredTurns} is the other half, so the two cannot disagree on a field.
+ * answer cut at its bound (the owner's list, 2026-11-10), so what History shows of a conversation is what it was.
  */
 export function savedTurns(turns: readonly ConversationTurn[]): SavedTurn[] {
   return turns.slice(-MAX_CHAT_TURNS).map((turn) => ({
@@ -49,19 +47,6 @@ export function savedTurns(turns: readonly ConversationTurn[]): SavedTurn[] {
     ...(turn.sent === undefined || turn.sent === null ? {} : { sent: turn.sent }),
     ...(turn.model === undefined ? {} : { model: turn.model.slice(0, MAX_MODEL_ID) }),
     ...(turn.attached === undefined ? {} : { attached: [...turn.attached] }),
-    ...(turn.refused === undefined ? {} : { refused: turn.refused }),
-    ...(turn.cut === undefined ? {} : { cut: turn.cut }),
-  }));
-}
-
-/** A saved conversation as the panel holds it again: {@link savedTurns}' fields, each read back. */
-export function restoredTurns(turns: readonly SavedTurn[]): ConversationTurn[] {
-  return turns.map((turn) => ({
-    role: turn.role,
-    text: turn.text,
-    ...(turn.sent === undefined ? {} : { sent: turn.sent }),
-    ...(turn.model === undefined ? {} : { model: turn.model }),
-    ...(turn.attached === undefined ? {} : { attached: turn.attached }),
     ...(turn.refused === undefined ? {} : { refused: turn.refused }),
     ...(turn.cut === undefined ? {} : { cut: turn.cut }),
   }));
@@ -87,9 +72,6 @@ export function syncConversation(
 ): () => void {
   let stopped = false;
   let cancelPending: (() => void) | undefined;
-  // THE LOADED TURNS are not saved back: nothing changed, and the first save would otherwise be a
-  // rewrite of what was just read.
-  let loaded: readonly ConversationTurn[] | undefined;
   // WHICH SAVED CONVERSATION each one is (ADR-0277 Decision 6): its key once `main` has one, BY THE SERIAL that names it
   // in the store. A new serial is a new conversation, saved as a new one, so the old one is kept, never replaced — and a
   // key answered after New chat still lands on the conversation it was asked for.
@@ -101,30 +83,17 @@ export function syncConversation(
   const firstSaves = new Map<number, Promise<void>>();
   const waiting = new Map<number, readonly ConversationTurn[]>();
 
-  if (enabled()) {
-    const serial = store.getState().conversationSerial;
-    void client['ai.history.load']({ docId }).then((answer) => {
-      if (stopped || !answer.ok || answer.value.turns.length === 0) return;
-      if (store.getState().conversation.length > 0 || store.getState().conversationSerial !== serial) return;
-      const turns = restoredTurns(answer.value.turns);
-      loaded = turns;
-      if (answer.value.conversation !== null) keys.set(serial, answer.value.conversation);
-      store.getState().converse(turns);
-    });
-  }
-
   /** Saves conversation `serial` as `turns`, under its key where it has one. */
   const saveNow = async (serial: number, turns: readonly ConversationTurn[]): Promise<void> => {
     if (!enabled()) return;
     const answer = await client['ai.history.save']({ docId, conversation: keys.get(serial) ?? null, turns: savedTurns(turns) });
     if (answer.ok && answer.value.conversation !== null) keys.set(serial, answer.value.conversation);
-    // WHAT THE PANEL SAYS is about the conversation on show; an older one's answer changes nothing it says.
-    if (store.getState().conversationSerial !== serial) return;
     if (answer.ok) {
       if (answer.value.saved) store.getState().historyRefusedAs(null);
-    } else if (answer.error.code === 'file-full') {
-      // SAID, NOT DROPPED: the file keeps its twenty and this conversation is not saved until one is removed.
-      store.getState().historyRefusedAs('file-full');
+    } else if (answer.error.code === 'history-locked') {
+      // SAID, NOT DROPPED (the correction of 2026-11-12): the history saved here is sealed under a key this Windows
+      // account cannot unwrap. It is kept, never replaced, and the panel says once what starts again.
+      store.getState().historyRefusedAs('locked');
     }
   };
   const save = (serial: number, turns: readonly ConversationTurn[]): void => {
@@ -152,7 +121,7 @@ export function syncConversation(
   /** The save settling, made now: for a close, and for a conversation New chat is leaving. */
   let settling: (() => void) | undefined;
   const unsubscribe = store.subscribe((state, previous) => {
-    if (state.conversation === previous.conversation || state.conversation === loaded) return;
+    if (state.conversation === previous.conversation) return;
     // A NEW CONVERSATION BEGUN while the old one's last change was still settling: that change is saved now, as the old
     // one's, rather than cancelled by the new one's first change — which lost an answer that landed just before New chat.
     if (state.conversationSerial !== previous.conversationSerial) settling?.();

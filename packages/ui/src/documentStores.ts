@@ -236,10 +236,11 @@ export interface DocumentState {
    */
   readonly conversationSerial: number;
   /**
-   * Why this conversation is NOT being saved though chat history is on, or `null`: `file-full` when its file already keeps
-   * `MAX_FILE_CONVERSATIONS` (ADR-0277 Decision 6), so the panel says so rather than leaving it unsaved in silence.
+   * Why this conversation is NOT being saved though chat history is on, or `null`: `locked` when the history saved on
+   * this computer cannot be opened by this Windows account (ADR-0279's correction of 2026-11-12), so the panel says so
+   * once rather than leaving it unsaved in silence.
    */
-  readonly historyRefused: 'file-full' | null;
+  readonly historyRefused: 'locked' | null;
   /**
    * Which documents this conversation asks about when two are side by side — *Left · Right ·
    * Both* (ADR-0089 Decision 5). The conversation's, so it lives and dies with the turns;
@@ -371,7 +372,7 @@ export interface DocumentActions {
   readonly startConversation: () => void;
 
   /** Records why this conversation is not being saved, or `null` once it is — the history sync is its one writer. */
-  readonly historyRefusedAs: (why: 'file-full' | null) => void;
+  readonly historyRefusedAs: (why: 'locked' | null) => void;
 
   /** Records the Left · Right · Both choice for this conversation. */
   readonly choseSides: (sides: AskSides) => void;
@@ -533,7 +534,9 @@ export function createDocumentStore(
       set({ conversation: turns });
     },
     startConversation: () => {
-      set((state) => ({ conversation: [], conversationSerial: state.conversationSerial + 1, historyRefused: null }));
+      // THE REFUSAL IS KEPT: a history this account cannot open refuses every conversation, so New chat changes nothing
+      // about it, and clearing it here would have the panel say it again at the next answer.
+      set((state) => ({ conversation: [], conversationSerial: state.conversationSerial + 1 }));
     },
     historyRefusedAs: (why) => {
       set({ historyRefused: why });

@@ -288,3 +288,25 @@ The case is `historyStore.test.ts`' *history LOCKED to another account*: a key m
 another refuses a save as locked, the key file is unchanged byte for byte, and after *Clear chat history* the key is
 gone and a save is read back whole. Its control asserts that a store with no key yet, and one whose cipher is off, are
 not locked and are not refused as locked. Reverting the refusal turns the first case red (measured, 2026-11-12).
+
+### What the wiring found, 2026-11-12
+
+Recorded by the cloud agent that wired the store, each a choice the text above does not make. None is final until the
+owner has read it.
+
+5. **A PDF that needs a password to open.** Decision 6 removes a section whose PDF *cannot be found or read*. The check
+   reads a closed PDF's `/ID` by opening a copy with no password, which a PDF with an open password refuses, so as written
+   the check would remove the history of a password PDF standing at its place a day after the first pass that looked.
+   **Built conservatively, and asked of the owner:** the host's `locked` answer counts as present, so nothing is removed;
+   a different password PDF put at the same place keeps the old section on disk, unshown, until the owner decides.
+   `historyCheck.test.ts`' *a PDF that needs a password* holds it, with an unreadable file removed as its control.
+6. **A conversation 1.1.2610.0 saved before times were kept** has no time to be headed by, so `HISTORY_UNNAMED`
+   (*Earlier conversation*) heads that one alone, where the wording table removed it.
+7. **History reads every page.** A list answer carries `HISTORY_PAGE` (200) conversations, and History asks for the next
+   until `main` answers none, so every conversation is listed with no control to reach the rest and no new string.
+8. **Decision h is not built yet:** *Save chat history* still defaults to off. On by default needs the one-time note,
+   whose wording the text above does not give and which needs a place to remember that it was shown. Both are asked of
+   the owner rather than written here.
+9. **Delete runs on a worker thread**, as Decision 7 says: `historyRewriteWorker.ts` in `packages/nodemode` opens every
+   record and writes the kept ones beside the file; `main` appends what was saved meanwhile and renames. The local agent's
+   measurement of a large file on Windows decides whether the 3.1 to 3.9 s figure now stays off the main thread.
