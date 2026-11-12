@@ -403,6 +403,12 @@ export interface SerialiseOptions {
    * drawn by the page, and the session keeps them as layers (ADR-0287). Absent: the bytes are the session as held.
    */
   readonly marks?: 'engraved';
+  /**
+   * `removed`: the bytes carry no certification, written whole so no earlier revision does either: the copy a certified
+   * document's change is worked on (ADR-0291 Decision 5). The session keeps it. A document with no certification is
+   * written exactly as without this.
+   */
+  readonly certification?: 'removed';
 }
 
 export interface EngineWriter<TSession> {

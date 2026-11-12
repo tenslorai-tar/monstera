@@ -157,6 +157,7 @@ import {
   type StagedImage,
   type StagedMarks,
   type StagedOutline,
+  type StagedCertification,
   type Staging,
   AS_HELD,
   KEPT_FILE,
@@ -4764,10 +4765,17 @@ export class DocumentCommands {
     docId: DocId,
     command: Command,
   ): Promise<{ readonly outcome: DocumentCopyOutcome; readonly destination: string } | undefined> {
-    return this.#writeCopy(docId, (version) => {
-      const named = targetVersionOf(command);
-      if (named !== undefined && named !== version) throw new StaleTargetError(command.kind, named, version);
-    });
+    return this.#writeCopy(
+      docId,
+      (version) => {
+        const named = targetVersionOf(command);
+        if (named !== undefined && named !== version) throw new StaleTargetError(command.kind, named, version);
+      },
+      'kept',
+      // THE COPY A CHANGE IS MADE ON IS NO LONGER CERTIFIED (ADR-0291 Decision 5): written whole, without `/Perms /DocMDP`,
+      // so the change it is opened for is not refused there too. An uncertified document is written as it always was.
+      'removed',
+    );
   }
 
   /** {@link saveCopy}'s pick and write, with `inLane` run first inside the lane against the version being copied. */
@@ -4776,6 +4784,8 @@ export class DocumentCommands {
     inLane: (version: DocVersion) => void,
     /** `left-out` writes the copy without the document's bookmarks (*Save a copy without bookmarks*, item 20). */
     outline: StagedOutline = 'kept',
+    /** `removed` writes it without its certification: the copy a certified document's change is made on (ADR-0291). */
+    certification: StagedCertification = 'kept',
   ): Promise<{ readonly outcome: DocumentCopyOutcome; readonly destination: string } | undefined> {
     // THE NAME IS READ BEFORE THE LANE and the document may close while the
     // dialog is up — which is fine, because a filename is all that was taken
@@ -4814,7 +4824,7 @@ export class DocumentCommands {
           this.#save.deps,
           this.#checkFor(docId),
           // A FILE A PERSON KEEPS, with or without its outline (ADR-0287).
-          () => this.#save.stage(docId, sessions, { outline, marks: 'engraved' }),
+          () => this.#save.stage(docId, sessions, { outline, marks: 'engraved', certification }),
           destination,
           backupsFor(context),
         );

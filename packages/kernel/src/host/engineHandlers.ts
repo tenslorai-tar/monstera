@@ -874,14 +874,16 @@ export function createEngineHandlers({
       };
     },
 
-    'engine/serialise': async ({ session, into, outline, marks }) => {
+    'engine/serialise': async ({ session, into, outline, marks, certification }) => {
       const held = sessions.lookup(session);
       if (held === undefined) return gone;
       try {
         // `marks: 'engraved'` for a file a person keeps (ADR-0287); absent, the session's bytes as held.
+        // `certification: 'removed'` for the copy a certified document's change is made on (ADR-0291).
         const bytes = await writer.serialise(held.session, {
           ...(outline === undefined ? {} : { outline }),
           ...(marks === undefined ? {} : { marks }),
+          ...(certification === undefined ? {} : { certification }),
         });
         const written = await files.writeOutput(held.outputDirectory, into, bytes);
         return { ok: true, value: { bytes: written } };

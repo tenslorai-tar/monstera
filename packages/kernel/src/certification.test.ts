@@ -98,6 +98,39 @@ describe('a certification, read (ADR-0291 Decision 1)', () => {
     expect(read(await withPerms(signatureWith({ P: 3 })))?.level).toBe('form-fill-and-annotate');
   });
 
+  it('a copy written uncertified carries no certification, is written whole, and the session stays certified', async () => {
+    const certified = await sign(await blank(), 'Grace Hopper', 'no-changes');
+    const session = await mupdfWriter.open(certified);
+    try {
+      const copy = await mupdfWriter.serialise(session, { certification: 'removed' });
+      expect(read(copy), 'the copy is no longer certified').toBeNull();
+      // WHOLE: the certified file is not the copy's first bytes, so no earlier revision holds the certification.
+      expect(Buffer.from(copy.subarray(0, certified.length)).equals(Buffer.from(certified))).toBe(false);
+      expect(Buffer.from(copy).includes('/DocMDP')).toBe(false);
+      // THE SIGNATURE STAYS (preserve, never drop): its dictionary is still in the copy.
+      expect(Buffer.from(copy).includes('/ByteRange')).toBe(true);
+      // THE SESSION IS PUT BACK: the next save as held is certified, and appended to the signed bytes.
+      const held = await mupdfWriter.serialise(session);
+      expect(read(held)).toStrictEqual({ level: 'no-changes', signer: 'Grace Hopper' });
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  }, 60_000);
+
+  it('CONTROL: an ordinary signed document is written exactly as without the option', async () => {
+    const signed = await sign(await blank(), 'Grace Hopper');
+    const asked = await mupdfWriter.open(signed);
+    const plain = await mupdfWriter.open(signed);
+    try {
+      const removed = await mupdfWriter.serialise(asked, { certification: 'removed' });
+      const asHeld = await mupdfWriter.serialise(plain);
+      expect(Buffer.from(removed).equals(Buffer.from(asHeld))).toBe(true);
+    } finally {
+      await mupdfWriter.close(asked);
+      await mupdfWriter.close(plain);
+    }
+  }, 60_000);
+
   it('the lane’s one read carries it beside the signature count', async () => {
     const certified = await sign(await blank(), 'Grace Hopper', 'form-fill');
     const session = await mupdfWriter.open(certified);

@@ -177,6 +177,7 @@ export {
   type SessionAreaSurface,
   AS_HELD,
   KEPT_FILE,
+  type StagedCertification,
   type StagedMarks,
   type StagedOutline,
   type Staging,

@@ -2193,6 +2193,8 @@ export function liveSessionChannels() {
           outline: z.literal('left-out').exactOptional(),
           /** `engraved`: a file a person keeps, Monstera's placed marks drawn by the page (ADR-0287). */
           marks: z.literal('engraved').exactOptional(),
+          /** `removed`: the bytes carry no certification, written whole (ADR-0291 Decision 5). */
+          certification: z.literal('removed').exactOptional(),
         })
         .strict(),
       // A COUNT, NOT A NAME. Main already knows where it asked for the bytes;

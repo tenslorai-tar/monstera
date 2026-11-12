@@ -8,6 +8,7 @@ import type {
   SavePurpose,
   SerialiseOptions,
 } from './engineSeam.js';
+import { carriesCertification, savedUncertified } from './docMdp.js';
 import { DocumentLocked } from './engineSeam.js';
 import { openPdfFile } from './mupdfOpen.js';
 import { savedEngraved } from './engraveOnSave.js';
@@ -596,6 +597,8 @@ function copiedInto(into: mupdf.PDFDocument, from: mupdf.PDFObject, renumbered: 
 function saveTermsOf(session: MupdfSession): {
   readonly document: mupdf.PDFDocument;
   readonly terms: string;
+  /** The terms of a whole save of this session, whichever {@link terms} is: what a copy written uncertified takes. */
+  readonly whole: string;
   readonly signatures: number;
   readonly appends: boolean;
   readonly purpose: SavePurpose;
@@ -636,8 +639,9 @@ function saveTermsOf(session: MupdfSession): {
   const signatures = signatureValues(document).length;
   const appends =
     purpose === 'ordinary' && protection === undefined && signatures > 0 && document.canBeSavedIncrementally();
-  const terms = appends ? 'incremental' : [options[purpose], protection ?? ''].filter((term) => term !== '').join(',');
-  return { document, terms, signatures, appends, purpose };
+  const whole = [options[purpose], protection ?? ''].filter((term) => term !== '').join(',');
+  const terms = appends ? 'incremental' : whole;
+  return { document, terms, whole, signatures, appends, purpose };
 }
 
 /**
@@ -818,10 +822,16 @@ export const mupdfWriter: EngineWriter<MupdfSession> = {
     // INSIDE `promised`, as the lookup always was: a session from elsewhere is refused as a REJECTION, never a
     // synchronous throw from a method that answers a promise (the writer's CONTROL cases).
     return promised(() => {
-      const { document, terms, appends } = saveTermsOf(session);
+      const { document, terms: held, whole, appends: heldAppends } = saveTermsOf(session);
+      // A COPY WRITTEN UNCERTIFIED (ADR-0291 Decision 5) is a WHOLE save, never an appended one: an earlier revision
+      // would still hold the certification. Only where there is one to take out; otherwise the save is as held.
+      const uncertified = options?.certification === 'removed' && carriesCertification(document);
+      const terms = uncertified ? whole : held;
+      const appends = heldAppends && !uncertified;
       // MEASURED BEFORE A COLLECTING SAVE, and refused in words where it would pass the engine's stack (`saveDepth.ts`).
-      const save = (): mupdf.Buffer =>
+      const written = (): mupdf.Buffer =>
         options?.outline === 'left-out' ? savedWithoutOutline(document, terms) : savedBuffer(document, terms);
+      const save = (): mupdf.Buffer => (uncertified ? savedUncertified(document, written) : written());
       // A FILE A PERSON KEEPS draws Monstera's placed marks by the page (ADR-0287), and the session is put back after.
       // NOT ON AN APPENDED SAVE: it exists to keep a signature, and page content changed after one is reported by
       // every validator (Decision 5), so a signed document's marks stay layers.

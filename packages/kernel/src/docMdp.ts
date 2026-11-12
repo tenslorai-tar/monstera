@@ -1,5 +1,7 @@
 import type { CertificationLevel } from '@monstera/contract';
 
+import type { PDFDocument, PDFObject } from './mupdfRaw.js';
+
 /**
  * `/DocMDP`'s `/P`, by the word the payload carries, ONCE for the signer that writes it and the reader that obeys it
  * ([ADR-0291](../../../docs/DECISIONS/0291-a-certified-document-is-locked-to-what-its-certifier-allowed-and-worked-on-as-a-copy.md)).
@@ -23,4 +25,50 @@ export function levelOfDocMdp(p: number | undefined): CertificationLevel {
     if (value === p) return level;
   }
   return 'no-changes';
+}
+
+/** Whether the catalogue carries `/Perms /DocMDP`, the one place a certification is declared. */
+export function carriesCertification(document: PDFDocument): boolean {
+  const perms = document.getTrailer().get('Root').get('Perms');
+  return perms.isDictionary() && !perms.get('DocMDP').isNull();
+}
+
+/**
+ * `save`'s answer for `document` with its certification taken out, and the document put back exactly as it was
+ * afterwards, whatever `save` did (ADR-0291 Decision 5; `savedWithoutOutline`'s shape).
+ *
+ * Two places hold it: the catalogue's `/Perms /DocMDP`, and the certifying signature's `/Reference` entry whose
+ * `/TransformMethod` is `/DocMDP`. Both go, so neither states what the other no longer does. The signature itself
+ * stays (preserve, never drop), and reads as not covering the copy, which is true.
+ */
+export function savedUncertified<T>(document: PDFDocument, save: () => T): T {
+  const perms = document.getTrailer().get('Root').get('Perms');
+  if (!perms.isDictionary()) return save();
+  const signature = perms.get('DocMDP');
+  const references = signature.isDictionary() ? signature.get('Reference') : null;
+  const restore: (() => void)[] = [];
+  try {
+    // `/DocMDP` ONLY, never the whole `/Perms`: it may hold `/UR3` (usage rights), which is not a certification, and an
+    // empty `/Perms` certifies nothing.
+    perms.delete('DocMDP');
+    restore.push(() => {
+      perms.put('DocMDP', signature);
+    });
+    if (references !== null && references.isArray() && signature.isDictionary()) {
+      const kept = document.newArray();
+      const listed: PDFObject[] = [];
+      references.forEach((reference) => {
+        listed.push(reference);
+      });
+      for (const reference of listed) if (String(reference.get('TransformMethod')) !== '/DocMDP') kept.push(reference);
+      if (kept.length === 0) signature.delete('Reference');
+      else signature.put('Reference', kept);
+      restore.push(() => {
+        signature.put('Reference', references);
+      });
+    }
+    return save();
+  } finally {
+    for (const step of restore.reverse()) step();
+  }
 }

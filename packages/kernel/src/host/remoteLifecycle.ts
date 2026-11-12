@@ -108,17 +108,24 @@ export type StagedOutline = 'kept' | 'left-out';
  */
 export type StagedMarks = 'as-held' | 'engraved';
 
-/** What a staged copy is: both halves REQUIRED, so no caller writes a file without saying which (ADR-0287 Decision 6). */
+/**
+ * Whether a staged copy keeps the document's certification (`kept`) or is written without it (`removed`), the copy a
+ * certified document's change is made on (ADR-0291 Decision 5).
+ */
+export type StagedCertification = 'kept' | 'removed';
+
+/** What a staged copy is: every part REQUIRED, so no caller writes a file without saying which (ADR-0287 Decision 6). */
 export interface Staging {
   readonly outline: StagedOutline;
   readonly marks: StagedMarks;
+  readonly certification: StagedCertification;
 }
 
 /** The staging an undo checkpoint, a refreshed image and a host's own copy take: the session exactly as held. */
-export const AS_HELD: Staging = { outline: 'kept', marks: 'as-held' };
+export const AS_HELD: Staging = { outline: 'kept', marks: 'as-held', certification: 'kept' };
 
 /** The staging a file a person keeps takes, with its outline. */
-export const KEPT_FILE: Staging = { outline: 'kept', marks: 'engraved' };
+export const KEPT_FILE: Staging = { outline: 'kept', marks: 'engraved', certification: 'kept' };
 
 /**
  * The host's refusal of a serialise as `main` throws it: the document's depth as the same {@link StructureTooDeep} a
@@ -413,7 +420,7 @@ export function remoteMupdfLifecycle(
    * moves them and checks the count against what moved; discarding removes them if they were never placed — a whole
    * copy of the document where the contained host may read it, otherwise.
    */
-  const stage = async (session: MupdfSession, { outline, marks }: Staging): Promise<StagedImage> => {
+  const stage = async (session: MupdfSession, { outline, marks, certification }: Staging): Promise<StagedImage> => {
     const area = sessions.areaFor(session);
     const into = areas.mintName();
     const answer = await client['engine/serialise']({
@@ -421,6 +428,7 @@ export function remoteMupdfLifecycle(
       into,
       ...(outline === 'left-out' ? { outline } : {}),
       ...(marks === 'engraved' ? { marks } : {}),
+      ...(certification === 'removed' ? { certification } : {}),
     });
     if (!answer.ok) throw serialiseRefusal(answer.error.code);
     const byteLength = answer.value.bytes;

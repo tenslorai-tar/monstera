@@ -2021,7 +2021,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
         }
       };
       // THE ROUTE ASKED FOR A FILE A PERSON KEEPS, and the file on disk has no stamp layer.
-      expect(t.stagings.at(-1)).toStrictEqual({ outline: 'kept', marks: 'engraved' });
+      expect(t.stagings.at(-1)).toStrictEqual({ outline: 'kept', marks: 'engraved', certification: 'kept' });
       expect(await stampsIn(new Uint8Array(readFileSync(t.path)))).toBe(0);
       // CONTROL: the session still holds the stamp, so it moves until the document is closed.
       expect(await stampsIn(await t.serialised())).toBe(1);
@@ -2219,6 +2219,18 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
         expect(await t.version()).toBe(version);
         expect(Buffer.from(await t.serialised()).equals(Buffer.from(bytes))).toBe(true);
         expect(await t.commands.undo(t.saved)).toBeUndefined();
+      });
+
+      it('WORK ON A COPY stages the copy WITHOUT its certification; Save a copy keeps it (Decision 5)', async () => {
+        const destination = join(directory, `certified-copy-${String(savables + 1)}.pdf`);
+        const t = await aSavableDocument(certified('no-changes'), ledger(), destination);
+
+        expect((await t.commands.copyForEditing(t.saved, rotateOnce))?.outcome.kind).toBe('copied');
+        expect(t.stagings.at(-1)).toStrictEqual({ outline: 'kept', marks: 'engraved', certification: 'removed' });
+
+        // CONTROL: the person's own copy of the certified document is the document as certified.
+        expect(await t.commands.saveCopy(t.saved)).toMatchObject({ kind: 'copied' });
+        expect(t.stagings.at(-1)).toStrictEqual({ outline: 'kept', marks: 'engraved', certification: 'kept' });
       });
 
       it('AGREEING to break signatures does not pass it: the lock is not a warning', async () => {
