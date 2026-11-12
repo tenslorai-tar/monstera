@@ -3473,7 +3473,11 @@ function certificationHandler(commands: DocumentCommands): ContractHandlers['doc
 function saveSignedVersionHandler(commands: DocumentCommands): ContractHandlers['document.saveSignedVersion'] {
   return async ({ docId, signedThrough }) => {
     try {
-      return ok(await commands.saveSignedVersion(docId, signedThrough));
+      const outcome = await commands.saveSignedVersion(docId, signedThrough);
+      if (outcome.kind === 'refused' || outcome.kind === 'onto-source') return ok(copyRefusalWire(outcome));
+      // THE CAUSE STAYS IN MAIN, as every copy's does: the renderer is told the write failed.
+      if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
+      return ok(outcome);
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });

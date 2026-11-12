@@ -5476,6 +5476,7 @@ export function signaturesCommand(deps: DocumentCommandDeps & { readonly toast: 
         case 'not-found':
           deps.toast('problem', TOAST_SIGNED_VERSION_NOT_FOUND);
           return;
+        case 'refused':
         case 'onto-source':
         case 'write-failed':
           void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: copyProblemOf(saved.value.kind) });

@@ -128,6 +128,8 @@ import {
   type BlockFaces,
   type SaveDependencies,
   type CopyOutcome,
+  type CopyRefusal,
+  copyRefusalOf,
   type DocumentCopyOutcome,
   type CopyTargetVerdict,
   type SaveOutcome,
@@ -4860,7 +4862,12 @@ export class DocumentCommands {
   async saveSignedVersion(
     docId: DocId,
     signedThrough: number,
-  ): Promise<{ readonly kind: 'saved' | 'cancelled' | 'not-found' | 'onto-source' | 'write-failed' }> {
+  ): Promise<
+    | { readonly kind: 'saved' | 'cancelled' | 'not-found' }
+    | CopyRefusal
+    /** The filesystem refused, `cause` what it threw. Nothing at the destination was replaced. */
+    | { readonly kind: 'write-failed'; readonly cause: unknown }
+  > {
     const suggest = this.#documents.nameOf(docId);
     if (suggest === undefined) throw new DocumentNotOpenError(docId, 'save a signed version');
     const { value: path } = await this.#documents.read(docId, (context) => Promise.resolve(context.path));
@@ -4869,13 +4876,15 @@ export class DocumentCommands {
 
     const destination = await this.#copy.pick(suffixed(suggest, 'signed version'));
     if (destination === null) return { kind: 'cancelled' };
-    // NEVER OVER THE DOCUMENT'S OWN FILE: that would replace the file the signed version was cut from.
-    if (destination === path) return { kind: 'onto-source' };
+    // NEVER OVER THE DOCUMENT'S OWN FILE, nor one another open document holds: asked of `checkCopyTarget`, as every other
+    // copy is (B3a), which compares the files and not their spellings.
+    const refused = copyRefusalOf(await this.#checkFor(docId)(destination));
+    if (refused !== undefined) return refused;
     try {
       await writePrefix(path, signedThrough, destination);
-    } catch {
-      // THE CAUSE IS THE DISK'S, said as a copy's failed write is; the document and its file are untouched.
-      return { kind: 'write-failed' };
+    } catch (cause) {
+      // THE DISK'S, kept as a copy's failed write keeps it; the document and its file are untouched.
+      return { kind: 'write-failed', cause };
     }
     return { kind: 'saved' };
   }

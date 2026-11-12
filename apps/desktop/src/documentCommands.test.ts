@@ -4,7 +4,7 @@ import { readFile, rm } from 'node:fs/promises';
 
 import { strFromU8, unzipSync } from 'fflate';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, sep } from 'node:path';
 import { crc32, deflateSync } from 'node:zlib';
 
 import {
@@ -137,6 +137,8 @@ import { type DocId, type DocVersion, asDocId, asDocVersion, asFileHandle } from
 const AMPLE_CEILING = 64 * 1024 * 1024;
 /** What a case passes as *Save a copy*'s answer to mean the document's own file, which no real path spells. */
 const ITS_OWN_FILE = 'the document’s own file';
+/** The same file spelt otherwise, with a `.` segment in its folder: a different string that names the same file. */
+const ITS_OWN_FILE_SPELT_OTHERWISE = 'the document’s own file, spelt otherwise';
 
 /** The name every conversion here runs under (ADR-0234); a case about the name itself mints its own. */
 const WORK = 'work-under-test';
@@ -1947,7 +1949,10 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
           },
           copy: {
             // ITS OWN FILE where a case asks for it, which is a path this fixture names only once it is made.
-            pick: () => Promise.resolve(copyTo === ITS_OWN_FILE ? path : copyTo),
+            pick: () =>
+              Promise.resolve(
+                copyTo === ITS_OWN_FILE ? path : copyTo === ITS_OWN_FILE_SPELT_OTHERWISE ? `${dirname(path)}${sep}.${sep}${basename(path)}` : copyTo,
+              ),
             checkTarget: (target, source) => own.checkCopyTarget(target, source),
           },
           save: {
@@ -2320,6 +2325,13 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
         rmSync(destination);
         expect(await t.commands.saveSignedVersion(t.saved, signed.length - 1)).toStrictEqual({ kind: 'not-found' });
         expect(existsSync(destination)).toBe(false);
+
+        // THE DOCUMENT'S OWN FILE SPELT OTHERWISE is refused as its own file, and the file is not cut.
+        const own = await aSavableDocument(signatureFacts, ledger(), ITS_OWN_FILE_SPELT_OTHERWISE);
+        const file = Buffer.concat([Buffer.from(signed), Buffer.alloc(40, 0x2a)]);
+        writeFileSync(own.path, file);
+        expect(await own.commands.saveSignedVersion(own.saved, signed.length)).toStrictEqual({ kind: 'onto-source' });
+        expect(Buffer.from(readFileSync(own.path)).equals(file), 'the document’s own file is untouched').toBe(true);
       }, 60_000);
 
       it('CERTIFYING A SIGNED DOCUMENT is refused in the lane, from the same read, with nothing changed (question 3)', async () => {

@@ -4154,7 +4154,9 @@ export const channels = {
    * Decision 7, measured first in `signedVersion.test.ts`). The signature is named by where its signed bytes end, which
    * `document.signatures` reports. Main cuts the file as it is saved, not the session, so a file damaged after it was
    * signed gives its signed version back; the cut is read in a session of its own and written only where a signature
-   * ending there verifies over all of it. `not-found` is that read's answer: nothing was written.
+   * ending there verifies over all of it. `not-found` is that read's answer: nothing was written. The destination is
+   * checked as every copy's is: `onto-source` for the document's own file however it is spelt, `refused` for one another
+   * open document holds.
    */
   'document.saveSignedVersion': channel(
     'Saves the document as one of its signatures signed it, as a copy the person places.',
@@ -4163,6 +4165,7 @@ export const channels = {
       z.object({ kind: z.literal('saved') }).strict(),
       z.object({ kind: z.literal('cancelled') }).strict(),
       z.object({ kind: z.literal('not-found') }).strict(),
+      z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }).strict(),
       z.object({ kind: z.literal('onto-source') }).strict(),
       z.object({ kind: z.literal('write-failed') }).strict(),
     ]),
