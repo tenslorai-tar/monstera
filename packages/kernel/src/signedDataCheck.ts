@@ -405,6 +405,18 @@ function signatureScheme(capture: SignedDataCapture): Scheme | null {
 }
 
 /**
+ * THE CERTIFICATE THE SIGNER NAMES, by the issuer's DER and the serial's bytes, compared as the bytes both sides carry
+ * rather than as either reader's rendering. The one rule for it: {@link checkSigner} verifies with it, and a reader that
+ * only names a signer (a certification's, ADR-0291) takes it from here.
+ */
+export function signerCertificate(signed: SignedData): CmsCertificate | null {
+  const capture = signed.capture;
+  const wantedIssuer = capture.issuer === undefined ? null : forge.asn1.toDer(capture.issuer).getBytes();
+  if (wantedIssuer === null || capture.serial === undefined) return null;
+  return signed.certificates.find((candidate) => candidate.issuerDer === wantedIssuer && candidate.serial === capture.serial) ?? null;
+}
+
+/**
  * Checks the one signer of `signed` against `content`.
  *
  * @param signed a SignedData, read by {@link readSignedDataBody} or {@link readContentInfo}.
@@ -413,16 +425,7 @@ function signatureScheme(capture: SignedDataCapture): Scheme | null {
  */
 export function checkSigner(signed: SignedData, content: string): SignerCheck {
   const capture = signed.capture;
-
-  // THE CERTIFICATE THE SIGNER NAMES, by the issuer's DER and the serial's bytes,
-  // compared as the bytes both sides carry rather than as either reader's rendering.
-  const wantedIssuer = capture.issuer === undefined ? null : forge.asn1.toDer(capture.issuer).getBytes();
-  const certificate =
-    wantedIssuer === null || capture.serial === undefined
-      ? null
-      : (signed.certificates.find(
-          (candidate) => candidate.issuerDer === wantedIssuer && candidate.serial === capture.serial,
-        ) ?? null);
+  const certificate = signerCertificate(signed);
   const refuse = (refusal: SignerRefusal): SignerCheck => ({ certificate, verified: false, refusal });
 
   // ONE SIGNER. node-forge captures SignerInfo fields into one flat object, so a

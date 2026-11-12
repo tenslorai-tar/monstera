@@ -164,7 +164,7 @@ import {
   stagedBytes,
   type SplitOutcome,
   type MupdfSession,
-  type NextSave,
+  type SignatureFacts,
   type ReadSignature,
   SignatureAppearanceRefusedError,
   SignatureCredentialRefusedError,
@@ -2615,7 +2615,7 @@ export interface DocumentCommandsParts {
    */
   readonly signatures: (session: MupdfSession) => Promise<readonly ReadSignature[]>;
   /** How many signatures, and whether the next save keeps them — the writer's own decision. See {@link save}. */
-  readonly signaturesKept: (session: MupdfSession) => Promise<NextSave>;
+  readonly signaturesKept: (session: MupdfSession) => Promise<SignatureFacts>;
   readonly restore: DocumentRestore;
   /** How a removal's save opens the document's sessions again from the file it wrote (ADR-0164). */
   readonly renew: DocumentRenew;
@@ -2925,7 +2925,7 @@ export class DocumentCommands {
   readonly #documentInformation: DocumentInformationReader;
   readonly #pageMarks: DocumentPageMarksReader;
   readonly #signatures: (session: MupdfSession) => Promise<readonly ReadSignature[]>;
-  readonly #signaturesKept: (session: MupdfSession) => Promise<NextSave>;
+  readonly #signaturesKept: (session: MupdfSession) => Promise<SignatureFacts>;
   readonly #restore: DocumentRestore;
   readonly #renew: DocumentRenew;
   readonly #recentPicture: Pick<RecentPictures, 'retake'>;

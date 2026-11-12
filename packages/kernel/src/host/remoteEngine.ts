@@ -18,10 +18,9 @@ import { declaredCommands } from '../commandDeclarations.js';
 import { type MupdfSession, NO_BOXES, type PreReadValue } from '../engineSeam.js';
 import type { PageRuns } from '../operatorEdit.js';
 import { BlockUnchangedError, EditRefusedError, TextNotWritableError } from '../textEditRefusals.js';
-import type { NextSave } from '../mupdfWriter.js';
 import type { DuplicatePageGroup } from '../pageDuplicates.js';
 import type { PageGeometryReader } from '../pageGeometry.js';
-import type { ReadSignature } from '../signatureRead.js';
+import type { ReadSignature, SignatureFacts } from '../signatureRead.js';
 import type { PdfLibHost } from '../pdfLibWriter.js';
 import type { SignatureHost } from '../documentSign.js';
 import {
@@ -651,7 +650,7 @@ export function remoteMupdfSignatures(
 export function remoteMupdfSignaturesKept(
   client: ClientApi<EngineChannels>,
   sessions: RemoteSessions,
-): (session: MupdfSession) => Promise<NextSave> {
+): (session: MupdfSession) => Promise<SignatureFacts> {
   return async (session) =>
     answered(
       'engine/signatures-kept',

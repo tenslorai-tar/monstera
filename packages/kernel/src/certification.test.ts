@@ -1,0 +1,114 @@
+import { PDFDocument, PDFName, type PDFRef, PDFString } from '@cantoo/pdf-lib';
+import { CERTIFICATION_LEVELS, type CertificationLevel } from '@monstera/contract';
+import forge from 'node-forge';
+import { beforeAll, describe, expect, it } from 'vitest';
+
+import type { ByteImage } from './engineSeam.js';
+import * as mupdf from './mupdfRaw.js';
+import { mupdfWriter } from './mupdfWriter.js';
+import { certificationOf, signatureFacts } from './signatureRead.js';
+import { applySignDocument } from './signpdfWriter.js';
+
+/**
+ * ADR-0291 Decision 1: one reader of a certification, `/Perms /DocMDP` and its `/TransformParams /P`, with the certifier
+ * named as every signature is. Each level is written by this build's own signer, so the reader is held to the writer.
+ */
+
+let credential: Uint8Array;
+beforeAll(() => {
+  const keys = forge.pki.rsa.generateKeyPair(2048);
+  const cert = forge.pki.createCertificate();
+  cert.publicKey = keys.publicKey;
+  cert.serialNumber = '01';
+  cert.validity.notBefore = new Date(Date.now() - 86_400_000);
+  cert.validity.notAfter = new Date(Date.now() + 86_400_000);
+  cert.setSubject([{ name: 'commonName', value: 'Certificate Name' }]);
+  cert.setIssuer([{ name: 'commonName', value: 'Certificate Name' }]);
+  cert.sign(keys.privateKey, forge.md.sha256.create());
+  const p12 = forge.asn1.toDer(forge.pkcs12.toPkcs12Asn1(keys.privateKey, [cert], 'pass', { algorithm: '3des' })).getBytes();
+  credential = Uint8Array.from(p12, (character: string) => character.charCodeAt(0));
+}, 60_000);
+
+async function blank(): Promise<ByteImage> {
+  const document = await PDFDocument.create();
+  document.addPage([400, 600]);
+  return document.save();
+}
+
+const sign = (bytes: ByteImage, name: string | undefined, certify?: CertificationLevel) =>
+  applySignDocument(bytes, {
+    kind: 'signDocument',
+    bytes: credential,
+    passphrase: 'pass',
+    ...(name === undefined ? {} : { name }),
+    ...(certify === undefined ? {} : { certify }),
+  });
+
+function read(bytes: ByteImage): ReturnType<typeof certificationOf> {
+  const document = mupdf.PDFDocument.openDocument(bytes, 'application/pdf');
+  try {
+    if (!(document instanceof mupdf.PDFDocument)) throw new Error('not a PDF');
+    return certificationOf(document);
+  } finally {
+    document.destroy();
+  }
+}
+
+/** A blank page whose catalogue carries `/Perms /DocMDP` as `perms` builds it, signed by nothing. */
+async function withPerms(perms: (document: PDFDocument) => PDFRef | number): Promise<ByteImage> {
+  const document = await PDFDocument.create();
+  document.addPage([400, 600]);
+  document.catalog.set(PDFName.of('Perms'), document.context.obj({ DocMDP: perms(document) }));
+  return document.save();
+}
+
+const signatureWith = (params: Record<string, unknown>) => (document: PDFDocument) =>
+  document.context.register(
+    document.context.obj({
+      Type: 'Sig',
+      Name: PDFString.of('Hand Built'),
+      Reference: [{ Type: 'SigRef', TransformMethod: 'DocMDP', TransformParams: { Type: 'TransformParams', V: '1.2', ...params } }],
+    }),
+  );
+
+describe('a certification, read (ADR-0291 Decision 1)', () => {
+  for (const level of CERTIFICATION_LEVELS) {
+    it(`the ${level} level this build's signer writes reads back, with the certifier's name`, async () => {
+      expect(read(await sign(await blank(), 'Grace Hopper', level))).toStrictEqual({ level, signer: 'Grace Hopper' });
+    }, 60_000);
+  }
+
+  it('a certifier with no /Name is named by the certificate', async () => {
+    expect(read(await sign(await blank(), undefined, 'no-changes'))).toStrictEqual({ level: 'no-changes', signer: 'Certificate Name' });
+  }, 60_000);
+
+  it('CONTROL: an ordinary signature is no certification, and neither is an unsigned file', async () => {
+    expect(read(await sign(await blank(), 'Grace Hopper'))).toBeNull();
+    expect(read(await blank())).toBeNull();
+  }, 60_000);
+
+  it('a /TransformParams with no /P is the format’s default, form filling and signing', async () => {
+    expect(read(await withPerms(signatureWith({})))).toStrictEqual({ level: 'form-fill', signer: 'Hand Built' });
+  });
+
+  it('a /P this build cannot read, and a /Perms naming no signature, are read as no changes', async () => {
+    expect(read(await withPerms(signatureWith({ P: 7 })))?.level).toBe('no-changes');
+    expect(read(await withPerms(() => 5))).toStrictEqual({ level: 'no-changes', signer: '' });
+    // CONTROL: the same hand-built signature with a /P of 3 reads 3, so the refusal above is the value's doing.
+    expect(read(await withPerms(signatureWith({ P: 3 })))?.level).toBe('form-fill-and-annotate');
+  });
+
+  it('the lane’s one read carries it beside the signature count', async () => {
+    const certified = await sign(await blank(), 'Grace Hopper', 'form-fill');
+    const session = await mupdfWriter.open(certified);
+    try {
+      expect(await signatureFacts(session)).toStrictEqual({
+        signatures: 1,
+        kept: true,
+        certification: { level: 'form-fill', signer: 'Grace Hopper' },
+      });
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  }, 60_000);
+});

@@ -4542,6 +4542,15 @@ export const placeSignaturePictureSchema = z
   .strict();
 
 /**
+ * What a certifying signature allows to change afterwards, by the words this build uses for `/DocMDP`'s `/P` 1, 2 and
+ * 3 (ISO 32000-1 §12.8.2.2). One list for the signer that writes a certification and the reader that obeys one
+ * ([ADR-0291](../../../docs/DECISIONS/0291-a-certified-document-is-locked-to-what-its-certifier-allowed-and-worked-on-as-a-copy.md)).
+ */
+export const CERTIFICATION_LEVELS = ['no-changes', 'form-fill', 'form-fill-and-annotate'] as const;
+export const certificationLevelSchema = z.enum(CERTIFICATION_LEVELS);
+export type CertificationLevel = z.infer<typeof certificationLevelSchema>;
+
+/**
  * Signs the document with a PKCS#12 certificate the user picked.
  *
  * ## The certificate's BYTES are the command's asset, and main reads them
@@ -4620,7 +4629,7 @@ export const signDocumentSchema = z.object({
    * the mapping is the format's and the kernel owns it, and a renderer sending
    * `2` would be sending a number whose meaning it had to know.
    */
-  certify: z.enum(['no-changes', 'form-fill', 'form-fill-and-annotate']).optional(),
+  certify: certificationLevelSchema.optional(),
   /**
    * Where the signature is SEEN, and how it looks.
    *

@@ -17,8 +17,8 @@ import { joinedContent, showOperators, textObjectCount } from '../textOperators.
 
 import { localMupdfExecution } from '../commandSpecs.js';
 import type { ByteImage, MupdfSession } from '../engineSeam.js';
-import { accessFor, mupdfWriter, signaturesKeptBySave, withDocument } from '../mupdfWriter.js';
-import { readSignatures } from '../signatureRead.js';
+import { accessFor, mupdfWriter, withDocument } from '../mupdfWriter.js';
+import { readSignatures, signatureFacts } from '../signatureRead.js';
 import { extractPages } from '../pageExtract.js';
 import { readFormPages } from '../formText.js';
 import { applyPdfLibImage } from '../pdfLibWriter.js';
@@ -413,7 +413,7 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
       // host that reads, so the clipboard's copy is exercised over the pipe below.
       annotationRecords: copyAnnotationData,
       annotationWords: readAnnotationWords,
-      signaturesKept: signaturesKeptBySave,
+      signaturesKept: signatureFacts,
     }),
     (incident) => incidents.push(incident),
   );

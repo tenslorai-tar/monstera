@@ -214,7 +214,7 @@ export { barcodeRect } from './barcodePlacement.js';
 // imports `node-forge` at module scope, so a VALUE export from this barrel would
 // put an ASN.1 parser into `main` — the one process invariant 25 keeps document
 // parsing out of.
-export type { ReadSignature } from './signatureRead.js';
+export type { Certification, ReadSignature, SignatureFacts } from './signatureRead.js';
 // TYPES ONLY, and the rule is sharper here than for the line above:
 // `ocrRecognise.ts` instantiates 2.8 MB of Tesseract on its first call, and the
 // recognition itself runs in the engine host. Main composes the reader and passes

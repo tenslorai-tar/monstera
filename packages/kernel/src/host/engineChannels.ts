@@ -2,6 +2,7 @@ import {
   type CommandKind,
   type CommandOfKind,
   accessibilitySpotsSchema,
+  certificationLevelSchema,
   listedAnnotationSchema,
   displayBoxSchema,
   documentFontSchema,
@@ -3300,7 +3301,17 @@ export const engineChannels = {
     z.object({ session: sessionSchema }).strict(),
     // A COUNT, unbounded but for being an integer: it crosses as one number, and bounding it at the list's
     // ENGINE_SIGNATURES_MAX made every save of a document with more signatures fail (table A row 14).
-    z.object({ signatures: z.number().int().nonnegative(), kept: z.boolean() }).strict(),
+    // AND THE CERTIFICATION (ADR-0291), which main's lane asks before every command: what it allows, and who.
+    z
+      .object({
+        signatures: z.number().int().nonnegative(),
+        kept: z.boolean(),
+        certification: z
+          .object({ level: certificationLevelSchema, signer: z.string().max(ENGINE_SIGNATURE_FIELD_MAX) })
+          .strict()
+          .nullable(),
+      })
+      .strict(),
     ['no-such-session'],
   ),
 

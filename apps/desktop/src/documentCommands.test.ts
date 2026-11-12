@@ -116,7 +116,7 @@ import {
   serialiseFormData,
   rasterisePageImage,
   snapshotRegion,
-  signaturesKeptBySave,
+  signatureFacts,
   withDocument,
   composeWordDocument,
   DocumentLocked,
@@ -957,7 +957,7 @@ const INERT = {
   signatures: () => Promise.reject(new Error('this case does not read signatures')),
   // EVERY SAVE ASKS, since item 6 — the answer also says whether the save is a removal's — so the inert answer is the
   // ordinary one: an unsigned document, and not a removal.
-  signaturesKept: () => Promise.resolve({ signatures: 0, kept: true }),
+  signaturesKept: () => Promise.resolve({ signatures: 0, kept: true, certification: null }),
   restore: noRestore,
   renew: () => Promise.reject(new Error('INERT: this case saves no removal and must not renew a session')),
   // RESOLVES, unlike the refusing surfaces: a removal's save retakes the picture after its lane and does not await it,
@@ -1813,7 +1813,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
      */
     async function aSavableDocument(
       /** What the writer says about the next save and the signatures — the real decision unless a case says otherwise. */
-      signaturesKept: DocumentCommandsParts['signaturesKept'] = signaturesKeptBySave,
+      signaturesKept: DocumentCommandsParts['signaturesKept'] = signatureFacts,
       /** Which backups Monstera made — the product's ledger on the real disk unless a case holds a file. */
       provenance: BackupProvenance = ledger(),
       /** Where *Save a copy*'s picker answers, for the cases that write one; a dismissed picker otherwise. */
@@ -2061,7 +2061,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       const asked: unknown[] = [];
       const { commands, saved, path, before } = await aSavableDocument((session) => {
         asked.push(session);
-        return Promise.resolve({ signatures: 2, kept: false });
+        return Promise.resolve({ signatures: 2, kept: false, certification: null });
       });
 
       expect(await commands.save(saved, { breakSignatures: false })).toStrictEqual({ kind: 'breaks-signatures', signatures: 2 });
@@ -2112,7 +2112,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
      * fire, which is what lets the third assertion separate *agreed once* from *never asked*.
      */
     describe('an edit that would break a signature (ADR-0149)', () => {
-      const signedAndBroken: DocumentCommandsParts['signaturesKept'] = () => Promise.resolve({ signatures: 1, kept: false });
+      const signedAndBroken: DocumentCommandsParts['signaturesKept'] = () => Promise.resolve({ signatures: 1, kept: false, certification: null });
 
       it('is REFUSED before any byte changes: the same version, the same session bytes, no history', async () => {
         const t = await aSavableDocument(signedAndBroken);
@@ -2186,7 +2186,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       });
 
       it('CONTROL: an unsigned document is not asked about the same removal', async () => {
-        const t = await aSavableDocument(() => Promise.resolve({ signatures: 0, kept: true }));
+        const t = await aSavableDocument(() => Promise.resolve({ signatures: 0, kept: true, certification: null }));
         const version = await t.version();
 
         await t.commands.execute(t.saved, sanitize);
@@ -2223,7 +2223,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
             ? Promise.reject(Object.assign(new Error('resource busy or locked'), { code: 'EBUSY' }))
             : nodeFileSurface.rename(from, to),
       };
-      const { commands, saved, path, before } = await aSavableDocument(signaturesKeptBySave, ledger(), null, {
+      const { commands, saved, path, before } = await aSavableDocument(signatureFacts, ledger(), null, {
         surface: holdingBackup,
       });
       const aside = `${path}.monstera-previous`;
@@ -2293,7 +2293,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       it('a copy written while the removal is pending keeps no backup of the file it replaces', async () => {
         const destination = join(directory, 'redacted copy.pdf');
         writeFileSync(destination, 'an earlier copy, made before the redaction');
-        const t = await aSavableDocument(signaturesKeptBySave, ledger(), destination);
+        const t = await aSavableDocument(signatureFacts, ledger(), destination);
         await t.commands.execute(t.saved, sanitize);
 
         expect(await t.commands.saveCopy(t.saved)).toMatchObject({ kind: 'copied' });
@@ -2303,7 +2303,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       it('CONTROL: the same copy with no removal pending leaves the backup a save would', async () => {
         const destination = join(directory, 'ordinary copy.pdf');
         writeFileSync(destination, 'an earlier copy');
-        const t = await aSavableDocument(signaturesKeptBySave, ledger(), destination);
+        const t = await aSavableDocument(signatureFacts, ledger(), destination);
         await t.commands.execute(t.saved, rotateOnce);
 
         expect(await t.commands.saveCopy(t.saved)).toMatchObject({ kind: 'copied' });
@@ -2313,7 +2313,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       it('a copy onto the document’s OWN FILE is refused as onto-source, the file untouched (the owner, 2026-11-10)', async () => {
         // THE REAL SERVICE AND THE REAL BINDING: the source is named by the command, through `#checkFor`, and the
         // composition-shaped `checkTarget` forwards it. A binding that dropped it would answer `refused` here.
-        const t = await aSavableDocument(signaturesKeptBySave, ledger(), ITS_OWN_FILE);
+        const t = await aSavableDocument(signatureFacts, ledger(), ITS_OWN_FILE);
         await t.commands.execute(t.saved, rotateOnce);
 
         expect(await t.commands.saveCopy(t.saved)).toStrictEqual({ kind: 'onto-source' });
@@ -2331,7 +2331,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
           holding ? Promise.reject(Object.assign(new Error('resource busy or locked'), { code: 'EBUSY' })) : rm(path, { force: true }),
         wait: () => Promise.resolve(),
       });
-      const { commands, saved, path, before } = await aSavableDocument(signaturesKeptBySave, held);
+      const { commands, saved, path, before } = await aSavableDocument(signatureFacts, held);
       await commands.execute(saved, rotateOnce);
       expect(await commands.save(saved, { breakSignatures: false })).toMatchObject({ previousKeptAt: `${path}.bak`, held: [] });
       expect(holdsReplaced(path, before)).toStrictEqual([`${basename(path)}.bak`]);
@@ -2359,7 +2359,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
           holding ? Promise.reject(Object.assign(new Error('resource busy or locked'), { code: 'EBUSY' })) : rm(path, { force: true }),
         wait: () => Promise.resolve(),
       });
-      const { commands, saved, path } = await aSavableDocument(signaturesKeptBySave, held);
+      const { commands, saved, path } = await aSavableDocument(signatureFacts, held);
       await commands.execute(saved, rotateOnce);
       await commands.save(saved, { breakSignatures: false });
       await commands.execute(saved, sanitize);
@@ -7992,7 +7992,7 @@ describe('a document opened with its password: no unprotected copy, and no passw
       };
       const commands = new DocumentCommands({
         ...LOCAL_READS,
-        signaturesKept: signaturesKeptBySave,
+        signaturesKept: signatureFacts,
         documents: own,
         bus: new CommandBus({ mupdf: localMupdfWriter }),
         engine: held,
@@ -8147,7 +8147,7 @@ describe('a protect in this session: the holder follows it', () => {
           return Promise.resolve();
         },
       },
-      signaturesKept: signaturesKeptBySave,
+      signaturesKept: signatureFacts,
       documents: own,
       bus: new CommandBus({ mupdf: localMupdfWriter }),
       engine: engineOf(held),
