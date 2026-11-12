@@ -142,6 +142,14 @@ export const CERTIFIED_FORM_FILL = messageKey('problem.certified.form-fill');
 export const CERTIFIED_FORM_FILL_AND_ANNOTATE = messageKey('problem.certified.form-fill-and-annotate');
 export const CERTIFIED_BY_LABEL = messageKey('problem.certified.by');
 export const CERTIFIED_EDIT_TITLE = messageKey('dialog.certified-edit.title');
+/**
+ * The certification line at the top of a certified document, one per level, and the copy's (ADR-0291's amendment of
+ * 2026-11-12). `named` is `yes` where the certifier has a name to give.
+ */
+export const CERTIFICATION_LINE_NO_CHANGES = messageKey('document.certification-line.no-changes');
+export const CERTIFICATION_LINE_FORM_FILL = messageKey('document.certification-line.form-fill');
+export const CERTIFICATION_LINE_FORM_FILL_AND_ANNOTATE = messageKey('document.certification-line.form-fill-and-annotate');
+export const CERTIFICATION_LINE_COPY = messageKey('document.certification-line.copy');
 export const CERTIFIED_EDIT_EXPLAINS = messageKey('dialog.certified-edit.explains');
 export const SAVE_TOO_DEEP_TITLE = messageKey('dialog.save-too-deep.title');
 export const SAVE_TOO_DEEP_EXPLAINS = messageKey('dialog.save-too-deep.explains');
@@ -3778,6 +3786,14 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'This document is certified, and its certifier allows only filling in its form, signing it and adding comments. Nothing was changed.',
   [CERTIFIED_BY_LABEL]: 'Certified by',
   [CERTIFIED_EDIT_TITLE]: 'This document is certified',
+  [CERTIFICATION_LINE_NO_CHANGES]:
+    '{named, select, yes {Certified by {signer}, who allows no changes to it.} other {Certified. Its certifier allows no changes to it.}}',
+  [CERTIFICATION_LINE_FORM_FILL]:
+    '{named, select, yes {Certified by {signer}, who allows only filling in its forms and signing it.} other {Certified. Its certifier allows only filling in its forms and signing it.}}',
+  [CERTIFICATION_LINE_FORM_FILL_AND_ANNOTATE]:
+    '{named, select, yes {Certified by {signer}, who allows only filling in its forms, signing it and adding comments.} other {Certified. Its certifier allows only filling in its forms, signing it and adding comments.}}',
+  [CERTIFICATION_LINE_COPY]:
+    '{named, select, yes {This copy is not certified. The original, certified by {signer}, is unchanged.} other {This copy is not certified. The certified original is unchanged.}}',
   [CERTIFIED_EDIT_EXPLAINS]:
     'Work on a copy to make this change. The copy is saved where you choose and opens with the change made. It is a new document and no longer carries the certification, and this document stays exactly as it was certified.',
   [SAVE_TOO_DEEP_TITLE]: 'This file can’t be saved',

@@ -4108,6 +4108,20 @@ export const channels = {
   ),
 
   /**
+   * Whether the document is certified, by whom and to what, and whether it holds any signature
+   * ([ADR-0291](../../../docs/DECISIONS/0291-a-certified-document-is-locked-to-what-its-certifier-allowed-and-worked-on-as-a-copy.md)'s
+   * amendment of 2026-11-12). The lane's own read (`signatureFacts`), so the line a person reads and the lock cannot
+   * disagree; it verifies nothing, which `document.signatures` does. `certification` is the `certified` refusal's own
+   * detail, one schema for both.
+   */
+  'document.certification': channel(
+    'Reads whether an open document is certified, by whom, and whether it holds a signature.',
+    z.object({ docId: docIdSchema }).strict(),
+    z.object({ certification: FAILURE_DETAIL_SCHEMAS.certified.nullable(), signed: z.boolean() }),
+    ['document-not-open', 'document-busy', 'document-poisoned', 'engine-unavailable'],
+  ),
+
+  /**
    * Saves, as a copy, the document's FILE cut back to the bytes one signature signed
    * ([ADR-0291](../../../docs/DECISIONS/0291-a-certified-document-is-locked-to-what-its-certifier-allowed-and-worked-on-as-a-copy.md)
    * Decision 7, measured first in `signedVersion.test.ts`). The signature is named by where its signed bytes end, which

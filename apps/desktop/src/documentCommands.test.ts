@@ -2317,6 +2317,19 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
         await expect(unsigned.commands.execute(unsigned.saved, certify)).rejects.toMatchObject({ name: 'UnregisteredWriterError' });
       });
 
+      it('THE LINE’S READ answers the lane’s own facts: who certified it, to what, and that it is signed', async () => {
+        const t = await aSavableDocument(certified('form-fill'));
+        expect(await t.commands.certification(t.saved)).toStrictEqual({
+          certification: { level: 'form-fill', signer: 'Grace Hopper' },
+          signed: true,
+        });
+        // CONTROL: an ordinary signature is signed and uncertified, and an unsigned document is neither.
+        const plain = await aSavableDocument(() => Promise.resolve({ signatures: 1, kept: true, certification: null }));
+        expect(await plain.commands.certification(plain.saved)).toStrictEqual({ certification: null, signed: true });
+        const unsigned = await aSavableDocument(() => Promise.resolve({ signatures: 0, kept: true, certification: null }));
+        expect(await unsigned.commands.certification(unsigned.saved)).toStrictEqual({ certification: null, signed: false });
+      });
+
       it('AGREEING to break signatures does not pass it: the lock is not a warning', async () => {
         const t = await aSavableDocument(certified('no-changes'));
         const version = await t.version();

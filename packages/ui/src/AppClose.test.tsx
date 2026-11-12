@@ -137,6 +137,9 @@ function client(options: {
       // EVERY OPEN ASKS whether the file can be saved over (cloud-4 7b).
       case 'document.fileAccess':
         return Promise.resolve(ok({ access: 'writable' as const }));
+      // AND ITS CERTIFICATION, for the line at its top (ADR-0291's amendment): none, which is every case's position.
+      case 'document.certification':
+        return Promise.resolve(ok({ certification: null, signed: false }));
       // AND THE OLD `.bak` FILES BESIDE IT ARE MOVED SILENTLY (ADR-0198): none moved, which is every case's position.
       case 'document.adoptOldBackups':
         return Promise.resolve(ok({ kind: 'adopted' as const, moved: 0 }));

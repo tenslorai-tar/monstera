@@ -238,6 +238,7 @@ describe('browser shim', () => {
       'document.awaitExternalEdit',
       'document.blockFaces',
       'document.buttonActions',
+      'document.certification',
       'document.clearRecent',
       'document.close',
       'document.convertTextToCurves',

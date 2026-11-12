@@ -13,6 +13,7 @@ import { type SignedEditing, applyDocumentCommand } from './documentCommands.js'
 const DOC = asDocId('doc-writes');
 const signatures: SignedEditing = {
   warn: () => true,
+  reread: () => undefined,
   onOpened: () => {
     throw new Error('a case opened a copy for an edit without asking for one');
   },

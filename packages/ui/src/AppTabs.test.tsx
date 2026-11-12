@@ -157,6 +157,8 @@ function client(): { readonly client: ContractClient; readonly sent: Sent[] } {
     if (id === 'document.held') return Promise.resolve(ok({ documents: [] }));
     // EVERY OPEN ASKS whether the file can be saved over (cloud-4 7b).
     if (id === 'document.fileAccess') return Promise.resolve(ok({ access: 'writable' as const }));
+    // AND ITS CERTIFICATION, for the line at its top (ADR-0291's amendment): none.
+    if (id === 'document.certification') return Promise.resolve(ok({ certification: null, signed: false }));
     // AND NO OLD `.bak` FILES TO MOVE (ADR-0198).
     if (id === 'document.adoptOldBackups') return Promise.resolve(ok({ kind: 'adopted' as const, moved: 0 }));
     // E3's prompt asks once per mount; not due, so no banner sits over the tabs these cases drive.

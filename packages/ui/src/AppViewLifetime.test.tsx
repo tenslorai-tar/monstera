@@ -139,6 +139,7 @@ function answeringClient(model?: Readonly<Record<string, unknown>>): ContractCli
     'document.held': { documents: [] },
     // EVERY OPEN ASKS whether the file can be saved over (cloud-4 7b).
     'document.fileAccess': { access: 'writable' },
+    'document.certification': { certification: null, signed: false },
     // AND NO OLD `.bak` FILES TO MOVE (ADR-0198).
     'document.adoptOldBackups': { kind: 'adopted', moved: 0 },
   };

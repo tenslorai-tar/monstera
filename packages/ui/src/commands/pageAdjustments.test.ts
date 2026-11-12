@@ -12,6 +12,7 @@ const DOC = asDocId('00000000-0000-4000-8000-0000000000d5');
 const STAMP = () => ({ author: 'A. Tester', created: '2026-10-13T09:00:00.000Z' });
 const signatures = {
   warn: () => true,
+  reread: () => undefined,
   onOpened: () => {
     throw new Error('a case opened a copy for an edit without asking for one');
   },

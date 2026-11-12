@@ -61,7 +61,7 @@ const command = (deps: ReturnType<typeof harness>['deps']) =>
     ...deps,
     onApplied: () => undefined,
     stamp: () => ({ author: 'A', created: '2026-10-08T00:00:00.000Z' }),
-    signatures: { warn: () => true, onOpened: () => undefined },
+    signatures: { warn: () => true, reread: () => undefined, onOpened: () => undefined },
   });
 
 describe('restoreVersionCommand', () => {

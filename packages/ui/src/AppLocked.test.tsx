@@ -73,6 +73,7 @@ function answeringClient(): ContractClient {
     'app.rendererEnded': { kind: 'none' },
     'document.held': { documents: [] },
     'document.fileAccess': { access: 'writable' },
+    'document.certification': { certification: null, signed: false },
     'document.adoptOldBackups': { kind: 'adopted', moved: 0 },
   };
   return createClient(channels, (id) => {

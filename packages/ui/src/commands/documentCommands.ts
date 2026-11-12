@@ -388,6 +388,7 @@ import type { ZoomDirection, ZoomMode } from '../zoom.js';
 import type { TextBlock } from '../textBlock.js';
 import { shownOf } from '../objectRead.js';
 import { copyProblemOf } from './copyProblem.js';
+import type { CertificationLine } from '../documentStores.js';
 
 /**
  * The three commands that act on the open document.
@@ -525,8 +526,13 @@ export interface PagePlanning {
 export interface SignedEditing {
   /** Whether a change that would break a signature asks first: the save's switch, `saving.warn-signature-break`. */
   readonly warn: () => boolean;
-  /** Adds the copy an edit was made on as a tab, as an open does. */
-  readonly onOpened: (document: OpenedDocument) => void;
+  /**
+   * Adds the copy an edit was made on as a tab, as an open does; `line` is what its certification line says, where the
+   * copy was made from a certified document (ADR-0291's amendment): the copy is the one that knows it is one.
+   */
+  readonly onOpened: (document: OpenedDocument, line?: CertificationLine) => void;
+  /** Reads a document's certification line again, after a signing that may have certified it. */
+  readonly reread: (docId: DocId) => void;
 }
 
 /**
@@ -978,7 +984,8 @@ async function sendInLane(
   // signature warning off does not reach here. Cancel, or a dismissed picker, keeps what was typed (ADR-0149's addition).
   if (!answer.ok && answer.error.code === 'certified') {
     const asked = CERTIFIED_EDIT_RESULT.safeParse(await deps.ask(CERTIFIED_EDIT_DIALOG_ID, answer.error.detail));
-    if (!asked.success || !(await editOnCopy(deps, docId, sent))) options.keep?.(answer.error);
+    const copyLine = { kind: 'uncertified-copy', signer: answer.error.detail.signer } as const;
+    if (!asked.success || !(await editOnCopy(deps, docId, sent, copyLine))) options.keep?.(answer.error);
     return false;
   }
 
@@ -1079,7 +1086,13 @@ function tellUnsealed(
  * @returns whether a copy is open for the edit. `false` is none — the picker dismissed, or the write or the open
  * refused, each said here but the dismissal — so the caller may keep what the person typed, which went nowhere.
  */
-async function editOnCopy(deps: DocumentCommandDeps, docId: DocId, command: RenderableCommand): Promise<boolean> {
+async function editOnCopy(
+  deps: DocumentCommandDeps,
+  docId: DocId,
+  command: RenderableCommand,
+  /** The copy's certification line, where the copy is made because the original is certified. */
+  line?: CertificationLine,
+): Promise<boolean> {
   const answer = await deps.client['document.editCopy']({ docId, command });
   if (!answer.ok) {
     reportProblem(deps, answer.error);
@@ -1089,12 +1102,15 @@ async function editOnCopy(deps: DocumentCommandDeps, docId: DocId, command: Rend
   switch (outcome.kind) {
     case 'edited':
     case 'edit-refused': {
-      deps.signatures.onOpened({
-        docId: outcome.docId,
-        version: outcome.version,
-        byteLength: outcome.byteLength,
-        name: outcome.name,
-      });
+      deps.signatures.onOpened(
+        {
+          docId: outcome.docId,
+          version: outcome.version,
+          byteLength: outcome.byteLength,
+          name: outcome.name,
+        },
+        line,
+      );
       // THE COPY IS OPEN EITHER WAY, and a refusal of the edit there is said over it: the file is where the person
       // put it, unchanged, and closing its tab is theirs.
       if (outcome.kind === 'edit-refused') {
@@ -5331,9 +5347,12 @@ export async function readPageContentBoxes(
  * answer is decide whether to trust the document, which is a judgement rather
  * than a command.
  */
+/** *Check signatures*' id, which the certification line runs it by (ADR-0291's amendment). */
+export const CHECK_SIGNATURES_COMMAND_ID = 'document.check-signatures';
+
 export function signaturesCommand(deps: DocumentCommandDeps & { readonly toast: ShowToast }): UiCommand {
   return {
-    id: 'document.check-signatures',
+    id: CHECK_SIGNATURES_COMMAND_ID,
     feedback: RESULT_DIALOG,
     icon: 'BadgeCheck',
     title: SIGNATURES_COMMAND_TITLE,
@@ -5413,6 +5432,9 @@ export function signDocumentCommand(deps: DocumentCommandDeps & WritesAFile): Ui
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
       await signDocument(deps, context.docId);
+      // A SIGNING MAY HAVE CERTIFIED IT, so its line is read again once the attempt ends (ADR-0291's amendment); a read
+      // after one that changed nothing answers what the line already says.
+      deps.signatures.reread(context.docId);
     },
   };
 }

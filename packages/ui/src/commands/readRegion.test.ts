@@ -93,7 +93,7 @@ function rig(before: readonly Placed[], after: readonly Placed[], execute: 'ok' 
           client,
           onApplied: () => undefined,
           stamp: () => ({ author: 'A. Tester', created: '2026-10-08T09:00:00.000Z' }),
-          signatures: { warn: () => false, onOpened: () => undefined },
+          signatures: { warn: () => false, reread: () => undefined, onOpened: () => undefined },
           toast: (...args: unknown[]) => toasts.push(args),
           style: styleFrom({} as never),
           run: (id: string) => {

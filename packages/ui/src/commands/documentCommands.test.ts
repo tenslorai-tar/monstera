@@ -285,6 +285,7 @@ const stamp = (): AnnotationStamp => ({ author: 'A. Tester', created: '2026-09-2
  */
 const signatures: SignedEditing = {
   warn: () => true,
+  reread: () => undefined,
   onOpened: () => {
     throw new Error('a case opened a copy for an edit without asking for one');
   },
@@ -7695,7 +7696,13 @@ describe('a change main answers certified for (ADR-0291)', () => {
     const opened: unknown[] = [];
 
     const moved = await applyDocumentCommand(
-      { client, ask, stamp, signatures: { warn: () => true, onOpened: (document) => opened.push(document) }, onApplied: () => undefined },
+      {
+        client,
+        ask,
+        stamp,
+        signatures: { warn: () => true, reread: () => undefined, onOpened: (document, line) => opened.push({ document, line }) },
+        onApplied: () => undefined,
+      },
       DOC,
       ROTATE,
     );
@@ -7706,7 +7713,13 @@ describe('a change main answers certified for (ADR-0291)', () => {
       { id: 'document.execute', params: { docId: DOC, command: ROTATE } },
       { id: 'document.editCopy', params: { docId: DOC, command: ROTATE } },
     ]);
-    expect(opened).toHaveLength(1);
+    // THE COPY OPENS WITH ITS LINE (ADR-0291's amendment): not certified, the original's certifier named.
+    expect(opened).toStrictEqual([
+      {
+        document: { docId: asDocId('doc-copy'), version: 2, byteLength: 2048, name: 'copy.pdf' },
+        line: { kind: 'uncertified-copy', signer: 'Grace Hopper' },
+      },
+    ]);
   });
 
   it('NEVER sends the command again agreed, and the warning turned off does not skip the window', async () => {
@@ -7715,7 +7728,7 @@ describe('a change main answers certified for (ADR-0291)', () => {
     const kept: string[] = [];
 
     const moved = await applyDocumentCommand(
-      { client, ask, stamp, signatures: { warn: () => false, onOpened: () => undefined }, onApplied: () => undefined },
+      { client, ask, stamp, signatures: { warn: () => false, reread: () => undefined, onOpened: () => undefined }, onApplied: () => undefined },
       DOC,
       ROTATE,
       {
@@ -7736,7 +7749,7 @@ describe('a change main answers certified for (ADR-0291)', () => {
   it('CONTROL: the signed-edit question is not the one asked, so the certified window is the answer’s own', async () => {
     const { client } = certifiedMain();
     const { ask, asked } = answering(undefined);
-    await applyDocumentCommand({ client, ask, stamp, signatures: { warn: () => true, onOpened: () => undefined }, onApplied: () => undefined }, DOC, ROTATE);
+    await applyDocumentCommand({ client, ask, stamp, signatures: { warn: () => true, reread: () => undefined, onOpened: () => undefined }, onApplied: () => undefined }, DOC, ROTATE);
     expect(asked.map((each) => each.id)).not.toContain('dialog.signed-edit');
     expect(asked.map((each) => each.id)).not.toContain('dialog.command-problem');
   });
@@ -7786,9 +7799,22 @@ describe('an edit main answers breaks-signatures for (ADR-0149)', () => {
   }
 
   /** The copy's opener, recording what it was handed. */
-  function opening(warn = true): { signatures: SignedEditing; opened: unknown[] } {
+  function opening(warn = true): { signatures: SignedEditing; opened: unknown[]; lines: unknown[] } {
     const opened: unknown[] = [];
-    return { opened, signatures: { warn: () => warn, onOpened: (document) => opened.push(document) } };
+    // THE CERTIFICATION LINE each copy was opened with (ADR-0291's amendment), apart, so `opened` keeps its meaning.
+    const lines: unknown[] = [];
+    return {
+      opened,
+      lines,
+      signatures: {
+        warn: () => warn,
+        reread: () => undefined,
+        onOpened: (document, line) => {
+          opened.push(document);
+          lines.push(line);
+        },
+      },
+    };
   }
 
   it('CHANGE THIS DOCUMENT sends the SAME command again, agreed, and the document moves', async () => {
@@ -7827,7 +7853,7 @@ describe('an edit main answers breaks-signatures for (ADR-0149)', () => {
     const { client, sent } = signedMain(copy);
     const { ask, asked } = answering('copy');
     const applied: Applied[] = [];
-    const { signatures: signed, opened } = opening();
+    const { signatures: signed, opened, lines } = opening();
 
     const moved = await applyDocumentCommand(
       { client, ask, stamp, signatures: signed, onApplied: (next) => applied.push(next) },
@@ -7843,6 +7869,8 @@ describe('an edit main answers breaks-signatures for (ADR-0149)', () => {
       { id: 'document.editCopy', params: { docId: DOC, command: SANITIZE } },
     ]);
     expect(opened).toStrictEqual([{ docId: COPY, version: 2, byteLength: 2048, name: 'signed copy.pdf' }]);
+    // CONTROL for the certified route's line: a SIGNED document's copy is opened with none, since nothing certified it.
+    expect(lines).toStrictEqual([undefined]);
     expect(asked).toStrictEqual(['dialog.signed-edit']);
   });
 

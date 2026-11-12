@@ -46,6 +46,7 @@ const stamp = (): AnnotationStamp => ({ author: 'A. Tester', created: '2026-10-0
 /** No document here is signed, so a copy opened for an edit is a defect of the case. */
 const signatures: SignedEditing = {
   warn: () => true,
+  reread: () => undefined,
   onOpened: () => {
     throw new Error('a case opened a copy for an edit without asking for one');
   },

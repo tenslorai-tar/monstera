@@ -223,6 +223,8 @@ const OTHER_ANSWERS: Partial<Record<string, unknown>> = {
   'document.held': { documents: [] },
   // EVERY OPEN ASKS whether the file can be saved over (cloud-4 7b); a file a person just opened usually can.
   'document.fileAccess': { access: 'writable' },
+  // AND ITS CERTIFICATION, for the line at its top (ADR-0291's amendment): none, unless a case certifies it.
+  'document.certification': { certification: null, signed: false },
   // AND THE OLD `.bak` FILES BESIDE IT ARE MOVED SILENTLY (ADR-0198): none moved, which is every case's position.
   'document.adoptOldBackups': { kind: 'adopted', moved: 0 },
   // E3's rating prompt asks once per mount. Not due is every case's position: a banner here would put four
@@ -369,6 +371,7 @@ const OPEN_DOCUMENT_ANSWERS = {
   'app.prepareEditing': { started: true },
   'document.held': { documents: [] },
   'document.fileAccess': { access: 'writable' as const },
+  'document.certification': { certification: null, signed: false },
   'document.adoptOldBackups': { kind: 'adopted' as const, moved: 0 },
   'document.openWaiting': { opened: [] },
   'document.open': {
@@ -4955,6 +4958,44 @@ describe('the menu bar, in the shell (ADR-0107)', () => {
       { docId: DOC },
       { docId: COPY },
     ]);
+  });
+
+  it('a CERTIFIED document says who certified it at its top, and the line’s button runs Check signatures on it (ADR-0291)', async () => {
+    const { client, sent } = answeringClient({
+      ...OPEN_DOCUMENT_ANSWERS,
+      'document.certification': { certification: { level: 'form-fill', signer: 'Grace Hopper' }, signed: true },
+      'document.signatures': { signatures: [], unreadable: false },
+    });
+    const { container } = render(<App client={client} settings={freshSettings()} />);
+    await withDocumentOpen();
+
+    const line = await vi.waitFor(() => {
+      const found = container.querySelector<HTMLElement>('[data-document-layer="active"] [data-certification-line="certified"]');
+      if (found === null) throw new Error('no line yet');
+      return found;
+    });
+    expect(line.textContent).toContain('Certified by Grace Hopper, who allows only filling in its forms and signing it.');
+    expect(sent.filter((one) => one.id === 'document.certification').map((one) => one.params)).toStrictEqual([{ docId: DOC }]);
+
+    // THE REGISTERED COMMAND, run with the document on show: it reads that document's signatures.
+    const before = sent.length;
+    await act(async () => {
+      within(line).getByRole('button', { name: 'Check signatures' }).click();
+      await Promise.resolve();
+    });
+    await vi.waitFor(() => {
+      expect(sent.slice(before).filter((one) => one.id === 'document.signatures').map((one) => one.params)).toStrictEqual([{ docId: DOC }]);
+    });
+  });
+
+  it('CONTROL: an uncertified document has no line', async () => {
+    const { client } = answeringClient(OPEN_DOCUMENT_ANSWERS);
+    const { container } = render(<App client={client} settings={freshSettings()} />);
+    await withDocumentOpen();
+    await vi.waitFor(() => {
+      expect(container.querySelector(`[data-tab="${DOC}"]`)).not.toBeNull();
+    });
+    expect(container.querySelector('[data-certification-line]')).toBeNull();
   });
 
   it('File › Start screen shows the start screen and KEEPS the document’s tab', async () => {

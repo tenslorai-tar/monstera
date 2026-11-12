@@ -63,7 +63,7 @@ function deps(client: ContractClient): Parameters<typeof applyDocumentCommand>[0
       return Promise.resolve(undefined);
     },
     stamp,
-    signatures: { warn: () => false, onOpened: () => undefined },
+    signatures: { warn: () => false, reread: () => undefined, onOpened: () => undefined },
   };
 }
 

@@ -3646,6 +3646,22 @@ export class DocumentCommands {
     }).then(({ value }) => value);
   }
 
+  /**
+   * The document's certification and whether it holds a signature (ADR-0291's amendment of 2026-11-12): the line at
+   * open, and the Sign dialog's question. THE LANE'S OWN READ, `signaturesKept`, inside the lane for `signatures`'
+   * reason, so what a person reads and what the lane refuses cannot be two answers.
+   */
+  async certification(docId: DocId): Promise<{ readonly certification: Certification | null; readonly signed: boolean }> {
+    return this.#documents.read(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+      const session = this.#engine.sessions(docId)?.mupdf;
+      if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+      const facts = await this.#signaturesKept(session);
+      return { certification: facts.certification, signed: facts.signatures > 0 };
+    }).then(({ value }) => value);
+  }
+
   async layers(docId: DocId): Promise<DocumentLayers> {
     const { version, value } = await this.#documents.read(docId, async () => {
       const failures = this.#engine.poisoned(docId);

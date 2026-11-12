@@ -673,6 +673,7 @@ export function createContractHandlers(deps: {
     'document.pageMarks': pageMarksHandler(deps.commands),
     'document.layers': layersHandler(deps.commands),
     'document.signatures': signaturesHandler(deps.commands),
+    'document.certification': certificationHandler(deps.commands),
     'document.saveSignedVersion': saveSignedVersionHandler(deps.commands),
     'document.annotations': annotationsHandler(deps.commands),
     'document.formFields': formFieldsHandler(deps.commands),
@@ -3409,6 +3410,21 @@ function signaturesHandler(
     try {
       const { signatures, unreadable } = await commands.signatures(docId);
       return ok({ signatures: signatures.map((signature) => ({ ...signature })), unreadable });
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      if (thrown instanceof MissingSessionError) return err({ code: 'engine-unavailable' });
+      throw thrown;
+    }
+  };
+}
+
+/** The document's certification, read at open (ADR-0291's amendment). The lane's refusals as `signaturesHandler`'s. */
+function certificationHandler(commands: DocumentCommands): ContractHandlers['document.certification'] {
+  return async ({ docId }) => {
+    try {
+      return ok(await commands.certification(docId));
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
