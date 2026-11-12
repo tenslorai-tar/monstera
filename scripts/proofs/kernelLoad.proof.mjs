@@ -91,6 +91,13 @@ const COMPOSE_FORBIDDEN = 'markdownCompose.js';
 const CSV_FORBIDDEN = 'csvRead.js';
 
 /**
+ * The kept font catalogue's parser, from 2026-11-12 (ADR-0293): `main` copies the file by name and never reads it, so
+ * the barrel gives `main` the name alone (`keptCatalogueName.js`) and must never reach what parses the file.
+ */
+const KEPT_PARSER_FORBIDDEN = 'keptCatalogue.js';
+const KEPT_NAME = 'keptCatalogueName.js';
+
+/**
  * zxing-cpp's reader and writer, from 2026-09-17 (ADR-0076). Two constants for two remedies:
  * the reader belongs to the engine host, the writer to a lazy subpath in `main`.
  */
@@ -113,7 +120,7 @@ const FONT_FORBIDDEN = [
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 47 });
+const roster = createRoster(failures, { cases: 50 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -420,6 +427,27 @@ try {
     `${CSV_FORBIDDEN} is PRESENT, so its four answers above are about reachability`,
     existsSync(join(DIST, CSV_FORBIDDEN)),
     `${CSV_FORBIDDEN} is missing from ${DIST}, so "not reachable" is true and means nothing.`,
+  );
+
+  // THE KEPT CATALOGUE'S PARSER (ADR-0293): the barrel reaches the name and never the parser. THE CONTROL is the name's
+  // module, which the barrel does reach: the walk follows the very branch a parser exported from it would arrive by.
+  const keptNameFromIndex = reaches('index.js', KEPT_NAME);
+  const keptParserFromIndex = reaches('index.js', KEPT_PARSER_FORBIDDEN);
+  check(
+    `CONTROL: the kernel's public surface DOES reach ${KEPT_NAME}, so the walk follows the kept catalogue's branch`,
+    keptNameFromIndex.reached,
+    `the walk could not reach ${KEPT_NAME} from index.js, which exports keptCatalogueName from it. The case below would then be satisfied by blindness.`,
+  );
+  check(
+    `importing the kernel's public surface does not load ${KEPT_PARSER_FORBIDDEN}`,
+    !keptParserFromIndex.reached,
+    `reachable via ${keptParserFromIndex.path.join(' -> ')}.\n` +
+      '      `main` copies the kept catalogue by name and never parses it (ADR-0293); export the name from keptCatalogueName.js alone.',
+  );
+  check(
+    `${KEPT_PARSER_FORBIDDEN} is PRESENT, so the answer above is about reachability`,
+    existsSync(join(DIST, KEPT_PARSER_FORBIDDEN)),
+    `${KEPT_PARSER_FORBIDDEN} is missing from ${DIST}, so "not reachable" is true and means nothing.`,
   );
 
   // THE FONT ENGINE AND THE BIDI ALGORITHM, 2026-10-05 (ADR-0172): the CSV reader's five questions for each module

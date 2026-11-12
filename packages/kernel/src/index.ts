@@ -338,6 +338,10 @@ export {
 // is behind `@monstera/kernel/compose`, and `proof:kernelload` asserts this barrel
 // never reaches it (ADR-0060).
 export { type ComposeChannels, composeChannels } from './host/composeChannels.js';
+// THE CATALOGUE HOST'S CHANNELS (ADR-0293), for the same reason: schemas and the shared host channels, no font read.
+export { type CatalogueChannels, catalogueChannels } from './host/catalogueChannels.js';
+// THE NAME ALONE, from a module that reaches no parser: `main` copies the file by it and never reads it.
+export { isKeptCatalogueName, keptCatalogueName } from './keptCatalogueName.js';
 export {
   type PdfiumArea,
   type PdfiumInputKeeper,

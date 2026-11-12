@@ -55,7 +55,7 @@ const CONTRACT_DIST = join(REPO_ROOT, 'packages', 'contract', 'dist');
 const CONTRACT_ROOT = '@monstera/contract';
 
 /** Every engine host's entry, relative to the kernel's dist. */
-const HOSTS = ['host/hostEntry.js', 'host/pdfiumHostEntry.js', 'host/composeHostEntry.js'];
+const HOSTS = ['host/hostEntry.js', 'host/pdfiumHostEntry.js', 'host/composeHostEntry.js', 'host/catalogueHostEntry.js'];
 
 /**
  * The other writers' modules, which the MuPDF host must not reach — and `documentSign.js`, the signer's KEY half,
@@ -77,7 +77,7 @@ const HARFBUZZ = 'harfbuzzjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 23 });
+const roster = createRoster(failures, { cases: 25 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {

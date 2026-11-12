@@ -5,10 +5,20 @@
  *
  * Windows only: every process is read with `Get-CimInstance Win32_Process` (private bytes, `PrivatePageCount`) and
  * classified by its command line: `main`, `renderer`, `gpu`, `utility`, `crashpad`, and the engine hosts, which are
- * named by the entry file they run (`host mupdf`, `host pdfium`, `host compose`).
+ * named by the entry file they run (`host mupdf`, `host pdfium`, `host compose`, `host catalogue`).
  */
 
 import { descendantsAmong, listProcesses } from './childProcesses.mjs';
+
+/**
+ * Each host's role by its entry file, lower-cased: ONE TABLE for which processes are hosts and what each is called, so a
+ * host added to one cannot be missing from the other. A role the table does not name is printed as its entry's name,
+ * never filed under another host's, which is how the catalogue host would otherwise have been counted as `compose`.
+ * @type {Readonly<Record<string, string>>}
+ */
+const HOST_ROLES = { hostentry: 'mupdf', pdfiumhostentry: 'pdfium', composehostentry: 'compose', cataloguehostentry: 'catalogue' };
+// CASE-INSENSITIVE: the entry file is `hostEntry.js` in one build's command line and `HostEntry.js` in another's.
+const HOST_ENTRY = /(hostEntry|pdfiumHostEntry|composeHostEntry|catalogueHostEntry)\.js/iu;
 
 /**
  * @typedef {{ pid: number, parent: number, role: string, privateBytes: number }} ProcessMemory
@@ -32,8 +42,7 @@ export function processTreeMemory(root, options = {}) {
       console.error(`DUMP pid=${String(each.pid)} parent=${String(each.parent)} private=${String(each.privateBytes)} cmd=${(each.commandLine ?? '<unreadable>').slice(-90)}`);
     }
   }
-  const isHost = (/** @type {{ commandLine?: string | null }} */ process) =>
-    /(?:hostEntry|pdfiumHostEntry|composeHostEntry)\.js/iu.test(process.commandLine ?? '');
+  const isHost = (/** @type {{ commandLine?: string | null }} */ process) => HOST_ENTRY.test(process.commandLine ?? '');
   // EACH EDGE BY childProcesses.mjs' RULE: a recorded parent id alone can name a process whose parent ended before `root`
   // began and whose id `root` was then given.
   const inTree = descendantsAmong(root, all);
@@ -54,14 +63,14 @@ export function processTreeMemory(root, options = {}) {
       const line = process.commandLine ?? '';
       const type = /--type=([a-z-]+)/u.exec(line)?.[1];
       // CASE-INSENSITIVE: the entry file is `hostEntry.js` in one build's command line and `HostEntry.js` in another's.
-      const host = /(hostEntry|pdfiumHostEntry|composeHostEntry)\.js/iu.exec(line)?.[1]?.toLowerCase();
+      const host = HOST_ENTRY.exec(line)?.[1]?.toLowerCase();
       const role =
         process.pid === mainPid
           ? 'main'
           : process.pid === root
             ? 'launcher'
             : host !== undefined
-              ? `host ${host === 'hostentry' ? 'mupdf' : host === 'pdfiumhostentry' ? 'pdfium' : 'compose'}`
+              ? `host ${HOST_ROLES[host] ?? host}`
               : type === 'renderer'
                 ? 'renderer'
                 : type === 'gpu-process'

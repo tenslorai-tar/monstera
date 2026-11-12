@@ -46,7 +46,18 @@ import { COMPOSE_HOST_HEAP_LIMIT_MIB } from './budget.js';
  * It is a kind here for the same reason the two engines are: a host is contained
  * by being a principal of its own, and the records below are what give it one.
  */
-export type EngineHostKind = 'mupdf' | 'pdfium' | 'compose';
+export type EngineHostKind = 'mupdf' | 'pdfium' | 'compose' | 'catalogue';
+
+/**
+ * Where a host that sets text is told its kept font catalogue is
+ * ([ADR-0293](../../../docs/DECISIONS/0293-the-font-catalogue-is-read-once-by-a-host-that-holds-no-document-and-kept.md)
+ * Decision 6): the kept area, which it may read and not write, and ADR-0237's fingerprint, which names the file. `null`
+ * where `main` does not know the fingerprint yet: the host reads its folders, as every host did before.
+ */
+export interface KeptCatalogueArguments {
+  readonly area: string;
+  readonly fingerprint: string;
+}
 
 /**
  * One host's program: which engine, and what that engine needs to start.
@@ -70,6 +81,17 @@ export type EngineHostProgram =
       readonly fontsPath: string | null;
       /** The machine's installed fonts' folder (ADR-0172 Decision 2), or `null`: `installedFonts.ts`' answer. */
       readonly installedFontsPath: string | null;
+      /** The kept catalogue (ADR-0293), or `null` where none is known yet. */
+      readonly kept: KeptCatalogueArguments | null;
+    }
+  | {
+      /**
+       * The catalogue host (ADR-0293): it reads the two font folders and writes their catalogue into its own area. It
+       * binds no library and is told no kept catalogue, since it is what writes one.
+       */
+      readonly kind: 'catalogue';
+      readonly fontsPath: string | null;
+      readonly installedFontsPath: string | null;
     }
   | {
       readonly kind: 'compose';
@@ -88,6 +110,8 @@ export type EngineHostProgram =
       readonly fontsPath: string | null;
       /** The machine's installed fonts' folder (ADR-0172 Decision 2), or `null`: `installedFonts.ts`' answer. */
       readonly installedFontsPath: string | null;
+      /** The kept catalogue (ADR-0293), or `null` where none is known yet. */
+      readonly kept: KeptCatalogueArguments | null;
     }
   | {
       readonly kind: 'pdfium';
@@ -107,6 +131,8 @@ export type EngineHostProgram =
       readonly fontsPath: string | null;
       /** The machine's installed fonts' folder (ADR-0172 Decision 2), or `null`: `installedFonts.ts`' answer. */
       readonly installedFontsPath: string | null;
+      /** The kept catalogue (ADR-0293), or `null` where none is known yet. */
+      readonly kept: KeptCatalogueArguments | null;
     };
 
 /**
@@ -128,6 +154,8 @@ export const ENGINE_HOST_CONTAINER: Record<EngineHostKind, string> = {
   // A THIRD DISTINCT STRING, for the reason above: a file picked for import and a
   // document's bytes must never be readable by one principal.
   compose: 'monstera-compose-host',
+  // A FOURTH (ADR-0293): the host that writes the catalogue every text host reads is a principal no document reaches.
+  catalogue: 'monstera-catalogue-host',
 };
 
 /**
@@ -141,6 +169,7 @@ export const ENGINE_HOST_ENTRY_FILE: Record<EngineHostKind, string> = {
   mupdf: 'hostEntry.js',
   pdfium: 'pdfiumHostEntry.js',
   compose: 'composeHostEntry.js',
+  catalogue: 'catalogueHostEntry.js',
 };
 
 /**
@@ -159,24 +188,33 @@ export function hostCommandArguments(
   entryPath: string,
   pipeName: string,
 ): readonly string[] {
-  // THE FONTS THIRD and THE INSTALLED FONTS FOURTH, each EMPTY where there is none: `hostEntry.ts` and
-  // `pdfiumHostEntry.ts` read `argv[4]` and `argv[5]` and take an empty one as absent.
-  if (program.kind === 'mupdf') {
-    return [entryPath, pipeName, program.libraryPath, program.fontsPath ?? '', program.installedFontsPath ?? ''];
+  // THE KEPT CATALOGUE'S AREA and FINGERPRINT after the installed fonts, `argv[6]` and `argv[7]` on every text host
+  // (`keptArguments.ts`), each EMPTY where none is known yet, so the host reads its folders.
+  const kept = (arguments_: KeptCatalogueArguments | null): string[] => [arguments_?.area ?? '', arguments_?.fingerprint ?? ''];
+  // ONE BRANCH PER KIND and no default, so a kind added to `EngineHostKind` is a compile error here rather than a host
+  // started with a neighbour's command line: the compose branch was the fall-through until ADR-0293.
+  switch (program.kind) {
+    // THE FONTS THIRD and THE INSTALLED FONTS FOURTH, each EMPTY where there is none: `hostEntry.ts` and
+    // `pdfiumHostEntry.ts` read `argv[4]` and `argv[5]` and take an empty one as absent.
+    case 'mupdf':
+    case 'pdfium':
+      return [entryPath, pipeName, program.libraryPath, program.fontsPath ?? '', program.installedFontsPath ?? '', ...kept(program.kept)];
+    // THE SHIM'S PATH SECOND, THE FONTS' THIRD and THE INSTALLED FONTS' FOURTH, each EMPTY where there is none:
+    // `composeHostEntry.ts` reads `argv[3]` to `argv[5]` and takes an empty one as absent, so a position never shifts
+    // when the one before it is missing. THE HEAP LIMIT BEFORE THE SCRIPT, where Node takes its own options: they go to
+    // `execArgv`, so the entry's `argv` is the same list (measured on the Electron binary in Node mode, 2026-10-13).
+    case 'compose':
+      return [
+        `--max-old-space-size=${String(COMPOSE_HOST_HEAP_LIMIT_MIB)}`,
+        entryPath,
+        pipeName,
+        program.shimPath ?? '',
+        program.fontsPath ?? '',
+        program.installedFontsPath ?? '',
+        ...kept(program.kept),
+      ];
+    // THE FONTS SECOND and THE INSTALLED FONTS THIRD, `catalogueArguments.ts`' `argv[3]` and `argv[4]`.
+    case 'catalogue':
+      return [entryPath, pipeName, program.fontsPath ?? '', program.installedFontsPath ?? ''];
   }
-  if (program.kind === 'pdfium') {
-    return [entryPath, pipeName, program.libraryPath, program.fontsPath ?? '', program.installedFontsPath ?? ''];
-  }
-  // THE SHIM'S PATH SECOND, THE FONTS' THIRD and THE INSTALLED FONTS' FOURTH, each EMPTY where there is none:
-  // `composeHostEntry.ts` reads `argv[3]` to `argv[5]` and takes an empty one as absent, so a position never shifts
-  // when the one before it is missing. THE HEAP LIMIT BEFORE THE SCRIPT, where Node takes its own options: they go to
-  // `execArgv`, so the entry's `argv` is the same list (measured on the Electron binary in Node mode, 2026-10-13).
-  return [
-    `--max-old-space-size=${String(COMPOSE_HOST_HEAP_LIMIT_MIB)}`,
-    entryPath,
-    pipeName,
-    program.shimPath ?? '',
-    program.fontsPath ?? '',
-    program.installedFontsPath ?? '',
-  ];
 }

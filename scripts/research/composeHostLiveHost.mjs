@@ -155,11 +155,12 @@ async function main() {
       report: (outcome) => {
         if (!outcome.ok) process.stderr.write(`package-data check: ${outcome.error}\n`);
       },
-    });
+      // NO KEPT FONT CATALOGUE (ADR-0293): the hosts here read their font folders, as every host did before it.
+    }, () => null);
     if (platform === null) {
       throw new Error('createEngineHostPlatform returned null, so no contained host can exist here.');
     }
-    const composePlatform = platformModule.createComposeHostPlatform(platform);
+    const composePlatform = platformModule.createComposeHostPlatform(platform, () => null);
     if (composePlatform === null) {
       throw new Error('createComposeHostPlatform returned null: the compose container SID was not derived.');
     }

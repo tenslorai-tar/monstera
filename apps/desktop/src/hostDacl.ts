@@ -195,6 +195,22 @@ export function handedDirectoryDacl(
 }
 
 /**
+ * The DACL on the kept font catalogue's area
+ * ([ADR-0293](../../../docs/DECISIONS/0293-the-font-catalogue-is-read-once-by-a-host-that-holds-no-document-and-kept.md),
+ * its correction of 2026-11-12): the user full control, since `main` places and removes the files, and READ to each host
+ * that sets text, and nothing to any host for writing, the catalogue host included, so no document can reach what a
+ * later document's host reads. PROTECTED, as {@link handedDirectoryDacl}'s, so nothing inherits in, and a file copied in
+ * takes these ACEs.
+ *
+ * @param user This process's own user SID.
+ * @param readers The principals of the hosts that set text; at least one, or the area grants nothing to read it.
+ */
+export function keptAreaDacl(user: UserSid, readers: readonly ContainerSid[]): string {
+  if (readers.length === 0) throw new Error('a kept area with no reader is granted to nothing that reads it');
+  return `D:P(A;OICI;FA;;;${user.value})${readers.map((reader) => `(A;OICI;${DIRECTORY_READ_MASK};;;${reader.value})`).join('')}`;
+}
+
+/**
  * The DACL an installed build puts on the package's data folders (ADR-0023 Decision 17, the owner's route D).
  *
  * A host created by a packaged `main` is a child container of the package and holds the package's capability SID,

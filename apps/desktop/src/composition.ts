@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { constants as fileConstants, createReadStream } from 'node:fs';
-import { copyFile, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { type Server, connect, createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -24,6 +24,7 @@ import {
   RECENT_PREVIEWS_STORED,
   REVIEW_PROMPTS_STORED,
   type ClientApi,
+  type ChannelMap,
   type IncidentSink,
   type StorePage,
   UPDATE_CHECK_STORED,
@@ -160,6 +161,8 @@ import {
   pdfiumChannels,
   type ComposeChannels,
   composeChannels,
+  catalogueChannels,
+  keptCatalogueName,
   remotePdfiumPageObjects,
   remotePdfiumPageContent,
   remotePdfiumRenderPage,
@@ -282,11 +285,14 @@ type DuplicateReport = (
 ) => ReturnType<DocumentDuplicatesReader> extends Promise<infer T> ? Promise<T> : never;
 import {
   type EngineHostConnection,
+  type EngineHostConnectionFailure,
   type EngineHostConnectionSurfaces,
   EngineCannotStartError,
   createEngineHostConnection,
   refusedAtConnect,
 } from './engineHostConnection.js';
+import { type KeptCatalogueHolder, type RunCatalogueHost, createKeptCatalogue } from './keptCatalogueStore.js';
+import type { DaclSurface } from './packageDataLock.js';
 import {
   type EngineOpenFromPath,
   type HostDeathSurfaces,
@@ -881,6 +887,18 @@ export interface ShellComposition {
    */
   readonly composePlatform?: EngineHostPlatform | null;
   /**
+   * The kept font catalogue ([ADR-0293](../../../docs/DECISIONS/0293-the-font-catalogue-is-read-once-by-a-host-that-holds-no-document-and-kept.md)):
+   * its area, the surface its DACL is written through, the holder the text hosts' platforms ask, the catalogue host's
+   * platform, and where its lines go. `null` where there is no Win32 platform: every host then reads its font folders.
+   */
+  readonly keptCatalogue?: {
+    readonly area: string;
+    readonly dacl: DaclSurface;
+    readonly holder: KeptCatalogueHolder;
+    readonly platform: EngineHostPlatform | null;
+    readonly report: (line: string) => void;
+  } | null;
+  /**
    * Where layout-preserving text is extracted: Poppler's `pdftotext` through §8's
    * external-converter seam (ADR-0071). `null` where no Win32 platform exists or
    * no `pdftotext` was handed down, and the export then answers *unavailable*.
@@ -1009,6 +1027,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     memoryPressure,
     pdfiumPlatform = null,
     composePlatform = null,
+    keptCatalogue = null,
     layoutTextPlatform = null,
     pdfaPlatform = null,
     officeImport = null,
@@ -1161,6 +1180,36 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
   // then refused by name rather than composed in `main` (ADR-0060).
   const composeHost =
     composePlatform === null ? null : composeHostBinding(composePlatform, failures, hostPolicy);
+  // THE KEPT FONT CATALOGUE (ADR-0293), started once in the background and on no document's path: the area given its
+  // DACL, ADR-0237's fingerprint, and the catalogue host run only where no file of that fingerprint is in place. Every
+  // way it can fail leaves the text hosts reading their folders, which is what its report says.
+  if (keptCatalogue !== null && enginePlatform !== null && fontList !== undefined) {
+    const readers = [enginePlatform, pdfiumPlatform, composePlatform].flatMap((each) => (each === null ? [] : [each.container]));
+    void createKeptCatalogue({
+      area: keptCatalogue.area,
+      user: enginePlatform.user,
+      readers,
+      dacl: keptCatalogue.dacl,
+      files: {
+        makeDirectory: (path) => mkdir(path, { recursive: true }),
+        exists: (path) => stat(path).then(
+          () => true,
+          () => false,
+        ),
+        copy: (from, to) => copyFile(from, to),
+        names: (directory) => readdir(directory),
+        remove: (path) => rm(path, { force: true }),
+      },
+      fingerprint: fontList.fingerprint,
+      run: keptCatalogue.platform === null ? null : catalogueHostRun(keptCatalogue.platform, failures, hostPolicy),
+      holder: keptCatalogue.holder,
+      report: keptCatalogue.report,
+    })
+      .start()
+      .catch((error: unknown) => {
+        keptCatalogue.report(`the kept font catalogue did not start: ${String(error)}`);
+      });
+  }
   // A SIGNATURE PICTURE, a PNG, a JPEG or a scanned PDF, from either route that asks for one: the PDF is made a picture
   // in the compose host, `null` where there is none, which is a graph a picked PDF cannot reach in a build.
   const signaturePicture = {
@@ -4264,6 +4313,142 @@ function pdfiumHostBinding(
  * failure code, a count that disagrees with the file, or a host that could not be
  * built throws — none of those is a fact about the person's Markdown.
  */
+/**
+ * The channels every host that holds no document owes (ADR-0060 Decision 3): the probe and its area's open and close,
+ * ONE DEFINITION of each, `hostAreaChannels(byteImageWire)`, which both such hosts' maps spread. The connect asks
+ * through these alone, so it is typed by what it asks rather than by each host's whole map.
+ */
+const AREA_HOST_CHANNELS = {
+  'engine/probe-containment': composeChannels['engine/probe-containment'],
+  'engine/open': composeChannels['engine/open'],
+  'engine/close': composeChannels['engine/close'],
+};
+type AreaHostChannels = typeof AREA_HOST_CHANNELS;
+
+/** One host that holds no document, connected, contained and handed its area. */
+interface AreaHostLive<TMap extends ChannelMap> {
+  readonly connection: EngineHostConnection;
+  readonly client: ClientApi<TMap>;
+  /** The granted pair, so its close can remove exactly what the connect created. */
+  readonly paths: { readonly snapshot: DirectoryPath; readonly output: DirectoryPath };
+  readonly session: string;
+}
+
+/**
+ * A host that holds no document, CONNECTED, CONTAINED AND HANDED ITS AREA: ADR-0060's sequence, stated once for the
+ * compose host and the catalogue host
+ * ([ADR-0293](../../../docs/DECISIONS/0293-the-font-catalogue-is-read-once-by-a-host-that-holds-no-document-and-kept.md)),
+ * since §3's *a second host is a generalisation of the first, never a copy* holds on this side of the pipe too. Each host
+ * says what it is called, its channels, how a refusal at connect is told, and what its ending does; the rest is one rule.
+ *
+ * A file-routed answer crosses in the area handed below (ADR-0125), and no file-routed call is made before `engine/open`,
+ * `pdfiumHostBinding`'s binding and its reason.
+ */
+async function connectAreaHost<TMap extends ChannelMap & AreaHostChannels>(
+  platform: EngineHostPlatform,
+  policy: HostPolicy,
+  host: {
+    /** The host's name in its pipe and in every refusal: `compose`, `catalogue`. */
+    readonly name: string;
+    readonly channels: TMap;
+    readonly refused: (failure: EngineHostConnectionFailure) => Error;
+    readonly onEnded: (ending: HostEnding) => void;
+  },
+): Promise<AreaHostLive<TMap>> {
+  const answerArea: { handle: string | null; area: SessionArea | null } = { handle: null, area: null };
+  const live = await createEngineHostConnection(platform.surfaces, {
+    pipeName: `\\\\.\\pipe\\monstera-${host.name}-${randomBytes(16).toString('hex')}`,
+    fileAnswers: fileAnswersFor(host.channels, (params) =>
+      answerArea.handle !== null && (params as { readonly session?: unknown } | null)?.session === answerArea.handle
+        ? (answerArea.area ?? undefined)
+        : undefined,
+    ),
+    user: platform.user,
+    container: platform.container,
+    readBytes: 64 * 1024,
+    maxOutstandingWrites: 16,
+    maxInFlight: ENGINE_HOST_MAX_IN_FLIGHT,
+    processMemoryLimitBytes: ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES,
+    correlate: () => randomBytes(8).toString('hex'),
+    deadline: policy.deadline,
+    memorySampling: policy.memorySampling,
+    // NO CALL HERE BELONGS TO A DOCUMENT'S COUNT, for PDFium's reason: this host holds no document's session.
+    owner: () => undefined,
+    onEnded: host.onEnded,
+  });
+  if (!live.ok) throw host.refused(live.error);
+
+  const client = createClient(host.channels, live.value.client.invoke);
+  const area = createClient(AREA_HOST_CHANNELS, live.value.client.invoke);
+
+  // ITS OWN VERDICT, never another host's: a verdict is about one token.
+  const verdict = await containmentOf((request) => area['engine/probe-containment'](request), platform);
+  if (verdict.kind !== 'contained') {
+    const refusal = `the ${host.name} host was created and is not contained (${verdict.kind}): ` + ('detail' in verdict ? verdict.detail : 'no detail');
+    live.value.refuse(refusal);
+    throw new Error(refusal);
+  }
+
+  const minted = sessionDirectoryName(randomBytes(16).toString('hex'));
+  if (!minted.ok) throw new Error(`the ${host.name} area name was refused: ${minted.error}`);
+  const paths = sessionDirectoryPaths(platform.sessionRoot, minted.value);
+  const made = createSessionDirectories(platform.directories, paths, platform.user, platform.container);
+  if (!made.ok) {
+    const refusal = `the ${host.name} area was not created: ${made.error.stage}: ${made.error.detail}`;
+    live.value.refuse(refusal);
+    throw new Error(refusal);
+  }
+
+  const opened = await area['engine/open']({ snapshotDirectory: paths.snapshot, outputDirectory: paths.output });
+  if (!opened.ok) {
+    removeSessionDirectories(platform.directories, paths);
+    const refusal = `the ${host.name} host refused its area: ${opened.error.code}`;
+    live.value.refuse(refusal);
+    throw new Error(refusal);
+  }
+  answerArea.handle = opened.value.session;
+  answerArea.area = { snapshotDirectory: paths.snapshot, outputDirectory: paths.output };
+
+  return { connection: live.value, client, paths, session: opened.value.session };
+}
+
+/**
+ * One run of the catalogue host (ADR-0293, its correction of 2026-11-12): connect it through {@link connectAreaHost}, ask
+ * it to keep the catalogue for `fingerprint` in its own area, hand the written file to `place` while that area exists,
+ * then close it and remove the area. It holds no document and runs once a launch at most, in the background, so its
+ * ending affects nothing and a refusal at connect tells the person nothing: the text hosts read their folders instead.
+ */
+function catalogueHostRun(platform: EngineHostPlatform, failures: ShellFailureSink, policy: HostPolicy): RunCatalogueHost {
+  return async (fingerprint, place) => {
+    const live = await connectAreaHost(platform, policy, {
+      name: 'catalogue',
+      channels: catalogueChannels,
+      refused: (failure) => new Error(`the catalogue host was refused at ${failure.stage}: ${failure.detail}`),
+      onEnded: ({ termination }: HostEnding) => {
+        if (termination.code === 'shutdown') return;
+        failures({
+          event: engineHostEndingEvent(termination),
+          detail: `the catalogue host ended (${termination.code}): ${termination.detail}. No document is affected: the hosts read their font folders.`,
+        });
+      },
+    });
+    try {
+      const kept = await live.client['engine/keep-catalogue']({ session: live.session, fingerprint });
+      if (!kept.ok) {
+        if (kept.error.code === 'no-faces') return 'no-faces';
+        throw new Error(`the catalogue host did not keep the catalogue: ${kept.error.code}`);
+      }
+      // BY THE NAME `main` GIVES IT, in the area `main` made: nothing the host answered names a path.
+      await place(join(live.paths.output, keptCatalogueName(fingerprint)));
+      return 'kept';
+    } finally {
+      // THE HOST FIRST, THEN THE DIRECTORIES, and no `engine/close`: the compose binding's close, and its reasons.
+      live.connection.close();
+      removeSessionDirectories(platform.directories, live.paths);
+    }
+  };
+}
+
 function composeHostBinding(
   platform: EngineHostPlatform,
   failures: ShellFailureSink,
@@ -4319,28 +4504,11 @@ function composeHostBinding(
   let host: Promise<Live> | null = null;
   const areas = sessionAreas(platform);
 
-  const connect = async (): Promise<Live> => {
-    const answerArea: { handle: string | null; area: SessionArea | null } = { handle: null, area: null };
-    const live = await createEngineHostConnection(platform.surfaces, {
-      pipeName: `\\\\.\\pipe\\monstera-compose-${randomBytes(16).toString('hex')}`,
-      // A WORKBOOK'S OUTLINE AND A JOIN'S LIST cross in files (ADR-0125), in the area this host is given below —
-      // `pdfiumHostBinding`'s binding, and for its reason no file-routed call is made before `engine/open`.
-      fileAnswers: fileAnswersFor(composeChannels, (params) =>
-        answerArea.handle !== null && (params as { readonly session?: unknown } | null)?.session === answerArea.handle
-          ? (answerArea.area ?? undefined)
-          : undefined,
-      ),
-      user: platform.user,
-      container: platform.container,
-      readBytes: 64 * 1024,
-      maxOutstandingWrites: 16,
-      maxInFlight: ENGINE_HOST_MAX_IN_FLIGHT,
-      processMemoryLimitBytes: ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES,
-      correlate: () => randomBytes(8).toString('hex'),
-      deadline: policy.deadline,
-      memorySampling: policy.memorySampling,
-      // NO CALL HERE BELONGS TO A DOCUMENT'S COUNT, for PDFium's reason: this host holds no document's session.
-      owner: () => undefined,
+  const connect = (): Promise<Live> =>
+    connectAreaHost(platform, policy, {
+      name: 'compose',
+      channels: composeChannels,
+      refused: (failure) => refusedAtConnect('compose host', 'mupdf-shim', failure, policy.cannotStart),
       onEnded: ({ termination }: HostEnding) => {
         // CLEARED, AND THAT IS ALL, for PDFium's reason: `onEngineHostEnded` walks
         // the open documents and schedules a reopen for each, which is wrong for a
@@ -4355,52 +4523,6 @@ function composeHostBinding(
         });
       },
     });
-    if (!live.ok) throw refusedAtConnect('compose host', 'mupdf-shim', live.error, policy.cannotStart);
-
-    const client = createClient(composeChannels, live.value.client.invoke);
-
-    // ITS OWN VERDICT, never another host's: a verdict is about one token.
-    const verdict = await containmentOf(
-      (request) => client['engine/probe-containment'](request),
-      platform,
-    );
-    if (verdict.kind !== 'contained') {
-      const refusal =
-        `the compose host was created and is not contained (${verdict.kind}): ` + ('detail' in verdict ? verdict.detail : 'no detail');
-      live.value.refuse(refusal);
-      throw new Error(refusal);
-    }
-
-    const minted = sessionDirectoryName(randomBytes(16).toString('hex'));
-    if (!minted.ok) throw new Error(`the compose area name was refused: ${minted.error}`);
-    const paths = sessionDirectoryPaths(platform.sessionRoot, minted.value);
-    const made = createSessionDirectories(
-      platform.directories,
-      paths,
-      platform.user,
-      platform.container,
-    );
-    if (!made.ok) {
-      const refusal = `the compose area was not created: ${made.error.stage}: ${made.error.detail}`;
-      live.value.refuse(refusal);
-      throw new Error(refusal);
-    }
-
-    const opened = await client['engine/open']({
-      snapshotDirectory: paths.snapshot,
-      outputDirectory: paths.output,
-    });
-    if (!opened.ok) {
-      removeSessionDirectories(platform.directories, paths);
-      const refusal = `the compose host refused its area: ${opened.error.code}`;
-      live.value.refuse(refusal);
-      throw new Error(refusal);
-    }
-    answerArea.handle = opened.value.session;
-    answerArea.area = { snapshotDirectory: paths.snapshot, outputDirectory: paths.output };
-
-    return { connection: live.value, client, paths, session: opened.value.session };
-  };
 
   /**
    * The composed PDF, taken from the output directory and held to the count the host

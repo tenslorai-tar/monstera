@@ -16,6 +16,7 @@ import { PDFA_BOUNDS } from './pdfaConversion.js';
 import {
   ENGINE_HOST_CONTAINER,
   ENGINE_HOST_ENTRY_FILE,
+  type KeptCatalogueArguments,
   hostCommandArguments,
 } from './engineHostPrograms.js';
 import { type PackageDataLock, gatePackageData } from './packageDataLock.js';
@@ -147,7 +148,13 @@ export interface PackageDataCheck {
   readonly report: (outcome: Result<PackageDataLock, string>) => void;
 }
 
-export function createEngineHostPlatform(sessionRoot: string, packageData: PackageDataCheck): EngineHostPlatform | null {
+/**
+ * What a host that sets text is told of the kept font catalogue when it starts (ADR-0293 Decision 6): `null` until `main`
+ * knows the fingerprint and the file is in place.
+ */
+export type KeptCatalogueKnown = () => KeptCatalogueArguments | null;
+
+export function createEngineHostPlatform(sessionRoot: string, packageData: PackageDataCheck, kept: KeptCatalogueKnown): EngineHostPlatform | null {
   // NOT A CAPABILITY CHECK WEARING A PLATFORM CHECK'S CLOTHES. The engine host
   // is a Win32 AppContainer process by ADR-0022, so on any other platform there
   // is nothing degraded to fall back to — `null` is what the root is built to
@@ -236,6 +243,8 @@ export function createEngineHostPlatform(sessionRoot: string, packageData: Packa
                   libraryPath,
                   fontsPath: nativeComponentPath('fonts'),
                   installedFontsPath: installedFontsFolder(),
+                  // ASKED AT EACH HOST'S START, so a host started once `main` knows the fingerprint is told it (ADR-0293).
+                  kept: kept(),
                 },
                 entry,
                 pipeName,
@@ -311,7 +320,7 @@ export function createEngineHostPlatform(sessionRoot: string, packageData: Packa
  * @returns the platform, or `null` where no `pdfium.dll` path was supplied —
  *   which is every packaged run today. See {@link pdfiumLibraryPath}.
  */
-export function createPdfiumHostPlatform(base: EngineHostPlatform): EngineHostPlatform | null {
+export function createPdfiumHostPlatform(base: EngineHostPlatform, kept: KeptCatalogueKnown): EngineHostPlatform | null {
   const libraryPath = pdfiumLibraryPath();
   if (libraryPath === null) return null;
 
@@ -337,6 +346,7 @@ export function createPdfiumHostPlatform(base: EngineHostPlatform): EngineHostPl
                   libraryPath,
                   fontsPath: nativeComponentPath('fonts'),
                   installedFontsPath: installedFontsFolder(),
+                  kept: kept(),
                 },
                 entry,
                 pipeName,
@@ -496,7 +506,7 @@ function mupdfShimPath(): string | null {
   return nativeComponentPath('mupdf-shim');
 }
 
-export function createComposeHostPlatform(base: EngineHostPlatform): EngineHostPlatform | null {
+export function createComposeHostPlatform(base: EngineHostPlatform, kept: KeptCatalogueKnown): EngineHostPlatform | null {
   const container = hostContainerSid(ENGINE_HOST_CONTAINER.compose);
   if (!container.ok) return null;
 
@@ -519,6 +529,7 @@ export function createComposeHostPlatform(base: EngineHostPlatform): EngineHostP
                   shimPath: mupdfShimPath(),
                   fontsPath: nativeComponentPath('fonts'),
                   installedFontsPath: installedFontsFolder(),
+                  kept: kept(),
                 },
                 entry,
                 pipeName,
@@ -528,6 +539,47 @@ export function createComposeHostPlatform(base: EngineHostPlatform): EngineHostP
           workingDirectory: dirname(binary),
           containerName: ENGINE_HOST_CONTAINER.compose,
           // A NAME OF ITS OWN, per host and per creation, as the other two have.
+          diagnosticPath: hostDiagnosticPath(base.sessionRoot, diagnosticName()),
+        }),
+    },
+    container: container.value,
+    probe: {
+      positive: { path: entry, origin: 'install-root' },
+      negative: base.probe.negative,
+    },
+  };
+}
+
+/**
+ * The catalogue host's platform (ADR-0293): the compose host's, with its own principal and entry, started with the two
+ * font folders and nothing else. It binds no native library and is told no kept catalogue, since it writes one.
+ */
+export function createCatalogueHostPlatform(base: EngineHostPlatform): EngineHostPlatform | null {
+  const container = hostContainerSid(ENGINE_HOST_CONTAINER.catalogue);
+  if (!container.ok) return null;
+
+  const entry = hostEntryPath(ENGINE_HOST_ENTRY_FILE.catalogue);
+  const binary = electronBinaryOfThisProcess();
+
+  return {
+    ...base,
+    surfaces: {
+      ...base.surfaces,
+      hostFor: (pipeName) =>
+        createWin32HostSurface({
+          program: {
+            runs: 'electron-node',
+            executablePath: binary,
+            commandArguments: [
+              ...hostCommandArguments(
+                { kind: 'catalogue', fontsPath: nativeComponentPath('fonts'), installedFontsPath: installedFontsFolder() },
+                entry,
+                pipeName,
+              ),
+            ],
+          },
+          workingDirectory: dirname(binary),
+          containerName: ENGINE_HOST_CONTAINER.catalogue,
           diagnosticPath: hostDiagnosticPath(base.sessionRoot, diagnosticName()),
         }),
     },

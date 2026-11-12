@@ -6,6 +6,7 @@ import {
   handedDirectoryDacl,
   hostPipeDacl,
   isPackageDataLocked,
+  keptAreaDacl,
   packageDataDacl,
 } from './hostDacl.js';
 
@@ -178,5 +179,19 @@ describe('isPackageDataLocked', () => {
     expect(
       isPackageDataLocked(`O:${user.value}D:PAI(A;OICI;FA;;;${user.value})(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)`),
     ).toBe(true);
+  });
+});
+
+describe('keptAreaDacl (ADR-0293)', () => {
+  it('grants the user full control and each reader READ, protected, and no principal write but the user', () => {
+    const second: ContainerSid = { __sid: 'container', value: 'S-1-15-2-9' };
+    const sddl = keptAreaDacl(user, [container, second]);
+    expect(sddl).toBe(`D:P(A;OICI;FA;;;${user.value})(A;OICI;0x00120089;;;${container.value})(A;OICI;0x00120089;;;${second.value})`);
+    // THE SAME READ MASK a handed read directory carries, so the area grants a text host what its snapshot does, no more.
+    expect(sddl).toContain(handedDirectoryDacl(user, container, 'read').split(`(A;OICI;FA;;;${user.value})`)[1] ?? 'none');
+  });
+
+  it('refuses an area with no reader, which would grant nothing that reads it', () => {
+    expect(() => keptAreaDacl(user, [])).toThrow(/no reader/u);
   });
 });

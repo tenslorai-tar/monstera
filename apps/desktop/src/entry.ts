@@ -51,6 +51,7 @@ import {
   createOfficeImportPicker,
 } from './imagePicker.js';
 import {
+  createCatalogueHostPlatform,
   createComposeHostPlatform,
   createEngineHostPlatform,
   createLayoutTextPlatform,
@@ -58,6 +59,8 @@ import {
   createPdfaPlatform,
   createPdfiumHostPlatform,
 } from './engineHostPlatform.js';
+import { keptCatalogueHolder } from './keptCatalogueStore.js';
+import { createWin32DaclSurface } from './win32DaclSurface.js';
 import { OFFICE_IMPORT_FORMATS } from './officeConversion.js';
 import { describePackageDataCheck } from './packageDataLock.js';
 import { removeRetiredCaches } from './retiredCaches.js';
@@ -212,13 +215,20 @@ startShell(() => {
   // THE PACKAGE-DATA CHECK REPORTS INTO THE LOG, which is why the log is built first (ADR-0023 Decision 17): one line
   // on every packaged start, naming any folder this start had to lock — the first start of an install, or something
   // that undid a lock since.
-  const enginePlatform = createEngineHostPlatform(join(app.getPath('sessionData'), 'engine-sessions'), {
-    report: (outcome) => {
-      const line = describePackageDataCheck(outcome);
-      if (line.kind === 'failure') log.failures({ event: 'package-data-unlocked', detail: line.detail });
-      else log.write('package-data', line.detail);
+  // WHAT THE TEXT HOSTS ARE TOLD OF THE KEPT FONT CATALOGUE as each starts (ADR-0293): `null` until the composition has
+  // the fingerprint and a file of it is in place, so a host started before that reads its folders.
+  const keptFonts = keptCatalogueHolder();
+  const enginePlatform = createEngineHostPlatform(
+    join(app.getPath('sessionData'), 'engine-sessions'),
+    {
+      report: (outcome) => {
+        const line = describePackageDataCheck(outcome);
+        if (line.kind === 'failure') log.failures({ event: 'package-data-unlocked', detail: line.detail });
+        else log.write('package-data', line.detail);
+      },
     },
-  });
+    keptFonts.known,
+  );
   // THE ASSISTANT'S EVENTS (ADR-0082): `webContents` is Electron's, so the push arrives
   // from here like every other runtime surface. It goes to the focused window, or the
   // first one — the window the ask came from — and to nothing at all when there is none,
@@ -581,11 +591,26 @@ startShell(() => {
     // that could not be derived. All three end the same way and that is
     // deliberate — no PDFium host is created, and a command routed to `pdfium`
     // is refused by name at the registry rather than reaching a native call.
-    pdfiumPlatform: enginePlatform === null ? null : createPdfiumHostPlatform(enginePlatform),
+    pdfiumPlatform: enginePlatform === null ? null : createPdfiumHostPlatform(enginePlatform, keptFonts.known),
     // THE COMPOSE HOST'S PLATFORM, derived the same way and `null` on the same
     // roads but one: it needs no provisioned library, so only a missing Win32
     // platform or an underivable container SID leaves it absent (ADR-0060).
-    composePlatform: enginePlatform === null ? null : createComposeHostPlatform(enginePlatform),
+    composePlatform: enginePlatform === null ? null : createComposeHostPlatform(enginePlatform, keptFonts.known),
+    // THE KEPT FONT CATALOGUE (ADR-0293): its area beside the engine sessions' root, never inside it, so the startup
+    // sweep of that root never takes it; written by `main` through the DACL surface route D uses, and read by the text
+    // hosts. `null` on the compose host's roads: no Win32 platform.
+    keptCatalogue:
+      enginePlatform === null
+        ? null
+        : {
+            area: join(app.getPath('sessionData'), 'font-catalogue'),
+            dacl: createWin32DaclSurface(),
+            holder: keptFonts,
+            platform: createCatalogueHostPlatform(enginePlatform),
+            report: (line) => {
+              log.write('font-catalogue', line);
+            },
+          },
     // THE LAYOUT-TEXT CONVERTER'S PLATFORM, `null` on the PDFium roads: no Win32
     // platform, no `pdftotext` handed down by the launcher, or no container SID (ADR-0071).
     layoutTextPlatform: enginePlatform === null ? null : createLayoutTextPlatform(enginePlatform, cannotStart),

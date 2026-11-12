@@ -4,6 +4,9 @@ import { extname, join } from 'node:path';
 import { z } from 'zod';
 
 import type { Catalogue, CatalogueFace, CatalogueReading, FontFolder } from './fontCatalogue.js';
+import { KEPT_FINGERPRINT, isKeptCatalogueName, keptCatalogueName } from './keptCatalogueName.js';
+
+export { keptCatalogueName } from './keptCatalogueName.js';
 
 /**
  * The font catalogue kept as a file ([ADR-0293](../../../docs/DECISIONS/0293-the-font-catalogue-is-read-once-by-a-host-that-holds-no-document-and-kept.md)):
@@ -34,14 +37,7 @@ import type { Catalogue, CatalogueFace, CatalogueReading, FontFolder } from './f
  */
 export const KEPT_CATALOGUE_READING = 1;
 
-/** A fingerprint as ADR-0237 makes it: SHA-256, hex. Anything else names no file, so no path can be built from it. */
-const FINGERPRINT = /^[0-9a-f]{64}$/u;
-
-/** The file a fingerprint's catalogue is kept in, inside the area. */
-export function keptCatalogueName(fingerprint: string): string {
-  if (!FINGERPRINT.test(fingerprint)) throw new Error('a kept catalogue is named by a SHA-256 fingerprint, and this is not one');
-  return `${fingerprint}.catalogue.json`;
-}
+const FINGERPRINT = KEPT_FINGERPRINT;
 
 const FONT_FILES = new Set(['.ttf', '.otf', '.ttc', '.otc']);
 
@@ -185,7 +181,7 @@ export function keepCatalogue(area: string, fingerprint: string, folders: readon
   writeFileSync(partial, keptCatalogueText(catalogue, fingerprint));
   renameSync(partial, join(area, name));
   for (const other of readdirSync(area)) {
-    if (other !== name && other.endsWith('.catalogue.json')) rmSync(join(area, other), { force: true });
+    if (other !== name && isKeptCatalogueName(other)) rmSync(join(area, other), { force: true });
   }
   return catalogue.faces.length;
 }
