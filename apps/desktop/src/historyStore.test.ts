@@ -8,8 +8,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 /** Every path the store opened for reading or read whole, recorded by the spy below. */
 const reads: string[] = vi.hoisted(() => []);
-/** Every path read WHOLE on this thread: what Delete's rewrite must leave to its worker (ADR-0279 Decision 7). */
+/** Every path read WHOLE by the store itself: what Delete's rewrite must leave to its worker (ADR-0279 Decision 7). */
 const wholeReads: string[] = vi.hoisted(() => []);
+/**
+ * Whether the rewriter is running. The cases hand the store an IN-PROCESS rewriter, so `runHistoryRewrite` is read from
+ * source like everything else here; the real worker loads the package's build, which a test of this store must not
+ * (`testResolution.proof.mjs`). Reads made inside it are the worker's, not the store's, so they are not recorded as whole
+ * reads. That the worker really is another thread is `historyRewriter.test.ts`'s.
+ */
+const rewriting = vi.hoisted(() => ({ now: false }));
 
 vi.mock('node:fs', async (importOriginal) => {
   const real = await importOriginal<typeof import('node:fs')>();
@@ -21,14 +28,28 @@ vi.mock('node:fs', async (importOriginal) => {
     },
     readFileSync: (path: string, ...rest: unknown[]) => {
       reads.push(path);
-      wholeReads.push(path);
+      if (!rewriting.now) wholeReads.push(path);
       return (real.readFileSync as (...args: unknown[]) => unknown)(path, ...rest);
     },
   };
 });
 
-import { type HistoryGuard, HistoryLockedError, createHistoryStore, frame } from './historyStore.js';
+import { runHistoryRewrite } from '@monstera/nodemode';
+
+import type { HistoryRewriter } from './historyRewriter.js';
+import { type HistoryGuard, HistoryLockedError, createHistoryStore as storeWith, frame } from './historyStore.js';
 import type { SecretCipher } from './secretStore.js';
+
+/** The worker's rewrite, run here from source; see `rewriting` above. */
+const inProcess: HistoryRewriter = (data) => {
+  rewriting.now = true;
+  try {
+    return Promise.resolve(runHistoryRewrite(data));
+  } finally {
+    rewriting.now = false;
+  }
+};
+const createHistoryStore = (directory: string, cipher: SecretCipher) => storeWith(directory, cipher, undefined, inProcess);
 
 /**
  * ADR-0279's store, one file per PDF, against a FAKE of the account's cipher: Windows' own encryption is the local
