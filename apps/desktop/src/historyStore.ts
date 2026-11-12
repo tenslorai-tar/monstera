@@ -136,8 +136,8 @@ export interface HistoryStore {
   relink(placeKey: string, place: string, previous: HistoryGuard, next: HistoryGuard): void;
   /**
    * Saves a conversation: `conversation` names the one it continues, `null` a new one, whose key is answered. Appends one
-   * card and the turns changed since this session's last save of it, and reads nothing. An empty new conversation stores
-   * nothing and answers `null`. Throws where this machine cannot keep conversations.
+   * card and the turns changed since this session's last save of it, and reads nothing. A save with no turns stores
+   * nothing and answers the key it was given (`null` for a new one). Throws where this machine cannot keep conversations.
    */
   save(
     placeKey: string,
@@ -360,7 +360,9 @@ export function createHistoryStore(
         if (isLocked()) throw new HistoryLockedError();
         throw new Error('this machine has no usable credential store, so the conversation was not saved');
       }
-      if (conversation === null && turns.length === 0) return { conversation: null };
+      // A SAVE WITH NO TURNS CHANGES NOTHING ON DISK, a new conversation's or a saved one's: the contract's "nothing is
+      // removed by a save". Written, it would be a TURNS record from 0 holding none, which empties the saved one.
+      if (turns.length === 0) return { conversation };
       const id = conversation ?? mint();
       const now = turns.map((turn) => JSON.stringify(turn));
       const before = savedTurns.get(id) ?? [];

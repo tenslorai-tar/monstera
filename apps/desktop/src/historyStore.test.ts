@@ -150,6 +150,23 @@ describe('one history file per PDF (ADR-0279)', () => {
     expect(existsSync(store.pathOf(PLACE_KEY))).toBe(false);
   });
 
+  it('a SAVE WITH NO TURNS changes nothing on disk: a saved conversation keeps its turns, in this session and the next', () => {
+    const directory = folder();
+    const store = createHistoryStore(directory, fakeCipher());
+    const key = store.save(PLACE_KEY, PLACE, ID, null, TURNS, null, AT).conversation ?? '';
+    const path = store.pathOf(PLACE_KEY);
+    const size = statSync(path).size;
+    expect(store.save(PLACE_KEY, PLACE, ID, key, [], null, AT)).toStrictEqual({ conversation: key });
+    // AND IN A LATER SESSION, which holds nothing of what this one saved, so nothing above stops it.
+    const later = createHistoryStore(directory, fakeCipher());
+    expect(later.save(PLACE_KEY, PLACE, ID, key, [], null, AT)).toStrictEqual({ conversation: key });
+    expect(statSync(path).size).toBe(size);
+    expect(later.read(PLACE_KEY, key)?.turns).toStrictEqual(TURNS);
+    // CONTROL: a save of that key that does hold turns is written, so the size above is the empty save's own.
+    later.save(PLACE_KEY, PLACE, ID, key, [...TURNS, { role: 'user', text: 'And the date?' }], null, AT);
+    expect(statSync(path).size).toBeGreaterThan(size);
+  });
+
   it('a TORN last record ends the read and loses nothing before it', () => {
     const directory = folder();
     const store = createHistoryStore(directory, fakeCipher());
