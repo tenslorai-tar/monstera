@@ -101,8 +101,37 @@ await recordLongTasks();
   }
   process.stdout.write(`control: the planted 150 ms task was recorded as ${String(Math.round(Math.max(...seen.map((task) => task.duration))))} ms\n`);
 }
+{
+  // THE PRESS CLOCK'S CONTROL: a press made while a planted 600 ms task runs must carry a time stamp at least 200 ms
+  // before its handler ran, or the press times below cannot see a press that waited, which is the case they exist for.
+  // A clock read in the handler gives about 0. The task is long against the threshold because where the press lands
+  // inside it depends on how long Playwright's press takes to arrive: with a 300 ms task the lag read 249 ms in one run
+  // and 178 ms in the next (2026-11-12). Pressed on the start screen's empty right side, where a press does nothing.
+  await page.evaluate(() => {
+    const clock = /** @type {{ now: () => number }} */ (Reflect.get(globalThis, 'performance'));
+    const later = /** @type {(run: () => void, ms: number) => void} */ (Reflect.get(globalThis, 'setTimeout'));
+    const dom = /** @type {{ addEventListener: (type: string, run: (event: { timeStamp: number }) => void, options: unknown) => void }} */ (
+      Reflect.get(globalThis, 'document')
+    );
+    dom.addEventListener('pointerdown', (event) => Reflect.set(globalThis, '__pressLag', clock.now() - event.timeStamp), { capture: true, once: true });
+    later(() => {
+      const until = clock.now() + 600;
+      while (clock.now() < until) {
+        // the planted task the press waits behind
+      }
+    }, 50);
+  });
+  await page.waitForTimeout(100);
+  await page.mouse.click(1300, 220);
+  await page.waitForTimeout(800);
+  const lag = await page.evaluate(() => /** @type {number | undefined} */ (Reflect.get(globalThis, '__pressLag')));
+  if (lag === undefined || lag < 200) {
+    throw new Error(`a press made during a planted 600 ms task was stamped ${String(lag)} ms before its handler ran, so the press clock cannot see a press that waited`);
+  }
+  process.stdout.write(`control: a press that waited behind a planted task was stamped ${String(Math.round(lag))} ms before its handler ran\n`);
+}
 
-/** @type {{ firstRead: number, editable: number, wall: number, total: number, worst: number, count: number }[]} */
+/** @type {{ firstRead: number, selected: number, editable: number, wall: number, total: number, worst: number, count: number }[]} */
 const readings = [];
 
 /**
@@ -136,13 +165,20 @@ async function closeTabs() {
 async function armEditableClock() {
   await page.evaluate(() => {
     const clock = /** @type {{ now: () => number }} */ (Reflect.get(globalThis, 'performance'));
-    const dom = /** @type {{ querySelector: (selector: string) => unknown, activeElement: unknown, addEventListener: (type: string, run: () => void, options: unknown) => void, removeEventListener: (type: string, run: () => void, options: unknown) => void }} */ (
+    const dom = /** @type {{ querySelector: (selector: string) => unknown, activeElement: unknown, addEventListener: (type: string, run: (event: { timeStamp: number }) => void, options: unknown) => void, removeEventListener: (type: string, run: (event: { timeStamp: number }) => void, options: unknown) => void }} */ (
       Reflect.get(globalThis, 'document')
     );
     const frame = /** @type {(run: () => void) => void} */ (Reflect.get(globalThis, 'requestAnimationFrame'));
+    // THE PRESS'S OWN TIME, `timeStamp`, which Chromium sets when the press arrives, on the same clock as `now()`. The
+    // handler's own `now()` is when the handler RAN, and a press queued behind a long task runs late, so it would read
+    // the wait as the press and the editor as faster than it is.
     let lastPress = -1;
-    const press = () => {
-      lastPress = clock.now();
+    let firstPress = -1;
+    let selected = -1;
+    /** @param {{ timeStamp: number }} event */
+    const press = (event) => {
+      lastPress = event.timeStamp;
+      if (firstPress < 0) firstPress = event.timeStamp;
     };
     dom.addEventListener('pointerdown', press, { capture: true });
     Reflect.set(
@@ -152,9 +188,12 @@ async function armEditableClock() {
         const look = () => {
           const kit = /** @type {{ getAttribute: (name: string) => string | null } | null} */ (dom.querySelector('[data-kit-frame]'));
           const words = dom.querySelector('[data-kit-surface]');
+          if (selected < 0 && firstPress >= 0 && kit !== null && dom.activeElement === kit && kit.getAttribute('data-kit-mode') === 'box') {
+            selected = clock.now() - firstPress;
+          }
           if (lastPress >= 0 && kit?.getAttribute('data-kit-mode') === 'text' && words !== null && dom.activeElement === words) {
             dom.removeEventListener('pointerdown', press, { capture: true });
-            resolve(clock.now() - lastPress);
+            resolve({ selected, editable: clock.now() - lastPress });
             return;
           }
           frame(look);
@@ -164,7 +203,7 @@ async function armEditableClock() {
     );
   });
 }
-const editableReading = () => page.evaluate(() => /** @type {Promise<number>} */ (Reflect.get(globalThis, '__editable')));
+const editableReading = () => page.evaluate(() => /** @type {Promise<{ selected: number, editable: number }>} */ (Reflect.get(globalThis, '__editable')));
 
 for (let round = 1; round <= rounds; round += 1) {
   await step(`round ${String(round)}`, async () => {
@@ -210,14 +249,15 @@ for (let round = 1; round <= rounds; round += 1) {
     const started = Date.now();
     await openBlock(blocks.nth(largest), 'middle');
     const wall = Date.now() - started;
-    const editable = await editableReading();
+    const { selected, editable } = await editableReading();
+    if (selected < 0) throw new Error('the box was never seen selected between the presses, so the first press has no reading');
     await page.waitForTimeout(2000);
     const tasks = (await takeLongTasks()).filter((task) => task.start >= from);
     const total = tasks.reduce((sum, task) => sum + task.duration, 0);
     const worst = tasks.reduce((most, task) => Math.max(most, task.duration), 0);
-    readings.push({ firstRead, editable, wall, total, worst, count: tasks.length });
+    readings.push({ firstRead, selected, editable, wall, total, worst, count: tasks.length });
     process.stdout.write(
-      `round ${String(round)}: first read ${String(firstRead)} ms; block ${String(largest + 1)} of ${String(handles.length)} (${String(Math.round(area))} px²): click until editable ${String(Math.round(editable))} ms, open in ${String(wall)} ms, long tasks ${String(Math.round(total))} ms over ${String(tasks.length)} (worst ${String(Math.round(worst))} ms)\n`,
+      `round ${String(round)}: first read ${String(firstRead)} ms; block ${String(largest + 1)} of ${String(handles.length)} (${String(Math.round(area))} px²): first press until selected ${String(Math.round(selected))} ms, click until editable ${String(Math.round(editable))} ms, open in ${String(wall)} ms, long tasks ${String(Math.round(total))} ms over ${String(tasks.length)} (worst ${String(Math.round(worst))} ms)\n`,
     );
     await page.keyboard.press('Escape');
     await nothingInFlight(page);
@@ -238,6 +278,7 @@ if (readings.length > 0) {
     [
       `over ${String(readings.length)} round(s), document ${String(fileNumber)}:`,
       `  first read of the blocks: ${summary(readings.map((each) => each.firstRead))}`,
+      `  first press until the box shows selected (the window's clock): ${summary(readings.map((each) => each.selected))}`,
       `  click until editable (ADR-0271's 300 ms, the window's clock): ${summary(readings.map((each) => each.editable))}`,
       `  opening the largest block, wall (with the 700 ms pause between the presses): ${summary(readings.map((each) => each.wall))}`,
       `  opening it, long tasks in all: ${summary(readings.map((each) => each.total))}`,
