@@ -11,12 +11,12 @@ export const SIGNATURES_DIALOG_ID = 'dialog.signatures';
 /**
  * What a document's signatures say, shown to a person.
  *
- * ## It ANSWERS NOTHING
+ * ## It answers ONE THING
  *
- * `declareDialog` gives an entry no result unless it declares one (ADR-0038),
- * so this is informational by construction. There is nothing to do about a
- * signature from here: what a person does is decide whether to trust the
- * document, and that is a judgement rather than a command.
+ * What a person mostly does here is decide whether to trust the document, and
+ * that is a judgement rather than a command. The one thing it answers, since
+ * ADR-0291 Decision 7, is which signature's signed version to save as a copy,
+ * offered where the file holds more than that signature signed.
  *
  * ## The props are the channel's answer, restated
  *
@@ -34,7 +34,14 @@ const shownSignatureSchema = z.object({
   notAfter: z.string().max(MAX_SIGNATURE_FIELD),
   coversDocument: z.boolean(),
   coversWholeFile: z.boolean(),
+  signedThrough: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
 });
+
+/**
+ * The one answer: *Save this signed version…* for the signature whose signed bytes end at `signedThrough`
+ * (ADR-0291 Decision 7). Closing the window answers nothing, which is reading it.
+ */
+export const SIGNATURES_RESULT = z.object({ signedThrough: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER) }).strict();
 
 /**
  * One row of the signature list, as the body renders it.
@@ -48,11 +55,12 @@ export type ShownSignature = z.infer<typeof shownSignatureSchema>;
 export const SIGNATURES_DIALOG = declareDialog({
   id: SIGNATURES_DIALOG_ID,
   title: SIGNATURES_TITLE,
-  informs: 'report',
   props: z.object({
     signatures: z.array(shownSignatureSchema).max(MAX_SIGNATURES),
     /** Whether a signature was there and could not be read. */
     unreadable: z.boolean(),
   }),
+  // IT ANSWERS ONE THING since ADR-0291 Decision 7: which signed version to save. Everything else it shows is read.
+  result: SIGNATURES_RESULT,
   component: lazy(() => import('./SignaturesBody.js')),
 });

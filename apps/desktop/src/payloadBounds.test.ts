@@ -357,6 +357,7 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // what keeps it the same size for a two-page document and a two-thousand-page
   // one — a channel answering certificates would carry a chain per signature.
   'document.signatures': 'answers a bounded list of bounded rows',
+  'document.saveSignedVersion': 'answers one outcome word; the signed version is written to a file, never answered',
   // These four need an engine session, and no engine host runs in a unit test.
   // Their bounds are asserted where they can be: the search channel by
   // ADR-0035 and `documentCommands.test.ts`, the rest by the caller-stated

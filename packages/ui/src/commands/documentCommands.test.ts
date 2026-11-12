@@ -5912,6 +5912,7 @@ describe('protectDocumentCommand', () => {
                 notAfter: '',
                 coversDocument: true,
                 coversWholeFile: true,
+                signedThrough: 18360,
               })),
               unreadable: already.unreadable === true,
             }),
@@ -6634,6 +6635,7 @@ describe('protectDocumentCommand', () => {
             notAfter: '2027-01-01T00:00:00.000Z',
             coversDocument: false,
             coversWholeFile: true,
+            signedThrough: 18360,
           },
         ],
         unreadable: false,
@@ -6645,6 +6647,7 @@ describe('protectDocumentCommand', () => {
         client,
         stamp,
         signatures,
+        toast: () => undefined,
         onApplied: () => undefined,
         ask: (id, props) => {
           shown.push({ id, props });
@@ -6669,6 +6672,7 @@ describe('protectDocumentCommand', () => {
         client,
         stamp,
         signatures,
+        toast: () => undefined,
         onApplied: () => undefined,
         ask: (id, props) => {
           shown.push({ id, props });
@@ -6679,6 +6683,58 @@ describe('protectDocumentCommand', () => {
       expect(shown).toStrictEqual([
         { id: 'dialog.signatures', props: { signatures: [], unreadable: false } },
       ]);
+    });
+
+    describe('Save this signed version (ADR-0291 Decision 7)', () => {
+      const SIGNATURE = {
+        signer: 'Grace Hopper',
+        organisation: '',
+        reason: '',
+        location: '',
+        notBefore: '2026-01-01T00:00:00.000Z',
+        notAfter: '2027-01-01T00:00:00.000Z',
+        coversDocument: true,
+        coversWholeFile: false,
+        signedThrough: 18360,
+      };
+
+      /** Main reading one signature and answering the save with `outcome`; records what was sent and toasted. */
+      async function choosing(answer: unknown, outcome: { kind: string }): Promise<{ sent: { id: string; params: unknown }[]; toasts: string[] }> {
+        const sent: { id: string; params: unknown }[] = [];
+        const toasts: string[] = [];
+        const client = createClient(channels, (id, params) => {
+          sent.push({ id, params });
+          if (id === 'document.signatures') return Promise.resolve(ok({ signatures: [SIGNATURE], unreadable: false }));
+          return Promise.resolve(ok(outcome as never));
+        });
+        await signaturesCommand({
+          client,
+          stamp,
+          signatures,
+          toast: (kind) => toasts.push(kind),
+          onApplied: () => undefined,
+          ask: (id) => Promise.resolve(id === 'dialog.signatures' ? answer : undefined),
+        }).run(CONTEXT);
+        return { sent, toasts };
+      }
+
+      it('the answer is sent to main by where the signature ends, and a saved version is confirmed', async () => {
+        const { sent, toasts } = await choosing({ signedThrough: 18360 }, { kind: 'saved' });
+        expect(sent.map((call) => call.id)).toStrictEqual(['document.signatures', 'document.saveSignedVersion']);
+        expect(sent[1]?.params).toStrictEqual({ docId: CONTEXT.docId, signedThrough: 18360 });
+        expect(toasts).toStrictEqual(['done']);
+      });
+
+      it('a version the saved file does not hold is said, with nothing written', async () => {
+        const { toasts } = await choosing({ signedThrough: 18360 }, { kind: 'not-found' });
+        expect(toasts).toStrictEqual(['problem']);
+      });
+
+      it('CONTROL: a window closed sends nothing to main', async () => {
+        const { sent, toasts } = await choosing(undefined, { kind: 'saved' });
+        expect(sent.map((call) => call.id)).toStrictEqual(['document.signatures']);
+        expect(toasts).toStrictEqual([]);
+      });
     });
   });
 

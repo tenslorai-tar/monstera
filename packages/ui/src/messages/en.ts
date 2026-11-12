@@ -3381,6 +3381,10 @@ export const SIGNATURES_CHANGED = messageKey('dialog.signatures.changed');
 export const SIGNATURES_APPENDED = messageKey('dialog.signatures.appended');
 export const SIGNATURES_VALID_BETWEEN = messageKey('dialog.signatures.valid-between');
 export const SIGNATURES_NOT_TRUSTED = messageKey('dialog.signatures.not-trusted');
+// SAVE THIS SIGNED VERSION (ADR-0291 Decision 7): the file as this signature signed it, as a copy.
+export const SIGNATURES_SAVE_SIGNED_VERSION = messageKey('dialog.signatures.save-signed-version');
+export const TOAST_SIGNED_VERSION_SAVED = messageKey('toast.signed-version-saved');
+export const TOAST_SIGNED_VERSION_NOT_FOUND = messageKey('toast.signed-version-not-found');
 export const SIGNATURES_SIGNER = messageKey('dialog.signatures.signer');
 export const SIGNATURES_SIGNER_OF = messageKey('dialog.signatures.signer-of');
 export const SIGNATURES_STATUS = messageKey('dialog.signatures.status');
@@ -7279,6 +7283,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SIGNATURES_CERTIFICATE]: 'Certificate',
   [SIGNATURES_NOT_TRUSTED]:
     'These checks compare the signature against the bytes it covers. They do not say whether the certificate itself is one you should trust.',
+  [SIGNATURES_SAVE_SIGNED_VERSION]: 'Save this signed version…',
+  [TOAST_SIGNED_VERSION_SAVED]: 'Signed version saved. It is the document exactly as this signature signed it.',
+  [TOAST_SIGNED_VERSION_NOT_FOUND]:
+    'This signature’s signed version could not be found in the file as it is saved, so nothing was written.',
 
   [GROUP_MARKS]: 'Marks',
   [GROUP_TEXT]: 'Text',

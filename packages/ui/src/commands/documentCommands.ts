@@ -77,7 +77,7 @@ import { SIGN_PROBLEM_DIALOG_ID } from '../dialogs/signProblem.js';
 import { DOCUSIGN_NOTICE_DIALOG_ID } from '../dialogs/docusignNotice.js';
 import { DOCUSIGN_SEND_DIALOG_ID } from '../dialogs/docusignSend.js';
 import type { DocusignSendAnswer } from '../dialogs/docusignSend.js';
-import { SIGNATURES_DIALOG_ID } from '../dialogs/signatures.js';
+import { SIGNATURES_DIALOG_ID, SIGNATURES_RESULT } from '../dialogs/signatures.js';
 import type { CropPagesAnswer } from '../dialogs/cropPagesResult.js';
 import { DELETE_PAGES_DIALOG_ID } from '../dialogs/deletePages.js';
 import type { DeletePagesAnswer } from '../dialogs/deletePagesResult.js';
@@ -363,6 +363,8 @@ import {
   TOAST_SAVED_CLEARED,
   TOAST_SAVED_CLEARED_BACKUPS,
   TOAST_HELD_COPIES_DELETED,
+  TOAST_SIGNED_VERSION_NOT_FOUND,
+  TOAST_SIGNED_VERSION_SAVED,
   TOAST_NOTHING_MARKED,
   TOAST_SMALLER_COPY_SAVED,
   UNDO_TITLE,
@@ -5329,7 +5331,7 @@ export async function readPageContentBoxes(
  * answer is decide whether to trust the document, which is a judgement rather
  * than a command.
  */
-export function signaturesCommand(deps: DocumentCommandDeps): UiCommand {
+export function signaturesCommand(deps: DocumentCommandDeps & { readonly toast: ShowToast }): UiCommand {
   return {
     id: 'document.check-signatures',
     feedback: RESULT_DIALOG,
@@ -5347,10 +5349,35 @@ export function signaturesCommand(deps: DocumentCommandDeps): UiCommand {
       // SHOWN EVEN WHEN THE LIST IS EMPTY. *This document is not signed* is the
       // answer a person asked for, and a command that opened nothing would be
       // one that appears not to have run.
-      void deps.ask(SIGNATURES_DIALOG_ID, {
-        signatures: read.value.signatures.map((signature) => ({ ...signature })),
-        unreadable: read.value.unreadable,
-      });
+      const docId = context.docId;
+      const chosen = SIGNATURES_RESULT.safeParse(
+        await deps.ask(SIGNATURES_DIALOG_ID, {
+          signatures: read.value.signatures.map((signature) => ({ ...signature })),
+          unreadable: read.value.unreadable,
+        }),
+      );
+      // CLOSED, which is reading it: nothing more to do.
+      if (!chosen.success) return;
+      // SAVE THIS SIGNED VERSION (ADR-0291 Decision 7): main cuts the saved file back to where the signature ends.
+      const saved = await deps.client['document.saveSignedVersion']({ docId, signedThrough: chosen.data.signedThrough });
+      if (!saved.ok) {
+        reportProblem(deps, saved.error);
+        return;
+      }
+      switch (saved.value.kind) {
+        case 'saved':
+          deps.toast('done', TOAST_SIGNED_VERSION_SAVED);
+          return;
+        case 'cancelled':
+          return;
+        case 'not-found':
+          deps.toast('problem', TOAST_SIGNED_VERSION_NOT_FOUND);
+          return;
+        case 'onto-source':
+        case 'write-failed':
+          void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: copyProblemOf(saved.value.kind) });
+          return;
+      }
     },
   };
 }

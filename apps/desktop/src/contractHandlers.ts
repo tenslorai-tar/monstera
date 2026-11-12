@@ -673,6 +673,7 @@ export function createContractHandlers(deps: {
     'document.pageMarks': pageMarksHandler(deps.commands),
     'document.layers': layersHandler(deps.commands),
     'document.signatures': signaturesHandler(deps.commands),
+    'document.saveSignedVersion': saveSignedVersionHandler(deps.commands),
     'document.annotations': annotationsHandler(deps.commands),
     'document.formFields': formFieldsHandler(deps.commands),
     'document.flatFieldCandidates': flatFieldCandidatesHandler(deps.commands),
@@ -3408,6 +3409,21 @@ function signaturesHandler(
     try {
       const { signatures, unreadable } = await commands.signatures(docId);
       return ok({ signatures: signatures.map((signature) => ({ ...signature })), unreadable });
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      if (thrown instanceof MissingSessionError) return err({ code: 'engine-unavailable' });
+      throw thrown;
+    }
+  };
+}
+
+/** A signature's signed version, saved as a copy (ADR-0291 Decision 7). The lane's refusals as `signaturesHandler`'s. */
+function saveSignedVersionHandler(commands: DocumentCommands): ContractHandlers['document.saveSignedVersion'] {
+  return async ({ docId, signedThrough }) => {
+    try {
+      return ok(await commands.saveSignedVersion(docId, signedThrough));
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });

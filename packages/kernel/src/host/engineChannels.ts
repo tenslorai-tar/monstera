@@ -458,6 +458,8 @@ const engineSignatureSchema = z
     notAfter: z.string().max(ENGINE_SIGNATURE_FIELD_MAX),
     coversDocument: z.boolean(),
     coversWholeFile: z.boolean(),
+    // WHERE THE SIGNED BYTES END (ADR-0291 Decision 7): a byte offset, so a count a file can hold.
+    signedThrough: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   })
   .strict();
 

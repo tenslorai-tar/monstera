@@ -1,7 +1,7 @@
 export { accessFor, mupdfWriter, signaturesKeptBySave, withDocument } from './mupdfWriter.js';
 // WHAT MAIN'S LANE ASKS before a command and a save (ADR-0291): the writer's answer and the certification, as the host
 // binds it, for an in-process proof of the lane.
-export { signatureFacts } from './signatureRead.js';
+export { readSignatures, signatureFacts } from './signatureRead.js';
 // WHAT THE WRITER'S `open` THROWS for a file that needs a password, beside the writer, so an in-process caller tells it
 // apart by its class as the host's caller tells `EngineDocumentLocked`.
 export { DocumentLocked } from './engineSeam.js';

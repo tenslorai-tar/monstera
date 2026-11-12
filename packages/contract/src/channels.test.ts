@@ -101,11 +101,13 @@ const handlers: ContractHandlers = {
             notAfter: '2027-01-01T00:00:00.000Z',
             coversDocument: false,
             coversWholeFile: true,
+            signedThrough: 18360,
           },
         ],
         unreadable: false,
       }),
     ),
+  'document.saveSignedVersion': () => Promise.resolve(ok({ kind: 'not-found' as const })),
   // ONE ENTRY AND A DIRTY MARKER, for the layers fixture's reason: an empty
   // list and `lastExitClean: true` are what a boundary that dropped both fields
   // produces, and they are also the ordinary state — so the fixture that

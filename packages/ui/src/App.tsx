@@ -4355,7 +4355,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
         sanitizeDocumentCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
         documentPropertiesCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
         signDocumentCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
-        signaturesCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        signaturesCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
         docusignSendCommand({
           client,
           onApplied: applied,

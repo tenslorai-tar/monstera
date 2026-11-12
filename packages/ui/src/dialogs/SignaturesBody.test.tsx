@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { InDialog } from './inDialog.js';
@@ -24,6 +24,7 @@ const SIGNED: ShownSignature = {
   notAfter: '2027-01-15T00:00:00Z',
   coversDocument: true,
   coversWholeFile: true,
+  signedThrough: 18360,
 };
 
 /** Each fact as the dialog shows it: the name in a `dt`, the value in the `dd` after it. */
@@ -41,7 +42,7 @@ describe('SignaturesBody', () => {
   it('heads each signature with its signer, and names every fact beside its value', () => {
     render(
       <InDialog>
-        <SignaturesBody signatures={[SIGNED]} unreadable={false} />
+        <SignaturesBody signatures={[SIGNED]} unreadable={false} resolve={() => undefined} update={() => undefined} />
       </InDialog>,
     );
     expect(screen.getByRole('heading', { name: 'Ada Lovelace — Example Ltd' })).toBeDefined();
@@ -56,10 +57,35 @@ describe('SignaturesBody', () => {
   it('leaves out a fact the signature does not carry, rather than naming it over nothing', () => {
     render(
       <InDialog>
-        <SignaturesBody signatures={[{ ...SIGNED, organisation: '', reason: '', location: '' }]} unreadable={false} />
+        <SignaturesBody signatures={[{ ...SIGNED, organisation: '', reason: '', location: '' }]} unreadable={false} resolve={() => undefined} update={() => undefined} />
       </InDialog>,
     );
     expect(screen.getByRole('heading', { name: 'Ada Lovelace' })).toBeDefined();
     expect(Object.keys(facts())).toStrictEqual(['Status', 'Certificate']);
+  });
+
+  it('offers Save this signed version on a signature the file holds more than, and answers where it ends (ADR-0291)', () => {
+    const answers: unknown[] = [];
+    render(
+      <InDialog>
+        <SignaturesBody
+          signatures={[{ ...SIGNED, coversWholeFile: false, signedThrough: 18360 }]}
+          unreadable={false}
+          resolve={(answer) => answers.push(answer)}
+          update={() => undefined}
+        />
+      </InDialog>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Save this signed version…' }));
+    expect(answers).toStrictEqual([{ signedThrough: 18360 }]);
+  });
+
+  it('CONTROL: a signature that covers the whole file offers nothing to save, since the file is its signed version', () => {
+    render(
+      <InDialog>
+        <SignaturesBody signatures={[SIGNED]} unreadable={false} resolve={() => undefined} update={() => undefined} />
+      </InDialog>,
+    );
+    expect(screen.queryByRole('button', { name: 'Save this signed version…' })).toBeNull();
   });
 });

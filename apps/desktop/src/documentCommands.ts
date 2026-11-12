@@ -224,6 +224,7 @@ import { readFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 
 import type { BackupProvenance } from './backupLedger.js';
+import { holdsPrefix, writePrefix } from './signedVersionFile.js';
 import { adoptLegacyBackups } from './legacyBackups.js';
 import { type EditableSources, editablePages, emptyReport } from './editablePowerPoint.js';
 import { DocusignOutcomeRefused, type DocusignSession } from './docusignSession.js';
@@ -2637,6 +2638,12 @@ export interface DocumentCommandsParts {
   readonly signatures: (session: MupdfSession) => Promise<readonly ReadSignature[]>;
   /** How many signatures, and whether the next save keeps them — the writer's own decision. See {@link save}. */
   readonly signaturesKept: (session: MupdfSession) => Promise<SignatureFacts>;
+  /**
+   * Whether the file at `path`, cut back to its first `end` bytes, holds a signature that ends there and verifies over
+   * all of it (ADR-0291 Decision 7). Composed where the engine host is, because only a host may open a document's
+   * bytes: the cut is read in a session of its own, which is closed before this answers.
+   */
+  readonly signedVersionVerifies: (path: string, end: number) => Promise<boolean>;
   readonly restore: DocumentRestore;
   /** How a removal's save opens the document's sessions again from the file it wrote (ADR-0164). */
   readonly renew: DocumentRenew;
@@ -2947,6 +2954,7 @@ export class DocumentCommands {
   readonly #pageMarks: DocumentPageMarksReader;
   readonly #signatures: (session: MupdfSession) => Promise<readonly ReadSignature[]>;
   readonly #signaturesKept: (session: MupdfSession) => Promise<SignatureFacts>;
+  readonly #signedVersionVerifies: (path: string, end: number) => Promise<boolean>;
   readonly #restore: DocumentRestore;
   readonly #renew: DocumentRenew;
   readonly #recentPicture: Pick<RecentPictures, 'retake'>;
@@ -3056,6 +3064,7 @@ export class DocumentCommands {
     this.#pageMarks = parts.pageMarks;
     this.#signatures = parts.signatures;
     this.#signaturesKept = parts.signaturesKept;
+    this.#signedVersionVerifies = parts.signedVersionVerifies;
     this.#restore = parts.restore;
     this.#renew = parts.renew;
     this.#recentPicture = parts.recentPicture;
@@ -4776,6 +4785,39 @@ export class DocumentCommands {
       // so the change it is opened for is not refused there too. An uncertified document is written as it always was.
       'removed',
     );
+  }
+
+  /**
+   * Saves, as a copy the person places, the document's FILE cut back to the bytes the signature ending at
+   * `signedThrough` signed (ADR-0291 Decision 7).
+   *
+   * THE FILE AS SAVED, NOT THE SESSION: a file damaged after it was signed is repaired on open, and a repaired document
+   * saves whole, so the session no longer holds the signed bytes as its prefix; the file on disk does. The cut is read
+   * in a session of its own and written only where a signature ending exactly there verifies over all of it, so a
+   * signature added in this session and not yet saved, or a file rewritten since, answers `not-found` with nothing
+   * written. The path is read in the lane; the file is cut outside it, since it changes nothing about the document.
+   */
+  async saveSignedVersion(
+    docId: DocId,
+    signedThrough: number,
+  ): Promise<{ readonly kind: 'saved' | 'cancelled' | 'not-found' | 'onto-source' | 'write-failed' }> {
+    const suggest = this.#documents.nameOf(docId);
+    if (suggest === undefined) throw new DocumentNotOpenError(docId, 'save a signed version');
+    const { value: path } = await this.#documents.read(docId, (context) => Promise.resolve(context.path));
+    if (!(await holdsPrefix(path, signedThrough))) return { kind: 'not-found' };
+    if (!(await this.#signedVersionVerifies(path, signedThrough))) return { kind: 'not-found' };
+
+    const destination = await this.#copy.pick(suffixed(suggest, 'signed version'));
+    if (destination === null) return { kind: 'cancelled' };
+    // NEVER OVER THE DOCUMENT'S OWN FILE: that would replace the file the signed version was cut from.
+    if (destination === path) return { kind: 'onto-source' };
+    try {
+      await writePrefix(path, signedThrough, destination);
+    } catch {
+      // THE CAUSE IS THE DISK'S, said as a copy's failed write is; the document and its file are untouched.
+      return { kind: 'write-failed' };
+    }
+    return { kind: 'saved' };
   }
 
   /** {@link saveCopy}'s pick and write, with `inLane` run first inside the lane against the version being copied. */

@@ -178,6 +178,7 @@ const SIGNATURES = [
     notAfter: '2027-01-15T00:00:00Z',
     coversDocument: true,
     coversWholeFile: true,
+    signedThrough: 18360,
   },
   {
     signer: 'Finance Office',
@@ -188,6 +189,7 @@ const SIGNATURES = [
     notAfter: '2026-12-31T00:00:00Z',
     coversDocument: true,
     coversWholeFile: false,
+    signedThrough: 18360,
   },
 ];
 
@@ -687,6 +689,7 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
           notAfter: '2027-01-15T00:00:00Z',
           coversDocument: at !== 3,
           coversWholeFile: at === 0,
+          signedThrough: 18360 + at * 1024,
         })),
         unreadable: false,
       },

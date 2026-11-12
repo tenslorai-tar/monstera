@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { rm } from 'node:fs/promises';
+import { readFile, rm } from 'node:fs/promises';
 
 import { strFromU8, unzipSync } from 'fflate';
 import { tmpdir } from 'node:os';
@@ -118,6 +118,8 @@ import {
   rasterisePageImage,
   snapshotRegion,
   signatureFacts,
+  readSignatures,
+  applySignDocument,
   withDocument,
   composeWordDocument,
   DocumentLocked,
@@ -960,6 +962,17 @@ const INERT = {
   // EVERY SAVE ASKS, since item 6 — the answer also says whether the save is a removal's — so the inert answer is the
   // ordinary one: an unsigned document, and not a removal.
   signaturesKept: () => Promise.resolve({ signatures: 0, kept: true, certification: null }),
+  // THE HOST'S CHECK OF A CUT, in process: the cut opened, read by the same reader, closed (ADR-0291 Decision 7).
+  signedVersionVerifies: async (path, end) => {
+    const cut = new Uint8Array((await readFile(path)).subarray(0, end));
+    const session = await mupdfWriter.open(cut);
+    try {
+      const read = await readSignatures(session, cut);
+      return read.some((signature) => signature.signedThrough === end && signature.coversDocument && signature.coversWholeFile);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  },
   restore: noRestore,
   renew: () => Promise.reject(new Error('INERT: this case saves no removal and must not renew a session')),
   // RESOLVES, unlike the refusing surfaces: a removal's save retakes the picture after its lane and does not await it,
@@ -2232,6 +2245,35 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
         expect(await t.commands.saveCopy(t.saved)).toMatchObject({ kind: 'copied' });
         expect(t.stagings.at(-1)).toStrictEqual({ outline: 'kept', marks: 'engraved', certification: 'kept' });
       });
+
+      it('SAVE THIS SIGNED VERSION cuts the saved file back to the signature, and writes only a cut that verifies (Decision 7)', async () => {
+        const { default: forge } = await import('node-forge');
+        const keys = forge.pki.rsa.generateKeyPair(2048);
+        const cert = forge.pki.createCertificate();
+        cert.publicKey = keys.publicKey;
+        cert.serialNumber = '01';
+        cert.validity.notBefore = new Date(Date.now() - 86_400_000);
+        cert.validity.notAfter = new Date(Date.now() + 86_400_000);
+        cert.setSubject([{ name: 'commonName', value: 'Monstera Test' }]);
+        cert.setIssuer([{ name: 'commonName', value: 'Monstera Test' }]);
+        cert.sign(keys.privateKey, forge.md.sha256.create());
+        const p12 = forge.asn1.toDer(forge.pkcs12.toPkcs12Asn1(keys.privateKey, [cert], 'pass', { algorithm: '3des' })).getBytes();
+        const credential = Uint8Array.from(p12, (character: string) => character.charCodeAt(0));
+        const signed = await applySignDocument(await pdfBytes(), { kind: 'signDocument', bytes: credential, passphrase: 'pass', name: 'Grace Hopper' });
+
+        const destination = join(directory, `signed-version-${String(savables + 1)}.pdf`);
+        const t = await aSavableDocument(signatureFacts, ledger(), destination);
+        // THE FILE AS SAVED: the signed file with 40 bytes of rubbish after it, a tail no reader can make sense of.
+        writeFileSync(t.path, Buffer.concat([Buffer.from(signed), Buffer.alloc(40, 0x2a)]));
+
+        expect(await t.commands.saveSignedVersion(t.saved, signed.length)).toStrictEqual({ kind: 'saved' });
+        expect(Buffer.from(readFileSync(destination)).equals(Buffer.from(signed)), 'the copy is the signed file, byte for byte').toBe(true);
+
+        // CONTROL: one byte short holds no signature ending there that verifies, and nothing is written.
+        rmSync(destination);
+        expect(await t.commands.saveSignedVersion(t.saved, signed.length - 1)).toStrictEqual({ kind: 'not-found' });
+        expect(existsSync(destination)).toBe(false);
+      }, 60_000);
 
       it('AGREEING to break signatures does not pass it: the lock is not a warning', async () => {
         const t = await aSavableDocument(certified('no-changes'));

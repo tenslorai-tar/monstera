@@ -1470,6 +1470,15 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       );
     },
 
+    /**
+     * Saves a signature's signed version (ADR-0291 Decision 7): `cancelled`, the picker dismissed, which is the answer
+     * that writes nothing. The shim holds no file to cut back.
+     */
+    'document.saveSignedVersion': ({ docId }) => {
+      if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' as const }));
+      return Promise.resolve(ok({ kind: 'cancelled' as const }));
+    },
+
     'document.fonts': ({ docId }) => {
       const current = versions.get(docId);
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' as const }));

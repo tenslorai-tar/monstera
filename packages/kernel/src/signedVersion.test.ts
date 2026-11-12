@@ -120,6 +120,21 @@ describe('cutting a file back to the bytes a signature signed (Group 5, measured
     );
   }, 120_000);
 
+  it('the reader reports each signature’s end as signedThrough, which is where its signer’s file ends', async () => {
+    const first = await sign(await blank(), 'Grace Hopper');
+    const second = await sign(first, 'Ada Lovelace');
+    const later = await edited(second);
+    const reported = (await read(later)).map((each) => [each.signer, each.signedThrough]).sort();
+    // CONTROL FOR THE READ: the ends read by hand from each /ByteRange, and the files' own lengths, agree with it.
+    expect(signedEnds(later).sort((a, b) => a - b)).toStrictEqual([first.length, second.length]);
+    expect(reported).toStrictEqual(
+      [
+        ['Ada Lovelace', second.length],
+        ['Grace Hopper', first.length],
+      ].sort(),
+    );
+  }, 120_000);
+
   it('a file damaged after its signature: the cut recovers the signed file', async () => {
     const signed = await sign(await blank(), 'Grace Hopper');
     const later = await edited(signed);

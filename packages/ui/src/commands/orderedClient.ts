@@ -40,6 +40,9 @@ export const READS_THE_DOCUMENT_OUT = [
   'document.curvesNotice',
   'document.convertTextToCurves',
   'document.exportAnnotations',
+  // THE SIGNED VERSION (ADR-0291 Decision 7) is cut from the FILE, which a Save pressed before it writes, so it waits
+  // for that save as a copy does.
+  'document.saveSignedVersion',
 ] as const satisfies readonly { [K in keyof ContractClient]: ChannelParams<K> extends { readonly docId: unknown } ? K : never }[keyof ContractClient][];
 
 /**

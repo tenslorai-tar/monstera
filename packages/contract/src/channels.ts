@@ -4095,6 +4095,8 @@ export const channels = {
             notAfter: z.string().max(MAX_SIGNATURE_FIELD),
             coversDocument: z.boolean(),
             coversWholeFile: z.boolean(),
+            /** Where the bytes it signed end, which names it to *Save this signed version* (ADR-0291 Decision 7). */
+            signedThrough: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
           }),
         )
         .max(MAX_SIGNATURES)
@@ -4102,6 +4104,27 @@ export const channels = {
       /** A signature this build could not parse at all. */
       unreadable: z.boolean(),
     }),
+    ['document-not-open', 'document-busy', 'document-poisoned', 'engine-unavailable'],
+  ),
+
+  /**
+   * Saves, as a copy, the document's FILE cut back to the bytes one signature signed
+   * ([ADR-0291](../../../docs/DECISIONS/0291-a-certified-document-is-locked-to-what-its-certifier-allowed-and-worked-on-as-a-copy.md)
+   * Decision 7, measured first in `signedVersion.test.ts`). The signature is named by where its signed bytes end, which
+   * `document.signatures` reports. Main cuts the file as it is saved, not the session, so a file damaged after it was
+   * signed gives its signed version back; the cut is read in a session of its own and written only where a signature
+   * ending there verifies over all of it. `not-found` is that read's answer: nothing was written.
+   */
+  'document.saveSignedVersion': channel(
+    'Saves the document as one of its signatures signed it, as a copy the person places.',
+    z.object({ docId: docIdSchema, signedThrough: z.number().int().positive().max(Number.MAX_SAFE_INTEGER) }).strict(),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('saved') }).strict(),
+      z.object({ kind: z.literal('cancelled') }).strict(),
+      z.object({ kind: z.literal('not-found') }).strict(),
+      z.object({ kind: z.literal('onto-source') }).strict(),
+      z.object({ kind: z.literal('write-failed') }).strict(),
+    ]),
     ['document-not-open', 'document-busy', 'document-poisoned', 'engine-unavailable'],
   ),
 

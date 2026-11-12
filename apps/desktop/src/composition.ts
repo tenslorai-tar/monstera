@@ -317,6 +317,7 @@ import type { OpenExternalEditor } from './openExternalEditor.js';
 import type { SecretStoreSurface } from './secretStore.js';
 import { type ChatHistory, noChatHistory } from './chatHistory.js';
 import { type SettingsSurface, createEphemeralSettings, createJsonFile } from './settingsFile.js';
+import { writePrefix } from './signedVersionFile.js';
 import { type StartReading, startEditingHosts } from './editingHosts.js';
 import { idleHost } from './idleRetire.js';
 import { type MemoryPressurePolicy, watchMemoryPressure } from './memoryPressure.js';
@@ -1625,6 +1626,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // holds or sends them.
     signatures: (session) => engineHost.signatures(session),
     signaturesKept: (session) => engineHost.signaturesKept(session),
+    signedVersionVerifies: (path, end) => engineHost.signedVersionVerifies(path, end),
     // THE CHECKPOINT RESTORE, and it is `recycle` with a different source of
     // bytes rather than a new operation. `EngineSessions.recycle` already
     // releases a document's sessions and opens them again while KEEPING its
@@ -2619,6 +2621,8 @@ function engineSessionOpener(
   readonly signatures: (session: MupdfSession) => Promise<readonly ReadSignature[]>;
   /** How many signatures, and whether the next save keeps them — the writer's own decision, in the host. */
   readonly signaturesKept: (session: MupdfSession) => Promise<SignatureFacts>;
+  /** Whether a file cut back to `end` bytes holds a signature ending there that verifies (ADR-0291 Decision 7). */
+  readonly signedVersionVerifies: (path: string, end: number) => Promise<boolean>;
   /** Every annotation in the document, from whichever host is live. */
   readonly annotations: HostAnnotationsReader;
   /** Named marks serialised for the clipboard, from whichever host is live. */
@@ -3778,6 +3782,34 @@ function engineSessionOpener(
     });
   };
 
+  /**
+   * Whether `path`'s first `end` bytes hold a signature ending there that verifies over all of them (ADR-0291 Decision
+   * 7): the cut copied into a granted pair of its own, opened, read with the signature reader every Check signatures
+   * uses, and ended whatever the read answered. A cut that does not open is not a signed version.
+   */
+  const signedVersionVerifiesAt = async (path: string, end: number): Promise<boolean> => {
+    let opened: Awaited<ReturnType<typeof openInArea>>;
+    try {
+      opened = await openInArea(
+        async (destination) => {
+          await writePrefix(path, end, destination);
+          return end;
+        },
+        { keys: [], standing: 'as-copied' },
+      );
+    } catch (thrown) {
+      // A CUT THAT IS NOT A PDF, OR ONE THAT ASKS FOR A PASSWORD, is no signed version this build can check.
+      if (thrown instanceof EngineDocumentLocked || thrown instanceof Error) return false;
+      throw thrown;
+    }
+    try {
+      const read = await readSignaturesThroughHost(opened.session);
+      return read.some((signature) => signature.signedThrough === end && signature.coversDocument && signature.coversWholeFile);
+    } finally {
+      await opened.end();
+    }
+  };
+
   const unlockDocument = async (docId: DocId, password: string): Promise<UnlockOutcome> => {
     // THE LANE'S VERSION STAMP IS DISCARDED, deliberately. Unlocking changes no
     // bytes and bumps no version — it gives the engine a session it could not
@@ -3865,6 +3897,7 @@ function engineSessionOpener(
     pageMarks: readPageMarksThroughHost,
     signatures: readSignaturesThroughHost,
     signaturesKept: readSignaturesKeptThroughHost,
+    signedVersionVerifies: signedVersionVerifiesAt,
     annotations: readAnnotationsThroughHost,
     annotationCopy: copyAnnotationsThroughHost,
     annotationWords: readAnnotationWordsThroughHost,

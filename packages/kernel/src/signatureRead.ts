@@ -86,6 +86,12 @@ export interface ReadSignature {
    * that folded them would report an intact signature over half a document.
    */
   readonly coversWholeFile: boolean;
+  /**
+   * Where the bytes this signature signed end: its `/ByteRange`'s `c + d`, a property of the signature dictionary and
+   * so the same in the file and in any later revision of it. A file signed and then appended to holds the signed file
+   * as its first this-many bytes, which is what *Save this signed version* cuts back to (ADR-0291 Decision 7).
+   */
+  readonly signedThrough: number;
 }
 
 /** Why a document's signatures could not be read at all. */
@@ -164,6 +170,7 @@ function readOne(signature: mupdf.PDFObject, bytes: Uint8Array): ReadSignature |
     notAfter: x509?.validToDate.toISOString() ?? '',
     coversDocument: checked.verified,
     coversWholeFile: rangeCoversWholeFile([a, b, c, d], contentBytes, bytes),
+    signedThrough: c + d,
   };
 }
 

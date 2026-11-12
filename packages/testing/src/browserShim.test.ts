@@ -313,6 +313,7 @@ describe('browser shim', () => {
       'document.save',
       'document.saveBarcodeContact',
       'document.saveCopy',
+      'document.saveSignedVersion',
       'document.searchPage',
       'document.sign',
       'document.signatures',
