@@ -299,7 +299,7 @@ guards is removed.
 | [Electron](https://www.electronjs.org/) | 43.8.3 | The desktop shell; the same pinned binary runs the engine hosts in Node mode |
 | [React](https://react.dev/) | 19.2.8 | The interface |
 | [TypeScript](https://www.typescriptlang.org/) | 6.0.3 | Every package, in strict mode |
-| [MuPDF](https://mupdf.com/) | 1.28.0 | The main PDF engine: opening, rendering, editing text in place, redaction, encryption; built from source into a native library loaded through [koffi](https://koffi.dev/) 3.1.5 |
+| [MuPDF](https://mupdf.com/) ([source](https://github.com/ArtifexSoftware/mupdf)) | 1.28.0 | The main PDF engine: opening, rendering, editing text in place, redaction, encryption; built from source into a native library loaded through [koffi](https://koffi.dev/) 3.1.5 |
 | [PDFium](https://pdfium.googlesource.com/pdfium/) | 155.0.8044.0 | Reading a page's text, its runs and its fonts for Edit text, in its own contained host |
 | [PDF.js](https://mozilla.github.io/pdf.js/) | 6.2.108 | Draws pages in the window; never the source of truth |
 | [pdf-lib](https://github.com/cantoo-scribe/pdf-lib) (the `@cantoo/pdf-lib` fork) | 2.9.1 | Composing new documents, creating form fields and the OCR text layer |
@@ -448,7 +448,7 @@ or by email to report@monsterapdf.com. See [`SECURITY.md`](SECURITY.md).
 
 **[AGPL-3.0-or-later](LICENSE).**
 
-Monstera PDF Editor is built on **MuPDF**, which we build from MuPDF's source and
+Monstera PDF Editor is built on **MuPDF**, which we build from [MuPDF's source](https://github.com/ArtifexSoftware/mupdf) and
 **statically link** into a native library the engine hosts load. That is a
 combined work by any reading, and MuPDF is AGPL, so Monstera PDF Editor is AGPL.
 In plain terms: you may use, study, modify and redistribute this software, and if
