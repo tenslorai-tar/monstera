@@ -233,3 +233,14 @@ did; signatures are checked one at a time, and each button appears as its check 
 document's version and saved file (path, size and time), so the window opened again opens no host; the save takes the
 same answer, and its bytes stay held to that check's digest. A closed document's answers are dropped at teardown.
 What is cut is unchanged: the file on disk, for the reason above.
+
+## Correction, 2026-11-13 — the status, and the order to read this record in (HHHHHHHHH-21)
+
+The status above still says the design is *for the owner's review at merge*. That review happened: the branch merged
+in b553f2e9, the owner answered the open questions on 2026-11-12 (the amendment above) and decided Decision 7's
+offer on 2026-11-13 (the correction above). The status is **Accepted**, with those answers; this record is append-only,
+so the line is corrected here rather than edited.
+
+The sections are not in date order. *Amendment only* belongs to the first record of 2026-11-12 (f08030b4), written
+before the *Addition* above it, which came with the build. Read in order: the decision and its first record, *Amendment
+only*, then each dated section as it stands.

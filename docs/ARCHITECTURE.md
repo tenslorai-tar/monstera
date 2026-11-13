@@ -1909,8 +1909,11 @@ reconciled.
   the PDF now there. No cap on PDFs or conversations. Delete one rewrites the
   file without that conversation; History's *Clear all* removes the file and
   Settings › Privacy's *Clear chat history* removes every file, each asking
-  first. A section whose PDF is gone or unreadable is removed **24 hours after
-  the first check that finds it so**, checked only while the person is idle.
+  first. A section whose PDF is gone, or cannot be read because of the PDF
+  itself, is removed **24 hours after the first check that finds it so**,
+  checked only while the person is idle. A PDF that needs a password counts as
+  there, so its history is never removed while it does; a read the engine host
+  could not make decides nothing that pass.
   History saved by 1.1.2610.0 is moved over once, losing nothing. The renderer
   saves and lists by `DocId` and never holds a path, a key or a file name.
 - **What reaches an AI provider, and who says so.** Document content goes to a
