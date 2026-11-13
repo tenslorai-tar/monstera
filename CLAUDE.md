@@ -549,7 +549,9 @@ menu row on 2026-09-27,
 still a projection. The Properties tab's foot joined it
 2026-09-24,
 [ADR-0102](docs/DECISIONS/0102-a-selection-survives-a-command-that-keeps-the-walk.md),
-for Reply and Delete.) A hand-maintained layout file for
+for Reply and Delete. A certified document's line joined it 2026-11-14,
+[ADR-0295](docs/DECISIONS/0295-the-certification-line-projects-the-commands-placed-on-it.md),
+for Check signatures, which it had looked up by id.) A hand-maintained layout file for
 any surface is exactly the second wiring place the registry exists to forbid.
 **A key a person rebinds is a setting applied to the commands before the
 registry is built** ([ADR-0111](docs/DECISIONS/0111-a-key-a-person-chose-is-a-setting-applied-before-the-registry-is-built.md)),
