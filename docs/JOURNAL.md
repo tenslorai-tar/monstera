@@ -1009,6 +1009,68 @@ of this branch's own: `contract.proof.mjs`' client case, in the staged ADR-0294 
   preview bound, list order, stale-key and corrupt-record cases have no successor; `documentHistory.test.ts:51-60` and
   `mupdfOpen.test.ts:43` hold fixtures the bug would also pass.
 
+### Correction, 2026-11-13 — the checklist this entry left out
+
+This entry was written with findings and no item headings, and `check:docs` refused it on Guards for `546311e2` and
+`588c6ece` (*"answers 0 of 11 checklist items"*, RRRR-1's own failure). The entry above stands as written. The answers
+below are of the range `75a59036..658e14df`, and where they rest on work done since, they name it.
+
+#### 1. Root cause or workaround
+
+The reviewers read all 42 messages; none reads as a workaround. The range's two local instrument commits (`fee318e9`,
+`658e14df`) fix nothing. `658e14df`'s ADR addition measured the wrong rename (HHHHHHHHH-16); that is a measurement
+claimed past its evidence, not a workaround, and it was corrected on 2026-11-12 (`546311e2`).
+
+#### 2. The easy shape only
+
+Yes, and that is where the range's defects were: the history store was proven on whole files and on a session that
+holds what it wrote. The hard shapes were a torn record (HHHHHHHHH-2), a save landing as the worker reads (-3), a save
+with no turns in a later session (-1), and a file that changed under the session (the class, `27ba89a7`). Each now has a
+case built from the shape itself (`7af35756`, `3cf64def`, `04ece345`, `27ba89a7`).
+
+#### 2a. A change to how something is proven
+
+`chatHistory.test.ts` was removed with ADR-0093's store, and with it the case that a save removes nothing:
+HHHHHHHHH-1 got through that way. Its successor is `7af35756`'s case. No other change to how a thing is proven was found.
+
+#### 3. Would CI have caught it
+
+Not answered from a run when the entry was written, which it should have been. Since then: Guards failed on this
+entry's missing checklist, the check working; CI on `546311e2` failed only *Visual baselines*, for the screens the
+merge owed, made in `588c6ece`. None of HHHHHHHHH-1 to -4 could have been caught by CI: no case reached them.
+
+#### 4. Proofs non-vacuous
+
+Not mutated at audit time. Each fix since was mutated and its case went red, recorded in its commit message.
+
+#### 4a. Instruments' resolution
+
+HHHHHHHHH-16: `renameOverCost.mjs`' control showed a quiet clock, not a 100 ms resolution. Rewritten in `546311e2` with
+a planted-100 ms control (114.8 ms read). `historyDeleteCost.mjs`' planted 500 ms block is a resolution control.
+
+#### 4b. Searches have a positive control
+
+No search instrument was added in this range.
+
+#### 4c. Derived extents
+
+No roster or count was added in this range.
+
+#### 5. Executed or asserted
+
+Asserted, as the entry says: *"Nothing was run for this audit."* The four high findings were re-read at their lines.
+They were later shown by cases that failed before each fix, which is the execution this entry lacked.
+
+#### 6. Architecture before the feature
+
+ADR-0279 and ADR-0291 were written before their builds on their branches. The torn-record fix (`3cf64def`) changed
+Decision 1's *"a save reads nothing"* under the built store, by the owner's answer of 2026-11-12. ADR-0279 records it in
+its correction of that date, written in the same range of work.
+
+#### 7. Documents match the code
+
+HHHHHHHHH-21 names what does not match; those items are still open.
+
 ---
 
 ## 2026-11-12 — Stage audit of `01d02a84..75a59036` — findings GGGGGGGGG-1 to GGGGGGGGG-7
