@@ -124,7 +124,12 @@ try {
     const run = spawnSync(
       ELECTRON,
       [join(ROOT, 'node_modules', 'vitest', 'vitest.mjs'), 'run', ...SUITES, '--reporter=json', `--outputFile=${report}`],
-      { cwd: ROOT, env: { ...hostEnvironment(), MONSTERA_EXPECTED_RUNTIME: 'electron-as-node' }, encoding: 'utf8' },
+      // MONSTERA_PLAIN_NODE is this proof's own binary: decodeForTests.ts decodes with sharp there, never in Electron.
+      {
+        cwd: ROOT,
+        env: { ...hostEnvironment(), MONSTERA_EXPECTED_RUNTIME: 'electron-as-node', MONSTERA_PLAIN_NODE: process.execPath },
+        encoding: 'utf8',
+      },
     );
     /** @type {{ numFailedTests?: number, numPassedTests?: number, numFailedTestSuites?: number, testResults?: { name: string, status?: string, message?: string, assertionResults: { fullName: string, status: string }[] }[] }} */
     const parsed = existsSync(report) ? JSON.parse(readFileSync(report, 'utf8')) : {};

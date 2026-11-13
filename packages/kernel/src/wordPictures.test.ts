@@ -1,11 +1,11 @@
 import { PDFDocument, StandardFonts, degrees } from '@cantoo/pdf-lib';
 import { strFromU8, unzipSync } from 'fflate';
-import sharp from 'sharp';
 import { deflateSync } from 'node:zlib';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import type { PageSet } from '@monstera/contract/host';
 
+import { decodeForTests } from './decodeForTests.js';
 import type { MupdfSession } from './engineSeam.js';
 import { mupdfWriter } from './mupdfWriter.js';
 import { composeWordDocument, drawPagePictures } from './wordPictures.js';
@@ -107,7 +107,7 @@ async function composed(
 
 /** RGBA at a fraction of the picture's width and height, decoded by libvips. */
 async function sampled(png: Uint8Array): Promise<(fx: number, fy: number) => readonly number[]> {
-  const { data, info } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const { data, info } = await decodeForTests(png, { ensureAlpha: true });
   return (fx, fy) => {
     const x = Math.min(info.width - 1, Math.floor(info.width * fx));
     const y = Math.min(info.height - 1, Math.floor(info.height * fy));

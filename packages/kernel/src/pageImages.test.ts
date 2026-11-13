@@ -1,9 +1,9 @@
 import { PDFDocument, rgb } from '@cantoo/pdf-lib';
 import { MAX_SNAPSHOT_SCALE, MIN_PAGE_PICTURE_SCALE, MIN_SNAPSHOT_SCALE } from '@monstera/contract';
 import * as mupdf from './mupdfRaw.js';
-import sharp from 'sharp';
 import { describe, expect, it } from 'vitest';
 
+import { decodeForTests } from './decodeForTests.js';
 import type { ByteImage, MupdfSession } from './engineSeam.js';
 import { mupdfWriter } from './mupdfWriter.js';
 import { type PageImageRequest, rasterisePageImage } from './pageImages.js';
@@ -149,7 +149,7 @@ describe('rasterisePageImage', () => {
     // dependency, never shipped — whose libvips is not the code that wrote it.
     // The 200×100 page at scale 2, and its blue 60-point square at 120×120.
     const webp = await image(await contentPage(), { format: 'webp', scale: 2, quality: 100 });
-    const { data, info } = await sharp(webp).raw().toBuffer({ resolveWithObject: true });
+    const { data, info } = await decodeForTests(webp);
     expect([info.width, info.height]).toEqual([400, 200]);
 
     let blue = 0;
