@@ -88,7 +88,7 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 76 });
+const roster = createRoster(failures, { cases: 77 });
 
 /**
  * Records, and prints nothing — `roster.format` emits the case list at the end.
@@ -1501,8 +1501,25 @@ try {
       return found;
     };
 
+    // THE ONE DELIBERATE DETACHED SPAWN, named with the mechanism that keeps it inside the harness's reach. A
+    // detached process escapes the tree-kill, so an entry here is owed a child that cannot outlive the file that
+    // started it; childProcesses.proof.mjs' child polls the proof's id and exits once it is gone. Anchored both
+    // ways: a detached spawn anywhere else is reported, and so is an entry whose file no longer has one.
+    /** @type {Record<string, string>} */
+    const DELIBERATE_DETACHED = {
+      'scripts/lib/childProcesses.proof.mjs':
+        "reproduces the app's shape, a child that outlives its parent; it exits once the proof's id is gone",
+    };
     const files = [...sources('scripts'), ...sources('packages'), ...sources('apps')];
-    const detached = files.filter((file) => /\bdetached\s*:/u.test(readFileSync(file, 'utf8')));
+    const relative = (/** @type {string} */ file) => file.slice(REPO.length + 1).replaceAll('\\', '/');
+    const detaching = files.filter((file) => /\bdetached\s*:/u.test(readFileSync(file, 'utf8'))).map(relative);
+    const detached = detaching.filter((file) => !(file in DELIBERATE_DETACHED));
+    const stale = Object.keys(DELIBERATE_DETACHED).filter((file) => !detaching.includes(file));
+    check(
+      'every deliberate detached spawn named is still one, so the exemption cannot outlive its reason',
+      stale.length === 0,
+      `Named and no longer detaching: ${stale.join(', ')}. Remove the entry.`,
+    );
 
     const sample = `spawn(exe, [], { ${DETACHED_KEY}: true })`;
     check(
@@ -1517,7 +1534,8 @@ try {
       `Measured 2026-08-24: an ordinary grandchild dies with the harness 3 of 3, a detached one ` +
         `survives 3 of 3. So the harness's tree-kill is real and it is conditional on this. ` +
         `If you are adding a detached spawn deliberately, the FEATURES row's job-object work ` +
-        `comes back with it. Found: ${detached.map((f) => f.slice(REPO.length + 1)).join(', ')}`,
+        `comes back with it, or the child is bounded by the process that started it and named in ` +
+        `DELIBERATE_DETACHED. Found: ${detached.join(', ')}`,
     );
   }
 

@@ -201,10 +201,15 @@ async function main() {
  * object that ends them when the parent's handle closes, so an undetached child ends with its parent (measured
  * 2026-11-12, the first run of this case). Chromium's processes are in no such job, which is why the walk's survived.
  *
+ * AND IT ENDS WHEN THIS PROOF DOES. A detached process is out of reach of the tree-kill `checkLocal.mjs` applies on a
+ * timeout, so the child polls this proof's id and exits once that id is gone: it outlives its own parent, which is
+ * what the control needs, and never the proof, which is what the harness needs (`checkLocal.proof.mjs`' detached
+ * spawn case names this file for that reason).
+ *
  * @returns {Promise<{ parent: import('node:child_process').ChildProcess, child: number }>}
  */
 function startPair() {
-  const grandchild = 'setInterval(() => undefined, 1000);';
+  const grandchild = `setInterval(() => { try { process.kill(${String(process.pid)}, 0); } catch { process.exit(0); } }, 250);`;
   const program = [
     "const { spawn } = require('node:child_process');",
     `const child = spawn(process.execPath, ['-e', ${JSON.stringify(grandchild)}], { stdio: 'ignore', detached: true });`,
