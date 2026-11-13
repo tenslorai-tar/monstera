@@ -281,6 +281,20 @@ export function createHistoryStore(
   const ends = new Map<string, number>();
 
   /**
+   * Each file's rewrite in flight, so the next waits for it: a rewrite awaits its worker, and two of one file at once, two
+   * Deletes or a Delete and the 24-hour check, would each rename a file built from the same old one over the other's.
+   */
+  const rewrites = new Map<string, Promise<unknown>>();
+  /**
+   * How many times each file was cleared, and Clear all's count for every file: a rewrite whose worker read the file
+   * before a clear renames nothing, since what it built is the cleared file's, sealed under a key the clear may have
+   * removed, and would land over whatever a save wrote since.
+   */
+  const cleared = new Map<string, number>();
+  let clearedAll = 0;
+  const clearsOf = (path: string): string => `${String(clearedAll)}:${String(cleared.get(path) ?? 0)}`;
+
+  /**
    * Appends whole records to the file at `path`, and NEVER BEHIND A TORN ONE (the owner's answer of 2026-11-12): where
    * the file is not the size this session left it, its records are walked once ({@link wholeRecords}) and a torn tail,
    * the part of a record a crash or a full disk left, is cut off first. Only those bytes are lost, and they never were a
@@ -361,10 +375,33 @@ export function createHistoryStore(
    */
   const rewrite = async (placeKey: string, drop: HistoryDrop): Promise<readonly string[] | null> => {
     const path = fileOf(placeKey);
+    const before = rewrites.get(path) ?? Promise.resolve();
+    // AFTER THE ONE BEFORE, whatever it answered: its failure was its caller's, and this one reads the file it left.
+    const run = before.then(
+      () => rewriteNow(placeKey, drop),
+      () => rewriteNow(placeKey, drop),
+    );
+    rewrites.set(path, run);
+    try {
+      return await run;
+    } finally {
+      if (rewrites.get(path) === run) rewrites.delete(path);
+    }
+  };
+
+  const rewriteNow = async (placeKey: string, drop: HistoryDrop): Promise<readonly string[] | null> => {
+    const path = fileOf(placeKey);
     const key = keyFor(false);
     if (key === null || !existsSync(path)) return null;
-    const writing = `${path}.writing`;
+    // ITS OWN NAME, so nothing else this process writes beside the file can be the file this rewrite renames.
+    const writing = `${path}.${randomBytes(8).toString('hex')}.writing`;
+    const clears = clearsOf(path);
     const result = await rewriter({ path, writing, key: new Uint8Array(key), drop });
+    // CLEARED WHILE THE WORKER READ: what it built is of a file that is gone, and nothing of it is renamed in.
+    if (clearsOf(path) !== clears) {
+      rmSync(writing, { force: true });
+      return null;
+    }
     if (result.kind === 'nothing') return null;
     // THE GUARD THIS SESSION WROTE may be among what is dropped (a section's guards, or the whole file with the last
     // conversation), so the next save writes it again: one small record, where a missing one hides the section from the
@@ -550,12 +587,14 @@ export function createHistoryStore(
     },
 
     clearFile(placeKey) {
+      cleared.set(fileOf(placeKey), (cleared.get(fileOf(placeKey)) ?? 0) + 1);
       rmSync(fileOf(placeKey), { force: true });
       ends.delete(fileOf(placeKey));
       written.delete(placeKey);
     },
 
     clearAll() {
+      clearedAll += 1;
       let count = 0;
       for (const placeKey of this.files()) {
         count +=

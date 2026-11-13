@@ -497,6 +497,67 @@ describe('Delete really deletes (ADR-0279, the owner’s answers, Decision 7)', 
     expect(chainsToEnd(readFileSync(store.pathOf(PLACE_KEY)))).toBe(true);
   });
 
+  /** A worker that reads and writes at once and answers only when the case lets it: a Delete still running. */
+  function held(): { readonly rewriter: HistoryRewriter; readonly calls: () => number; readonly release: () => void } {
+    const waiting: (() => void)[] = [];
+    let calls = 0;
+    return {
+      rewriter: async (data) => {
+        calls += 1;
+        const result = await inProcess(data);
+        await new Promise<void>((release) => waiting.push(release));
+        return result;
+      },
+      calls: () => calls,
+      release: () => {
+        waiting.shift()?.();
+      },
+    };
+  }
+  const settle = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+  const writingLeft = (directory: string): string[] => readdirSync(join(directory, 'history')).filter((name) => name.endsWith('.writing'));
+
+  it('TWO DELETES OF ONE FILE AT ONCE run one after the other, and neither brings back what the other removed', async () => {
+    const directory = folder();
+    const worker = held();
+    const store = storeWith(directory, fakeCipher(), undefined, worker.rewriter);
+    const first = store.save(PLACE_KEY, PLACE, ID, null, [{ role: 'user', text: 'Remove me first' }], null, AT).conversation ?? '';
+    const second = store.save(PLACE_KEY, PLACE, ID, null, [{ role: 'user', text: 'Remove me too' }], null, AT).conversation ?? '';
+    const kept = store.save(PLACE_KEY, PLACE, ID, null, TURNS, null, AT).conversation ?? '';
+    const one = store.remove(PLACE_KEY, first);
+    const two = store.remove(PLACE_KEY, second);
+    await settle();
+    expect(worker.calls(), 'the second Delete’s worker waits for the first').toBe(1);
+    worker.release();
+    expect(await one).toBe(true);
+    await settle();
+    expect(worker.calls()).toBe(2);
+    worker.release();
+    expect(await two).toBe(true);
+    expect(store.list(PLACE_KEY, ID).map((card) => card.key)).toStrictEqual([kept]);
+    expect(everyFileHolds(directory, Buffer.from(first, 'hex')), 'the first stays removed').toBe(false);
+    expect(writingLeft(directory)).toStrictEqual([]);
+  });
+
+  it('CLEAR ALL WHILE A DELETE’S WORKER RUNS: what the worker built is never renamed over a save made since', async () => {
+    const directory = folder();
+    const worker = held();
+    const store = storeWith(directory, fakeCipher(), undefined, worker.rewriter);
+    const gone = store.save(PLACE_KEY, PLACE, ID, null, [{ role: 'user', text: 'Remove me' }], null, AT).conversation ?? '';
+    store.save(PLACE_KEY, PLACE, ID, null, TURNS, null, AT);
+    const removing = store.remove(PLACE_KEY, gone);
+    await settle();
+    expect(worker.calls()).toBe(1);
+    // CLEARED, the key with it, and a new conversation saved under the next key, all while the worker runs.
+    expect(store.clearAll()).toBe(2);
+    const fresh = store.save(PLACE_KEY, PLACE, ID, null, [{ role: 'user', text: 'Asked after the clear' }], null, AT).conversation ?? '';
+    worker.release();
+    expect(await removing, 'the conversation it was to remove went with the clear').toBe(false);
+    expect(store.list(PLACE_KEY, ID).map((card) => card.key)).toStrictEqual([fresh]);
+    expect(store.read(PLACE_KEY, fresh)?.turns).toStrictEqual([{ role: 'user', text: 'Asked after the clear' }]);
+    expect(writingLeft(directory)).toStrictEqual([]);
+  });
+
   it('removing a section keeps the other document’s, and the file goes with the last', async () => {
     const store = createHistoryStore(folder(), fakeCipher());
     store.save(PLACE_KEY, PLACE, ID, null, TURNS, null, AT);
