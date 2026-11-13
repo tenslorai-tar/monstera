@@ -6,7 +6,7 @@ import { MAX_SIGNATURE_FIELD } from '@monstera/contract/host';
 import type * as mupdf from './mupdfRaw.js';
 import forge from 'node-forge';
 
-import { levelOfDocMdp } from './docMdp.js';
+import { docMdpOf, levelOfDocMdp } from './docMdp.js';
 import { type NextSave, signaturesKeptBySave, withDocument } from './mupdfWriter.js';
 import { shownName } from './shownName.js';
 import { signatureValues } from './signatureFields.js';
@@ -200,10 +200,9 @@ export interface Certification {
  * certifying signature still verifies is not asked: the level is what the certifier declared.
  */
 export function certificationOf(document: mupdf.PDFDocument): Certification | null {
-  const perms = document.getTrailer().get('Root').get('Perms');
-  if (!perms.isDictionary()) return null;
-  const signature = perms.get('DocMDP');
-  if (signature.isNull()) return null;
+  const declared = docMdpOf(document);
+  if (declared === null) return null;
+  const { signature } = declared;
   if (!signature.isDictionary()) return { level: 'no-changes', signer: '' };
   const references: mupdf.PDFObject[] = [];
   const listed = signature.get('Reference');

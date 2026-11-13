@@ -27,10 +27,17 @@ export function levelOfDocMdp(p: number | undefined): CertificationLevel {
   return 'no-changes';
 }
 
-/** Whether the catalogue carries `/Perms /DocMDP`, the one place a certification is declared. */
-export function carriesCertification(document: PDFDocument): boolean {
+/**
+ * The catalogue's `/Perms` and the `/DocMDP` it holds, the one place a certification is declared, or `null` where there is
+ * none: THE ONE READING of whether a document is certified, which the lock's reader and the copy's removal both take
+ * (B3a). A `/Perms` that is not a dictionary, an unresolved one included, declares nothing; a `/DocMDP` that is not a
+ * dictionary is still declared, and {@link levelOfDocMdp}'s reader reads it as `no-changes`.
+ */
+export function docMdpOf(document: PDFDocument): { readonly perms: PDFObject; readonly signature: PDFObject } | null {
   const perms = document.getTrailer().get('Root').get('Perms');
-  return perms.isDictionary() && !perms.get('DocMDP').isNull();
+  if (!perms.isDictionary()) return null;
+  const signature = perms.get('DocMDP');
+  return signature.isNull() ? null : { perms, signature };
 }
 
 /**
@@ -42,9 +49,10 @@ export function carriesCertification(document: PDFDocument): boolean {
  * stays (preserve, never drop), and reads as not covering the copy, which is true.
  */
 export function savedUncertified<T>(document: PDFDocument, save: () => T): T {
-  const perms = document.getTrailer().get('Root').get('Perms');
-  if (!perms.isDictionary()) return save();
-  const signature = perms.get('DocMDP');
+  const declared = docMdpOf(document);
+  // NOTHING DECLARED, nothing to take out: and nothing put back, where a restore would write a `/DocMDP` that was absent.
+  if (declared === null) return save();
+  const { perms, signature } = declared;
   const references = signature.isDictionary() ? signature.get('Reference') : null;
   const restore: (() => void)[] = [];
   try {

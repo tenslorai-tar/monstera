@@ -8,7 +8,7 @@ import type {
   SavePurpose,
   SerialiseOptions,
 } from './engineSeam.js';
-import { carriesCertification, savedUncertified } from './docMdp.js';
+import { docMdpOf, savedUncertified } from './docMdp.js';
 import { DocumentLocked } from './engineSeam.js';
 import { AppendRefused } from './appendRefused.js';
 import { openPdfFile, pagesWithoutRepair } from './mupdfOpen.js';
@@ -825,7 +825,7 @@ export const mupdfWriter: EngineWriter<MupdfSession> = {
       const { document, terms: held, whole, appends: heldAppends } = saveTermsOf(session);
       // A COPY WRITTEN UNCERTIFIED (ADR-0291 Decision 5) is a WHOLE save, never an appended one: an earlier revision
       // would still hold the certification. Only where there is one to take out; otherwise the save is as held.
-      const uncertified = options?.certification === 'removed' && carriesCertification(document);
+      const uncertified = options?.certification === 'removed' && docMdpOf(document) !== null;
       // AND A PERSON WHO CHOSE TO SAVE PAST A REFUSED APPEND (ADR-0291 question 4) is written whole too.
       const writtenWhole = uncertified || options?.append === 'never';
       const terms = writtenWhole ? whole : held;

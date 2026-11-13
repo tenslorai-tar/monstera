@@ -3,6 +3,7 @@ import { CERTIFICATION_LEVELS, type CertificationLevel } from '@monstera/contrac
 import forge from 'node-forge';
 import { beforeAll, describe, expect, it } from 'vitest';
 
+import { docMdpOf, savedUncertified } from './docMdp.js';
 import type { ByteImage } from './engineSeam.js';
 import * as mupdf from './mupdfRaw.js';
 import { mupdfWriter } from './mupdfWriter.js';
@@ -116,6 +117,27 @@ describe('a certification, read (ADR-0291 Decision 1)', () => {
       await mupdfWriter.close(session);
     }
   }, 60_000);
+
+  it('a /Perms holding usage rights and NO /DocMDP is no certification, and taking one out writes no /DocMDP', async () => {
+    const built = await PDFDocument.create();
+    built.addPage([400, 600]);
+    built.catalog.set(PDFName.of('Perms'), built.context.obj({ UR3: built.context.register(built.context.obj({ Type: 'Sig' })) }));
+    const bytes = await built.save();
+    const document = mupdf.PDFDocument.openDocument(bytes, 'application/pdf');
+    try {
+      if (!(document instanceof mupdf.PDFDocument)) throw new Error('not a PDF');
+      expect(docMdpOf(document)).toBeNull();
+      expect(certificationOf(document)).toBeNull();
+      const plain = document.saveToBuffer('').asUint8Array();
+      const taken = savedUncertified(document, () => document.saveToBuffer('').asUint8Array());
+      expect(Buffer.from(taken).equals(Buffer.from(plain)), 'nothing taken out, nothing put back').toBe(true);
+      expect(Buffer.from(document.saveToBuffer('').asUint8Array()).includes('/DocMDP'), 'and none left after it').toBe(false);
+      // CONTROL: the usage rights are in what it wrote, so the search above can see the catalogue's /Perms.
+      expect(Buffer.from(taken).includes('/UR3')).toBe(true);
+    } finally {
+      document.destroy();
+    }
+  });
 
   it('CONTROL: an ordinary signed document is written exactly as without the option', async () => {
     const signed = await sign(await blank(), 'Grace Hopper');
