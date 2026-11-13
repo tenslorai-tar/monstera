@@ -48,20 +48,13 @@ function world(id: string | null) {
 }
 
 describe('the guard is read at the open and carried by every save (ADR-0279 Decision 5)', () => {
-  it('a PDF with an /ID is guarded by it, and Monstera’s save of it keeps its conversations listed', async () => {
-    const { history, disk } = world('a1b2');
-    history.opened(DOC, PLACE, Promise.resolve());
-    await history.save(DOC, null, TURNS, 'lease.pdf', AT);
-    // THE SAVE WRITES NEW BYTES AT THE PLACE; the first /ID string is kept, so the guard is the same.
-    disk.size = 2000;
-    disk.mtimeMs += 5000;
-    await history.saved(DOC);
-    expect((await history.list(DOC))?.map((card) => card.messages)).toStrictEqual([1]);
-  });
-
-  /** Saves one conversation, writes new bytes at the place, re-links or not, then REOPENS: what the next open lists. */
-  const reopenedAfterSave = async (relink: boolean): Promise<number> => {
-    const { store, history, disk } = world(null);
+  /**
+   * Saves one conversation, writes new bytes at the place, re-links or not, then REOPENS: what the next open lists. The
+   * reopen is a new adapter over the same store, so what it lists is what the GUARD on disk finds, never a guard the first
+   * session still holds (HHHHHHHHH-21: a list in the same session passes whatever the guard is).
+   */
+  const reopenedAfterSave = async (relink: boolean, id: string | null = null): Promise<number> => {
+    const { store, history, disk } = world(id);
     history.opened(DOC, PLACE, Promise.resolve());
     await history.save(DOC, null, TURNS, 'lease.pdf', AT);
     disk.size = 2000;
@@ -70,12 +63,18 @@ describe('the guard is read at the open and carried by every save (ADR-0279 Deci
     const next = createDocumentHistory({
       store,
       placeKeyOf: () => PLACE_KEY,
-      permanentIdOf: () => Promise.resolve(null),
+      permanentIdOf: () => Promise.resolve(id),
       stat: () => ({ size: disk.size, mtimeMs: disk.mtimeMs }),
     });
     next.opened(DOC, PLACE, Promise.resolve());
     return (await next.list(DOC))?.length ?? -1;
   };
+
+  it('a PDF with an /ID is guarded by it: after a save that writes new bytes, the NEXT OPEN lists its conversations with no re-link', async () => {
+    // THE SAVE KEEPS THE FIRST /ID STRING, so the guard is the same at the next open whatever the size and time say. A guard
+    // taken by stamp instead, the bug, lists none here: the stamp case's control below is the same reopen.
+    expect(await reopenedAfterSave(false, 'a1b2')).toBe(1);
+  });
 
   it('a PDF with NO /ID is guarded by its stamp, and the RE-LINK after Monstera’s save keeps its conversations at the next open', async () => {
     expect(await reopenedAfterSave(true)).toBe(1);

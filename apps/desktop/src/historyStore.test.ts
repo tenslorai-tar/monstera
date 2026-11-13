@@ -3,7 +3,7 @@ import { appendFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmS
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { SavedTurn } from '@monstera/contract';
+import { MAX_HISTORY_PREVIEW, type SavedTurn } from '@monstera/contract';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 /** Every path the store opened for reading or read whole, recorded by the spy below. */
@@ -135,6 +135,47 @@ describe('one history file per PDF (ADR-0279)', () => {
     expect(store.list(PLACE_KEY, ID)).toHaveLength(26);
     // EVERYTHING A PERSON WROTE IS SEALED: the question is in no file in the clear.
     expect(everyFileHolds(directory, Buffer.from('Who signs the contract?'))).toBe(false);
+  });
+
+  // SUCCESSORS of `chatHistory.test.ts`' cases (HHHHHHHHH-21), for the store that replaced it.
+  it('lists the section NEWEST SAVED FIRST, and one 1.1.2610.0 moved with no time last', () => {
+    const directory = folder();
+    const first = createHistoryStore(directory, fakeCipher());
+    first.writeUnguarded(PLACE_KEY, 'b'.repeat(64), [{ role: 'user', text: 'Moved' }], null, null);
+    // ADOPTED by the section's guard at its PDF's next open, a session of its own.
+    const store = createHistoryStore(directory, fakeCipher());
+    store.recordGuard(PLACE_KEY, PLACE, ID);
+    const older = store.save(PLACE_KEY, PLACE, ID, null, [{ role: 'user', text: 'Older' }], null, new Date('2026-11-01T08:00:00.000Z'));
+    const newer = store.save(PLACE_KEY, PLACE, ID, null, [{ role: 'user', text: 'Newer' }], null, AT);
+    expect(store.list(PLACE_KEY, ID).map((card) => card.preview)).toStrictEqual(['Newer', 'Older', 'Moved']);
+    // CONTROL: saved on, the older one moves to the front.
+    store.save(PLACE_KEY, PLACE, ID, older.conversation, [{ role: 'user', text: 'Older' }, { role: 'assistant', text: 'Again' }], null, new Date('2026-11-13T08:00:00.000Z'));
+    expect(store.list(PLACE_KEY, ID).map((card) => card.key)).toStrictEqual([older.conversation, newer.conversation, 'b'.repeat(64)]);
+  });
+
+  it('the preview is ONE LINE of the first question, bounded with an ellipsis, and an assistant-only conversation quotes its first turn', () => {
+    const store = createHistoryStore(folder(), fakeCipher());
+    store.save(PLACE_KEY, PLACE, ID, null, [{ role: 'user', text: `Please   summarise\nthe whole of this lease ${'and its schedules '.repeat(30)}` }], null, AT);
+    const [long] = store.list(PLACE_KEY, ID);
+    expect(long?.preview.length).toBe(MAX_HISTORY_PREVIEW);
+    expect(long?.preview.startsWith('Please summarise the whole of this lease')).toBe(true);
+    expect(long?.preview.endsWith('…')).toBe(true);
+    const other = 'c'.repeat(64);
+    store.save(other, PLACE, ID, null, [{ role: 'assistant', text: 'A restored answer' }], null, AT);
+    expect(store.list(other, ID)[0]?.preview).toBe('A restored answer');
+  });
+
+  it('a save naming a conversation DELETED since is written WHOLE under its key, never as the tail the session last saved', async () => {
+    const store = createHistoryStore(folder(), fakeCipher());
+    const { conversation } = store.save(PLACE_KEY, PLACE, ID, null, TURNS, null, AT);
+    if (conversation === null) throw new Error('the setup saved nothing');
+    const kept = store.save(PLACE_KEY, PLACE, ID, null, [{ role: 'user', text: 'Kept' }], null, AT);
+    await store.remove(PLACE_KEY, conversation);
+    const more = [...TURNS, { role: 'user' as const, text: 'And the date?' }];
+    store.save(PLACE_KEY, PLACE, ID, conversation, more, null, AT);
+    // THE WHOLE CONVERSATION reads back: a save from the session's old count would hold the last turn alone.
+    expect(store.read(PLACE_KEY, conversation)?.turns).toStrictEqual(more);
+    expect(store.list(PLACE_KEY, ID).map((card) => card.key).sort()).toStrictEqual([conversation, kept.conversation].sort());
   });
 
   it('a SAVE READS NOTHING: no history file is opened for reading while it saves', () => {

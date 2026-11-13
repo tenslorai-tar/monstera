@@ -39,8 +39,35 @@ async function selfPointingStream(): Promise<Uint8Array> {
   return Uint8Array.from([...bytes, ...latin1(tail)]);
 }
 
-/** The chain as it stands, by the module's own reading (`pagesWithoutRepair`), for a file with no password. */
+/**
+ * The chain as it stands, by the module's own reading (`pagesWithoutRepair`), for a file with no password. Every fixture
+ * read through it is unprotected, so none of them can tell a reader that drops its password from one that keeps it: that
+ * is the protected cases' job below (HHHHHHHHH-21).
+ */
 const pagesWithoutRecovery = (image: Uint8Array): number => pagesWithoutRepair(image, undefined);
+
+/**
+ * A PROTECTED file whose last section's /Prev names itself: the two pages encrypted by MuPDF's own writer, which keeps
+ * the page dictionaries in a classic table where a rebuild finds them, then the self-pointing table appended with the
+ * file's own trailer entries. Its pages are found by the rebuild, and opened only with the password.
+ *
+ * NOT `lockedPageTree`'s file: its page tree sits in an encrypted object stream, and with the same self-pointing tail
+ * `openPdfFile` answered no pages even WITH the password (run 2026-11-14 in this file), so it could not tell a rebuild
+ * that keeps the password from one that drops it. Why MuPDF's rebuild does not find it is not established here.
+ */
+async function protectedSelfPointing(): Promise<Uint8Array> {
+  const { bytes } = await twoPages();
+  const opened = mupdf.Document.openDocument(bytes, 'application/pdf').asPDF();
+  if (opened === null) throw new Error('the fixture is not a PDF');
+  const file = opened.saveToBuffer('encrypt=aes-128,user-password=open-me,owner-password=own-me').asUint8Array().slice();
+  opened.destroy();
+  const text = new TextDecoder('latin1').decode(file);
+  const trailer = /trailer\s*<<(.*?)>>\s*startxref/su.exec(text)?.[1];
+  if (!trailer?.includes('/Encrypt')) throw new Error('the protected fixture has no trailer to copy');
+  const at = file.length;
+  const tail = `xref\n0 1\n0000000000 65535 f \ntrailer\n<<${trailer}/Prev ${String(at)}>>\nstartxref\n${String(at)}\n%%EOF\n`;
+  return Uint8Array.from([...file, ...latin1(tail)]);
+}
 
 describe.each([
   ['an XRef stream', selfPointingStream],
@@ -100,6 +127,22 @@ describe('a chain read as it stands (pagesWithoutRepair), the appended save’s 
       expect(rebuilt.countPages()).toBe(2);
     } finally {
       rebuilt.destroy();
+    }
+  });
+});
+
+describe('the recovery of a PROTECTED file (HHHHHHHHH-21)', () => {
+  it('a protected file whose chain names itself is rebuilt WITH its password, and reads its pages', async () => {
+    const file = await protectedSelfPointing();
+    // CONTROL: as its chain stands it reads no pages even with the password, so what reads them is the rebuild.
+    expect(pagesWithoutRepair(file, 'open-me')).toBe(0);
+    const { document, access } = openPdfFile(file, 'open-me');
+    try {
+      expect(access).toBeGreaterThan(0);
+      expect(document.countPages()).toBe(2);
+      expect(document instanceof mupdf.PDFDocument && document.wasRepaired()).toBe(true);
+    } finally {
+      document.destroy();
     }
   });
 });
