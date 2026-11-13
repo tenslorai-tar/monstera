@@ -3013,6 +3013,26 @@ settings,
     expect(keyOf(await handlers['ai.history.save']({ docId: DOC, conversation: null, turns: TURNS }))).toMatch(/^[0-9a-f]{64}$/u);
   });
 
+  it('history LOCKED: History’s list, read and remove are each refused as history-locked, never answered as nothing saved (HHHHHHHHH-8)', async () => {
+    const folder = mkdtempSync(join(tmpdir(), 'monstera-chat-history-'));
+    const key = storeIn(folder, xor(0x5a)).save(FILE, PLACE, GUARD, null, TURNS, null, AT).conversation;
+    if (key === null) throw new Error('the setup saved nothing');
+    const locked = { ok: false, error: { code: 'history-locked' } };
+    const { handlers } = withHistory(true, folder, xor(0x33));
+    await expect(handlers['ai.history.list']({ docId: DOC, from: 0 })).resolves.toEqual(locked);
+    await expect(handlers['ai.history.read']({ docId: DOC, key })).resolves.toEqual(locked);
+    await expect(handlers['ai.history.remove']({ docId: DOC, key })).resolves.toEqual(locked);
+    // NOT OPEN BEFORE LOCKED: a document that is not open is that, whatever the store.
+    await expect(handlers['ai.history.list']({ docId: OTHER, from: 0 })).resolves.toEqual({ ok: false, error: { code: 'document-not-open' } });
+    // CONTROL: the account that saved it lists it; and an unlocked store with nothing saved lists none.
+    const listed = await withHistory(true, folder, xor(0x5a)).handlers['ai.history.list']({ docId: DOC, from: 0 });
+    expect(listed.ok ? listed.value.conversations.map((each) => each.key) : listed.error).toStrictEqual([key]);
+    await expect(withHistory(true).handlers['ai.history.list']({ docId: DOC, from: 0 })).resolves.toEqual({
+      ok: true,
+      value: { conversations: [], next: null },
+    });
+  });
+
   it('CONTROL: a machine with no working cipher is refused as secret-storage-unavailable, never as locked', async () => {
     const { handlers } = withHistory(true, undefined, { ...xor(), available: () => false });
     await expect(handlers['ai.history.save']({ docId: DOC, conversation: null, turns: TURNS })).resolves.toEqual({

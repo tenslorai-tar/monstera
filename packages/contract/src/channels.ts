@@ -6804,7 +6804,9 @@ export const channels = {
    * The open PDF's saved conversations (ADR-0279 Decision 2), newest saved first, {@link HISTORY_PAGE} at a time from
    * `from`; `next` is where the following page starts, `null` after the last. Only this PDF's file is read, and only the
    * section of the PDF now at its place. Not behind *Save chat history*: what was saved while it was on stays readable
-   * while it is off. Empty where nothing is saved or this machine cannot decrypt what was.
+   * while it is off. Empty where nothing is saved. `history-locked` where the history saved on this computer is sealed
+   * under a key this Windows account cannot unwrap, as `ai.history.save` answers it: what is saved is there and cannot be
+   * read, which an empty list would say is not.
    */
   'ai.history.list': channel(
     'The saved assistant conversations about an open document, newest first, one page at a time.',
@@ -6813,12 +6815,13 @@ export const channels = {
       conversations: z.array(savedConversationSchema).max(HISTORY_PAGE),
       next: z.number().int().positive().nullable(),
     }),
-    ['document-not-open'],
+    ['document-not-open', 'history-locked'],
   ),
 
   /**
    * One of the open PDF's saved conversations by the key `ai.history.list` gave (ADR-0192), to be SHOWN. `null` for a key
-   * nothing is saved under — removed since the list was read, or one that will not decrypt.
+   * nothing is saved under — removed since the list was read, or one that will not decrypt. `history-locked` as
+   * `ai.history.list` answers it.
    */
   'ai.history.read': channel(
     'One saved assistant conversation about an open document, by its key, to be shown read-only.',
@@ -6832,18 +6835,19 @@ export const channels = {
         .strict()
         .nullable(),
     }),
-    ['document-not-open'],
+    ['document-not-open', 'history-locked'],
   ),
 
   /**
    * Removes one of the open PDF's saved conversations by its key (ADR-0279 Decision 7): the file is rewritten without its
    * records, off the main thread, so its words leave the disk. `removed` is false for a key nothing was saved under.
+   * `history-locked` as `ai.history.list` answers it: a record that cannot be opened cannot be found to be removed.
    */
   'ai.history.remove': channel(
     'Removes one saved assistant conversation about an open document, by its key.',
     z.object({ docId: docIdSchema, key: savedConversationSchema.shape.key }).strict(),
     z.object({ removed: z.boolean() }),
-    ['document-not-open'],
+    ['document-not-open', 'history-locked'],
   ),
 
   /** History's *Clear all* (ADR-0279 Decision 3): removes the open PDF's history file. */

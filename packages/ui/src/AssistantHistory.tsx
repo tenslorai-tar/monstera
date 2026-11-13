@@ -6,6 +6,7 @@ import { type ReactElement, useCallback, useEffect, useState } from 'react';
 import {
   ASSISTANT_ASSISTANT,
   ASSISTANT_HISTORY,
+  ASSISTANT_HISTORY_LOCKED,
   ASSISTANT_YOU,
   HISTORY_BACK,
   HISTORY_BACK_TO_LIST,
@@ -39,6 +40,8 @@ import { ICONS } from './primitives/icons.js';
 type View =
   | { readonly kind: 'loading' }
   | { readonly kind: 'failed' }
+  /** The history saved here is locked to another Windows account: said, never shown as an empty list (HHHHHHHHH-8). */
+  | { readonly kind: 'locked' }
   | { readonly kind: 'list'; readonly conversations: readonly SavedConversation[] }
   | {
       /** One conversation, read-only. `turns` is `undefined` for one removed since the list was read. */
@@ -92,19 +95,19 @@ export function AssistantHistory({
   const [asking, setAsking] = useState<Asking>(undefined);
 
   const load = useCallback((): void => {
-    const pages = async (): Promise<readonly SavedConversation[] | null> => {
+    const pages = async (): Promise<View> => {
       const all: SavedConversation[] = [];
       for (let from: number | null = 0; from !== null; ) {
         const answer = await client['ai.history.list']({ docId, from });
-        if (!answer.ok) return null;
+        if (!answer.ok) return { kind: answer.error.code === 'history-locked' ? 'locked' : 'failed' };
         all.push(...answer.value.conversations);
         from = answer.value.next;
       }
-      return all;
+      return { kind: 'list', conversations: all };
     };
     void pages().then(
-      (conversations) => {
-        setView(conversations === null ? { kind: 'failed' } : { kind: 'list', conversations });
+      (shown) => {
+        setView(shown);
       },
       () => {
         setView({ kind: 'failed' });
@@ -126,6 +129,10 @@ export function AssistantHistory({
   const open = (entry: SavedConversation): void => {
     void client['ai.history.read']({ docId, key: entry.key }).then(
       (answer) => {
+        if (!answer.ok && answer.error.code === 'history-locked') {
+          setView({ kind: 'locked' });
+          return;
+        }
         setView({
           kind: 'conversation',
           entry,
@@ -186,6 +193,11 @@ export function AssistantHistory({
       ) : view.kind === 'failed' ? (
         <p className="m-assistant-history__note" role="alert">
           {i18n._(HISTORY_FAILED)}
+        </p>
+      ) : view.kind === 'locked' ? (
+        // THE ASSISTANT'S OWN SENTENCE (the owner's approval of 2026-11-12), one string wherever a locked store is met.
+        <p className="m-assistant-history__note" data-assistant-history-locked="" role="alert">
+          {i18n._(ASSISTANT_HISTORY_LOCKED)}
         </p>
       ) : view.conversations.length === 0 ? (
         <p className="m-assistant-history__note" data-assistant-history-empty={saving ? 'on' : 'off'}>

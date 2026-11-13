@@ -479,18 +479,25 @@ describe('the assistant tab', () => {
       initial: readonly (typeof ENTRIES)[number][] = ENTRIES,
       saving = true,
       pages?: readonly (readonly (typeof ENTRIES)[number][])[],
+      lockedAtStart = false,
     ): {
       readonly sent: { id: string; params: unknown }[];
       readonly removed: string[];
       readonly cleared: () => number;
+      /** From now on, `main` answers History as a store locked to another account. */
+      readonly lock: () => void;
     } {
       const sent: { id: string; params: unknown }[] = [];
       const removed: string[] = [];
       let clears = 0;
       let held = [...initial];
+      let locked = lockedAtStart;
       const client = clientOver((id, params) => {
         sent.push({ id, params });
         if (id === 'ai.models') return Promise.resolve({ ok: true, value: { source: 'fetched', models: [] } });
+        if (locked && (id === 'ai.history.list' || id === 'ai.history.read' || id === 'ai.history.remove')) {
+          return Promise.resolve({ ok: false, error: { code: 'history-locked' } });
+        }
         if (id === 'ai.history.list') {
           const { from } = params as { from: number };
           // A CASE'S PAGES, each answered at its own offset, with the next offset until the last.
@@ -549,7 +556,14 @@ describe('the assistant tab', () => {
           />
         </Wrapped>,
       );
-      return { sent, removed, cleared: () => clears };
+      return {
+        sent,
+        removed,
+        cleared: () => clears,
+        lock: () => {
+          locked = true;
+        },
+      };
     }
 
     const settle = async (): Promise<void> => {
@@ -664,6 +678,32 @@ describe('the assistant tab', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Back to the conversation' }));
       expect(document.querySelector('[data-assistant-history]')).toBeNull();
       expect(document.querySelector('.m-assistant__composer')).not.toBeNull();
+    });
+
+    // HHHHHHHHH-8: a history LOCKED to another Windows account is said with the assistant's own approved sentence.
+    const LOCKED_LINE =
+      'Chat history cannot be saved on this computer, because the history saved here cannot be opened by this Windows account. To start again, choose Clear chat history in Settings › Privacy.';
+
+    it('a store LOCKED to another account shows the approved locked line in History, not an empty list; CONTROL: an unlocked empty store still says none are saved', async () => {
+      stored([], true, undefined, true);
+      await openHistory();
+      expect(document.querySelector('[data-assistant-history-locked]')?.textContent).toBe(LOCKED_LINE);
+      expect(screen.queryByText('No conversations are saved for this file.')).toBeNull();
+      cleanup();
+      stored([], true);
+      await openHistory();
+      expect(screen.getByText('No conversations are saved for this file.')).toBeTruthy();
+      expect(document.querySelector('[data-assistant-history-locked]')).toBeNull();
+    });
+
+    it('a store that LOCKS after the list was read: Open shows the locked line, never a conversation said to be gone', async () => {
+      const { lock } = stored();
+      await openHistory();
+      lock();
+      fireEvent.click(pick(screen.getAllByRole('button', { name: OPEN })));
+      await settle();
+      expect(document.querySelector('[data-assistant-history-locked]')?.textContent).toBe(LOCKED_LINE);
+      expect(document.querySelector('[data-assistant-history="conversation"]')).toBeNull();
     });
   });
 

@@ -88,7 +88,7 @@ import {
 import { readFile, stat, writeFile } from 'node:fs/promises';
 import { basename, isAbsolute, win32 } from 'node:path';
 
-import { type DocId, type DocVersion, type FileHandle, err, lineText, ok, paragraphsOfLines } from '@monstera/shared';
+import { type DocId, type DocVersion, type FileHandle, type Result, err, lineText, ok, paragraphsOfLines } from '@monstera/shared';
 
 import { readBundledFace } from './bundledFaces.js';
 import { executeCommandHandler } from './commandHandlers.js';
@@ -486,6 +486,15 @@ export function createContractHandlers(deps: {
   const mintWritten: MintWritten = (destination) => deps.capabilities.mint(destination);
   // EVERY CONVERSION'S NAME IS FINISHED HERE, once its answer is ready however it ended (ADR-0234).
   const finishing = finishingWork(deps.commands);
+  /**
+   * History's refusal before it reads the store: the document not open, or the history saved here LOCKED to another
+   * account (HHHHHHHHH-8), which is said rather than read as nothing saved. `null` where History may read.
+   */
+  const historyRefusal = (docId: DocId): Result<never, { readonly code: 'document-not-open' | 'history-locked' }> | null => {
+    if (!deps.documents.isOpen(docId)) return err({ code: 'document-not-open' } as const);
+    if (deps.chatHistory.locked()) return err({ code: 'history-locked' } as const);
+    return null;
+  };
   return {
     // THE PRELOAD'S CHANNEL (ADR-0099). The page cannot send it — the bridge's `invoke` refuses its id —
     // so the path here is one `webUtils.getPathForFile` resolved from a file the operating system handed
@@ -762,7 +771,12 @@ export function createContractHandlers(deps: {
     },
     // HISTORY (ADR-0279 Decision 2): this PDF's section only, a page at a time, and NOT behind the setting — what was
     // saved while it was on stays readable and removable while it is off, as clearing already does.
+    //
+    // LOCKED IS SAID, never read as empty (HHHHHHHHH-8): a history this account cannot unwrap is there, and a list of none
+    // would tell the person nothing was saved. Asked after the document is known open, as a save asks it.
     'ai.history.list': async ({ docId, from }) => {
+      const refused = historyRefusal(docId);
+      if (refused !== null) return refused;
       const cards = await deps.chatHistory.list(docId);
       if (cards === undefined) return err({ code: 'document-not-open' } as const);
       const page = cards.slice(from, from + HISTORY_PAGE);
@@ -779,11 +793,15 @@ export function createContractHandlers(deps: {
       });
     },
     'ai.history.read': async ({ docId, key }) => {
+      const refused = historyRefusal(docId);
+      if (refused !== null) return refused;
       const found = await deps.chatHistory.read(docId, key);
       if (found === undefined) return err({ code: 'document-not-open' } as const);
       return ok({ conversation: found === null ? null : { savedAt: found.savedAt, turns: [...found.turns] } });
     },
     'ai.history.remove': async ({ docId, key }) => {
+      const refused = historyRefusal(docId);
+      if (refused !== null) return refused;
       const removed = await deps.chatHistory.remove(docId, key);
       if (removed === undefined) return err({ code: 'document-not-open' } as const);
       return ok({ removed });
