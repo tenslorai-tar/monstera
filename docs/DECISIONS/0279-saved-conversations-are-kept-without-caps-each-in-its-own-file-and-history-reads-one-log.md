@@ -487,3 +487,14 @@ held handle would put a new question on Delete's path, which renames another fil
 that rename replace a file this process holds open, which was not measured. What was different about the two slow
 readings: free memory then ended at 2,154 to 2,264 MiB, against about 4,020 MiB now. That is recorded as a difference,
 not as the cause. They stay unexplained, and the step-by-step instrument is the one to run when one is seen again.
+
+## Correction, 2026-11-13 — *cannot be read* is the PDF's failure, never the host's (HHHHHHHHH-6)
+
+Decision 6 removes a section whose PDF *cannot be found or read*. As built, the `/ID` read answered `failed` for any
+error, so an engine host that did not start, was refused, or ended counted every `/ID`-guarded PDF as unreadable, and
+removed every such history a day later: the host's failure read as the PDF's. Now the read says whose failure it was
+(`idReadFailure` in `historyCheck.ts`). The PDF's own, its file refused when opened for reading or its bytes a document
+the engine says will never open (`EngineOpenFailed`), is `failed`, and Decision 6 removes it as before. Anything else is
+`not-read`: that pass decides nothing about the section, its clock neither starts nor stops, and the next pass looks
+again. A PDF that cannot be found is unchanged: the file's `stat` needs no host. Held by `historyCheck.test.ts`' *a host
+that does not read says nothing about the PDF* and *whose failure a read that threw was*, each mutated red.

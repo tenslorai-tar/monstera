@@ -139,10 +139,15 @@ export type ShellFailureEvent =
    */
   | 'copy-unsealed'
   /**
-   * A closed PDF whose `/ID` the chat history's 24-hour check could not read (ADR-0279 Decision 6): which file and why.
-   * The check counts it as a PDF that cannot be read; this line is where a dead host is told apart from a broken file.
+   * A closed PDF whose `/ID` the chat history's 24-hour check could not read because of the PDF itself, its file refused
+   * or its bytes not a document (ADR-0279 Decision 6): which file and why. The check counts it as a PDF that cannot be read.
    */
   | 'history-id-unread'
+  /**
+   * A closed PDF whose `/ID` the 24-hour check did not read because the reading failed, the host not starting or ending:
+   * which file and why. Nothing is decided of the PDF that pass, so a host that cannot start removes no history.
+   */
+  | 'history-id-not-read'
   /** A step of the chat history's 24-hour check that threw (ADR-0279 Decision 6); the next ask, a minute on, tries again. */
   | 'history-check-failed'
   /** The one move of 1.1.2610.0's saved conversations failed at a step; the old file is kept whole and the next start tries again. */

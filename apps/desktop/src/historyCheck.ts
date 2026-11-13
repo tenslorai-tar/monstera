@@ -1,3 +1,4 @@
+import { EngineOpenFailed } from '@monstera/kernel';
 import { z } from 'zod';
 
 import type { HistoryGuard, HistoryStore } from './historyStore.js';
@@ -64,12 +65,36 @@ export interface HistoryCheckDependencies {
 
 /**
  * What the host read of a closed PDF's `/ID`: the id as hex or `null` where it has none; `locked` where the PDF needs a
- * password to open, which the check does not have; `failed` where it could not be read at all.
+ * password to open, which the check does not have; `failed` where the PDF itself could not be read, its file refused
+ * or its bytes not a document the engine opens; `not-read` where the reading did not happen, the host not starting or
+ * ending, which says nothing about the PDF.
  */
 export type PermanentIdRead =
   | { readonly kind: 'read'; readonly id: string | null }
   | { readonly kind: 'locked' }
-  | { readonly kind: 'failed' };
+  | { readonly kind: 'failed' }
+  | { readonly kind: 'not-read' };
+
+/** A closed PDF's own file refused to be opened for reading: the PDF's failure, never the engine host's. */
+export class PdfFileRefused extends Error {
+  constructor(cause: unknown) {
+    super(`the PDF could not be opened for reading: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
+    this.name = 'PdfFileRefused';
+  }
+}
+
+/**
+ * Whose failure a read of a closed PDF's `/ID` that threw was. The PDF's own — its file refused ({@link PdfFileRefused})
+ * or its bytes a document the engine says will never open (`EngineOpenFailed`, the class the open gives exactly that)
+ * — is `failed`, which Decision 6 removes. Anything else is the reading's: a host that did not start, was refused, or
+ * ended, which says nothing of the PDF and is `not-read`.
+ */
+export function idReadFailure(thrown: unknown): 'failed' | 'not-read' {
+  return thrown instanceof PdfFileRefused || thrown instanceof EngineOpenFailed ? 'failed' : 'not-read';
+}
+
+/** Whether the PDF at a section's place is the section's, or whether this pass could not tell. */
+type Presence = 'present' | 'absent' | 'not-looked';
 
 /** What one step did. */
 export type HistoryStep = 'busy' | 'not-due' | 'checked' | 'done';
@@ -89,20 +114,23 @@ export function createHistoryCheck(deps: HistoryCheckDependencies): HistoryCheck
   };
 
   /** Whether the PDF at `place` is the one `guard` names, updating what the ledger has seen of it. */
-  const present = async (place: string, guard: HistoryGuard, entry: Ledger['sections'][string]): Promise<boolean> => {
+  const presence = async (place: string, guard: HistoryGuard, entry: Ledger['sections'][string]): Promise<Presence> => {
     const found = await deps.stat(place);
-    if (found === null) return false;
-    if (guard.kind === 'stamp') return found.size === guard.size && found.mtimeMs === guard.mtimeMs;
-    if (entry.seen !== null && entry.seen.size === found.size && entry.seen.mtimeMs === found.mtimeMs) return true;
+    if (found === null) return 'absent';
+    if (guard.kind === 'stamp') return found.size === guard.size && found.mtimeMs === guard.mtimeMs ? 'present' : 'absent';
+    if (entry.seen !== null && entry.seen.size === found.size && entry.seen.mtimeMs === found.mtimeMs) return 'present';
     // MOVED SINCE IT WAS LAST SEEN WITH ITS ID, or never seen: the one case that parses.
     const read = await deps.permanentIdOf(place);
     // A PDF THAT NEEDS A PASSWORD is THERE, and its `/ID` cannot be read without one, which the check never has. Counting
     // it missing would remove the history of a file standing at its place a day later, so it counts as present, and what
     // was seen is not moved: the next pass asks again. Asked of the owner (ADR-0279's correction of 2026-11-12, later).
-    if (read.kind === 'locked') return true;
-    if (read.kind === 'failed' || read.id !== guard.id) return false;
+    if (read.kind === 'locked') return 'present';
+    // THE HOST DID NOT READ IT: a host that does not start would otherwise count every `/ID`-guarded PDF as gone, and
+    // remove every such history a day later. Nothing was learnt of the PDF, so nothing is decided of it this pass.
+    if (read.kind === 'not-read') return 'not-looked';
+    if (read.kind === 'failed' || read.id !== guard.id) return 'absent';
     entry.seen = { size: found.size, mtimeMs: found.mtimeMs };
-    return true;
+    return 'present';
   };
 
   return {
@@ -119,7 +147,10 @@ export function createHistoryCheck(deps: HistoryCheckDependencies): HistoryCheck
       for (const { placeKey, section, place, guard } of queue.splice(0, BATCH)) {
         const name = `${placeKey}/${section}`;
         const entry = ledger.sections[name] ?? { seen: null, missingSince: null };
-        if (await present(place, guard, entry)) {
+        const found = await presence(place, guard, entry);
+        // THE CLOCK NEITHER STARTS NOR STOPS: the ledger keeps what it knew, and the next pass looks again.
+        if (found === 'not-looked') continue;
+        if (found === 'present') {
           // BACK, OR NEVER GONE: the clock starts again.
           ledger.sections[name] = { seen: entry.seen, missingSince: null };
           continue;

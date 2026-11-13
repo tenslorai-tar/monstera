@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
-import { constants as fileConstants, createReadStream, statSync } from 'node:fs';
-import { copyFile, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { constants as fileConstants, createReadStream, createWriteStream, statSync } from 'node:fs';
+import { type FileHandle, copyFile, mkdir, open as openFile, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { pipeline } from 'node:stream/promises';
 import { type Server, connect, createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -322,7 +323,14 @@ import type { EditWatchSurface } from './externalEditWatch.js';
 import type { OpenExternalEditor } from './openExternalEditor.js';
 import type { SecretStoreSurface } from './secretStore.js';
 import { createDocumentHistory, noDocumentHistory } from './documentHistory.js';
-import { IDLE_SECONDS, type PermanentIdRead, createHistoryCheck, driveHistoryCheck } from './historyCheck.js';
+import {
+  IDLE_SECONDS,
+  type PermanentIdRead,
+  PdfFileRefused,
+  createHistoryCheck,
+  driveHistoryCheck,
+  idReadFailure,
+} from './historyCheck.js';
 import type { HistoryStore } from './historyStore.js';
 import { type SettingsSurface, createEphemeralSettings, createJsonFile } from './settingsFile.js';
 import { type PrefixDigest, writePrefix } from './signedVersionFile.js';
@@ -3940,7 +3948,17 @@ function engineSessionOpener(
     try {
       const opened = await openInArea(
         async (destination) => {
-          await copyFile(path, destination);
+          let source: FileHandle;
+          try {
+            source = await openFile(path, 'r');
+          } catch (refused) {
+            throw new PdfFileRefused(refused);
+          }
+          try {
+            await pipeline(source.createReadStream({ autoClose: false }), createWriteStream(destination));
+          } finally {
+            await source.close();
+          }
           return (await stat(destination)).size;
         },
         { keys: [], standing: 'as-copied' },
@@ -3949,9 +3967,11 @@ function engineSessionOpener(
       return { kind: 'read', id: (await readDocumentInformationThroughHost(opened.session)).permanentId };
     } catch (thrown) {
       if (thrown instanceof EngineDocumentLocked) return { kind: 'locked' };
-      // NOT SWALLOWED: `failed` is the answer the check acts on, a PDF that cannot be read, and the cause is said.
-      failures({ event: 'history-id-unread', detail: `${path}: ${thrown instanceof Error ? thrown.message : String(thrown)}` });
-      return { kind: 'failed' };
+      // NOT SWALLOWED: either answer is one the check acts on, and the cause is said either way.
+      const kind = idReadFailure(thrown);
+      const detail = `${path}: ${thrown instanceof Error ? thrown.message : String(thrown)}`;
+      failures({ event: kind === 'failed' ? 'history-id-unread' : 'history-id-not-read', detail });
+      return { kind };
     } finally {
       if (end !== undefined) await end();
     }

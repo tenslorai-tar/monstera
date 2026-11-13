@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { BATCH, DAY_MS, GRACE_MS, createHistoryCheck } from './historyCheck.js';
+import { EngineOpenFailed } from '@monstera/kernel';
+
+import { EngineCannotStartError } from './engineHostConnection.js';
+import { BATCH, DAY_MS, GRACE_MS, PdfFileRefused, createHistoryCheck, idReadFailure } from './historyCheck.js';
 import type { HistoryGuard, HistorySection } from './historyStore.js';
 
 /**
@@ -13,7 +16,9 @@ const HOUR = 60 * 60 * 1000;
 
 interface World {
   /** What is at each place now: a size and time and an id, or nothing. */
-  readonly disk: Map<string, { size: number; mtimeMs: number; id: string | null; locked?: true }>;
+  readonly disk: Map<string, { size: number; mtimeMs: number; id: string | null; locked?: true; unparsable?: true }>;
+  /** Whether the host reads at all: `false` is a host that does not start, which says nothing about any PDF. */
+  hostReads: boolean;
   readonly removed: string[];
   readonly parsed: string[];
   readonly stated: string[];
@@ -22,7 +27,7 @@ interface World {
 }
 
 function world(sections: readonly (HistorySection & { readonly placeKey: string })[]) {
-  const state: World = { disk: new Map(), removed: [], parsed: [], stated: [], clock: 1_000_000, idle: true };
+  const state: World = { disk: new Map(), removed: [], parsed: [], stated: [], clock: 1_000_000, idle: true, hostReads: true };
   let ledger: unknown = null;
   const live = [...sections];
   const check = createHistoryCheck({
@@ -47,8 +52,9 @@ function world(sections: readonly (HistorySection & { readonly placeKey: string 
     },
     permanentIdOf: (path) => {
       state.parsed.push(path);
+      if (!state.hostReads) return Promise.resolve({ kind: 'not-read' } as const);
       const found = state.disk.get(path);
-      if (found === undefined) return Promise.resolve({ kind: 'failed' } as const);
+      if (found === undefined || found.unparsable === true) return Promise.resolve({ kind: 'failed' } as const);
       if (found.locked === true) return Promise.resolve({ kind: 'locked' } as const);
       return Promise.resolve({ kind: 'read', id: found.id } as const);
     },
@@ -176,5 +182,51 @@ describe('a PDF that needs a password is there, though its /ID cannot be read wi
     // THE HOST WAS ASKED every pass, so the case reaches the locked answer rather than a stamp it had seen.
     expect(state.parsed.filter((path) => path === 'C:/locked.pdf')).toHaveLength(4);
     expect(state.removed).toStrictEqual(['p2/s2']);
+  });
+});
+
+describe('whose failure a read that threw was', () => {
+  it('the PDF’s own — its file refused, its bytes a document the engine will never open — is failed', () => {
+    expect(idReadFailure(new PdfFileRefused(Object.assign(new Error('EACCES'), { code: 'EACCES' })))).toBe('failed');
+    expect(idReadFailure(new EngineOpenFailed('malformed'))).toBe('failed');
+  });
+
+  it('CONTROL: the reading’s — a host that cannot start, any other error, a thrown non-error — is not-read', () => {
+    expect(idReadFailure(new EngineCannotStartError('mupdf-shim','the shim did not load'))).toBe('not-read');
+    expect(idReadFailure(new Error('the reader thread exited with code 1 without reporting'))).toBe('not-read');
+    expect(idReadFailure('gone')).toBe('not-read');
+  });
+});
+
+describe('a host that does not read says nothing about the PDF', () => {
+  it('no section is removed while the host does not start, and the clock it had is kept; CONTROL: a PDF the host says will never open is removed after 24 hours', async () => {
+    const { state, passAt } = world([
+      section('p1', 's1', 'C:/here.pdf', byId('aa')),
+      section('p2', 's2', 'C:/broken.pdf', byId('bb')),
+      section('p3', 's3', 'C:/was-gone.pdf', byId('cc')),
+    ]);
+    // ON DISK, and written again before every pass, so each pass must parse it: the host's answer is what decides.
+    const touched = (hours: number): void => {
+      state.disk.set('C:/here.pdf', { size: 10, mtimeMs: 5 + hours, id: 'aa' });
+    };
+    state.disk.set('C:/broken.pdf', { size: 10, mtimeMs: 5, id: 'bb', unparsable: true });
+    // MISSING at the first pass, so its clock starts; then a PDF arrives that only the host could judge.
+    touched(0);
+    await passAt(0);
+    state.disk.set('C:/was-gone.pdf', { size: 10, mtimeMs: 5, id: 'zz' });
+    state.hostReads = false;
+    for (const hours of [24, 48, 72]) {
+      touched(hours);
+      await passAt(hours);
+    }
+    expect(state.removed, 'a host that does not start removes nothing').toStrictEqual([]);
+    // THE HOST WAS ASKED, so the case reaches the not-read answer rather than a stamp it had seen.
+    expect(state.parsed.filter((path) => path === 'C:/here.pdf')).toHaveLength(4);
+
+    // THE HOST BACK: the PDF it says will never open is gone a day after it was first found so, and the PDF that
+    // replaced the missing one is a different one, whose clock ran from the first pass and was never reset.
+    state.hostReads = true;
+    await passAt(96);
+    expect(state.removed).toStrictEqual(['p2/s2', 'p3/s3']);
   });
 });
