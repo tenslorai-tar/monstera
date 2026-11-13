@@ -325,7 +325,7 @@ import { createDocumentHistory, noDocumentHistory } from './documentHistory.js';
 import { IDLE_SECONDS, type PermanentIdRead, createHistoryCheck, driveHistoryCheck } from './historyCheck.js';
 import type { HistoryStore } from './historyStore.js';
 import { type SettingsSurface, createEphemeralSettings, createJsonFile } from './settingsFile.js';
-import { writePrefix } from './signedVersionFile.js';
+import { type PrefixDigest, writePrefix } from './signedVersionFile.js';
 import { type StartReading, startEditingHosts } from './editingHosts.js';
 import { idleHost } from './idleRetire.js';
 import { type MemoryPressurePolicy, watchMemoryPressure } from './memoryPressure.js';
@@ -1684,7 +1684,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // holds or sends them.
     signatures: (session) => engineHost.signatures(session),
     signaturesKept: (session) => engineHost.signaturesKept(session),
-    signedVersionVerifies: (path, end) => engineHost.signedVersionVerifies(path, end),
+    checkedSignedVersion: (path, end) => engineHost.checkedSignedVersion(path, end),
     // THE CHECKPOINT RESTORE, and it is `recycle` with a different source of
     // bytes rather than a new operation. `EngineSessions.recycle` already
     // releases a document's sessions and opens them again while KEEPING its
@@ -2733,8 +2733,8 @@ function engineSessionOpener(
   readonly signatures: (session: MupdfSession) => Promise<readonly ReadSignature[]>;
   /** How many signatures, and whether the next save keeps them — the writer's own decision, in the host. */
   readonly signaturesKept: (session: MupdfSession) => Promise<SignatureFacts>;
-  /** Whether a file cut back to `end` bytes holds a signature ending there that verifies (ADR-0291 Decision 7). */
-  readonly signedVersionVerifies: (path: string, end: number) => Promise<boolean>;
+  /** The digest of a file cut back to `end` bytes where a signature ending there verifies (ADR-0291 Decision 7). */
+  readonly checkedSignedVersion: (path: string, end: number) => Promise<PrefixDigest | undefined>;
   /** Every annotation in the document, from whichever host is live. */
   readonly annotations: HostAnnotationsReader;
   /** Named marks serialised for the clipboard, from whichever host is live. */
@@ -3900,28 +3900,31 @@ function engineSessionOpener(
   };
 
   /**
-   * Whether `path`'s first `end` bytes hold a signature ending there that verifies over all of them (ADR-0291 Decision
-   * 7): the cut copied into a granted pair of its own, opened, read with the signature reader every Check signatures
-   * uses, and ended whatever the read answered. A cut that does not open is not a signed version.
+   * The digest of `path`'s first `end` bytes where they hold a signature ending there that verifies over all of them
+   * (ADR-0291 Decision 7), and `undefined` where they do not: the cut copied into a granted pair of its own, opened, read
+   * with the signature reader every Check signatures uses, and ended whatever the read answered. A cut that does not open
+   * is not a signed version. The digest is of the bytes the host read, so a later write of the cut can be held to them.
    */
-  const signedVersionVerifiesAt = async (path: string, end: number): Promise<boolean> => {
+  const checkedSignedVersionAt = async (path: string, end: number): Promise<PrefixDigest | undefined> => {
     let opened: Awaited<ReturnType<typeof openInArea>>;
+    let digest: PrefixDigest | undefined;
     try {
       opened = await openInArea(
         async (destination) => {
-          await writePrefix(path, end, destination);
+          digest = await writePrefix(path, end, destination, 'unchecked');
           return end;
         },
         { keys: [], standing: 'as-copied' },
       );
     } catch (thrown) {
       // A CUT THAT IS NOT A PDF, OR ONE THAT ASKS FOR A PASSWORD, is no signed version this build can check.
-      if (thrown instanceof EngineDocumentLocked || thrown instanceof Error) return false;
+      if (thrown instanceof EngineDocumentLocked || thrown instanceof Error) return undefined;
       throw thrown;
     }
     try {
       const read = await readSignaturesThroughHost(opened.session);
-      return read.some((signature) => signature.signedThrough === end && signature.coversDocument && signature.coversWholeFile);
+      const verifies = read.some((signature) => signature.signedThrough === end && signature.coversDocument && signature.coversWholeFile);
+      return verifies ? digest : undefined;
     } finally {
       await opened.end();
     }
@@ -4041,7 +4044,7 @@ function engineSessionOpener(
     pageMarks: readPageMarksThroughHost,
     signatures: readSignaturesThroughHost,
     signaturesKept: readSignaturesKeptThroughHost,
-    signedVersionVerifies: signedVersionVerifiesAt,
+    checkedSignedVersion: checkedSignedVersionAt,
     annotations: readAnnotationsThroughHost,
     annotationCopy: copyAnnotationsThroughHost,
     annotationWords: readAnnotationWordsThroughHost,

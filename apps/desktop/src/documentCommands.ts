@@ -229,7 +229,7 @@ import { readFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 
 import type { BackupProvenance } from './backupLedger.js';
-import { holdsPrefix, writePrefix } from './signedVersionFile.js';
+import { holdsPrefix, type PrefixDigest, PrefixChangedError, writePrefix } from './signedVersionFile.js';
 import { adoptLegacyBackups } from './legacyBackups.js';
 import { type EditableSources, editablePages, emptyReport } from './editablePowerPoint.js';
 import { DocusignOutcomeRefused, type DocusignSession } from './docusignSession.js';
@@ -2671,11 +2671,12 @@ export interface DocumentCommandsParts {
   /** How many signatures, and whether the next save keeps them — the writer's own decision. See {@link save}. */
   readonly signaturesKept: (session: MupdfSession) => Promise<SignatureFacts>;
   /**
-   * Whether the file at `path`, cut back to its first `end` bytes, holds a signature that ends there and verifies over
-   * all of it (ADR-0291 Decision 7). Composed where the engine host is, because only a host may open a document's
-   * bytes: the cut is read in a session of its own, which is closed before this answers.
+   * Where the file at `path`, cut back to its first `end` bytes, holds a signature that ends there and verifies over all
+   * of it, the digest of those bytes; `undefined` otherwise (ADR-0291 Decision 7). Composed where the engine host is,
+   * because only a host may open a document's bytes: the cut is read in a session of its own, which is closed before
+   * this answers.
    */
-  readonly signedVersionVerifies: (path: string, end: number) => Promise<boolean>;
+  readonly checkedSignedVersion: (path: string, end: number) => Promise<PrefixDigest | undefined>;
   readonly restore: DocumentRestore;
   /** How a removal's save opens the document's sessions again from the file it wrote (ADR-0164). */
   readonly renew: DocumentRenew;
@@ -2986,7 +2987,7 @@ export class DocumentCommands {
   readonly #pageMarks: DocumentPageMarksReader;
   readonly #signatures: (session: MupdfSession) => Promise<readonly ReadSignature[]>;
   readonly #signaturesKept: (session: MupdfSession) => Promise<SignatureFacts>;
-  readonly #signedVersionVerifies: (path: string, end: number) => Promise<boolean>;
+  readonly #checkedSignedVersion: (path: string, end: number) => Promise<PrefixDigest | undefined>;
   readonly #restore: DocumentRestore;
   readonly #renew: DocumentRenew;
   readonly #recentPicture: Pick<RecentPictures, 'retake'>;
@@ -3096,7 +3097,7 @@ export class DocumentCommands {
     this.#pageMarks = parts.pageMarks;
     this.#signatures = parts.signatures;
     this.#signaturesKept = parts.signaturesKept;
-    this.#signedVersionVerifies = parts.signedVersionVerifies;
+    this.#checkedSignedVersion = parts.checkedSignedVersion;
     this.#restore = parts.restore;
     this.#renew = parts.renew;
     this.#recentPicture = parts.recentPicture;
@@ -4858,6 +4859,10 @@ export class DocumentCommands {
    * in a session of its own and written only where a signature ending exactly there verifies over all of it, so a
    * signature added in this session and not yet saved, or a file rewritten since, answers `not-found` with nothing
    * written. The path is read in the lane; the file is cut outside it, since it changes nothing about the document.
+   *
+   * THE BYTES WRITTEN ARE THE BYTES CHECKED: the file is read again for the write, after the picker, and a save while the
+   * picker was up changes it, so the write is held to the checked cut's digest and refused as `not-found` where the file
+   * no longer holds it.
    */
   async saveSignedVersion(
     docId: DocId,
@@ -4872,7 +4877,8 @@ export class DocumentCommands {
     if (suggest === undefined) throw new DocumentNotOpenError(docId, 'save a signed version');
     const { value: path } = await this.#documents.read(docId, (context) => Promise.resolve(context.path));
     if (!(await holdsPrefix(path, signedThrough))) return { kind: 'not-found' };
-    if (!(await this.#signedVersionVerifies(path, signedThrough))) return { kind: 'not-found' };
+    const checked = await this.#checkedSignedVersion(path, signedThrough);
+    if (checked === undefined) return { kind: 'not-found' };
 
     const destination = await this.#copy.pick(suffixed(suggest, 'signed version'));
     if (destination === null) return { kind: 'cancelled' };
@@ -4881,8 +4887,10 @@ export class DocumentCommands {
     const refused = copyRefusalOf(await this.#checkFor(docId)(destination));
     if (refused !== undefined) return refused;
     try {
-      await writePrefix(path, signedThrough, destination);
+      await writePrefix(path, signedThrough, destination, checked);
     } catch (cause) {
+      // THE FILE CHANGED SINCE IT WAS CHECKED, and the cut it holds now was never verified: nothing was written.
+      if (cause instanceof PrefixChangedError) return { kind: 'not-found' };
       // THE DISK'S, kept as a copy's failed write keeps it; the document and its file are untouched.
       return { kind: 'write-failed', cause };
     }

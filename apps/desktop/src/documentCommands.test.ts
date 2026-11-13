@@ -966,12 +966,13 @@ const INERT = {
   // ordinary one: an unsigned document, and not a removal.
   signaturesKept: () => Promise.resolve({ signatures: 0, kept: true, certification: null }),
   // THE HOST'S CHECK OF A CUT, in process: the cut opened, read by the same reader, closed (ADR-0291 Decision 7).
-  signedVersionVerifies: async (path, end) => {
+  checkedSignedVersion: async (path, end) => {
     const cut = new Uint8Array((await readFile(path)).subarray(0, end));
     const session = await mupdfWriter.open(cut);
     try {
       const read = await readSignatures(session, cut);
-      return read.some((signature) => signature.signedThrough === end && signature.coversDocument && signature.coversWholeFile);
+      const verifies = read.some((signature) => signature.signedThrough === end && signature.coversDocument && signature.coversWholeFile);
+      return verifies ? { sha256: createHash('sha256').update(cut).digest('hex') } : undefined;
     } finally {
       await mupdfWriter.close(session);
     }
@@ -1861,7 +1862,12 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       /** Where *Save a copy*'s picker answers, for the cases that write one; a dismissed picker otherwise. */
       copyTo: string | null = null,
       /** The file's access and the save's filesystem, for the cases about a save that is not written (7b). */
-      file: { readonly probeAccess?: FileAccessProbe; readonly surface?: AtomicWriteSurface } = {},
+      file: {
+        readonly probeAccess?: FileAccessProbe;
+        readonly surface?: AtomicWriteSurface;
+        /** Run while the picker is up, against the document's file: a save made while the person chooses a name. */
+        readonly whilePicking?: (path: string) => void;
+      } = {},
     ): Promise<{
       commands: DocumentCommands;
       saved: DocId;
@@ -1949,10 +1955,12 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
           },
           copy: {
             // ITS OWN FILE where a case asks for it, which is a path this fixture names only once it is made.
-            pick: () =>
-              Promise.resolve(
+            pick: () => {
+              file.whilePicking?.(path);
+              return Promise.resolve(
                 copyTo === ITS_OWN_FILE ? path : copyTo === ITS_OWN_FILE_SPELT_OTHERWISE ? `${dirname(path)}${sep}.${sep}${basename(path)}` : copyTo,
-              ),
+              );
+            },
             checkTarget: (target, source) => own.checkCopyTarget(target, source),
           },
           save: {
@@ -2332,6 +2340,21 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
         writeFileSync(own.path, file);
         expect(await own.commands.saveSignedVersion(own.saved, signed.length)).toStrictEqual({ kind: 'onto-source' });
         expect(Buffer.from(readFileSync(own.path)).equals(file), 'the document’s own file is untouched').toBe(true);
+
+        // A SAVE WHILE THE PICKER IS UP rewrites the file: same length, one byte changed inside the signed range. The cut
+        // it holds now was never checked, so nothing is written, though the destination was chosen.
+        const raced = join(directory, `signed-version-raced-${String(savables + 1)}.pdf`);
+        const during = await aSavableDocument(signatureFacts, ledger(), raced, {
+          whilePicking: (at) => {
+            const changed = Buffer.from(readFileSync(at));
+            changed[16] = changed[16] === 0x20 ? 0x0a : 0x20;
+            writeFileSync(at, changed);
+          },
+        });
+        writeFileSync(during.path, Buffer.concat([Buffer.from(signed), Buffer.alloc(40, 0x2a)]));
+        expect(await during.commands.saveSignedVersion(during.saved, signed.length)).toStrictEqual({ kind: 'not-found' });
+        expect(existsSync(raced), 'nothing is written where the bytes are not the ones checked').toBe(false);
+        expect(readdirSync(directory).filter((name) => name.endsWith('.writing')), 'and no partial file is left beside it').toStrictEqual([]);
       }, 60_000);
 
       it('CERTIFYING A SIGNED DOCUMENT is refused in the lane, from the same read, with nothing changed (question 3)', async () => {
