@@ -1097,6 +1097,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // below; no close can reach this before it exists, because nothing is open before it does.
     teardown: async (docId) => {
       commands.endExternalEdit(docId);
+      // ITS SIGNED-VERSION CHECKS (ADR-0291 Decision 7) go with it, so a closed document holds nothing here.
+      commands.forgetSignedVersions(docId);
       await engine.releaseOnClose(docId);
       // THE LAST DOCUMENT OUT STOPS THE HOSTS (the owner's Part 7 A). Here, after the release, because the record left
       // the service before this document's lane drained: a count read at removal would stop a host its own queued work

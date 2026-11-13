@@ -225,7 +225,7 @@ import {
 // directory came from a picker in this process and never crosses to the
 // renderer, exactly as a destination does. What L2 forbids is a path in a
 // renderer-facing type.
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 
 import type { BackupProvenance } from './backupLedger.js';
@@ -2988,6 +2988,11 @@ export class DocumentCommands {
   readonly #signatures: (session: MupdfSession) => Promise<readonly ReadSignature[]>;
   readonly #signaturesKept: (session: MupdfSession) => Promise<SignatureFacts>;
   readonly #checkedSignedVersion: (path: string, end: number) => Promise<PrefixDigest | undefined>;
+  /**
+   * Each open document's signed-version checks (ADR-0291 Decision 7), held for the version and saved file they were made
+   * at, so the Signatures window opened again asks no host twice. `at` names both; a check of another `at` starts again.
+   */
+  readonly #signedCuts = new Map<DocId, { readonly at: string; readonly cuts: Map<number, Promise<PrefixDigest | undefined>> }>();
   readonly #restore: DocumentRestore;
   readonly #renew: DocumentRenew;
   readonly #recentPicture: Pick<RecentPictures, 'retake'>;
@@ -4875,10 +4880,9 @@ export class DocumentCommands {
   > {
     const suggest = this.#documents.nameOf(docId);
     if (suggest === undefined) throw new DocumentNotOpenError(docId, 'save a signed version');
-    const { value: path } = await this.#documents.read(docId, (context) => Promise.resolve(context.path));
-    if (!(await holdsPrefix(path, signedThrough))) return { kind: 'not-found' };
-    const checked = await this.#checkedSignedVersion(path, signedThrough);
-    if (checked === undefined) return { kind: 'not-found' };
+    const cut = await this.#checkedCut(docId, signedThrough);
+    if (cut === undefined) return { kind: 'not-found' };
+    const { path, checked } = cut;
 
     const destination = await this.#copy.pick(suffixed(suggest, 'signed version'));
     if (destination === null) return { kind: 'cancelled' };
@@ -4895,6 +4899,50 @@ export class DocumentCommands {
       return { kind: 'write-failed', cause };
     }
     return { kind: 'saved' };
+  }
+
+  /**
+   * Whether *Save this signed version…* would find the signed version ending at `signedThrough`: the check
+   * {@link saveSignedVersion} makes, asked by the Signatures window once it is open (ADR-0291 Decision 7, built as written
+   * by the owner's decision of 2026-11-13), so the button is offered only where it would succeed.
+   */
+  async signedVersionVerifies(docId: DocId, signedThrough: number): Promise<boolean> {
+    return (await this.#checkedCut(docId, signedThrough)) !== undefined;
+  }
+
+  /** Forgets a closed document's signed-version checks. Registered on `DocumentTeardown`, beside {@link endExternalEdit}. */
+  forgetSignedVersions(docId: DocId): void {
+    this.#signedCuts.delete(docId);
+  }
+
+  /**
+   * THE ONE CHECK of a signed version, for the window's offer and the save alike: the saved file holds the cut, and a
+   * signature ending exactly there verifies over it in a session of its own. Answered once per document version and saved
+   * file (its path, size and time), so a check the window made is the one a press then writes against: still safe where
+   * the file changed unseen in between, since {@link writePrefix} holds the bytes it writes to this check's digest.
+   * A check that throws is not kept, so the next asks again.
+   */
+  async #checkedCut(docId: DocId, signedThrough: number): Promise<{ readonly path: string; readonly checked: PrefixDigest } | undefined> {
+    const { value: path, version } = await this.#documents.read(docId, (context) => Promise.resolve(context.path));
+    if (!(await holdsPrefix(path, signedThrough))) return undefined;
+    const file = await stat(path);
+    const at = `${String(version)}|${String(file.size)}|${String(file.mtimeMs)}|${path}`;
+    let held = this.#signedCuts.get(docId);
+    if (held?.at !== at) {
+      held = { at, cuts: new Map() };
+      this.#signedCuts.set(docId, held);
+    }
+    const { cuts } = held;
+    let check = cuts.get(signedThrough);
+    if (check === undefined) {
+      check = this.#checkedSignedVersion(path, signedThrough);
+      cuts.set(signedThrough, check);
+      check.catch(() => {
+        if (cuts.get(signedThrough) === check) cuts.delete(signedThrough);
+      });
+    }
+    const checked = await check;
+    return checked === undefined ? undefined : { path, checked };
   }
 
   /** {@link saveCopy}'s pick and write, with `inLane` run first inside the lane against the version being copied. */

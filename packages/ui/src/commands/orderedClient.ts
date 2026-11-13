@@ -43,6 +43,8 @@ export const READS_THE_DOCUMENT_OUT = [
   // THE SIGNED VERSION (ADR-0291 Decision 7) is cut from the FILE, which a Save pressed before it writes, so it waits
   // for that save as a copy does.
   'document.saveSignedVersion',
+  // AND ITS CHECK, which reads the same file the same way, so a Save pressed before the window opened is in it.
+  'document.signedVersionVerifies',
 ] as const satisfies readonly { [K in ChannelId]: ChannelParams<K> extends { readonly docId: unknown } ? K : never }[ChannelId][];
 
 /**

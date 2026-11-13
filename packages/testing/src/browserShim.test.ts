@@ -318,6 +318,7 @@ describe('browser shim', () => {
       'document.searchPage',
       'document.sign',
       'document.signatures',
+      'document.signedVersionVerifies',
       'document.snapshotRegion',
       'document.split',
       'document.submitButtonForm',

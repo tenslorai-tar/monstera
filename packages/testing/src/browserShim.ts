@@ -1482,6 +1482,12 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       return Promise.resolve(ok({ kind: 'cancelled' as const }));
     },
 
+    /** Whether a signed version would be found: never, since the shim holds no file to cut back. */
+    'document.signedVersionVerifies': ({ docId }) => {
+      if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' as const }));
+      return Promise.resolve(ok({ verifies: false }));
+    },
+
     /** The document's certification (ADR-0291's amendment): none, unless a case certifies the shim's documents. */
     'document.certification': ({ docId }) => {
       if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' as const }));

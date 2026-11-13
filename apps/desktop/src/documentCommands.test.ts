@@ -1867,6 +1867,8 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
         readonly surface?: AtomicWriteSurface;
         /** Run while the picker is up, against the document's file: a save made while the person chooses a name. */
         readonly whilePicking?: (path: string) => void;
+        /** Told of each check of a signed version the host is asked to make, by where its cut ends. */
+        readonly checking?: (end: number) => void;
       } = {},
     ): Promise<{
       commands: DocumentCommands;
@@ -1927,6 +1929,10 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
         commands: new DocumentCommands({
           ...LOCAL_READS,
           signaturesKept,
+          checkedSignedVersion: (at, end) => {
+            file.checking?.(end);
+            return LOCAL_READS.checkedSignedVersion(at, end);
+          },
           documents: own,
           bus: bus(),
           engine: held,
@@ -2355,6 +2361,29 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
         expect(await during.commands.saveSignedVersion(during.saved, signed.length)).toStrictEqual({ kind: 'not-found' });
         expect(existsSync(raced), 'nothing is written where the bytes are not the ones checked').toBe(false);
         expect(readdirSync(directory).filter((name) => name.endsWith('.writing')), 'and no partial file is left beside it').toStrictEqual([]);
+
+        // THE WINDOW'S CHECK (HHHHHHHHH-12, Decision 7 as written): the cut that verifies answers yes, one byte short no.
+        const checks: number[] = [];
+        const asked = await aSavableDocument(signatureFacts, ledger(), join(directory, `signed-version-asked-${String(savables + 1)}.pdf`), {
+          checking: (end) => checks.push(end),
+        });
+        writeFileSync(asked.path, Buffer.concat([Buffer.from(signed), Buffer.alloc(40, 0x2a)]));
+        expect(await asked.commands.signedVersionVerifies(asked.saved, signed.length)).toBe(true);
+        expect(await asked.commands.signedVersionVerifies(asked.saved, signed.length - 1)).toBe(false);
+        // REMEMBERED FOR THE VERSION AND FILE: the window opened again asks no host, and the press writes against the
+        // window's own check.
+        expect(await asked.commands.signedVersionVerifies(asked.saved, signed.length)).toBe(true);
+        expect(await asked.commands.signedVersionVerifies(asked.saved, signed.length - 1)).toBe(false);
+        expect(await asked.commands.saveSignedVersion(asked.saved, signed.length)).toStrictEqual({ kind: 'saved' });
+        expect(checks).toStrictEqual([signed.length, signed.length - 1]);
+        // CONTROL: the saved file changed, and the check is made again rather than answered from the old file's.
+        writeFileSync(asked.path, Buffer.concat([Buffer.from(signed), Buffer.alloc(41, 0x2a)]));
+        expect(await asked.commands.signedVersionVerifies(asked.saved, signed.length)).toBe(true);
+        expect(checks).toStrictEqual([signed.length, signed.length - 1, signed.length]);
+        // AND A CLOSED DOCUMENT'S ARE FORGOTTEN, so the next check is made again.
+        asked.commands.forgetSignedVersions(asked.saved);
+        expect(await asked.commands.signedVersionVerifies(asked.saved, signed.length)).toBe(true);
+        expect(checks).toHaveLength(4);
       }, 60_000);
 
       it('CERTIFYING A SIGNED DOCUMENT is refused in the lane, from the same read, with nothing changed (question 3)', async () => {

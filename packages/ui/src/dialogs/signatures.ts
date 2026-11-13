@@ -37,11 +37,20 @@ const shownSignatureSchema = z.object({
   signedThrough: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
 });
 
+/** Where a signature's signed bytes end, which names its signed version. */
+const signedThroughSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+
 /**
  * The one answer: *Save this signed version…* for the signature whose signed bytes end at `signedThrough`
  * (ADR-0291 Decision 7). Closing the window answers nothing, which is reading it.
  */
-export const SIGNATURES_RESULT = z.object({ signedThrough: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER) }).strict();
+export const SIGNATURES_RESULT = z.object({ signedThrough: signedThroughSchema }).strict();
+
+/**
+ * The window's one report: it is SHOWN, so the opener may now check each signed version and reply with the ones that
+ * verify (ADR-0158). The checks start after the window opens, never before it, so it opens as fast as it did.
+ */
+export const SIGNATURES_SHOWN = z.object({ shown: z.literal(true) }).strict();
 
 /**
  * One row of the signature list, as the body renders it.
@@ -59,8 +68,14 @@ export const SIGNATURES_DIALOG = declareDialog({
     signatures: z.array(shownSignatureSchema).max(MAX_SIGNATURES),
     /** Whether a signature was there and could not be read. */
     unreadable: z.boolean(),
+    /**
+     * Where each signature ends whose signed version main checked and found (ADR-0291 Decision 7): only these offer *Save
+     * this signed version…*. Empty when the window opens; the opener's replies fill it as each check passes.
+     */
+    verified: z.array(signedThroughSchema).max(MAX_SIGNATURES),
   }),
-  // IT ANSWERS ONE THING since ADR-0291 Decision 7: which signed version to save. Everything else it shows is read.
-  result: SIGNATURES_RESULT,
+  // IT ANSWERS ONE THING since ADR-0291 Decision 7: which signed version to save. Everything else it shows is read. And
+  // it REPORTS one, that it is shown, which is when the checks behind that answer start.
+  result: z.union([SIGNATURES_RESULT, SIGNATURES_SHOWN]),
   component: lazy(() => import('./SignaturesBody.js')),
 });

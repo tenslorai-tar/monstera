@@ -686,6 +686,7 @@ export function createContractHandlers(deps: {
     'document.signatures': signaturesHandler(deps.commands),
     'document.certification': certificationHandler(deps.commands),
     'document.saveSignedVersion': saveSignedVersionHandler(deps.commands),
+    'document.signedVersionVerifies': signedVersionVerifiesHandler(deps.commands),
     'document.annotations': annotationsHandler(deps.commands),
     'document.formFields': formFieldsHandler(deps.commands),
     'document.flatFieldCandidates': flatFieldCandidatesHandler(deps.commands),
@@ -3497,6 +3498,21 @@ function saveSignedVersionHandler(commands: DocumentCommands): ContractHandlers[
       // THE CAUSE STAYS IN MAIN, as every copy's does: the renderer is told the write failed.
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
       return ok(outcome);
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      if (thrown instanceof MissingSessionError) return err({ code: 'engine-unavailable' });
+      throw thrown;
+    }
+  };
+}
+
+/** Whether a signature's signed version would be found (ADR-0291 Decision 7). The lane's refusals as the save's. */
+function signedVersionVerifiesHandler(commands: DocumentCommands): ContractHandlers['document.signedVersionVerifies'] {
+  return async ({ docId, signedThrough }) => {
+    try {
+      return ok({ verifies: await commands.signedVersionVerifies(docId, signedThrough) });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });

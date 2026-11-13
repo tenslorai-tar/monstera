@@ -55,6 +55,7 @@ import { UNTRACKED } from '../runningTask.js';
 import type { ScanReader } from '../dialogs/scanReader.js';
 import type { ToastAction } from '../primitives/Toast.js';
 import type { CommandContext } from '../registries/commands.js';
+import type { DialogReports } from '../registries/dialogs.js';
 import { SettingsRegistry } from '../registries/settings.js';
 import { ALL_SETTINGS } from '../settings/all.js';
 import { DOCUMENT_PANEL_SETTING } from '../settings/layout.js';
@@ -6727,7 +6728,8 @@ describe('protectDocumentCommand', () => {
         },
       }).run(CONTEXT);
 
-      expect(shown).toStrictEqual([{ id: 'dialog.signatures', props: answer }]);
+      // OPENED WITH NONE VERIFIED: the checks start once the window says it is shown, never before it.
+      expect(shown).toStrictEqual([{ id: 'dialog.signatures', props: { ...answer, verified: [] } }]);
     });
 
     it('CONTROL: an unsigned document still opens the panel, with an empty list', async () => {
@@ -6753,7 +6755,7 @@ describe('protectDocumentCommand', () => {
       }).run(CONTEXT);
 
       expect(shown).toStrictEqual([
-        { id: 'dialog.signatures', props: { signatures: [], unreadable: false } },
+        { id: 'dialog.signatures', props: { signatures: [], unreadable: false, verified: [] } },
       ]);
     });
 
@@ -6806,6 +6808,91 @@ describe('protectDocumentCommand', () => {
         const { sent, toasts } = await choosing(undefined, { kind: 'saved' });
         expect(sent.map((call) => call.id)).toStrictEqual(['document.signatures']);
         expect(toasts).toStrictEqual([]);
+      });
+
+      // HHHHHHHHH-12, Decision 7 as written: offered only where the cut verifies, checked after the window opens.
+      it('checks each signed version only AFTER the window says it is shown, and replies with the ones that verify', async () => {
+        const WHOLE = { ...SIGNATURE, coversWholeFile: true, signedThrough: 500 };
+        const FAILS = { ...SIGNATURE, coversDocument: false, signedThrough: 9000 };
+        const sent: { id: string; params: unknown }[] = [];
+        const client = clientOver((id, params) => {
+          sent.push({ id, params });
+          if (id === 'document.signatures') return Promise.resolve(ok({ signatures: [WHOLE, SIGNATURE, FAILS], unreadable: false }));
+          const { signedThrough } = params as { signedThrough: number };
+          return Promise.resolve(ok({ verifies: signedThrough === SIGNATURE.signedThrough } as never));
+        });
+        const replies: unknown[] = [];
+        let close: (answer: unknown) => void = () => undefined;
+        let report: DialogReports | undefined;
+        const running = signaturesCommand({
+          client,
+          stamp,
+          signatures,
+          toast: () => undefined,
+          onApplied: () => undefined,
+          ask: (_: string, __: unknown, onUpdate?: DialogReports) => {
+            report = onUpdate;
+            return new Promise((settle) => {
+              close = settle;
+            });
+          },
+        }).run(CONTEXT);
+        await vi.waitFor(() => {
+          expect(report).toBeDefined();
+        });
+        // OPEN AND NOT YET SHOWN: nothing is checked.
+        expect(sent.map((call) => call.id)).toStrictEqual(['document.signatures']);
+        report?.({ shown: true }, (props) => replies.push(props));
+        await vi.waitFor(() => {
+          expect(sent.filter((call) => call.id === 'document.signedVersionVerifies')).toHaveLength(2);
+        });
+        // THE WHOLE-FILE SIGNATURE IS NOT CHECKED: the file is its signed version, and no button is offered for it.
+        expect(sent.filter((call) => call.id === 'document.signedVersionVerifies').map((call) => call.params)).toStrictEqual([
+          { docId: CONTEXT.docId, signedThrough: 18360 },
+          { docId: CONTEXT.docId, signedThrough: 9000 },
+        ]);
+        // ONE REPLY, for the one that verified; the one that did not is never offered.
+        expect(replies).toStrictEqual([{ signatures: [WHOLE, SIGNATURE, FAILS], unreadable: false, verified: [18360] }]);
+        close(undefined);
+        await running;
+      });
+
+      it('CONTROL: a window closed before its checks finish asks main for no more of them', async () => {
+        const second = { ...SIGNATURE, signedThrough: 9000 };
+        const sent: string[] = [];
+        let close: (answer: unknown) => void = () => undefined;
+        let report: DialogReports | undefined;
+        const client = clientOver((id) => {
+          sent.push(id);
+          if (id === 'document.signatures') return Promise.resolve(ok({ signatures: [SIGNATURE, second], unreadable: false }));
+          // THE FIRST CHECK ANSWERS ONLY AFTER THE WINDOW CLOSED.
+          close(undefined);
+          return new Promise((settle) => {
+            setTimeout(() => {
+              settle(ok({ verifies: true } as never));
+            }, 0);
+          });
+        });
+        const running = signaturesCommand({
+          client,
+          stamp,
+          signatures,
+          toast: () => undefined,
+          onApplied: () => undefined,
+          ask: (_: string, __: unknown, onUpdate?: DialogReports) => {
+            report = onUpdate;
+            return new Promise((settle) => {
+              close = settle;
+            });
+          },
+        }).run(CONTEXT);
+        await vi.waitFor(() => {
+          expect(report).toBeDefined();
+        });
+        report?.({ shown: true }, () => undefined);
+        await running;
+        await new Promise((settle) => setTimeout(settle, 10));
+        expect(sent).toStrictEqual(['document.signatures', 'document.signedVersionVerifies']);
       });
     });
   });

@@ -1,5 +1,5 @@
 import { useLingui } from '@lingui/react';
-import type { ReactElement } from 'react';
+import { type ReactElement, useEffect, useRef } from 'react';
 
 import {
   SIGNATURES_APPENDED,
@@ -46,12 +46,25 @@ import type { ShownSignature } from './signatures.js';
 export default function SignaturesBody({
   signatures,
   unreadable,
+  verified,
   resolve,
+  update,
 }: {
   readonly signatures: readonly ShownSignature[];
   readonly unreadable: boolean;
-} & DialogAnswering<{ readonly signedThrough: number }>): ReactElement {
+  readonly verified: readonly number[];
+} & DialogAnswering<{ readonly signedThrough: number } | { readonly shown: true }>): ReactElement {
   const { _ } = useLingui();
+
+  // SHOWN, said ONCE, after the window is drawn: the opener checks each signed version from here, never before. Once
+  // by a ref and not by `update`'s identity, which changes with each reply (`RegionReadBody`'s reason): a second report
+  // would start the checks again.
+  const told = useRef(false);
+  useEffect(() => {
+    if (told.current) return;
+    told.current = true;
+    update({ shown: true });
+  });
 
   if (signatures.length === 0) {
     return (
@@ -110,8 +123,9 @@ export default function SignaturesBody({
               </dd>
             </dl>
             {/* THE SIGNED VERSION, offered where the file holds more than this signature signed, or it no longer reads
-                as signed (ADR-0291 Decision 7). Main cuts the file back and saves the cut only where it verifies. */}
-            {signature.coversDocument && signature.coversWholeFile ? null : (
+                as signed, AND main has checked that its cut is in the file and verifies (ADR-0291 Decision 7, as
+                written): a button that could only answer "could not be found" is not offered. */}
+            {(signature.coversDocument && signature.coversWholeFile) || !verified.includes(signature.signedThrough) ? null : (
               <Button
                 label={SIGNATURES_SAVE_SIGNED_VERSION}
                 onClick={() => {

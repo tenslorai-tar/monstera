@@ -42,7 +42,7 @@ describe('SignaturesBody', () => {
   it('heads each signature with its signer, and names every fact beside its value', () => {
     render(
       <InDialog>
-        <SignaturesBody signatures={[SIGNED]} unreadable={false} resolve={() => undefined} update={() => undefined} />
+        <SignaturesBody signatures={[SIGNED]} unreadable={false} verified={[]} resolve={() => undefined} update={() => undefined} />
       </InDialog>,
     );
     expect(screen.getByRole('heading', { name: 'Ada Lovelace — Example Ltd' })).toBeDefined();
@@ -57,20 +57,21 @@ describe('SignaturesBody', () => {
   it('leaves out a fact the signature does not carry, rather than naming it over nothing', () => {
     render(
       <InDialog>
-        <SignaturesBody signatures={[{ ...SIGNED, organisation: '', reason: '', location: '' }]} unreadable={false} resolve={() => undefined} update={() => undefined} />
+        <SignaturesBody signatures={[{ ...SIGNED, organisation: '', reason: '', location: '' }]} unreadable={false} verified={[]} resolve={() => undefined} update={() => undefined} />
       </InDialog>,
     );
     expect(screen.getByRole('heading', { name: 'Ada Lovelace' })).toBeDefined();
     expect(Object.keys(facts())).toStrictEqual(['Status', 'Certificate']);
   });
 
-  it('offers Save this signed version on a signature the file holds more than, and answers where it ends (ADR-0291)', () => {
+  it('offers Save this signed version on a signature the file holds more than whose cut VERIFIED, and answers where it ends (ADR-0291)', () => {
     const answers: unknown[] = [];
     render(
       <InDialog>
         <SignaturesBody
           signatures={[{ ...SIGNED, coversWholeFile: false, signedThrough: 18360 }]}
           unreadable={false}
+          verified={[18360]}
           resolve={(answer) => answers.push(answer)}
           update={() => undefined}
         />
@@ -80,10 +81,48 @@ describe('SignaturesBody', () => {
     expect(answers).toStrictEqual([{ signedThrough: 18360 }]);
   });
 
+  it('a SHORT signature whose cut does not verify offers no button (Decision 7 as written, HHHHHHHHH-12); CONTROL: the same signature verified offers it', () => {
+    const short = { ...SIGNED, coversDocument: false, coversWholeFile: false, signedThrough: 18360 };
+    render(
+      <InDialog>
+        <SignaturesBody signatures={[short]} unreadable={false} verified={[]} resolve={() => undefined} update={() => undefined} />
+      </InDialog>,
+    );
+    expect(screen.queryByRole('button', { name: 'Save this signed version…' })).toBeNull();
+    // ANOTHER SIGNATURE'S VERIFIED CUT is not this one's.
+    cleanup();
+    render(
+      <InDialog>
+        <SignaturesBody signatures={[short]} unreadable={false} verified={[9000]} resolve={() => undefined} update={() => undefined} />
+      </InDialog>,
+    );
+    expect(screen.queryByRole('button', { name: 'Save this signed version…' })).toBeNull();
+    cleanup();
+    render(
+      <InDialog>
+        <SignaturesBody signatures={[short]} unreadable={false} verified={[18360]} resolve={() => undefined} update={() => undefined} />
+      </InDialog>,
+    );
+    expect(screen.getByRole('button', { name: 'Save this signed version…' })).toBeDefined();
+  });
+
+  it('reports SHOWN once, after it is drawn, however often it is answered with new props', () => {
+    const reports: unknown[] = [];
+    const short = { ...SIGNED, coversWholeFile: false };
+    const body = (verified: number[]): React.JSX.Element => (
+      <InDialog>
+        <SignaturesBody signatures={[short]} unreadable={false} verified={verified} resolve={() => undefined} update={(report) => reports.push(report)} />
+      </InDialog>
+    );
+    const { rerender } = render(body([]));
+    rerender(body([18360]));
+    expect(reports).toStrictEqual([{ shown: true }]);
+  });
+
   it('CONTROL: a signature that covers the whole file offers nothing to save, since the file is its signed version', () => {
     render(
       <InDialog>
-        <SignaturesBody signatures={[SIGNED]} unreadable={false} resolve={() => undefined} update={() => undefined} />
+        <SignaturesBody signatures={[SIGNED]} unreadable={false} verified={[18360]} resolve={() => undefined} update={() => undefined} />
       </InDialog>,
     );
     expect(screen.queryByRole('button', { name: 'Save this signed version…' })).toBeNull();

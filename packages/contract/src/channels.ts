@@ -4180,6 +4180,19 @@ export const channels = {
   ),
 
   /**
+   * Whether `document.saveSignedVersion` would find the signed version ending at `signedThrough`: its check, made without
+   * a picker (ADR-0291 Decision 7). The Signatures window asks it for each signature that does not cover the whole file,
+   * once it is open, and offers *Save this signed version…* only where it answers `verifies: true`. Main keeps the answer
+   * for the document's version and saved file, so the window opened again asks no engine twice.
+   */
+  'document.signedVersionVerifies': channel(
+    'Says whether a signature’s signed version can be found in the saved file and verifies.',
+    z.object({ docId: docIdSchema, signedThrough: z.number().int().positive().max(Number.MAX_SAFE_INTEGER) }).strict(),
+    z.object({ verifies: z.boolean() }).strict(),
+    ['document-not-open', 'document-busy', 'document-poisoned', 'engine-unavailable'],
+  ),
+
+  /**
    * Signs the document with a certificate the user picks.
    *
    * ## `document.placeImage`'s shape, and every one of its arguments

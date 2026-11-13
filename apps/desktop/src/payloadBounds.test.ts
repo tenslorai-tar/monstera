@@ -358,6 +358,7 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // one — a channel answering certificates would carry a chain per signature.
   'document.signatures': 'answers a bounded list of bounded rows',
   'document.saveSignedVersion': 'answers one outcome word; the signed version is written to a file, never answered',
+  'document.signedVersionVerifies': 'a DocId and a byte offset in; one boolean out',
   'document.certification': 'one DocId in; a level, a signer bounded by MAX_SIGNATURE_FIELD and a boolean out',
   // These four need an engine session, and no engine host runs in a unit test.
   // Their bounds are asserted where they can be: the search channel by

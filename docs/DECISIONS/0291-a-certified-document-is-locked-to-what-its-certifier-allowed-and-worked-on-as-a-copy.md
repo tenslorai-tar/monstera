@@ -223,3 +223,13 @@ Since 806f7513 the bytes written are held to the digest of the cut that was chec
 answers `not-found` with nothing written (HHHHHHHHH-5). Whether the offer should wait on a check of each cut, as written,
 at the cost of one host open per such signature each time Check signatures opens, is the owner's to decide; until then
 this correction is what is true.
+
+## Correction, 2026-11-13 — Decision 7 built as written, by the owner's decision
+
+The owner decided the same day: build it as written. *Save this signed version…* is now offered only for a signature
+whose cut has been checked and verifies. The check is `document.signedVersionVerifies`, the save's own check made
+without a picker. The window asks for it once it is shown (it reports so, ADR-0158), never before, so it opens as it
+did; signatures are checked one at a time, and each button appears as its check passes. Main keeps each answer for the
+document's version and saved file (path, size and time), so the window opened again opens no host; the save takes the
+same answer, and its bytes stay held to that check's digest. A closed document's answers are dropped at teardown.
+What is cut is unchanged: the file on disk, for the reason above.

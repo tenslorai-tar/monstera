@@ -79,7 +79,7 @@ import { SIGN_PROBLEM_DIALOG_ID } from '../dialogs/signProblem.js';
 import { DOCUSIGN_NOTICE_DIALOG_ID } from '../dialogs/docusignNotice.js';
 import { DOCUSIGN_SEND_DIALOG_ID } from '../dialogs/docusignSend.js';
 import type { DocusignSendAnswer } from '../dialogs/docusignSend.js';
-import { SIGNATURES_DIALOG_ID, SIGNATURES_RESULT } from '../dialogs/signatures.js';
+import { SIGNATURES_DIALOG_ID, SIGNATURES_RESULT, SIGNATURES_SHOWN } from '../dialogs/signatures.js';
 import type { CropPagesAnswer } from '../dialogs/cropPagesResult.js';
 import { DELETE_PAGES_DIALOG_ID } from '../dialogs/deletePages.js';
 import type { DeletePagesAnswer } from '../dialogs/deletePagesResult.js';
@@ -5437,7 +5437,13 @@ export async function readPageContentBoxes(
 /** *Check signatures*' id, which the certification line runs it by (ADR-0291's amendment). */
 export const CHECK_SIGNATURES_COMMAND_ID = 'document.check-signatures';
 
-export function signaturesCommand(deps: DocumentCommandDeps & { readonly toast: ShowToast }): UiCommand {
+export function signaturesCommand(
+  deps: DocumentCommandDeps & {
+    readonly toast: ShowToast;
+    /** An `ask` that hears the window's report that it is shown, which starts the signed-version checks. */
+    readonly ask: (id: string, props: unknown, onUpdate?: DialogReports) => Promise<unknown>;
+  },
+): UiCommand {
   return {
     id: CHECK_SIGNATURES_COMMAND_ID,
     feedback: RESULT_DIALOG,
@@ -5456,10 +5462,30 @@ export function signaturesCommand(deps: DocumentCommandDeps & { readonly toast: 
       // answer a person asked for, and a command that opened nothing would be
       // one that appears not to have run.
       const docId = context.docId;
+      const signatures = read.value.signatures.map((signature) => ({ ...signature }));
+      const shown = { signatures, unreadable: read.value.unreadable };
+      // THE SIGNED VERSIONS ARE CHECKED AFTER THE WINDOW OPENS (ADR-0291 Decision 7, built as written by the owner's
+      // decision of 2026-11-13): one at a time, each signature that does not cover the whole file, and each button
+      // offered as its check passes. Main keeps each answer for the document's version, so opening it again is instant.
+      let open = true;
+      const onReport: DialogReports = (report, reply) => {
+        if (!SIGNATURES_SHOWN.safeParse(report).success) return;
+        void (async () => {
+          const verified: number[] = [];
+          for (const signature of signatures) {
+            if (!open) return;
+            if (signature.coversDocument && signature.coversWholeFile) continue;
+            const checked = await deps.client['document.signedVersionVerifies']({ docId, signedThrough: signature.signedThrough });
+            // A CHECK THAT COULD NOT BE MADE offers nothing: the button is for a version known to be there.
+            if (!checked.ok || !checked.value.verifies) continue;
+            verified.push(signature.signedThrough);
+            reply({ ...shown, verified: [...verified] });
+          }
+        })();
+      };
       const chosen = SIGNATURES_RESULT.safeParse(
-        await deps.ask(SIGNATURES_DIALOG_ID, {
-          signatures: read.value.signatures.map((signature) => ({ ...signature })),
-          unreadable: read.value.unreadable,
+        await deps.ask(SIGNATURES_DIALOG_ID, { ...shown, verified: [] }, onReport).finally(() => {
+          open = false;
         }),
       );
       // CLOSED, which is reading it: nothing more to do.

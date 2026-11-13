@@ -108,6 +108,7 @@ const handlers: ContractHandlers = {
       }),
     ),
   'document.saveSignedVersion': () => Promise.resolve(ok({ kind: 'not-found' as const })),
+  'document.signedVersionVerifies': () => Promise.resolve(ok({ verifies: false })),
   'document.certification': () => Promise.resolve(ok({ certification: null, signed: false })),
   // ONE ENTRY AND A DIRTY MARKER, for the layers fixture's reason: an empty
   // list and `lastExitClean: true` are what a boundary that dropped both fields
