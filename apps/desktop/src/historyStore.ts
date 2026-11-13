@@ -16,6 +16,7 @@ import {
 import { join } from 'node:path';
 
 import type { SavedTurn } from '@monstera/contract';
+import { pathlessCause } from '@monstera/shared';
 import {
   CARD,
   GUARD,
@@ -409,7 +410,8 @@ export function createHistoryStore(
     written.delete(placeKey);
     if (result.kind === 'failed') {
       rmSync(writing, { force: true });
-      throw new Error(`the conversation could not be removed: ${result.message}`);
+      // PATHLESS (HHHHHHHHH-19): a system error's message names the history file, and this one reaches the failure log.
+      throw new Error(`the conversation could not be removed: ${pathlessCause(result)}`);
     }
     const keep = keptUnder(result.plan);
     const fd = openSync(path, 'r');

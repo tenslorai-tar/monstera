@@ -178,3 +178,4 @@ export {
   paragraphSpacing,
 } from './paragraphShape.js';
 export { LIST_ENTRY, type ListEntry, listEntryOf } from './listEntry.js';
+export { pathlessCause } from './pathlessCause.js';

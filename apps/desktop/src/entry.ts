@@ -5,6 +5,7 @@ import { join } from 'node:path';
 
 import { type EventId, type EventPayload, IncidentLog, isFollowable } from '@monstera/contract';
 import { sweepCheckpointDirectories } from '@monstera/kernel';
+import { pathlessCause } from '@monstera/shared';
 import { BrowserWindow, app, clipboard, crashReporter, nativeImage, powerMonitor, safeStorage, shell } from 'electron';
 
 import { HOST_CALL_DEADLINE, HOST_IDLE_MS, HOST_MEMORY_SAMPLING } from './budget.js';
@@ -338,7 +339,8 @@ startShell(() => {
     const moved = moveChatHistory(app.getPath('userData'), OS_CIPHER, historyStore);
     if (moved !== null) log.write('chat-history-moved', `${String(moved)} saved conversation(s) moved into one file per PDF`);
   } catch (cause) {
-    log.failures({ event: 'chat-history-not-moved', detail: cause instanceof Error ? cause.message : String(cause) });
+    // PATHLESS (HHHHHHHHH-19): a system error's message names the history folder's files, and the log is sent with reports.
+    log.failures({ event: 'chat-history-not-moved', detail: pathlessCause(cause) });
   }
 
   return createShellDependencies({

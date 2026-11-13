@@ -2,7 +2,7 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { Worker } from 'node:worker_threads';
 
-import type { HistoryRewriteData, HistoryRewriteResult } from '@monstera/nodemode';
+import { type HistoryRewriteData, type HistoryRewriteResult, rewriteFailed } from '@monstera/nodemode';
 
 /** Runs one Delete's rewrite and answers what it did (ADR-0279, the owner's answers, Decision 7). */
 export type HistoryRewriter = (data: HistoryRewriteData) => Promise<HistoryRewriteResult>;
@@ -31,17 +31,17 @@ export function workerRewriter(entryPath: string = historyRewriteEntryPath()): H
       try {
         worker = new Worker(entryPath, { workerData: data });
       } catch (cause) {
-        answer({ kind: 'failed', message: cause instanceof Error ? cause.message : String(cause) });
+        answer(rewriteFailed(cause));
         return;
       }
       worker.once('message', (result: HistoryRewriteResult) => {
         answer(result);
       });
       worker.once('error', (cause) => {
-        answer({ kind: 'failed', message: cause.message });
+        answer(rewriteFailed(cause));
       });
       worker.once('exit', (code) => {
-        answer({ kind: 'failed', message: `the rewrite thread ended with code ${String(code)} and no answer` });
+        answer(rewriteFailed(new Error(`the rewrite thread ended with code ${String(code)} and no answer`)));
       });
     });
 }

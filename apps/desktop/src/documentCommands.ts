@@ -225,11 +225,12 @@ import {
 // directory came from a picker in this process and never crosses to the
 // renderer, exactly as a destination does. What L2 forbids is a path in a
 // renderer-facing type.
+import type { Stats } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 
 import type { BackupProvenance } from './backupLedger.js';
-import { holdsPrefix, type PrefixDigest, PrefixChangedError, writePrefix } from './signedVersionFile.js';
+import { cutFailure, holdsPrefix, type PrefixDigest, PrefixChangedError, writePrefix } from './signedVersionFile.js';
 import { adoptLegacyBackups } from './legacyBackups.js';
 import { type EditableSources, editablePages, emptyReport } from './editablePowerPoint.js';
 import { DocusignOutcomeRefused, type DocusignSession } from './docusignSession.js';
@@ -4924,8 +4925,16 @@ export class DocumentCommands {
    */
   async #checkedCut(docId: DocId, signedThrough: number): Promise<{ readonly path: string; readonly checked: PrefixDigest } | undefined> {
     const { value: path, version } = await this.#documents.read(docId, (context) => Promise.resolve(context.path));
-    if (!(await holdsPrefix(path, signedThrough))) return undefined;
-    const file = await stat(path);
+    let file: Stats;
+    try {
+      if (!(await holdsPrefix(path, signedThrough))) return undefined;
+      file = await stat(path);
+    } catch (thrown) {
+      // THE SAVED FILE GONE OR REFUSED holds no signed version: `not-found`, and never a thrown error whose message
+      // carries its path into the failure log (HHHHHHHHH-19). Anything else is not the file's, and is thrown.
+      if (cutFailure(thrown, path) === 'not-found') return undefined;
+      throw thrown;
+    }
     const at = `${String(version)}|${String(file.size)}|${String(file.mtimeMs)}|${path}`;
     let held = this.#signedCuts.get(docId);
     if (held?.at !== at) {

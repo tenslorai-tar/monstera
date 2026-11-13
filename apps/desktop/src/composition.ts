@@ -219,7 +219,7 @@ import {
   fetchGuardedPdf,
   postGuarded,
 } from '@monstera/kernel';
-import { type DocId, HeldPassword, normaliseRotation } from '@monstera/shared';
+import { type DocId, HeldPassword, normaliseRotation, pathlessCause } from '@monstera/shared';
 
 import {
   ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES,
@@ -324,6 +324,7 @@ import type { OpenExternalEditor } from './openExternalEditor.js';
 import type { SecretStoreSurface } from './secretStore.js';
 import { createDocumentHistory, noDocumentHistory } from './documentHistory.js';
 import {
+  type HistoryCheckDependencies,
   IDLE_SECONDS,
   type PermanentIdRead,
   PdfFileRefused,
@@ -2296,7 +2297,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
             now: () => Date.now(),
           }),
           (cause) => {
-            failures({ event: 'history-check-failed', detail: cause instanceof Error ? cause.message : String(cause) });
+            failures({ event: 'history-check-failed', detail: pathlessCause(cause) });
           },
         );
 
@@ -2801,9 +2802,10 @@ function engineSessionOpener(
   readonly copies: ProtectedCopies;
   /**
    * A CLOSED PDF's first `/ID` string, for the chat history's 24-hour check (ADR-0279 Decision 6): a copy of the file
-   * opened in a session of its own and ended, as a protect's sealing of a copy is, so `main` never parses it.
+   * opened in a session of its own and ended, as a protect's sealing of a copy is, so `main` never parses it. A failure
+   * is logged by `placeKey`, the history file's key, and never by `path` (HHHHHHHHH-19).
    */
-  readonly permanentIdAt: (path: string) => Promise<PermanentIdRead>;
+  readonly permanentIdAt: HistoryCheckDependencies['permanentIdOf'];
   /**
    * Builds one document's sessions — the same call `openedDocument` and the
    * death path make, returned so recycling uses it rather than a second one.
@@ -3945,7 +3947,7 @@ function engineSessionOpener(
    * and ended whatever happens. A PDF that needs a password answers `locked`, which the check counts as present; any
    * other failure is `failed`, the PDF that cannot be read.
    */
-  const permanentIdAt = async (path: string): Promise<PermanentIdRead> => {
+  const permanentIdAt = async (path: string, placeKey: string): Promise<PermanentIdRead> => {
     let end: (() => Promise<void>) | undefined;
     try {
       const opened = await openInArea(
@@ -3969,10 +3971,10 @@ function engineSessionOpener(
       return { kind: 'read', id: (await readDocumentInformationThroughHost(opened.session)).permanentId };
     } catch (thrown) {
       if (thrown instanceof EngineDocumentLocked) return { kind: 'locked' };
-      // NOT SWALLOWED: either answer is one the check acts on, and the cause is said either way.
+      // NOT SWALLOWED: either answer is one the check acts on, and the cause is said either way. BY ITS HISTORY KEY AND
+      // PATHLESS (HHHHHHHHH-19): the log goes with a crash report a person sends, and the store names no PDF by its path.
       const kind = idReadFailure(thrown);
-      const detail = `${path}: ${thrown instanceof Error ? thrown.message : String(thrown)}`;
-      failures({ event: kind === 'failed' ? 'history-id-unread' : 'history-id-not-read', detail });
+      failures({ event: kind === 'failed' ? 'history-id-unread' : 'history-id-not-read', detail: `${placeKey}: ${pathlessCause(thrown)}` });
       return { kind };
     } finally {
       if (end !== undefined) await end();

@@ -1,4 +1,5 @@
 import { EngineOpenFailed } from '@monstera/kernel';
+import { pathlessCause } from '@monstera/shared';
 import { z } from 'zod';
 
 import type { HistoryGuard, HistoryStore } from './historyStore.js';
@@ -56,8 +57,11 @@ export interface HistoryCheckDependencies {
   readonly store: Pick<HistoryStore, 'files' | 'guards' | 'removeSection' | 'ledger' | 'keepLedger'>;
   /** The PDF at `path`'s size and write time, or `null` where it cannot be found or read (an unplugged drive too). */
   readonly stat: (path: string) => Promise<{ readonly size: number; readonly mtimeMs: number } | null>;
-  /** What the contained host read of the PDF at `path`'s first `/ID` string. */
-  readonly permanentIdOf: (path: string) => Promise<PermanentIdRead>;
+  /**
+   * What the contained host read of the PDF at `path`'s first `/ID` string. `placeKey` is the history file's key, the one
+   * name a failure of the read is logged under: never `path`, since no path is in the clear (HHHHHHHHH-19).
+   */
+  readonly permanentIdOf: (path: string, placeKey: string) => Promise<PermanentIdRead>;
   /** No input for {@link IDLE_SECONDS} and no document opening. */
   readonly idle: () => boolean;
   readonly now: () => number;
@@ -78,7 +82,8 @@ export type PermanentIdRead =
 /** A closed PDF's own file refused to be opened for reading: the PDF's failure, never the engine host's. */
 export class PdfFileRefused extends Error {
   constructor(cause: unknown) {
-    super(`the PDF could not be opened for reading: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
+    // PATHLESS: Node's own message names the PDF, and this one is logged.
+    super(`the PDF could not be opened for reading: ${pathlessCause(cause)}`, { cause });
     this.name = 'PdfFileRefused';
   }
 }
@@ -114,13 +119,13 @@ export function createHistoryCheck(deps: HistoryCheckDependencies): HistoryCheck
   };
 
   /** Whether the PDF at `place` is the one `guard` names, updating what the ledger has seen of it. */
-  const presence = async (place: string, guard: HistoryGuard, entry: Ledger['sections'][string]): Promise<Presence> => {
+  const presence = async (placeKey: string, place: string, guard: HistoryGuard, entry: Ledger['sections'][string]): Promise<Presence> => {
     const found = await deps.stat(place);
     if (found === null) return 'absent';
     if (guard.kind === 'stamp') return found.size === guard.size && found.mtimeMs === guard.mtimeMs ? 'present' : 'absent';
     if (entry.seen !== null && entry.seen.size === found.size && entry.seen.mtimeMs === found.mtimeMs) return 'present';
     // MOVED SINCE IT WAS LAST SEEN WITH ITS ID, or never seen: the one case that parses.
-    const read = await deps.permanentIdOf(place);
+    const read = await deps.permanentIdOf(place, placeKey);
     // A PDF THAT NEEDS A PASSWORD is THERE, and its `/ID` cannot be read without one, which the check never has. Counting
     // it missing would remove the history of a file standing at its place a day later, so it counts as present, and what
     // was seen is not moved: the next pass asks again. Asked of the owner (ADR-0279's correction of 2026-11-12, later).
@@ -147,7 +152,7 @@ export function createHistoryCheck(deps: HistoryCheckDependencies): HistoryCheck
       for (const { placeKey, section, place, guard } of queue.splice(0, BATCH)) {
         const name = `${placeKey}/${section}`;
         const entry = ledger.sections[name] ?? { seen: null, missingSince: null };
-        const found = await presence(place, guard, entry);
+        const found = await presence(placeKey, place, guard, entry);
         // THE CLOCK NEITHER STARTS NOR STOPS: the ledger keeps what it knew, and the next pass looks again.
         if (found === 'not-looked') continue;
         if (found === 'present') {

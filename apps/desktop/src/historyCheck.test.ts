@@ -21,13 +21,15 @@ interface World {
   hostReads: boolean;
   readonly removed: string[];
   readonly parsed: string[];
+  /** The history key each parse was asked under, which is all a failed parse is logged by (HHHHHHHHH-19). */
+  readonly parsedUnder: string[];
   readonly stated: string[];
   clock: number;
   idle: boolean;
 }
 
 function world(sections: readonly (HistorySection & { readonly placeKey: string })[]) {
-  const state: World = { disk: new Map(), removed: [], parsed: [], stated: [], clock: 1_000_000, idle: true, hostReads: true };
+  const state: World = { disk: new Map(), removed: [], parsed: [], parsedUnder: [], stated: [], clock: 1_000_000, idle: true, hostReads: true };
   let ledger: unknown = null;
   const live = [...sections];
   const check = createHistoryCheck({
@@ -50,8 +52,9 @@ function world(sections: readonly (HistorySection & { readonly placeKey: string 
       const found = state.disk.get(path);
       return Promise.resolve(found === undefined ? null : { size: found.size, mtimeMs: found.mtimeMs });
     },
-    permanentIdOf: (path) => {
+    permanentIdOf: (path, placeKey) => {
       state.parsed.push(path);
+      state.parsedUnder.push(placeKey);
       if (!state.hostReads) return Promise.resolve({ kind: 'not-read' } as const);
       const found = state.disk.get(path);
       if (found === undefined || found.unparsable === true) return Promise.resolve({ kind: 'failed' } as const);
@@ -132,6 +135,15 @@ describe('the host parses a PDF only when its size or write time moved', () => {
     await passAt(24);
     await passAt(48);
     expect(state.parsed).toStrictEqual(['C:/report.pdf']);
+  });
+
+  it('each parse is asked under ITS SECTION’S history key, the name its failure is logged by, never the path (HHHHHHHHH-19)', async () => {
+    const { state, passAt } = world([section('p1', 's1', 'C:/report.pdf', byId('aa')), section('p2', 's1', 'C:/letter.pdf', byId('bb'))]);
+    state.disk.set('C:/report.pdf', { size: 10, mtimeMs: 5, id: 'aa' });
+    state.disk.set('C:/letter.pdf', { size: 11, mtimeMs: 5, id: 'bb' });
+    await passAt(0);
+    expect(state.parsed).toStrictEqual(['C:/report.pdf', 'C:/letter.pdf']);
+    expect(state.parsedUnder).toStrictEqual(['p1', 'p2']);
   });
 
   it('CONTROL: a PDF whose write time moved is parsed again, and kept where it keeps its id', async () => {

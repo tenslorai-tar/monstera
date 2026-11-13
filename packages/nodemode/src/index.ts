@@ -37,7 +37,7 @@
 
 export type { WorkerModeReport } from './workerModeReport.js';
 export * from './historyRecords.js';
-export type { HistoryRewriteData, HistoryRewriteResult } from './historyRewriteProtocol.js';
+export { type HistoryRewriteData, type HistoryRewriteResult, rewriteFailed } from './historyRewriteProtocol.js';
 export { runHistoryRewrite } from './historyRewrite.js';
 export type {
   ReaderChunk,

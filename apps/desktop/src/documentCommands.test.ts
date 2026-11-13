@@ -2384,6 +2384,10 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
         asked.commands.forgetSignedVersions(asked.saved);
         expect(await asked.commands.signedVersionVerifies(asked.saved, signed.length)).toBe(true);
         expect(checks).toHaveLength(4);
+        // THE SAVED FILE GONE (HHHHHHHHH-19): no signed version there, answered as such, never Node's error with its path.
+        rmSync(asked.path);
+        expect(await asked.commands.signedVersionVerifies(asked.saved, signed.length)).toBe(false);
+        expect(await asked.commands.saveSignedVersion(asked.saved, signed.length)).toStrictEqual({ kind: 'not-found' });
       }, 60_000);
 
       it('CERTIFYING A SIGNED DOCUMENT is refused in the lane, from the same read, with nothing changed (question 3)', async () => {

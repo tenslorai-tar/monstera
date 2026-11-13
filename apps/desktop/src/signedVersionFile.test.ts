@@ -1,4 +1,5 @@
 import { EngineDocumentLocked, EngineOpenFailed } from '@monstera/kernel';
+import { pathlessCause } from '@monstera/shared';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -42,6 +43,9 @@ describe('cutFailure: whose failure a signed-version check was (HHHHHHHHH-18)', 
     expect(thrown).toMatchObject({ code: 'ENOENT', path: missing });
     expect(cutFailure(thrown, missing)).toBe('not-found');
     expect(cutFailure(thrown, join(folder(), 'another.pdf'))).toBe('not-checked');
+    // AND SAID WITHOUT IT (HHHHHHHHH-19): Node's message names the file; what is logged of it does not.
+    expect(thrown instanceof Error ? thrown.message : '').toContain('gone.pdf');
+    expect(pathlessCause(thrown)).toBe('ENOENT on open');
   });
 
   it('a host that did not start or ended is the CHECK’S failure, thrown and never kept as “not found”', () => {

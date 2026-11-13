@@ -1,9 +1,10 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { threadId } from 'node:worker_threads';
 
-import type { HistoryRewriteData } from '@monstera/nodemode';
+import { type HistoryRewriteData, rewriteFailed } from '@monstera/nodemode';
+import { pathlessCause } from '@monstera/shared';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { workerRewriter } from './historyRewriter.js';
@@ -47,12 +48,32 @@ describe('the history rewriter', () => {
 
   it('a thread that throws is a failure said, never a promise left waiting', async () => {
     const answer = await workerRewriter(entry('throws', "throw new Error('the file is gone');"))(JOB);
-    expect(answer).toStrictEqual({ kind: 'failed', message: 'the file is gone' });
+    expect(answer).toStrictEqual({ kind: 'failed', message: 'the file is gone', code: null, syscall: null });
   });
 
   it('a thread that ends without answering is a failure said', async () => {
     const answer = await workerRewriter(entry('silent', 'process.exit(0);'))(JOB);
-    expect(answer).toStrictEqual({ kind: 'failed', message: 'the rewrite thread ended with code 0 and no answer' });
+    expect(answer).toStrictEqual({ kind: 'failed', message: 'the rewrite thread ended with code 0 and no answer', code: null, syscall: null });
+  });
+
+  it('a rewrite’s failure on a missing file carries Node’s code and call, which main says in place of the path (HHHHHHHHH-19)', () => {
+    let thrown: unknown;
+    try {
+      readFileSync(JOB.path);
+    } catch (caught) {
+      thrown = caught;
+    }
+    const answer = rewriteFailed(thrown);
+    // THE CONTROL: Node's message does name the file, which is why the code is what is said.
+    expect(answer).toMatchObject({ kind: 'failed', code: 'ENOENT', syscall: 'open' });
+    expect(answer.kind === 'failed' ? answer.message : '').toContain('absent.mhist');
+    expect(pathlessCause(answer)).toBe('ENOENT on open');
+  });
+
+  it('and a file error the THREAD did not catch keeps its code across the thread, so it is said without the path too', async () => {
+    const answer = await workerRewriter(entry('unread', "import { readFileSync } from 'node:fs';\nreadFileSync(workerData.path);"))(JOB);
+    expect(answer.kind === 'failed' ? answer.message : '').toContain('absent.mhist');
+    expect(pathlessCause(answer)).toBe('ENOENT on open');
   });
 
   it('an entry point that cannot start is a failure said', async () => {
