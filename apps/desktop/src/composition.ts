@@ -333,7 +333,7 @@ import {
 } from './historyCheck.js';
 import type { HistoryStore } from './historyStore.js';
 import { type SettingsSurface, createEphemeralSettings, createJsonFile } from './settingsFile.js';
-import { type PrefixDigest, writePrefix } from './signedVersionFile.js';
+import { cutFailure, type PrefixDigest, writePrefix } from './signedVersionFile.js';
 import { type StartReading, startEditingHosts } from './editingHosts.js';
 import { idleHost } from './idleRetire.js';
 import { type MemoryPressurePolicy, watchMemoryPressure } from './memoryPressure.js';
@@ -3927,8 +3927,8 @@ function engineSessionOpener(
         { keys: [], standing: 'as-copied' },
       );
     } catch (thrown) {
-      // A CUT THAT IS NOT A PDF, OR ONE THAT ASKS FOR A PASSWORD, is no signed version this build can check.
-      if (thrown instanceof EngineDocumentLocked || thrown instanceof Error) return undefined;
+      // THE FILE'S FAILURE is no signed version there; a host's is thrown, so it is never kept as one (`cutFailure`).
+      if (cutFailure(thrown, path) === 'not-found') return undefined;
       throw thrown;
     }
     try {

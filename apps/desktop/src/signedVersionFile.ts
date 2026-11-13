@@ -1,3 +1,4 @@
+import { EngineDocumentLocked, EngineOpenFailed } from '@monstera/kernel';
 import { createHash, randomBytes } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { rename, rm, stat } from 'node:fs/promises';
@@ -23,12 +24,28 @@ export interface PrefixDigest {
   readonly sha256: string;
 }
 
-/** {@link writePrefix} refused: the bytes it read are not the ones `expect` names, so the file changed since. */
+/**
+ * {@link writePrefix} refused: the file no longer holds the cut it was asked for, its bytes not the ones `expect` names
+ * or fewer than `end` of them, so it changed since it was checked or measured.
+ */
 export class PrefixChangedError extends Error {
   constructor(readonly end: number) {
     super(`the file's first ${String(end)} bytes are not the ones that were checked`);
     this.name = 'PrefixChangedError';
   }
+}
+
+/**
+ * Whose failure a check of a signed version that threw was (HHHHHHHHH-18; {@link idReadFailure}'s shape). The FILE's —
+ * the cut not a document the engine opens, one that asks for a password, the file changed under the read, or the file
+ * itself refused — is `not-found`: there is no signed version there to offer. Anything else is the checking's, a host
+ * that did not start or ended, which says nothing of the file and is thrown, so it is never kept as an answer.
+ *
+ * @param source the signed file, whose own refusal is told from the area's by the path Node's error names
+ */
+export function cutFailure(thrown: unknown, source: string): 'not-found' | 'not-checked' {
+  if (thrown instanceof EngineOpenFailed || thrown instanceof EngineDocumentLocked || thrown instanceof PrefixChangedError) return 'not-found';
+  return thrown instanceof Error && 'path' in thrown && thrown.path === source ? 'not-found' : 'not-checked';
 }
 
 /**
@@ -55,7 +72,8 @@ export async function writePrefix(
   });
   try {
     await pipeline(createReadStream(source, { start: 0, end: end - 1 }), hashing, createWriteStream(writing, { flags: 'wx' }));
-    if ((await stat(writing)).size !== end) throw new Error(`the signed version was cut short: ${String(end)} bytes asked for`);
+    // FEWER BYTES THAN ASKED: the file shrank after it was measured, which is a change to it like any other.
+    if ((await stat(writing)).size !== end) throw new PrefixChangedError(end);
     const written = { sha256: hash.digest('hex') };
     if (expect !== 'unchecked' && expect.sha256 !== written.sha256) throw new PrefixChangedError(end);
     await rename(writing, destination);
