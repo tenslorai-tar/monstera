@@ -102,3 +102,10 @@ ADR-0279's store is wired on `work/cloud-62-history-per-pdf` (`historyStore.ts`,
 (`historyMove.ts`). From the release that carries that branch, Decisions 1, 2, 3 and 5 here are superseded and ADR-0279
 describes what ships. One thing this ADR decided is unchanged for now: chat history is still off by default, because
 ADR-0279's decision h waits on the owner's wording for its one-time note (that ADR's correction of 2026-11-12, item 8).
+
+## Correction, 2026-11-13 — chat history is on by default, so Decision 1 is superseded too (HHHHHHHHH-14)
+
+The correction above was true when written and stopped being true the same day. The owner gave the note's wording, and
+2cc23e40 built decision h: `CHAT_HISTORY_STORED`'s fallback in `storedSettings.ts` is `true`, a switch nobody touched
+takes it, and one a person turned off is stored off and stays off. So Decision 1 here (*off by default*) is superseded
+by ADR-0279 with Decisions 2, 3 and 5, and this ADR's title no longer describes what ships. Both branches are on `main`.
