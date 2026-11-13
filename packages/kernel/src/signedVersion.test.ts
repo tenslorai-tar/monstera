@@ -98,8 +98,12 @@ describe('cutting a file back to the bytes a signature signed (Group 5, measured
     const later = await edited(await sign(await blank(), 'Grace Hopper'));
     const [end = 0] = signedEnds(later);
     const short = later.subarray(0, end - 1);
-    const found = await read(short).catch(() => []);
-    expect(found.every((each) => !(each.coversDocument && each.coversWholeFile))).toBe(true);
+    // THE SIGNATURE IS FOUND, ending where it did, and does not verify: an empty read, or a cut that does not open, would
+    // also hold no verifying signature, and proves nothing about the byte.
+    const found = await read(short);
+    expect(found.map((each) => [each.signer, each.signedThrough, each.coversDocument, each.coversWholeFile])).toStrictEqual([
+      ['Grace Hopper', end, false, false],
+    ]);
   }, 60_000);
 
   it('two signatures: each cut gives the file as that signer signed it, the first alone in the first', async () => {
