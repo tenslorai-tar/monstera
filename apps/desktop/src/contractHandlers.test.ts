@@ -1669,7 +1669,9 @@ describe('document.editCopy — an edit of a signed document made on a copy (ADR
       value: {
         kind: 'edited',
         docId: COPY,
+        // THE EDIT'S VERSION, AND THE ONE THE COPY'S FILE HOLDS: the edit was made in the open copy, not saved.
         version: 2,
+        savedVersion: 1,
         byteLength: 2048,
         name: 'signed copy.pdf',
         historyDropped: 0,

@@ -533,7 +533,7 @@ export interface SignedEditing {
    * Adds the copy an edit was made on as a tab, as an open does; `line` is what its certification line says, where the
    * copy was made from a certified document (ADR-0291's amendment): the copy is the one that knows it is one.
    */
-  readonly onOpened: (document: OpenedDocument, line?: CertificationLine) => void;
+  readonly onOpened: (document: OpenedDocument, line: CertificationLine | undefined, savedVersion: DocVersion) => void;
   /** Reads a document's certification line again, after a signing that may have certified it. */
   readonly reread: (docId: DocId) => void;
 }
@@ -1124,6 +1124,9 @@ async function editOnCopy(
           name: outcome.name,
         },
         line,
+        // WHAT ITS FILE HOLDS: the version before the edit where one was made, so the copy opens with an unsaved change,
+        // and the version it opened at where the edit was refused.
+        outcome.kind === 'edited' ? outcome.savedVersion : outcome.version,
       );
       // THE COPY IS OPEN EITHER WAY, and a refusal of the edit there is said over it: the file is where the person
       // put it, unchanged, and closing its tab is theirs.

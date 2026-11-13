@@ -1294,8 +1294,10 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
   const signatures = useMemo<SignedEditing>(
     () => ({
       warn: warnSignatureBreak,
-      onOpened: (document, line) => {
-        opened(document);
+      onOpened: (document, line, savedVersion) => {
+        // THE VERSION ITS FILE HOLDS, which is not the one on show when the edit was made in the copy: as a held
+        // document's, so the bar, the dot and the title say unsaved, as the close's question does, and it never parks.
+        opened(document, { savedVersion });
         if (line !== undefined) stores.get(document.docId)?.getState().certificationShown(line);
       },
       reread: (docId) => {

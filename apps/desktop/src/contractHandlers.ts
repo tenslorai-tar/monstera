@@ -2986,7 +2986,8 @@ function editCopyHandler(
       const applied = await deps.commands.execute(opened.docId, withTargetVersion(command, opened.version), {
         breakSignatures: true,
       });
-      return ok({ ...opened, kind: 'edited', ...applied } as const);
+      // THE FILE HOLDS THE VERSION THE COPY OPENED AT; the edit's version is the copy's now, unsaved.
+      return ok({ ...opened, kind: 'edited', ...applied, savedVersion: opened.version } as const);
     } catch (thrown) {
       const problem =
         editRefusalOf(thrown) ?? (thrown instanceof DocumentPoisonedError ? ({ code: 'document-poisoned' } as const) : undefined);

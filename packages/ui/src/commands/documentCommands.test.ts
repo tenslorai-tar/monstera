@@ -7762,7 +7762,8 @@ describe('a change main answers certified for (ADR-0291)', () => {
   }
 
   it('asks the certified window with the level and the certifier, and WORK ON A COPY sends the command to a copy', async () => {
-    const copy = { kind: 'edited', docId: asDocId('doc-copy'), version: 2, byteLength: 2048, name: 'copy.pdf', historyDropped: 0, boxed: [], more: 0 };
+    // THE COPY AFTER THE EDIT IS VERSION 2, AND ITS FILE HOLDS VERSION 1: the edit is unsaved in the copy.
+    const copy = { kind: 'edited', docId: asDocId('doc-copy'), version: 2, savedVersion: 1, byteLength: 2048, name: 'copy.pdf', historyDropped: 0, boxed: [], more: 0 };
     const { client, sent } = certifiedMain(copy);
     const { ask, asked } = answering('copy');
     const opened: unknown[] = [];
@@ -7772,7 +7773,11 @@ describe('a change main answers certified for (ADR-0291)', () => {
         client,
         ask,
         stamp,
-        signatures: { warn: () => true, reread: () => undefined, onOpened: (document, line) => opened.push({ document, line }) },
+        signatures: {
+          warn: () => true,
+          reread: () => undefined,
+          onOpened: (document, line, savedVersion) => opened.push({ document, line, savedVersion }),
+        },
         onApplied: () => undefined,
       },
       DOC,
@@ -7790,6 +7795,8 @@ describe('a change main answers certified for (ADR-0291)', () => {
       {
         document: { docId: asDocId('doc-copy'), version: 2, byteLength: 2048, name: 'copy.pdf' },
         line: { kind: 'uncertified-copy', signer: 'Grace Hopper' },
+        // OPENED AS ITS FILE HOLDS IT, so the tab reads unsaved: the version on show is not the saved one.
+        savedVersion: 1,
       },
     ]);
   });
@@ -7916,6 +7923,7 @@ describe('an edit main answers breaks-signatures for (ADR-0149)', () => {
       kind: 'edited',
       docId: COPY,
       version: 2,
+      savedVersion: 1,
       byteLength: 2048,
       name: 'signed copy.pdf',
       historyDropped: 0,
@@ -7952,6 +7960,7 @@ describe('an edit main answers breaks-signatures for (ADR-0149)', () => {
       kind: 'edited',
       docId: COPY,
       version: 2,
+      savedVersion: 1,
       byteLength: 2048,
       name: 'signed copy.pdf',
       historyDropped: 0,

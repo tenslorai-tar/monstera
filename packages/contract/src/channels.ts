@@ -3755,7 +3755,14 @@ export const channels = {
     z.object({ docId: docIdSchema, command: renderableCommandSchema }),
     z.discriminatedUnion('kind', [
       // AND THE BOXES THE EDIT DREW ON THE COPY, `document.execute`'s list on the copy route (ADR-0174).
-      openedSchema.extend({ kind: z.literal('edited'), historyDropped: z.number().int().nonnegative(), ...drawnBoxesShape }),
+      // `version` IS THE COPY AFTER THE EDIT, and `savedVersion` the one its file holds: the edit is made in the open copy
+      // and not saved, so the copy opens with an unsaved change, as main's `document.unsaved` says it has.
+      openedSchema.extend({
+        kind: z.literal('edited'),
+        savedVersion: docVersionSchema,
+        historyDropped: z.number().int().nonnegative(),
+        ...drawnBoxesShape,
+      }),
       openedSchema.extend({
         kind: z.literal('edit-refused'),
         // A FAILURE'S OWN SHAPE, so a refusal that carries a detail carries it here as on `document.execute`
