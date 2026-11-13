@@ -336,3 +336,32 @@ stays open, not dismissed, so it closes itself when the lockfile moves. **Trigge
 @eslint/config-array, @typescript-eslint/typescript-estree or eslint-plugin-import-x whose range admits 11.0.1 — then
 each dependent takes the release that does, lint runs over the whole tree with the project's own verb, and the change
 is recorded here.
+
+## Addition — 2026-11-13 — node-forge takes 1.4.3
+
+node-forge, which ships, moves **1.4.2 → 1.4.3**, still pinned exact, in the root and `packages/kernel` manifests, and
+`@signpdf/signer-p12`'s copy dedupes to it (`npm ls node-forge`). Read from the registry on 2026-11-13: 1.4.3 was
+published 2026-11-04 and is the latest; its integrity is the lockfile's. Licence unchanged and it has no dependencies;
+`LICENSE` is not among the files 1.4.2 → 1.4.3 changes (GitHub's compare of the two tags).
+
+**Why it is taken: because forge ships**, not because a flaw reaches this build. Dependabot opened #32–#39 on
+2026-11-13: four advisories, each counted twice — GHSA-j8rw-jp99-435v and GHSA-w4xr-hqv8-ch44 (`forge.tls`, a client
+crash), GHSA-6cv4-p8m7-4r25 (`forge.http`, header-trimming ReDoS) and GHSA-6889-vf6x-f3g5 (`ed25519.verify`,
+small-order keys). 1.4.3's changelog fixes a fifth that no alert names, **HIGH**, GHSA-3cc4-3294-vgjf:
+`pki.verifyCertificateChain` ignored name constraints. **None reaches shipped code.** Run 2026-11-13, with no match:
+
+```bash
+git grep -nE "forge\.(http|tls)|ed25519|wrapSocket|verifyCertificateChain|createCaStore" -- packages/kernel/src apps/desktop/src
+```
+
+Chain verification is the door `docs/security/engine-advisories.json`'s `forge-rsa-verify` already watches; this build
+verifies with Node's `crypto.verify`.
+
+**What changed in the parts we call.** The compare touches `lib/ed25519.js`, `lib/http.js`, `lib/tls.js` and
+`lib/x509.js`; `asn1`, `pkcs7`, `pkcs12` and `md` are untouched. In `x509.js` everything is inside
+`verifyCertificateChain` and its new helpers, except one branch in `certificateExtensionFromAsn1`, which
+`certificateFromAsn1` calls: a nameConstraints extension now also carries `permittedSubtrees`, `excludedSubtrees` and
+`unsupportedSubtreeRange`, and a value that does not parse is caught and left unparsed. That is additive, on an
+extension shipped code never reads (`timestampToken.ts` reads `extKeyUsage` alone), and `certificateToAsn1` is
+unchanged. The signing, timestamping and signature-reading tests pass on 1.4.3: eight files, 137 cases.
+`npm audit --omit=dev` reports 0 vulnerabilities.
