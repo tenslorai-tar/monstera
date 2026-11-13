@@ -15,6 +15,15 @@ import {
   environmentFor,
 } from './containedProgram.js';
 
+/**
+ * Modules that start a process and are not shipped, by name and why. Each must still start one, and must be imported by
+ * tests alone; both are asserted below, so an entry cannot outlive its reason or come to name shipped code.
+ */
+const TEST_ONLY_STARTERS: Readonly<Record<string, string>> = {
+  'decodeForTests.ts':
+    'the kernel tests’ image decode, which under the hosts’ runtime runs sharp in a plain Node child, never in Electron',
+};
+
 // Casts are the test's own mints: this file checks what each branch PRODUCES, and
 // the brands' job — restricting who may mint — is `proof:contract`'s and
 // `check:electronbinary`'s, not this file's.
@@ -169,6 +178,33 @@ describe('every contained process is created with no console window (the owner�
       }
     }
     expect(files.length, 'the scan read the shipped sources').toBeGreaterThan(100);
-    expect(starters).toStrictEqual(['win32HostSurface.ts: CreateProcessW']);
+    const shipped = starters.filter((starter) => !Object.keys(TEST_ONLY_STARTERS).some((name) => starter.startsWith(`${name}: `)));
+    expect(shipped).toStrictEqual(['win32HostSurface.ts: CreateProcessW']);
+    // NOT STALE: each module named as a test-only starter still is one, so the exemption cannot outlive its reason.
+    for (const name of Object.keys(TEST_ONLY_STARTERS)) {
+      expect(starters.some((starter) => starter.startsWith(`${name}: `)), name).toBe(true);
+    }
+  });
+
+  /**
+   * WHY A TEST-ONLY STARTER IS NOT SHIPPED, read from the sources rather than taken from its name: a module ships when
+   * the application can reach it (`scripts/release/shippedModules.mjs`), and nothing reaches one that only tests import.
+   * So no source that is not a test may import it. CONTROL: a test does import each, so the import search can see.
+   */
+  it('a module named as a test-only starter is imported by tests alone', () => {
+    const roots = ['.', '../../../packages/kernel/src', '../../../packages/nodemode/src'].map((root) =>
+      fileURLToPath(new URL(`${root}/`, import.meta.url)),
+    );
+    const sources = roots.flatMap((root) =>
+      readdirSync(root, { recursive: true, encoding: 'utf8' })
+        .filter((name) => /\.tsx?$/u.test(name) && !name.endsWith('.d.ts'))
+        .map((name) => ({ name, text: readFileSync(join(root, name), 'utf8') })),
+    );
+    for (const module of Object.keys(TEST_ONLY_STARTERS)) {
+      const specifier = new RegExp(`from ['"][^'"]*/${module.replace(/\.ts$/u, '').replaceAll('.', '\\.')}\\.js['"]`, 'u');
+      const importers = sources.filter(({ text }) => specifier.test(text)).map(({ name }) => basename(name));
+      expect(importers.filter((name) => /\.test\.tsx?$/u.test(name)).length, `a test imports ${module}`).toBeGreaterThan(0);
+      expect(importers.filter((name) => !/\.test\.tsx?$/u.test(name)), `${module} is imported by tests alone`).toStrictEqual([]);
+    }
   });
 });
