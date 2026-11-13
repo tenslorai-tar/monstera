@@ -661,15 +661,29 @@ describe('the 24-hour check’s ledger is sealed like every record (ADR-0279 Dec
   it('keeps what it is given and reads it back, and a place in it is not on the disk in the clear', () => {
     const directory = folder();
     const store = createHistoryStore(directory, fakeCipher());
+    store.save(PLACE_KEY, PLACE, ID, null, TURNS, null, AT);
     const ledger = { lastPass: 5, sections: { [`${PLACE_KEY}/s`]: { seen: null, missingSince: 7, place: PLACE } } };
     store.keepLedger(ledger);
     expect(createHistoryStore(directory, fakeCipher()).ledger()).toStrictEqual(ledger);
     expect(everyFileHolds(directory, Buffer.from(PLACE))).toBe(false);
   });
 
+  it('a machine that never saved a conversation is given NO data key, nor any history file, by the check (HHHHHHHHH-20)', () => {
+    const directory = folder();
+    const store = createHistoryStore(directory, fakeCipher());
+    store.keepLedger({ lastPass: 5, sections: {} });
+    expect(existsSync(join(directory, 'history'))).toBe(false);
+    expect(store.ledger()).toBeNull();
+    // CONTROL: once a conversation is saved, the same call keeps the ledger, under the key the save made.
+    store.save(PLACE_KEY, PLACE, ID, null, TURNS, null, AT);
+    store.keepLedger({ lastPass: 5, sections: {} });
+    expect(store.ledger()).toStrictEqual({ lastPass: 5, sections: {} });
+  });
+
   it('CONTROL: another account reads no ledger, and Clear chat history removes it', () => {
     const directory = folder();
     const store = createHistoryStore(directory, fakeCipher());
+    store.save(PLACE_KEY, PLACE, ID, null, TURNS, null, AT);
     store.keepLedger({ lastPass: 5, sections: {} });
     expect(createHistoryStore(directory, fakeCipher('someone else')).ledger()).toBeNull();
     store.clearAll();

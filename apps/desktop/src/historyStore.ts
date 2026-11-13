@@ -196,7 +196,10 @@ export interface HistoryStore {
    * of each section and when it first found one missing. `null` where none is kept or it does not open.
    */
   ledger(): unknown;
-  /** Keeps the ledger, written beside and renamed over. Nothing is kept where this machine cannot keep conversations. */
+  /**
+   * Keeps the ledger, written beside and renamed over, under the data key in force. Nothing is kept where there is none:
+   * a machine that never saved a conversation, one that cannot keep conversations, or one whose history is locked.
+   */
   keepLedger(value: unknown): void;
   /** History's *Clear all*: this PDF's file. */
   clearFile(placeKey: string): void;
@@ -581,7 +584,10 @@ export function createHistoryStore(
     },
 
     keepLedger(value) {
-      const key = keyFor(true);
+      // THE KEY IN FORCE, NEVER A NEW ONE (HHHHHHHHH-20): a machine that never saved a conversation has no section to
+      // check, and the check's pass would otherwise make it a data key, and a history folder, for nothing. Where there is
+      // none, nothing is kept, and the next pass starts every clock again, which can only delay a removal.
+      const key = keyFor(false);
       if (key === null) return;
       mkdirSync(folder, { recursive: true });
       writeFileSync(`${ledgerPath}.writing`, seal(key, value));
