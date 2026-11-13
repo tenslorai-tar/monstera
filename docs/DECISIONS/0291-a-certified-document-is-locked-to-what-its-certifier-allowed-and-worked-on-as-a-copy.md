@@ -206,3 +206,20 @@ Decision 5's reason), *Save anyway* (written whole, breaking the signatures, on 
 Cancel. A copy made for a change that breaks signatures is written whole from the start, so it cannot be refused.
 Not built: an export or a print of a signed document still appends when it serialises, so a refusal there would read as
 the failure it did before; none is known to reach it.
+
+## Correction, 2026-11-13 — Decision 7 as built is not Decision 7 as written (HHHHHHHHH-12)
+
+Decision 7 offers *Save this signed version…* only for a signature whose cut verifies, cut from the bytes main opened.
+The build, read from the code on 2026-11-13, differs in both:
+
+- **Where it is offered.** `SignaturesBody.tsx` offers it for every signature that does not cover the whole document and
+  file. Whether its cut verifies is asked only when it is pressed; a cut that does not answers `not-found`, and the window
+  says *"This signature’s signed version could not be found in the file as it is saved, so nothing was written."*
+- **What is cut.** `saveSignedVersion` cuts the file on disk, not the session's bytes. Its comment gives the reason: a file
+  damaged after it was signed is repaired on open, and a repaired document saves whole, so the session no longer holds
+  the signed bytes as its first ones; the file does.
+
+Since 806f7513 the bytes written are held to the digest of the cut that was checked, so a save while the picker is up
+answers `not-found` with nothing written (HHHHHHHHH-5). Whether the offer should wait on a check of each cut, as written,
+at the cost of one host open per such signature each time Check signatures opens, is the owner's to decide; until then
+this correction is what is true.
