@@ -101,6 +101,7 @@ function drawable(family: string): boolean {
  */
 export function drawFamilies(families: readonly FontFamilyEntry[]): void {
   const client = listedClient;
+  const before = registered.size;
   for (const family of families) {
     const key = family.name.toLowerCase();
     if (handled.has(key)) continue;
@@ -118,7 +119,11 @@ export function drawFamilies(families: readonly FontFamilyEntry[]): void {
     const bundled = BUNDLED_FAMILIES.find((name) => name.toLowerCase() === key);
     if (family.origin === 'bundled' && bundled !== undefined && client !== undefined) void addBundled(bundled, client);
   }
-  gave();
+  // ONLY WHERE A FACE WAS GIVEN, as `given`'s own contract says (a new set each time a face is given, the same set
+  // between): a bundled face is given later, by `give`. This announced a new set on every call, so every block opened
+  // after its families had their faces made a new look and fitted its lines again inside the press: one paint of three
+  // in the first press on a block (document 2, 2026-11-14, JOURNAL).
+  if (registered.size !== before) gave();
 }
 
 /**

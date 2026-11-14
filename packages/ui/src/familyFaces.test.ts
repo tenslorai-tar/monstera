@@ -1,8 +1,42 @@
 import type { FontFamilyEntry } from '@monstera/contract';
 import { STAND_INS, normaliseFamily, withoutSubsetTag } from '@monstera/shared';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { familyIndexOf, listedFamiliesFor, previewFamilyOf } from './familyFaces.js';
+import { drawFamilies, facesGiven, familyIndexOf, listedFamiliesFor, previewFamilyOf, subscribeFaces } from './familyFaces.js';
+
+describe('a face given is announced once, and a call that gives none announces nothing', () => {
+  it('a family given its face announces a new set once; drawing it again gives nothing and announces nothing', () => {
+    // A FACE THE BROWSER CAN TAKE, in a document whose canvas measures every font alike, so the family is one the browser
+    // does not draw by name and is given a face (`drawnByBrowser`). This file runs in Node, so the document is a stand-in.
+    vi.stubGlobal('FontFace', class {
+      constructor(readonly family: string) {}
+    });
+    const added = vi.fn();
+    vi.stubGlobal('document', {
+      fonts: { add: added },
+      createElement: () => ({ getContext: () => ({ font: '', measureText: () => ({ width: 10 }) }) }),
+    });
+    let told = 0;
+    const stop = subscribeFaces(() => {
+      told += 1;
+    });
+    const family = { ...entry('Announced Once Sans', 'installed'), locals: ['AnnouncedOnceSans-Regular'] };
+    const before = facesGiven();
+    drawFamilies([family]);
+    // CONTROL: the face was given, so the set was announced and is a new one.
+    expect(added).toHaveBeenCalledTimes(1);
+    expect(told).toBe(1);
+    expect(facesGiven()).not.toBe(before);
+    const after = facesGiven();
+    // THE SAME FAMILY AGAIN, as every block opened after the first asks: nothing given, so the same set and no word of it.
+    // Announcing it anyway made a new look and fitted the open block's lines again inside the press (2026-11-14).
+    drawFamilies([family]);
+    expect(told).toBe(1);
+    expect(facesGiven()).toBe(after);
+    stop();
+    vi.unstubAllGlobals();
+  });
+});
 
 /**
  * Which face a name the font picker shows is drawn in (ADR-0250 Decision 3): the resolver's own stand-in table, read
