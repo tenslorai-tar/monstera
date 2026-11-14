@@ -59,9 +59,16 @@ describe('decodeForTests', () => {
         .filter((file) => file.endsWith('.ts'))
         .map((file) => ({ file: `${name}/src/${file.replaceAll('\\', '/')}`, text: readFileSync(join(root, name, 'src', file), 'utf8') })),
     );
+    // EITHER QUOTE, and a dynamic import or a require with spaces (IIIIIIIII-22): no lint rule fixes the quote style, and
+    // kernel sources import with double quotes too, so a pattern of single quotes alone missed an import it exists to see.
+    const SHARP = /from\s*["']sharp["']|import\(\s*["'`]sharp["'`]\s*\)|require\(\s*["']sharp["']\s*\)/u;
+    // CONTROL: the pattern sees every spelling, so the empty-but-for-the-helper answer below is not a narrow one.
+    for (const spelling of ["import sharp from 'sharp';", 'import sharp from "sharp";', "await import( 'sharp' )", 'require("sharp")']) {
+      expect(SHARP.test(spelling), spelling).toBe(true);
+    }
     // This file is left out by name: its pattern is the text it searches for.
     const reaching = sources
-      .filter(({ file, text }) => file !== 'kernel/src/decodeForTests.test.ts' && /from 'sharp'|import\('sharp'\)/u.test(text))
+      .filter(({ file, text }) => file !== 'kernel/src/decodeForTests.test.ts' && SHARP.test(text))
       .map(({ file }) => file);
     // CONTROL: the scan sees the helper's own import, so an empty answer is not a blind one.
     expect(reaching).toContain('kernel/src/decodeForTests.ts');
