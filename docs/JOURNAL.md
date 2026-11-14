@@ -892,6 +892,34 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-11-14 — The kept font catalogue, measured in the running app, and where the rest of the first read goes
+
+**ADR-0293 holds in the app.** `editOpenCost.mjs --file 2 --rounds 3` on a fresh data folder
+(`_review/walks/edit-open-cost/2026-11-14T03-21-17`), then again on that run's folder with `--app-data`, which printed
+*1 kept catalogue file(s) in it* before launching (`2026-11-14T03-22-49`). Round 1, the first open after launch: first
+read 3,684 ms on the first launch and 1,994 ms on the second; first press until selected 2,666 and 2,015 ms. The first
+launch wrote the kept file, as the ADR says it pays for. Until today the instrument started every run on a fresh data
+folder, so it could only ever see a first launch.
+
+**What the catalogue does not touch: the first read stays about 2 s in every round of both launches** (1,979 to 2,095
+ms), because `document.textBlocks` reads no font. Split by temporary timers in its composition reader, not committed,
+on a build of this tree, three rounds, page 1 (the first read of each opened document):
+
+| step | first read of an open | the same page read again |
+|---|---|---|
+| MuPDF's first answer (`pageRewrite`) | 720–1,033 ms | 3–5 ms |
+| PDFium's runs (`textRuns`) | 115–836 ms | 102–142 ms |
+| MuPDF's form pages, 6 placements (`formPages`) | 254–336 ms | 202–474 ms |
+| PDFium's runs of those 6 (`textRunsOfPages`) | 464–487 ms | 802–992 ms |
+
+The first row is waiting, not reading: the instrument presses Edit text on a document just opened, and the same call
+answers in 3–5 ms later. The shell log shows what it waits behind, the open's own reads (`document.viewModel` 1,976 ms,
+`document.formFields` 2,864 ms). The largest cost a person pays on every read is the last row: six form placements
+read by PDFium cost four to eight times the page's own runs. That is the next thing to measure, outside the app,
+before anything is changed.
+
+---
+
 ## 2026-11-13 — The first letter is not held on this branch, and click until editable is slower than it was
 
 Items 28/64. `editOpenCost.mjs --file 2 --rounds 7`, the release's commit `5dead873` (its own worktree) and this branch

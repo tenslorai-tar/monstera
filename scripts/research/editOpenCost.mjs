@@ -3,6 +3,7 @@
  * What Edit text costs before a person can type: the first read of a page's blocks, and opening a dense block.
  *
  *   node scripts/research/editOpenCost.mjs --corpus <folder> --file <n> [--rounds <n>] [--app-root <checkout>] [--profile]
+ *     [--app-data <an earlier run's app-data folder>]
  *
  * `--file` is the document's place in the folder's `.pdf` files sorted by name, so no document's name is printed or
  * written. Nothing here prints a word of a document either: a block is chosen by its outline's size, never its text.
@@ -55,7 +56,15 @@ const chosen = files[fileNumber];
 if (chosen === undefined) throw new Error(`the folder holds ${String(files.length)} PDF file(s); --file ${String(fileNumber)} names none`);
 const documentPath = join(corpus, chosen);
 
-const walk = await startWalk('edit-open-cost', appRootOption(process.argv));
+// `--app-data`: an EARLIER run's app-data folder, so this launch is a second one, with the font catalogue that run kept
+// (ADR-0293: the first launch after the fonts change pays the folders' read while the catalogue host writes the file).
+// It prints the kept files it finds there before launching, so a launch that had none to take cannot read as one that had.
+const appData = option('--app-data');
+if (appData !== undefined) {
+  const kept = readdirSync(appData, { recursive: true, encoding: 'utf8' }).filter((name) => name.endsWith('.catalogue.json'));
+  process.stdout.write(`app data from an earlier run: ${String(kept.length)} kept catalogue file(s) in it\n`);
+}
+const walk = await startWalk('edit-open-cost', { ...appRootOption(process.argv), ...(appData === undefined ? {} : { appData }) });
 const { page, open, section, finish, step, output } = walk;
 const profiler = process.argv.includes('--profile') ? await page.context().newCDPSession(page) : undefined;
 if (profiler !== undefined) {
