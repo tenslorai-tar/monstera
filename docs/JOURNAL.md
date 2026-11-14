@@ -892,6 +892,36 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-11-14 — What the first press on a block spends, and two changes that did not hold
+
+The 300 ms first-press goal is one long task in the window. `editOpenCost.mjs --trace` with `traceTop.mjs`
+(`ec7218d2`), document 2, rounds 2 and 3 (`_review/walks/edit-open-cost/2026-11-14T14-00-43`): the task is 338.9 and
+357.1 ms, against 338 and 357 ms read by the instrument's own long-task clock; inside it, script 185 and 200 ms, style
+recalculation 106 and 111 ms, layout 34 ms. The style and layout are not one pass: about ten forced recalculations of 540
+to 660 elements each, script reading layout after writing it.
+
+**Where the paints come from**, read by temporary `performance.mark`s in the trace (not committed;
+`2026-11-14T14-11-28`, `14-17-36`): three paints of the editor inside the press. The mount's, which fits the block; a
+second at mount from the look-or-drawing effect, with nothing to fit; and one after a font family is given its face
+(`facesGiven`), which makes a new look and fits the block again. That new look's font strings for every run of the
+block were the same as the one before.
+
+**Change 1, withdrawn: a new look whose font strings are the same keeps the fit.** Measured with it, the first press
+read 174 to 252 ms, median 204, against 334 to 546, median 345, without (`14-26-24` and `14-32-26`). It is wrong, and a
+control caught it: `editTextCaret.pw.ts`' kerning control failed with it and passed without it (built each way). **The
+same font string can draw differently**: a family given its face keeps its name, and the browser draws the letters
+from the face once it has it, at other widths, so the fit has to be made again. Equal strings are not equal drawing.
+
+**Change 2, withdrawn: no second paint at mount.** With the first change taken out, all 40 rendered editor cases passed,
+and it measured worse, not better: first press median 432 ms (347 to 434) against 326 (307 to 348), first letter 296 ms
+against 52 (`15-05-21` without, `15-11-00` with). Why skipping a paint of nothing costs time was not established.
+
+**What this leaves.** The refit after a family is given its face is needed, so the lever is the order, not the fit: a
+face given before the editor mounts is fitted once. When the editor's families are given their faces, against the
+first press, is the next reading. The first press stands at a median of about 326 to 345 ms.
+
+---
+
 ## 2026-11-14 — Stage audit of `658e14df..7b03d0cf` — findings IIIIIIIII-1 to IIIIIIIII-26
 
 Owed before the board reader's fix could be committed: that commit would have taken the range to 201 files.
