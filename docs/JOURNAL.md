@@ -912,6 +912,14 @@ back to back on this machine.
 
 **Withdrawn below**, by these readings: *the first press stands at a median of about 326 to 345 ms*.
 
+**Correction, 2026-11-14, same day.** *60 of 60 in six runs alone, 87 of 87 in three runs* read vitest's summary line,
+and the runs' exit codes were 1: each also reported one unhandled rejection, which the summary does not count. CI found
+it on `27d0786b` (run 43621651026, every leg's unit tests). The new teardown shut down a case that leaves a font-list
+call unanswered on purpose and never awaited it, so the call's ending rejected with nothing waiting. That case now shuts
+its composition down itself and asserts the call ends as a shutdown. Read since by exit code: the file alone, three runs,
+exit 0, no unhandled error; `vitest related composition.ts`, exit 0, 87 passed. The readings in `4afd14f6`'s message
+are the summary-line ones and are corrected here.
+
 ---
 
 ## 2026-11-14 — What the first press on a block spends, and two changes that did not hold

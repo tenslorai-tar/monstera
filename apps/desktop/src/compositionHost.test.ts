@@ -2958,7 +2958,7 @@ describe('the composition root, with the COMPOSE host (ADR-0060)', () => {
       ...third.platform,
       directories: { ...third.platform.directories, listFiles: (path) => readdirSync(path) },
     };
-    const { handlers } = createShellDependencies({
+    const { handlers, shutdown } = createShellDependencies({
       ...harnessSurfaces('the composition-host test'),
       appInfo,
       pickMarkdown: () => Promise.resolve(join(scratch, 'draft-running.md')),
@@ -2970,13 +2970,17 @@ describe('the composition root, with the COMPOSE host (ADR-0060)', () => {
     const answer = await handlers['document.newFromMarkdown']({ family: 'Tinos', work: WORK });
     if (!answer.ok || answer.value.kind !== 'opened') throw new Error(`the composed document did not open: ${JSON.stringify(answer)}`);
 
-    void handlers['app.fontFamilies']({});
+    const listed = handlers['app.fontFamilies']({});
     await vi.waitFor(() => {
       expect(third.harness.calls).toContain('peer.request:engine/font-families');
     });
     await handlers['document.close']({ docId: answer.value.docId });
     expect(spy(mupdf.harness.calls, 'host.terminate')).toBe(1);
     expect(spy(third.harness.calls, 'host.terminate')).toBe(0);
+    // AND A QUIT ENDS THE CALL STILL RUNNING as a shutdown, which is what it is: the case holds the call, so its ending is
+    // asserted rather than left to reject with nothing waiting on it once the composition is shut down.
+    await shutdown();
+    await expect(listed).rejects.toThrow(/shutdown/u);
   }, 120_000);
 
   /**
