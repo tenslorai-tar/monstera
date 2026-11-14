@@ -2653,7 +2653,15 @@ test('the RIBBON FOLDS PER GROUP below 1920, nothing scrolls sideways, and every
     // width and left about 200 px of empty ribbon (measured 2026-09-24, Comment); a bound at or past that would pass it.
     expect(bound, `section ${String(index)}'s bound`).toBeLessThan(200);
     try {
-      await expect.poll(unusedRoom).toBeLessThan(bound);
+      // THE SETTLED STATE, BOTH SIDES OF IT: under the bound AND not past the row's end. Polled for being under the bound
+      // alone, a row still folding was taken as settled while it ran past its end, since running over is negative room and
+      // negative room is under any bound; the single read after the poll then failed at -117 px on main's run of 5c037654
+      // (CI run 43632566571, ubuntu), where the branch's run of the same commit passed. A fold that settles past the end
+      // still fails, when the poll runs out.
+      await expect.poll(async () => {
+        const room = await unusedRoom();
+        return room >= -1 && room < bound;
+      }).toBe(true);
     } catch (error) {
       // NAME THE SECTION AND THE WIDTHS: a failure here is read from a CI log on a machine this one is not.
       const state = await tools.evaluate((element) => ({
