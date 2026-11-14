@@ -986,6 +986,76 @@ command or dialog was added, so no article was owed; no competitor name is in th
 1d029118, c5fc2a75, b4e57bf8, 74fc8ec0, 9d07d901. Partial: c194797b (-1). Stated workarounds: 1ecb83bd (cause outside
 the repository, sharp's own disclaimer) and efeeb406 (a named exception standing for a deferred closure, -3).
 
+### Correction, 2026-11-14 — the checklist this entry left out
+
+This entry was written with findings and no item headings, and `check:docs` refused it on Guards for `3bec1d73` (run
+43575256777, *"answers 0 of 11 checklist items"*): the same omission the last audit's entry made and corrected in
+cbd4f31b, so the second in a row. The entry above stands as written; the answers below are of `658e14df..7b03d0cf`, and
+where they rest on work since, they name it.
+
+#### 1. Root cause or workaround
+
+As the paragraph above: eleven root-cause fixes, c194797b partial (-1, closed in 3bec1d73), and two stated
+workarounds, 1ecb83bd and efeeb406, each naming why.
+
+#### 2. The easy shape only
+
+Twice. The 24-hour check was proven on a missing PDF and a host that did not read, not on a PDF present and refusing to
+open, which a share lock produces (-2). The history store's re-link on save is exercised only for a PDF with no `/ID`
+since its vacuous case was replaced (-20).
+
+#### 2a. A change to how something is proven
+
+Three, each stated where it was made: `contract.proof.mjs`' missing-channel compile case moved to construction through
+`clientOver` (-21); `containedProgram.test.ts`' exact starter list became a filter with two anchors (-3); and
+`historyRewriteBuilt.proof.mjs`' control moved from the whole Delete to the worker's read, which can no longer see
+when the worker reaches the file's end (-19).
+
+#### 3. Would CI have caught it
+
+From runs. CI on 9d07d901 (run 43544069419) failed the built Delete proof's control, which cbdc3bde repaired; 5049ec31
+reddened CI until 9a92ef4c (-15). Guards on 3bec1d73 failed this entry's missing checklist, the check working. Of the
+mediums, none could have been caught: no case reached the path in a replace's message (-1, a case since in 3bec1d73)
+or a refused open in the 24-hour check (-2), and the documents' claims (-8 to -11) are prose no check compares. The gap
+this entry's own failure shows: the checklist is checked on Guards and not at commit, so it is found after the push.
+
+#### 4. Proofs non-vacuous
+
+Not mutated at audit time; the reviewers found none vacuous, and the most exposed is -19. The one fix since, -1, was
+mutated and its case went red (3bec1d73's message).
+
+#### 4a. Instruments' resolution
+
+`editOpenCost.mjs`' first-letter clock carries a resolution control (a letter held 1,200 ms read as held, one shown at
+once as not). Its `--app-data` prints the kept-file count and does not refuse at zero (-4). Four research instruments
+were not reached for their controls (named above).
+
+#### 4b. Searches have a positive control
+
+The `sharp` import scan has one, over a single-quote pattern (-22). The `TEST_ONLY_STARTERS` importer search has none
+for the importers it cannot see (-3). ADR-0004's `git grep` for node-forge has none (-26).
+
+#### 4c. Derived extents
+
+Two roster counts moved in the range, each a literal matching the cases added: `checkLocal.proof.mjs` 76 to 77 and
+`historyRewriteBuilt.proof.mjs` at 4. No count was derived from the set it governs.
+
+#### 5. Executed or asserted
+
+Asserted, as the entry says: nothing was run, and the mediums were re-read at their lines. -1 has since been executed
+(its case and mutation, 3bec1d73).
+
+#### 6. Architecture before the feature
+
+ADR-0295 and its ARCHITECTURE §7 row came in 1fb53286, before the build in 0f807363. ADR-0279's first-write and torn-tail
+sections record owner decisions of 2026-11-12 and 2026-11-13; whether each landed before its build commit was not
+checked here.
+
+#### 7. Documents match the code
+
+No, in nine places (-8 to -18). Corrected since: the journal entries in 011e85fb (-10, -11, -12) and ARCHITECTURE,
+ADR-0291, ADR-0277, FEATURES and the ADR index in 73dc7d97 (-8, -9, -13, -14, -18). -15, -16 and -17 stand as recorded.
+
 ---
 
 ## 2026-11-14 — A read of one form placement costs about what six do: the placements' read is mostly a fixed cost
