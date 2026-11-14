@@ -58,11 +58,17 @@ const documentPath = join(corpus, chosen);
 
 // `--app-data`: an EARLIER run's app-data folder, so this launch is a second one, with the font catalogue that run kept
 // (ADR-0293: the first launch after the fonts change pays the folders' read while the catalogue host writes the file).
-// It prints the kept files it finds there before launching, so a launch that had none to take cannot read as one that had.
+// It prints the kept files it finds there before launching, and REFUSES a folder holding none (IIIIIIIII-4): readings
+// taken there are a first launch's, and a run that went on would label them a second one. What it cannot say is whether
+// the app TOOK the file: a changed font fingerprint reads the folders again, and the app logs neither route, so a first
+// read near a first launch's on a folder that holds one is that, and the readings say so rather than this line.
 const appData = option('--app-data');
 if (appData !== undefined) {
   const kept = readdirSync(appData, { recursive: true, encoding: 'utf8' }).filter((name) => name.endsWith('.catalogue.json'));
   process.stdout.write(`app data from an earlier run: ${String(kept.length)} kept catalogue file(s) in it\n`);
+  if (kept.length === 0) {
+    throw new Error(`--app-data names a folder with no kept catalogue file, so this launch would be a first one read as a second`);
+  }
 }
 const walk = await startWalk('edit-open-cost', { ...appRootOption(process.argv), ...(appData === undefined ? {} : { appData }) });
 const { page, open, section, finish, step, output } = walk;
