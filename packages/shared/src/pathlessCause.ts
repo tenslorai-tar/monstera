@@ -14,6 +14,8 @@ export function pathlessCause(thrown: unknown): string {
     const call = 'syscall' in thrown && typeof thrown.syscall === 'string' ? ` on ${thrown.syscall}` : '';
     return `${thrown.code}${call}`;
   }
-  // AN OBJECT WITH NEITHER is said by its JSON, since `String` would say only `[object Object]`.
-  return 'message' in thrown && typeof thrown.message === 'string' ? thrown.message : JSON.stringify(thrown);
+  if ('message' in thrown && typeof thrown.message === 'string') return thrown.message;
+  // AN OBJECT WITH NEITHER is said by the NAMES of its fields, never their values: its JSON said them all, and a `path`
+  // field is the one a value would most likely carry (IIIIIIIII-24). `String` would say only `[object Object]`.
+  return `an object with ${Object.keys(thrown).length === 0 ? 'no fields' : `fields ${Object.keys(thrown).join(', ')}`}`;
 }

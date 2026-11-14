@@ -22,6 +22,14 @@ describe('pathlessCause (HHHHHHHHH-19)', () => {
     expect(pathlessCause({ kind: 'failed', message: 'a record did not open', code: null, syscall: null })).toBe('a record did not open');
   });
 
+  it('an object with no code and no message is said by its field NAMES, never a value, a path among them (IIIIIIIII-24)', () => {
+    const posted = { kind: 'failed', path: 'C:/Users/someone/Private letters/lease.pdf' };
+    expect(pathlessCause(posted)).toBe('an object with fields kind, path');
+    // THE CONTROL: its JSON, which this used to answer, carries the path.
+    expect(JSON.stringify(posted)).toContain('lease.pdf');
+    expect(pathlessCause({})).toBe('an object with no fields');
+  });
+
   it('this application’s own error and a thrown string are said as written', () => {
     expect(pathlessCause(new Error('the rewrite thread ended with code 1 and no answer'))).toBe('the rewrite thread ended with code 1 and no answer');
     expect(pathlessCause('stopped')).toBe('stopped');
