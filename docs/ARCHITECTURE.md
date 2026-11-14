@@ -1915,11 +1915,14 @@ reconciled.
   the PDF now there. No cap on PDFs or conversations. Delete one rewrites the
   file without that conversation; History's *Clear all* removes the file and
   Settings › Privacy's *Clear chat history* removes every file, each asking
-  first. A section whose PDF is gone, or cannot be read because of the PDF
-  itself, is removed **24 hours after the first check that finds it so**,
-  checked only while the person is idle. A PDF that needs a password counts as
-  there, so its history is never removed while it does; a read the engine host
-  could not make decides nothing that pass.
+  first. **Only a PDF that is really gone loses its history** (the owner,
+  2026-11-14): a section is removed **24 hours after the first check that finds
+  its file not there in a folder that is**, checked only while the person is
+  idle. A file there, whatever it is and whether or not it opens (a share lock,
+  a password, a different PDF), keeps it, and so does a place that cannot be
+  reached (an unplugged drive, an offline share, a missing folder): that pass
+  decides nothing. The check reads no PDF, only the file's and its folder's
+  `stat`.
   History saved by 1.1.2610.0 is moved over once, losing nothing. The renderer
   saves and lists by `DocId` and never holds a path, a key or a file name.
 - **What reaches an AI provider, and who says so.** Document content goes to a
@@ -3266,6 +3269,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-11-14 | **Only a PDF that is really gone loses its chat history** (§8). The owner's decision on the stage audit's IIIIIIIII-2: a file another program held with a share lock refused to open, counted as unreadable, and lost its history a day later. Gone is now a not-found file in a folder that is there; a file at the place, readable or not and whichever PDF, and a place that cannot be reached, keep it, and the 24-hour check reads no `/ID`. Rejected: keeping *cannot be read* and listing lock codes, which leaves every refusal not listed to remove history | ADR-0279 Decision 6's *cannot be found or read* and its unplugged-drive clause, and Decision 5's *the old file counts as not found* | [0279](DECISIONS/0279-saved-conversations-are-kept-without-caps-each-in-its-own-file-and-history-reads-one-log.md) |
 | 2026-11-14 | **The certification line projects the commands placed on it** (§7's `Placement`). ADR-0291's line at the top of a certified document drew *Check signatures* by looking up its id, a surface naming the commands it draws, which ADR-0102 rejected for the Properties foot as *footer buttons named by id*. Found by the stage audit of `75a59036..658e14df` (HHHHHHHHH-21). `certification-line` joins the union, `certificationLineModel` projects it, and the command carries the placement. Rejected: naming the line a projection as it was; recording it as the line's own control (ADR-0180's exception holds only for what is not a command) | §7's placement union without `certification-line`, and its list of derived surfaces | [0295](DECISIONS/0295-the-certification-line-projects-the-commands-placed-on-it.md) |
 | 2026-11-13 | **A certified document is changed only as its certifier allowed, and otherwise as a copy** (§4's save invariants). Recorded after the build, found by the stage audit of `75a59036..658e14df` (HHHHHHHHH-13): ADR-0291 changed four seams and this log named none of them, where ADR-0045, 0051 and 0149 each had a row. The owner's decision of 2026-11-06 (Group 5). A fourth axis of `CommandDeclaration`, `changes`, total over the command union; one constant of what each certification level allows; a refusal in the lane, `certified`, asked before ADR-0149's question and not passed by agreeing to break signatures; serialise options for the copy a change is made on (certification removed, written whole); and a save outcome, `append-refused`, for an appended save the file cannot take. Rejected: deriving what a command changes from its writer, purpose or walk; a second, sterner question that lets the change through; keeping the certification on the copy; removing the signature from it | §4's signature bullet, which named one question before a change (ADR-0149's) and one save shape for a signed document (appended) | [0291](DECISIONS/0291-a-certified-document-is-locked-to-what-its-certifier-allowed-and-worked-on-as-a-copy.md) |
 | 2026-11-12 | **A refusal for a document this window closed is the client's own code, and the one door shows nothing for it** (§5's renderer types). After ADR-0292 a close runs ahead of a read this window had queued, and that read answers `document-not-open`; Edit text showed *That document is no longer open* to a person who had just closed it (measured, three rounds of seven). The renderer's client answers `document-closed-here` for a call whose document this window sent a close for; the renderer's `ContractClient` carries it on the channels that declare `document-not-open`, and only `closedHereClient` builds one; `reportProblem` accepts it and shows nothing, and the command-problem dialog's props refuse it. A document `main` lost is still reported. Rejected: a helper each reader calls, never answering the call, a mark checked at `ask`, making the close wait for the reads | §5's *renderer types* derived from the contract unchanged, for the one renderer-only code | [0294](DECISIONS/0294-a-refusal-for-a-document-this-window-closed-is-the-clients-own-code.md) |

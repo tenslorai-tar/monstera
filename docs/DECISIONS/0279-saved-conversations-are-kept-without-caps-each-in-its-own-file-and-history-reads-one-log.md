@@ -498,3 +498,31 @@ the engine says will never open (`EngineOpenFailed`), is `failed`, and Decision 
 `not-read`: that pass decides nothing about the section, its clock neither starts nor stops, and the next pass looks
 again. A PDF that cannot be found is unchanged: the file's `stat` needs no host. Held by `historyCheck.test.ts`' *a host
 that does not read says nothing about the PDF* and *whose failure a read that threw was*, each mutated red.
+
+## Correction, 2026-11-14 — only a PDF that is really gone loses its history (the owner's decision, IIIIIIIII-2)
+
+The stage audit of `658e14df..7b03d0cf` found that the correction above still removed the history of a PDF standing at
+its place: a file another program holds with a share lock refuses to open (EBUSY or EPERM), which counted as `failed`,
+and two checks a day apart removed its section. The owner decided, 2026-11-14, replacing Decision 6's *cannot be found
+or read* and its *an unplugged USB stick or an offline network drive counts as not found*:
+
+> Only a PDF that is really gone loses its chat history. Gone means the folder that held it is reachable and the file
+> isn't there (stat answers not-found). Keep the history when the file is there but can't be opened right now: a share
+> lock (EBUSY or EPERM), a password, an engine that fails to start, or any other refusal. Also keep it when the place
+> itself can't be reached: an unplugged drive, an offline network folder, a folder that is missing as a whole. Nothing
+> learnt decides nothing, and preserve, never drop.
+
+**What it decides that the words do not list, and why.** *Gone* is defined by the file's absence, so a file at the place
+is never gone, **whichever PDF it is**. Decision 5's *the old file counts as not found* for a different PDF at the place
+is therefore withdrawn: that PDF still does not see the old conversations, because History shows only the section
+whose guard matches, and the old section is kept on disk, unshown, as the owner's answer of 2026-11-12 already kept a
+password PDF's. So the check reads no PDF at all: it asks the file's `stat` and, where the file is not found, its
+folder's, and never the engine host, which also takes a parse out of an idle pass (invariant 25's host is no longer
+reached by it). A PDF that is gone and comes back before the 24 hours starts the clock again, as before; any PDF there
+then counts as back.
+
+**As built** (`historyCheck.ts`, the composition's `stat`): the place is *found*, *gone* or *unreachable*. *Gone* is a
+not-found file in a folder that is there; a folder, drive or share that is not there, and every other refusal, is
+*unreachable*, which decides nothing that pass. Held by `historyCheck.test.ts`: a present file under a share lock across
+two checks a day apart keeps its history; a file on a missing drive or folder keeps it; a file deleted from a folder
+that is still there loses it after 24 hours, the control.
