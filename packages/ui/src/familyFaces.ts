@@ -100,30 +100,75 @@ function drawable(family: string): boolean {
  * read, leave that family in the interface font, which is what the picker shows for any family with no face.
  */
 export function drawFamilies(families: readonly FontFamilyEntry[]): void {
-  const client = listedClient;
   const before = registered.size;
-  for (const family of families) {
-    const key = family.name.toLowerCase();
-    if (handled.has(key)) continue;
-    handled.add(key);
-    if (drawnByBrowser(family.name)) continue;
-    if (family.origin === 'installed' && family.locals !== undefined) {
-      // EACH NAME IN TURN, in one source list: the browser takes the first its system has (CSS Fonts 4, `src`). ADDED
-      // UNLOADED: the browser reads the file the first time the family is drawn, so a list of three hundred families
-      // costs nothing until a picker shows them. The names are the face's own, which Chromium matched for every family on
-      // this project's Windows machine (text regression 7b, 2026-10-16).
-      document.fonts.add(new FontFace(family.name, family.locals.map((name) => `local("${name}")`).join(', ')));
-      registered.add(key);
-      continue;
-    }
-    const bundled = BUNDLED_FAMILIES.find((name) => name.toLowerCase() === key);
-    if (family.origin === 'bundled' && bundled !== undefined && client !== undefined) void addBundled(bundled, client);
-  }
+  for (const family of families) giveFace(family);
   // ONLY WHERE A FACE WAS GIVEN, as `given`'s own contract says (a new set each time a face is given, the same set
   // between): a bundled face is given later, by `give`. This announced a new set on every call, so every block opened
   // after its families had their faces made a new look and fitted its lines again inside the press: one paint of three
   // in the first press on a block (document 2, 2026-11-14, JOURNAL).
   if (registered.size !== before) gave();
+}
+
+/** One family of {@link drawFamilies}: given a face where the browser cannot draw it by name, once a window. */
+function giveFace(family: FontFamilyEntry): void {
+  const key = family.name.toLowerCase();
+  if (handled.has(key)) return;
+  handled.add(key);
+  if (drawnByBrowser(family.name)) return;
+  if (family.origin === 'installed' && family.locals !== undefined) {
+    // EACH NAME IN TURN, in one source list: the browser takes the first its system has (CSS Fonts 4, `src`). ADDED
+    // UNLOADED: the browser reads the file the first time the family is drawn, so a list of three hundred families
+    // costs nothing until a picker shows them. The names are the face's own, which Chromium matched for every family on
+    // this project's Windows machine (text regression 7b, 2026-10-16).
+    document.fonts.add(new FontFace(family.name, family.locals.map((name) => `local("${name}")`).join(', ')));
+    registered.add(key);
+    return;
+  }
+  const bundled = BUNDLED_FAMILIES.find((name) => name.toLowerCase() === key);
+  const client = listedClient;
+  if (family.origin === 'bundled' && bundled !== undefined && client !== undefined) void addBundled(bundled, client);
+}
+
+/** Runs `step` when the window is next idle, with the time it may take; a timer where the host has no idle callback. */
+type IdleSchedule = (step: (remaining: () => number) => void) => void;
+const whenIdle: IdleSchedule = (step) => {
+  if (typeof requestIdleCallback === 'function') {
+    requestIdleCallback((deadline) => {
+      step(() => deadline.timeRemaining());
+    });
+  } else {
+    setTimeout(() => {
+      step(() => 0);
+    }, 0);
+  }
+};
+
+/**
+ * {@link drawFamilies} over a WHOLE LIST, a few families at a time while the window is idle, announced once at the end.
+ *
+ * Whether the browser draws a family by name is measured (`drawnByBrowser`), and the first measure of a family looks
+ * it up among the computer's fonts. Over the computer's whole list that cost 1,685 ms of a 2,190 ms first press on a
+ * block in a window just started (canvas `measureText`, `editOpenCost.mjs --profile`, document 2, 2026-11-14): the
+ * picker drew the list as the editor's panel mounted, inside the press. Nothing waits on the whole list: a shown name
+ * is measured as it is drawn (`drawnWith`), and an open block's own families are given at once (`drawFamiliesNamed`).
+ * ONE ANNOUNCEMENT for the list, not one a slice, since each is a new look and a refit for an open editor.
+ *
+ * @param schedule when each slice runs; the window's idle callback, which a case replaces to run the slices itself.
+ */
+export function drawFamiliesWhenIdle(families: readonly FontFamilyEntry[], schedule: IdleSchedule = whenIdle): void {
+  const left = families.filter((family) => !handled.has(family.name.toLowerCase()));
+  if (left.length === 0) return;
+  const before = registered.size;
+  const slice = (remaining: () => number): void => {
+    // AT LEAST ONE A SLICE, so a host with no idle time still finishes; more while the idle period lasts.
+    do {
+      const next = left.shift();
+      if (next !== undefined) giveFace(next);
+    } while (left.length > 0 && remaining() > 1);
+    if (left.length > 0) schedule(slice);
+    else if (registered.size !== before) gave();
+  };
+  schedule(slice);
 }
 
 /**

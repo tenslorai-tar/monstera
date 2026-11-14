@@ -3,7 +3,7 @@ import type { FaceStyle, FontFamilyEntry } from '@monstera/contract';
 import { type MessageKey, SUBSET_TAG } from '@monstera/shared';
 import { type ReactElement, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
-import { drawFamilies, drawnWith, facesGiven, previewFamilyOf, subscribeFaces } from './familyFaces.js';
+import { drawFamiliesWhenIdle, drawnWith, facesGiven, previewFamilyOf, subscribeFaces } from './familyFaces.js';
 import {
   FONT_GROUP_ALL,
   FONT_GROUP_BUILT_IN,
@@ -267,10 +267,11 @@ export function FontPicker({ label, value, unset, list, inDocument, builtIn, onP
   );
   /** The computer's list as read, or `undefined` while it is read and where the consumer offers none. */
   const read = readList(list);
-  // EACH LISTED FAMILY GIVEN ITS FACE as the list is drawn (ADR-0250), once a window (`drawFamilies`), and drawn again
-  // when a face arrives: a bundled family's bytes come after the list does.
+  // EACH LISTED FAMILY GIVEN ITS FACE (ADR-0250), once a window, WHILE THE WINDOW IS IDLE (`drawFamiliesWhenIdle`): the
+  // picker mounts with the editor's panel, and measuring the whole list at once was most of a first press in a window
+  // just started. Drawn again when a face arrives: a bundled family's bytes come after the list does.
   useEffect(() => {
-    if (read !== undefined) drawFamilies(read.families);
+    if (read !== undefined) drawFamiliesWhenIdle(read.families);
   }, [read]);
   // THE FACES GIVEN SO FAR, as this render reads them: the snapshot itself, so a compiled list draws a family again once
   // it has one (ADR-0258).

@@ -2,7 +2,59 @@ import type { FontFamilyEntry } from '@monstera/contract';
 import { STAND_INS, normaliseFamily, withoutSubsetTag } from '@monstera/shared';
 import { describe, expect, it, vi } from 'vitest';
 
-import { drawFamilies, facesGiven, familyIndexOf, listedFamiliesFor, previewFamilyOf, subscribeFaces } from './familyFaces.js';
+import {
+  drawFamilies,
+  drawFamiliesWhenIdle,
+  facesGiven,
+  familyIndexOf,
+  listedFamiliesFor,
+  previewFamilyOf,
+  subscribeFaces,
+} from './familyFaces.js';
+
+describe('the whole list is given its faces while the window is idle, and announced once', () => {
+  it('measures nothing when called, gives every family slice by slice, and announces the set once at the end', () => {
+    vi.stubGlobal('FontFace', class {
+      constructor(readonly family: string) {}
+    });
+    const added = vi.fn();
+    let measured = 0;
+    vi.stubGlobal('document', {
+      fonts: { add: added },
+      createElement: () => ({
+        getContext: () => ({
+          font: '',
+          measureText: () => {
+            measured += 1;
+            return { width: 10 };
+          },
+        }),
+      }),
+    });
+    let told = 0;
+    const stop = subscribeFaces(() => {
+      told += 1;
+    });
+    const families = Array.from({ length: 5 }, (_unused, at) => ({ ...entry(`Idle Family ${String(at)}`, 'installed'), locals: [`IdleFamily${String(at)}`] }));
+    // THE IDLE PERIODS, run by the case: each slice is given no time left, so it takes one family, the least it may.
+    const slices: ((remaining: () => number) => void)[] = [];
+    drawFamiliesWhenIdle(families, (slice) => slices.push(slice));
+    // NOTHING AT THE CALL: the cost the press used to pay is not paid here.
+    expect(measured).toBe(0);
+    expect(added).not.toHaveBeenCalled();
+    let ran = 0;
+    for (let slice = slices.shift(); slice !== undefined; slice = slices.shift()) {
+      slice(() => 0);
+      ran += 1;
+    }
+    expect(ran).toBe(families.length);
+    expect(added).toHaveBeenCalledTimes(families.length);
+    // CONTROL: the set was announced, and ONCE for the list, not once a slice.
+    expect(told).toBe(1);
+    stop();
+    vi.unstubAllGlobals();
+  });
+});
 
 describe('a face given is announced once, and a call that gives none announces nothing', () => {
   it('a family given its face announces a new set once; drawing it again gives nothing and announces nothing', () => {
