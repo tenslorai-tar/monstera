@@ -208,6 +208,14 @@ function pause(ms: number): void {
  * original error as its cause and the attempt count, so a genuinely locked
  * settings file reads as one and not as a mystery.
  *
+ * ## Its failure names no file, and reads as the system error it is
+ *
+ * The settings file, the chat history's files and key, the history ledger and the recent pictures all replace through
+ * here, and the history's files sit in the account's folder under a key that stands for a PDF's place, which nothing
+ * logs in the clear (HHHHHHHHH-19). This said `Could not replace ${to}` with no `code`, so `pathlessCause` took its
+ * message whole and the history path reached the log (IIIIIIIII-1). {@link ReplaceFailed} carries the rename's code
+ * and call instead, `EPERM on rename`, and a message naming no file.
+ *
  * It also removes the temporary on the way out. A failed write that left
  * `settings.json.writing` behind would accumulate one per failure, in the
  * directory whose whole job is to hold exactly one document.
@@ -244,14 +252,29 @@ export function replaceWithRetry(
           // is holding the destination is plausibly holding this too, and the
           // error worth reporting is the one about the settings file.
         }
-        throw new Error(
-          `Could not replace ${to} after ${String(attempt)} attempt(s) (${code ?? 'no code'}). ` +
-            `The settings change was not stored.`,
-          { cause },
-        );
+        throw new ReplaceFailed(attempt, code, cause);
       }
       pause(REPLACE_BACKOFF_MS);
     }
+  }
+}
+
+/**
+ * A replace that failed for good: the rename's own code and call, so `pathlessCause` says `EPERM on rename`, and a
+ * message that names no file, since every caller's file is one a log must not name.
+ */
+export class ReplaceFailed extends Error {
+  readonly code?: string;
+  readonly syscall = 'rename';
+
+  constructor(attempts: number, code: string | undefined, cause: unknown) {
+    super(
+      `A file could not be replaced after ${String(attempts)} attempt(s) (${code ?? 'no code'}), so what was to be ` +
+        `written was not stored.`,
+      { cause },
+    );
+    this.name = 'ReplaceFailed';
+    if (code !== undefined) this.code = code;
   }
 }
 

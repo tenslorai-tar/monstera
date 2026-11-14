@@ -2,9 +2,11 @@ import { mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { pathlessCause } from '@monstera/shared';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import {
+  ReplaceFailed,
   SETTINGS_FILE,
   createEphemeralSettings,
   createJsonFile,
@@ -215,6 +217,35 @@ describe('the settings file', () => {
     // And the temporary is gone, because one left behind accumulates per failure
     // in the directory whose whole job is to hold exactly one document.
     expect(() => readFileSync(from, 'utf8')).toThrow();
+  });
+
+  it('a replace that fails for good names NO FILE, and pathlessCause says the rename’s code (IIIIIIIII-1)', () => {
+    const { directory } = freshArea();
+    const from = join(directory, 'history.writing');
+    const to = join(directory, 'history');
+    writeFileSync(from, 'payload\n', 'utf8');
+
+    // THE CAUSE SPELLS BOTH PATHS, as Node's own rename error does, so a failure that passed its message on would carry
+    // them. The history store and its ledger replace through here, and their failure log goes out with a crash report.
+    let thrown: unknown = null;
+    try {
+      replaceWithRetry(from, to, (source, target) => {
+        const held: NodeJS.ErrnoException = new Error(`EPERM: operation not permitted, rename '${source}' -> '${target}'`);
+        held.code = 'EPERM';
+        held.syscall = 'rename';
+        throw held;
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(ReplaceFailed);
+    const said = pathlessCause(thrown);
+    expect(said).toBe('EPERM on rename');
+    expect((thrown as Error).message).not.toContain(directory);
+    // CONTROL: a failure with NO code is said by its message, which is the branch the old message reached the log by.
+    expect(pathlessCause(new ReplaceFailed(1, undefined, null))).not.toContain(directory);
+    expect(pathlessCause(new ReplaceFailed(1, undefined, null))).toMatch(/was not stored/u);
   });
 
   it('a failure that is NOT transient is reported on the first attempt', () => {
