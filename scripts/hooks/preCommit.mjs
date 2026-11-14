@@ -17,7 +17,7 @@
  * repository's permanent history cannot be undone at any price.
  */
 
-import { explainAuditBudget, pendingAuditScope } from '../lib/auditWatermark.mjs';
+import { auditCommitRefusal, explainAuditBudget, pendingAuditScope } from '../lib/auditWatermark.mjs';
 import { scan as scanEmittedTemplates } from '../lib/emittedTemplates.mjs';
 import { scan as scanMachineNames } from '../lib/machineNames.mjs';
 import { scan as scanProductNames } from '../lib/productNames.mjs';
@@ -435,6 +435,13 @@ async function main() {
   const budget = pendingAuditScope();
   if (!budget.recordsAudit && budget.overBudget.length > 0) {
     process.stderr.write(explainAuditBudget(budget));
+    return 1;
+  }
+  // THE COMMIT THAT RECORDS AN AUDIT answers its checklist here, not a push later on Guards (IIIIIIIII's entry).
+  const journal = budget.recordsAudit ? readStagedBlob('docs/JOURNAL.md') : null;
+  const unanswered = auditCommitRefusal({ recordsAudit: budget.recordsAudit, journalText: journal === null ? null : `${journal}` });
+  if (unanswered !== null) {
+    process.stderr.write(`\nCommit blocked — it records a stage audit whose entry does not answer the checklist.\n\n  ${unanswered}\n\n`);
     return 1;
   }
 

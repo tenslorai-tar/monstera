@@ -440,6 +440,27 @@ export function unansweredAuditItems(journalText) {
 }
 
 /**
+ * Whether a commit that ADVANCES the watermark may land: its staged journal must answer every checklist item.
+ *
+ * {@link unansweredAuditItems} ran only in `check:docs`' whole-corpus rule, which does not run at commit, so an audit
+ * entry without its headings reached the push twice in a row and was found on Guards: `546311e2` (closed by cbd4f31b)
+ * and `3bec1d73` (run 43575256777, IIIIIIIII's entry). The commit that records an audit is the one place that entry is
+ * written, so it is checked there. Every other commit is not asked: the entry it would be asked about is a record, and
+ * a rule that judged it on every commit would demand an edit item 7 forbids.
+ *
+ * @param {{ recordsAudit: boolean, journalText: string | null }} commit `journalText` is the INDEX's journal, or `null`
+ *   where the index holds none.
+ * @returns {string | null} why the commit is refused, or `null`
+ */
+export function auditCommitRefusal({ recordsAudit, journalText }) {
+  if (!recordsAudit) return null;
+  if (journalText === null) {
+    return 'This commit advances docs/audit-watermark.json and stages no docs/JOURNAL.md, so the audit it records has no entry to answer the checklist.';
+  }
+  return unansweredAuditItems(journalText);
+}
+
+/**
  * Whether the journal's newest recorded audit and the watermark agree, as one
  * message or `null`.
  *

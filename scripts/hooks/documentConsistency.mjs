@@ -853,8 +853,10 @@ registerRule({
   // history. An audit entry is a record: the three that lost the checklist take
   // an appended correction, never an edit, so a rule that judged every entry
   // would demand the one operation item 7 forbids. Checking the newest is not a
-  // weaker rule — every audit is the newest one at the moment it is written, so
-  // nothing reaches a commit unchecked.
+  // weaker rule — every audit is the newest one at the moment it is written.
+  // This rule runs on Guards, not at commit; the commit that records an audit is
+  // checked by `auditCommitRefusal` in the pre-commit hook, and until it was, two
+  // entries in a row reached the push without their checklist.
   const unanswered = unansweredAuditItems(journal);
   if (unanswered !== null) failures.push(unanswered);
 

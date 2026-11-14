@@ -30,6 +30,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
+  auditCommitRefusal,
   auditRecordDisagreement,
   auditScope,
   BATCH,
@@ -1285,6 +1286,30 @@ try {
     `an entry is a record, so answers added later arrive under a dated correction and sit one ` +
       `heading level in. Refusing them for their depth would refuse a complete answer set for a ` +
       `property this rule holds no opinion about.`,
+  );
+
+  // AT COMMIT, the commit that records an audit (IIIIIIIII's entry, the second in a row found on Guards instead).
+  const headless = entryAnswering([]);
+  const atCommit = auditCommitRefusal({ recordsAudit: true, journalText: headless });
+  check(
+    'a commit that ADVANCES the watermark with an entry answering nothing is refused at commit, naming the items',
+    atCommit !== null && atCommit.includes(`0 of ${String(AUDIT_ITEMS.length)}`),
+    `got ${JSON.stringify(atCommit)}. The checklist ran only on Guards, so the entry reached the push twice in a row.`,
+  );
+  check(
+    'CONTROL: the same journal on a commit that records NO audit is not asked, so a record is never judged again',
+    auditCommitRefusal({ recordsAudit: false, journalText: headless }) === null,
+    'an ordinary commit was refused for an old entry, which only an edit of a record could satisfy.',
+  );
+  check(
+    'CONTROL: a commit that advances the watermark with every item answered lands',
+    auditCommitRefusal({ recordsAudit: true, journalText: entryAnswering(AUDIT_ITEMS) }) === null,
+    'a complete entry was refused, so the first case is satisfied by a gate that refuses every audit commit.',
+  );
+  check(
+    'a commit that advances the watermark and stages no journal is refused',
+    auditCommitRefusal({ recordsAudit: true, journalText: null }) !== null,
+    'an advanced watermark with no journal in the index would record an audit no entry answers.',
   );
 
   check(
