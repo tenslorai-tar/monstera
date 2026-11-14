@@ -1056,6 +1056,44 @@ checked here.
 No, in nine places (-8 to -18). Corrected since: the journal entries in 011e85fb (-10, -11, -12) and ARCHITECTURE,
 ADR-0291, ADR-0277, FEATURES and the ADR index in 73dc7d97 (-8, -9, -13, -14, -18). -15, -16 and -17 stand as recorded.
 
+### Correction, 2026-11-14 — where each finding was closed
+
+Each closure with a case names the mutation that turned it red in its commit message; where a finding closed with no
+change, the mechanism that answers it is named.
+
+- **-1** `3bec1d73`: `ReplaceFailed` carries the rename's code and names no file.
+- **-2** by the owner's decision (`92463fa5`, ADR-0279's correction): `ad8cb932` builds it, only a not-found file in a
+  folder that is there is gone, and the check reads no PDF; `735050e8` says so in the assistant's Help article.
+- **-3** `5d36aba2`: whether `decodeForTests.js` ships is asked of `shippedModules.mjs`' closure in
+  `proof:shippedmodules`, and the importer search, a second opinion, is gone.
+- **-4** `540bc192`: `--app-data` refuses a folder with no kept file.
+- **-5** no change. A rejection of the `void` block is owned by `unhandledRejections.ts` (CR-COR-12), which tells the
+  person something did not finish; and a reply after the window closed does nothing (`registries/dialogs.ts`, the
+  `DialogReports` contract), with `open` read before each new check, so at most the one in flight finishes late.
+- **-6, -7** stand as notes: -6 is every copy handler's shape, -7 is ADR-0294's accepted cost.
+- **-8, -9, -13, -14, -18** `73dc7d97`; **-10, -11, -12** `011e85fb`.
+- **-15**, recorded here: the closure list of HHHHHHHHH cites -11 at `abd1c427`, whose control failed CI run 43544069419
+  and was repaired in `cbdc3bde`, and -12 at `5049ec31`, which reddened CI until `9a92ef4c`; and -13, -14 and -16 of that
+  list were closed in documents only, with no failing case.
+- **-16**, recorded here: `cbd4f31b`'s answer to item 3 read CI's runs and not Guards' on `546311e2`, whose
+  `checkLocal.proof` red `2bd1e19e` says it read one cause of.
+- **-17**, recorded here: `6e5e1daf`'s walk, `_review/walks/help-articles/2026-11-13T00-30-47`, ran on `588c6ece` with
+  uncommitted changes (`clean: false`), which were then committed as `0ef6d1fa`; its 11 of 11 stands, the commit it
+  names does not.
+- **-19** re-run: with main's carrying of the tail removed, the built proof lost 38 of 275 saves, the first at 1,084 ms
+  inside a worker read of 4 to 1,268 ms, and failed; restored and rebuilt, 4 passed. So the control's window holds the
+  saves the guard decides on this machine; what it still cannot see is the moment the worker reaches the file's end.
+- **-20** no case added. A re-link that guarded an `/ID` document by its stamp was mutated in: the next open still lists
+  its conversations and the next session's save joins the same section, because the store keeps every guard of a
+  section's chain. A case that passes under the mutation it names would be vacuous, so none was added.
+- **-22** `722d05ea`; **-23** `3dc189ee`; **-24** `6e3137f4`.
+- **-21, -25, -26** stand as notes; -25, ADR-0295 accepted under the standing instruction, is in the owner's report.
+
+**Found while closing them.** `compositionHost.test.ts`' two LOW MEMORY cases failed in 3 of 11 runs in one batch and 0
+of 12 in another, with and without `ad8cb932`'s change, and 16 of 16 passed run interleaved. The failing run named the
+mechanism: the ten-crossing case passed its 5 s timeout, and its 20 ms memory monitor, never stopped, logged into the
+next case. **Open**: a case that times out leaves its monitor running, which no case asserts.
+
 ---
 
 ## 2026-11-14 — A read of one form placement costs about what six do: the placements' read is mostly a fixed cost
