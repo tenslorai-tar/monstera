@@ -136,6 +136,14 @@ describe('the recovery of a PROTECTED file (HHHHHHHHH-21)', () => {
     const file = await protectedSelfPointing();
     // CONTROL: as its chain stands it reads no pages even with the password, so what reads them is the rebuild.
     expect(pagesWithoutRepair(file, 'open-me')).toBe(0);
+    // AND IT IS PROTECTED: opened with no password it grants no access, so the rebuild below is one that took the
+    // password through, which is the property this case exists for (IIIIIIIII-23).
+    const unopened = openPdfFile(file, undefined);
+    try {
+      expect(unopened.access).toBeLessThanOrEqual(0);
+    } finally {
+      unopened.document.destroy();
+    }
     const { document, access } = openPdfFile(file, 'open-me');
     try {
       expect(access).toBeGreaterThan(0);
