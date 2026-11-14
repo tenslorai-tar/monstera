@@ -3,7 +3,7 @@
  * What Edit text costs before a person can type: the first read of a page's blocks, and opening a dense block.
  *
  *   node scripts/research/editOpenCost.mjs --corpus <folder> --file <n> [--rounds <n>] [--app-root <checkout>] [--profile]
- *     [--app-data <an earlier run's app-data folder>]
+ *     [--trace] [--app-data <an earlier run's app-data folder>]
  *
  * `--file` is the document's place in the folder's `.pdf` files sorted by name, so no document's name is printed or
  * written. Nothing here prints a word of a document either: a block is chosen by its outline's size, never its text.
@@ -73,6 +73,9 @@ if (appData !== undefined) {
 const walk = await startWalk('edit-open-cost', { ...appRootOption(process.argv), ...(appData === undefined ? {} : { appData }) });
 const { page, open, section, finish, step, output } = walk;
 const profiler = process.argv.includes('--profile') ? await page.context().newCDPSession(page) : undefined;
+/** `frameTimes.mjs`' categories, the ones whose events say which thread did what. */
+const TRACE_CATEGORIES = ['toplevel', 'devtools.timeline', 'disabled-by-default-devtools.timeline', 'blink.user_timing', 'v8.execute'];
+const tracer = process.argv.includes('--trace') ? await page.context().newCDPSession(page) : undefined;
 if (profiler !== undefined) {
   await profiler.send('Profiler.enable');
   await profiler.send('Profiler.setSamplingInterval', { interval: 200 });
@@ -355,6 +358,14 @@ for (let round = 1; round <= rounds; round += 1) {
     // `--profile`: a sampled CPU profile from just before the first press until the words are editable, written beside
     // the walk's pictures as `round-<n>.cpuprofile` for `cpuProfileTop.mjs`. The first press's task is most of it.
     await profiler?.send('Profiler.start');
+    // `--trace`: the same window as a Chromium timeline trace, which sees layout, style and paint, where a sampled CPU
+    // profile sees only script and left a third of the first press unaccounted for (2026-11-14). For `traceTop.mjs`.
+    if (tracer !== undefined) {
+      await tracer.send('Tracing.start', {
+        transferMode: 'ReturnAsStream',
+        traceConfig: { includedCategories: TRACE_CATEGORIES, recordMode: 'recordAsMuchAsPossible' },
+      });
+    }
     const from = await rendererNow();
     const started = Date.now();
     await openBlock(blocks.nth(largest), 'middle');
@@ -369,6 +380,19 @@ for (let round = 1; round <= rounds; round += 1) {
     if (profiler !== undefined) {
       const { profile } = await profiler.send('Profiler.stop');
       writeFileSync(join(output, `round-${String(round)}.cpuprofile`), JSON.stringify(profile));
+    }
+    if (tracer !== undefined) {
+      const complete = new Promise((done) => tracer.once('Tracing.tracingComplete', done));
+      await tracer.send('Tracing.end');
+      const { stream } = /** @type {{ stream: string }} */ (await complete);
+      let text = '';
+      for (;;) {
+        const chunk = await tracer.send('IO.read', { handle: stream, size: 1 << 20 });
+        text += chunk.base64Encoded === true ? Buffer.from(chunk.data, 'base64').toString('utf8') : chunk.data;
+        if (chunk.eof === true) break;
+      }
+      await tracer.send('IO.close', { handle: stream });
+      writeFileSync(join(output, `round-${String(round)}.trace.json`), text);
     }
     if (selected < 0) throw new Error('the box was never seen selected between the presses, so the first press has no reading');
     await page.waitForTimeout(2000);
