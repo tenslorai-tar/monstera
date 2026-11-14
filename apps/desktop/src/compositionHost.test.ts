@@ -13,9 +13,9 @@ import {
 import { prepareSignature } from '@monstera/kernel/engine';
 import { type BoxedCharacter, type ComposeSkip, type FormPath, blockEditOf, replacementFieldsOf } from '@monstera/contract';
 import { type DocVersion, asDocId, asDocVersion, err, ok } from '@monstera/shared';
-import { afterAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, describe, expect, it, onTestFinished, vi } from 'vitest';
 
-import { type EngineHostPlatform, createShellDependencies } from './composition.js';
+import { type EngineHostPlatform, createShellDependencies as composeShell } from './composition.js';
 import type { ConverterExecutablePath } from './containedProgram.js';
 import type { BakedAppInfo as AppInfo } from './contractHandlers.js';
 import type { ConverterPlatform } from './converterSession.js';
@@ -95,6 +95,22 @@ const negativePath = join(scratch, 'containment-negative');
 writeFileSync(negativePath, 'bytes an uncontained reader would have read\n');
 
 /** Records what the platform was asked to do, so a case can assert a call. */
+/**
+ * The composition root, SHUT DOWN WHEN ITS CASE FINISHES, passed or failed or timed out. A composition starts a memory
+ * sampler (`watchMemoryPressure`) that only `shutdown` stops, and no case here called it: every case left one running for
+ * the rest of the file, reading that case's own `available`. A case that ended with it low, a timeout mid-crossing, had
+ * its sampler log `memory-low` into the next case's capture of stderr (the two LOW MEMORY cases' failure, 2026-11-14).
+ */
+function createShellDependencies(
+  composition: Parameters<typeof composeShell>[0],
+  /** Why this composition is NOT shut down: a case that leaves a call unanswered for good, which a shutdown would wait on. */
+  leftRunning?: string,
+): ReturnType<typeof composeShell> {
+  const made = composeShell(composition);
+  if (leftRunning === undefined) onTestFinished(() => made.shutdown());
+  return made;
+}
+
 interface PlatformSpy {
   readonly platform: EngineHostPlatform;
   readonly harness: HostHarness;
@@ -1673,6 +1689,8 @@ describe('the composition root, with BOTH engine hosts', () => {
     const mupdf = platformAnswering(serialisingEngine());
     const second = platformAnswering(pdfiumPeer([]).peer);
     let available = 90;
+    /** How many times the sampler has read memory, so a wait ends when it has seen a reading rather than after a guess. */
+    let reads = 0;
     const written = vi.spyOn(process.stderr, 'write');
     const lows = (): number =>
       written.mock.calls.filter(([line]) => String(line).startsWith('MONSTERA_SHELL_FAILURE memory-low: available memory fell')).length;
@@ -1683,7 +1701,14 @@ describe('the composition root, with BOTH engine hosts', () => {
       pickDocument: () => Promise.resolve(aDocument('low.pdf')),
       enginePlatform: mupdf.platform,
       pdfiumPlatform: second.platform,
-      memoryPressure: { intervalMs: 20, belowFraction: 0.1, read: () => ({ available: available * MIB, total: 100 * MIB }) },
+      memoryPressure: {
+        intervalMs: 20,
+        belowFraction: 0.1,
+        read: () => {
+          reads += 1;
+          return { available: available * MIB, total: 100 * MIB };
+        },
+      },
       sendEvent: (event) => {
         pushed.push(event);
       },
@@ -1697,9 +1722,14 @@ describe('the composition root, with BOTH engine hosts', () => {
     // between each, and the renderer's memory released (the renewal's own call, ADR-0252) halfway through.
     for (let crossing = 1; crossing <= 10; crossing += 1) {
       available = 5;
-      await vi.waitFor(() => {
-        expect(lows()).toBe(crossing);
-      });
+      // POLLED AT THE SAMPLER'S OWN PACE: the default 50 ms poll and a fixed 60 ms sleep below were most of a crossing's
+      // time, ten of them past the 5 s limit on a loaded machine (2026-11-14).
+      await vi.waitFor(
+        () => {
+          expect(lows()).toBe(crossing);
+        },
+        { interval: 5 },
+      );
       const edited = await handlers['document.execute']({
         docId,
         command: { kind: 'replaceTextObject', page: 0, ...replacementFieldsOf([{ index: 2, text: `hi ${String(crossing)}` }]), version },
@@ -1708,7 +1738,15 @@ describe('the composition root, with BOTH engine hosts', () => {
       version = edited.value.version;
       if (crossing === 5) await handlers['app.releaseMemory']({});
       available = 90;
-      await new Promise((resolve) => setTimeout(resolve, 60));
+      // BACK OVER THE LINE ONCE THE SAMPLER HAS READ IT: a reading after this assignment is a reading of 90, since a read is
+      // one synchronous call, so the spell has ended when one more read has happened. A sleep only hoped it had.
+      const before = reads;
+      await vi.waitFor(
+        () => {
+          expect(reads).toBeGreaterThan(before);
+        },
+        { interval: 5 },
+      );
     }
     // TEN SPELLS, each answered by giving memory back and logged with its figure; and nothing pushed to the person.
     expect(lows()).toBe(10);
@@ -1779,13 +1817,21 @@ describe('the composition root, with BOTH engine hosts', () => {
     const written = vi.spyOn(process.stderr, 'write');
     const logged = (): string[] =>
       written.mock.calls.map(([line]) => String(line)).filter((line) => line.startsWith('MONSTERA_SHELL_FAILURE memory-low'));
-    const { handlers } = createShellDependencies({
-      ...harnessSurfaces('the composition-host test'),
-      appInfo,
-      pickDocument: () => Promise.resolve(aDocument('busy.pdf')),
-      enginePlatform: mupdf.platform,
-      pdfiumPlatform: second.platform,
-      memoryPressure: { intervalMs: 20, belowFraction: 0.1, read: () => ({ available: available * MIB, total: 100 * MIB }) },
+    const { handlers } = createShellDependencies(
+      {
+        ...harnessSurfaces('the composition-host test'),
+        appInfo,
+        pickDocument: () => Promise.resolve(aDocument('busy.pdf')),
+        enginePlatform: mupdf.platform,
+        pdfiumPlatform: second.platform,
+        memoryPressure: { intervalMs: 20, belowFraction: 0.1, read: () => ({ available: available * MIB, total: 100 * MIB }) },
+      },
+      'its second edit is held in the PDFium host for good, which a shutdown would wait on to close the document',
+    );
+    // ITS SAMPLER RUNS ON, so its reading goes back over the line once the case ends: a sampler left reading low logged
+    // `memory-low` into the next case's capture of stderr.
+    onTestFinished(() => {
+      available = 90;
     });
     const opened = await handlers['document.open']({});
     if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
