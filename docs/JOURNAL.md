@@ -892,6 +892,102 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-11-14 — Stage audit of `658e14df..7b03d0cf` — findings IIIIIIIII-1 to IIIIIIIII-26
+
+Owed before the board reader's fix could be committed: that commit would have taken the range to 201 files.
+`npm run audit:scope`: 48 commits, 198 files; 6 proofs added, 95 modified, none removed.
+
+**Method and coverage.** Three read-only reviewers, one slice each: the proofs (every modified proof's removed lines,
+the five whose deletions the range diff hides read through `git log -p`, and the six added ones for their controls),
+the non-test source and the instruments, and the documents and all 48 commit messages. **This author re-read the
+mediums at the lines they name, and each holds** (IIIIIIIII-1, -2, -8, -9 and -13 by their lines; -10 and -11 against
+the entries). The rest are the reviewers' readings, each naming its lines, not re-read here. **Nothing was run for this
+audit**, and the reviewers ran no mutation; the mutation results quoted are the commits' own. Not reached: `paint.ts`
+past its batching diff, `EditorSurface.tsx`, `App.tsx`, `historyRewriteWorker.ts`, four research instruments
+(`buildFreshness`, `historyAppendCost`, `historyFirstWriteCost`, `renameOverCost`) for their controls, every ms figure
+in the journal against its walk (the walks' reports carry no timings), and the internal-error log's format.
+
+**No check was loosened without an anchor.** The UI tests' +2/−2 diffs are one swap, `createClient(channels, X)` to
+`clientOver(X)`, read line by line. One check was loosened with two anchors (-3), and one compile case moved to
+construction with the move stated in its comment (-21). **No high finding.**
+
+**Medium.**
+
+- **IIIIIIIII-1.** `settingsFile.ts:247-251`'s `replaceWithRetry` throws `Could not replace ${to} …` with no `code`,
+  so `pathlessCause` passes the message through and the history or ledger path, account folder included, reaches the
+  log (`historyStore.ts:253`, `:441`, `:594`; `history-check-failed`). c194797b's sweep closed the worker's messages
+  and `PdfFileRefused` and not this shared helper; its message also calls a history file *the settings change*.
+- **IIIIIIIII-2.** The 24-hour check removes a present PDF's history when its file refuses to open twice a day apart:
+  `stat` found it, any refusal of `openFile(path, 'r')` (a share lock's EBUSY or EPERM) becomes `PdfFileRefused`,
+  `failed`, and `historyCheck.ts:90` treats `failed` as absent. That is ADR-0279 Decision 6 as written, and it
+  contradicts the owner's *preserve, never drop* and 1d029118's own rule that nothing learnt decides nothing. The fix
+  is the ADR's first, in a dated correction.
+- **IIIIIIIII-8.** `docs/ARCHITECTURE.md:1909-1910` says *a save appends and reads nothing*, false since 3cf64def (a
+  session's first write walks the record heads and cuts a torn tail). dc2fb3ff edited the same paragraph and left it.
+- **IIIIIIIII-9.** ADR-0291's correction of 2026-11-13 is headed *Decision 7 built as written*, and FEATURES row 212
+  and the closure list (88458b50) repeat it, while its own line 235 says what is cut is still the file on disk.
+  0d22d4af named two differences; one was closed.
+- **IIIIIIIII-10.** The 2026-11-13 entry's *about 125 ms added* to click until editable stands uncorrected, though
+  9d07d901 measured the same reading on the same branch at 17 ms (9 to 191), 146 and 78 ms and claimed no change.
+- **IIIIIIIII-11.** This author's entry of today, *a read of one form placement costs about what six do*, concludes a
+  fixed cost from page 1 against page 2, which also differ in how much text their placements hold: the axis this
+  morning's correction had just named, and the comparison with the page's own runs it had withdrawn. One axis wide
+  where the evidence varies on two. Its sibling (07eaa1c4) says *every press of Edit text reads two pages*, observed on
+  document 2 at one zoom.
+
+**Low.**
+
+- **IIIIIIIII-3.** `containedProgram.test.ts:181`'s `TEST_ONLY_STARTERS` exemption is anchored by an importer search
+  matching static `from '…/decodeForTests.js'` in three roots: a dynamic import, or an importer in `ui`, `shared` or
+  `scripts`, passes (efeeb406 defers the module closure that would close it).
+- **IIIIIIIII-4.** `editOpenCost.mjs --app-data` prints the kept-catalogue count and launches at zero, so a launch
+  with nothing to take still reads as a second one; and a file present is not the app taking it.
+- **IIIIIIIII-5.** The Signatures window's checks (`documentCommands.ts`, `onReport`) run in a `void` async block: a
+  transport throw is an unhandled rejection, and `open` is checked before each await and not after, so a reply can
+  land after the window closed.
+- **IIIIIIIII-12.** The kept-catalogue entry (701642e7) says the first read stays about 2 s *in every round of both
+  launches* three sentences after round 1's 3,684 ms, and its timer table names no walk folder.
+- **IIIIIIIII-13.** ADR-0277:14 still says *history is off by default*, and its last correction that ADR-0279 is
+  *built, on its branch*: 37c1f2de corrected ADR-0093 and the index, the instance and not the class.
+- **IIIIIIIII-14.** FEATURES row 269 says history is *on `work/cloud-62-history-per-pdf`*, merged since 10c93859, and
+  says nothing of the locked-history line 506ceb81 added.
+- **IIIIIIIII-15.** The closure list (88458b50) cites -11 at abd1c427 and -12 at 5049ec31, which reddened CI until
+  cbdc3bde and 9a92ef4c, unnoted; and it says every closure has a failing case unless stated, while -13, -14 and -16
+  were documents only.
+- **IIIIIIIII-16.** cbd4f31b's answer to item 3 reads CI's runs and not Guards' masked `checkLocal.proof` red on
+  546311e2, which 2bd1e19e says it read only one cause of.
+- **IIIIIIIII-17.** 6e5e1daf cites a Help-articles walk *on the build of 0ef6d1fa*; its report stamps 588c6ece with
+  `clean: false`.
+- **IIIIIIIII-18.** `docs/DECISIONS/README.md` lists 0295 above 0294.
+- **IIIIIIIII-19.** `historyRewriteBuilt.proof.mjs:138`'s control asks for saves spread across the worker's read and
+  cannot see when the worker reaches the file's end, which is when a save becomes one the guard decides; and after
+  cbdc3bde changed the control only the timer mutation was re-run, not the one removing the guard.
+- **IIIIIIIII-20.** `documentHistory.test.ts:48`: the re-link of `history.saved` on a PDF with an `/ID` is exercised
+  by no case since the vacuous one was replaced.
+
+**Notes.** -6: Save this signed version's `write-failed` cause is kept in the return and logged by nothing
+(`contractHandlers.ts:3499`), as for every copy handler. -7: `closedHereClient` records a close before it is sent, so
+a close refused as busy leaves later real not-opens shown as nothing (ADR-0294 accepts it). -21: `contract.proof.mjs`
+moved *a stub missing a channel does not compile* to construction through `clientOver`, stated. -22: the `sharp`
+import scan's pattern takes single quotes only (`decodeForTests.test.ts:48`). -23: `mupdfOpen.test.ts:134`'s fixture
+comment claims an open without the password fails, which nothing asserts. -24: `pathlessCause` prints an object with
+no code and no message through `JSON.stringify`, which would carry a `path` field. -25: ADR-0295 was accepted under
+the standing instruction of 2026-11-13 with no new decision of the owner's; the B4 order holds (1fb53286 before
+0f807363). -26: ADR-0004's node-forge addition rests on a `git grep` that found nothing, with no positive control; and
+the torn-tail first-write figures (one run) and 9d07d901's layout figures (one round's profile) are single samples.
+
+**Checked and holding.** 806f7513 writes only the bytes it checked, re-hashed before the rename; 5049ec31 offers the
+save only where `#checkedCut` verified; Delete's rewrite is serial per file, discards a rewrite a Clear outran and
+reads the tail from the worker's last whole record, synchronous from its await to the rename; `docMdpOf` is the one
+reader; node-forge is exact 1.4.3 in both manifests and the lockfile; the JOURNAL and ADR diffs are additions only; no
+command or dialog was added, so no article was owed; no competitor name is in the range.
+
+**Root cause or workaround (item 1).** Root cause: 3cf64def, 1769f012, 04ece345, 27ba89a7, ac187bfa, 806f7513,
+1d029118, c5fc2a75, b4e57bf8, 74fc8ec0, 9d07d901. Partial: c194797b (-1). Stated workarounds: 1ecb83bd (cause outside
+the repository, sharp's own disclaimer) and efeeb406 (a named exception standing for a deferred closure, -3).
+
+---
+
 ## 2026-11-14 — A read of one form placement costs about what six do: the placements' read is mostly a fixed cost
 
 Temporary timers in `document.textBlocks` (not committed; each step's start and end from the read's entry, per page),
