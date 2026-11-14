@@ -918,6 +918,12 @@ answers in 3–5 ms later. The shell log shows what it waits behind, the open's 
 read by PDFium cost four to eight times the page's own runs. That is the next thing to measure, outside the app,
 before anything is changed.
 
+**Correction, 2026-11-14, same day.** *Four to eight times* compares unlike things and reads as a fault it does not
+show: this page draws its words inside form objects (`blockFacesCost.mjs`' header says so of document 2), so the six
+placements hold most of the page's text and its own runs hold little. What else differs about the odd row is the amount
+of text, and nothing above counts the runs in each. The figures stand; the reading that the placements' read is slow
+for what it reads is withdrawn until a measurement counts what each read returns.
+
 ---
 
 ## 2026-11-13 — The first letter is not held on this branch, and click until editable is slower than it was
