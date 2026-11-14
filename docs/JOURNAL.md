@@ -1013,6 +1013,12 @@ fixed (writing the built document across, PDFium opening it, the read itself) wa
 reading, inside the PDFium host, before anything is changed. The first row is the wait behind the open's own reads that
 the entry of this morning recorded.
 
+**Correction, 2026-11-14, same day (IIIIIIIII-11).** *Mostly a fixed cost* compares page 1 with page 2, which differ in
+how much text their placements hold as well as in how many there are, and nothing here counts the runs either read
+returns: the axis this morning's correction named, one entry further on. The same goes for setting the placements'
+read beside the page's own runs, which that correction withdrew. The timings stand; the reading that most of the call
+does not grow with what it reads is withdrawn until a measurement counts what each read returns.
+
 ---
 
 ## 2026-11-14 — Asking for a page's form placements beside its own runs reads no faster, so it is not kept
@@ -1033,6 +1039,10 @@ reads every visible page in Edit text (`App.tsx`'s mode), so each press of Edit 
 requests, and the second ends 0.5 to 1.2 s after the first. Why overlapping the two hosts' steps within one read saves
 nothing was not measured; the timers that would split it were not run on this build. The next reading needs them per
 request, page by page, before any change to the order of reads.
+
+**Correction, 2026-11-14, same day (IIIIIIIII-11).** *Every press of Edit text sends two requests* was observed on
+document 2 at the instrument's one zoom. The renderer reads every visible page, so how many reads a press sends depends
+on the document and the zoom; two is this document's, not every press's.
 
 ---
 
@@ -1068,6 +1078,11 @@ placements hold most of the page's text and its own runs hold little. What else 
 of text, and nothing above counts the runs in each. The figures stand; the reading that the placements' read is slow
 for what it reads is withdrawn until a measurement counts what each read returns.
 
+**Correction, 2026-11-14 (IIIIIIIII-12).** *About 2 s in every round of both launches (1,979 to 2,095 ms)* is wrong
+for round 1 of the first launch, which this entry gives as 3,684 ms three sentences earlier: the range is rounds 2 and
+3 of the first launch and every round of the second. The timer table names no walk folder: it was read on a build of
+this tree with temporary timers whose run's folder this entry did not record, so its figures cannot be traced to one.
+
 ---
 
 ## 2026-11-13 — The first letter is not held on this branch, and click until editable is slower than it was
@@ -1095,6 +1110,12 @@ after the font-name fix, 143 ms now, while the release in this same pair reads 1
 `80b65fe4` added about 125 ms between the press that opens the words and the editor taking them. **Open, not yet
 investigated:** the range holds the three merged cloud branches and the closed-document rule, and a profile of that
 press on both builds is the next reading.
+
+**Correction, 2026-11-14 (IIIIIIIII-10).** *Added about 125 ms* reads one pair as a change, and later readings on this
+branch do not hold it: 9d07d901's message gives click until editable at 17 ms (9 to 191) before its change, 78 ms (20
+to 229) after it, and 146 ms (14 to 293) in a run between, and the A/B of 2026-11-14 gives medians of 60 and 56 ms
+(`_review/walks/edit-open-cost/2026-11-14T06-43-25` and `06-48-03`). The spread of this one reading covers every
+figure above, so no regression is established and none is open; the 300 ms row holds in every reading.
 
 ---
 
