@@ -50,7 +50,6 @@ import {
   placeImage,
   signDocument,
   type SignedEditing,
-  CHECK_SIGNATURES_COMMAND_ID,
   snapshotRegion,
   findCommand,
   movePageCommand,
@@ -510,7 +509,7 @@ import { ContextPanel } from './surfaces/ContextPanel.js';
 import { DocumentBody } from './surfaces/DocumentBody.js';
 import { PanelPresence } from './panelPresence.js';
 import { DocumentPanel, type DocumentPanelProps } from './surfaces/DocumentPanel.js';
-import { CertificationLine, type LineCommand } from './surfaces/CertificationLine.js';
+import { CertificationLine, type LineCommands } from './surfaces/CertificationLine.js';
 import { composing, controlOwnsChord, dispatchChord, fieldOwnsChord, shortcutsFor } from './surfaces/shortcuts.js';
 import { RecentFiles } from './RecentFiles.js';
 import { CrashReportOffer } from './CrashReportOffer.js';
@@ -5334,19 +5333,9 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
    * LAYOUT, so a document brought forward is already laid out exactly as it will be shown and nothing re-fits.
    * The rest is the layer's own store or nothing (`DocumentLayer`).
    */
-  // THE CERTIFICATION LINE'S BUTTON (ADR-0291's amendment): the registered *Check signatures*, run with the context of
-  // the document on show, its title the command's own — never a second way to check. Stable, so no layer re-renders.
-  const checkSignatures = useMemo<LineCommand | undefined>(() => {
-    const target = registry.get(CHECK_SIGNATURES_COMMAND_ID);
-    if (target === undefined) return undefined;
-    return {
-      title: target.title,
-      run: () => {
-        const at = commandContextRef.current;
-        if (at !== undefined) void target.run(at);
-      },
-    };
-  }, [registry]);
+  // THE CERTIFICATION LINE'S COMMANDS (ADR-0295): what is placed on it, projected by the line from the registry with the
+  // context of the document on show. Only that layer is handed them, and it takes a new element on every render anyway.
+  const lineCommands = useMemo<LineCommands>(() => ({ registry, context }), [registry, context]);
 
   const background = useMemo<BackgroundLayer>(
     () => ({
@@ -5544,7 +5533,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
           store={stores.get(tab.docId)}
           background={tab.docId === open.docId ? undefined : background}
           onArrived={tab.docId === arriving ? arrived : undefined}
-          checkSignatures={tab.docId === open.docId ? checkSignatures : undefined}
+          lineCommands={tab.docId === open.docId ? lineCommands : undefined}
           parked={parked.has(tab.docId)}
         >
         {/* THE ELEMENT ONLY FOR THE LAYER ON SHOW: a layer behind draws its own, and handed this one too it would
@@ -6108,7 +6097,7 @@ const DocumentLayer = memo(function DocumentLayer({
   onArrived,
   parked,
   children,
-  checkSignatures,
+  lineCommands,
 }: {
   readonly tab: OpenDocument;
   readonly store: DocumentStore | undefined;
@@ -6127,8 +6116,8 @@ const DocumentLayer = memo(function DocumentLayer({
   readonly parked: boolean;
   /** The `PageCanvas` element `App` builds for the document on show, and only for it. */
   readonly children?: ReactElement | undefined;
-  /** The certification line's *Check signatures*, for the layer on show; behind, the line is hidden with the layer. */
-  readonly checkSignatures?: LineCommand | undefined;
+  /** The certification line's commands (ADR-0295), for the layer on show; behind, the line is hidden with the layer. */
+  readonly lineCommands?: LineCommands | undefined;
 }): ReactElement {
   const state = useSyncExternalStore(store?.subscribe ?? NO_DOCUMENT_SUBSCRIBE, () => store?.getState());
   const behind = background !== undefined;
@@ -6145,7 +6134,7 @@ const DocumentLayer = memo(function DocumentLayer({
       inert={behind}
     >
       {/* THE CERTIFICATION LINE (ADR-0291's amendment), this document's own, above its pages: a row that does not grow. */}
-      {state?.certificationLine == null ? null : <CertificationLine check={checkSignatures} line={state.certificationLine} />}
+      {state?.certificationLine == null ? null : <CertificationLine commands={lineCommands} line={state.certificationLine} />}
       <ErrorBoundary
         fallback={({ reset }) => (
           <ViewProblem

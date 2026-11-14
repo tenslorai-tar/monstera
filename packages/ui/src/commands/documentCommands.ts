@@ -5434,7 +5434,7 @@ export async function readPageContentBoxes(
  * answer is decide whether to trust the document, which is a judgement rather
  * than a command.
  */
-/** *Check signatures*' id, which the certification line runs it by (ADR-0291's amendment). */
+/** *Check signatures*' id. The certification line draws it by its placement, never by this (ADR-0295). */
 export const CHECK_SIGNATURES_COMMAND_ID = 'document.check-signatures';
 
 export function signaturesCommand(
@@ -5449,7 +5449,11 @@ export function signaturesCommand(
     feedback: RESULT_DIALOG,
     icon: 'BadgeCheck',
     title: SIGNATURES_COMMAND_TITLE,
-    placements: [{ surface: 'ribbon', section: 'protect', group: GROUP_SIGNATURES, order: 20 }],
+    placements: [
+      { surface: 'ribbon', section: 'protect', group: GROUP_SIGNATURES, order: 20 },
+      // AND ON A CERTIFIED DOCUMENT'S LINE (ADR-0295), which draws what is placed on it and names no command.
+      { surface: 'certification-line', order: 10 },
+    ],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;

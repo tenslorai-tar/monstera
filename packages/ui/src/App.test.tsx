@@ -3378,6 +3378,7 @@ describe('App', () => {
     const surfaces = {
       ribbon: [projections.ribbonModel(everything, context), projections.railModel(everything, context)],
       properties: [projections.propertiesModel(everything, context)],
+      certificationLine: [projections.certificationLineModel(everything, context)],
       quickToolbar: [projections.quickToolbarModel(everything, context)],
       contextMenu: menus.map((menu) => projections.contextMenuModel(everything, context, menu)),
       startScreen: [projections.startScreenModel(everything, context)],
@@ -3438,6 +3439,7 @@ describe('App', () => {
       ribbonModel: (registry) => projections.ribbonModel(registry, CONTEXT),
       railModel: (registry) => projections.railModel(registry, CONTEXT),
       propertiesModel: (registry) => projections.propertiesModel(registry, CONTEXT),
+      certificationLineModel: (registry) => projections.certificationLineModel(registry, CONTEXT),
       showMeModel: (registry) => projections.showMeModel(registry, CONTEXT),
       quickToolbarModel: (registry) => projections.quickToolbarModel(registry, CONTEXT),
       contextMenuModel: (registry) => MENUS.map((menu) => projections.contextMenuModel(registry, CONTEXT, menu)),

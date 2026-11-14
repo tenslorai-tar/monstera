@@ -124,6 +124,7 @@ export type Placement =
   | MenuBarCommandsPlacement
   | RailPlacement
   | PropertiesPlacement
+  | CertificationLinePlacement
   | MenuBarPlacement;
 
 /** The menu bar's own menus (ADR-0107); the section menus between View and Window are the ribbon's sections. */
@@ -164,6 +165,16 @@ export type MenuBarSubmenu = 'recent';
  */
 export interface PropertiesPlacement {
   readonly surface: 'properties';
+  readonly order: number;
+}
+
+/**
+ * A button on the line at the top of a certified document, and of its copy
+ * ([ADR-0295](../../../../docs/DECISIONS/0295-the-certification-line-projects-the-commands-placed-on-it.md),
+ * the line ADR-0291's amendment built). *Check signatures* is drawn there; the line names no command itself.
+ */
+export interface CertificationLinePlacement {
+  readonly surface: 'certification-line';
   readonly order: number;
 }
 

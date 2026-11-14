@@ -186,6 +186,7 @@ function railOrder(placement: Placement): number | undefined {
     case 'status-bar':
     case 'menu-bar-commands':
     case 'properties':
+    case 'certification-line':
     case 'menu-bar':
       return undefined;
     default: {
@@ -223,6 +224,7 @@ function propertiesOrder(placement: Placement): number | undefined {
     case 'status-bar':
     case 'menu-bar-commands':
     case 'rail':
+    case 'certification-line':
     case 'menu-bar':
       return undefined;
     default: {
@@ -230,6 +232,21 @@ function propertiesOrder(placement: Placement): number | undefined {
       return unhandled;
     }
   }
+}
+
+/**
+ * The commands on a certified document's line, and its copy's
+ * ([ADR-0295](../../../../docs/DECISIONS/0295-the-certification-line-projects-the-commands-placed-on-it.md)): *Check
+ * signatures*, by its placement and never by its id.
+ */
+export function certificationLineModel(registry: CommandRegistry, context: CommandContext): readonly OrderedEntry[] {
+  const entries: OrderedEntry[] = [];
+  for (const command of registry.available(context)) {
+    for (const placement of command.placements) {
+      if (placement.surface === 'certification-line') entries.push({ command, order: placement.order });
+    }
+  }
+  return ordered(entries);
 }
 
 /**
@@ -282,6 +299,7 @@ function ribbonSlot(
     case 'menu-bar-commands':
     case 'rail':
     case 'properties':
+    case 'certification-line':
     case 'menu-bar':
       return undefined;
     default: {
@@ -333,6 +351,7 @@ function quickToolbarOrder(placement: Placement): number | undefined {
     case 'menu-bar-commands':
     case 'rail':
     case 'properties':
+    case 'certification-line':
     case 'menu-bar':
       return undefined;
     default: {
@@ -377,6 +396,7 @@ function contextMenuOrder(placement: Placement, menu: MenuContext): number | und
     case 'menu-bar-commands':
     case 'rail':
     case 'properties':
+    case 'certification-line':
     case 'menu-bar':
       return undefined;
     default: {
@@ -424,6 +444,7 @@ function startScreenSlot(
     case 'menu-bar-commands':
     case 'rail':
     case 'properties':
+    case 'certification-line':
     case 'menu-bar':
       return undefined;
     default: {
@@ -492,6 +513,7 @@ function statusBarSlot(placement: Placement): { readonly gap: StatusBarGap; read
     case 'menu-bar-commands':
     case 'rail':
     case 'properties':
+    case 'certification-line':
     case 'menu-bar':
       return undefined;
     default: {
@@ -543,6 +565,7 @@ function menuBarCommandsSlot(placement: Placement): MenuBarCommandsPlacement | u
     case 'status-bar':
     case 'rail':
     case 'properties':
+    case 'certification-line':
     case 'menu-bar':
       return undefined;
     default: {
@@ -700,6 +723,7 @@ function menuBarSlot(placement: Placement): MenuBarPlacement | undefined {
     case 'menu-bar-commands':
     case 'rail':
     case 'properties':
+    case 'certification-line':
       return undefined;
     default: {
       const unhandled: never = placement;

@@ -119,6 +119,7 @@ export class CommandAnswers {
 export const SURFACE_PLACEMENTS = {
   ribbon: ['ribbon', 'rail'],
   properties: ['properties'],
+  certificationLine: ['certification-line'],
   quickToolbar: ['quick-toolbar'],
   contextMenu: ['context-menu'],
   startScreen: ['start-screen'],

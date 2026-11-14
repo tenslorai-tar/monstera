@@ -321,6 +321,7 @@ const DRAWS_A_GLYPH: ReadonlySet<SurfaceId> = new Set<SurfaceId>([
   // §10.4: "16 px primary controls (rail …)" — the rail's foot draws the command's glyph (ADR-0098).
   'rail',
   // NOT `properties`: v5-02 draws the Properties tab's foot as two text buttons, Reply and Delete.
+  // NOT `certification-line`: the line draws *Check signatures* as a quiet text button (ADR-0295).
 ]);
 
 /** Whether a command exists in a context: its `when`, and every command without one. The one rule `available` and `availableById` take. */
