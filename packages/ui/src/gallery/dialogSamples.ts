@@ -193,6 +193,19 @@ const SIGNATURES = [
   },
 ];
 
+/** Twelve signatures, the Signatures window's long state. */
+const LONG_SIGNATURES = Array.from({ length: 12 }, (_unused, at) => ({
+  signer: `Approver ${String(at + 1)}`,
+  organisation: 'Example Holdings International Limited, Finance and Audit Division',
+  reason: prose(200).slice(0, 200),
+  location: 'Head office, second floor meeting room',
+  notBefore: '2026-01-15T00:00:00Z',
+  notAfter: '2027-01-15T00:00:00Z',
+  coversDocument: at !== 3,
+  coversWholeFile: at === 0,
+  signedThrough: 18360 + at * 1024,
+}));
+
 const TABLE = {
   rows: [
     [
@@ -684,24 +697,17 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'scan-locked', props: { reason: 'scan-locked' } },
   ],
   'dialog.sign-problem': [{ state: 'opened', props: { reason: 'wrong-passphrase' } }],
+  // EVERY SIGNED VERSION CHECKED AND FOUND (ADR-0291 Decision 7): each sample draws every button it can, as before the
+  // checks, and the body still offers none on a signature that covers the whole file.
   'dialog.signatures': [
-    { state: 'opened', props: { signatures: SIGNATURES, unreadable: false } },
-    { state: 'empty', props: { signatures: [], unreadable: false } },
+    { state: 'opened', props: { signatures: SIGNATURES, unreadable: false, verified: SIGNATURES.map((each) => each.signedThrough) } },
+    { state: 'empty', props: { signatures: [], unreadable: false, verified: [] } },
     {
       state: 'long',
       props: {
-        signatures: Array.from({ length: 12 }, (_unused, at) => ({
-          signer: `Approver ${String(at + 1)}`,
-          organisation: 'Example Holdings International Limited, Finance and Audit Division',
-          reason: prose(200).slice(0, 200),
-          location: 'Head office, second floor meeting room',
-          notBefore: '2026-01-15T00:00:00Z',
-          notAfter: '2027-01-15T00:00:00Z',
-          coversDocument: at !== 3,
-          coversWholeFile: at === 0,
-          signedThrough: 18360 + at * 1024,
-        })),
+        signatures: LONG_SIGNATURES,
         unreadable: false,
+        verified: LONG_SIGNATURES.map((each) => each.signedThrough),
       },
     },
   ],
