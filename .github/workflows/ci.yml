@@ -1026,6 +1026,12 @@ jobs:
       - name: Prove the composition root's ceiling is ADR-0007's
         run: node scripts/ci/annotate.mjs scripts/proofs/composition.proof.mjs
 
+      # DELETE'S REWRITE ON THE SHIPPED WORKER (HHHHHHHHH-11): the built store and `historyRewriteWorker.js`, with saves
+      # landing across the whole Delete, every one kept. The tests cannot load the build, so this is where the thread,
+      # its answer, the tail main reads after it and the rename run together.
+      - name: Prove Delete's rewrite on the built worker keeps every save made while it runs
+        run: node scripts/ci/annotate.mjs scripts/proofs/historyRewriteBuilt.proof.mjs
+
       # A process tree is ended whole, each process by its own id. Guards runs this file on Linux, where the two live
       # cases (a launched process's detached child survives the launched process alone; endTree ends both) cannot
       # run, so the Windows leg runs them and refuses to pass without them.

@@ -243,6 +243,7 @@
     "proof:retrytransient": "node scripts/proofs/retryTransient.proof.mjs",
     "proof:osvquery": "node scripts/proofs/osvQuery.proof.mjs",
     "proof:historyrange": "node scripts/proofs/historyRange.proof.mjs",
+    "proof:historyrewritebuilt": "node scripts/proofs/historyRewriteBuilt.proof.mjs",
     "proof:fetchverified": "node scripts/proofs/fetchVerified.proof.mjs",
     "proof:pinnedtree": "node scripts/proofs/pinnedTree.proof.mjs",
     "proof:onlyofficefontcache": "node scripts/proofs/onlyofficeFontCache.proof.mjs",

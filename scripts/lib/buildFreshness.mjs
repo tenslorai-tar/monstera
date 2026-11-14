@@ -793,6 +793,8 @@ export const ARTEFACT_EDGES = {
   'proof:pdflibprotected': PDF_LIB_PROTECTED,
   // THE READER CHANNEL'S TEARDOWN on the shipped thread, which used to abort the process when it terminated it.
   'proof:readerdispose': READER_DISPOSE,
+  // DELETE'S REWRITE ON THE SHIPPED WORKER, with saves landing while it reads (HHHHHHHHH-11).
+  'proof:historyrewritebuilt': HISTORY_DELETE,
   // THE ENGINE HOST'S WIN32 HARDENING on the shipped surfaces (the code review of 2026-10-03).
   'proof:hosthardening': HOST_HARDENING,
   // THE PACKAGE'S MODULE CLOSURE, walked over the built `dist/`s it takes modules from (decision E).
