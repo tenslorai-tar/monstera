@@ -42,6 +42,10 @@
  *   node scripts/ci/board.mjs --verbose         one line per poll as well
  *   node scripts/ci/board.mjs --once            one look, no waiting
  *   node scripts/ci/board.mjs --sha <40 hex>    another commit, full sha only
+ *   node scripts/ci/board.mjs --branch main     the runs of that branch's push: main's own run of a sha it was moved to
+ *
+ * The branch defaults to the one checked out. A sha main was moved to has runs on the branch AND on main, and the
+ * two can differ, so main's read names it.
  *
  * **No positional sha, and that is the point** (finding FFFF-6). This used to
  * take one and accept it at seven characters — a length `?head_sha=` matches
@@ -143,6 +147,11 @@ function headSha() {
   return execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
 }
 
+/** The branch checked out, `''` on a detached HEAD — git's answer, judged by {@link boardTarget} like the sha. */
+function headBranch() {
+  return execFileSync('git', ['branch', '--show-current'], { encoding: 'utf8' }).trim();
+}
+
 /**
  * Ends one look that reached no verdict: prints the library's line, on stdout like every verdict, and answers its code.
  *
@@ -157,7 +166,7 @@ function concludeOnce(sha, look) {
 }
 
 async function main() {
-  const { sha, once } = boardTarget(process.argv.slice(2), { headSha: headSha() });
+  const { sha, branch, once } = boardTarget(process.argv.slice(2), { headSha: headSha(), headBranch: headBranch() });
 
   /** @type {Map<number, number>} */
   const seen = new Map();
@@ -208,7 +217,7 @@ async function main() {
       continue;
     }
 
-    const { verdict, reason, green } = boardVerdict(answer.runs, { sha, seen });
+    const { verdict, reason, green } = boardVerdict(answer.runs, { sha, branch, seen });
     trace(`  poll ${String(attempt)}: ${verdict.toUpperCase()} — ${reason}\n`);
 
     if (verdict === 'complete') {
@@ -223,7 +232,7 @@ async function main() {
       // was read off a HUMAN-READABLE SUMMARY rather than off the data, and it
       // lived in this shell, which has no proof, rather than in the module that
       // does. The shell prints what it is handed.
-      process.stdout.write(`\n${green ? 'GREEN' : 'NOT GREEN'} at ${sha}: ${reason}\n`);
+      process.stdout.write(`\n${green ? 'GREEN' : 'NOT GREEN'} at ${sha} on ${branch}: ${reason}\n`);
       return green ? 0 : 1;
     }
     if (once) return concludeOnce(sha, { kind: 'answered', verdict, reason });
@@ -240,6 +249,7 @@ async function main() {
     // mistake the greenness predicate made before it moved.
     const paced = pollDelaySeconds(answer.runs, {
       sha,
+      branch,
       nowMs: Date.now(),
       fallbackSeconds: POLL_SECONDS,
     });

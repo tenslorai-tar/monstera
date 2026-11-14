@@ -52,6 +52,7 @@
 /**
  * @typedef {{
  *   sha: string,
+ *   branch: string,
  *   workflow: string,
  *   runNumber: number,
  *   status: string,
@@ -163,17 +164,43 @@ const FULL_SHA = /^[0-9a-f]{40}$/u;
  * must not become a query that quietly matches nothing — which is the same
  * defect arriving through the other door.
  *
+ * ## A push is a commit ON A BRANCH, so the branch is part of the target
+ *
+ * The owner's process (2026-10-01) moves `main` to a sha the work branch already passed, and that push starts its own
+ * runs: every sha `main` holds has two runs per workflow, the branch's and main's. A reader keyed on the sha alone
+ * counted four where it expected two and said BLIND on every read of main's own run, measured 2026-11-14 at
+ * `53095a4c` (four runs, all `success`); and main's run is the one that can differ (7263803b, 2026-10-31: green on the
+ * branch, red on main). `--branch` names it; absent, it is the branch checked out, which is the push just made. A
+ * detached HEAD names none and is refused rather than guessed.
+ *
+ * ## An unknown flag is refused
+ *
+ * `--event push` was typed for main's read on 2026-11-14 and accepted without a word: the flag was skipped as a flag
+ * and its value passed the positional rule because that rule looked only at the first. So every argument is either a
+ * flag this knows, a flag's value, or a refusal.
+ *
  * @param {readonly string[]} argv Arguments after the script path.
- * @param {{ headSha: string }} context The resolved `HEAD`, supplied by the
- *   caller so this stays free of process spawning and testable with literals.
- * @returns {{ sha: string, once: boolean, verbose: boolean }}
+ * @param {{ headSha: string, headBranch: string }} context The resolved `HEAD` and the branch checked out (`''` for a
+ *   detached HEAD), supplied by the caller so this stays free of process spawning and testable with literals.
+ * @returns {{ sha: string, branch: string, once: boolean, verbose: boolean }}
  */
-export function boardTarget(argv, { headSha }) {
-  const positional = argv.filter((argument) => !argument.startsWith('--'));
+export function boardTarget(argv, { headSha, headBranch }) {
   const flagged = argv.indexOf('--sha');
   const supplied = flagged === -1 ? undefined : argv[flagged + 1];
+  const branchFlag = argv.indexOf('--branch');
+  const suppliedBranch = branchFlag === -1 ? undefined : argv[branchFlag + 1];
+  const values = new Set([flagged + 1, branchFlag + 1].filter((at) => at > 0));
+  const positional = argv.filter((argument, at) => !argument.startsWith('--') && !values.has(at));
+  const unknown = argv.filter((argument, at) => argument.startsWith('--') && !values.has(at) && !BOARD_FLAGS.has(argument));
 
-  if (positional.length > 0 && positional[0] !== supplied) {
+  if (unknown.length > 0) {
+    throw new Error(
+      `The board reader does not know ${unknown.map((flag) => `"${flag}"`).join(', ')}. It takes ` +
+        `${[...BOARD_FLAGS].join(', ')}; a flag it skipped would leave the read asking a question nobody typed.`,
+    );
+  }
+
+  if (positional.length > 0) {
     throw new Error(
       `The board reader takes no positional argument; got "${String(positional[0])}". ` +
         `Run it with no sha to read HEAD, or pass --sha <40 hex characters> for another ` +
@@ -199,7 +226,35 @@ export function boardTarget(argv, { headSha }) {
     );
   }
 
-  return { sha, once: argv.includes('--once'), verbose: argv.includes('--verbose') };
+  if (branchFlag !== -1 && (suppliedBranch === undefined || suppliedBranch === '' || suppliedBranch.startsWith('--'))) {
+    throw new Error(`--branch needs a branch name, as GitHub reports it in a run's head_branch (main, work/<date>).`);
+  }
+  const branch = suppliedBranch ?? headBranch;
+  if (branch === '') {
+    throw new Error(
+      `HEAD is detached, so it names no branch, and a sha main also holds has a run on each. Pass --branch <name> ` +
+        `for the push whose runs you mean.`,
+    );
+  }
+
+  return { sha, branch, once: argv.includes('--once'), verbose: argv.includes('--verbose') };
+}
+
+/** Every flag {@link boardTarget} takes; `--sha` and `--branch` each take the argument after them. */
+const BOARD_FLAGS = new Set(['--sha', '--branch', '--once', '--verbose']);
+
+/**
+ * The runs ONE PUSH made: at this sha, on this branch. The one rule for it, so the verdict and the pacing cannot hold
+ * two opinions about which runs are the push's (B3a).
+ *
+ * @param {BoardRun[]} runs
+ * @param {{ sha: string, branch: string }} push
+ * @returns {BoardRun[]}
+ */
+export function pushRuns(runs, { sha, branch }) {
+  if (sha === '') throw new Error('pushRuns needs a sha to anchor on; "" matches everything.');
+  if (branch === '') throw new Error('pushRuns needs a branch; a sha main also holds has runs on two.');
+  return runs.filter((run) => run.sha.startsWith(sha) && run.branch === branch);
 }
 
 /**
@@ -243,7 +298,7 @@ export function parseRuns(payload) {
 
   return runs.map((entry, index) => {
     const row = /** @type {Record<string, unknown>} */ (entry ?? {});
-    for (const field of /** @type {const} */ (['head_sha', 'name', 'run_number', 'status'])) {
+    for (const field of /** @type {const} */ (['head_sha', 'head_branch', 'name', 'run_number', 'status'])) {
       if (row[field] === undefined) {
         throw new Error(
           `Run ${String(index)} has no \`${field}\`. A payload missing the field a verdict is ` +
@@ -254,6 +309,7 @@ export function parseRuns(payload) {
     }
     return {
       sha: String(row['head_sha']),
+      branch: String(row['head_branch']),
       workflow: String(row['name']),
       runNumber: Number(row['run_number']),
       status: String(row['status']),
@@ -381,10 +437,10 @@ function epochMs(value) {
  * either way; what changed is what the wait cost the shared quota.
  *
  * @param {BoardRun[]} runs
- * @param {{ sha: string, nowMs: number, fallbackSeconds: number }} options
+ * @param {{ sha: string, branch: string, nowMs: number, fallbackSeconds: number }} options
  * @returns {{ seconds: number, derivedFrom: number, medianSeconds: number | null }}
  */
-export function pollDelaySeconds(runs, { sha, nowMs, fallbackSeconds }) {
+export function pollDelaySeconds(runs, { sha, branch, nowMs, fallbackSeconds }) {
   const durations = runs
     .flatMap((run) => {
       if (run.status !== 'completed') return [];
@@ -399,9 +455,9 @@ export function pollDelaySeconds(runs, { sha, nowMs, fallbackSeconds }) {
   }
 
   const median = durations[Math.floor(durations.length / 2)] ?? 0;
-  const started = runs.flatMap((run) =>
-    run.sha === sha && run.createdAt !== null ? [run.createdAt] : [],
-  );
+  // THIS PUSH'S RUNS ONLY: main's push of a sha starts after the branch's, so the branch's start would read as time
+  // main's run had already spent.
+  const started = pushRuns(runs, { sha, branch }).flatMap((run) => (run.createdAt !== null ? [run.createdAt] : []));
   // Nothing for this sha yet is the ordinary first-poll state, and it means the
   // run has not been created — so the full median is the right wait.
   const elapsed = started.length === 0 ? 0 : nowMs - Math.min(...started);
@@ -434,11 +490,13 @@ export function pollDelaySeconds(runs, { sha, nowMs, fallbackSeconds }) {
  * @param {BoardRun[]} runs
  * @param {{
  *   sha: string,
+ *   branch: string,
  *   expect?: number,
  *   seen?: Map<number, number>,
  * }} options
  *   `sha` is the commit the caller just pushed — the anchor, and the freshness
- *   marker, because a payload older than that push cannot contain it. `expect`
+ *   marker, because a payload older than that push cannot contain it. `branch` is
+ *   the branch it was pushed to ({@link pushRuns}). `expect`
  *   is how many runs that push should produce (one per workflow). `seen` is this
  *   caller's high-water mark per run, carried across polls; it is MUTATED, so a
  *   caller keeps one Map for the whole wait.
@@ -447,10 +505,8 @@ export function pollDelaySeconds(runs, { sha, nowMs, fallbackSeconds }) {
  *   `success`. It is false for every other verdict, including `stale` and
  *   `blind` — an answer that could not be read is not a passing one.
  */
-export function boardVerdict(runs, { sha, expect = 2, seen = new Map() }) {
-  if (sha === '') throw new Error('boardVerdict needs a sha to anchor on; "" matches everything.');
-
-  const mine = runs.filter((run) => run.sha.startsWith(sha));
+export function boardVerdict(runs, { sha, branch, expect = 2, seen = new Map() }) {
+  const mine = pushRuns(runs, { sha, branch });
 
   // THE POSITIVE CONTROL, on every call rather than only in the proof. A wrong
   // sha, a short sha against full ones, a cache older than the push and a
@@ -459,7 +515,7 @@ export function boardVerdict(runs, { sha, expect = 2, seen = new Map() }) {
     return {
       verdict: 'blind',
       reason:
-        `Found ${String(mine.length)} run(s) for ${sha}, expected ${String(expect)}. This is a ` +
+        `Found ${String(mine.length)} run(s) for ${sha} on ${branch}, expected ${String(expect)}. This is a ` +
         `BROKEN LOOKUP, not a verdict: a cache older than the push, a sha that does not match ` +
         `the field, or a page that does not reach far enough all produce it, and every one of ` +
         `them otherwise reads as "the runs have not started".`,

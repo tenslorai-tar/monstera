@@ -41,7 +41,7 @@ import { formatError } from './reportError.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 45 });
+const roster = createRoster(failures, { cases: 54 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -52,16 +52,19 @@ function check(label, condition, detail) {
 
 const MINE = 'a3f4225464391ebd05f8acf300aafcfa554b29e7';
 const OTHER = '71e7bd9ef5b7a789a3a4019611eaf108925c7823';
+/** The work branch every fixture's push is on unless it names another. */
+const WORK = 'work/2026-11-14';
 
 /**
  * One run, shaped as the API returns it.
  *
- * @param {{ sha?: string, name?: string, runNumber?: number, status?: string, conclusion?: string | null }} over
+ * @param {{ sha?: string, branch?: string, name?: string, runNumber?: number, status?: string, conclusion?: string | null }} over
  * @returns {Record<string, unknown>}
  */
 function run(over = {}) {
   return {
     head_sha: over.sha ?? MINE,
+    head_branch: over.branch ?? WORK,
     name: over.name ?? 'Guards',
     run_number: over.runNumber ?? 161,
     status: over.status ?? 'completed',
@@ -101,18 +104,49 @@ const halfDone = payload([
 
 check(
   'both workflows completed reads as COMPLETE',
-  verdictOf(bothDone, { sha: MINE }).verdict === 'complete',
-  `got ${verdictOf(bothDone, { sha: MINE }).verdict}. Two rows for the pushed sha, both ` +
+  verdictOf(bothDone, { sha: MINE, branch: WORK }).verdict === 'complete',
+  `got ${verdictOf(bothDone, { sha: MINE, branch: WORK }).verdict}. Two rows for the pushed sha, both ` +
     `completed, is the only state that means the board has answered.`,
 );
 
 check(
   'one still running reads as PENDING, not complete',
-  verdictOf(halfDone, { sha: MINE }).verdict === 'pending',
-  `got ${verdictOf(halfDone, { sha: MINE }).verdict}. The concurrency group cancels an ` +
+  verdictOf(halfDone, { sha: MINE, branch: WORK }).verdict === 'pending',
+  `got ${verdictOf(halfDone, { sha: MINE, branch: WORK }).verdict}. The concurrency group cancels an ` +
     `IN-PROGRESS run when the next push lands, so treating a started run as an answer is how a ` +
     `commit ends up with a cancelled verdict instead of one.`,
 );
+
+// MAIN'S OWN RUN, the push the owner's process makes of a sha the branch already passed (2026-10-01). Measured
+// 2026-11-14 at 53095a4c: four runs at one sha, and a reader keyed on the sha alone said BLIND on every read of main's.
+// The fixture holds the state that matters, the branch green and main red (7263803b, 2026-10-31), so a reader that
+// took the branch's runs for main's reads GREEN here.
+{
+  const movedToMain = payload([
+    run({ name: 'Guards', runNumber: 161 }),
+    run({ name: 'CI', runNumber: 155 }),
+    run({ branch: 'main', name: 'Guards', runNumber: 162 }),
+    run({ branch: 'main', name: 'CI', runNumber: 156, conclusion: 'failure' }),
+  ]);
+  const onMain = verdictOf(movedToMain, { sha: MINE, branch: 'main' });
+  check(
+    'main’s own run of a sha the branch also ran is READ, and its red is red',
+    onMain.verdict === 'complete' && !onMain.green && onMain.reason.includes('CI=failure'),
+    `got ${JSON.stringify({ verdict: onMain.verdict, reason: onMain.reason })}. Four runs at one sha is what every ` +
+      `move of main makes, and main's is the run that can differ from the branch's.`,
+  );
+  const onWork = verdictOf(movedToMain, { sha: MINE, branch: WORK });
+  check(
+    'the branch’s own run of the same sha reads GREEN, so each push answers for itself',
+    onWork.verdict === 'complete' && onWork.green,
+    `got ${JSON.stringify({ verdict: onWork.verdict, reason: onWork.reason })}.`,
+  );
+  check(
+    'CONTROL: the fixture holds FOUR runs at the one sha, the shape a sha-only reader called blind',
+    parseRuns(movedToMain).filter((each) => each.sha === MINE).length === 4,
+    'the fixture no longer reproduces a sha main was moved to, so the two cases above separate nothing.',
+  );
+}
 
 // The failure that started this. `?head_sha=` and a short sha silently return
 // nothing, and so does querying before the runs register.
@@ -120,6 +154,7 @@ check(
   'a sha with no runs reads as BLIND, never as pending',
   verdictOf(payload([run({ sha: OTHER }), run({ sha: OTHER, name: 'CI' })]), {
     sha: MINE,
+    branch: WORK,
   }).verdict === 'blind',
   'zero rows for the pushed sha is a broken lookup. Reporting it as "not started" is the ' +
     'defect this module was built after: a wrong sha, an unreachable API and a push that never ' +
@@ -128,7 +163,7 @@ check(
 
 check(
   'ONE row where two were expected is BLIND, not half-done',
-  verdictOf(payload([run({ name: 'Guards' })]), { sha: MINE }).verdict === 'blind',
+  verdictOf(payload([run({ name: 'Guards' })]), { sha: MINE, branch: WORK }).verdict === 'blind',
   'a page that does not reach far enough truncates the second workflow, and one row of two ' +
     'looks exactly like "the other has not started". The count is the control.',
 );
@@ -142,8 +177,8 @@ check(
 {
   /** @type {Map<number, number>} */
   const seen = new Map();
-  const first = verdictOf(bothDone, { sha: MINE, seen });
-  const cached = verdictOf(halfDone, { sha: MINE, seen });
+  const first = verdictOf(bothDone, { sha: MINE, branch: WORK, seen });
+  const cached = verdictOf(halfDone, { sha: MINE, branch: WORK, seen });
 
   check(
     'a payload showing a completed run as in_progress reads as STALE',
@@ -156,7 +191,7 @@ check(
 
   check(
     'CONTROL: without the earlier observation the same payload is merely PENDING',
-    verdictOf(halfDone, { sha: MINE, seen: new Map() }).verdict === 'pending',
+    verdictOf(halfDone, { sha: MINE, branch: WORK, seen: new Map() }).verdict === 'pending',
     'the stale verdict must come from the REGRESSION and not from the payload itself, or the ' +
       'case above is satisfied by any in-progress board and proves nothing about freshness.',
   );
@@ -211,7 +246,7 @@ check(
   'an unrecognised status reads as BLIND, not as unfinished',
   verdictOf(
     payload([run({ status: 'hibernating', conclusion: null }), run({ name: 'CI' })]),
-    { sha: MINE },
+    { sha: MINE, branch: WORK },
   ).verdict === 'blind',
   'ranking an unknown status as "not finished" waits forever and looks like a slow run. If ' +
     'GitHub adds a state, this says so on the first poll instead of on the tenth minute.',
@@ -237,7 +272,7 @@ check(
       run({ name: 'CI', runNumber: 155, conclusion: 'cancelled' }),
       run({ name: 'Guards', runNumber: 161, conclusion: 'success' }),
     ]),
-    { sha: MINE },
+    { sha: MINE, branch: WORK },
   ).green === false,
   'This is 9292d1f: CI cancelled by the next push, Guards green. The predicate this replaces ' +
     'reported GREEN for it — the concurrency-group cancellation this whole module was written ' +
@@ -257,7 +292,7 @@ check(
       run({ name: 'CI', runNumber: 155, conclusion: 'timed_out' }),
       run({ name: 'Guards', runNumber: 161, conclusion: 'success' }),
     ]),
-    { sha: MINE },
+    { sha: MINE, branch: WORK },
   ).green === false,
   'Greenness is equality against ONE conclusion, not absence of a bad one. An allowlist of ' +
     'one cannot acquire a hole when GitHub adds a conclusion; a denylist acquires one silently.',
@@ -265,7 +300,7 @@ check(
 
 check(
   'CONTROL: two successes ARE green',
-  verdictOf(bothDone, { sha: MINE }).green === true,
+  verdictOf(bothDone, { sha: MINE, branch: WORK }).green === true,
   'without this the cases above are satisfied by a predicate that reports nothing green, ' +
     'which is the direction rule from audit item 4 — mutate towards the answer the bug also ' +
     'produces, and check the other one too.',
@@ -273,9 +308,9 @@ check(
 
 check(
   'a verdict that could not be read is never green',
-  verdictOf(payload([run({ sha: OTHER }), run({ sha: OTHER, name: 'CI' })]), { sha: MINE })
+  verdictOf(payload([run({ sha: OTHER }), run({ sha: OTHER, name: 'CI' })]), { sha: MINE, branch: WORK })
     .green === false &&
-    verdictOf(halfDone, { sha: MINE }).green === false,
+    verdictOf(halfDone, { sha: MINE, branch: WORK }).green === false,
   'BLIND and PENDING must both report green:false. An answer nobody could read is not a ' +
     'passing one, and a caller that checks `green` without checking `verdict` must not be ' +
     'handed `true` by a board it never saw.',
@@ -285,7 +320,7 @@ check(
   'an empty sha is refused rather than matching everything',
   (() => {
     try {
-      verdictOf(bothDone, { sha: '' });
+      verdictOf(bothDone, { sha: '', branch: WORK });
       return false;
     } catch {
       return true;
@@ -310,7 +345,7 @@ check(
   const NOW = Date.parse('2026-08-26T12:00:00Z');
   /** @param {Record<string, unknown>[]} rows */
   const pace = (rows, nowMs = NOW) =>
-    pollDelaySeconds(parseRuns(payload(rows)), { sha: MINE, nowMs, fallbackSeconds: 30 });
+    pollDelaySeconds(parseRuns(payload(rows)), { sha: MINE, branch: WORK, nowMs, fallbackSeconds: 30 });
 
   const fast = pace([timed(NOW - 900_000, 300_000), timed(NOW - 900_000, 300_000)]);
   const slow = pace([timed(NOW - 900_000, 600_000), timed(NOW - 900_000, 600_000)]);
@@ -425,7 +460,7 @@ check(
 
   /** @param {readonly string[]} argv @param {string} [head] */
   function target(argv, head = MINE) {
-    return boardTarget(argv, { headSha: head });
+    return boardTarget(argv, { headSha: head, headBranch: WORK });
   }
   /** @param {readonly string[]} argv @param {string} [head] */
   function refusal(argv, head = MINE) {
@@ -438,9 +473,54 @@ check(
   }
 
   check(
-    'no arguments reads HEAD, so the common case names no sha at all',
-    target([]).sha === MINE && !target([]).once,
-    `got ${JSON.stringify(target([]))} for a HEAD of ${MINE}.`,
+    'no arguments reads HEAD on the branch checked out, so the common case names no sha at all',
+    target([]).sha === MINE && target([]).branch === WORK && !target([]).once,
+    `got ${JSON.stringify(target([]))} for a HEAD of ${MINE} on ${WORK}.`,
+  );
+
+  // AN UNKNOWN FLAG IS REFUSED BY NAME. `--event push` was typed for main's read on 2026-11-14 and the reader ran
+  // without a word: `--event` was skipped as a flag, and `push` passed because the positional rule compared only the
+  // first positional with the sha's value, which the sha itself was.
+  const typed = refusal(['--sha', MINE, '--event', 'push']);
+  check(
+    'an UNKNOWN flag is refused by its name, as the exact command typed on 2026-11-14',
+    typed !== null && typed.includes('"--event"'),
+    `got ${JSON.stringify(typed)}. A flag the reader skips leaves it answering a question nobody typed.`,
+  );
+  check(
+    'CONTROL: the flags it knows are accepted beside a --sha, so the refusal is about the name',
+    refusal(['--sha', MINE, '--once', '--verbose', '--branch', 'main']) === null,
+    `got ${JSON.stringify(refusal(['--sha', MINE, '--once', '--verbose', '--branch', 'main']))}.`,
+  );
+
+  check(
+    '--branch names the push read, so main’s own run of a sha it was moved to is reachable',
+    target(['--sha', MINE, '--branch', 'main']).branch === 'main',
+    `got ${JSON.stringify(target(['--sha', MINE, '--branch', 'main']))}.`,
+  );
+  const detached = (() => {
+    try {
+      boardTarget([], { headSha: MINE, headBranch: '' });
+      return null;
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error);
+    }
+  })();
+  check(
+    'a DETACHED HEAD with no --branch is refused rather than guessed',
+    detached !== null && detached.includes('--branch'),
+    `got ${JSON.stringify(detached)}. A sha main also holds has a run on each branch; a guess picks one silently.`,
+  );
+  check(
+    'CONTROL: the same detached HEAD with --branch is accepted, so the refusal is about the missing name',
+    boardTarget(['--branch', 'main'], { headSha: MINE, headBranch: '' }).branch === 'main',
+    'a named branch was refused on a detached HEAD, so the case above separates nothing.',
+  );
+  const bare = refusal(['--branch']);
+  check(
+    'a --branch with no name after it is refused',
+    bare !== null && bare.startsWith('--branch needs'),
+    `got ${JSON.stringify(bare)}.`,
   );
 
   const shortFlag = refusal(['--sha', SHORT]);
@@ -612,7 +692,7 @@ check(
   );
   check(
     'CONTROL: a readable answer comes back as runs, and reaches a GREEN verdict',
-    readable.kind === 'runs' && boardVerdict(readable.runs, { sha: MINE }).green,
+    readable.kind === 'runs' && boardVerdict(readable.runs, { sha: MINE, branch: WORK }).green,
     `got ${JSON.stringify(readable)}. Without this, a classifier that answered could-not-look for everything ` +
       `would satisfy every case above.`,
   );
