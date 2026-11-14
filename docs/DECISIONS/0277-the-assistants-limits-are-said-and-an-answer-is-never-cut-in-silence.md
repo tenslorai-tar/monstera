@@ -176,3 +176,10 @@ On `work/cloud-62-history-per-pdf`, ADR-0279's store replaces this ADR's: `MAX_F
 `chat-history.json` are read once, by the move into ADR-0279's store (`historyMove.ts`), and nothing else reads them. A
 saved conversation is no longer loaded into the assistant when its PDF opens (ADR-0279 Decision 8), so a too-long mark
 saved with a conversation (the correction of 2026-11-10) is now what History shows of it, not what a reopen restores.
+
+## Correction, 2026-11-14 — history is on by default, and ADR-0279 is merged (IIIIIIIII-13)
+
+Line 14 says *Everything else ADR-0093 decided stands: history is off by default*, and the correction of 2026-11-12
+says ADR-0279 is *built, on its branch*. Both stopped being true when work/cloud-62-history-per-pdf merged (10c93859):
+history is on by default with its one-time note (ADR-0093's correction and the index say so, 37c1f2de), and ADR-0279 is
+on `main`. This ADR's own decisions are untouched.

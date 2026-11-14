@@ -1907,7 +1907,10 @@ reconciled.
   has none, re-recorded by Monstera's own saves); each section is records
   appended one after another, a card per save and the turns added since, each
   sealed with AES-256-GCM under **one data key** that `safeStorage` wraps. A
-  save appends and reads nothing; **opening a PDF reads no history**; History
+  save appends; the first write a session makes to a file it did not leave at
+  its present size walks the file's record heads to where the last whole one
+  ends and cuts a torn tail, and every later write reads nothing (ADR-0279's
+  first-write section); **opening a PDF reads no history**; History
   reads only the open PDF's file and shows the section whose guard matches
   the PDF now there. No cap on PDFs or conversations. Delete one rewrites the
   file without that conversation; History's *Clear all* removes the file and

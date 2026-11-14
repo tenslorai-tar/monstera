@@ -244,3 +244,13 @@ so the line is corrected here rather than edited.
 The sections are not in date order. *Amendment only* belongs to the first record of 2026-11-12 (f08030b4), written
 before the *Addition* above it, which came with the build. Read in order: the decision and its first record, *Amendment
 only*, then each dated section as it stands.
+
+## Correction, 2026-11-14 — *built as written* covers the offer, not the cut (IIIIIIIII-9)
+
+The heading of the second correction of 2026-11-13 says Decision 7 is *built as written*, and FEATURES and the JOURNAL's
+closure list of HHHHHHHHH repeat it. The first correction of that day found two differences from Decision 7: where the
+save is offered, and what is cut. The owner's decision closed the first: the save is offered only where the cut's check
+has passed. The second stands, as that same section's last line says: the cut is taken from the file on disk, not from
+the bytes main opened, for the reason the first correction gives (the bytes main opened do not carry the signed bytes
+as their first ones; the file does). So Decision 7 is built as written in where it offers the save, and as the first
+correction of 2026-11-13 says in what it cuts.
