@@ -186,25 +186,9 @@ describe('every contained process is created with no console window (the ownerâ€
     }
   });
 
-  /**
-   * WHY A TEST-ONLY STARTER IS NOT SHIPPED, read from the sources rather than taken from its name: a module ships when
-   * the application can reach it (`scripts/release/shippedModules.mjs`), and nothing reaches one that only tests import.
-   * So no source that is not a test may import it. CONTROL: a test does import each, so the import search can see.
-   */
-  it('a module named as a test-only starter is imported by tests alone', () => {
-    const roots = ['.', '../../../packages/kernel/src', '../../../packages/nodemode/src'].map((root) =>
-      fileURLToPath(new URL(`${root}/`, import.meta.url)),
-    );
-    const sources = roots.flatMap((root) =>
-      readdirSync(root, { recursive: true, encoding: 'utf8' })
-        .filter((name) => /\.tsx?$/u.test(name) && !name.endsWith('.d.ts'))
-        .map((name) => ({ name, text: readFileSync(join(root, name), 'utf8') })),
-    );
-    for (const module of Object.keys(TEST_ONLY_STARTERS)) {
-      const specifier = new RegExp(`from ['"][^'"]*/${module.replace(/\.ts$/u, '').replaceAll('.', '\\.')}\\.js['"]`, 'u');
-      const importers = sources.filter(({ text }) => specifier.test(text)).map(({ name }) => basename(name));
-      expect(importers.filter((name) => /\.test\.tsx?$/u.test(name)).length, `a test imports ${module}`).toBeGreaterThan(0);
-      expect(importers.filter((name) => !/\.test\.tsx?$/u.test(name)), `${module} is imported by tests alone`).toStrictEqual([]);
-    }
-  });
+  // WHY A TEST-ONLY STARTER IS NOT SHIPPED is not asked here: a module ships when the application can reach it, which is
+  // `scripts/release/shippedModules.mjs`' closure and nobody else's (B3a). `proof:shippedmodules` asserts the built
+  // closure leaves `decodeForTests.js` out. An importer search here was a second opinion that saw static imports in
+  // three folders and missed a dynamic one or one elsewhere (IIIIIIIII-3); a module added to TEST_ONLY_STARTERS owes the
+  // same assertion there.
 });

@@ -50,7 +50,7 @@ function check(label, condition, detail, ran = true) {
 }
 
 const BUILT_CASE =
-  "the built tree: engineHostFake.js and the harnesses are left out, and every module loaded by path is in, with nodemode's resolved entry";
+  "the built tree: engineHostFake.js, the harnesses and decodeForTests.js are left out, and every module loaded by path is in, with nodemode's resolved entry";
 const REQUIRE_BUILD = process.argv.includes('--require-build');
 /** Why the built case did not run, or null where it ran. @type {string | null} */
 let unbuilt = null;
@@ -208,10 +208,15 @@ try {
     const leftOut = built.unreached.map((path) => basename(path));
     // THE FILE 0.1.7.0 LEFT OUT: nodemode's entry, which the shell resolves to find the reader and nothing imports.
     const readerEntry = resolve(ROOT, 'packages', 'nodemode', 'dist', 'index.js');
+    // THE KERNEL TESTS' DECODE, the one process starter `containedProgram.test.ts` exempts as test-only (efeeb406): it
+    // is test-only because the application cannot reach it, which is this closure's answer and nobody else's (B3a). It
+    // replaced an importer search in that test which saw static imports in three folders (IIIIIIIII-3).
+    const testDecode = resolve(ROOT, 'packages', 'kernel', 'dist', 'decodeForTests.js');
     check(
       BUILT_CASE,
       leftOut.includes('engineHostFake.js') &&
         leftOut.includes('shellHarness.js') &&
+        built.unreached.some((path) => resolve(path) === testDecode) &&
         built.reached.has(resolve(desktopDist, 'entry.js')) &&
         built.reached.has(readerEntry),
       `left out ${String(leftOut.length)}: ${leftOut.slice(0, 20).join(', ')}; nodemode's entry ${built.reached.has(readerEntry) ? 'reached' : 'NOT reached'}`,
