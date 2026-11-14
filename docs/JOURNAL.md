@@ -892,6 +892,33 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-11-14 — A read of one form placement costs about what six do: the placements' read is mostly a fixed cost
+
+Temporary timers in `document.textBlocks` (not committed; each step's start and end from the read's entry, per page),
+on a build of `07eaa1c4`, `editOpenCost.mjs --file 2 --rounds 3` (`_review/walks/edit-open-cost/2026-11-14T06-54-25`):
+twelve reads, six of page 1, which draws six placements, and six of page 2, which draws one.
+
+**The entry below asked why overlapping two steps saved nothing, and this answers it.** The two pages' reads do not run
+at once in `main`: each read of page 2 began 7 to 21 ms after page 1's ended (every pair in the log), so a document's
+reads take their turn. Within one read, PDFium's runs of the page take 60 to 180 ms once the first round's 842 ms is
+past, so asking for the placements beside them could save at most about that, inside the spread of every row here.
+
+| step | page 1 (six placements) | page 2 (one placement) |
+|---|---|---|
+| MuPDF's first answer (`pageRewrite`), first read of an open | 681 to 963 ms | 11 to 33 ms |
+| the same, page 1 read again | 3 ms | — |
+| PDFium's runs of the page (`textRuns`) | 86 to 842 ms; 86 to 116 after round 1 | 60 to 180 ms |
+| MuPDF's build of the placements (`formPages`) | 196 to 345 ms | 110 to 287 ms |
+| PDFium's runs of the placements (`textRunsOfPages`) | 400 to 862 ms | **283 to 759 ms** |
+
+**One placement's read costs 283 to 759 ms and six cost 400 to 862 ms**, while the page's own runs, the same engine on
+the document's image, cost about 100 ms. So most of that call does not grow with what it reads. Which part of it is
+fixed (writing the built document across, PDFium opening it, the read itself) was not measured. That is the next
+reading, inside the PDFium host, before anything is changed. The first row is the wait behind the open's own reads that
+the entry of this morning recorded.
+
+---
+
 ## 2026-11-14 — Asking for a page's form placements beside its own runs reads no faster, so it is not kept
 
 `document.textBlocks` awaits each step in turn: MuPDF's clips, PDFium's runs of the page, then MuPDF's build of the
