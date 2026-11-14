@@ -18,7 +18,7 @@ import {
   wholeBlock,
   wordStep,
 } from './model.js';
-import { AS_DRAWN_CLASS, type DrawnWordPlace, fitDrawnLines, type Look, paragraphElement, restyleParagraph } from './paint.js';
+import { AS_DRAWN_CLASS, type DrawnRow, type DrawnWordPlace, fitDrawnRows, type Look, paragraphElement, restyleParagraph } from './paint.js';
 import type { EditorStore } from './store.js';
 import { exactCaretOf, holdAnchorAtPress } from '../pressAnchor.js';
 
@@ -168,14 +168,17 @@ export function EditorSurface({ store, look, drawn, label, className, style, edi
         const widths = latest.current.drawn?.widths;
         const words = latest.current.drawn?.words;
         if (widths !== undefined) {
+          // EVERY ROW TO FIT IN ONE CALL, so the block is laid out twice for the fit and not twice a line (`fitDrawnRows`).
+          const due: DrawnRow[] = [];
           for (const [index, row] of elements.entries()) {
             if (!row.classList.contains(AS_DRAWN_CLASS)) continue;
             const paragraph = model.paragraphs[index];
             const kept = paragraph === undefined ? undefined : built.get(paragraph);
             if (kept?.fitted === now) continue;
-            fitDrawnLines(row, widths[index] ?? [], now.zoom, words?.[index] ?? []);
+            due.push({ element: row, widths: widths[index] ?? [], words: words?.[index] ?? [] });
             if (paragraph !== undefined && kept !== undefined) built.set(paragraph, { ...kept, fitted: now });
           }
+          fitDrawnRows(due, now.zoom);
         }
         // THE OPENING'S PLACES, read once, in points so a zoom does not move them.
         openedTops ??= elements.map((row) => row.offsetTop / now.zoom);

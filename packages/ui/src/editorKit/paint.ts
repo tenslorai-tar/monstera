@@ -219,64 +219,158 @@ function alongLine(element: HTMLElement): Along {
   return { start: (rect) => rect.left / scale, length: (rect) => rect.width / scale };
 }
 
+/** One paragraph of the editor to fit: its element, each line's drawn width, and each line's word places. */
+export interface DrawnRow {
+  readonly element: HTMLElement;
+  readonly widths: readonly number[];
+  readonly words: readonly (readonly DrawnWordPlace[])[];
+}
+
+/** {@link fitDrawnRows} for one paragraph. */
 export function fitDrawnLines(element: HTMLElement, widths: readonly number[], zoom: number, words: readonly (readonly DrawnWordPlace[])[] = []): void {
-  const owner = element.ownerDocument;
-  const along = alongLine(element);
-  const lines: HTMLElement[][] = [[]];
-  /** Where each span's letters begin in the paragraph's words. */
-  const starts = new Map<HTMLElement, number>();
-  let offset = 0;
-  for (const child of Array.from(element.children)) {
-    if (child instanceof HTMLElement && child.dataset['kitWrap'] !== undefined) lines.push([]);
-    else if (child instanceof HTMLElement && child.dataset['kitRun'] !== undefined) {
-      lines.at(-1)?.push(child);
-      starts.set(child, offset);
-      offset += child.textContent.length;
-    }
-  }
-  for (const [at, spans] of lines.entries()) {
-    const placed = words[at] ?? [];
-    for (const span of spans) span.style.marginLeft = '';
-    if (placed.length > 0 && fitWords(spans, starts, placed, zoom, along)) continue;
-    for (const span of spans) span.style.marginLeft = '';
-    const target = widths[at];
-    if (target === undefined || spans.length === 0) continue;
-    for (const span of spans) span.style.letterSpacing = span.dataset['kitSpacing'] ?? '';
-    const texts = spans.map((span) => span.firstChild).filter((node): node is Text => node instanceof Text && node.data !== '');
-    const first = texts[0];
-    // THE LAST LETTER THAT IS NOT A SPACE, and its text node.
-    let last: { readonly node: Text; readonly end: number } | undefined;
-    for (const node of [...texts].reverse()) {
-      const end = node.data.trimEnd().length;
-      if (end > 0) {
-        last = { node, end };
-        break;
+  fitDrawnRows([{ element, widths, words }], zoom);
+}
+
+/** A line's words as the page places them, each with its own spans, and the spaces between them that are fitted. */
+interface WordPlan {
+  readonly groups: readonly { readonly word: DrawnWordPlace; readonly spans: readonly HTMLElement[] }[];
+  readonly gaps: readonly { readonly spans: readonly HTMLElement[]; readonly width: number; readonly letters: number }[];
+}
+
+interface LineFit {
+  readonly spans: readonly HTMLElement[];
+  readonly target: number | undefined;
+  readonly along: Along;
+  /** Fitted by its words, where every place has spans of its own; else the line is fitted whole. */
+  readonly plan: WordPlan | undefined;
+}
+
+/**
+ * Each line of `rows` as wide as the page draws it: where the page places its words, each word's letters spaced to its
+ * drawn width and each word after the first moved by its left margin to stand where the page draws it; else the line's
+ * letters spaced to its drawn width.
+ *
+ * TWO LAYOUTS FOR THE WHOLE BLOCK, never two a line: every reset is written, then every width read, then every spacing
+ * written, then every word's left read, then every margin written. One line read after another's writes laid the editor
+ * out again for it, twice a line: a dense block's open spent about 470 ms in `getBoundingClientRect`, and about 220 ms
+ * batched (`editOpenCost.mjs --profile`, document 2, round 2, 2026-11-14). Batching gives the same answer: the paragraph
+ * is `white-space: pre` and its lines are parted by forced breaks, so one line's spacing moves no other line's letters
+ * along it, and a line's lefts are measured from its own first word.
+ */
+export function fitDrawnRows(rows: readonly DrawnRow[], zoom: number): void {
+  const lines: LineFit[] = [];
+  for (const { element, widths, words } of rows) {
+    // READ BEFORE ANY WRITE: the transforms, from computed style.
+    const along = alongLine(element);
+    const parted: HTMLElement[][] = [[]];
+    /** Where each span's letters begin in the paragraph's words. */
+    const starts = new Map<HTMLElement, number>();
+    let offset = 0;
+    for (const child of Array.from(element.children)) {
+      if (child instanceof HTMLElement && child.dataset['kitWrap'] !== undefined) parted.push([]);
+      else if (child instanceof HTMLElement && child.dataset['kitRun'] !== undefined) {
+        parted.at(-1)?.push(child);
+        starts.set(child, offset);
+        offset += child.textContent.length;
       }
     }
-    if (first === undefined || last === undefined) continue;
-    const range = owner.createRange();
-    range.setStart(first, 0);
-    range.setEnd(last.node, last.end);
-    const natural = along.length(range.getBoundingClientRect());
-    // NO LAYOUT, NOTHING TO FIT: a document with no layout engine measures every range as nothing.
-    if (!(natural > 0)) continue;
-    const letters = range.toString().length;
-    const extra = (target * zoom - natural) / letters;
+    for (const [at, spans] of parted.entries()) {
+      const placed = words[at] ?? [];
+      lines.push({ spans, target: widths[at], along, plan: placed.length > 0 ? planWords(spans, starts, placed) : undefined });
+    }
+  }
+
+  // 1. WRITE: every line as its runs set it.
+  for (const { spans } of lines) {
+    for (const span of spans) {
+      span.style.marginLeft = '';
+      span.style.letterSpacing = span.dataset['kitSpacing'] ?? '';
+    }
+  }
+
+  // 2. READ, ONE LAYOUT: each place's and gap's width, and each line's whole width where it is fitted whole or its words
+  // cannot be (a place that measures nothing).
+  const read = lines.map(({ spans, target, along, plan }) => {
+    if (plan !== undefined) {
+      const naturals = plan.groups.map(({ spans: own }) => lengthOf(own, along));
+      const gapNaturals = plan.gaps.map(({ spans: own }) => lengthOf(own, along));
+      // NO LAYOUT, NOTHING TO FIT: a document with no layout engine measures every range as nothing.
+      if (naturals.every((natural) => natural > 0)) return { kind: 'words' as const, plan, naturals, gapNaturals };
+    }
+    if (target === undefined || spans.length === 0) return undefined;
+    const whole = wholeLine(spans);
+    if (whole === undefined) return undefined;
+    const natural = along.length(whole.range.getBoundingClientRect());
+    return natural > 0 ? { kind: 'whole' as const, target, natural, letters: whole.letters } : undefined;
+  });
+
+  // 3. WRITE: every spacing.
+  const spaceBy = (spans: readonly HTMLElement[], extra: number): void => {
     for (const span of spans) {
       const own = span.dataset['kitSpacing'] ?? '';
       span.style.letterSpacing = own === '' ? `${String(extra)}px` : `calc(${own} + ${String(extra)}px)`;
+    }
+  };
+  for (const [at, fit] of read.entries()) {
+    const line = lines[at];
+    if (fit === undefined || line === undefined) continue;
+    if (fit.kind === 'whole') {
+      spaceBy(line.spans, (fit.target * zoom - fit.natural) / fit.letters);
+      continue;
+    }
+    // THE SPACES BETWEEN TWO PLACES, fitted to the gap the page draws there: no place covers a space, so it kept the
+    // stand-in's own width, and the next place's margin put that place right while the space's END stood off — Courier's
+    // stand-in draws a space 0.05 em narrower, and a caret at the end of one stood 0.60 pt short at 12 pt (Chromium 151,
+    // `editTextCaret.pw.ts`' end side, 2026-11-04). A gap the page draws as nothing or less is left to the margin.
+    for (const [index, { spans: own, width, letters }] of fit.plan.gaps.entries()) {
+      const natural = fit.gapNaturals[index] ?? 0;
+      if (natural > 0) spaceBy(own, (width * zoom - natural) / letters);
+    }
+    // EACH PLACE AS WIDE AS THE PAGE DRAWS IT.
+    for (const [index, { word, spans: own }] of fit.plan.groups.entries()) {
+      spaceBy(own, ((word.x1 - word.x0) * zoom - (fit.naturals[index] ?? 0)) / (word.to - word.from));
+    }
+  }
+
+  // 4. READ, THE SECOND LAYOUT: each placed word's left after the spacing. READ, never worked out from the spacing: a
+  // spacing that is not zero changes how the browser shapes the letters (its ligatures are dropped), so a width does not
+  // grow by its letters times the spacing. Worked out, the kerning control in `editTextCaret.pw.ts` put its worst caret
+  // at the 18th boundary and not the kerned one (run 2026-11-14), which is that error made visible.
+  const lefts = read.map((fit, at) => {
+    const line = lines[at];
+    if (fit?.kind !== 'words' || line === undefined) return undefined;
+    return fit.plan.groups.map(({ spans: own }) => {
+      const range = rangeOf(own);
+      return range === undefined ? undefined : line.along.start(range.getBoundingClientRect());
+    });
+  });
+
+  // 5. WRITE: EACH PLACE WHERE THE PAGE DRAWS IT FROM THE LINE'S FIRST, each margin less what the margins before it
+  // already moved it, since on one line a margin moves everything after it by its own size.
+  for (const [at, fit] of read.entries()) {
+    const starts = lefts[at];
+    if (fit?.kind !== 'words' || starts === undefined) continue;
+    const first = fit.plan.groups[0];
+    const origin = starts[0];
+    if (first === undefined || origin === undefined) continue;
+    let moved = 0;
+    for (const [index, { word, spans: own }] of fit.plan.groups.entries()) {
+      if (index === 0) continue;
+      const lead = own[0];
+      const left = starts[index];
+      if (lead === undefined || left === undefined) break;
+      const margin = origin + (word.x0 - first.word.x0) * zoom - (left + moved);
+      lead.style.marginLeft = `${String(margin)}px`;
+      moved += margin;
     }
   }
 }
 
 /**
- * {@link fitDrawnLines} for one line whose words the page places: each word's letters spaced to its drawn width, then
- * each word after the first moved by its left margin to stand as far from the first as the page draws it. False where a
- * word has no spans of its own (the words were cut elsewhere than these), and the line is then fitted whole.
+ * A line's words as the page places them, or `undefined` where a word has no spans of its own (the words were cut
+ * elsewhere than these), and the line is then fitted whole. Reads no layout.
  */
-function fitWords(spans: readonly HTMLElement[], starts: ReadonlyMap<HTMLElement, number>, placed: readonly DrawnWordPlace[], zoom: number, along: Along): boolean {
-  const owner = spans[0]?.ownerDocument;
-  if (owner === undefined) return false;
+function planWords(spans: readonly HTMLElement[], starts: ReadonlyMap<HTMLElement, number>, placed: readonly DrawnWordPlace[]): WordPlan | undefined {
   const groups = placed.map((word) => ({
     word,
     spans: spans.filter((span) => {
@@ -284,11 +378,7 @@ function fitWords(spans: readonly HTMLElement[], starts: ReadonlyMap<HTMLElement
       return from >= word.from && from + span.textContent.length <= word.to && span.textContent.length > 0;
     }),
   }));
-  if (groups.some(({ word, spans: own }) => own.reduce((sum, span) => sum + span.textContent.length, 0) !== word.to - word.from)) return false;
-  // THE SPACES BETWEEN TWO PLACES, fitted to the gap the page draws there: no place covers a space, so it kept the
-  // stand-in's own width, and the next place's margin put that place right while the space's END stood off — Courier's
-  // stand-in draws a space 0.05 em narrower, and a caret at the end of one stood 0.60 pt short at 12 pt (Chromium 151,
-  // `editTextCaret.pw.ts`' end side, 2026-11-04). A gap the page draws as nothing or less is left to the margin.
+  if (groups.some(({ word, spans: own }) => own.reduce((sum, span) => sum + span.textContent.length, 0) !== word.to - word.from)) return undefined;
   const placedSpans = new Set(groups.flatMap(({ spans: own }) => own));
   const gaps = groups.slice(1).flatMap((after, at) => {
     const before = groups[at];
@@ -301,65 +391,42 @@ function fitWords(spans: readonly HTMLElement[], starts: ReadonlyMap<HTMLElement
     const letters = own.reduce((sum, span) => sum + span.textContent.length, 0);
     return width > 0 && letters > 0 && letters === after.word.from - before.word.to ? [{ spans: own, width, letters }] : [];
   });
-  const rangeOf = (own: readonly HTMLElement[]): Range | undefined => {
-    const first = own[0]?.firstChild;
-    const last = own.at(-1)?.firstChild;
-    if (!(first instanceof Text) || !(last instanceof Text)) return undefined;
-    const range = owner.createRange();
-    range.setStart(first, 0);
-    range.setEnd(last, last.data.length);
-    return range;
-  };
-  for (const span of spans) span.style.letterSpacing = span.dataset['kitSpacing'] ?? '';
-  // EVERY WIDTH READ IN ONE LAYOUT, then every spacing written: a place is a letter where the read gives letters
-  // (`blockModel.ts`' `drawnPlaces`), and a read after each write laid the line out again once per letter.
-  const naturals = groups.map(({ spans: own }) => {
-    const range = rangeOf(own);
-    return range === undefined ? 0 : along.length(range.getBoundingClientRect());
-  });
-  const gapNaturals = gaps.map(({ spans: own }) => {
-    const range = rangeOf(own);
-    return range === undefined ? 0 : along.length(range.getBoundingClientRect());
-  });
-  // NO LAYOUT, NOTHING TO FIT: a document with no layout engine measures every range as nothing.
-  if (naturals.some((natural) => !(natural > 0))) return false;
-  for (const [at, { spans: own, width, letters }] of gaps.entries()) {
-    const natural = gapNaturals[at] ?? 0;
-    if (!(natural > 0)) continue;
-    const extra = (width * zoom - natural) / letters;
-    for (const span of own) {
-      const mine = span.dataset['kitSpacing'] ?? '';
-      span.style.letterSpacing = mine === '' ? `${String(extra)}px` : `calc(${mine} + ${String(extra)}px)`;
+  return { groups, gaps };
+}
+
+/** The range from the first span's first letter to the last span's last. */
+function rangeOf(own: readonly HTMLElement[]): Range | undefined {
+  const first = own[0]?.firstChild;
+  const last = own.at(-1)?.firstChild;
+  if (!(first instanceof Text) || !(last instanceof Text)) return undefined;
+  const range = first.ownerDocument.createRange();
+  range.setStart(first, 0);
+  range.setEnd(last, last.data.length);
+  return range;
+}
+
+function lengthOf(own: readonly HTMLElement[], along: Along): number {
+  const range = rangeOf(own);
+  return range === undefined ? 0 : along.length(range.getBoundingClientRect());
+}
+
+/** The line from its first letter to its last that is not a space, and how many letters that holds. */
+function wholeLine(spans: readonly HTMLElement[]): { readonly range: Range; readonly letters: number } | undefined {
+  const texts = spans.map((span) => span.firstChild).filter((node): node is Text => node instanceof Text && node.data !== '');
+  const first = texts[0];
+  let last: { readonly node: Text; readonly end: number } | undefined;
+  for (const node of [...texts].reverse()) {
+    const end = node.data.trimEnd().length;
+    if (end > 0) {
+      last = { node, end };
+      break;
     }
   }
-  // EACH PLACE AS WIDE AS THE PAGE DRAWS IT.
-  for (const [at, { word, spans: own }] of groups.entries()) {
-    const extra = ((word.x1 - word.x0) * zoom - (naturals[at] ?? 0)) / (word.to - word.from);
-    for (const span of own) {
-      const mine = span.dataset['kitSpacing'] ?? '';
-      span.style.letterSpacing = mine === '' ? `${String(extra)}px` : `calc(${mine} + ${String(extra)}px)`;
-    }
-  }
-  // EACH PLACE WHERE THE PAGE DRAWS IT FROM THE LINE'S FIRST: every left read in one layout, and each margin less what the
-  // margins before it already moved it, since on one line a margin moves everything after it by its own size.
-  const lefts = groups.map(({ spans: own }) => {
-    const range = rangeOf(own);
-    return range === undefined ? undefined : along.start(range.getBoundingClientRect());
-  });
-  const first = groups[0];
-  const origin = lefts[0];
-  if (first === undefined || origin === undefined) return false;
-  let moved = 0;
-  for (const [at, { word, spans: own }] of groups.entries()) {
-    if (at === 0) continue;
-    const lead = own[0];
-    const left = lefts[at];
-    if (lead === undefined || left === undefined) return false;
-    const margin = origin + (word.x0 - first.word.x0) * zoom - (left + moved);
-    lead.style.marginLeft = `${String(margin)}px`;
-    moved += margin;
-  }
-  return true;
+  if (first === undefined || last === undefined) return undefined;
+  const range = first.ownerDocument.createRange();
+  range.setStart(first, 0);
+  range.setEnd(last.node, last.end);
+  return { range, letters: range.toString().length };
 }
 
 function wrapBreak(owner: Document): HTMLElement {
