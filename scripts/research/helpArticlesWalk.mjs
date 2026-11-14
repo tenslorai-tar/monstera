@@ -9,14 +9,15 @@
  * Parts: `certified` (certified-documents.md: a document certified "nothing may be changed", its line, a rotation refused,
  * Work on a copy, the copy's line, the original untouched); `signed-version` (check-signatures.md: Save this signed
  * version… on a file with bytes after its signature, and the document's own file refused); `sign-window`
- * (sign-a-document.md: on a signed document the window says why it cannot certify); `protected`
+ * (sign-a-document.md: on a signed document the window says why it cannot certify); `history-locked` (ai-assistant.md:
+ * History says a history locked to another account is, in the approved line); `protected`
  * (open-a-protected-pdf.md: Cancel at the password, then Enter password and Close).
  *
  * THE CERTIFICATE IS THE WALK'S OWN: a self-signed one made here with node-forge, as `documentCommands.test.ts` makes
  * its, under a password generated here. It is a test credential for this application and nothing else.
  */
 import { randomBytes } from 'node:crypto';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join, sep } from 'node:path';
 
@@ -159,6 +160,33 @@ if (runs('certified')) {
     return Promise.resolve({ bytes: before.length });
   });
   await closeAll();
+  // THE LINE'S BUTTON IS A PROJECTION since ADR-0295: drawn because Check signatures is placed on the line, not named.
+  await step('certified: Check signatures on the line opens the signatures, and a certification over the whole file offers no signed version', async () => {
+    await open(certified);
+    const line = page.locator('[data-certification-line="certified"]');
+    await expect(line).toBeVisible({ timeout: 30_000 });
+    await line.getByRole('button', { name: 'Check signatures', exact: true }).click();
+    await expect(dialog()).toContainText('Walk Certifier', { timeout: 30_000 });
+    await expect(dialog()).toContainText('Unchanged since it was signed');
+    // THE FILE IS ITS SIGNED VERSION: nothing to offer, whatever the check would answer.
+    await page.waitForTimeout(2000);
+    await expect(dialog().getByRole('button', { name: 'Save this signed version…', exact: true })).toHaveCount(0);
+    await page.keyboard.press('Escape');
+  });
+  // THE CLAIM THAT READ AS A CONTRADICTION (HHHHHHHHH-15): certified-documents.md says File › Save a copy… keeps the
+  // certification; save-a-document.md says the copy a REFUSED APPEND offers is no longer certified. Two routes, run here.
+  const keptCopy = join(output, 'certified-saved-copy.pdf');
+  await step('certified: File › Save a copy… writes the document unchanged, still certified, and the copy opens saying so', async () => {
+    await saveTo(keptCopy);
+    await command('Save a copy…');
+    // NOT THERE UNTIL THE COPY IS WRITTEN: the wait is for the file, then for what it holds.
+    await expect.poll(() => existsSync(keptCopy) && readFileSync(keptCopy).includes('/DocMDP'), { timeout: 60_000 }).toBe(true);
+    await closeAll();
+    await open(keptCopy);
+    await expect(page.getByText('Certified by Walk Certifier, who allows no changes to it.')).toBeVisible({ timeout: 30_000 });
+    return { bytes: readFileSync(keptCopy).length };
+  });
+  await closeAll();
 }
 
 // ——————————————————————————————————————— check-signatures.md ———————————————————————————————————————
@@ -215,7 +243,52 @@ if (runs('signed-version') || runs('sign-window')) {
       await page.keyboard.press('Escape');
     });
     await closeAll();
+    // DECISION 7 AS WRITTEN (HHHHHHHHH-12): a signature whose signed bytes were changed has no signed version to save, so
+    // no button; and the window opens at once, its checks made after it is shown.
+    await step('signed version: a signature whose signed bytes were changed offers no signed version, and the window opens at once', async () => {
+      const tampered = Buffer.from(signedBytes);
+      // ONE BYTE INSIDE THE FIRST SIGNED RANGE that nothing reads: the header's binary comment, `%` and four high bytes on
+      // the second line. The file still opens, and the signature reads as changed.
+      const comment = tampered.indexOf('\n%') + 2;
+      if (comment < 2 || (tampered[comment] ?? 0) < 0x80) throw new Error('the signed fixture has no binary comment to change');
+      tampered[comment] = (tampered[comment] ?? 0) ^ 0x01;
+      writeFileSync(signed, tampered);
+      await open(signed);
+      const asked = performance.now();
+      await command('Check signatures');
+      await expect(dialog()).toContainText('The document has changed since this signature was made', { timeout: 30_000 });
+      const shown = performance.now() - asked;
+      await page.waitForTimeout(3000);
+      await expect(dialog().getByRole('button', { name: 'Save this signed version…', exact: true })).toHaveCount(0);
+      await page.keyboard.press('Escape');
+      return { windowShownMs: Math.round(shown) };
+    });
+    await closeAll();
   }
+}
+
+// ——————————————————————————————————————— ai-assistant.md, a locked chat history ———————————————————————————————————————
+
+// HHHHHHHHH-8: *"the AI assistant and History both say chat history cannot be saved, and History lists nothing until
+// then"*. A history LOCKED to another account is made the way one arrives: a data key this account's cipher cannot unwrap,
+// written into the walk's own profile before the store first reads it. The store reads its key only when first asked.
+if (runs('history-locked')) {
+  const plain = join(output, 'history-locked.pdf');
+  writeFileSync(plain, await plainDocument('A document with a locked history'));
+  await step('history locked: History shows the approved locked line, not "No conversations are saved"', async () => {
+    const history = join(output, 'app-data', 'history');
+    mkdirSync(history, { recursive: true });
+    writeFileSync(join(history, 'key'), randomBytes(48).toString('base64'));
+    await open(plain);
+    await command('Open the AI assistant');
+    await page.getByRole('button', { name: 'History', exact: true }).click();
+    await expect(page.locator('[data-assistant-history-locked]')).toHaveText(
+      'Chat history cannot be saved on this computer, because the history saved here cannot be opened by this Windows account. To start again, choose Clear chat history in Settings › Privacy.',
+      { timeout: 30_000 },
+    );
+    await expect(page.getByText('No conversations are saved for this file.')).toHaveCount(0);
+  });
+  await closeAll();
 }
 
 // ——————————————————————————————————————— open-a-protected-pdf.md ———————————————————————————————————————

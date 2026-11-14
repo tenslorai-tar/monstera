@@ -23,7 +23,7 @@ An ordinary signature that does not certify the document allows any change, and 
 1. Make the change as usual, for example rotate a page or edit text.
 2. Monstera says the document is certified, who certified it and what they allow. Nothing has been changed.
 3. Choose **Work on a copy**, then choose where to save the copy.
-4. The copy opens in a new tab with your change made.
+4. The copy opens in a new tab with your change made. The change is not saved in the copy yet: save it to keep it.
 
 ![The window for a certified document, with Work on a copy](screenshot:certified-documents-1)
 
@@ -32,7 +32,7 @@ An ordinary signature that does not certify the document allows any change, and 
 - The copy is a new document. It no longer carries the certification, and the author's signature in it no longer verifies, because the copy is not what they signed. The line at the top of the copy says so. The certified document itself is left exactly as it was.
 - A certified document stays locked even if its author's signature no longer verifies, for example because another program changed the file. Work on a copy to change it.
 - To leave the document as it is, close the window. Anything you were typing is kept, so you can copy it elsewhere.
-- **Save a copy…** in the **File** menu keeps the certification: it writes the document as it is, unchanged.
+- **Save a copy…** in the **File** menu keeps the certification: it writes the document as it is, unchanged, and the copy opens saying who certified it. This is not the copy Monstera offers when a signed file cannot take your changes after its signatures (see "Save a document"): that one is written whole, so it is no longer certified.
 - To see who certified a document, choose **Protect**, then **Check signatures**.
 - To certify a document you wrote, see "Sign a document digitally" and choose one of the "I am the author" options in **This signature says**. Only a document with no signature yet can be certified, because a certification must be the first signature.
 
