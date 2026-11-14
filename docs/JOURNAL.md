@@ -892,6 +892,27 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-11-14 — Asking for a page's form placements beside its own runs reads no faster, so it is not kept
+
+`document.textBlocks` awaits each step in turn: MuPDF's clips, PDFium's runs of the page, then MuPDF's build of the
+form placements, then PDFium's runs of those. The build needs nothing PDFium answers, so it was tried asked beside the
+page's runs (`Promise.all`), with a case whose PDFium peer never answers the page's read and whose MuPDF peer must still
+be asked `engine/form-pages`. The case failed without the change and passed with it. **The change bought nothing
+measurable, so it was taken out, case and all.**
+
+`editOpenCost.mjs --file 2 --rounds 5`, the build without it and then the build with it, back to back by one script on
+this machine (`_review/walks/edit-open-cost/2026-11-14T06-43-25` and `2026-11-14T06-48-03`): first read of the blocks,
+median 2,023 ms (1,980 to 3,218) without and 2,014 ms (1,517 to 3,189) with; first press until selected 340 and 334 ms.
+The shell log's `document.textBlocks` durations overlap whole: 1,421 to 3,883 ms without and 1,351 to 3,292 ms with.
+
+**What the log shows instead, and what was not established.** Every round asks for two pages' blocks at once: the renderer
+reads every visible page in Edit text (`App.tsx`'s mode), so each press of Edit text sends two `document.textBlocks`
+requests, and the second ends 0.5 to 1.2 s after the first. Why overlapping the two hosts' steps within one read saves
+nothing was not measured; the timers that would split it were not run on this build. The next reading needs them per
+request, page by page, before any change to the order of reads.
+
+---
+
 ## 2026-11-14 — The kept font catalogue, measured in the running app, and where the rest of the first read goes
 
 **ADR-0293 holds in the app.** `editOpenCost.mjs --file 2 --rounds 3` on a fresh data folder
