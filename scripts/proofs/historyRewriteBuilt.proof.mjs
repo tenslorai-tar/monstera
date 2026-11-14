@@ -21,8 +21,10 @@
  *
  * ## Its cases and controls
  *
- * - CONTROL, of the instrument: enough saves landed while the Delete was in flight, spread from its start to its end.
- *   Without it, *every save kept* is also what a run whose saves all landed before or after would report.
+ * - CONTROL, of the instrument: enough saves landed while the shipped worker read, spread from its start to its answer.
+ *   Without it, *every save kept* is also what a run whose saves all landed before or after would report. It is timed on
+ *   the worker, never on the whole Delete: after the answer `main` reads the tail and renames, synchronously, so no
+ *   save can land there, and a Linux runner read 105 ms of 246 with none (CI run 43544069419, 2026-11-14).
  * - Every save made while it ran reads back whole, in this session and in a fresh one over the same folder.
  * - The deleted conversation is gone from both; CONTROL: a kept long conversation reads back whole in the fresh one, so
  *   a read that found nothing cannot pass as a removal.
@@ -44,6 +46,7 @@ const ROOT = repoRoot();
 refuseStaleBuild(ROOT, HISTORY_DELETE, 2);
 // LITERAL SPECIFIERS, so `proof:electronimports` can read what this loads.
 const { createHistoryStore } = await import('../../apps/desktop/dist/historyStore.js');
+const { workerRewriter } = await import('../../apps/desktop/dist/historyRewriter.js');
 
 const PLACE = 'C:/Users/someone/Documents/contract.pdf';
 const PLACE_KEY = 'a'.repeat(64);
@@ -84,7 +87,18 @@ function check(label, held, detail) {
 
 const folder = mkdtempSync(join(tmpdir(), 'monstera-history-rewrite-built-'));
 try {
-  const store = createHistoryStore(folder, CIPHER);
+  // THE SHIPPED WORKER, TIMED: the store's default is `workerRewriter()`, and this is that call with its start and its
+  // answer read, so the control asks about the thread's read and not about what `main` does once it has answered.
+  const shipped = workerRewriter();
+  /** @type {{ started: number; answered: number }} */
+  const worker = { started: Infinity, answered: -Infinity };
+  const timed = async (/** @type {unknown} */ data) => {
+    worker.started = performance.now();
+    const result = await shipped(/** @type {never} */ (data));
+    worker.answered = performance.now();
+    return result;
+  };
+  const store = createHistoryStore(folder, CIPHER, undefined, timed);
   /** @type {Map<string, string>} the long conversations, by key, to the digest of their turns */
   const kept = new Map();
   let doomed = '';
@@ -115,14 +129,19 @@ try {
   saveOne();
 
   const during = saves.filter((save) => save.inFlight);
-  const first = during[0]?.at ?? Infinity;
-  const last = during.at(-1)?.at ?? -Infinity;
+  const from = worker.started - started;
+  const to = worker.answered - started;
+  const read = to - from;
+  const reading = saves.filter((save) => save.at >= from && save.at <= to);
+  const first = reading[0]?.at ?? Infinity;
+  const last = reading.at(-1)?.at ?? -Infinity;
   check(
-    'CONTROL: saves landed across the whole Delete, from its start to its end, so some landed while the worker read',
-    removed && during.length >= AT_LEAST_IN_FLIGHT && first <= took * 0.1 && last >= took * 0.9,
-    `${String(during.length)} save(s) in flight over ${took.toFixed(0)} ms, the first at ${first.toFixed(0)} ms and the ` +
-      `last at ${last.toFixed(0)} ms; Delete answered ${String(removed)}. A file too small for the read to take time, or ` +
-      'a timer the machine did not run, leaves nothing for the next cases to see.',
+    'CONTROL: saves landed across the worker’s whole read, from its start to its answer',
+    removed && reading.length >= AT_LEAST_IN_FLIGHT && first <= from + read * 0.1 && last >= to - read * 0.1,
+    `${String(reading.length)} save(s) while the worker read, from ${from.toFixed(0)} to ${to.toFixed(0)} ms, the first ` +
+      `at ${first.toFixed(0)} ms and the last at ${last.toFixed(0)} ms; Delete answered ${String(removed)} at ` +
+      `${took.toFixed(0)} ms. A file too small for the read to take time, or a timer the machine did not run, leaves ` +
+      'nothing for the next cases to see.',
   );
 
   const fresh = createHistoryStore(folder, CIPHER);
@@ -150,7 +169,8 @@ try {
 
   process.stdout.write(
     `\n  the built store's Delete: ${took.toFixed(0)} ms over ${String(LONG)} long conversations, ` +
-      `${String(during.length)} save(s) made while it ran\n\n`,
+      `${String(during.length)} save(s) made while it ran; the worker read from ${from.toFixed(0)} to ` +
+      `${to.toFixed(0)} ms and main finished ${(took - to).toFixed(0)} ms after its answer\n\n`,
   );
 } finally {
   rmSync(folder, { recursive: true, force: true });
