@@ -892,6 +892,28 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-11-14 — The first press under 300 ms, warm and cold, and the low-memory cases' leaked samplers
+
+Three changes, each with its readings in its commit; `editOpenCost.mjs --file 2`, the build without and then with,
+back to back on this machine.
+
+- **Warm** (`3320d3b4`): `drawFamilies` announced a new set of given faces on every call, against its own contract, and
+  each announcement refitted an open block inside the press. Rounds 2 to 8: first press median 337 ms without and **170
+  ms with** (156 to 180). The first typed letter moved the other way, median 176 to 296 ms: the faces' settle, about
+  950 ms after the press in both, now does the first layout in those faces, and a letter typed about a second after
+  the press waits behind it. Stated in the commit, not hidden.
+- **Cold** (`0f1fcfef`): the font picker measured every family on the computer as the editor's panel mounted, 1,685
+  ms of `measureText` in a 2,190 ms profile. It now does so while the window is idle. Round 1 of three fresh launches:
+  first press 2,268 to 2,578 ms without and **294 to 463 ms with**. The cold open's first read, 3.2 to 3.8 s, is the
+  font catalogue's first read, which ADR-0293 has the first launch pay; 1,994 ms on a second launch.
+- **The LOW MEMORY cases** (`4afd14f6`): every composition in `compositionHost.test.ts` now shuts down when its case
+  finishes, and the crossings wait on the sampler's own readings. 60 of 60 in six runs alone, 87 of 87 in three runs
+  beside the other composition files.
+
+**Withdrawn below**, by these readings: *the first press stands at a median of about 326 to 345 ms*.
+
+---
+
 ## 2026-11-14 — What the first press on a block spends, and two changes that did not hold
 
 The 300 ms first-press goal is one long task in the window. `editOpenCost.mjs --trace` with `traceTop.mjs`
