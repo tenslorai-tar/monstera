@@ -1,36 +1,43 @@
 import { describe, expect, it } from 'vitest';
 
-import { EngineOpenFailed } from '@monstera/kernel';
-
-import { EngineCannotStartError } from './engineHostConnection.js';
-import { BATCH, DAY_MS, GRACE_MS, PdfFileRefused, createHistoryCheck, idReadFailure } from './historyCheck.js';
+import { BATCH, DAY_MS, GRACE_MS, type StatCall, createHistoryCheck, placeOf } from './historyCheck.js';
 import type { HistoryGuard, HistorySection } from './historyStore.js';
 
 /**
- * The 24-hour check (ADR-0279 Decision 6, the correction of 2026-11-12). What each case asserts is the DECISION — which
- * section was removed, whether the host was asked to parse — not the state after it, since a check that never removed
- * anything leaves the same files as one that correctly waited.
+ * The 24-hour check (ADR-0279 Decision 6, as the owner corrected it on 2026-11-14: only a PDF that is really gone loses
+ * its history). What each case asserts is the DECISION, which section was removed, not the state after it, since a
+ * check that never removed anything leaves the same files as one that correctly waited.
  */
 
 const HOUR = 60 * 60 * 1000;
 
-interface World {
-  /** What is at each place now: a size and time and an id, or nothing. */
-  readonly disk: Map<string, { size: number; mtimeMs: number; id: string | null; locked?: true; unparsable?: true }>;
-  /** Whether the host reads at all: `false` is a host that does not start, which says nothing about any PDF. */
-  hostReads: boolean;
-  readonly removed: string[];
-  readonly parsed: string[];
-  /** The history key each parse was asked under, which is all a failed parse is logged by (HHHHHHHHH-19). */
-  readonly parsedUnder: string[];
-  readonly stated: string[];
-  clock: number;
-  idle: boolean;
+/** What a path is on the fake disk: a file, a folder, or a `stat` that throws this code. */
+type Entry = 'file' | 'folder' | { readonly refuses: string };
+
+/** A file system `stat` over `disk`: an absent path throws ENOENT, as Node's does. */
+function fakeStat(disk: Map<string, Entry>, stated: string[]): StatCall {
+  return (path) => {
+    stated.push(path);
+    const entry = disk.get(path);
+    if (entry === undefined) return Promise.reject(Object.assign(new Error(`ENOENT: ${path}`), { code: 'ENOENT' }));
+    if (typeof entry === 'object') return Promise.reject(Object.assign(new Error(`${entry.refuses}: ${path}`), { code: entry.refuses }));
+    return Promise.resolve({ isDirectory: () => entry === 'folder' });
+  };
 }
 
 function world(sections: readonly (HistorySection & { readonly placeKey: string })[]) {
-  const state: World = { disk: new Map(), removed: [], parsed: [], parsedUnder: [], stated: [], clock: 1_000_000, idle: true, hostReads: true };
-  let ledger: unknown = null;
+  const state = {
+    /** The folders C:/docs and C:/ are there from the start; a case adds and removes files. */
+    disk: new Map<string, Entry>([
+      ['C:/', 'folder'],
+      ['C:/docs', 'folder'],
+    ]),
+    removed: [] as string[],
+    stated: [] as string[],
+    clock: 1_000_000,
+    idle: true,
+    ledger: null as unknown,
+  };
   const live = [...sections];
   const check = createHistoryCheck({
     store: {
@@ -42,25 +49,12 @@ function world(sections: readonly (HistorySection & { readonly placeKey: string 
         if (at >= 0) live.splice(at, 1);
         return Promise.resolve(true);
       },
-      ledger: () => ledger,
+      ledger: () => state.ledger,
       keepLedger: (value) => {
-        ledger = JSON.parse(JSON.stringify(value));
+        state.ledger = JSON.parse(JSON.stringify(value));
       },
     },
-    stat: (path) => {
-      state.stated.push(path);
-      const found = state.disk.get(path);
-      return Promise.resolve(found === undefined ? null : { size: found.size, mtimeMs: found.mtimeMs });
-    },
-    permanentIdOf: (path, placeKey) => {
-      state.parsed.push(path);
-      state.parsedUnder.push(placeKey);
-      if (!state.hostReads) return Promise.resolve({ kind: 'not-read' } as const);
-      const found = state.disk.get(path);
-      if (found === undefined || found.unparsable === true) return Promise.resolve({ kind: 'failed' } as const);
-      if (found.locked === true) return Promise.resolve({ kind: 'locked' } as const);
-      return Promise.resolve({ kind: 'read', id: found.id } as const);
-    },
+    place: (path) => placeOf(path, fakeStat(state.disk, state.stated)),
     idle: () => state.idle,
     now: () => state.clock,
   });
@@ -75,15 +69,12 @@ function world(sections: readonly (HistorySection & { readonly placeKey: string 
 }
 
 const byId = (id: string): HistoryGuard => ({ kind: 'id', id });
-const section = (placeKey: string, name: string, place: string, guard: HistoryGuard) => ({ placeKey, section: name, place, guard });
+const section = (placeKey: string, name: string, place: string, guard: HistoryGuard = byId('aa')) => ({ placeKey, section: name, place, guard });
 
-describe('a section whose PDF is gone is removed 24 hours after the first check that finds it so', () => {
-  it('waits the 24 hours, then removes it by the store, and only it', async () => {
-    const { state, passAt } = world([
-      section('p1', 's1', 'C:/gone.pdf', byId('aa')),
-      section('p2', 's2', 'C:/here.pdf', byId('bb')),
-    ]);
-    state.disk.set('C:/here.pdf', { size: 10, mtimeMs: 5, id: 'bb' });
+describe('the owner’s three cases (2026-11-14): only a PDF that is really gone loses its history', () => {
+  it('CONTROL: a file deleted from a folder that is still there loses its history 24 hours after the first check that finds it so', async () => {
+    const { state, passAt } = world([section('p1', 's1', 'C:/docs/gone.pdf'), section('p2', 's2', 'C:/docs/here.pdf')]);
+    state.disk.set('C:/docs/here.pdf', 'file');
     await passAt(0);
     expect(state.removed).toStrictEqual([]);
     await passAt(23.9);
@@ -92,84 +83,125 @@ describe('a section whose PDF is gone is removed 24 hours after the first check 
     expect(state.removed).toStrictEqual(['p1/s1']);
   });
 
-  it('CONTROL: a PDF back at its place with its id before the 24 hours starts the clock again', async () => {
-    const { state, passAt } = world([section('p1', 's1', 'C:/away.pdf', byId('aa'))]);
-    await passAt(0);
-    state.disk.set('C:/away.pdf', { size: 10, mtimeMs: 5, id: 'aa' });
-    await passAt(24);
+  it('a present file held open with a SHARE LOCK keeps its history across checks a day apart, whether its stat answers or refuses', async () => {
+    const { state, passAt } = world([section('p1', 'answers', 'C:/docs/held.pdf'), section('p2', 'refuses', 'C:/docs/busy.pdf')]);
+    // A LOCK THAT LEAVES stat ANSWERING (the file is there; only opening it is refused) and one whose stat is refused too.
+    state.disk.set('C:/docs/held.pdf', 'file');
+    state.disk.set('C:/docs/busy.pdf', { refuses: 'EBUSY' });
+    for (const hours of [0, 24, 48]) await passAt(hours);
     expect(state.removed).toStrictEqual([]);
-    state.disk.delete('C:/away.pdf');
-    await passAt(48);
-    expect(state.removed, 'missing again from 48 hours, so not yet').toStrictEqual([]);
-    await passAt(72);
-    expect(state.removed).toStrictEqual(['p1/s1']);
+    // THE FOLDER WAS NEVER ASKED for the refused file: a refusal is not a not-found, so nothing is learnt of its absence.
+    expect(state.stated.filter((path) => path === 'C:/docs')).toStrictEqual([]);
   });
 
-  it('a DIFFERENT PDF at the place is not the section’s, and counts as gone', async () => {
-    const { state, passAt } = world([section('p1', 's1', 'C:/report.pdf', byId('aa'))]);
-    state.disk.set('C:/report.pdf', { size: 10, mtimeMs: 5, id: 'cc' });
-    await passAt(0);
-    await passAt(24);
-    expect(state.removed).toStrictEqual(['p1/s1']);
-  });
-
-  it('a guard by size and time is the PDF only at that size and time, and is never parsed', async () => {
-    const { state, passAt } = world([
-      section('p1', 'kept', 'C:/same.pdf', { kind: 'stamp', size: 10, mtimeMs: 5 }),
-      section('p2', 'changed', 'C:/edited.pdf', { kind: 'stamp', size: 10, mtimeMs: 5 }),
-    ]);
-    state.disk.set('C:/same.pdf', { size: 10, mtimeMs: 5, id: null });
-    state.disk.set('C:/edited.pdf', { size: 11, mtimeMs: 9, id: null });
-    await passAt(0);
-    await passAt(24);
-    expect(state.removed).toStrictEqual(['p2/changed']);
-    expect(state.parsed).toStrictEqual([]);
+  it('a file on a MISSING DRIVE or in a MISSING FOLDER keeps its history, pass after pass', async () => {
+    const { state, passAt } = world([section('p1', 'drive', 'E:/report.pdf'), section('p2', 'folder', 'C:/moved-away/report.pdf')]);
+    for (const hours of [0, 24, 48, 72]) await passAt(hours);
+    expect(state.removed).toStrictEqual([]);
+    // EACH ABSENCE WAS LOOKED AT and its folder asked, so the case reaches the folder rule rather than stopping short.
+    expect(state.stated).toContain('E:/report.pdf');
+    expect(state.stated).toContain('C:/moved-away');
   });
 });
 
-describe('the host parses a PDF only when its size or write time moved', () => {
-  it('parses once on the first pass, and not again while the PDF stays as it was found', async () => {
-    const { state, passAt } = world([section('p1', 's1', 'C:/report.pdf', byId('aa'))]);
-    state.disk.set('C:/report.pdf', { size: 10, mtimeMs: 5, id: 'aa' });
-    await passAt(0);
-    await passAt(24);
-    await passAt(48);
-    expect(state.parsed).toStrictEqual(['C:/report.pdf']);
-  });
-
-  it('each parse is asked under ITS SECTION’S history key, the name its failure is logged by, never the path (HHHHHHHHH-19)', async () => {
-    const { state, passAt } = world([section('p1', 's1', 'C:/report.pdf', byId('aa')), section('p2', 's1', 'C:/letter.pdf', byId('bb'))]);
-    state.disk.set('C:/report.pdf', { size: 10, mtimeMs: 5, id: 'aa' });
-    state.disk.set('C:/letter.pdf', { size: 11, mtimeMs: 5, id: 'bb' });
-    await passAt(0);
-    expect(state.parsed).toStrictEqual(['C:/report.pdf', 'C:/letter.pdf']);
-    expect(state.parsedUnder).toStrictEqual(['p1', 'p2']);
-  });
-
-  it('CONTROL: a PDF whose write time moved is parsed again, and kept where it keeps its id', async () => {
-    const { state, passAt } = world([section('p1', 's1', 'C:/report.pdf', byId('aa'))]);
-    state.disk.set('C:/report.pdf', { size: 10, mtimeMs: 5, id: 'aa' });
-    await passAt(0);
-    state.disk.set('C:/report.pdf', { size: 12, mtimeMs: 6, id: 'aa' });
-    await passAt(24);
-    await passAt(48);
-    expect(state.parsed).toStrictEqual(['C:/report.pdf', 'C:/report.pdf']);
+describe('a file at the place is there, whichever PDF it is', () => {
+  it('a DIFFERENT PDF at the place keeps the old section, unshown (Decision 5 withdrawn, 2026-11-14)', async () => {
+    const { state, passAt } = world([section('p1', 's1', 'C:/docs/report.pdf', byId('aa'))]);
+    state.disk.set('C:/docs/report.pdf', 'file');
+    for (const hours of [0, 24, 48]) await passAt(hours);
     expect(state.removed).toStrictEqual([]);
+  });
+
+  it('a file guarded by size and time is there whatever its size and time now', async () => {
+    const { state, passAt } = world([section('p1', 's1', 'C:/docs/edited.pdf', { kind: 'stamp', size: 10, mtimeMs: 5 })]);
+    state.disk.set('C:/docs/edited.pdf', 'file');
+    for (const hours of [0, 24, 48]) await passAt(hours);
+    expect(state.removed).toStrictEqual([]);
+  });
+
+  it('CONTROL: a PDF back at its place before the 24 hours starts the clock again', async () => {
+    const { state, passAt } = world([section('p1', 's1', 'C:/docs/away.pdf')]);
+    await passAt(0);
+    state.disk.set('C:/docs/away.pdf', 'file');
+    await passAt(24);
+    expect(state.removed).toStrictEqual([]);
+    state.disk.delete('C:/docs/away.pdf');
+    await passAt(48);
+    expect(state.removed, 'gone again from 48 hours, so not yet').toStrictEqual([]);
+    await passAt(72);
+    expect(state.removed).toStrictEqual(['p1/s1']);
+  });
+});
+
+describe('a place that cannot be reached decides nothing', () => {
+  it('the clock a gone file started is neither stopped nor started while its drive is away, and runs on once it is back', async () => {
+    const { state, passAt } = world([section('p1', 's1', 'C:/docs/gone.pdf')]);
+    await passAt(0);
+    // THE FOLDER UNREACHABLE for a day: nothing learnt, so neither removed nor reset.
+    state.disk.delete('C:/docs');
+    await passAt(24);
+    expect(state.removed).toStrictEqual([]);
+    state.disk.set('C:/docs', 'folder');
+    await passAt(48);
+    expect(state.removed, 'gone since the first pass, seen gone again').toStrictEqual(['p1/s1']);
+  });
+
+  it('a ledger kept before 2026-11-14 is read as empty, which starts every clock again and removes nothing', async () => {
+    const { state, passAt } = world([section('p1', 's1', 'C:/docs/gone.pdf')]);
+    state.ledger = { lastPass: null, sections: { 'p1/s1': { seen: null, missingSince: 0 } } };
+    await passAt(0);
+    expect(state.removed, 'missing since long ago by the old ledger, and removed by nothing').toStrictEqual([]);
+    await passAt(24);
+    expect(state.removed).toStrictEqual(['p1/s1']);
+  });
+});
+
+describe('placeOf, the one rule', () => {
+  const disk = new Map<string, Entry>([
+    ['C:/docs', 'folder'],
+    ['C:/docs/here.pdf', 'file'],
+    ['C:/docs/locked.pdf', { refuses: 'EBUSY' }],
+    ['C:/docs/denied.pdf', { refuses: 'EACCES' }],
+    ['C:/docs/held.pdf', { refuses: 'EPERM' }],
+    ['C:/a-file', 'file'],
+  ]);
+  const at = (path: string, stated: string[] = []) => placeOf(path, fakeStat(disk, stated));
+
+  it('a file that answers is found, and its folder is not asked', async () => {
+    const stated: string[] = [];
+    expect(await at('C:/docs/here.pdf', stated)).toBe('found');
+    expect(stated).toStrictEqual(['C:/docs/here.pdf']);
+  });
+
+  it('CONTROL: not found in a folder that is there is gone', async () => {
+    expect(await at('C:/docs/deleted.pdf')).toBe('gone');
+  });
+
+  it('not found where the folder or drive is not there, or is a file, is unreachable', async () => {
+    expect(await at('C:/away/deleted.pdf')).toBe('unreachable');
+    expect(await at('E:/deleted.pdf')).toBe('unreachable');
+    expect(await at('C:/a-file/deleted.pdf')).toBe('unreachable');
+  });
+
+  it('a stat refused (EBUSY, EACCES, EPERM) is unreachable, never gone', async () => {
+    expect(await at('C:/docs/locked.pdf')).toBe('unreachable');
+    expect(await at('C:/docs/denied.pdf')).toBe('unreachable');
+    expect(await at('C:/docs/held.pdf')).toBe('unreachable');
   });
 });
 
 describe('it runs only while the person is not working, in batches, at most once a day', () => {
   it('does nothing at all while the person is working: no file is even looked at', async () => {
-    const { state, check } = world([section('p1', 's1', 'C:/gone.pdf', byId('aa'))]);
+    const { state, check } = world([section('p1', 's1', 'C:/docs/gone.pdf')]);
     state.idle = false;
     expect(await check.step()).toBe('busy');
     expect(state.stated).toStrictEqual([]);
   });
 
   it(`checks ${String(BATCH)} sections a step, and a pass is not due again within a day`, async () => {
-    const many = Array.from({ length: BATCH * 2 + 20 }, (_unused, at) => section(`p${String(at)}`, 's', `C:/${String(at)}.pdf`, byId('aa')));
+    const many = Array.from({ length: BATCH * 2 + 20 }, (_unused, at) => section(`p${String(at)}`, 's', `C:/docs/${String(at)}.pdf`));
     const { state, check } = world(many);
-    for (const each of many) state.disk.set(each.place, { size: 1, mtimeMs: 1, id: 'aa' });
+    for (const each of many) state.disk.set(each.place, 'file');
     expect([await check.step(), await check.step(), await check.step()]).toStrictEqual(['checked', 'checked', 'done']);
     expect(state.stated).toHaveLength(many.length);
     state.clock += DAY_MS - 1;
@@ -180,65 +212,5 @@ describe('it runs only while the person is not working, in batches, at most once
 
   it('GRACE_MS is the owner’s 24 hours', () => {
     expect(GRACE_MS).toBe(24 * HOUR);
-  });
-});
-
-describe('a PDF that needs a password is there, though its /ID cannot be read without one', () => {
-  it('its section is NEVER removed, pass after pass; CONTROL: the same PDF unreadable is removed after 24 hours', async () => {
-    const { state, passAt } = world([
-      section('p1', 's1', 'C:/locked.pdf', byId('aa')),
-      section('p2', 's2', 'C:/broken.pdf', byId('bb')),
-    ]);
-    state.disk.set('C:/locked.pdf', { size: 10, mtimeMs: 5, id: 'aa', locked: true });
-    for (const hours of [0, 24, 48, 72]) await passAt(hours);
-    // THE HOST WAS ASKED every pass, so the case reaches the locked answer rather than a stamp it had seen.
-    expect(state.parsed.filter((path) => path === 'C:/locked.pdf')).toHaveLength(4);
-    expect(state.removed).toStrictEqual(['p2/s2']);
-  });
-});
-
-describe('whose failure a read that threw was', () => {
-  it('the PDF’s own — its file refused, its bytes a document the engine will never open — is failed', () => {
-    expect(idReadFailure(new PdfFileRefused(Object.assign(new Error('EACCES'), { code: 'EACCES' })))).toBe('failed');
-    expect(idReadFailure(new EngineOpenFailed('malformed'))).toBe('failed');
-  });
-
-  it('CONTROL: the reading’s — a host that cannot start, any other error, a thrown non-error — is not-read', () => {
-    expect(idReadFailure(new EngineCannotStartError('mupdf-shim','the shim did not load'))).toBe('not-read');
-    expect(idReadFailure(new Error('the reader thread exited with code 1 without reporting'))).toBe('not-read');
-    expect(idReadFailure('gone')).toBe('not-read');
-  });
-});
-
-describe('a host that does not read says nothing about the PDF', () => {
-  it('no section is removed while the host does not start, and the clock it had is kept; CONTROL: a PDF the host says will never open is removed after 24 hours', async () => {
-    const { state, passAt } = world([
-      section('p1', 's1', 'C:/here.pdf', byId('aa')),
-      section('p2', 's2', 'C:/broken.pdf', byId('bb')),
-      section('p3', 's3', 'C:/was-gone.pdf', byId('cc')),
-    ]);
-    // ON DISK, and written again before every pass, so each pass must parse it: the host's answer is what decides.
-    const touched = (hours: number): void => {
-      state.disk.set('C:/here.pdf', { size: 10, mtimeMs: 5 + hours, id: 'aa' });
-    };
-    state.disk.set('C:/broken.pdf', { size: 10, mtimeMs: 5, id: 'bb', unparsable: true });
-    // MISSING at the first pass, so its clock starts; then a PDF arrives that only the host could judge.
-    touched(0);
-    await passAt(0);
-    state.disk.set('C:/was-gone.pdf', { size: 10, mtimeMs: 5, id: 'zz' });
-    state.hostReads = false;
-    for (const hours of [24, 48, 72]) {
-      touched(hours);
-      await passAt(hours);
-    }
-    expect(state.removed, 'a host that does not start removes nothing').toStrictEqual([]);
-    // THE HOST WAS ASKED, so the case reaches the not-read answer rather than a stamp it had seen.
-    expect(state.parsed.filter((path) => path === 'C:/here.pdf')).toHaveLength(4);
-
-    // THE HOST BACK: the PDF it says will never open is gone a day after it was first found so, and the PDF that
-    // replaced the missing one is a different one, whose clock ran from the first pass and was never reset.
-    state.hostReads = true;
-    await passAt(96);
-    expect(state.removed).toStrictEqual(['p2/s2', 'p3/s3']);
   });
 });

@@ -1,13 +1,23 @@
-import { EngineOpenFailed } from '@monstera/kernel';
-import { pathlessCause } from '@monstera/shared';
+import { dirname } from 'node:path';
+
 import { z } from 'zod';
 
-import type { HistoryGuard, HistoryStore } from './historyStore.js';
+import type { HistoryStore } from './historyStore.js';
 
 /**
- * The 24-hour check (ADR-0279's *The owner's answers*, Decision 6, and its correction of 2026-11-12): a section of a
- * history file whose PDF cannot be found at its place, or is a different PDF there now, is removed 24 hours after the
- * first check that finds it so. A PDF back at its place with the same guard before then starts the clock again.
+ * The 24-hour check (ADR-0279 Decision 6, as the owner corrected it on 2026-11-14): **only a PDF that is really gone
+ * loses its history.** A section is removed 24 hours after the first check that finds its file not there in a folder
+ * that is; a file back at its place before then starts the clock again.
+ *
+ * ## Gone, found, or could not look
+ *
+ * {@link placeOf} is the one rule. *Gone* is a file the system says is not found, in a folder it says is there.
+ * *Found* is any file at the place, whichever PDF it is and whether or not it would open: a share lock, a password or a
+ * different PDF says nothing about the history's PDF being gone (a different PDF does not see the old section, since
+ * History shows only the one whose guard matches; the old section is kept unshown). *Unreachable* is everything else, a
+ * drive or share that is not there, a folder missing as a whole, any refusal of the file's own `stat`: nothing was
+ * learnt, so that pass decides nothing and the clock neither starts nor stops. So the check opens no PDF and never
+ * reaches the engine host.
  *
  * ## Only while the person is not working
  *
@@ -15,12 +25,6 @@ import type { HistoryGuard, HistoryStore } from './historyStore.js';
  * not touched the computer for {@link IDLE_SECONDS} and no document is opening; a pass over every section is made at
  * most once a {@link DAY_MS}. So it never slows an open: the caller asks for a step when idle, and the step refuses
  * when it is not.
- *
- * ## A PDF is PARSED only when its size or write time moved
- *
- * A guard by `/ID` is read by the contained host (`permanentIdOf`, invariant 25), which is a parse, so the ledger keeps
- * the size and write time the check last found the PDF at with that id, and a PDF still at those is the same one
- * without being opened. A guard by size and write time needs no parse at all: those two are the guard.
  *
  * ## A section with no guard is not checked
  *
@@ -37,69 +41,56 @@ export const BATCH = 50;
 /** How long the person must have left the computer alone for a step to run. */
 export const IDLE_SECONDS = 30;
 
-/** What the check last knew of the PDF at a section's place. */
-const stampSchema = z.object({ size: z.number().nonnegative(), mtimeMs: z.number() }).strict();
-
+/**
+ * The ledger: when the last whole pass ended, and since when each section's file is gone. A ledger kept before
+ * 2026-11-14 also carried what each PDF was last seen at, and fails this schema: it is read as empty, which starts
+ * every clock again, the direction that keeps history.
+ */
 const ledgerSchema = z
   .object({
     /** When the last whole pass ended, `null` before the first. */
     lastPass: z.number().nullable(),
-    /** By `placeKey/section`: the size and time the PDF was last found at with its guard, and since when it is missing. */
-    sections: z.record(
-      z.string(),
-      z.object({ seen: stampSchema.nullable(), missingSince: z.number().nullable() }).strict(),
-    ),
+    /** By `placeKey/section`: since when its file is gone, `null` while it is there. */
+    sections: z.record(z.string(), z.object({ missingSince: z.number().nullable() }).strict()),
   })
   .strict();
 type Ledger = z.infer<typeof ledgerSchema>;
 
+/** What a section's place says of its file: there, really gone, or nothing that can be learnt this pass. */
+export type PdfPlace = 'found' | 'gone' | 'unreachable';
+
+/** A file system's `stat`, the one call {@link placeOf} makes: it answers, or throws with Node's `code`. */
+export type StatCall = (path: string) => Promise<{ isDirectory(): boolean }>;
+
+/**
+ * THE ONE RULE for whether a history's PDF is gone (the owner, 2026-11-14). The file answering is *found*, whatever it
+ * is. Not found (ENOENT) in a folder that answers as a folder is *gone*. Anything else is *unreachable*: a folder,
+ * drive or share that is not there, a path through a file (ENOTDIR), a refusal (EBUSY, EPERM, EACCES), any error a
+ * future system gives: the folder must be SEEN to be there for an absence to count.
+ */
+export async function placeOf(path: string, stat: StatCall): Promise<PdfPlace> {
+  try {
+    await stat(path);
+    return 'found';
+  } catch (thrown) {
+    if ((thrown as NodeJS.ErrnoException | null)?.code !== 'ENOENT') return 'unreachable';
+  }
+  try {
+    return (await stat(dirname(path))).isDirectory() ? 'gone' : 'unreachable';
+  } catch {
+    // THE FOLDER COULD NOT BE SEEN, which is the unplugged drive's answer and the offline share's: nothing learnt.
+    return 'unreachable';
+  }
+}
+
 export interface HistoryCheckDependencies {
   readonly store: Pick<HistoryStore, 'files' | 'guards' | 'removeSection' | 'ledger' | 'keepLedger'>;
-  /** The PDF at `path`'s size and write time, or `null` where it cannot be found or read (an unplugged drive too). */
-  readonly stat: (path: string) => Promise<{ readonly size: number; readonly mtimeMs: number } | null>;
-  /**
-   * What the contained host read of the PDF at `path`'s first `/ID` string. `placeKey` is the history file's key, the one
-   * name a failure of the read is logged under: never `path`, since no path is in the clear (HHHHHHHHH-19).
-   */
-  readonly permanentIdOf: (path: string, placeKey: string) => Promise<PermanentIdRead>;
+  /** What the section's place says of its file, by {@link placeOf}. */
+  readonly place: (path: string) => Promise<PdfPlace>;
   /** No input for {@link IDLE_SECONDS} and no document opening. */
   readonly idle: () => boolean;
   readonly now: () => number;
 }
-
-/**
- * What the host read of a closed PDF's `/ID`: the id as hex or `null` where it has none; `locked` where the PDF needs a
- * password to open, which the check does not have; `failed` where the PDF itself could not be read, its file refused
- * or its bytes not a document the engine opens; `not-read` where the reading did not happen, the host not starting or
- * ending, which says nothing about the PDF.
- */
-export type PermanentIdRead =
-  | { readonly kind: 'read'; readonly id: string | null }
-  | { readonly kind: 'locked' }
-  | { readonly kind: 'failed' }
-  | { readonly kind: 'not-read' };
-
-/** A closed PDF's own file refused to be opened for reading: the PDF's failure, never the engine host's. */
-export class PdfFileRefused extends Error {
-  constructor(cause: unknown) {
-    // PATHLESS: Node's own message names the PDF, and this one is logged.
-    super(`the PDF could not be opened for reading: ${pathlessCause(cause)}`, { cause });
-    this.name = 'PdfFileRefused';
-  }
-}
-
-/**
- * Whose failure a read of a closed PDF's `/ID` that threw was. The PDF's own — its file refused ({@link PdfFileRefused})
- * or its bytes a document the engine says will never open (`EngineOpenFailed`, the class the open gives exactly that)
- * — is `failed`, which Decision 6 removes. Anything else is the reading's: a host that did not start, was refused, or
- * ended, which says nothing of the PDF and is `not-read`.
- */
-export function idReadFailure(thrown: unknown): 'failed' | 'not-read' {
-  return thrown instanceof PdfFileRefused || thrown instanceof EngineOpenFailed ? 'failed' : 'not-read';
-}
-
-/** Whether the PDF at a section's place is the section's, or whether this pass could not tell. */
-type Presence = 'present' | 'absent' | 'not-looked';
 
 /** What one step did. */
 export type HistoryStep = 'busy' | 'not-due' | 'checked' | 'done';
@@ -111,31 +102,11 @@ export interface HistoryCheck {
 
 export function createHistoryCheck(deps: HistoryCheckDependencies): HistoryCheck {
   /** The sections this pass has still to check, `undefined` between passes. */
-  let queue: { readonly placeKey: string; readonly section: string; readonly place: string; readonly guard: HistoryGuard }[] | undefined;
+  let queue: { readonly placeKey: string; readonly section: string; readonly place: string }[] | undefined;
 
   const ledgerOf = (): Ledger => {
     const kept = ledgerSchema.safeParse(deps.store.ledger());
     return kept.success ? kept.data : { lastPass: null, sections: {} };
-  };
-
-  /** Whether the PDF at `place` is the one `guard` names, updating what the ledger has seen of it. */
-  const presence = async (placeKey: string, place: string, guard: HistoryGuard, entry: Ledger['sections'][string]): Promise<Presence> => {
-    const found = await deps.stat(place);
-    if (found === null) return 'absent';
-    if (guard.kind === 'stamp') return found.size === guard.size && found.mtimeMs === guard.mtimeMs ? 'present' : 'absent';
-    if (entry.seen !== null && entry.seen.size === found.size && entry.seen.mtimeMs === found.mtimeMs) return 'present';
-    // MOVED SINCE IT WAS LAST SEEN WITH ITS ID, or never seen: the one case that parses.
-    const read = await deps.permanentIdOf(place, placeKey);
-    // A PDF THAT NEEDS A PASSWORD is THERE, and its `/ID` cannot be read without one, which the check never has. Counting
-    // it missing would remove the history of a file standing at its place a day later, so it counts as present, and what
-    // was seen is not moved: the next pass asks again. Asked of the owner (ADR-0279's correction of 2026-11-12, later).
-    if (read.kind === 'locked') return 'present';
-    // THE HOST DID NOT READ IT: a host that does not start would otherwise count every `/ID`-guarded PDF as gone, and
-    // remove every such history a day later. Nothing was learnt of the PDF, so nothing is decided of it this pass.
-    if (read.kind === 'not-read') return 'not-looked';
-    if (read.kind === 'failed' || read.id !== guard.id) return 'absent';
-    entry.seen = { size: found.size, mtimeMs: found.mtimeMs };
-    return 'present';
   };
 
   return {
@@ -144,28 +115,29 @@ export function createHistoryCheck(deps: HistoryCheckDependencies): HistoryCheck
       const ledger = ledgerOf();
       if (queue === undefined) {
         if (ledger.lastPass !== null && deps.now() - ledger.lastPass < DAY_MS) return 'not-due';
-        queue = deps.store.files().flatMap((placeKey) => deps.store.guards(placeKey).map((each) => ({ placeKey, ...each })));
+        queue = deps.store
+          .files()
+          .flatMap((placeKey) => deps.store.guards(placeKey).map(({ section, place }) => ({ placeKey, section, place })));
         // A SECTION NO LONGER IN ANY FILE leaves the ledger with this pass: it names a place, and keeps nothing it needs.
         const live = new Set(queue.map((each) => `${each.placeKey}/${each.section}`));
         for (const name of Object.keys(ledger.sections)) if (!live.has(name)) Reflect.deleteProperty(ledger.sections, name);
       }
-      for (const { placeKey, section, place, guard } of queue.splice(0, BATCH)) {
+      for (const { placeKey, section, place } of queue.splice(0, BATCH)) {
         const name = `${placeKey}/${section}`;
-        const entry = ledger.sections[name] ?? { seen: null, missingSince: null };
-        const found = await presence(placeKey, place, guard, entry);
+        const found = await deps.place(place);
         // THE CLOCK NEITHER STARTS NOR STOPS: the ledger keeps what it knew, and the next pass looks again.
-        if (found === 'not-looked') continue;
-        if (found === 'present') {
+        if (found === 'unreachable') continue;
+        if (found === 'found') {
           // BACK, OR NEVER GONE: the clock starts again.
-          ledger.sections[name] = { seen: entry.seen, missingSince: null };
+          ledger.sections[name] = { missingSince: null };
           continue;
         }
-        const since = entry.missingSince ?? deps.now();
+        const since = ledger.sections[name]?.missingSince ?? deps.now();
         if (deps.now() - since >= GRACE_MS) {
           await deps.store.removeSection(placeKey, section);
           Reflect.deleteProperty(ledger.sections, name);
         } else {
-          ledger.sections[name] = { seen: entry.seen, missingSince: since };
+          ledger.sections[name] = { missingSince: since };
         }
       }
       const finished = queue.length === 0;

@@ -1,7 +1,6 @@
 import { randomBytes } from 'node:crypto';
-import { constants as fileConstants, createReadStream, createWriteStream, statSync } from 'node:fs';
-import { type FileHandle, copyFile, mkdir, open as openFile, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
-import { pipeline } from 'node:stream/promises';
+import { constants as fileConstants, createReadStream, statSync } from 'node:fs';
+import { copyFile, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { type Server, connect, createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -323,15 +322,7 @@ import type { EditWatchSurface } from './externalEditWatch.js';
 import type { OpenExternalEditor } from './openExternalEditor.js';
 import type { SecretStoreSurface } from './secretStore.js';
 import { createDocumentHistory, noDocumentHistory } from './documentHistory.js';
-import {
-  type HistoryCheckDependencies,
-  IDLE_SECONDS,
-  type PermanentIdRead,
-  PdfFileRefused,
-  createHistoryCheck,
-  driveHistoryCheck,
-  idReadFailure,
-} from './historyCheck.js';
+import { IDLE_SECONDS, createHistoryCheck, driveHistoryCheck, placeOf } from './historyCheck.js';
 import type { HistoryStore } from './historyStore.js';
 import { type SettingsSurface, createEphemeralSettings, createJsonFile } from './settingsFile.js';
 import { cutFailure, type PrefixDigest, writePrefix } from './signedVersionFile.js';
@@ -2283,16 +2274,9 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       : driveHistoryCheck(
           createHistoryCheck({
             store: historyStore,
-            stat: async (path) => {
-              try {
-                const found = await stat(path);
-                return { size: found.size, mtimeMs: found.mtimeMs };
-              } catch {
-                // NOT FOUND OR NOT READABLE, which an unplugged drive is too: the check's own answer for both is `null`.
-                return null;
-              }
-            },
-            permanentIdOf: engineHost.permanentIdAt,
+            // FOUND, GONE OR UNREACHABLE by the one rule (the owner, 2026-11-14): only a file not found in a folder that is
+            // there is gone, and the check reads no PDF.
+            place: (path) => placeOf(path, stat),
             idle: () => opening === 0 && systemIdleSeconds() >= IDLE_SECONDS,
             now: () => Date.now(),
           }),
@@ -2800,12 +2784,6 @@ function engineSessionOpener(
   readonly closeHost: () => Promise<void>;
   /** How a protect replaces the document's plaintext copies, through this host (ADR-0171 Decision 8). */
   readonly copies: ProtectedCopies;
-  /**
-   * A CLOSED PDF's first `/ID` string, for the chat history's 24-hour check (ADR-0279 Decision 6): a copy of the file
-   * opened in a session of its own and ended, as a protect's sealing of a copy is, so `main` never parses it. A failure
-   * is logged by `placeKey`, the history file's key, and never by `path` (HHHHHHHHH-19).
-   */
-  readonly permanentIdAt: HistoryCheckDependencies['permanentIdOf'];
   /**
    * Builds one document's sessions — the same call `openedDocument` and the
    * death path make, returned so recycling uses it rather than a second one.
@@ -3942,45 +3920,6 @@ function engineSessionOpener(
     }
   };
 
-  /**
-   * A closed PDF's `/ID`, by {@link openInArea}'s one route: a copy into a fresh granted pair, opened with no key, read,
-   * and ended whatever happens. A PDF that needs a password answers `locked`, which the check counts as present; any
-   * other failure is `failed`, the PDF that cannot be read.
-   */
-  const permanentIdAt = async (path: string, placeKey: string): Promise<PermanentIdRead> => {
-    let end: (() => Promise<void>) | undefined;
-    try {
-      const opened = await openInArea(
-        async (destination) => {
-          let source: FileHandle;
-          try {
-            source = await openFile(path, 'r');
-          } catch (refused) {
-            throw new PdfFileRefused(refused);
-          }
-          try {
-            await pipeline(source.createReadStream({ autoClose: false }), createWriteStream(destination));
-          } finally {
-            await source.close();
-          }
-          return (await stat(destination)).size;
-        },
-        { keys: [], standing: 'as-copied' },
-      );
-      end = opened.end;
-      return { kind: 'read', id: (await readDocumentInformationThroughHost(opened.session)).permanentId };
-    } catch (thrown) {
-      if (thrown instanceof EngineDocumentLocked) return { kind: 'locked' };
-      // NOT SWALLOWED: either answer is one the check acts on, and the cause is said either way. BY ITS HISTORY KEY AND
-      // PATHLESS (HHHHHHHHH-19): the log goes with a crash report a person sends, and the store names no PDF by its path.
-      const kind = idReadFailure(thrown);
-      failures({ event: kind === 'failed' ? 'history-id-unread' : 'history-id-not-read', detail: `${placeKey}: ${pathlessCause(thrown)}` });
-      return { kind };
-    } finally {
-      if (end !== undefined) await end();
-    }
-  };
-
   const unlockDocument = async (docId: DocId, password: string): Promise<UnlockOutcome> => {
     // THE LANE'S VERSION STAMP IS DISCARDED, deliberately. Unlocking changes no
     // bytes and bumps no version — it gives the engine a session it could not
@@ -4105,7 +4044,6 @@ function engineSessionOpener(
         failures({ event: 'copy-unsealed', detail: `${path}: ${cause instanceof Error ? cause.message : String(cause)}` });
       },
     },
-    permanentIdAt,
     rebuildSessions: create,
     restoreSessions: buildSessions,
     unlockDocument,
