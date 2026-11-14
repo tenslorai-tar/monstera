@@ -1071,6 +1071,19 @@ its correction of that date, written in the same range of work.
 
 HHHHHHHHH-21 names what does not match; those items are still open.
 
+### Correction, 2026-11-14 — where each finding was closed
+
+Every finding is closed on `work/2026-11-10`, each with a case that fails without its fix unless it says otherwise.
+-1 `7af35756`, -2 `3cf64def`, -3 `04ece345`, -4 `ac187bfa`. -5 `806f7513`, -6 `1d029118`, -7 `c5fc2a75`; -9 was `3cf64def`'s; -10 `beae4ced`;
+-13 `7ec6d6ef`; -14 `37c1f2de`; -16 was `546311e2`'s; -17 `74fc8ec0`. Then, by the owner's rulings of 2026-11-13:
+-8 `506ceb81` (History says the approved locked line); -12 `5049ec31` (Decision 7 built as written), with -18 `ff7894f8`
+first, since -12 keeps each check's answer and the catch-all would have kept a host's failure as *not found*; -19
+`c194797b` (no path in the history and signed-version log lines, by `pathlessCause`); -20 `b4e57bf8`. -21 in three:
+the tests `64fd5962` (a fixture for the rebuild of a protected file, which no case reached: mutated, the rebuild without
+its password passed every case), the documents `dc2fb3ff`, and the certification line, which looked its command up by
+id, by B4 as ADR-0295 (`1fb53286`, built `0f807363`). -11 `abd1c427`, a proof on the built worker. -15 `421c6d9a`,
+walked in the running app, with -8 and -12 walked there too.
+
 ---
 
 ## 2026-11-12 — Stage audit of `01d02a84..75a59036` — findings GGGGGGGGG-1 to GGGGGGGGG-7
