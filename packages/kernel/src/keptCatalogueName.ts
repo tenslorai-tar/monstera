@@ -15,6 +15,14 @@ export function keptCatalogueName(fingerprint: string): string {
   return `${fingerprint}.catalogue.json`;
 }
 
+/**
+ * The marker `main` leaves in the kept area when a fingerprint's catalogue will NOT be kept this launch: the catalogue
+ * host failed, found no face or could not be built. A host waiting for the file stops at it and reads its folders.
+ */
+export function unmadeCatalogueName(fingerprint: string): string {
+  return `${keptCatalogueName(fingerprint)}.unmade`;
+}
+
 /** Whether a file in a kept area is a kept catalogue, of whichever fingerprint: what `main` removes when another is placed. */
 export function isKeptCatalogueName(name: string): boolean {
   return name.endsWith('.catalogue.json') && KEPT_FINGERPRINT.test(name.slice(0, -'.catalogue.json'.length));

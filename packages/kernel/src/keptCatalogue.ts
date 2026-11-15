@@ -1,12 +1,40 @@
-import { readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { extname, join } from 'node:path';
 
 import { z } from 'zod';
 
 import type { Catalogue, CatalogueFace, CatalogueReading, FontFolder } from './fontCatalogue.js';
-import { KEPT_FINGERPRINT, isKeptCatalogueName, keptCatalogueName } from './keptCatalogueName.js';
+import { KEPT_FINGERPRINT, isKeptCatalogueName, keptCatalogueName, unmadeCatalogueName } from './keptCatalogueName.js';
 
 export { keptCatalogueName } from './keptCatalogueName.js';
+
+/**
+ * How a host waits for a kept file being made: `sleep` blocks this thread, which is what reading the folders would have
+ * done, without the reading. A case passes its own clock.
+ */
+export interface KeptWait {
+  readonly now: () => number;
+  readonly sleep: (ms: number) => void;
+  readonly boundMs: number;
+}
+
+/** How often a waiting host looks for the file or `main`'s marker. */
+const KEPT_POLL_MS = 100;
+
+/**
+ * The longest a host waits: past `HOST_CALL_DEADLINE`'s 120 s floor (`apps/desktop/src/budget.ts`), the deadline that
+ * ends a catalogue host that never answers, after which `main` leaves its marker. So this is reached only where `main`
+ * itself did not, and the host then reads its folders as it did before.
+ */
+const KEPT_WAIT_BOUND_MS = 150_000;
+
+const KEPT_WAIT: KeptWait = {
+  now: () => Date.now(),
+  sleep: (ms) => {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+  },
+  boundMs: KEPT_WAIT_BOUND_MS,
+};
 
 /**
  * The font catalogue kept as a file ([ADR-0293](../../../docs/DECISIONS/0293-the-font-catalogue-is-read-once-by-a-host-that-holds-no-document-and-kept.md)):
@@ -153,11 +181,25 @@ export function catalogueFromKept(text: string, fingerprint: string, folders: re
  * A reading that answers from the kept file in `area` for `fingerprint` where it is there and passes, and from `read`
  * otherwise (ADR-0293 Decision 6). `refused` hears why a file present was not taken, for the host's diagnostics log.
  */
-export function keptOrRead(area: string, fingerprint: string, read: CatalogueReading, refused: (why: string) => void = () => undefined): CatalogueReading {
+export function keptOrRead(
+  area: string,
+  fingerprint: string,
+  read: CatalogueReading,
+  refused: (why: string) => void = () => undefined,
+  wait: KeptWait = KEPT_WAIT,
+): CatalogueReading {
   return (folders) => {
+    const file = join(area, keptCatalogueName(fingerprint));
+    // NOT THERE YET IS BEING MADE: `main` names the area to a host from the moment it starts the catalogue host, so a
+    // host that reads the folders now reads them beside the one reading for it, which on a first launch was three reads
+    // at once (the catalogue, compose and MuPDF hosts: the font list 10.9 s, a block's faces 5.3 s, shell log of a fresh
+    // launch, 2026-11-14). It waits for the file, and reads the folders only where `main` says it will not come or the
+    // wait runs out.
+    const unmade = join(area, unmadeCatalogueName(fingerprint));
+    for (const started = wait.now(); !existsSync(file) && !existsSync(unmade) && wait.now() - started < wait.boundMs; ) wait.sleep(KEPT_POLL_MS);
     let text: string;
     try {
-      text = readFileSync(join(area, keptCatalogueName(fingerprint)), 'utf8');
+      text = readFileSync(file, 'utf8');
     } catch {
       return read(folders);
     }

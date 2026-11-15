@@ -1211,6 +1211,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         copy: (from, to) => copyFile(from, to),
         names: (directory) => readdir(directory),
         remove: (path) => rm(path, { force: true }),
+        mark: (path) => writeFile(path, ''),
       },
       fingerprint: fontList.fingerprint,
       run: keptCatalogue.platform === null ? null : catalogueHostRun(keptCatalogue.platform, failures, hostPolicy),

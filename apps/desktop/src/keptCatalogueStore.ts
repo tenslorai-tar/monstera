@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 
-import { isKeptCatalogueName, keptCatalogueName } from '@monstera/kernel';
+import { isKeptCatalogueName, keptCatalogueName, unmadeCatalogueName } from '@monstera/kernel';
 
 import type { KeptCatalogueArguments } from './engineHostPrograms.js';
 import { type ContainerSid, type UserSid, keptAreaDacl } from './hostDacl.js';
@@ -25,10 +25,13 @@ import type { DaclSurface } from './packageDataLock.js';
  * no host told of the area. Every failure here leaves the hosts reading their folders, as before ADR-0293: the file can
  * only make a load faster.
  *
- * ## Told only once the file is in place
+ * ## Told as soon as the file is being made, and told when it will not be
  *
- * {@link KeptCatalogueHolder.set} is called after the copy, or after finding a file of this fingerprint already there, so a
- * host is never told of an area that holds no file for its fingerprint, which would cost it a failed read for nothing.
+ * {@link KeptCatalogueHolder.set} is called once a file of this fingerprint is found, or as the catalogue host starts to
+ * make one (ADR-0293's correction of 2026-11-15). Told only once the file was in place, as this said until then, a host
+ * started on a first launch was told nothing and read the folders beside the catalogue host. Now it waits for the file,
+ * and every path that keeps none leaves the marker `unmadeCatalogueName` names, at which a waiting host stops and reads
+ * its folders. A marker from an earlier launch is removed before anything is told.
  */
 
 /** What the text hosts are told when each starts: set once, by {@link createKeptCatalogue}'s `start`. */
@@ -57,6 +60,8 @@ export interface KeptAreaFiles {
   readonly copy: (from: string, to: string) => Promise<void>;
   readonly names: (directory: string) => Promise<readonly string[]>;
   readonly remove: (path: string) => Promise<void>;
+  /** Leaves an empty file at `path`: the marker that a fingerprint's catalogue will not be kept this launch. */
+  readonly mark: (path: string) => Promise<void>;
 }
 
 /** One run of the catalogue host for a fingerprint: `place` is handed the written file's path while its area exists. */
@@ -98,37 +103,50 @@ export function createKeptCatalogue(parts: KeptCatalogueParts): { readonly start
       const fingerprint = await parts.fingerprint();
       const name = keptCatalogueName(fingerprint);
       const kept = join(area, name);
-      if (!(await files.exists(kept))) {
-        if (parts.run === null) {
-          report('no catalogue host can be built here, so the hosts read their font folders');
-          return;
-        }
-        let outcome: 'kept' | 'no-faces';
-        try {
-          outcome = await parts.run(fingerprint, async (written) => {
-            // BY THE NAME THE FINGERPRINT GIVES, never one the host answered: `main` copies what it named.
-            if (!written.endsWith(name)) throw new Error('the catalogue host wrote a file of another name');
-            await files.copy(written, kept);
-          });
-        } catch (error) {
-          report(`the catalogue host did not keep the font catalogue, so the hosts read their font folders: ${String(error)}`);
-          return;
-        }
-        if (outcome === 'no-faces') {
-          report('the font folders held no face, so nothing was kept and the hosts read the folders');
-          return;
-        }
-        // IN PLACE, or no host is told of it: a host told of an area with no file pays a failed read for nothing.
-        if (!(await files.exists(kept))) {
-          report('the catalogue host answered, and no kept file is in place, so the hosts read their font folders');
-          return;
-        }
-        for (const other of await files.names(area)) {
-          if (other !== name && isKeptCatalogueName(other)) await files.remove(join(area, other));
-        }
-        report('the font catalogue was read once and kept for this computer’s fonts');
+      const unmade = join(area, unmadeCatalogueName(fingerprint));
+      // A MARKER FROM AN EARLIER LAUNCH says nothing of this one, and a host that saw it would read its folders beside
+      // the catalogue host this launch starts.
+      await files.remove(unmade);
+      if (await files.exists(kept)) {
+        holder.set({ area, fingerprint });
+        return;
       }
+      if (parts.run === null) {
+        report('no catalogue host can be built here, so the hosts read their font folders');
+        return;
+      }
+      // NAMED TO THE HOSTS WHILE IT IS MADE (ADR-0293's correction of 2026-11-15): a host started now waits for the file
+      // (`keptOrRead`) rather than reading the folders beside the catalogue host. On a first launch the catalogue,
+      // compose and MuPDF hosts read them at once, and the font list took 10.9 s and a block's faces 5.3 s (shell log,
+      // 2026-11-14). EVERY PATH THAT KEEPS NO FILE leaves the marker, so a waiting host stops and reads its folders.
       holder.set({ area, fingerprint });
+      const notKept = async (line: string): Promise<void> => {
+        report(line);
+        await files.mark(unmade);
+      };
+      let outcome: 'kept' | 'no-faces';
+      try {
+        outcome = await parts.run(fingerprint, async (written) => {
+          // BY THE NAME THE FINGERPRINT GIVES, never one the host answered: `main` copies what it named.
+          if (!written.endsWith(name)) throw new Error('the catalogue host wrote a file of another name');
+          await files.copy(written, kept);
+        });
+      } catch (error) {
+        await notKept(`the catalogue host did not keep the font catalogue, so the hosts read their font folders: ${String(error)}`);
+        return;
+      }
+      if (outcome === 'no-faces') {
+        await notKept('the font folders held no face, so nothing was kept and the hosts read the folders');
+        return;
+      }
+      if (!(await files.exists(kept))) {
+        await notKept('the catalogue host answered, and no kept file is in place, so the hosts read their font folders');
+        return;
+      }
+      for (const other of await files.names(area)) {
+        if (other !== name && (isKeptCatalogueName(other) || other.endsWith('.catalogue.json.unmade'))) await files.remove(join(area, other));
+      }
+      report('the font catalogue was read once and kept for this computer’s fonts');
     },
   };
 }

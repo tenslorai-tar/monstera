@@ -2,7 +2,7 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFile
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { keptCatalogueName } from '@monstera/kernel';
+import { keptCatalogueName, unmadeCatalogueName } from '@monstera/kernel';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import type { ContainerSid, UserSid } from './hostDacl.js';
@@ -46,6 +46,10 @@ function filesRecording(copies: [string, string][]): KeptAreaFiles {
     names: (directory) => Promise.resolve(readdirSync(directory)),
     remove: (path) => {
       rmSync(path, { force: true });
+      return Promise.resolve();
+    },
+    mark: (path) => {
+      writeFileSync(path, '');
       return Promise.resolve();
     },
   };
@@ -119,21 +123,11 @@ describe('the kept catalogue in main (ADR-0293)', () => {
     expect(given.written).toHaveLength(1);
   });
 
+  // NO AREA A HOST MAY BE TOLD OF: one whose grants are not known, or one no catalogue host will ever fill.
   const UNTOLD: readonly [string, (area: string) => Partial<KeptCatalogueParts>][] = [
     ['the DACL could not be written', () => ({ dacl: { read: () => null, write: () => false } })],
     ['the DACL did not read back', () => ({ dacl: { read: () => null, write: () => true } })],
     ['no catalogue host can be built', () => ({ run: null })],
-    ['the catalogue host failed', () => ({ run: () => Promise.reject(new Error('refused at connect')) })],
-    ['the folders held no face', () => ({ run: () => Promise.resolve('no-faces') })],
-    [
-      'the host wrote a file of another name',
-      () => ({
-        run: async (_fingerprint, place) => {
-          await place(join(folder(), 'other.json'));
-          return 'kept';
-        },
-      }),
-    ],
   ];
   for (const [name, change] of UNTOLD) {
     it(`tells no host of the area where ${name}, and reports why`, async () => {
@@ -146,11 +140,64 @@ describe('the kept catalogue in main (ADR-0293)', () => {
     });
   }
 
-  it('CONTROL: a host that answers kept and placed nothing leaves the hosts untold, so being told means a file is there', async () => {
+  it('tells the hosts of the area AS THE CATALOGUE HOST STARTS, so a host started now waits for the file (2026-11-15)', async () => {
     const area = folder();
     const holder = keptCatalogueHolder();
-    await createKeptCatalogue(parts({ area, holder, run: () => Promise.resolve('kept') })).start();
-    expect(holder.known()).toBeNull();
-    expect(existsSync(join(area, keptCatalogueName(FINGERPRINT)))).toBe(false);
+    let toldDuringRun: unknown = 'not asked';
+    await createKeptCatalogue(
+      parts({
+        area,
+        holder,
+        run: async (fingerprint, place) => {
+          toldDuringRun = holder.known();
+          return hostWriting('the catalogue', [])(fingerprint, place);
+        },
+      }),
+    ).start();
+    expect(toldDuringRun).toStrictEqual({ area, fingerprint: FINGERPRINT });
+    // AND NO MARKER, since the file came.
+    expect(existsSync(join(area, unmadeCatalogueName(FINGERPRINT)))).toBe(false);
+  });
+
+  // KEPT NOTHING THIS LAUNCH: the hosts were told while it was made, so the marker tells the waiting ones to read their folders.
+  const UNMADE: readonly [string, () => Partial<KeptCatalogueParts>][] = [
+    ['the catalogue host failed', () => ({ run: () => Promise.reject(new Error('refused at connect')) })],
+    ['the folders held no face', () => ({ run: () => Promise.resolve('no-faces') })],
+    [
+      'the host wrote a file of another name',
+      () => ({
+        run: async (_fingerprint, place) => {
+          await place(join(folder(), 'other.json'));
+          return 'kept';
+        },
+      }),
+    ],
+    ['the host answered kept and placed nothing', () => ({ run: () => Promise.resolve('kept') })],
+  ];
+  for (const [name, change] of UNMADE) {
+    it(`leaves the marker that the file will not come where ${name}, and reports why`, async () => {
+      const area = folder();
+      const reported: string[] = [];
+      await createKeptCatalogue(parts({ area, report: (line) => reported.push(line), ...change() })).start();
+      expect(existsSync(join(area, unmadeCatalogueName(FINGERPRINT)))).toBe(true);
+      expect(existsSync(join(area, keptCatalogueName(FINGERPRINT)))).toBe(false);
+      expect(reported).toHaveLength(1);
+    });
+  }
+
+  it('removes a marker an earlier launch left before telling any host, so it cannot stop this launch’s wait', async () => {
+    const area = folder();
+    writeFileSync(join(area, unmadeCatalogueName(FINGERPRINT)), '');
+    let markerDuringRun = true;
+    await createKeptCatalogue(
+      parts({
+        area,
+        run: async (fingerprint, place) => {
+          markerDuringRun = existsSync(join(area, unmadeCatalogueName(FINGERPRINT)));
+          return hostWriting('the catalogue', [])(fingerprint, place);
+        },
+      }),
+    ).start();
+    expect(markerDuringRun).toBe(false);
   });
 });

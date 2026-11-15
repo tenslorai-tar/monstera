@@ -5,7 +5,19 @@ import { join, sep } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import type { Catalogue, CatalogueFace, FontFolder } from './fontCatalogue.js';
-import { KEPT_CATALOGUE_READING, catalogueFromKept, keepCatalogue, keptCatalogueName, keptCatalogueText, keptOrRead } from './keptCatalogue.js';
+import {
+  KEPT_CATALOGUE_READING,
+  type KeptWait,
+  catalogueFromKept,
+  keepCatalogue,
+  keptCatalogueName,
+  keptCatalogueText,
+  keptOrRead,
+} from './keptCatalogue.js';
+import { unmadeCatalogueName } from './keptCatalogueName.js';
+
+/** A wait that has no time: the reading looks once, as it did before files were waited for. */
+const NO_WAIT: KeptWait = { now: () => 0, sleep: () => undefined, boundMs: 0 };
 
 /**
  * The kept catalogue (ADR-0293): a host takes the file only where every face is one `readCatalogue` would build for a font
@@ -84,12 +96,77 @@ describe('a kept catalogue (ADR-0293)', () => {
 
   it('CONTROL: with no file the reading reads the folders, so the case above could see a reading that always read', () => {
     let read = 0;
-    const reading = keptOrRead(area(), FINGERPRINT, () => {
-      read += 1;
-      return { faces: [], unreadable: [] };
-    });
+    const reading = keptOrRead(
+      area(),
+      FINGERPRINT,
+      () => {
+        read += 1;
+        return { faces: [], unreadable: [] };
+      },
+      undefined,
+      NO_WAIT,
+    );
     reading(FOLDERS);
     expect(read).toBe(1);
+  });
+
+  describe('a file being made is waited for, not read beside (ADR-0293’s correction of 2026-11-15)', () => {
+    /** A clock that moves only when the host sleeps, and a sleep that runs `then` at its `at`th call. */
+    function clocked(at: number, then: () => void) {
+      let clock = 0;
+      let sleeps = 0;
+      return {
+        wait: {
+          now: () => clock,
+          sleep: (ms: number) => {
+            sleeps += 1;
+            clock += ms;
+            if (sleeps === at) then();
+          },
+          boundMs: 10_000,
+        },
+        sleeps: () => sleeps,
+      };
+    }
+    const counting = () => {
+      const seen = { read: 0 };
+      return {
+        seen,
+        read: () => {
+          seen.read += 1;
+          return { faces: [], unreadable: [] };
+        },
+      };
+    };
+
+    it('takes the file the catalogue host places while it waits, and reads no folder', () => {
+      const made = area();
+      const { seen, read } = counting();
+      const clock = clocked(3, () => {
+        writeFileSync(join(made, keptCatalogueName(FINGERPRINT)), keptCatalogueText(CATALOGUE, FINGERPRINT));
+      });
+      expect(keptOrRead(made, FINGERPRINT, read, undefined, clock.wait)(FOLDERS).faces).toHaveLength(3);
+      expect(seen.read).toBe(0);
+      expect(clock.sleeps()).toBe(3);
+    });
+
+    it('stops at main’s marker that the file will not come, and reads the folders at once', () => {
+      const made = area();
+      writeFileSync(join(made, unmadeCatalogueName(FINGERPRINT)), '');
+      const { seen, read } = counting();
+      const clock = clocked(Number.POSITIVE_INFINITY, () => undefined);
+      keptOrRead(made, FINGERPRINT, read, undefined, clock.wait)(FOLDERS);
+      expect(seen.read).toBe(1);
+      expect(clock.sleeps()).toBe(0);
+    });
+
+    it('reads the folders once the bound runs out with neither the file nor the marker', () => {
+      const { seen, read } = counting();
+      const clock = clocked(Number.POSITIVE_INFINITY, () => undefined);
+      keptOrRead(area(), FINGERPRINT, read, undefined, clock.wait)(FOLDERS);
+      expect(seen.read).toBe(1);
+      expect(clock.sleeps()).toBe(100);
+    });
   });
 
   const REFUSED: readonly [string, () => string, string][] = [
