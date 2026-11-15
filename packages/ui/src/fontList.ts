@@ -2,7 +2,7 @@ import type { ContractClient } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
 import { useEffect, useState } from 'react';
 
-import { noteFamilies } from './familyFaces.js';
+import { drawFamiliesWhenIdle, noteFamilies } from './familyFaces.js';
 import type { DocumentFont, FontList, ReadFontList } from './FontPicker.js';
 
 /**
@@ -21,8 +21,15 @@ export function fontListOf(client: ContractClient): Promise<ReadFontList> {
   if (held !== undefined) return held;
   const reading = client['app.fontFamilies']({}).then(
     (answer) => {
-      // NOTED FOR THE FACES (ADR-0250), which the picker gives as it draws the list; the read itself draws nothing.
-      if (answer.ok) noteFamilies(answer.value.families, client);
+      // NOTED FOR THE FACES (ADR-0250), and GIVEN THEM WHILE THE WINDOW IS IDLE from here, the list's arrival
+      // (`drawFamiliesWhenIdle`): the list is read at the first idle moment after start (ADR-0268), so its families are
+      // measured long before a picker draws them. Given from the picker's mount instead, the shown names were measured
+      // inside the first press on a block in a window just started, 28 ms of `measureText` under `previewFamilyOf`
+      // (unminified profile, document 2, 2026-11-15). The picker's own call then finds every family handled.
+      if (answer.ok) {
+        noteFamilies(answer.value.families, client);
+        drawFamiliesWhenIdle(answer.value.families);
+      }
       return answer.ok ? answer.value : { listed: false, families: [], more: 0 };
     },
     () => ({ listed: false, families: [], more: 0 }),

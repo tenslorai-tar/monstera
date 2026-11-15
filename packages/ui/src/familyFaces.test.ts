@@ -36,22 +36,56 @@ describe('the whole list is given its faces while the window is idle, and announ
       told += 1;
     });
     const families = Array.from({ length: 5 }, (_unused, at) => ({ ...entry(`Idle Family ${String(at)}`, 'installed'), locals: [`IdleFamily${String(at)}`] }));
-    // THE IDLE PERIODS, run by the case: each slice is given no time left, so it takes one family, the least it may.
+    // THE IDLE PERIODS, run by the case.
     const slices: ((remaining: () => number) => void)[] = [];
     drawFamiliesWhenIdle(families, (slice) => slices.push(slice));
     // NOTHING AT THE CALL: the cost the press used to pay is not paid here.
     expect(measured).toBe(0);
     expect(added).not.toHaveBeenCalled();
+    // A PERIOD WITH NO ROOM FOR A FAMILY gives none and asks again: a slice never runs into the person's next input.
+    slices.shift()?.(() => 0);
+    expect(added).not.toHaveBeenCalled();
+    expect(slices).toHaveLength(1);
+    // ROOM FOR TWO A PERIOD: each family's measure spends it, as a cold one does.
+    let spent = 0;
     let ran = 0;
     for (let slice = slices.shift(); slice !== undefined; slice = slices.shift()) {
-      slice(() => 0);
+      spent = 0;
+      slice(() => {
+        const left = 25 - spent;
+        spent += 10;
+        return left;
+      });
       ran += 1;
     }
-    expect(ran).toBe(families.length);
+    expect(ran).toBe(Math.ceil(families.length / 2));
     expect(added).toHaveBeenCalledTimes(families.length);
     // CONTROL: the set was announced, and ONCE for the list, not once a slice.
     expect(told).toBe(1);
     stop();
+    vi.unstubAllGlobals();
+  });
+
+  it('gives no family while the person has input waiting, however much idle time is left, and asks again', () => {
+    vi.stubGlobal('FontFace', class {
+      constructor(readonly family: string) {}
+    });
+    const added = vi.fn();
+    vi.stubGlobal('document', {
+      fonts: { add: added },
+      createElement: () => ({ getContext: () => ({ font: '', measureText: () => ({ width: 10 }) }) }),
+    });
+    let pending = true;
+    vi.stubGlobal('navigator', { scheduling: { isInputPending: () => pending } });
+    const slices: ((remaining: () => number) => void)[] = [];
+    drawFamiliesWhenIdle([{ ...entry('Input Waits Sans', 'installed'), locals: ['InputWaitsSans'] }], (slice) => slices.push(slice));
+    slices.shift()?.(() => 50);
+    expect(added).not.toHaveBeenCalled();
+    expect(slices).toHaveLength(1);
+    // CONTROL: the input handled, the next period gives it.
+    pending = false;
+    slices.shift()?.(() => 50);
+    expect(added).toHaveBeenCalledTimes(1);
     vi.unstubAllGlobals();
   });
 });

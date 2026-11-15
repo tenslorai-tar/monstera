@@ -129,6 +129,15 @@ function giveFace(family: FontFamilyEntry): void {
   if (family.origin === 'bundled' && bundled !== undefined && client !== undefined) void addBundled(bundled, client);
 }
 
+/** The idle time a slice must have left to start one more family: room for one family's first measure. */
+const SLICE_ROOM_MS = 10;
+
+/** Whether the person has input waiting: Chromium's own answer, and `false` where a host has none to give. */
+function inputPending(): boolean {
+  const scheduling = (globalThis.navigator as (Navigator & { scheduling?: { isInputPending?: () => boolean } }) | undefined)?.scheduling;
+  return scheduling?.isInputPending?.() === true;
+}
+
 /** Runs `step` when the window is next idle, with the time it may take; a timer where the host has no idle callback. */
 type IdleSchedule = (step: (remaining: () => number) => void) => void;
 const whenIdle: IdleSchedule = (step) => {
@@ -137,11 +146,15 @@ const whenIdle: IdleSchedule = (step) => {
       step(() => deadline.timeRemaining());
     });
   } else {
+    // A HOST WITH NO IDLE CALLBACK gets a frame's worth of time from the step's start, so a slice still gives faces.
     setTimeout(() => {
-      step(() => 0);
+      const started = Date.now();
+      step(() => FALLBACK_SLICE_MS - (Date.now() - started));
     }, 0);
   }
 };
+/** What a step is given where the host has no idle callback: one frame. */
+const FALLBACK_SLICE_MS = 16;
 
 /**
  * {@link drawFamilies} over a WHOLE LIST, a few families at a time while the window is idle, announced once at the end.
@@ -160,11 +173,14 @@ export function drawFamiliesWhenIdle(families: readonly FontFamilyEntry[], sched
   if (left.length === 0) return;
   const before = registered.size;
   const slice = (remaining: () => number): void => {
-    // AT LEAST ONE A SLICE, so a host with no idle time still finishes; more while the idle period lasts.
-    do {
+    // A FAMILY ONLY WHILE THE IDLE PERIOD HAS ROOM FOR ONE AND NO INPUT WAITS. One family's first measure looks it up
+    // among the computer's fonts and can take tens of milliseconds, so a slice that always took one, or went on until
+    // under a millisecond was left, became a long task the person's press waited behind: a first press on a block of 355
+    // to 726 ms and a second of up to 371 ms in a window just started (document 2, 2026-11-15).
+    while (left.length > 0 && remaining() >= SLICE_ROOM_MS && !inputPending()) {
       const next = left.shift();
       if (next !== undefined) giveFace(next);
-    } while (left.length > 0 && remaining() > 1);
+    }
     if (left.length > 0) schedule(slice);
     else if (registered.size !== before) gave();
   };
