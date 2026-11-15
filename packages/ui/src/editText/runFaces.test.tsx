@@ -8,7 +8,16 @@ import type { RunStyle } from '../editorKit/model.js';
 import { noteFamilies } from '../familyFaces.js';
 import type { TextBlock } from '../textBlock.js';
 import { runStyleOf } from './blockModel.js';
-import { type FaceRead, type FaceReads, editorFacesOf, faceCssOf, inkOfFaces, runFacesOf, useRunFaces } from './runFaces.js';
+import {
+  type FaceRead,
+  type FaceReads,
+  drawnInPageFaces,
+  editorFacesOf,
+  faceCssOf,
+  inkOfFaces,
+  runFacesOf,
+  useRunFaces,
+} from './runFaces.js';
 
 const STYLE = { size: 11, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false, italic: false, bold: false };
 const BOX = { x0: 72, y0: 686, x1: 300, y1: 700 };
@@ -135,6 +144,20 @@ describe('the faces an open block is drawn in', () => {
     expect(css(styleOfRun(1))).toBe('"Arimo", var(--m-face-sans)');
     // AND WITHOUT THE READ, the chain's face is not guessed: the page's name, where the list has a family for it.
     expect(faceCssOf(runFacesOf(BLOCK, NONE), BLOCK, 'sans', new Set(['carlito', 'arimo']))(styleOfRun(1))).toBe('var(--m-face-sans)');
+  });
+
+  it('a block every run of which PDF.js drew in its own face is laid out as it will stay; one with a run in a stand-in is not', () => {
+    const both: FaceRead = { faces: NO_BLOCK_FACES, shown: new Map([[1, 'g_d0_f1'], [4, 'g_d0_f2']]) };
+    expect(drawnInPageFaces(BLOCK, runFacesOf(BLOCK, both))).toBe(true);
+    // CONTROL: the Type 3 run has no face PDF.js loaded, so the read on open can still move its letters.
+    expect(drawnInPageFaces(BLOCK, runFacesOf(BLOCK, { faces: NO_BLOCK_FACES, shown: new Map([[1, 'g_d0_f1']]) }))).toBe(false);
+    // THE PREMISE, asserted: the read on open's answer leaves each such run's FIRST family, the one its letters are laid
+    // out in, where it was, and only adds the chain's behind it.
+    noteFamilies([entry('Carlito'), entry('Arimo')], clientOver(() => Promise.reject(new Error('no main here'))));
+    const first = (css: string): string => css.split(', ')[0] ?? '';
+    const before = faceCssOf(runFacesOf(BLOCK, both), BLOCK, 'sans', new Set(['carlito', 'arimo']));
+    const after = faceCssOf(runFacesOf(BLOCK, { ...READ, shown: both.shown }), BLOCK, 'sans', new Set(['carlito', 'arimo']));
+    for (const at of [0, 1]) expect(first(after(styleOfRun(at)))).toBe(first(before(styleOfRun(at))));
   });
 
   it('draws a family the block does not carry behind the person’s fallback kind (`editing.fallback-face`), and a page run behind its own', () => {

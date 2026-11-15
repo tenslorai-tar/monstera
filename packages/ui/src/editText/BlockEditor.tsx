@@ -44,7 +44,7 @@ import {
 } from '../textPlacement.js';
 import { type OpenedBlock, editOf } from './blockModel.js';
 import { type Placed, boxStyle } from './editing.js';
-import { type FaceKind, type RunFaces, editorFacesOf, faceCssOf, inkOfFaces } from './runFaces.js';
+import { type FaceKind, type RunFaces, drawnInPageFaces, editorFacesOf, faceCssOf, inkOfFaces } from './runFaces.js';
 
 /**
  * One block open for editing, on the editor kit
@@ -575,7 +575,10 @@ export function BlockEditor({
   }, [store]);
   const holdPress = (x: number, y: number): void => {
     const corner = frame.current?.getBoundingClientRect();
-    if (faces.settled || corner === undefined) return;
+    // NOT HELD WHERE THE LAYOUT WILL NOT MOVE: words every one of which PDF.js draws in the page's own face keep their
+    // places when the read on open answers (`drawnInPageFaces`), and holding their letters for it delayed the first
+    // typed letter behind an answer that changed nothing under it (document 2, 2026-11-15: 243 to 414 ms).
+    if (faces.settled || drawnInPageFaces(block, faces) || corner === undefined) return;
     held.current = { x: x - corner.left, y: y - corner.top, shown: shown.current, letters: [] };
   };
   // THE FACES DRAWN: the layout will not change for them again, so the held press is placed in it.

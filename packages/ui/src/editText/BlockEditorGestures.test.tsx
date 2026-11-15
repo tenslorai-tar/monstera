@@ -13,6 +13,7 @@ import { EN } from '../messages/en.js';
 import type { TextBlock } from '../textBlock.js';
 import type { PageBlocks } from './editing.js';
 import { EditTextLayer } from './EditTextLayer.js';
+import type { ShownPage } from './pdfjsFaces.js';
 
 /**
  * The rebuilt editor's gestures on a block's BOX (ADR-0271 section 3): its handles and keys, its removal, Escape inside
@@ -57,6 +58,8 @@ afterEach(() => {
 function opened(
   commit: () => Promise<BlockCommit> = () => Promise.resolve('written'),
   faces: () => Promise<typeof NO_BLOCK_FACES> = () => Promise.resolve(NO_BLOCK_FACES),
+  /** PDF.js's text for the page, where a case gives the block's runs the faces PDF.js loaded. */
+  shown?: () => Promise<ShownPage | undefined>,
 ) {
   const onCommit = vi.fn((_block: TextBlock, _text: string, _read: unknown, _formatting?: BlockFormatting) => commit());
   const onHolding = vi.fn();
@@ -71,6 +74,7 @@ function opened(
         page={0}
         paperAt={() => undefined}
         blockFaces={faces}
+        {...(shown === undefined ? {} : { shown })}
       />
     </I18nProvider>,
   );
@@ -359,6 +363,43 @@ describe('letters typed while a press waits for the faces (C1b)', () => {
     };
     return { ...made, settle, pressAndType };
   }
+
+  it('are NOT held in a block PDF.js draws in its own faces: they go in before the read on open answers', async () => {
+    // PDF.JS'S FACE FOR THE BLOCK'S ONE RUN, and the read on open held back for good: the letters' layout is the page's own
+    // face's, which that answer would not move, so nothing waits for it (`drawnInPageFaces`, 2026-11-15).
+    const made = opened(
+      undefined,
+      () => new Promise(() => undefined),
+      () => Promise.resolve({ version: BLOCKS.version, items: [{ text: 'Garden club', x: 72, y: 689, family: 'g_d0_f1' }] }),
+    );
+    // PDF.JS'S ANSWER TAKEN, the read on open still out.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(made.frame()?.dataset['kitMode']).toBe('box');
+    act(() => {
+      fireEvent.mouseDown(made.surface(), { detail: 1, clientX: 40, clientY: 7 });
+    });
+    act(() => {
+      for (const letter of 'XYZ') {
+        made.surface().dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: letter, bubbles: true, cancelable: true }));
+      }
+    });
+    expect(made.surface().textContent).toContain('XYZ');
+  });
+
+  it('CONTROL: the same letters in the same block with NO face from PDF.js wait for the read on open', () => {
+    const made = opened(undefined, () => new Promise(() => undefined));
+    act(() => {
+      fireEvent.mouseDown(made.surface(), { detail: 1, clientX: 40, clientY: 7 });
+    });
+    act(() => {
+      for (const letter of 'XYZ') {
+        made.surface().dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: letter, bubbles: true, cancelable: true }));
+      }
+    });
+    expect(made.surface().textContent).toBe('Garden club');
+  });
 
   it('go in at a caret, never over the whole block the box had selected, where the browser names no character there', async () => {
     const made = heldFaces();

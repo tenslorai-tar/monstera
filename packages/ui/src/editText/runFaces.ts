@@ -81,6 +81,15 @@ export function runFacesOf(block: TextBlock, read: FaceRead): RunFaces {
   return { settled: true, loaded, fonts };
 }
 
+/**
+ * Whether every run of `block` is drawn in the face PDF.js loaded for it: the page's own font, first in each run's
+ * family list (`faceCssOf`). The read on open's answer then only adds families BEHIND it, for letters it lacks, so the
+ * words already there are laid out as they will stay, and a press placed in them does not wait for that answer.
+ */
+export function drawnInPageFaces(block: TextBlock, faces: RunFaces): boolean {
+  return block.lines.every((line) => line.runs.every((run) => faces.loaded.has(faceKeyOf(run.style, run.index))));
+}
+
 /** The two reads a block's faces come from, begun together: PDF.js's faces for its runs, and the read on open. */
 export interface FaceReads {
   readonly shown: Promise<ReadonlyMap<number, string>>;
