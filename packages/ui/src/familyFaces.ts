@@ -138,23 +138,19 @@ function inputPending(): boolean {
   return scheduling?.isInputPending?.() === true;
 }
 
-/** Runs `step` when the window is next idle, with the time it may take; a timer where the host has no idle callback. */
+/** Runs `step` when the window is next idle, with the time it may take. */
 type IdleSchedule = (step: (remaining: () => number) => void) => void;
 const whenIdle: IdleSchedule = (step) => {
-  if (typeof requestIdleCallback === 'function') {
-    requestIdleCallback((deadline) => {
-      step(() => deadline.timeRemaining());
-    });
-  } else {
-    // A HOST WITH NO IDLE CALLBACK gets a frame's worth of time from the step's start, so a slice still gives faces.
-    setTimeout(() => {
-      const started = Date.now();
-      step(() => FALLBACK_SLICE_MS - (Date.now() - started));
-    }, 0);
-  }
+  // NO IDLE CALLBACK IS NO WINDOW: every Chromium window has one, and the pass measures in its document and gives faces
+  // to its `document.fonts`. So a host without one, such as Node running a command's case, starts no pass. A timer here
+  // ran the pass after the case that read the list had ended, against a document that was never there, and failed four
+  // other cases' files on all three CI legs (9b89f297, 2026-11-15). Nothing is lost by not starting it: a shown name
+  // is measured as it is drawn (`drawnWith`), and an open block's families are given at once (`drawFamiliesNamed`).
+  if (typeof requestIdleCallback !== 'function') return;
+  requestIdleCallback((deadline) => {
+    step(() => deadline.timeRemaining());
+  });
 };
-/** What a step is given where the host has no idle callback: one frame. */
-const FALLBACK_SLICE_MS = 16;
 
 /**
  * {@link drawFamilies} over a WHOLE LIST, a few families at a time while the window is idle, announced once at the end.

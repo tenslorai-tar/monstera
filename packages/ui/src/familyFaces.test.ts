@@ -66,6 +66,25 @@ describe('the whole list is given its faces while the window is idle, and announ
     vi.unstubAllGlobals();
   });
 
+  it('starts no pass in a host with no idle callback, which has no window to draw in', () => {
+    // THE HOST THE COMMANDS' CASES RUN IN: Node, no `requestIdleCallback`, no `document`. A pass started here outlives
+    // the case that read the list and fails whichever file is running when it fires.
+    expect(typeof requestIdleCallback).toBe('undefined');
+    vi.useFakeTimers();
+    try {
+      drawFamiliesWhenIdle([{ ...entry('No Window Sans', 'installed'), locals: ['NoWindowSans'] }]);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+    // CONTROL: where the window's idle callback exists, the same call asks it for a period.
+    const asked = vi.fn();
+    vi.stubGlobal('requestIdleCallback', asked);
+    drawFamiliesWhenIdle([{ ...entry('Window Sans', 'installed'), locals: ['WindowSans'] }]);
+    expect(asked).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
+
   it('gives no family while the person has input waiting, however much idle time is left, and asks again', () => {
     vi.stubGlobal('FontFace', class {
       constructor(readonly family: string) {}
