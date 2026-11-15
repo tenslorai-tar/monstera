@@ -892,6 +892,46 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-11-15 — The owner's list of the night: the first letter, the first press after launch, the first launch's read
+
+Measured with `editOpenCost.mjs --file 2`, rounds as stated, the same instrument and method as the readings before.
+
+**1. The first letter (`1aa896cd`): done.** Letters typed before the read on open answered were held for it in every
+block; a block PDF.js draws in its own faces no longer is (`drawnInPageFaces`). Eight rounds on one build: first press
+158 to 274 ms, median 184; first letter 62 to 188 ms, median 75, none held. Before (`3320d3b4`): first letter median 296
+ms, 57 to 778.
+
+**2. The first press right after launch: better, and not under 300 in every reading.** `0077f0d1` makes the idle font
+pass give way to input and start when the font list arrives; cold click until editable went from 147–375 ms to 21–171.
+Five fresh launches: first press 284 to 631 ms. Traced: a 428 ms press task with nothing before it, 274 ms of it script;
+unminified, the editor's paint 153 ms (its fit 93), React 130, the paper colour's first canvas read 25. The reading
+varies with what the machine is doing on a first launch (below), and a block in a stand-in face still refits when its
+faces settle, cold, inside the window of the second press. **Open.**
+
+**3. The first launch's font reading (`2a6ba2df`, `eb80af77`): the duplicate reads removed; the page's first read is
+still slower than a later launch's.** Three hosts read the font folders at once on a first launch; now one does and the
+others wait for its file. Font list 10,943 → 4,933–5,459 ms; a block's first faces 5,308 → 862–1,452 ms. The page's
+first read, split by temporary timers (not committed), first launch against second launch on the same build:
+
+| step, page 1 | first launch | second launch |
+|---|---|---|
+| waiting behind the open's reads (`pageRewrite`) | 1,026 ms | 689 ms |
+| PDFium's runs of the page | 686 ms | 85 ms |
+| MuPDF's build of the placements | 333 ms | 328 ms |
+| PDFium's runs of the placements | 716 ms | 698 ms |
+
+The first launch's extra is almost all PDFium's first read of the page (+601 ms) and the wait behind the open's reads
+(+337), while the catalogue host reads 455 MiB of fonts. That fits disk contention, which a lower CPU priority did not
+touch (measured, not kept: the font list rose to 7.1–11.7 s). **Not proven, and open**: lowering the catalogue host's
+disk priority needs a Windows call this project's Node hosts do not have.
+
+**4. Main's own run on `4c100b4b`**: green, CI and Guards.
+
+**Not kept, measured**: loading the MuPDF host's faces as an editing mode is chosen. It held the host while the page's
+first read queued (first read 3.7 → 5.6–6.2 s on a first launch) and found no session on later rounds.
+
+---
+
 ## 2026-11-14 — The first press under 300 ms, warm and cold, and the low-memory cases' leaked samplers
 
 Three changes, each with its readings in its commit; `editOpenCost.mjs --file 2`, the build without and then with,
