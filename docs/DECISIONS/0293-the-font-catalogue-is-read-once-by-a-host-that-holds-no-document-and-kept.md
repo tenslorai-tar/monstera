@@ -98,3 +98,29 @@ area handed to a host, where an ordinary one already does the job:
 - **The fingerprint is `main`'s, computed once a launch** in the background from ADR-0237's listing; a host started
   before it is known is handed none and reads the folders, as every host does today. A font changed during a launch is
   seen at the next one, as a host's catalogue is today seen at its next start.
+
+## Correction, 2026-11-15 — a host waits for the file being made, and is told the area while it is made
+
+The owner asked for the first launch's font reading to be cut with this ADR's reader rather than accepted as what a
+first launch pays (2026-11-15). Measured on a fresh launch (shell log, `editOpenCost.mjs --file 2 --rounds 1` on a fresh
+data folder, 2026-11-14): the font list (`app.fontFamilies`) took 10,943 ms and the first block's faces 5,308 ms. The
+mechanism: Decision 6 had a host whose file is absent read the folders, and the correction of 2026-11-12 told the hosts
+of the area only once the file was in place. So on a first launch every host that set text before the catalogue host
+finished read the folders itself, beside it: the catalogue, compose and MuPDF hosts reading the same 455 MiB at once.
+
+- **`main` names the area to the hosts as it starts the catalogue host**, as well as once a file is found
+  (`keptCatalogueStore.ts`). Decision 6's *absent* now means *being made*: a host told of an area whose file is not
+  there waits for it (`keptOrRead`), polling every 100 ms, and reads its folders only where the wait ends without it.
+- **Every path that keeps no file leaves a marker**, `<fingerprint>.catalogue.json.unmade` (`unmadeCatalogueName`): the
+  catalogue host failed, found no face, wrote another name, or answered and placed nothing. A waiting host stops at it.
+  A marker an earlier launch left is removed before any host is told.
+- **The wait is bounded at 150 s**, past `HOST_CALL_DEADLINE`'s 120 s floor, which ends a catalogue host that never
+  answers, after which `main` leaves the marker. So the bound is reached only where `main` did not, and the host reads
+  its folders as before.
+- **A host still never parses a file it was not told of, and the file can still only make a load faster**: a file that
+  comes is checked by Decision 6's rule exactly as one already there.
+
+Measured after, three fresh launches, the same instrument: the font list 4,933 to 5,459 ms, the first block's faces 862
+to 1,452 ms. The page's first read on a first launch is unchanged, 3.0 to 4.1 s, against about 2 s on a later launch:
+what still competes with it is the catalogue host's own read. Running that host at below-normal priority was measured
+and not kept: the font list, which waits on it, rose to 7.1 to 11.7 s, and the first read did not fall.
