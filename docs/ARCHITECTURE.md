@@ -1820,7 +1820,7 @@ The owner puts Donate and Rate Us there, centred on the window's top row, and ea
 command — Donate opens a dialog, Rate Us the Store's review page. A placement names its `tone` — `gold` for Donate's
 warm fill with a dark label, `violet` for Rate Us's violet fill (both filled since 2026-10-01, ADR-0113's
 correction: every tone is drawn by one rule, its label solved by `onColor` at the point of use), `plain` for the
-dormant *Update available* notice — because a bar deciding that
+*Update available* notice, live since 2026-11-17 (ADR-0110's note) — because a bar deciding that
 from a command's id is the layout table above, one field narrower; the tones are brand tokens and do not follow the
 accent. Until 2026-09-27 these sat in the title bar, between the tabs and the search. **The
 document tabs, the command search and the layout switcher are not commands**,
@@ -2133,13 +2133,14 @@ reconciled.
   3. **A settings entry to disable the check**, describing exactly what it sends
      and what it fetches. Default on.
 
-  **All three are built and DORMANT** (2026-09-26,
-  [ADR-0110](DECISIONS/0110-the-update-check-is-built-dormant-and-reads-numbers-only.md)):
-  the manifest's address is the contract's `UPDATE_MANIFEST`, `{ state: 'dormant' }`
-  and it stays so at launch by the owner's decision of 2026-10-14, which relies on the
-  Store for updates (ADR-0110's note of 2026-10-15); while it is dormant the
-  check calls nothing and the settings entry is not registered — a switch for a check
-  that cannot run would be display-only. Going live is that one value.
+  **All three are built (2026-09-26,
+  [ADR-0110](DECISIONS/0110-the-update-check-is-built-dormant-and-reads-numbers-only.md))
+  and LIVE since 2026-11-17**, by the owner's decision of that day, which reverses
+  the dormancy of 2026-10-14 (ADR-0110's notes): the contract's `UPDATE_MANIFEST` is
+  `{ state: 'live', url: 'https://monsterapdf.com/updates/v1/store.json' }`. Were it
+  dormant again, the check would call nothing and the settings entry would not be
+  registered — a switch for a check that cannot run would be display-only. The
+  state is that one value.
 
   The `security` flag is the join between the advisory tracker and the user: the
   tracker decides how fast a fix can ship, this decides how fast it arrives.
@@ -3287,6 +3288,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-11-17 | **The update check goes live, as built** (§8's update channel). The owner reverses the dormancy of 2026-10-14: `UPDATE_MANIFEST` is `https://monsterapdf.com/updates/v1/store.json`, the address ADR-0110 proposed, its own commit (`fe3414dd`). What a person sees is as built; the settings row is registered by the live value, and the update button's article is owed and written. | ADR-0110's note of 2026-10-15, *"the check stays dormant at launch"* | [0110](DECISIONS/0110-the-update-check-is-built-dormant-and-reads-numbers-only.md) |
 | 2026-11-17 | **The renderer is served from its own scheme, and a picture is never dropped silently** (§2's renderer hardening; invariant 27's delivery, its list unchanged). A user's PDF drew every page blank: PDF.js decodes CCITT, JBIG2 and JPEG 2000 only through decoders nothing shipped, and a failed decode drops the picture whole, 0 of 16 pages drawn (`pictureCheck.mjs`). Measuring the policy in the worker found it had none: a `file:` worker's scripts never pass the session's header hook, so `WebAssembly.compile` and `new Function` were allowed in the thread that parses every document. The renderer is now `monstera://app/`, whose handler writes the header on every response; PDF.js's JavaScript decoders ship beside the bundle; a dropped picture is named on its page (the second engine's redraw was withdrawn before the build: its answer cannot say what it left out); a rendered test fails on PDF.js's report. The WASM decoders were rejected because they need `'wasm-unsafe-eval'`. | §2's *"CSP set"* as delivered by `webRequest` on a `file://` page | [0296](DECISIONS/0296-the-renderer-is-served-from-its-own-scheme-and-a-picture-is-never-dropped-silently.md) |
 | 2026-11-15 | **A host waits for the kept font catalogue being made, and is told of it while it is made** (§3's host list). On a first launch every host that set text before the catalogue host finished read the font folders itself beside it, three reads at once: the font list took 10,943 ms and a block's first faces 5,308 ms. `main` now names the area as the catalogue host starts, a host waits for the file, and `main` leaves a marker where none will come; measured after, 4,933 to 5,459 ms and 862 to 1,452 ms. Rejected: running the catalogue host at below-normal priority, measured slower | ADR-0293 Decision 6's *absent: the host reads the folders*, and its 2026-11-12 correction's *told only once the file is in place* | [0293](DECISIONS/0293-the-font-catalogue-is-read-once-by-a-host-that-holds-no-document-and-kept.md) |
 | 2026-11-14 | **Only a PDF that is really gone loses its chat history** (§8). The owner's decision on the stage audit's IIIIIIIII-2: a file another program held with a share lock refused to open, counted as unreadable, and lost its history a day later. Gone is now a not-found file in a folder that is there; a file at the place, readable or not and whichever PDF, and a place that cannot be reached, keep it, and the 24-hour check reads no `/ID`. Rejected: keeping *cannot be read* and listing lock codes, which leaves every refusal not listed to remove history | ADR-0279 Decision 6's *cannot be found or read* and its unplugged-drive clause, and Decision 5's *the old file counts as not found* | [0279](DECISIONS/0279-saved-conversations-are-kept-without-caps-each-in-its-own-file-and-history-reads-one-log.md) |

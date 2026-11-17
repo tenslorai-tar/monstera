@@ -30,7 +30,7 @@
  */
 import { execFileSync } from 'node:child_process';
 import { copyFile, readFile, writeFile } from 'node:fs/promises';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { PDFDocument, PDFName, PDFString, StandardFonts, rgb } from '@cantoo/pdf-lib';
@@ -38,7 +38,7 @@ import { expect } from '@playwright/test';
 import { zipSync } from 'fflate';
 
 import { ADDED_FIRST, EFFECTS, FIELD_TYPED, LINK_TYPED, TYPED_WORD, outputsOf, readPdf, respondedWhy, scannedPageDocument } from './everyToolEffects.mjs';
-import { WALK_WINDOW, appRootOption, nothingInFlight, root, startWalk } from './liveWalk.mjs';
+import { WALK_WINDOW, appRootOption, launchApp, nothingInFlight, root, startWalk } from './liveWalk.mjs';
 import { editTextOpening } from './textWalkSteps.mjs';
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { bindNativeEngine } from '../lib/nativeEngine.mjs';
@@ -153,7 +153,6 @@ const NOT_HERE = /** @type {Readonly<Record<string, string>>} */ ({
   'app.exit': 'quits the application, which ends the walk; its close question is held by AppClose.test.tsx',
   'document.docusign-send': 'sends the document to DocuSign with the owner’s account, which leaves this computer and is the owner’s to approve',
   'document.docusign-retrieve': 'fetches a signed document from DocuSign with the owner’s account, which leaves this computer',
-  'app.check-for-updates': 'asks the Microsoft Store, a request off this computer; the update check is dormant at launch by the owner’s decision',
   // MEASURED 2026-11-03: Print opens Windows' own print dialog through a native call, which is modal and holds main
   // until a person answers it, so the walk's first trial lost its window there.
   'document.print': 'opens Windows’ own print dialog, which holds the app until a person answers it and which this walk does not drive',
@@ -170,11 +169,15 @@ const NOT_HERE = /** @type {Readonly<Record<string, string>>} */ ({
   'ai.draft-reply': 'asks a provider to draft a reply to a comment, which needs the owner’s key and sends the comment off this computer',
   'annotate.claude-region': 'sends a box of the page to Claude to recognise, which needs the owner’s key and sends the picture off this computer',
   'tools.cloud-region': 'sends a box of the page to Azure to recognise, which needs the owner’s Azure account',
-  // READ 2026-11-03: drawn only when the update check has found an update, and the check is dormant at launch.
-  'app.update-available': 'is drawn only when the update check has found an update, and the check is dormant at launch by the owner’s decision',
   'cloud.save-back': 'saves to a cloud document, which needs the owner’s cloud account',
   'document.sign-document': 'signs with a certificate file and its password, which the walk’s profile holds none of',
 });
+
+/**
+ * The update check's two commands, walked by the update steps below in applications of their own (the owner's list of
+ * 2026-11-17, item 4): the check runs once per start, so each answer it can give is a start on its own manifest.
+ */
+const WALKED_APART = new Set(['app.update-available', 'app.check-for-updates']);
 
 const args = process.argv;
 const at = (/** @type {string} */ flag) => {
@@ -1267,6 +1270,8 @@ if (!started) {
 }
 
 for (const command of commands) {
+  // WALKED APART, each in an application of its own started on a manifest the walk writes (the update steps below).
+  if (WALKED_APART.has(command.id)) continue;
   const reason = NOT_HERE[command.id];
   if (reason !== undefined) {
     await step(`${command.id}: not walked here`, async () => ({ notWalked: { [command.id]: reason } }));
@@ -1505,6 +1510,120 @@ for (const command of commands) {
     if (read.past > 0) throw new Error(`a block nobody edited is warned past the page: ${JSON.stringify(read)}`);
     return read;
   });
+}
+
+// THE UPDATE CHECK, LIVE SINCE 2026-11-17 (ADR-0110's note): each answer it can give is a START of its own, since it runs
+// once per start, so each is an application launched over a manifest this walk writes and read through the injected
+// transport (`entry.ts`' development-only `MONSTERA_WALK_UPDATE_MANIFEST`), never the live address. A launch counts its
+// reads beside the file. The Store is never opened: `shell.openExternal` is recorded, as in the walk's own window.
+{
+  /** The development build's own version, which `app.getVersion()` reads from `apps/desktop/package.json`. */
+  const installed = String(JSON.parse(readFileSync(join(root, 'apps', 'desktop', 'package.json'), 'utf8')).version);
+  const newer = installed
+    .split('.')
+    .map((/** @type {string} */ part, /** @type {number} */ at) => (at === 2 ? String(Number(part) + 1) : part))
+    .join('.');
+  /** @param {string} version @param {boolean} security */
+  const manifestOf = (version, security) => JSON.stringify({ schema: 1, channel: 'store', version, minimumVersion: installed, security });
+  /**
+   * An application started over `manifest`, in `appData`, with its opener recorded and its start screen up. Answers it,
+   * its window, its read count and what it handed Windows.
+   * @param {string} name @param {string} manifest @param {string} appData @param {Record<string, unknown>} [settings]
+   */
+  const startedOn = async (name, manifest, appData, settings) => {
+    const file = join(output, `update-${name}.json`);
+    writeFileSync(file, manifest);
+    if (settings !== undefined) {
+      mkdirSync(appData, { recursive: true });
+      writeFileSync(join(appData, 'settings.json'), JSON.stringify(settings));
+    }
+    process.env['MONSTERA_WALK_UPDATE_MANIFEST'] = file;
+    let launched;
+    try {
+      launched = await launchApp('every-tool-updates', { appData });
+    } finally {
+      delete process.env['MONSTERA_WALK_UPDATE_MANIFEST'];
+    }
+    const window = await launched.app.firstWindow();
+    await window.waitForLoadState('domcontentloaded');
+    await launched.app.evaluate(({ shell }) => {
+      const g = /** @type {{ __updateExternal: string[] }} */ (/** @type {unknown} */ (globalThis));
+      g.__updateExternal = [];
+      shell.openExternal = async (/** @type {string} */ url) => {
+        g.__updateExternal.push(url);
+      };
+    });
+    await window.getByRole('button', { name: /^Open PDF/u }).first().waitFor({ state: 'visible', timeout: 60_000 });
+    // THE CHECK'S ANSWER HAS ARRIVED, or none is coming: a read made, then a beat for the page to draw what it said.
+    const reads = () => (existsSync(`${file}.reads`) ? readFileSync(`${file}.reads`, 'utf8').split('\n').filter((line) => line !== '').length : 0);
+    for (let waited = 0; waited < 10_000 && reads() === 0 && settings === undefined; waited += 250) await window.waitForTimeout(250);
+    await window.waitForTimeout(1500);
+    const external = () => launched.app.evaluate(() => /** @type {{ __updateExternal: string[] }} */ (/** @type {unknown} */ (globalThis)).__updateExternal);
+    return { app: launched.app, window, reads, external, runCommand: launched.runCommand };
+  };
+  const button = (/** @type {import('playwright').Page} */ window) => window.getByRole('button', { name: 'Update available' });
+  const notice = (/** @type {import('playwright').Page} */ window) => window.getByRole('dialog', { name: 'Important security update' });
+
+  await step('UPDATES: the installed version named, up to date: no button, no notice, one read of the file', async () => {
+    const run = await startedOn('current', manifestOf(installed, false), join(output, 'updates-current'));
+    try {
+      if ((await button(run.window).count()) > 0) throw new Error('Update available is shown for the version installed');
+      if ((await notice(run.window).count()) > 0) throw new Error('a security notice is shown for the version installed');
+      if (run.reads() !== 1) throw new Error(`the file was read ${String(run.reads())} time(s) in one start`);
+      return { reads: run.reads() };
+    } finally {
+      await run.app.close();
+    }
+  }, { covers: ['app.update-available'] });
+
+  await step('UPDATES: a newer version named: Update available shows and opens Monstera’s Store page; Check for updates opens the updates page', async () => {
+    const run = await startedOn('newer', manifestOf(newer, false), join(output, 'updates-newer'));
+    try {
+      await button(run.window).waitFor({ state: 'visible', timeout: 15_000 });
+      if ((await notice(run.window).count()) > 0) throw new Error('a security notice is shown for a release that is not one');
+      await button(run.window).click();
+      // MONSTERA'S OWN LISTING, the product page (`STORE_URIS.listing`).
+      await expect.poll(async () => (await run.external()).some((url) => url.startsWith('ms-windows-store://pdp/?ProductId=')), { timeout: 10_000 }).toBe(true);
+      await run.runCommand(run.window, 'Check for updates');
+      await expect.poll(run.external, { timeout: 10_000 }).toContain('ms-windows-store://downloadsandupdates');
+      return { newer, opened: await run.external(), reads: run.reads() };
+    } finally {
+      await run.app.close();
+    }
+  }, { covers: ['app.update-available', 'app.check-for-updates'] });
+
+  await step('UPDATES: a security release: the notice shows, and once acknowledged it is not shown again', async () => {
+    const appData = join(output, 'updates-security');
+    const first = await startedOn('security', manifestOf(newer, true), appData);
+    try {
+      await notice(first.window).waitFor({ state: 'visible', timeout: 15_000 });
+      await notice(first.window).getByRole('button', { name: 'I understand' }).click();
+      await notice(first.window).waitFor({ state: 'hidden', timeout: 10_000 });
+    } finally {
+      await first.app.close();
+    }
+    // THE NEXT START, the same profile and the same file: acknowledged, so no notice.
+    const second = await startedOn('security-again', manifestOf(newer, true), appData);
+    try {
+      if ((await notice(second.window).count()) > 0) throw new Error('the acknowledged security notice is shown again');
+      // AND THE BUTTON STAYS until the person updates, as the article *Know when a new version is out* says.
+      if ((await button(second.window).count()) !== 1) throw new Error('Update available is gone once the notice was acknowledged');
+      return { secondStartReads: second.reads(), buttonStill: await button(second.window).count() };
+    } finally {
+      await second.app.close();
+    }
+  }, { covers: ['app.update-available'] });
+
+  await step('UPDATES: Check for new versions switched off: no request is made, and nothing is shown', async () => {
+    const run = await startedOn('off', manifestOf(newer, true), join(output, 'updates-off'), { 'updates.check': false });
+    try {
+      if (run.reads() !== 0) throw new Error(`the file was read ${String(run.reads())} time(s) with the check off`);
+      if ((await button(run.window).count()) > 0 || (await notice(run.window).count()) > 0) throw new Error('something is shown with the check off');
+      return { reads: run.reads() };
+    } finally {
+      await run.app.close();
+    }
+  }, { covers: ['app.update-available'] });
 }
 
 // THE WALK STARTED NOTHING OUTSIDE ITSELF: a route to Windows the recorders above miss would open a file in whatever

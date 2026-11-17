@@ -258,9 +258,8 @@ describe('the command line’s documents, through the assembled handlers', () =>
 });
 
 describe('the update check, through the assembled handlers (ADR-0110)', () => {
-  it('this build answers dormant and CALLS NOTHING — a Store build with the setting on, so dormancy is the only reason', async () => {
-    // A STORE BUILD, on, with a fetch that counts: the three things that would let a call through are all set, so an
-    // empty count separates *the address is dormant* from *nothing would have called anyway*.
+  it('this build is LIVE: a Store build asks the live address ONCE however often the page asks (2026-11-17)', async () => {
+    // A STORE BUILD, on, with a fetch that counts and answers nothing: what reached it is the production wiring's address.
     const urls: string[] = [];
     const deps = createShellDependencies({
       ...harnessSurfaces('the composition test'),
@@ -270,12 +269,11 @@ describe('the update check, through the assembled handlers (ADR-0110)', () => {
         return Promise.reject(new Error('the composition test serves no manifest'));
       },
     });
-    expect(await deps.handlers['app.updateStatus']({})).toStrictEqual({ ok: true, value: { status: { kind: 'dormant' } } });
-    expect(await deps.handlers['app.acknowledgeSecurityUpdate']({})).toStrictEqual({
-      ok: true,
-      value: { acknowledged: false },
-    });
-    expect(urls).toStrictEqual([]);
+    // NO ANSWER IS UNKNOWN, which shows a person nothing.
+    expect(await deps.handlers['app.updateStatus']({})).toStrictEqual({ ok: true, value: { status: { kind: 'unknown' } } });
+    expect(await deps.handlers['app.updateStatus']({})).toStrictEqual({ ok: true, value: { status: { kind: 'unknown' } } });
+    expect(await deps.handlers['app.acknowledgeSecurityUpdate']({})).toStrictEqual({ ok: true, value: { acknowledged: false } });
+    expect(urls).toStrictEqual(['https://monsterapdf.com/updates/v1/store.json']);
   });
 
   it('a development build answers none, the channel with no provider behind it', async () => {

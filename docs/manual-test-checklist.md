@@ -283,7 +283,7 @@ is not available.
 
 - [ ] **Donate** · `app.donate` · Shows: on screen · Help: *Support Monstera with a donation*
 - [ ] **Rate Us** · `app.rate` · Shows: on screen · Help: *Rate Monstera*
-- [ ] **Update available** · `app.update-available` · Shows: on screen
+- [ ] **Update available** · `app.update-available` · Shows: on screen · Help: *Know when a new version is out*
 
 ## Properties tab
 

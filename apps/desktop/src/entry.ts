@@ -1,9 +1,9 @@
-import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, rmSync } from 'node:fs';
 import { open, readFile, readdir, stat } from 'node:fs/promises';
 import { totalmem } from 'node:os';
 import { join } from 'node:path';
 
-import { type EventId, type EventPayload, IncidentLog, isFollowable } from '@monstera/contract';
+import { type EventId, type EventPayload, IncidentLog, isFollowable, updateManifestSchema } from '@monstera/contract';
 import { sweepCheckpointDirectories } from '@monstera/kernel';
 import { pathlessCause } from '@monstera/shared';
 import { BrowserWindow, app, clipboard, crashReporter, nativeImage, powerMonitor, safeStorage, shell } from 'electron';
@@ -343,14 +343,28 @@ startShell(() => {
     log.failures({ event: 'chat-history-not-moved', detail: pathlessCause(cause) });
   }
 
+  // THE WALK'S OWN UPDATE MANIFEST, in a DEVELOPMENT run only (the owner's list of 2026-11-17, item 4): the full walk
+  // proves the Store channel's check — up to date, a newer version, a security release, the setting off — against a
+  // file it writes, through the injected transport, and never against the live address or by changing the live file.
+  // A package never reads this: `app.isPackaged` is the Store package's own fact (ADR-0123 Decision 7). Each read is
+  // counted in a file beside it, so the walk can see that the setting switched off made no request.
+  const walkManifest = app.isPackaged ? undefined : process.env['MONSTERA_WALK_UPDATE_MANIFEST'];
   return createShellDependencies({
+    ...(walkManifest === undefined
+      ? {}
+      : {
+          fetchUpdateManifest: async () => {
+            appendFileSync(`${walkManifest}.reads`, 'read\n');
+            return updateManifestSchema.parse(JSON.parse(await readFile(walkManifest, 'utf8')));
+          },
+        }),
     checkpointDirectory,
     takenDirectory,
     appInfo: {
       version: app.getVersion(),
       // PACKAGED IS THE STORE PACKAGE (ADR-0123 Decision 7): fixed for a package, so still baked rather than detected
       // between launches. The web flavour ADR-0018 keeps has no build; when it gets one it bakes its own.
-      installChannel: app.isPackaged ? 'store' : 'development',
+      installChannel: app.isPackaged || walkManifest !== undefined ? 'store' : 'development',
       userName: windowsUserName(),
     },
     // THE REGIONAL FORMAT, not the application's language: Windows' own user locale, which is how this person writes a
@@ -570,7 +584,7 @@ startShell(() => {
     // THE VERSIONS A SAVE REPLACES (ADR-0198): Monstera's own folder under `userData`, never beside a person's file.
     backupDirectory: join(app.getPath('userData'), 'backups'),
     // WHICH SECURITY RELEASE THE PERSON ACKNOWLEDGED (ADR-0110), in its own document beside the rating record. The
-    // manifest's GET is the composition's own default; its address is the contract's, dormant in this build.
+    // manifest's GET is the composition's own default; its address is the contract's, live since 2026-11-17.
     updateRecordFile: createJsonFile(app.getPath('userData'), UPDATE_RECORD_FILE),
     openStore: async (page) => {
       await shell.openExternal(STORE_URIS[page]);

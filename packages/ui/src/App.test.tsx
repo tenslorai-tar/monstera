@@ -1246,7 +1246,7 @@ describe('App', () => {
       ]);
     });
 
-    it('CONTROL: this build’s own answer, dormant, draws no indicator and opens no notice', async () => {
+    it('CONTROL: a dormant answer draws no indicator and opens no notice', async () => {
       const { client } = updating({ kind: 'dormant' });
       render(<App client={client} settings={freshSettings()} />);
       // THE ANSWER ARRIVED before absence is read, so the absence is about the answer rather than about timing.
@@ -3257,17 +3257,17 @@ describe('App', () => {
     );
     expect(withoutThem.untaught).toStrictEqual(subjects.map((subject) => subject.id).filter((id) => id === 'document.properties' || id === 'document.convert-text-to-curves'));
 
-    // THE DAY THE UPDATE CHECK GOES LIVE (FFFFFFFFF-11): the update button's exemption leaves with the one value that
-    // switches the check on, so this same case fails until an article teaches the button. The control is the case
-    // above, which passes on this build's dormant check with the button excused.
+    // THE UPDATE CHECK IS LIVE (2026-11-17, ADR-0110's note): its button has no exemption, and *Know when a new version
+    // is out* teaches it. CONTROL: a dormant build would excuse it, so the exemption is the live value's doing.
     const live = commandCoverage(
       subjects,
       HELP_ARTICLES,
       commandsNoArticle({ state: 'live', url: 'https://monsterapdf.com/updates/v1/store.json' }),
       TAUGHT_IN_OTHER_WORDS,
     );
-    expect(live.untaught).toStrictEqual(['app.update-available']);
-    expect(commandsNoArticle({ state: 'dormant' })).toStrictEqual(COMMANDS_NO_ARTICLE);
+    expect(live.untaught).toStrictEqual([]);
+    expect(commandsNoArticle({ state: 'live', url: 'https://monsterapdf.com/updates/v1/store.json' })).toStrictEqual(COMMANDS_NO_ARTICLE);
+    expect(Object.keys(commandsNoArticle({ state: 'dormant' }))).toContain('app.update-available');
 
     // AND F1 FINDS THEM, by the lookup the Help command calls.
     expect(helpFor({ tool: 'document.properties', context: 'home' }).article?.id).toBe('document-properties');

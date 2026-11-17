@@ -121,3 +121,18 @@ The owner decided on 2026-10-14 (H3) that the check ships dormant and stays so: 
 Store for its updates, and *Help › Check for updates* ([ADR-0107](0107-the-menu-bar-is-a-projection.md)) keeps
 opening the Store's *Downloads and updates* page, the owner's answer of 2026-09-26. Dormant is therefore not a state waiting on the
 manifest's address; it is the shipped behaviour until the owner reverses this note. No code changed with it.
+
+## Note, 2026-11-17 — the owner reverses the note of 2026-10-15: the check goes live, as built
+
+The owner decided on 2026-11-17 that the check goes live in this release, exactly as built: Decision 1's one value is
+`{ state: 'live', url: 'https://monsterapdf.com/updates/v1/store.json' }` (`fe3414dd`, in its own commit), the address
+this record proposed. The site agent publishes the file and updates it on each release, when the owner says the new
+version is live in the Store. What a person sees is unchanged from the build: *Update available* in the title bar only
+when the file names a newer version, nothing when up to date, *Important security update* only when the file marks a
+release as security, and no new pop-up. The first file reads `{"schema":1,"channel":"store","version":"1.1.2613",
+"minimumVersion":"1.1.2610","security":false}`.
+
+A plain GET to the address on 2026-11-17, before the commit: **404**, no redirect, the site's HTML page-not-found;
+five minutes later: **200**, `application/json`, no redirect, exactly that file. Going live removes the update button's
+exemption from an article (`noArticleNeeded.ts`), and the article is *Know when a new version is out*. The note of
+2026-10-15 stands above as written.

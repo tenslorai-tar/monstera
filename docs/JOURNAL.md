@@ -892,6 +892,27 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-11-17 — The update check goes live, as built
+
+The owner reversed the dormancy of 2026-10-14: `UPDATE_MANIFEST` is `https://monsterapdf.com/updates/v1/store.json`
+(`fe3414dd`, its own commit, as ADR-0110 Decision 1 says), and ADR-0110 carries a dated note. **The live address,
+GET on 2026-11-17**: first 404, no redirect, the site's HTML page-not-found; five minutes later 200,
+`application/json`, no redirect, the owner's first file exactly (`version` 1.1.2613, `minimumVersion` 1.1.2610,
+`security` false), which parses as this build's shape (`updateManifest.test.ts`, with a control).
+
+**Walked**, in the full walk, each answer a start of its own over a manifest the walk writes, read through the injected
+transport (`entry.ts`' `MONSTERA_WALK_UPDATE_MANIFEST`, development runs only; a package never reads it), never the
+live address: the installed version named, no button, no notice, one read; a newer version, *Update available* shown
+and opening Monstera's Store page, and *Check for updates* opening the Store's updates page; a security release, the
+notice shown, and after *I understand* not shown at the next start, the button staying; the setting off, no read at
+all and nothing shown. 4 of 4 on the first run (`everyToolWalk.mjs --only view.zoom-in`).
+
+**The article** *Know when a new version is out* teaches the button, the notice and **Check for new versions**, and
+says what the check sends in the setting's own words; written after the walk ran it. Going live removed the button's
+exemption (`noArticleNeeded.ts`), and `App.test.tsx`' coverage case now holds no untaught command. The composition
+case asserts the production wiring asks the live address once across two asks; a failed fetch answers `unknown`,
+which shows nothing. CLAUDE.md, ARCHITECTURE §8, its amendment log and the FEATURES row say live.
+
 ## 2026-11-17 — Stage audit of `dce699fd..7c23088c` — findings KKKKKKKKK-1 to KKKKKKKKK-12
 
 Owed before Fixes 2 and 3 could be committed: `7c23088c` alone staged 187 files. `npm run audit:scope`: 2 commits.
