@@ -1310,8 +1310,12 @@ export type UpdateManifestAddress =
   | { readonly state: 'dormant' }
   | { readonly state: 'live'; readonly url: `https://monsterapdf.com/${string}` };
 
-/** This build's manifest address. Dormant: nothing hosts the file yet (the owner's work list, 2026-09-26). */
-export const UPDATE_MANIFEST: UpdateManifestAddress = { state: 'dormant' };
+/**
+ * This build's manifest address. LIVE by the owner's decision of 2026-11-17, which reverses the dormancy of 2026-10-14
+ * (ADR-0110's notes): the site agent publishes the file and updates it on each release the owner says is live in the
+ * Store. A file not there yet is `unknown` to the check, which shows a person nothing.
+ */
+export const UPDATE_MANIFEST: UpdateManifestAddress = { state: 'live', url: 'https://monsterapdf.com/updates/v1/store.json' };
 
 /** Whether the Store build checks for a newer version. Main reads it when the check runs; the renderer declares it. */
 export const UPDATE_CHECK_SETTING_ID = 'updates.check';

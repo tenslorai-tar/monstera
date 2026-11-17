@@ -50,7 +50,14 @@ describe('compareReleaseVersions', () => {
 });
 
 describe('UPDATE_MANIFEST', () => {
-  it('is dormant in this build: nothing hosts the file until the owner says so', () => {
-    expect(UPDATE_MANIFEST).toStrictEqual({ state: 'dormant' });
+  it('is LIVE at the address ADR-0110 proposed, by the owner’s decision of 2026-11-17', () => {
+    expect(UPDATE_MANIFEST).toStrictEqual({ state: 'live', url: 'https://monsterapdf.com/updates/v1/store.json' });
+  });
+
+  it('the first file the owner named parses as the shape this build reads', () => {
+    const first = { schema: 1, channel: 'store', version: '1.1.2613', minimumVersion: '1.1.2610', security: false };
+    expect(updateManifestSchema.safeParse(first).success).toBe(true);
+    // CONTROL: a field the shape does not name is refused, so the parse above is the shape's and not anything's.
+    expect(updateManifestSchema.safeParse({ ...first, note: 'x' }).success).toBe(false);
   });
 });
