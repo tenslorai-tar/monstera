@@ -892,6 +892,166 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-11-17 — Stage audit of `7b03d0cf..dce699fd` — findings JJJJJJJJJ-1 to JJJJJJJJJ-33
+
+Owed before ADR-0296's build could be committed: that commit stages 162 files and would have taken the range past
+200. `npm run audit:scope`: 31 commits, 48 files; no proof added, 16 modified, none removed; one instrument added
+(`traceTop.mjs`), 21 source files changed.
+
+**Method and coverage.** Three read-only reviewers, one slice each: the 16 modified proofs (removed lines first, and
+`familyFaces.test.ts` through `git log -p`, whose range diff hides 4 deletions), the non-test source and instruments
+(`familyFaces.ts` through `git log -p`, 20 hidden deletions), and the documents and all 31 commit messages. **This
+author re-read every medium at the lines it names, and each holds** (-1 against `budget.ts:104` and
+`composition.ts:1121-1123`; -2 at `composition.ts:1211`; -3 at `historyCheck.test.ts:151`; -4 at
+`containedProgram.test.ts:18-21`; -6 and -8 against `dce699fd`'s tree; -9 at `keptCatalogueStore.ts:110-112`). The
+rest are the reviewers' readings, each naming its lines. **Nothing was run for this audit** and no reviewer ran a
+mutation; the fixes below carry their own runs. Not reached: lines the range left unchanged, `compositionHost.test.ts`
+past its hunks, whether `navigator.scheduling.isInputPending` exists in the pinned Chromium 151, whether a history write
+reaches an incident (-11), every millisecond figure against its walk, and the help article's build.
+
+**No check was loosened without an anchor.** `renderedScreen.pw.ts`' poll was tightened to both bounds; the removed
+`historyCheck` cases left with the behaviour they tested; `familyFaces.test.ts`' removed *each slice takes one family*
+was replaced by the *no room gives none* case on purpose. **No high finding.**
+
+**Medium.**
+
+- **JJJJJJJJJ-1** (medium, fixed in the build of ADR-0296): `keptCatalogue.ts`' wait was bounded at 150 s *past*
+  `HOST_CALL_DEADLINE`'s 120 s floor, reasoned as *reached only where `main` did not*. The wait runs inside a call `main`
+  sent the waiting host, whose deadline is the floor and 5 s per MiB of open documents, and the area is named before the
+  catalogue host connects: a hung catalogue host outlived the waiting host's deadline, and `main` ended a document's
+  MuPDF host or the compose host mid-wait. Now 60 s; ADR-0293 carries a dated correction.
+- **JJJJJJJJJ-2** (low-medium, fixed there): `main` copied the host's file straight to its kept name, which exists
+  before its bytes do, and since this range a host waits on that name. Copied beside it and renamed into place; the
+  store's case asserts the copy's destination is the `.copying` name.
+- **JJJJJJJJJ-3** (medium, fixed there): `historyCheck.test.ts`' old-ledger case set `missingSince: 0`, sixteen minutes
+  before the first pass, so an accepted old ledger removed nothing either: a fixture the bug handles. Now past the
+  grace. Not mutated.
+- **JJJJJJJJJ-4** (medium, fixed there): `containedProgram.test.ts`' `TEST_ONLY_STARTERS` JSDoc still said both halves
+  are asserted below after the importer search moved to `proof:shippedmodules`.
+- **JJJJJJJJJ-6** (medium, closed by the build commit): at `dce699fd` ARCHITECTURE §2 stated the renderer *is* served
+  from `monstera://app/` while the code still loaded `file://`; B4's amendment written in the present tense.
+- **JJJJJJJJJ-7** (medium, open as a practice): two B4 amendments carry readings of the build they precede (2a6ba2df's
+  *measured after*, 92463fa5's *as built*), so the text shows the build was made and measured first. The commit order
+  met B4's letter. An amendment states the decision; the readings belong to the build's commit.
+- **JJJJJJJJJ-8** (medium, fixed there): invariant 27's *delivery is covered for all eleven directives* had a dead
+  clause, the worker having received no header; ARCHITECTURE now says the delivery read was the window's, and names the
+  worker case.
+- **JJJJJJJJJ-9** (medium, open, from before the range): `main` judges a kept catalogue by its existence alone, and the
+  name carries no `KEPT_CATALOGUE_READING`, so a file of an older reading, shape, or a truncated one is never replaced:
+  every text host refuses it and reads its folders on every launch until the fonts change.
+
+**Low and low-medium.**
+
+- **JJJJJJJJJ-5** (low-medium, corrected): ADR-0293's correction said the first read's remaining cost *is* the catalogue
+  host's read, which the 2026-11-15 entry calls a fit, not proven; and the 2026-11-14 entry's *the cold open's first
+  read is the font catalogue's first read* stood against the 2026-11-15 split (PDFium +601 ms, the wait +337 ms). ADR-0293
+  is corrected; **this sentence corrects the 2026-11-14 one: not established.**
+- **JJJJJJJJJ-10** (low-medium, open): the idle font pass is gated on `requestIdleCallback` as a stand-in for a window,
+  its input check answers *no input* where `isInputPending` is missing, the reassuring answer, and the font list's read
+  now gives faces to the document, which `noteFamilies`' header says it does not.
+- **JJJJJJJJJ-11** (low-medium, open): `ReplaceFailed`'s message is pathless and its `cause` still names both paths, and
+  `toStructuredError` copies `cause`; whether a history write reaches an incident is not traced.
+- **JJJJJJJJJ-12** (low-medium, open): `auditScope.proof.mjs`' *stages no journal* case names a state the hook cannot
+  produce: `readStagedBlob` reads the index's journal, present whether or not this commit changed it.
+- **JJJJJJJJJ-13** (low-medium, open): `placeOf`, the rule that decides deleting history, is tested only against a fake
+  `stat`.
+- **JJJJJJJJJ-14** (low-medium, corrected here): the 2026-11-14 entry is titled *the first press under 300 ms, warm and
+  cold*, and its own cold reading is 294 to 463 ms. **Cold was not under 300 ms.**
+- **JJJJJJJJJ-15** (low-medium, open): figures with no walk folder named, IIIIIIIII-12's defect again: the 2026-11-15
+  entry's split timers, its 4,933 to 5,459 ms and 862 to 1,452 ms, the 284 to 631 ms launches and the 7.1 to 11.7 s
+  reading; `familyFaces.ts:175` and `BlockEditor.tsx:580` name no instrument.
+- **JJJJJJJJJ-16** (low-medium, closed by the build commit): ADR-0296's reading 2 rested on a scratch probe; the build
+  makes it `proof:rendererpolicy`'s worker case and lands `pictureCheck.mjs`.
+- **JJJJJJJJJ-17** (low, open): `shippedModules.proof.mjs` names `decodeForTests.js` by hand, and a second
+  `TEST_ONLY_STARTERS` entry owes it in prose only.
+- **JJJJJJJJJ-18** (low, open): the stale-marker case observes the marker inside `run`, after `holder.set`, so it cannot
+  see the order its name claims; and the early path, a kept file already there, has no stale-marker case.
+- **JJJJJJJJJ-19** (low, open): `pollDelaySeconds`' new branch filter is reached by no pacing fixture.
+- **JJJJJJJJJ-20** (low, open): the Edit text faces case's CONTROL differs in a macrotask as well as in `shown`.
+- **JJJJJJJJJ-21** (low, open): one half of `settingsFile.test.ts`' IIIIIIIII-1 control builds an error with no path,
+  so it cannot fail.
+- **JJJJJJJJJ-22** (low, open): `decodeForTests.test.ts`' widened pattern still misses `import 'sharp';`.
+- **JJJJJJJJJ-23** (low, open): `familyFaces.test.ts`' new cases unstub their globals at the end of the body, not in a
+  `finally`.
+- **JJJJJJJJJ-24** (low, open): `keptCatalogueStore.ts` spells the marker suffix inline beside `unmadeCatalogueName`.
+- **JJJJJJJJJ-25** (low, open, smaller since -1): a marker whose write fails leaves waiting hosts the whole bound.
+- **JJJJJJJJJ-26** (low, open): `failingJobs.mjs` lists a sha's runs on every branch and points at `npm run board`,
+  which now reads the checked-out branch.
+- **JJJJJJJJJ-27** (low, open): `traceTop.mjs` carries a positive control and no resolution test; a child longer than
+  its parent by clock rounding gives a negative self time.
+- **JJJJJJJJJ-28** (low, fixed there): the ADR index ran 0294, 0296, 0295, IIIIIIIII-18's order defect again.
+- **JJJJJJJJJ-29** (low, recorded): the 2026-11-14 entry's *withdrawn below* has no dated correction under the
+  withdrawn sentence.
+- **JJJJJJJJJ-30** (low, recorded): ADR-0279's amendment-log row names a rejected alternative the ADR does not record.
+- **JJJJJJJJJ-31** (low, recorded): `1aa896cd`'s 243 to 414 ms names no run, and differs from `3320d3b4`'s on the
+  same build.
+- **JJJJJJJJJ-32** (low, recorded): the closure list's -19 re-run names no folder or sha.
+- **JJJJJJJJJ-33** (low, open): the history Help article was written from the code, not from a run, and *its chats are
+  removed about a day after* is now true only where the file's folder is still there.
+
+### 1. Fixes classified
+
+Each fix in the range states a mechanism: the history check's place rule (a share lock decides nothing), the kept
+catalogue's wait, the letter hold for PDF.js's own faces, the idle pass's input check, the board reader's branch. One
+was a fix whose own premise was wrong in a way that reaches the hosts' lives (-1), and one made a reachable gap out of
+an ordering that had hidden it (-2); both are root causes of this range's own making, fixed in the build that follows.
+None is a workaround: the below-normal priority that was measured and not kept is recorded as such.
+
+### 2. The easy shape
+
+-1 is the easy shape exactly: a catalogue host that answers, never one that hangs, with no document open, never several
+MiB. -2 is the easy timing: a host that reads after the copy, never during it. -9 is the easy file: one written by this
+build, never an older reading's or a truncated one.
+
+### 2a. How things are proven
+
+`proof:shippedmodules` took over the test-only importer search from a unit case, a move from a check that always runs
+to a built-tree check, stated in its commit; the second entry's obligation is not mechanised (-17).
+
+### 3. Would CI have caught it?
+
+No for -1, -2 and -9: each needs a hung or interrupted host or an older build's file. Yes for -3 once its fixture can
+fail, and for -12, -19 and -22 once each has its case. The CI red this range met (9b89f297, the idle pass's timer in
+Node) was caught by CI on all three legs and fixed in 05b9c999 with its control.
+
+### 4. Non-vacuous proofs
+
+-3, -18, -19, -20 and -21 are cases that cannot fail or cannot see what they name; -12 tests a state the hook cannot
+produce. The range's new cases that do separate: the history check's share lock and gone folder, the kept catalogue's
+three waits, the letter hold both ways, the idle pass's room, input and no-window cases.
+
+### 4a. Instruments' resolution
+
+`traceTop.mjs` has none (-27). `editOpenCost.mjs`' `--app-data` refusal is a positive control, not a resolution test.
+
+### 4b. Searches with a positive control
+
+`traceTop.mjs` refuses without its thread, its task and a longest task near `--expect`. The board reader keeps its
+positive control per branch. `decodeForTests.test.ts`' pattern has its control and one spelling short (-22).
+
+### 4c. Derived extents
+
+`boardStatus.proof.mjs`' roster is a literal, 45 to 54 with nine added checks. Nothing new derives a count from the set
+it governs.
+
+### 5. Executed or asserted
+
+-1, -2, -9, -10 and -11 are read from the code and not measured. -7 is the documents' own form of this item: readings
+of a build written into the amendment before it. ADR-0296's reading 2 was a scratch probe until its build (-16).
+
+### 6. Architecture before or underneath
+
+ADR-0293's correction and ADR-0296 each came first in their own commit; -6 and -7 are where the text ran ahead of
+that order.
+
+### 7. Documents against the code
+
+-4, -5, -6, -8, -14, -28 to -33. Swept for the range's symbols (`keptOrRead`, `unmadeCatalogueName`,
+`drawFamiliesWhenIdle`, `holdPress`, the history check's removed names, `onHeadersReceived`, `file://`): no other
+FEATURES, ARCHITECTURE or CLAUDE.md sentence made false.
+
+---
+
 ## 2026-11-15 — The owner's list of the night: the first letter, the first press after launch, the first launch's read
 
 Measured with `editOpenCost.mjs --file 2`, rounds as stated, the same instrument and method as the readings before.
