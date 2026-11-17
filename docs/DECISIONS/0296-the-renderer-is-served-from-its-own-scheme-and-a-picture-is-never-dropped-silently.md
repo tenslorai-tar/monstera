@@ -106,8 +106,10 @@ be drawn in full here*, where it showed a blank slot. A person who wants the oth
 becomes right the day the second engine's answer can say what it left out; until then a note that is always true is
 the better page.
 
-**Not seen** (stated in `renderPage.ts`): an INLINE picture PDF.js cannot decode is warned about and sent to no object
-table, so the page cannot say it; a rendered case still fails on the warning.
+**Not seen** (stated in `renderPage.ts`): an INLINE picture and an image MASK PDF.js cannot decode are warned about and
+sent to no object table, so the page cannot say them; a rendered case still fails on either warning (the mask's added
+by the stage audit's KKKKKKKKK-3). **And a picture shared between pages is read from the page's own operator list**,
+since PDF.js keeps it under the id of the page that first shared it (KKKKKKKKK-1).
 
 The WASM decoders' speed against the JavaScript builds, owed above, is not measured: under the shipped policy the WASM
 builds cannot run in the application at all, so there is no comparison to make there, and none was made outside it.

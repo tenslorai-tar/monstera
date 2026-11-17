@@ -156,6 +156,30 @@ export function pastItsPage(box: TextBlock['box'], crop: OverlayPage['crop']): b
   );
 }
 
+/** How far a box runs past each edge of the page, left, bottom, right, top; a side it does not cross is 0 or less. */
+function overshoot(box: TextBlock['box'], crop: OverlayPage['crop']): readonly number[] {
+  const [x0, y0, x1, y1] = crop;
+  return [x0 - box.x0, y0 - box.y0, box.x1 - x1, box.y1 - y1];
+}
+
+/**
+ * Whether a person's WRITE pushed a block past the page (the owner's Q7, as scoped by Fix 3 of 2026-11-17): the block
+ * as read after the write runs past it, and before the write it did not, or ran past it less on some side.
+ *
+ * Q7's sentence is for words a person's own typing put where nobody can see them. Asked of every block as the page is
+ * read, it was said of blocks nobody touched: every block a document opens with partly past an edge, and on a statement
+ * drawn whole and shifted on each page, nearly every block (before Fix 2 left that text out). So a block that OPENED
+ * past the page shows as any block does, and is said only once an edit moves an edge of it further out, by more than
+ * {@link PAGE_EDGE_TOLERANCE}: the person's edit is then what put more of it out of sight. Decided, not measured
+ * against a person: an edit that keeps an opened-past block where it was, or brings it in, says nothing.
+ */
+export function pushedPastPage(before: TextBlock['box'], after: TextBlock['box'], crop: OverlayPage['crop']): boolean {
+  if (!pastItsPage(after, crop)) return false;
+  if (!pastItsPage(before, crop)) return true;
+  const was = overshoot(before, crop);
+  return overshoot(after, crop).some((by, side) => by > Math.max(0, was[side] ?? 0) + PAGE_EDGE_TOLERANCE);
+}
+
 /**
  * Whether two boxes share any area: how a new read finds the block a write grew. Its first line stays where it was and
  * the rest grows down, so the new block covers the old one's top; a corner is not enough, since a box is its glyphs' ink

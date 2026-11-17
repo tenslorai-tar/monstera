@@ -496,7 +496,10 @@ export function BlockEditor({
       }),
     [store, opened.model],
   );
-  const roomTip = placeable && !wordsChanged && placement.width === undefined;
+  // ONLY WHERE IT IS TRUE (the review of Edit text's messages, 2026-11-17): the tip's reason is that a ONE-LINE block
+  // wraps at its reach, so a narrow one wraps at once; a paragraph of several lines already wraps at its own measure,
+  // and on it the advice was a line of reading that changed nothing (833205e1's own reason).
+  const roomTip = placeable && !wordsChanged && placement.width === undefined && block.lines.length === 1;
 
   // FINISHED BY A PRESS OR A FOCUS ANYWHERE ELSE: outside the frame, outside what keeps the editor, outside the menu.
   useEffect(() => {

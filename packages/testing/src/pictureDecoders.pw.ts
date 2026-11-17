@@ -22,8 +22,10 @@ import { expect, test } from './renderedTest.js';
  * The decoders must run where the policy refuses WebAssembly and eval, in the window and in the PDF.js worker, so
  * every response here carries `CONTENT_SECURITY_POLICY` from the built shell, the constant `proof:rendererpolicy` holds
  * equal to §9.27. A worker takes its policy from its own response, so the case first starts a probe worker of its own
- * through the same route and requires eval to be refused inside it: without that, a route that missed the worker's
- * requests would leave PDF.js's worker free to compile WebAssembly, and the case would pass for the wrong reason.
+ * from a file the route alone answers, and requires eval to be refused inside it: a route that missed workers' requests
+ * would leave the probe unstarted and the case red. What the probe does NOT show (KKKKKKKKK-9): the branch of the route
+ * PDF.js's MODULE worker takes, fetched and given the header, is another branch; the policy in the shipped worker is
+ * `proof:rendererpolicy`'s, against the real scheme.
  *
  * ## The control
  *
@@ -106,8 +108,9 @@ test('CCITT, JBIG2 and JPEG 2000 pictures draw under the shipped policy, a CCITT
 
   await page.getByRole('button', { name: 'Open PDF…' }).click();
   const expected: Record<(typeof PICTURE_PAGES)[number], { left: (rgb: number[]) => boolean; right: (rgb: number[]) => boolean }> = {
-    ccitt: { left: dark, right: dark },
-    jbig2: { left: dark, right: dark },
+    // TWO HALVES (KKKKKKKKK-10): a decoder answering zeroed bytes would draw both black.
+    ccitt: { left: white, right: dark },
+    jbig2: { left: white, right: dark },
     // MID-GREY: the codestream's every coefficient is zero, which the level shift makes 128.
     jpx: { left: grey, right: grey },
     // RED WHERE THE MASK IS WHITE, and the page's own white where it is black.
@@ -128,9 +131,11 @@ test.describe('a picture NO decoder can read', () => {
   // THE REPORT IS THIS CASE'S SUBJECT, and the fixture fails the case if PDF.js does NOT make it (`renderedTest.ts`).
   test.use({ undecodedPictures: 'expected' });
 
-  test('is said on its page, not dropped in silence (ADR-0296 Decision 4)', async ({ page }) => {
+  test('is said on EVERY page that draws it, a picture shared between pages included (ADR-0296 Decision 4)', async ({ page }) => {
     test.setTimeout(120_000);
-    const bytes = await undecodablePicturePdf();
+    // THREE PAGES OF ONE PICTURE: PDF.js shares it from the second page and paints the shared entry on the third, which
+    // sends nothing new, so a rule reading the id's page saw the third page as whole (KKKKKKKKK-1).
+    const bytes = await undecodablePicturePdf(3);
     await page.setViewportSize({ width: 1280, height: 900 });
     await bridge(page, {
       opens: [{ kind: 'opened', docId: DOC, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'broken.pdf' }],
@@ -138,11 +143,35 @@ test.describe('a picture NO decoder can read', () => {
     });
     await page.goto('/');
     await page.getByRole('button', { name: 'Open PDF…' }).click();
-    const note = page.locator('.m-page-list [data-page-missing="pictures"]');
-    await expect(note).toBeVisible({ timeout: 30_000 });
-    await expect(note).toContainText('could not be shown');
-    // NOT A FAILED PAGE: the page drew what it could, and says what it lacks.
+    for (const index of [0, 1, 2]) {
+      const slot = page.locator('.m-page-list .m-page-slot').nth(index);
+      await slot.scrollIntoViewIfNeeded();
+      const note = slot.locator('[data-page-missing="pictures"]');
+      await expect(note, `page ${String(index + 1)}`).toBeVisible({ timeout: 30_000 });
+      await expect(note).toContainText('could not be shown');
+    }
+    // NOT A FAILED PAGE: each drew what it could, and says what it lacks.
     await expect(page.locator('.m-page-list canvas[data-failed]')).toHaveCount(0);
+  });
+
+  test('is heard from a page the case opens in a context of its OWN, not only the fixture’s (KKKKKKKKK-4)', async ({ browser }) => {
+    test.setTimeout(120_000);
+    // THE FIXTURE'S PAGE DRAWS NOTHING here: the only report can come from the page this case makes, so a watcher that
+    // heard the fixture's page alone leaves this case expecting a report it never gets, and it fails.
+    const own = await browser.newContext({ baseURL: test.info().project.use.baseURL ?? 'http://localhost:4173' });
+    try {
+      const page = await own.newPage();
+      const bytes = await undecodablePicturePdf();
+      await bridge(page, {
+        opens: [{ kind: 'opened', docId: DOC, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'broken.pdf' }],
+        documentBytes: new Map([[DOC, bytes]]),
+      });
+      await page.goto('/');
+      await page.getByRole('button', { name: 'Open PDF…' }).click();
+      await expect(page.locator('.m-page-list [data-page-missing="pictures"]')).toBeVisible({ timeout: 30_000 });
+    } finally {
+      await own.close();
+    }
   });
 });
 

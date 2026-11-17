@@ -1,8 +1,11 @@
 // @ts-check
 /**
- * Where the renderer build puts PDF.js's JavaScript decoders, and which they are: ONE statement, read by the build that
- * emits them and by the renderer that names their folder to PDF.js
+ * Where the renderer build puts PDF.js's JavaScript decoders, and which they are, as the build emits them
  * ([ADR-0296](../../docs/DECISIONS/0296-the-renderer-is-served-from-its-own-scheme-and-a-picture-is-never-dropped-silently.md)).
+ * TWO COPIES of the folder's name cannot import this, and each is proven against it rather than read from it (KKKKKKKKK-7):
+ * `packages/ui/src/documentView.ts`, a renderer module, which `pictureDecoders.pw.ts` proves by drawing the pictures;
+ * and `apps/desktop/src/rendererHarness.ts`' worker probe, which `proof:rendererpolicy`'s control proves by importing a
+ * decoder from it.
  * The names are PDF.js's own: its worker imports `${wasmUrl}jbig2_nowasm_fallback.js` for CCITT and JBIG2 and
  * `${wasmUrl}openjpeg_nowasm_fallback.js` for JPEG 2000.
  */

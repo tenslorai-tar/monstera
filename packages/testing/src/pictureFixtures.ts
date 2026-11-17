@@ -7,7 +7,7 @@ import { PDFDocument, concatTransformationMatrix, drawObject, popGraphicsState, 
  * One page each, the picture drawn in {@link PICTURE_BOX}, and a fourth page shaped like the user's PDF that drew blank:
  * a colour picture whose soft mask is a one-bit CCITT image. Each is small enough to state exactly what it holds:
  *
- * - **CCITT**: a {@link SIDE}-square bitmap, all black, Group 4 (`/K -1`).
+ * - **CCITT**: a {@link SIDE}-square bitmap, white on its left half and black on its right, Group 4 (`/K -1`).
  * - **JBIG2**: the same bitmap as an embedded stream: a page, one immediate generic region coded with MMR — which is
  *   Group 4 — and the end of the page.
  * - **JPEG 2000**: a codestream of one grey component whose one packet is empty, so every coefficient is zero and the
@@ -137,9 +137,12 @@ function bitmap(black: (x: number) => boolean): boolean[][] {
   return Array.from({ length: SIDE }, () => Array.from({ length: SIDE }, (_unused, x) => black(x)));
 }
 
-const ALL_BLACK = bitmap(() => true);
-/** The mask: white, so opaque, on the left half; black, so transparent, on the right. */
-const LEFT_OPAQUE = bitmap((x) => x >= SIDE / 2);
+/**
+ * White on the left half and black on the right: the CCITT and JBIG2 pictures, and the mask. TWO HALVES, never one
+ * colour (KKKKKKKKK-10): a decoder that answered zeroed bytes draws a one-bit grey picture all black, which an all-black
+ * fixture read as a correct decode. As the mask, white is opaque and black transparent.
+ */
+const RIGHT_BLACK = bitmap((x) => x >= SIDE / 2);
 
 const uint32 = (value: number): number[] => [(value >>> 24) & 0xff, (value >>> 16) & 0xff, (value >>> 8) & 0xff, value & 0xff];
 const uint16 = (value: number): number[] => [(value >>> 8) & 0xff, value & 0xff];
@@ -149,10 +152,10 @@ function segment(number: number, type: number, data: readonly number[]): number[
   return [...uint32(number), type, 0x00, 0x01, ...uint32(data.length), ...data];
 }
 
-/** {@link ALL_BLACK} as an embedded JBIG2 stream: the page, an immediate generic region coded with MMR, the page's end. */
+/** {@link RIGHT_BLACK} as an embedded JBIG2 stream: the page, an immediate generic region coded with MMR, the page's end. */
 function jbig2(): Uint8Array {
   const page = [...uint32(SIDE), ...uint32(SIDE), ...uint32(0), ...uint32(0), 0x00, ...uint16(0)];
-  const region = [...uint32(SIDE), ...uint32(SIDE), ...uint32(0), ...uint32(0), 0x00, 0x01, ...group4(ALL_BLACK)];
+  const region = [...uint32(SIDE), ...uint32(SIDE), ...uint32(0), ...uint32(0), 0x00, 0x01, ...group4(RIGHT_BLACK)];
   return Uint8Array.from([...segment(0, 48, page), ...segment(1, 38, region), ...segment(2, 49, [])]);
 }
 
@@ -172,23 +175,25 @@ function jpx(): Uint8Array {
 }
 
 /**
- * One page whose picture NO decoder can read: a `/JPXDecode` stream of bytes that are not a codestream. What a person is
- * shown when a picture really cannot be decoded (ADR-0296 Decision 4), with the page's own words drawn beside it so the
- * page is not blank for another reason.
+ * `pages` pages, each drawing one picture NO decoder can read: a `/JPXDecode` stream of bytes that are not a codestream.
+ * What a person is shown when a picture really cannot be decoded (ADR-0296 Decision 4). The page draws only the picture.
  */
-export async function undecodablePicturePdf(): Promise<Uint8Array> {
+export async function undecodablePicturePdf(pages = 1): Promise<Uint8Array> {
   const document = await PDFDocument.create();
   const context = document.context;
   const garbage = Uint8Array.from({ length: 64 }, (_unused, at) => (at * 37 + 11) & 0xff);
+  // ONE PICTURE, drawn on every page: from the second page PDF.js shares it between pages, as it does a logo (KKKKKKKKK-1).
   const picture = context.register(context.stream(garbage, { Type: 'XObject', Subtype: 'Image', Width: SIDE, Height: SIDE, Filter: 'JPXDecode' }));
-  const page = document.addPage([PAGE.width, PAGE.height]);
-  const name = page.node.newXObject('Im', picture);
-  page.pushOperators(
-    pushGraphicsState(),
-    concatTransformationMatrix(PICTURE_BOX.width, 0, 0, PICTURE_BOX.height, PICTURE_BOX.x, PICTURE_BOX.y),
-    drawObject(name),
-    popGraphicsState(),
-  );
+  for (let at = 0; at < pages; at += 1) {
+    const page = document.addPage([PAGE.width, PAGE.height]);
+    const name = page.node.newXObject('Im', picture);
+    page.pushOperators(
+      pushGraphicsState(),
+      concatTransformationMatrix(PICTURE_BOX.width, 0, 0, PICTURE_BOX.height, PICTURE_BOX.x, PICTURE_BOX.y),
+      drawObject(name),
+      popGraphicsState(),
+    );
+  }
   return document.save({ useObjectStreams: false });
 }
 
@@ -200,9 +205,9 @@ export async function picturesPdf(): Promise<Uint8Array> {
   const ccittParameters = { K: -1, Columns: SIDE, Rows: SIDE };
   const red = new Uint8Array(SIDE * SIDE * 3);
   for (let at = 0; at < red.length; at += 3) red[at] = 255;
-  const mask = context.register(context.stream(group4(LEFT_OPAQUE), { ...bilevel, Filter: 'CCITTFaxDecode', DecodeParms: ccittParameters }));
+  const mask = context.register(context.stream(group4(RIGHT_BLACK), { ...bilevel, Filter: 'CCITTFaxDecode', DecodeParms: ccittParameters }));
   const pictures = [
-    context.register(context.stream(group4(ALL_BLACK), { ...bilevel, Filter: 'CCITTFaxDecode', DecodeParms: ccittParameters })),
+    context.register(context.stream(group4(RIGHT_BLACK), { ...bilevel, Filter: 'CCITTFaxDecode', DecodeParms: ccittParameters })),
     context.register(context.stream(jbig2(), { ...bilevel, Filter: 'JBIG2Decode' })),
     context.register(context.stream(jpx(), { Type: 'XObject', Subtype: 'Image', Width: SIDE, Height: SIDE, Filter: 'JPXDecode' })),
     context.register(

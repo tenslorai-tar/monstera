@@ -51,13 +51,13 @@ afterEach(() => {
   cleanup();
 });
 
-function layer(commit: (text: string, formatting: unknown) => Promise<BlockCommit> = () => Promise.resolve('written')) {
+function layer(commit: (text: string, formatting: unknown) => Promise<BlockCommit> = () => Promise.resolve('written'), blocks: PageBlocks = BLOCKS) {
   const onCommit = vi.fn((_block: TextBlock, text: string, _read: unknown, formatting: unknown) => commit(text, formatting));
   const onLeave = vi.fn();
   const view = render(
     <I18nProvider i18n={i18n}>
       <EditTextLayer
-        blocks={BLOCKS}
+        blocks={blocks}
         geometry={{ ...GEOMETRY, crop: [...GEOMETRY.crop] }}
         onCommit={onCommit}
         onLeave={onLeave}
@@ -230,6 +230,26 @@ describe('Edit text on the editor kit (ADR-0271)', () => {
       typeAt(surface(), 'x', { paragraph: 0, offset: 11 });
     });
     expect(tip()).toBeUndefined();
+  });
+
+  it('THE ROOM TIP is only for a ONE-LINE block, whose words wrap at its reach; a paragraph says nothing (review of 2026-11-17)', () => {
+    const paragraph: TextBlock = {
+      ...BLOCK,
+      box: box(72, 672, 300, 700),
+      lines: [
+        { runs: [{ index: 1, text: 'Garden club', style: STYLE }], box: box(72, 686, 300, 700), soft: false, baseline: 689 },
+        { runs: [{ index: 3, text: 'meets on Tuesday', style: STYLE }], box: box(72, 672, 300, 686), soft: false, baseline: 675 },
+      ],
+    };
+    const { outline, frame } = layer(undefined, { ...BLOCKS, blocks: [paragraph, OTHER] });
+    fireEvent.click(outline(0), { detail: 1 });
+    expect(frame()).not.toBeNull();
+    expect(frame()?.querySelector('[data-kit-tip]')).toBeNull();
+    // CONTROL: the one-line block beside it, opened in the same layer, still carries it.
+    cleanup();
+    const one = layer();
+    fireEvent.click(one.outline(0), { detail: 1 });
+    expect(one.frame()?.querySelector('[data-kit-tip]')?.textContent).toBe(EN[TEXT_EDIT_ROOM_TIP]);
   });
 
   it('THE ROOM TIP goes once a side handle has widened the box, the advice taken', () => {

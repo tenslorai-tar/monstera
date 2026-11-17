@@ -17,8 +17,11 @@ import { join } from 'node:path';
 /** The rendered suites' case files, by the suffixes their configs match. */
 export const RENDERED_CASE = /\.(pw|visual|capture|measure)\.ts$/u;
 
-/** An import of `test` from Playwright, under its own name or another, on one line or over several. */
-const TAKES_PLAYWRIGHTS_TEST = /import\s*\{[^}]*\btest\b[^}]*\}\s*from\s*'@playwright\/test'/u;
+/**
+ * An import of `test` from Playwright, under its own name or another, on one line or over several, or the whole module
+ * by a namespace, whose `.test` is the same `test` (KKKKKKKKK-12).
+ */
+const TAKES_PLAYWRIGHTS_TEST = /import\s*\{[^}]*\btest\b[^}]*\}\s*from\s*'@playwright\/test'|import\s*\*\s*as\s+\w+\s+from\s*'@playwright\/test'/u;
 
 /**
  * The rendered case files under `dir` that take `test` from Playwright directly. Throws when the scan cannot find the
@@ -32,7 +35,8 @@ export function casesTakingPlaywrightsTest(dir) {
   if (!TAKES_PLAYWRIGHTS_TEST.test(own)) {
     throw new Error('the scan for rendered cases taking Playwright’s test did not find renderedTest.ts’s own import of it, so it cannot see one');
   }
-  return readdirSync(dir)
+  // EVERY FOLDER BELOW, as the configs' `**/` matches (KKKKKKKKK-12); a name is the path below `dir`.
+  return readdirSync(dir, { recursive: true, encoding: 'utf8' })
     .filter((name) => RENDERED_CASE.test(name))
     .filter((name) => TAKES_PLAYWRIGHTS_TEST.test(readFileSync(join(dir, name), 'utf8')));
 }

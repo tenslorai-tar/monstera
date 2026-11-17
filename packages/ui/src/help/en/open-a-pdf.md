@@ -29,6 +29,7 @@ To open by dragging:
 - If there isn't enough free disk space to open a very large document, Monstera says so. Free some space on this computer, then open it again.
 - Something dragged from a browser or another program that is not a file on this computer cannot be opened; drop a PDF from File Explorer instead.
 - A password-protected PDF asks for its password: see "Open a password-protected PDF".
+- Scanned and faxed pages are drawn whatever way their pictures are stored, including the black-and-white fax kinds and JPEG 2000. If a picture's own data is damaged so that it cannot be drawn, the page draws everything else and says at its foot: "A picture on this page could not be shown here. It is still in the file." Nothing is removed: saving, printing or sending the file keeps the picture. A page that cannot be drawn at all says so in the same place.
 
 <!--
 Screenshots to capture:

@@ -618,6 +618,48 @@ describe('a write that runs past the page’s foot (the owner’s Q7)', () => {
   });
 });
 
+describe('a block the document OPENS with past an edge is no edit of the person’s (Fix 3, 2026-11-17)', () => {
+  /** The body block as the file opens: already running below the page's foot, which nobody's edit did. */
+  const OPENED_PAST = read(3, [HEADING, grownTo(-30)]);
+
+  it('shows as any block does: no sentence, no outline as past', () => {
+    const made = layer(OPENED_PAST);
+    expect(made.view.container.textContent).not.toContain(PAST);
+    expect(made.outline(1).getAttribute('aria-description')).toBeNull();
+    expect(made.outline(1).className).not.toContain('m-text-block--past');
+  });
+
+  /** Writes the opened-past body block and hands the layer `after` as the read that follows. */
+  async function writeOpenedPast(after: PageBlocks) {
+    const answers: BlockCommit[] = ['written', 'unchanged'];
+    const made = layer(OPENED_PAST, () => Promise.resolve(answers.shift() ?? 'unchanged'));
+    fireEvent.click(made.outline(1), { detail: 1 });
+    act(() => {
+      typeAt(made.surface(), ' x', { paragraph: 0, offset: 13 });
+    });
+    await escape(made.surface());
+    expect(made.onCommit).toHaveBeenCalledTimes(1);
+    await made.show(after);
+    return made;
+  }
+
+  it('an edit that leaves it where it was says nothing; one that moves it FURTHER OUT says Q7’s sentence', async () => {
+    const kept = await writeOpenedPast(read(4, [HEADING, grownTo(-30)]));
+    expect(kept.frame()).toBeNull();
+    expect(kept.view.container.textContent).not.toContain(PAST);
+    cleanup();
+    // THE PERSON'S EDIT moved its foot 30 points further below the page: that much more of it is out of sight by their edit.
+    const further = await writeOpenedPast(read(4, [HEADING, grownTo(-60)]));
+    const frame = must(further.frame(), 'reopened editor');
+    expect(frame.querySelector('[role="status"]')?.textContent).toBe(PAST);
+  });
+
+  it('CONTROL, Q7 as it stands: a block inside the page that a write pushes past it is still said', async () => {
+    const made = await writeBody(read(4, [HEADING, grownTo(-30)]));
+    expect(must(made.frame(), 'reopened editor').querySelector('[role="status"]')?.textContent).toBe(PAST);
+  });
+});
+
 describe('a write that grows over something else says so (B1.6)', () => {
   /** A one-line block at `y0`, beside the body block as it grows down to 540. */
   const beside = (y0: number): TextBlock => ({ ...block(40, ['Footnote'], y0 + 14), box: box(80, y0, 200, y0 + 10) });

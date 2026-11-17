@@ -544,6 +544,11 @@ interface Shown {
   readonly source: number;
   readonly turn: number;
   readonly measured: Measured;
+  /**
+   * Whether the drawing lacks a picture PDF.js could not decode (ADR-0296): carried with the pixels, so a slot that
+   * takes this drawing says what it lacks too (KKKKKKKKK-2), where a copy showed it with no note.
+   */
+  readonly picturesDropped: boolean;
 }
 
 /** A page canvas's drawing kept at the moment a plan changed, beside what it shows. */
@@ -1988,7 +1993,7 @@ function PageSlotBody({
   // THE VIEW THE PIXELS ON SCREEN CAME FROM, set when a draw has presented: the drawing overlay holds a
   // released shape until this moves past the view it was released over (`AnnotationOverlay.drawnWith`).
   const [drawnWith, setDrawnWith] = useState<DocumentView | undefined>(undefined);
-  // WHAT THE PAGE ON SCREEN LACKS, said on it (ADR-0296 Decision 4): a picture neither engine could draw, or the page or
+  // WHAT THE PAGE ON SCREEN LACKS, said on it (ADR-0296 Decision 4): a picture PDF.js could not decode, or the page or
   // a tile of it, whose draw failed. Set by each draw that presents or fails, so a later draw that is whole clears it.
   const [missing, setMissing] = useState<'none' | 'pictures' | 'page'>('none');
   const picturesDropped = useCallback(() => {
@@ -2156,6 +2161,9 @@ function PageSlotBody({
         // come from PDF.js' viewport alone and each tile draws its own piece.
         const measured = await pageGeometry(view.document, pdfjsPageOf(source), scale, rotation);
         if (superseded.signal.aborted) return;
+        // THE TILES SAY AGAIN what this measure's drawing lacks: each draws this view anew and reports a dropped picture
+        // or a failure, where a note raised by an earlier view's tile stayed up for good (KKKKKKKKK-2).
+        setMissing('none');
         onMeasured(page, { ...measured, drawnAt: scale });
         // MEASURED, NOT DRAWN, so the drawn view is not set here: the tiles say when every one of them has drawn it
         // (`onPresentedView`). Set at the measure, a held look was dropped before the tiles showed the mark (ADR-0257).
@@ -2198,10 +2206,12 @@ function PageSlotBody({
           height: odd ? held.measured.width : held.measured.height,
           rotation: (held.measured.rotation + turns * 90) % 360,
         };
-        SHOWS.set(target, { view, source, turn, measured });
+        SHOWS.set(target, { view, source, turn, measured, picturesDropped: held.picturesDropped });
         onMeasured(page, measured);
         setDrawnWith(view);
         setPresentedWithout(leftOut);
+        // WHAT THE TAKEN DRAWING LACKS, said here as its own draw said it.
+        setMissing(held.picturesDropped ? 'pictures' : 'none');
         onPainted(page, true);
         return;
       }
@@ -2228,7 +2238,7 @@ function PageSlotBody({
         rotation: drawn.rotation,
       };
       // WHAT THIS CANVAS SHOWS NOW, for a plan made next to take it from (ADR-0261's correction).
-      SHOWS.set(target, { view, source, turn, measured });
+      SHOWS.set(target, { view, source, turn, measured, picturesDropped: drawn.picturesDropped });
       onMeasured(page, measured);
       setDrawnWith(view);
       setPresentedWithout(leftOut);

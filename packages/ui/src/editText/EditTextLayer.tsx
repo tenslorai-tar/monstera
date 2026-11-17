@@ -27,7 +27,7 @@ import type { BlockBox } from '../textPlacement.js';
 import { AreaPatch, type CssArea, type PatchArea } from './AreaPatch.js';
 import { modelOfBlock } from './blockModel.js';
 import { BlockEditor, type Opening } from './BlockEditor.js';
-import { type FreshBox, type PageBlocks, type Placed, boxStyle, cssMatrixOf, fontsOfPage, freshBox, insertOf, newlyCovered, overlaps, pastItsPage, place } from './editing.js';
+import { type FreshBox, type PageBlocks, type Placed, boxStyle, cssMatrixOf, fontsOfPage, freshBox, insertOf, newlyCovered, overlaps, pastItsPage, place, pushedPastPage } from './editing.js';
 import { type ShownPage, runFamiliesOf } from './pdfjsFaces.js';
 import { type FaceKind, type FaceReads, type RunFaces, useRunFaces } from './runFaces.js';
 
@@ -214,11 +214,34 @@ export function EditTextLayer({
   }, [holding, onHolding]);
   /** The block a written edit was made to, and the version it was read at, until the editor that reopens over it closes. */
   const [written, setWritten] = useState<{ readonly box: TextBlock['box']; readonly version: DocVersion } | undefined>();
+  // THE BLOCKS A PERSON'S OWN WRITES PUSHED PAST THE PAGE on this page, by their boxes as read after the write (Fix 3 of
+  // 2026-11-17): only these carry Q7's sentence and outline, while they stay past it. A block the document opened with
+  // past an edge is not one until an edit moves it further out (`pushedPastPage`).
+  const [pushed, setPushed] = useState<readonly TextBlock['box'][]>([]);
+  const wasPushed = (box: TextBlock['box']): boolean => pushed.some((each) => overlaps(each, box));
+  /** Whether a block as read now carries Q7's sentence: past the page, by a person's write. */
+  const warned = (box: TextBlock['box']): boolean => pastItsPage(box, geometry.crop) && wasPushed(box);
   // A WRITE THAT RAN PAST THE PAGE REOPENS ITS EDITOR over the read after it, with the sentence under the words (Q7).
   const regrown =
     written === undefined || blocks === undefined || blocks.version === written.version
       ? -1
-      : blocks.blocks.findIndex((block) => overlaps(pageBox(block), written.box) && pastItsPage(pageBox(block), geometry.crop));
+      : blocks.blocks.findIndex(
+          (block) =>
+            overlaps(pageBox(block), written.box) &&
+            pastItsPage(pageBox(block), geometry.crop) &&
+            (wasPushed(written.box) || pushedPastPage(written.box, pageBox(block), geometry.crop)),
+        );
+  // RECORDED ONCE THE READ AFTER THE WRITE ARRIVES: the grown block's box joins the pushed ones where the write pushed it
+  // past (or it was pushed already and is still past), and leaves them where it is back on the page.
+  // ADJUSTED AS THE READ ARRIVES, once per read (React's *storing information from previous renders*), rather than in an
+  // effect after it: the frame the read is drawn in already carries the sentence or not.
+  const [recordedAt, setRecordedAt] = useState<DocVersion | undefined>(undefined);
+  if (written !== undefined && blocks !== undefined && blocks.version !== written.version && recordedAt !== blocks.version) {
+    setRecordedAt(blocks.version);
+    const grownBlock = regrown === -1 ? undefined : blocks.blocks[regrown];
+    const others = pushed.filter((each) => !overlaps(each, written.box));
+    setPushed(grownBlock === undefined ? others : [...others, pageBox(grownBlock)]);
+  }
   // THE BLOCK A WRITE GREW, and what it now runs over that it did not before (B1.6). EVERY BOX HERE IS THE PAGE'S: a block
   // set at an angle has its own in its frame (ADR-0273), and two frames' boxes cannot be compared.
   const grown = written === undefined || blocks === undefined || blocks.version === written.version ? undefined : blocks.blocks.find((block) => overlaps(pageBox(block), written.box));
@@ -458,7 +481,7 @@ export function EditTextLayer({
               pageFonts={fontsOfPage(blocks.blocks)}
               paper={paperAround(placed.matrix === undefined ? placed : overlayBox(placed), paperAt)}
               parting={chosen === at && opened?.parting === true}
-              past={pastItsPage(pageBox(block), geometry.crop)}
+              past={at === regrown || warned(pageBox(block))}
               placed={placed}
               // A BLOCK OF ONE LINE grows to its column's edge or the page's margin before it wraps. A TURNED ONE grows the
               // same way in its own frame (ADR-0273), where its box and the boxes of the blocks set in its frame are, and
@@ -493,7 +516,7 @@ export function EditTextLayer({
           );
         }
         const words = labelled[at] ?? '';
-        const past = pastItsPage(pageBox(block), geometry.crop);
+        const past = at === regrown || warned(pageBox(block));
         const outline = (
           <button
             aria-label={_(TEXT_EDIT_BLOCK_LABEL, { words: words.length > 40 ? `${words.slice(0, 40)}…` : words })}

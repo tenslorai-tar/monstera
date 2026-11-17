@@ -30,7 +30,7 @@
  */
 import { execFileSync } from 'node:child_process';
 import { copyFile, readFile, writeFile } from 'node:fs/promises';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { PDFDocument, PDFName, PDFString, StandardFonts, rgb } from '@cantoo/pdf-lib';
@@ -1426,6 +1426,85 @@ for (const command of commands) {
     },
     { covers: [command.id] },
   );
+}
+
+// THE KINDS OF DOCUMENT two users' files showed wrongly (the owner's list of 2026-11-17), each a MADE-UP fixture from the
+// testing package, never a user's file: pictures only PDF.js's decoders draw (ADR-0296), a picture no decoder can read,
+// a statement drawn whole and shifted on each page (Fix 2), and a block the file opens with past the page's foot (Fix 3).
+{
+  const testingDist = join(root, 'packages', 'testing', 'dist');
+  const pictures = await import(pathToFileURL(join(testingDist, 'pictureFixtures.js')).href);
+  const edges = await import(pathToFileURL(join(testingDist, 'textEdgeFixtures.js')).href);
+  /** A made-up fixture written into the walk's output and opened. @param {string} name @param {Uint8Array} bytes */
+  const openMade = async (name, bytes) => {
+    const path = join(output, name);
+    writeFileSync(path, bytes);
+    await open(path);
+  };
+  /** The colour at a fraction of a page's picture box, `[r, g, b]`, or null where the page has no canvas yet. @param {number} index @param {number} across */
+  const pictureColour = (index, across) =>
+    page.locator(`.m-page-list:visible canvas[data-page-canvas="${String(index)}"]`).evaluate(
+      (element, at) => {
+        const canvas = /** @type {{ width: number, height: number, getContext: (kind: string) => { getImageData: (x: number, y: number, w: number, h: number) => { data: number[] } } | null }} */ (
+          /** @type {unknown} */ (element)
+        );
+        const context = canvas.getContext('2d');
+        if (context === null || canvas.width === 0) return null;
+        const { data } = context.getImageData(Math.floor(at.x * canvas.width), Math.floor(at.y * canvas.height), 1, 1);
+        return [data[0] ?? 255, data[1] ?? 255, data[2] ?? 255];
+      },
+      {
+        x: (pictures.PICTURE_BOX.x + across * pictures.PICTURE_BOX.width) / pictures.PAGE.width,
+        y: (pictures.PAGE.height - pictures.PICTURE_BOX.y - pictures.PICTURE_BOX.height / 2) / pictures.PAGE.height,
+      },
+    );
+  await step('KINDS OF DOCUMENT: CCITT, JBIG2 and JPEG 2000 pictures, and a CCITT soft mask, are drawn (ADR-0296)', async () => {
+    await openMade('kinds-pictures.pdf', await pictures.picturesPdf());
+    /** @type {Record<string, unknown>} */
+    const read = {};
+    for (const [index, name] of pictures.PICTURE_PAGES.entries()) {
+      await page.locator('.m-page-list:visible .m-page-slot').nth(index).scrollIntoViewIfNeeded();
+      // WHERE EACH PICTURE IS INKED: the CCITT and JBIG2 pictures on their right half, the others on their left.
+      const across = name === 'ccitt' || name === 'jbig2' ? 0.75 : 0.25;
+      await expect.poll(() => pictureColour(index, across), { timeout: 30_000 }).not.toBeNull();
+      // DRAWN, not the page's white: a picture dropped whole reads white there.
+      await expect.poll(async () => ((await pictureColour(index, across)) ?? [255, 255, 255]).some((channel) => channel < 200), { timeout: 30_000 }).toBe(true);
+      read[name] = await pictureColour(index, across);
+    }
+    // THE MASK APPLIED: its right half is transparent, so the page's white shows there.
+    const right = await pictureColour(3, 0.75);
+    if (right === null || right.some((channel) => channel < 230)) throw new Error(`the masked picture's transparent half is not the page: ${JSON.stringify(right)}`);
+    if ((await page.locator('.m-page-list:visible [data-page-missing]').count()) > 0) throw new Error('a page says it lacks a picture');
+    return { read, maskedRight: right };
+  });
+  await step('KINDS OF DOCUMENT: a picture no decoder can read is said on its page, not dropped in silence (ADR-0296)', async () => {
+    await openMade('kinds-undecodable.pdf', await pictures.undecodablePicturePdf());
+    const note = page.locator('.m-page-list:visible [data-page-missing="pictures"]');
+    await expect(note).toBeVisible({ timeout: 30_000 });
+    return { note: await note.innerText() };
+  });
+  /** Edit text on, and page `index`'s outlines once read: how many, and how many carry the past-the-page sentence. @param {number} index */
+  const editTextPage = async (index) => {
+    if ((await page.locator('[data-text-edit-layer]:visible').count()) === 0) await walk.command('Edit text on the page');
+    await page.locator('.m-page-list:visible .m-page-slot').nth(index).scrollIntoViewIfNeeded();
+    const layer = page.locator(`[data-text-edit-layer="${String(index)}"]:visible`);
+    await expect.poll(() => layer.locator('[data-text-block]').count(), { timeout: 30_000 }).toBeGreaterThan(0);
+    return { outlines: await layer.locator('[data-text-block]').count(), past: await layer.locator('.m-text-block--past, [data-text-block-past]').count() };
+  };
+  await step('KINDS OF DOCUMENT: a statement drawn whole and shifted on each page offers only what the page shows (Fix 2)', async () => {
+    await openMade('kinds-shifted-statement.pdf', await edges.shiftedStatementPdf());
+    const pagesRead = [];
+    for (const index of [0, 1, 2]) pagesRead.push(await editTextPage(index));
+    // ABOUT 80 A PAGE: each page shows 38 rows of two runs; the hidden 76 rows a page would be 228 outlines and past.
+    if (pagesRead.some(({ outlines, past }) => past > 0 || outlines > 100)) throw new Error(`hidden text is offered: ${JSON.stringify(pagesRead)}`);
+    return { pagesRead };
+  });
+  await step('KINDS OF DOCUMENT: a block the file opens with past the page’s foot carries no warning (Fix 3)', async () => {
+    await openMade('kinds-opened-past.pdf', await edges.openedPastPdf());
+    const read = await editTextPage(0);
+    if (read.past > 0) throw new Error(`a block nobody edited is warned past the page: ${JSON.stringify(read)}`);
+    return read;
+  });
 }
 
 // THE WALK STARTED NOTHING OUTSIDE ITSELF: a route to Windows the recorders above miss would open a file in whatever

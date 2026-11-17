@@ -606,6 +606,32 @@ describe('a glyph the page draws with a code its font names no text for is the p
   });
 });
 
+describe('a page that draws a whole statement shifted keeps its hidden lines byte for byte (Fix 2, 2026-11-17)', () => {
+  // THE CONVERTER'S SHAPE, made up: lines above the page, on it and below it, each its own text object. Main leaves the
+  // off-page ones out of every block (`liesOffPage`), so an edit names only a line on the page.
+  const hiddenAbove = 'BT /F1 10 Tf 1 0 0 1 72 1300 Tm (hidden above the page) Tj ET';
+  const seen = 'BT /F1 10 Tf 1 0 0 1 72 400 Tm (seen on the page) Tj ET';
+  const hiddenBelow = 'BT /F1 10 Tf 1 0 0 1 72 -300 Tm (hidden below the page) Tj ET';
+  const content = bytes([hiddenAbove, seen, hiddenBelow].join('\n'));
+  const fonts = new Map([['F1', LETTERS]]);
+  const said = ['hidden above the page', 'seen on the page', 'hidden below the page'];
+  const page: PageRuns = {
+    textObjects: [0, 1, 2],
+    runs: [0, 1, 2].map((index) => ({ index, members: [index], text: said[index] ?? '', left: 0, right: 0, bottom: 0, top: 0 })),
+  };
+
+  it('an edit to the visible line writes the hidden lines’ bytes exactly as they were', () => {
+    const result = editOperators(content, fonts, page, [{ lines: [[1]], soft: [false], text: 'seen on this page' }]);
+    if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+    const after = latin1(result.value.content);
+    expect(after).toContain(hiddenAbove);
+    expect(after).toContain(hiddenBelow);
+    // CONTROL: the edited line itself did change, so the case is not reading an edit that wrote nothing.
+    expect(after).not.toContain(seen);
+    expect(checkOperatorEdit(content, result.value, fonts).ok).toBe(true);
+  });
+});
+
 describe('an emptied operator keeps its advance only where a later one is placed by it', () => {
   // ONE POSITIONING, THREE OPERATORS: `ef` is drawn where `cd`'s advance leaves it, and is another block's.
   const content = bytes('BT /F1 10 Tf 0 0 Td (ab) Tj (cd) Tj (ef) Tj ET');

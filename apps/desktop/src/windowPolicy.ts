@@ -225,7 +225,8 @@ export const RENDERER_URL = `${RENDERER_SCHEME}://app/index.html`;
 /**
  * The media type of each kind of file the renderer build emits, and the only kinds served: a request for any other is
  * refused, so a file that lands in the build by mistake is not served by default. A kind the build starts emitting is a
- * line here, which `rendererFileFor`'s case for every emitted file catches.
+ * line here, which `proof:rendererpolicy` holds: it reads every file of the built renderer and fails on a kind this map
+ * does not name (KKKKKKKKK-5: this said a case did, and none did).
  */
 export const RENDERER_TYPES: ReadonlyMap<string, string> = new Map([
   ['.html', 'text/html; charset=utf-8'],

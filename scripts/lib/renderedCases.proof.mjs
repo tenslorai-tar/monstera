@@ -21,7 +21,7 @@ import { formatError } from './reportError.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 8 });
+const roster = createRoster(failures, { cases: 10 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -35,6 +35,7 @@ const WATCHED = "import { type Page } from '@playwright/test';\nimport { expect,
 const UNWATCHED = "import { type Page, expect, test } from '@playwright/test';\n";
 const UNWATCHED_SPREAD = "import {\n  type Page,\n  expect,\n  test,\n} from '@playwright/test';\n";
 const UNWATCHED_RENAMED = "import { test as it } from '@playwright/test';\n";
+const UNWATCHED_NAMESPACE = "import * as pw from '@playwright/test';\n";
 
 /**
  * A folder holding `files`, removed after `read` answers.
@@ -74,6 +75,7 @@ for (const [label, text] of /** @type {const} */ ([
   ['on one line', UNWATCHED],
   ['spread over lines', UNWATCHED_SPREAD],
   ['under another name', UNWATCHED_RENAMED],
+  ['as a namespace', UNWATCHED_NAMESPACE],
 ])) {
   const found = inFolder({ 'renderedTest.ts': OWN, 'a.pw.ts': WATCHED, 'c.pw.ts': text }, (dir) => casesTakingPlaywrightsTest(dir));
   check(`a case taking Playwright's test ${label} is found`, JSON.stringify(found) === '["c.pw.ts"]', `found ${JSON.stringify(found)}`);
@@ -88,6 +90,9 @@ check(
   JSON.stringify(everySuite) === '["a.visual.ts","b.capture.ts","c.measure.ts"]',
   `found ${JSON.stringify(everySuite)}`,
 );
+
+const nested = inFolder({ 'renderedTest.ts': OWN, 'deeper/e.pw.ts': UNWATCHED }, (dir) => casesTakingPlaywrightsTest(dir));
+check('a case in a folder below is read, as the configs match one', nested.length === 1 && nested[0]?.endsWith('e.pw.ts') === true, `found ${JSON.stringify(nested)}`);
 
 const refused = inFolder({ 'renderedTest.ts': OWN, 'c.pw.ts': UNWATCHED }, (dir) => thrown(() => refuseUnwatchedCases(dir)));
 check('the refusal THROWS and names the file', refused !== null && refused.includes('c.pw.ts'), `threw ${String(refused)}`);

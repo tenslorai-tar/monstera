@@ -268,7 +268,7 @@ const failures = [];
 // THE COUNT IS MOVED ONLY WITH THE CASES IT COUNTS, and the commit that moves it names the cases it adds or removes. A
 // running ledger of the count was kept here until 2026-10-17 and had stopped at 246 against 274 (VVVVVVV-23): a second
 // copy of the history git already holds, which nothing compared with the count.
-const roster = createRoster(failures, { cases: 295 });
+const roster = createRoster(failures, { cases: 296 });
 
 /**
  * @param {string} name
@@ -2664,6 +2664,26 @@ async function replaceAllCases() {
     'a replace-all REFUSES to capture, because its prior scales with the document',
     prior.captured === false && prior.reason.includes('document-scaled'),
     prior.captured === false ? prior.reason : 'it claimed to capture something',
+  );
+
+  // TEXT WHOLLY OFF THE PAGE IS NOT REPLACED (the owner's Fix 2 of 2026-11-17, `liesOffPage`): a converter that draws a
+  // whole statement on every page, shifted, leaves most of it above and below the page, and a person replacing a word
+  // means the one they see. The fixture is made up, the same shape: one line on the page, one above it, one below.
+  const shifted = await PDFDocument.create();
+  const shiftedPage = shifted.addPage([595, 842]);
+  const helvetica = await shifted.embedFont(StandardFonts.Helvetica);
+  shiftedPage.drawText('HIDDEN ROW ABOVE', { x: 72, y: 1300, size: 11, font: helvetica });
+  shiftedPage.drawText('VISIBLE ROW HERE', { x: 72, y: 400, size: 11, font: helvetica });
+  shiftedPage.drawText('HIDDEN ROW BELOW', { x: 72, y: -300, size: 11, font: helvetica });
+  const replacedOnThePage = await pageOf(
+    await localPdfiumExecution.apply({ session: await shifted.save(), command: replaceAll({ find: 'ROW', replace: 'LINE' }), sources: [], reads: undefined }),
+    0,
+  );
+  record(
+    'a replace-all changes the line ON the page and leaves the lines off it as they were, still in the file',
+    replacedOnThePage.includes('VISIBLE LINE HERE') && replacedOnThePage.includes('HIDDEN ROW ABOVE') && replacedOnThePage.includes('HIDDEN ROW BELOW'),
+    // CONTROL in the same reading: PDFium's own text holds the off-page lines, so their absence is not what passes it.
+    JSON.stringify(replacedOnThePage.slice(0, 160)),
   );
 }
 

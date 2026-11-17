@@ -984,6 +984,117 @@ ADR-0296 came first (`dce699fd`); its correction of the redraw came before the b
 
 ---
 
+## 2026-11-17 — Fix 1: pictures PDF.js could not decode were drawn as nothing, and the worker had no policy
+
+The owner's list of 2026-11-17, Fix 1, on a user's PDF that drew every page blank (used locally, never copied).
+
+**The cause, measured.** Each page is one Flate picture whose soft mask is a one-bit CCITT image. `pdfjs-dist` 6.2.108
+decodes CCITT, JBIG2 and JPEG 2000 only through its image decoders, which the worker imports from `wasmUrl`;
+`documentView.ts` passed `useWasm: false` and no `wasmUrl`, so the import named `null` + `jbig2_nowasm_fallback.js`, a
+file nothing shipped, and *Unable to decode image* dropped each picture whole, colour and mask. The comment beside it,
+*the shipped decoders are what run*, was false from `75662ab2` (2026-08-29). `pictureCheck.mjs` on the build of
+`05b9c999`: **0 of 16 pages** drawn as MuPDF 1.28 draws them, every page's ink 0.000 against MuPDF's 0.064 to 0.992.
+
+**What measuring the policy found** (a probe in the pinned Electron 43.8.3, now `proof:rendererpolicy`'s worker case):
+the window refused `WebAssembly.compile` and `new Function`; **the worker allowed both** — a `file:` worker's scripts
+never pass the session's header hook, so the thread that parses every document had no policy at all.
+
+**What changed** (ADR-0296, `dce699fd` and `7c23088c`): the renderer is served from `monstera://app/`, whose handler is
+the one writer of the header, on every response; PDF.js's JavaScript decoders ship beside the bundle; a picture still
+not decoded is said on its page (*A picture on this page could not be shown here. It is still in the file.*), and a page
+whose draw failed says so where it showed a blank slot; every rendered case fails on PDF.js's report. The second
+engine's redraw was withdrawn before shipping: its answer cannot say what it left out.
+
+**Proofs and controls.** `pictureDecoders.pw.ts`, made-up fixtures under the shipped policy: CCITT and JBIG2 black,
+JPEG 2000 mid-grey, the masked picture red with the page beside it; CONTROL, the build's decoder step removed, the CCITT
+picture reads the page's white and the fixture hears *JBig2 failed to initialize*. Its second case shows the note for a
+JPEG 2000 stream of garbage; MUTATED, the count forced to 0, no note. `proof:rendererpolicy`'s worker case; MUTATED, the
+header off non-page responses, it fails. **The user's file after: 16 of 16 pages** drawn as MuPDF draws them, every page
+within 0.015 of MuPDF's ink share (`pictureCheck.mjs`, this build).
+
+## 2026-11-17 — Fix 2: text lying off the page was read as the page's
+
+The owner's list, Fix 2, on a user's three-page bank statement (used locally; its words are in no record).
+
+**The cause, measured** (`offPageText.mjs`, which prints counts only). The statement's maker draws the whole statement on
+every page, shifted, and lets the page's edge hide the rest: MuPDF with `clip=no` reads 312, 272 and 336 of each page's
+479 lines wholly off the page, as the reviewing seat counted. **Edit text's read** — PDFium's runs, grouped in main —
+kept them: 270 blocks a page, of which **168, 166 and 185 lay wholly off it**, each outlined past the edge and so each
+warned *no longer fits*, and **one block on pages 1 and 2 crossed an edge**: no line straddles one, so it was the
+grouping joining a visible line to hidden ones beside it. Each label sits at its block's own top-left corner, and the Edit
+text layer is not clipped to its page (`.m-text-edit-layer` sets no overflow), so a hidden block's outline and label
+drew where the block is, beyond the page's top or foot, over the gap and the pages above and below it, and overlapping
+one another, a whole statement's worth a page — read from the code and the CSS, not measured on the old build. **The other readers, measured the same way**: Find found a word drawn only off the page 0 times on each page
+(its control, a word on the page, once); word count (266, 318, 238) and the text layer (360, 429, 329 words) stay
+under the visible words (384, 485, 336), against 721, 612 and 774 off it — MuPDF's structured text drops every glyph
+past the page by default (`FZ_STEXT_CLIP`), and Find, word count, the text layer (select and copy), spell check's word
+boxes, Ask AI's page text and export all read through it. **Translate reads Edit text's blocks, and Replace all walks
+PDFium's runs**, so both read the hidden text: Replace all would have changed words nobody could see.
+
+**The edges, decided** (`offPage.ts`). Wholly outside the page's box, sharing no area: off, left out. Partly on: on, as
+MuPDF's readers keep the glyphs on the page. Inside the box and hidden by a clip: on, grouped apart by its clip
+(ADR-0281); nothing here can tell a clip that hides from one that frames without drawing it.
+
+**What changed.** One rule, `liesOffPage`, in the kernel: main leaves such runs out before the grouping (so no block can
+join them), for the page and each form placement; Replace all leaves them unmatched. They stay in the file untouched.
+
+**Proofs and controls.** `compositionHost.test.ts`: a page with a line on it, above it, below it and across its edge
+reads two blocks; MUTATED, the filter removed, it fails. `proof:pdfiumcommand`: a replace-all changes the visible line
+and leaves the hidden ones, read back from PDFium; MUTATED, it fails. `operatorEdit.test.ts`: an edit to the visible
+line writes the hidden lines' bytes exactly. `offPage.test.ts` holds the edges. **On the user's statement after**: Edit
+text 102, 104 and 85 blocks, none off the page, none crossing an edge, no label (`editTextNotes.mjs`); one letter typed
+into a block on each page, saved and read back with `clip=no` (`editOneWord.mjs`, the copy deleted): pages 1 and 2
+changed in exactly the edited line, page 3 in the edited line, which wrapped into two, and **no line off the page
+changed on any page**. On the made-up statement: 82, 86 and 80 blocks, none past; the edit changed one line.
+
+## 2026-11-17 — Fix 3: "no longer fits" was said of blocks nobody had edited
+
+The owner's Q7 (`be8bb3b4`, 2026-10-06) stands: a person's typing that pushes a block past the page is never refused,
+keeps every word, and says *This text no longer fits on the page*. **The defect**: `pastItsPage` asked only whether a
+block's box crossed an edge, so every block a file opened with past an edge was outlined and labelled as the person's.
+
+**What changed** (`pushedPastPage`, `EditTextLayer.tsx`). The sentence and the heavy outline are for a block a person's
+own write pushed past the page: inside before and past after, or — **decided** for a block the file opened with past an
+edge — an edge moved further out by more than a quarter point. An edit that keeps an opened-past block where it was, or
+brings it in, says nothing. The layer keeps the boxes its writes pushed out, so a block stays said while it is past.
+
+**Proofs and controls.** `EditTextLayerFlows.test.tsx`: a block opened past the foot shows no sentence and no past
+outline; an edit keeping it there says nothing, one moving its foot 30 points further says the sentence; CONTROL, Q7 as
+it stands, a block pushed out from inside still says it. MUTATED, the old rule: the first two fail. `editing.test.ts`
+holds the edge rule. On the made-up opened-past page in the running app: two blocks, no warning (`editTextNotes.mjs`).
+
+## 2026-11-17 — Every message Edit text can show, reviewed
+
+The owner's review: Edit text shows too many warnings. **The list is the messages the Edit text files import and the
+messages shown from elsewhere while it is on**, read from `messages/en.ts` and the code that renders each, not from
+memory. The three questions: (1) only in answer to something the person did, or something they must act on now? (2)
+something they can act on, in plain words? (3) only where it is true? **(3) was run, not reasoned**: `editTextNotes.mjs`
+turned Edit text on over the first three pages of every corpus file (16 files, 34 pages) and the four made-up fixtures
+(8 pages), with nobody editing, and counted every note, label and outline state shown. On those 42 pages the only note
+was *This page is a picture…*, on the 7 corpus pages and 3 fixture pages with no text; the picture fixture's broken page
+said its picture could not be shown; no page showed a past outline or label. The rows a person's own action brings
+(the editor's notes) were run by their cases, named in the table.
+
+| Message, label or state | When it shows | (1) (2) (3) | Verdict and what changed |
+|---|---|---|---|
+| *This text no longer fits on the page*, and the solid past outline | Was: any block past an edge. Now: a block a person's write pushed past the page | Was no, yes, no | **Fixed (Fix 3)**: only for the person's own push; `EditTextLayerFlows.test.tsx`, with its control |
+| *Tip: drag a side handle to widen the box before you type…* (room tip) | Was: every open block until typing or widening. Now: an open one-line block, likewise | Was yes, yes, no | **Scoped**: its own reason (833205e1) is a one-line block's wrap at its reach; a paragraph already wraps at its measure. `EditTextLayer.test.tsx`, with its control. The owner asked for this tip, so it is scoped and not removed |
+| *The words you wrote now run over something else on this page. Press Ctrl+Z…* | After a write that grew over a block, picture or drawing it did not cover before | yes, yes, yes | Kept: B1.6's cases and controls (*growth over nothing, or what it already covered, says nothing*) |
+| *Nothing was changed, so the signatures still verify…* | An edit in a signed file, before it would break a signature | yes, yes, yes | Kept |
+| *Nothing was changed: the font on this page can't show some of the characters you typed*, *Can't show*, *Change the words, or press Esc…*, *Press Esc…* | A write refused for characters no face draws | yes, yes, yes | Kept: the owner's rule never refuses for the document, and this is the person's own characters |
+| *This page has no text that can be edited*, with *If this is a scan, recognise its words…* | A page whose read holds no block and no unreadable text, and which does not say it is a picture | no (turning the mode on), yes, yes | Kept: it is what a person meets on pressing a page with nothing to edit; never shown on the 42 pages, whose textless pages carry the picture note instead |
+| *This page is a picture, so there is no text to select or search*, with the recognise offer in Edit text | A page MuPDF reads as raster and no text | no, yes, yes | Kept: 10 of 42 pages, each with no text |
+| *This page's text is not readable, so it can't be edited here* | The page's read failed | no, yes, yes | Kept: it explains why a press does nothing; seen on none of the 42 |
+| *…more text than can be outlined at once…*, *…placed too many layers deep…*, *…repeats its drawings more often than…* | The read was cut, or a form's text past the walk's bounds | no, yes, yes | Kept: text a person sees and cannot press is otherwise a silent loss; seen on none of the 42 |
+| *A picture on this page could not be shown here. It is still in the file.*, *This page could not be drawn in full here…* | A picture no decoder could read; a draw that failed | no, yes, yes | New (Fix 1), shown in any mode; the broken fixture page only |
+| *Your dictionary is full…* | Adding a word to a full dictionary | yes, yes, yes | Kept |
+| The editor's name, *Text being edited. Press Esc when you are done.*; each outline's *Edit "…"*; the layer's *Editable text on page …*; the handles' *Drag to…*; *Click where the new text should go* | Read by a screen reader or as a tooltip, never drawn as a note | — | Kept: names, not warnings |
+| The plain outline, the adding outline | Each block offered; the box of text being added | — | Kept; with Fix 2 no outline lies off the page |
+
+**Nothing was removed**, so no removal hides a loss. The two that changed are the two that answered (3) *no*.
+
+---
+
 ## 2026-11-17 — Stage audit of `7b03d0cf..dce699fd` — findings JJJJJJJJJ-1 to JJJJJJJJJ-33
 
 Owed before ADR-0296's build could be committed: that commit stages 162 files and would have taken the range past

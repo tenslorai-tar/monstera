@@ -3,6 +3,7 @@ import type { CommandOfKind } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
 import type { AppliedImage, BoxedInEdit, ImageSession } from './engineSeam.js';
+import { liesOffPage } from './offPage.js';
 import { objectRuns, onImage, pageCount, pdfiumWriter, replaceTextObjects } from './pdfiumFfi.js';
 import { NothingToReplaceError } from './textEditRefusals.js';
 
@@ -142,7 +143,11 @@ export async function applyReplaceAllText(
       // the read a surface makes before offering an edit.
       // ONE RUN PER OBJECT (`objectRuns`), never the editor's joined runs: each replacement is written back into the
       // object whose text it was, and a joined run's text written into its first object corrupts the line (ADR-0130).
-      const { runs } = await objectRuns(session, page);
+      // TEXT WHOLLY OFF THE PAGE IS NOT MATCHED (`liesOffPage`, the owner's Fix 2 of 2026-11-17): a person replacing a
+      // word means the word they can see, and a page that draws a whole statement shifted holds many it cannot. It stays
+      // in the file untouched.
+      const { runs: all, box } = await objectRuns(session, page);
+      const runs = all.filter((run) => !liesOffPage(run, box));
       const replacements = runs.flatMap((run) => {
         const next = replaceMatches(run.text, compiled.value.matchesIn(run.text), command.replace);
         return next === null ? [] : [{ index: run.index, text: next }];

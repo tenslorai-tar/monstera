@@ -144,6 +144,7 @@ import {
   groupInFrames,
   inItsFrame,
   isUpright,
+  liesOffPage,
   withRises,
   hostedPdfLibExecution,
   nodeFileSurface,
@@ -1898,7 +1899,13 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
           return { ...risen, lines };
         });
       };
-      const grouped = blocksOf(found.runs, found.markers);
+      // TEXT WHOLLY OFF THE PAGE IS NOT THE PAGE'S (`liesOffPage`, the owner's Fix 2 of 2026-11-17): a converter that draws
+      // a whole statement on every page, shifted, left 166 to 185 of a page's 270 blocks outside it, each offered and
+      // each warned past the edge, and one block a page joining visible lines to hidden ones. Left out BEFORE the grouping,
+      // so no block can join them; it stays in the file untouched, since an edit rewrites only its own block's
+      // instructions (ADR-0266). The runs keep their indices, which is what an edit names them by.
+      const onThePage = (runs: typeof found.runs): typeof found.runs => runs.filter((run) => !liesOffPage(run, found.box));
+      const grouped = blocksOf(onThePage(found.runs), found.markers);
       // TEXT INSIDE A FORM (ADR-0269 Decision 1): each placement read by PDFium as a page of its own, in the page's user
       // space, its blocks after the page's own, each carrying its path. NEVER for Edit object's read, which reads the page
       // as it is (ADR-0264 Decision 5). A Type 3 font inside a form is not named by its descriptor: that read is the
@@ -1915,7 +1922,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         for (const [at, form] of placed.paths.entries()) {
           const read = reads[at];
           if (read === undefined) throw new Error(`the read of the form placements answered no page ${String(at)}`);
-          placements.push({ form, blocks: blocksOf(read.runs, read.markers), truncated: read.truncated });
+          // A FORM'S RUNS ARE IN THE PAGE'S SPACE, so the page's box decides the same way.
+          placements.push({ form, blocks: blocksOf(onThePage(read.runs), read.markers), truncated: read.truncated });
         }
       }
       const inForms = placements.flatMap(({ form, blocks }) => blocks.map((block) => ({ ...block, form })));

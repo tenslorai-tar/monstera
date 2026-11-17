@@ -1782,7 +1782,7 @@ export const TEXT_PROPERTIES_BOX = messageKey('surface.text-properties.box');
 export const PAGE_IMAGE_ONLY = messageKey('surface.page.image-only');
 /** What the page area says until its first page is drawn, in place of empty slots. */
 export const PAGE_OPENING = messageKey('surface.page.opening');
-/** A page drawn without a picture neither engine could decode (ADR-0296 Decision 4). */
+/** A page drawn without a picture PDF.js could not decode (ADR-0296 Decision 4). */
 export const PAGE_PICTURE_NOT_SHOWN = messageKey('surface.page.picture-not-shown');
 /** A page, or part of it, whose draw failed (ADR-0296 Decision 4). */
 export const PAGE_NOT_DRAWN = messageKey('surface.page.not-drawn');

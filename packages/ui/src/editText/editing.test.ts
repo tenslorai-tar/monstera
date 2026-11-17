@@ -1,6 +1,29 @@
 import { describe, expect, it } from 'vitest';
 
-import { boxStyle, cssMatrixOf, place } from './editing.js';
+import { boxStyle, cssMatrixOf, place, pushedPastPage } from './editing.js';
+
+describe('pushedPastPage: Q7’s sentence only for a block a person’s write put past the page (Fix 3, 2026-11-17)', () => {
+  const CROP = [0, 0, 612, 792] as const;
+  const box = (x0: number, y0: number, x1: number, y1: number) => ({ x0, y0, x1, y1 });
+
+  it('is true of a block inside the page before the write and past it after', () => {
+    expect(pushedPastPage(box(72, 100, 300, 200), box(72, -30, 300, 200), CROP)).toBe(true);
+  });
+
+  it('of a block already past: true only where an edge moved further out, by more than the tolerance', () => {
+    expect(pushedPastPage(box(72, -30, 300, 200), box(72, -60, 300, 200), CROP)).toBe(true);
+    expect(pushedPastPage(box(72, -30, 300, 200), box(72, -30, 650, 200), CROP)).toBe(true);
+    // CONTROL: kept where it was, a tolerance's width further, or brought in.
+    expect(pushedPastPage(box(72, -30, 300, 200), box(72, -30, 300, 200), CROP)).toBe(false);
+    expect(pushedPastPage(box(72, -30, 300, 200), box(72, -30.2, 300, 200), CROP)).toBe(false);
+    expect(pushedPastPage(box(72, -30, 300, 200), box(72, -10, 300, 200), CROP)).toBe(false);
+  });
+
+  it('is false of any block the write leaves on the page', () => {
+    expect(pushedPastPage(box(72, -30, 300, 200), box(72, 10, 300, 200), CROP)).toBe(false);
+    expect(pushedPastPage(box(72, 100, 300, 200), box(72, 50, 300, 200), CROP)).toBe(false);
+  });
+});
 
 /** A page 600 by 800 points, upright, at twice its size. */
 const PAGE = { crop: [0, 0, 600, 800] as [number, number, number, number], rotation: 0 as const, zoom: 2 };

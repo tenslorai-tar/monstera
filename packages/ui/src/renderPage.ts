@@ -1,4 +1,4 @@
-import { AnnotationMode, type PDFDocumentProxy } from 'pdfjs-dist';
+import { AnnotationMode, OPS, type PDFDocumentProxy } from 'pdfjs-dist';
 
 import { withDrawSlot } from './drawSlots.js';
 import { holdPixels } from './pixelLedger.js';
@@ -376,26 +376,38 @@ function geometryOf(page: PdfPage, viewport: Viewport, size: { width: number; he
  * How many pictures PDF.js could not decode on `page`'s last draw (ADR-0296 Decision 3).
  *
  * PDF.js answers a failed decode by sending the picture's object as `null` — `Unable to decode image` in the worker, and
- * the canvas then skips it — so a `null` in the page's object table, or in the document's shared one under an id that
- * names this page, is that report reaching the drawing side. An image's id names the page that drew it,
- * `img_p<index>_<n>`, with the document's id before it when it is shared between pages (pdfjs-dist 6.2.108,
- * `buildPaintImageXObject`); a pattern is never `null`. Read straight after the draw, while the page is held.
+ * the canvas then skips it — so a `null` is that report reaching the drawing side; a pattern is never `null`.
  *
- * NOT SEEN HERE: an INLINE picture PDF.js cannot decode is warned about and sent nowhere, so no table holds it. A
- * rendered case still fails on its warning (`renderedTest.ts`).
+ * - **The page's own table** holds only this page's pictures: each `null` there is one this draw dropped.
+ * - **The document's shared table** holds a picture used on more than one page, under an id naming the page that FIRST
+ *   shared it, and every later page draws that one entry and sends nothing (pdfjs-dist 6.2.108, `GlobalImageCache` and
+ *   `addCachedImageOps`). So the id cannot say which pages lack it (KKKKKKKKK-1, the stage audit of 2026-11-17: a logo repeated on
+ *   every page was dropped with no note from the third page on). Only this page's operator list can, and it is read
+ *   ONLY where a shared picture failed, which is never on a page that drew whole: it costs a second parse of the page.
+ *
+ * NOT SEEN HERE: an INLINE picture, and an image MASK, that PDF.js cannot decode are warned about and sent to no table.
+ * A rendered case still fails on either warning (`renderedTest.ts`).
  */
-export function picturesDroppedFrom(page: PdfPage): number {
-  const own = new RegExp(`(^|_)img_p${String(page.pageNumber - 1)}_\\d+$`, 'u');
+export async function picturesDroppedFrom(page: PdfPage): Promise<number> {
   let dropped = 0;
   for (const entry of page.objs) {
     const [, data] = entry as readonly unknown[];
     if (data === null) dropped += 1;
   }
+  const failedShared = new Set<string>();
   for (const entry of page.commonObjs) {
     const [id, data] = entry as readonly unknown[];
-    if (data === null && typeof id === 'string' && own.test(id)) dropped += 1;
+    if (data === null && typeof id === 'string') failedShared.add(id);
   }
-  return dropped;
+  if (failedShared.size === 0) return dropped;
+  const { fnArray, argsArray } = await page.getOperatorList();
+  const painted = new Set<string>();
+  for (const [at, op] of fnArray.entries()) {
+    if (op !== OPS.paintImageXObject && op !== OPS.paintImageXObjectRepeat) continue;
+    const id: unknown = (argsArray[at] as readonly unknown[] | undefined)?.[0];
+    if (typeof id === 'string' && failedShared.has(id)) painted.add(id);
+  }
+  return dropped + painted.size;
 }
 
 /**
@@ -436,7 +448,7 @@ async function drawWithPdfjs(
     signal.removeEventListener('abort', cancel);
   }
   // THE PICTURES IT COULD NOT DECODE, which a draw that finished drew without (ADR-0296 Decision 3).
-  return picturesDroppedFrom(page);
+  return await picturesDroppedFrom(page);
 }
 
 /**

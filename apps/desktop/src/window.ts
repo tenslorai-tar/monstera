@@ -93,7 +93,16 @@ export function serveRenderer(target: Session): void {
   if (target.protocol.isProtocolHandled(RENDERER_SCHEME)) return;
   target.protocol.handle(RENDERER_SCHEME, async (request) => {
     const found = rendererFileFor(request.url, RENDERER_ROOT, { resolve, relative, isAbsolute, extname });
-    const bytes = found === null ? null : await readFile(found.file).catch(() => null);
+    // A FILE THAT IS NOT THERE is a 404, as any request for no file of the build is; ANY OTHER failure to read one is
+    // thrown, so the load fails as a failure and is reported as one, never answered as if the file did not exist
+    // (KKKKKKKKK-6: every error was a quiet 404).
+    const bytes =
+      found === null
+        ? null
+        : await readFile(found.file).catch((error: unknown) => {
+            if ((error as { code?: unknown } | null)?.code === 'ENOENT') return null;
+            throw error;
+          });
     if (found === null || bytes === null) return new Response(null, { status: 404, headers: { 'Content-Security-Policy': CONTENT_SECURITY_POLICY } });
     return new Response(bytes, { status: 200, headers: { 'Content-Type': found.type, 'Content-Security-Policy': CONTENT_SECURITY_POLICY } });
   });

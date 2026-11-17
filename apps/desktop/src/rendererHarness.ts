@@ -27,8 +27,8 @@ const HERE = dirname(fileURLToPath(import.meta.url));
  * copy of the policy works. The point of this proof is the *shipped* path, so
  * the window comes from the function `startShell` calls, and the debugger
  * attaches to it afterwards and reloads — the reload goes through the same
- * session and the same `onHeadersReceived`, so the header captured is the one a
- * user's renderer gets.
+ * session and the same scheme handler, `serveRenderer` (ADR-0296), so the header
+ * captured is the one a user's renderer gets.
  *
  * ## Set versus enforced, which is the whole reason this file exists
  *

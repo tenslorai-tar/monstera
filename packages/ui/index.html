@@ -16,7 +16,8 @@
       four times. Here the specifier is a red build with no rule to remember.
 
       The Content-Security-Policy is NOT written here. It is served as a response
-      header by `applyContentSecurityPolicy`, because `frame-ancestors` and
+      header by the renderer scheme's handler, `serveRenderer` (ADR-0296), on
+      every response, the PDF.js worker's included, because `frame-ancestors` and
       `sandbox` are ignored in meta form and because two writers for one policy
       make the effective value something nobody can state. The policy is pinned
       as invariant 27 and this file is not one of its writers.

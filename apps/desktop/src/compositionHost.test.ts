@@ -2464,6 +2464,31 @@ describe('the composition root, EDIT TEXT’S READ of a page drawing many form p
     expect(inForms.map((block) => block.lines[0]?.runs[0]?.text)).toStrictEqual(MANY.map((_, at) => `word ${String(at)}`));
   });
 
+  it('text WHOLLY OFF THE PAGE is no block of it, and text across its edge still is (Fix 2, 2026-11-17)', async () => {
+    // A PAGE DRAWING A WHOLE STATEMENT SHIFTED, as a converter from HTML does: one line on the page, one above it, one
+    // below it, and one across its top edge. The page's box is 612 × 792.
+    const run = (index: number, text: string, bottom: number) => ({ ...answerFor(0).runs[0], index, last: index, text, bottom, top: bottom + 10 });
+    const inner = textRunsPeer();
+    const peer: FakePeer = (channel, params) =>
+      channel === 'engine/text-runs'
+        ? {
+            ok: true,
+            value: {
+              ...answerFor(0),
+              runs: [run(0, 'seen on the page', 400), run(1, 'hidden above', 1200), run(2, 'hidden below', -300), run(3, 'across the top edge', 787)],
+            },
+          }
+        : inner.peer(channel, params);
+    const read = await readThrough({ ...inner, peer }, []);
+    const words = read.blocks.flatMap((block) => block.lines.flatMap((line) => line.runs.map((each) => each.text)));
+    expect(words).toContain('seen on the page');
+    // PARTLY ON THE PAGE IS ON IT: a person sees part of it.
+    expect(words).toContain('across the top edge');
+    // CONTROL: what was left out is exactly the two lines a person cannot see.
+    expect(words.filter((word) => word.startsWith('hidden'))).toStrictEqual([]);
+    expect(words).toHaveLength(2);
+  });
+
   it('a page of 200 placements is read in one call', async () => {
     const two: readonly FormPath[] = Array.from({ length: 200 }, (_, at) => [{ name: `Fm${String(at)}`, occurrence: 0 }]);
     const pdfium = textRunsPeer();

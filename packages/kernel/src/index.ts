@@ -1,4 +1,5 @@
 export { CapabilityRegistry, type HandleBytesSource, handlesEqual } from './capabilityRegistry.js';
+export { liesOffPage } from './offPage.js';
 // `export type { … }` rather than `export { type … }`, and the difference is the
 // whole of ADR-0026 said in one statement: the second form elides the SPECIFIERS
 // and keeps the STATEMENT, emitting `export {} from './engineSeam.js'`, which

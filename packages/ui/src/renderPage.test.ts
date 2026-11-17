@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import type { PDFDocumentProxy } from 'pdfjs-dist';
+import { OPS, type PDFDocumentProxy } from 'pdfjs-dist';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { holdPage } from './pageResidency.js';
@@ -32,16 +32,37 @@ const NO_PICTURES_DROPPED = { objs: [] as unknown[][], commonObjs: [] as unknown
 
 describe('picturesDroppedFrom: what PDF.js could not decode, read from its object tables (ADR-0296 Decision 3)', () => {
   type Tables = Parameters<typeof picturesDroppedFrom>[0];
-  const page = (objs: unknown[][], commonObjs: unknown[][], pageNumber = 3): Tables => ({ objs, commonObjs, pageNumber }) as unknown as Tables;
+  /** A page's two tables, and the shared pictures its operator list paints, by id; `asked` counts the list's reads. */
+  const page = (objs: unknown[][], commonObjs: unknown[][], paints: readonly string[] = []) => {
+    const asked = { count: 0 };
+    const tables = {
+      objs,
+      commonObjs,
+      getOperatorList: () => {
+        asked.count += 1;
+        return Promise.resolve({ fnArray: paints.map(() => OPS.paintImageXObject), argsArray: paints.map((id) => [id, 1, 1]) });
+      },
+    } as unknown as Tables;
+    return { tables, asked };
+  };
 
-  it('counts a page image sent as null, and a shared one sent as null under an id naming THIS page', () => {
-    expect(picturesDroppedFrom(page([['img_p2_1', null], ['img_p2_2', { width: 1 }]], [['d0_img_p2_3', null]]))).toBe(2);
+  it('counts a page image sent as null, and reads nothing more where no shared picture failed', async () => {
+    const { tables, asked } = page([['img_p2_1', null], ['img_p2_2', { width: 1 }]], [['d0_s3', { name: 'a font' }]]);
+    expect(await picturesDroppedFrom(tables)).toBe(1);
+    expect(asked.count).toBe(0);
   });
 
-  // CONTROL: what a null must not count. A decoded image, a shared image another page dropped (its own draw says so),
-  // and a shared object that is not an image.
-  it('counts nothing for a decoded picture, another page’s shared one, or a shared null that is no image of this page', () => {
-    expect(picturesDroppedFrom(page([['img_p2_1', { width: 1 }]], [['d0_img_p5_1', null], ['d0_img_p22_1', null], ['d0_s3', null]]))).toBe(0);
+  // KKKKKKKKK-1: a SHARED picture keeps the id of the page that first shared it, and later pages paint that one entry.
+  it('counts a failed shared picture this page PAINTS, whichever page its id names', async () => {
+    const { tables } = page([], [['d0_img_p1_1', null], ['d0_img_p1_2', { width: 1 }]], ['d0_img_p1_1', 'd0_img_p1_2']);
+    expect(await picturesDroppedFrom(tables)).toBe(1);
+  });
+
+  // CONTROL: a failed shared picture this page does NOT paint, and a decoded one it does, count nothing.
+  it('counts nothing for a failed shared picture another page paints, or a decoded one', async () => {
+    const { tables, asked } = page([['img_p2_1', { width: 1 }]], [['d0_img_p5_1', null], ['d0_img_p1_2', { width: 1 }]], ['d0_img_p1_2']);
+    expect(await picturesDroppedFrom(tables)).toBe(0);
+    expect(asked.count).toBe(1);
   });
 });
 

@@ -45,8 +45,8 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -115,6 +115,7 @@ const RUNTIME_CASES = [
   'the window PAINTS the background the shell declares',
   'the window and the mounted surface paint the SAME colour',
   'a preload under these preferences cannot reach Node, which attributes to sandbox alone',
+  'every kind of file the built renderer holds is one its scheme serves',
 ];
 
 /** Cases decidable from strings alone. These run on every machine. */
@@ -813,6 +814,19 @@ try {
         `a sandboxed preload gets "threw: module not found: node:fs". The mutation that proves ` +
         `the attribution is flipping sandbox BY ITSELF, which must redden this case while the ` +
         `node-surface case stays green; if both move, the union has been measured again.`,
+    );
+
+    // EVERY KIND OF FILE THE BUILT RENDERER HOLDS IS ONE ITS SCHEME SERVES (ADR-0296, KKKKKKKKK-5): a kind the build
+    // starts emitting that `RENDERER_TYPES` does not name would be answered 404 in the packaged application only, since
+    // the rendered suites serve the build over Vite's preview. Its control is the walk over the folder finding files.
+    const { RENDERER_TYPES } = await import(`file://${join(REPO_ROOT, 'apps', 'desktop', 'dist', 'windowPolicy.js').replaceAll('\\', '/')}`);
+    const rendererFiles = readdirSync(join(REPO_ROOT, 'apps', 'desktop', 'dist', 'renderer'), { recursive: true, withFileTypes: true }).filter((entry) => entry.isFile());
+    const unserved = [...new Set(rendererFiles.map((entry) => extname(entry.name).toLowerCase()))].filter((kind) => !RENDERER_TYPES.has(kind));
+    check(
+      'every kind of file the built renderer holds is one its scheme serves',
+      rendererFiles.length > 0 && unserved.length === 0,
+      `${String(rendererFiles.length)} file(s); kinds the scheme would refuse: ${unserved.join(', ') || 'none'}. ` +
+        `Add the kind to RENDERER_TYPES in apps/desktop/src/windowPolicy.ts, with its media type.`,
     );
 
     // The list and the branch, compared rather than trusted to match.
