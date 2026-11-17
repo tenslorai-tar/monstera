@@ -20,7 +20,8 @@
 import { readdirSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 
-import { appRootOption, startWalk } from './liveWalk.mjs';
+import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
+import { appRootOption, root, startWalk } from './liveWalk.mjs';
 
 /** @param {string} name */
 function option(name) {
@@ -39,7 +40,11 @@ const files =
         .sort()
     : [basename(single)];
 
-/** The English text of every message, keyed back to its message: the notes are matched against these. */
+/**
+ * The English text of every message, keyed back to its message: the notes are matched against these. A stale build of
+ * the list would name a note by a message's old text, or call a new message UNKNOWN, so it is fresh or refused.
+ */
+refuseStaleBuild(root, [['packages/ui/src/messages/en.ts', 'packages/ui/dist/messages/en.js', 'tsc']], 1);
 const { EN } = /** @type {{ EN: Record<string, string> }} */ (await import('../../packages/ui/dist/messages/en.js'));
 /** @type {Map<string, string>} */
 const keyOf = new Map(Object.entries(EN).map(([key, text]) => [text.trim(), key]));
