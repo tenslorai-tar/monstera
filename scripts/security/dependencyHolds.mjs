@@ -50,7 +50,7 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
  * @typedef {{ package: string, advisory: string, fixedFrom: string, decided: string }} Hold
  * @type {readonly Hold[]}
  */
-export const HOLDS = [{ package: 'minimatch', advisory: 'GHSA-g3hv-75wg-m249', fixedFrom: '11.0.1', decided: '2026-11-10' }];
+export const HOLDS = [];
 
 /**
  * Asks the registry one question, as `npm view <spec> <field> --json` answers it: a string, an array of strings, or
@@ -143,12 +143,17 @@ function npmView(spec, field) {
 
 /**
  * Runs every hold. Answers the exit code; a lookup that could not be made leaves through `exitUnverifiable`.
- * @param {{ lock?: Parameters<typeof treeOf>[0], view?: View, required?: boolean, write?: (text: string) => void }} [options]
+ * @param {{ holds?: readonly Hold[], lock?: Parameters<typeof treeOf>[0], view?: View, required?: boolean, write?: (text: string) => void }} [options]
  */
-export function run({ lock, view = npmView, required = false, write = (text) => process.stdout.write(text) } = {}) {
+export function run({ holds = HOLDS, lock, view = npmView, required = false, write = (text) => process.stdout.write(text) } = {}) {
+  // NO HOLD IN FORCE asks the registry nothing, so it says that, never the line below that vouches for a lookup.
+  if (holds.length === 0) {
+    write('  ok  no dependency hold is in force (docs/security/dependency-alerts.md), so there is nothing to ask the registry\n');
+    return 0;
+  }
   const read = lock ?? JSON.parse(readFileSync(join(REPO_ROOT, 'package-lock.json'), 'utf8'));
   let failed = 0;
-  for (const hold of HOLDS) {
+  for (const hold of holds) {
     const tree = treeOf(read, hold.package);
     /** @type {ReturnType<typeof decide>} */
     let outcome;
@@ -166,7 +171,7 @@ export function run({ lock, view = npmView, required = false, write = (text) => 
     write(`  ${outcome.verdict === 'held' ? 'held' : 'FAIL'}  ${first ?? ''}\n${rest.map((line) => `        ${line}\n`).join('')}`);
     if (outcome.verdict !== 'held') failed += 1;
   }
-  if (failed === 0) write(`  ok  ${String(HOLDS.length)} dependency hold(s) still have their reason, and the registry's fixed range listed versions, so that means something\n`);
+  if (failed === 0) write(`  ok  ${String(holds.length)} dependency hold(s) still have their reason, and the registry's fixed range listed versions, so that means something\n`);
   return failed === 0 ? 0 : 1;
 }
 

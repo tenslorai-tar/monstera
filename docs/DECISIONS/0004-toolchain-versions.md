@@ -365,3 +365,32 @@ verifies with Node's `crypto.verify`.
 extension shipped code never reads (`timestampToken.ts` reads `extKeyUsage` alone), and `certificateToAsn1` is
 unchanged. The signing, timestamping and signature-reading tests pass on 1.4.3: eight files, 137 cases.
 `npm audit --omit=dev` reports 0 vulnerabilities.
+
+## Addition — 2026-11-17 — minimatch 11 arrives with the linters
+
+The trigger the addition of 2026-11-01 named fired, and `check:dependencyholds` reported it: Guards went red on
+`8c7a137b` naming every dependent's newest release as accepting the fix. Read from the registry on 2026-11-17
+(`npm view <package>@latest`):
+
+| Dependent | Was | Now | Its minimatch range | Published |
+|---|---|---|---|---|
+| eslint | 10.8.1 | 10.15.0 | `^11.0.5` | 2026-11-13 |
+| @eslint/config-array (through eslint) | 0.23.5 | 0.23.6 | `^11.0.5` | — |
+| typescript-eslint, with @typescript-eslint/typescript-estree | 8.67.0 | 8.73.0 | `^11.0.1` | 2026-11-16 |
+| eslint-plugin-import-x | 4.17.1 | 4.18.1 | `^9.0.3 \|\| ^10.1.2 \|\| ^11.0.1` | 2026-11-09 |
+
+Each took the release that admits it, by `npm install -D` of the three the root manifest names; the lockfile now resolves
+one minimatch, **11.0.9**, under all four (`npm ls minimatch`). typescript-eslint 8.73.0's TypeScript peer range,
+`>=4.8.4 <6.1.0`, admits this repository's 6.0.3. Everything the update added or changed is `"dev": true`: twelve
+packages added, among them `cacheable`, `hookified`, `keyv` 5 and `@isaacs/nonrecursive-glob-match` (BlueOak-1.0.0),
+which ESLint's file cache and minimatch 11 now take, and `json-buffer` removed. No override was used, so no tool runs
+against a major it does not declare.
+
+**Lint over the whole tree, with the project's verb, found 64 sites** in 7 of 16 units: typescript-eslint 8.73 adds
+`no-meaningless-void-operator`, `no-unsafe-enum-assignment` and `no-unsafe-class-instance-assignment` to the set this
+repository enables, every rule an error. None was switched off. `afb1d981` changed each site so the rule has nothing to
+say — among them a field shape's operator, a string cast into pdf-lib's enum, is now a name mapped through one complete
+table, and the signing code's ASN.1 context tags go through one helper checked against X.690's bytes — and after it
+`npm run lint` reports 16 of 16 units clean. The hold is removed from `dependencyHolds.mjs`' `HOLDS` and from
+`docs/security/dependency-alerts.md`; its proof now carries its own hold rather than reading the live list, and a run with
+no hold says the registry was not asked rather than vouching for a lookup it did not make.

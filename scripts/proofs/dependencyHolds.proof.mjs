@@ -14,12 +14,12 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { HOLDS, decide, treeOf } from '../security/dependencyHolds.mjs';
+import { decide, run, treeOf } from '../security/dependencyHolds.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 9 });
+const roster = createRoster(failures, { cases: 11 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -28,8 +28,10 @@ function check(label, condition, detail) {
   roster.record(mark, label);
 }
 
-const hold = HOLDS.find((each) => each.package === 'minimatch');
-if (hold === undefined) throw new Error('HOLDS carries no minimatch hold for this proof to exercise');
+// THE PROOF'S OWN HOLD, never one read from HOLDS: the mechanism is proven while no hold is in force, which is its usual
+// state. It is the first hold this repository took, ended 2026-11-17 when the lockfile took minimatch 11.
+/** @type {import('../security/dependencyHolds.mjs').Hold} */
+const hold = { package: 'minimatch', advisory: 'GHSA-g3hv-75wg-m249', fixedFrom: '11.0.1', decided: '2026-11-10' };
 
 /** Published versions, and which a range admits: the registry's half of `npm view minimatch@<range> version`. */
 const PUBLISHED = ['9.0.5', '10.2.4', '10.2.6', '11.0.1', '11.0.5'];
@@ -139,6 +141,27 @@ const tree = (installed, dependents) => ({ installed, dependents });
   check('a lockfile naming no dependent is a broken read, refused rather than taken as nothing to ask', threw.includes('broken read'), threw || 'no refusal');
 }
 
+{
+  // NO HOLD IN FORCE: the registry is not asked, and the green line says so rather than vouching for a lookup. The
+  // registry here throws on any question, so a run that asked would refuse instead of passing.
+  let asked = 0;
+  let said = '';
+  const code = run({ holds: [], view: () => { asked += 1; throw new Error('asked'); }, write: (text) => { said += text; } });
+  check(
+    'with no hold in force the registry is never asked, and the line says nothing was asked',
+    code === 0 && asked === 0 && said.includes('no dependency hold is in force') && !said.includes('listed versions'),
+    `exit ${String(code)}, asked ${String(asked)}, said ${JSON.stringify(said)}`,
+  );
+}
+{
+  // CONTROL: with a hold in force the same run asks, and only then says the fixed range listed versions.
+  let asked = 0;
+  let said = '';
+  const answer = registry({ eslint: '^10.2.6' });
+  const lock = { packages: { 'node_modules/minimatch': { version: '10.2.6' }, 'node_modules/eslint': { dependencies: { minimatch: '^10.2.6' } } } };
+  const code = run({ holds: [hold], lock, view: (spec, field) => { asked += 1; return answer(spec, field); }, write: (text) => { said += text; } });
+  check('CONTROL: with a hold in force the registry is asked, and the held line names the lookup', code === 0 && asked > 0 && said.includes('listed versions'), `exit ${String(code)}, asked ${String(asked)}, said ${JSON.stringify(said)}`);
+}
 {
   // GUARDS RUNS IT WITH --require-registry. Without the flag `exitUnverifiable` exits 0, so a lookup that broke for good
   // would leave the hold green on every run and nothing would say so. Read from the workflow's own command lines: exactly
