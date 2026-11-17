@@ -892,6 +892,42 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-11-17 — A walk step's picture was of the walk's own window, wherever its effect happened
+
+**Found by the owner**, reading the full walk of 2026-11-17T13-16-52: rows 288 (*a newer version named: Update
+available shows…*) and 289 (*a security release: the notice shows…*) passed on what the separate copies of the
+application did (the manifest read, the Store addresses opened), and their two screenshots were the same picture, the
+walk's ordinary window, with no *Update available* button and no security notice. A picture whose name says it shows
+something it does not is evidence that would pass a broken button.
+
+**The mechanism.** `liveWalk.mjs`' `step` took one screenshot, always of the walk's own page, after the step's work had
+ended. An update row starts a copy of the application, checks it and closes it inside its work, so by the time the
+picture was taken the window the effect happened in no longer existed, and nothing about the harness knew a step could
+have its effect anywhere else. The 4 of 4 recorded in the entry below rested on those pictures for what they show.
+
+**The class, and where it lives.** A row whose effect is in a window other than the walk's own. The application has one
+window (`createMainWindow` has one caller in `main.ts`), so in the walks the class is a step that starts a copy of the
+application: in the full walk, the four update rows (287 to 290), and nowhere else. The crash walk starts its copies
+outside any step.
+
+**The fix.** `step` notes every window a step opens, in the walk's own application (`app.on('window')`) and in each copy
+`launchApp` starts while the step runs, and hands the work `photograph(window)`, which records which window each picture
+is of (`walk`, `opened` or `elsewhere`). `walkPictures.mjs`' `pictureRefusal` is the one rule: a step that opened a
+window must have its first picture of a window it opened, or it is recorded FAILED whatever its work said. The four
+update rows photograph their copy while what they check is on screen: the button visible (288), the notice open before
+*I understand* (289, with the next start as its second picture), and the copy for the two that show nothing (287, 290).
+Each record names its pictures and their windows.
+
+**Proof**, in `proof:walkrecord`, six new cases, from 34 to 40: the control, a step that opened a window and photographed it;
+**the old behaviour**, a step that opened one and took no picture, so only the walk's own window is pictured, refused;
+the walk's own window photographed first, refused, naming the file; a window the step did not open, refused; a step that
+opened none, accepted; and the harness asking the rule of every step and recording a refusal as a failure before the
+step is kept. With the rule answering nothing, three cases went red, the old behaviour among them.
+
+**And the full walk of 56005100 stopped partway**, at its KINDS OF DOCUMENT block: `30817192` gave `refuseStaleBuild`
+two fixture builds and left the call site's declared count at 1, so the check refused, as it exists to. The count is 2.
+That walk was a check of the application; the walk this fix needs is the full one again, on the commit that carries it.
+
 ## 2026-11-17 — The update check goes live, as built
 
 The owner reversed the dormancy of 2026-10-14: `UPDATE_MANIFEST` is `https://monsterapdf.com/updates/v1/store.json`

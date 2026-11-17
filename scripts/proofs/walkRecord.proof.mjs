@@ -17,11 +17,12 @@ import { repoRoot } from '../lib/gitScope.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { FULL_WALK, commandIds, countsFor, programDigest, refusals, reportsOf, rowsFrom, writeRecord } from '../release/walkRecord.mjs';
+import { pictureRefusal } from '../research/walkPictures.mjs';
 import { stepTable, walkingRow } from '../research/walkSteps.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 34 });
+const roster = createRoster(failures, { cases: 40 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -214,6 +215,28 @@ async function main() {
   const listed = await walkingRow('document.open', async () => throws(() => Object.keys(table)));
   check('a step table listed in a row throws, since a listing reads every row\'s entry', listed, 'listed without throwing');
   check('a step table read outside any row throws', throws(() => table['document.open']), 'read outside a row without throwing');
+
+  // A STEP'S PICTURE IS OF THE WINDOW ITS EFFECT HAPPENED IN (`walkPictures.mjs`). The control is a step that started a
+  // copy and photographed it; the old behaviour, a step that started one and was photographed in the walk's own window at
+  // its end with no picture of its own, must be refused, as must the walk's own window photographed by hand.
+  check('CONTROL: a step that opened a window and photographed it first has evidence', pictureRefusal(1, [{ file: 'a.png', of: 'opened' }, { file: 'a-2.png', of: 'opened' }]) === undefined, 'refused');
+  const oldWay = pictureRefusal(1, []);
+  check('THE OLD BEHAVIOUR: a step that opened a window and took no picture of it, so only the walk\'s own window is pictured, is refused', oldWay?.includes('photographed none') === true, String(oldWay));
+  const walkWindow = pictureRefusal(1, [{ file: 'a.png', of: 'walk' }, { file: 'a-2.png', of: 'opened' }]);
+  check('a step that opened a window and whose first picture is of the walk\'s own window is refused, naming the picture', walkWindow?.includes('a.png') === true && walkWindow.includes("walk's own window"), String(walkWindow));
+  const stray = pictureRefusal(1, [{ file: 'a.png', of: 'elsewhere' }]);
+  check('a picture of a window the step did not open is refused', stray?.includes('neither') === true, String(stray));
+  check('CONTROL: a step that opened no window is evidence in the walk\'s own window, pictured by hand or at its end', pictureRefusal(0, []) === undefined && pictureRefusal(0, [{ file: 'a.png', of: 'walk' }]) === undefined, 'refused');
+  // AND THE HARNESS ASKS IT OF EVERY STEP and fails a passed step on its answer: a rule no step calls refuses nothing.
+  const harness = readFileSync(join(repoRoot(), 'scripts', 'research', 'liveWalk.mjs'), 'utf8');
+  const ruleAsked = harness.indexOf('pictureRefusal(launched.length + windows.length, pictures)');
+  const ruleFailed = harness.indexOf("record = { name, outcome: 'failed', problem: refused");
+  const ruleKept = harness.indexOf('steps.push(record)', ruleAsked);
+  check(
+    'every walk step asks the rule, and a passed step it refuses is recorded failed before it is kept',
+    ruleAsked > 0 && ruleFailed > ruleAsked && ruleKept > ruleFailed,
+    `asked at ${String(ruleAsked)}, failed at ${String(ruleFailed)}, kept at ${String(ruleKept)}`,
+  );
 
   // THE ROWS ARE THE REGISTRY'S: read from the checklist the registry generates, with its own positive control.
   const ids = commandIds(readFileSync(join(repoRoot(), 'docs', 'manual-test-checklist.md'), 'utf8'));

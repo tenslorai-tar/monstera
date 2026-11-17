@@ -33,6 +33,7 @@ import { developmentEnvironment } from '../lib/launchEnvironment.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
 import { PALETTE_DRIVER, SHELL_LAUNCH, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { builtAt, gitIn, walkBuild } from '../release/walkRecord.mjs';
+import { pictureRefusal } from './walkPictures.mjs';
 
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -58,6 +59,13 @@ export function appRootOption(argv) {
  * nothing to ask took 2431 ms, read from `textRegressionWalk.mjs`' own "Closed in" line on 2026-11-02 after sixteen tabs.
  */
 const CLOSE_HELD_MS = 60_000;
+
+/**
+ * The copies of the application launched while a step runs, or `undefined` between steps: `launchApp` adds each, so a
+ * step that starts one has opened a window other than the walk's own (`walkPictures.mjs`).
+ * @type {import('playwright').ElectronApplication[] | undefined}
+ */
+let launchedInStep;
 
 /**
  * How many writes (or, with `kind`, works) the window has finished: `data-writes-done` on the root, which the renderer
@@ -145,6 +153,7 @@ export async function boxSettled(page, read) {
  * @property {Record<string, unknown>} [facts] what the step measured, when it measured anything
  * @property {string[]} [covers] the commands the step walks, by their registry ids
  * @property {Record<string, string>} [notWalked] each command the step could not walk, and why
+ * @property {import('./walkPictures.mjs').StepPicture[]} [pictures] every picture of the step, and which window each is of
  */
 
 /**
@@ -224,6 +233,7 @@ export async function launchApp(walk, options = {}) {
           env: environment,
         },
   );
+  launchedInStep?.push(app);
   return { app, output, appData, runCommand, build };
 }
 
@@ -383,18 +393,43 @@ async function walkOn(walk, app, page, output, runCommand, build) {
    * `covers` names the commands the step walks, by their registry ids, and a step's facts may carry `notWalked`, each
    * command it could not walk and why: the full walk's record takes its rows from both (ADR-0285 Decision 4).
    *
+   * THE PICTURE IS OF THE WINDOW THE EFFECT HAPPENED IN (`walkPictures.mjs`). `work` is handed `photograph(window)`, and
+   * a step whose effect is in a window other than the walk's own (one it opens, or a copy of the application it starts)
+   * photographs that window while the effect is on screen; the first picture is the row's. A step that opened such a
+   * window and whose first picture is not of it FAILS, whatever its work said, since its picture would pass a broken
+   * button. A step that takes no picture is photographed in the walk's own window at its end, as every step was before.
+   *
    * @param {string} name
-   * @param {() => Promise<Record<string, unknown> | void>} work
+   * @param {(photograph: (window: import('playwright').Page) => Promise<void>) => Promise<Record<string, unknown> | void>} work
    * @param {{ covers?: readonly string[] }} [options]
    */
   const step = async (name, work, options = {}) => {
     counter += 1;
-    const screenshot = `${String(counter).padStart(2, '0')}-${name.replaceAll(/[^a-z0-9]+/giu, '-').toLowerCase().slice(0, 60)}.png`;
+    const stem = `${String(counter).padStart(2, '0')}-${name.replaceAll(/[^a-z0-9]+/giu, '-').toLowerCase().slice(0, 60)}`;
+    const screenshot = `${stem}.png`;
     const covers = options.covers === undefined ? {} : { covers: [...options.covers] };
+    /** @type {import('playwright').ElectronApplication[]} */
+    const launched = [];
+    /** @type {import('playwright').Page[]} */
+    const windows = [];
+    const onWindow = (/** @type {import('playwright').Page} */ window) => {
+      windows.push(window);
+    };
+    /** @type {import('./walkPictures.mjs').StepPicture[]} */
+    const pictures = [];
+    /** @param {import('playwright').Page} window */
+    const photograph = async (window) => {
+      const opened = windows.includes(window) || launched.some((each) => each.windows().includes(window));
+      const file = pictures.length === 0 ? screenshot : `${stem}-${String(pictures.length + 1)}.png`;
+      await window.screenshot({ path: join(output, file) });
+      pictures.push({ file, of: window === page ? 'walk' : opened ? 'opened' : 'elsewhere' });
+    };
+    launchedInStep = launched;
+    app.on('window', onWindow);
     /** @type {StepRecord} */
     let record;
     try {
-      const facts = await work();
+      const facts = await work(photograph);
       const said = facts?.['notWalked'];
       const notWalked = typeof said === 'object' && said !== null ? { notWalked: /** @type {Record<string, string>} */ (said) } : {};
       record = { name, outcome: 'passed', screenshot, ...covers, ...notWalked, ...(facts === undefined ? {} : { facts }) };
@@ -406,8 +441,17 @@ async function walkOn(walk, app, page, output, runCommand, build) {
       record = { name, outcome: 'failed', problem: (error instanceof Error ? error.message.slice(0, 2000) : String(error)) + blocked, screenshot, ...covers };
       // A DIALOG LEFT OPEN by a failed step would take the next step's presses, so it is put down.
       await page.keyboard.press('Escape').catch(() => undefined);
+    } finally {
+      app.off('window', onWindow);
+      launchedInStep = undefined;
     }
-    await page.screenshot({ path: join(output, screenshot) }).catch(() => undefined);
+    const refused = pictureRefusal(launched.length + windows.length, pictures);
+    if (record.outcome === 'passed' && refused !== undefined) {
+      record = { name, outcome: 'failed', problem: refused, screenshot, ...covers };
+    }
+    if (pictures.length === 0) await page.screenshot({ path: join(output, screenshot) }).catch(() => undefined);
+    // WHICH WINDOW EACH PICTURE IS OF, in the record, so a reader checks the pass against the right one.
+    record.pictures = pictures.length === 0 ? [{ file: screenshot, of: 'walk' }] : pictures;
     steps.push(record);
     process.stdout.write(`${record.outcome === 'passed' ? 'ok  ' : 'FAIL'}  ${name}${record.problem === undefined ? '' : `\n      ${record.problem.split('\n')[0] ?? ''}`}\n`);
   };

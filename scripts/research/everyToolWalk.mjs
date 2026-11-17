@@ -1440,7 +1440,7 @@ for (const command of commands) {
   refuseStaleBuild(root, [
     ['packages/testing/src/pictureFixtures.ts', 'packages/testing/dist/pictureFixtures.js', 'tsc'],
     ['packages/testing/src/textEdgeFixtures.ts', 'packages/testing/dist/textEdgeFixtures.js', 'tsc'],
-  ], 1);
+  ], 2);
   // LITERAL SPECIFIERS, so `proof:electronimports` can read what these load: this checkout's own fixtures, never a
   // build `--app-root` names.
   const pictures = await import('../../packages/testing/dist/pictureFixtures.js');
@@ -1569,9 +1569,12 @@ for (const command of commands) {
   const button = (/** @type {import('playwright').Page} */ window) => window.getByRole('button', { name: 'Update available' });
   const notice = (/** @type {import('playwright').Page} */ window) => window.getByRole('dialog', { name: 'Important security update' });
 
-  await step('UPDATES: the installed version named, up to date: no button, no notice, one read of the file', async () => {
+  // EACH ROW'S PICTURE IS OF THE COPY IT STARTED, taken while what the row checks is on screen (`walkPictures.mjs`): the
+  // walk's own window shows none of it, and `step` fails a row that started a copy and photographed its own window.
+  await step('UPDATES: the installed version named, up to date: no button, no notice, one read of the file', async (photograph) => {
     const run = await startedOn('current', manifestOf(installed, false), join(output, 'updates-current'));
     try {
+      await photograph(run.window);
       if ((await button(run.window).count()) > 0) throw new Error('Update available is shown for the version installed');
       if ((await notice(run.window).count()) > 0) throw new Error('a security notice is shown for the version installed');
       if (run.reads() !== 1) throw new Error(`the file was read ${String(run.reads())} time(s) in one start`);
@@ -1581,10 +1584,11 @@ for (const command of commands) {
     }
   }, { covers: ['app.update-available'] });
 
-  await step('UPDATES: a newer version named: Update available shows and opens Monstera’s Store page; Check for updates opens the updates page', async () => {
+  await step('UPDATES: a newer version named: Update available shows and opens Monstera’s Store page; Check for updates opens the updates page', async (photograph) => {
     const run = await startedOn('newer', manifestOf(newer, false), join(output, 'updates-newer'));
     try {
       await button(run.window).waitFor({ state: 'visible', timeout: 15_000 });
+      await photograph(run.window);
       if ((await notice(run.window).count()) > 0) throw new Error('a security notice is shown for a release that is not one');
       await button(run.window).click();
       // MONSTERA'S OWN LISTING, the product page (`STORE_URIS.listing`).
@@ -1597,11 +1601,12 @@ for (const command of commands) {
     }
   }, { covers: ['app.update-available', 'app.check-for-updates'] });
 
-  await step('UPDATES: a security release: the notice shows, and once acknowledged it is not shown again', async () => {
+  await step('UPDATES: a security release: the notice shows, and once acknowledged it is not shown again', async (photograph) => {
     const appData = join(output, 'updates-security');
     const first = await startedOn('security', manifestOf(newer, true), appData);
     try {
       await notice(first.window).waitFor({ state: 'visible', timeout: 15_000 });
+      await photograph(first.window);
       await notice(first.window).getByRole('button', { name: 'I understand' }).click();
       await notice(first.window).waitFor({ state: 'hidden', timeout: 10_000 });
     } finally {
@@ -1610,6 +1615,8 @@ for (const command of commands) {
     // THE NEXT START, the same profile and the same file: acknowledged, so no notice.
     const second = await startedOn('security-again', manifestOf(newer, true), appData);
     try {
+      // THE SECOND PICTURE: the next start, the button there and no notice.
+      await photograph(second.window);
       if ((await notice(second.window).count()) > 0) throw new Error('the acknowledged security notice is shown again');
       // AND THE BUTTON STAYS until the person updates, as the article *Know when a new version is out* says.
       if ((await button(second.window).count()) !== 1) throw new Error('Update available is gone once the notice was acknowledged');
@@ -1619,9 +1626,10 @@ for (const command of commands) {
     }
   }, { covers: ['app.update-available'] });
 
-  await step('UPDATES: Check for new versions switched off: no request is made, and nothing is shown', async () => {
+  await step('UPDATES: Check for new versions switched off: no request is made, and nothing is shown', async (photograph) => {
     const run = await startedOn('off', manifestOf(newer, true), join(output, 'updates-off'), { 'updates.check': false });
     try {
+      await photograph(run.window);
       if (run.reads() !== 0) throw new Error(`the file was read ${String(run.reads())} time(s) with the check off`);
       if ((await button(run.window).count()) > 0 || (await notice(run.window).count()) > 0) throw new Error('something is shown with the check off');
       return { reads: run.reads() };
