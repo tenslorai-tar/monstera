@@ -1437,9 +1437,14 @@ for (const command of commands) {
 // testing package, never a user's file: pictures only PDF.js's decoders draw (ADR-0296), a picture no decoder can read,
 // a statement drawn whole and shifted on each page (Fix 2), and a block the file opens with past the page's foot (Fix 3).
 {
-  const testingDist = join(root, 'packages', 'testing', 'dist');
-  const pictures = await import(pathToFileURL(join(testingDist, 'pictureFixtures.js')).href);
-  const edges = await import(pathToFileURL(join(testingDist, 'textEdgeFixtures.js')).href);
+  refuseStaleBuild(root, [
+    ['packages/testing/src/pictureFixtures.ts', 'packages/testing/dist/pictureFixtures.js', 'tsc'],
+    ['packages/testing/src/textEdgeFixtures.ts', 'packages/testing/dist/textEdgeFixtures.js', 'tsc'],
+  ], 1);
+  // LITERAL SPECIFIERS, so `proof:electronimports` can read what these load: this checkout's own fixtures, never a
+  // build `--app-root` names.
+  const pictures = await import('../../packages/testing/dist/pictureFixtures.js');
+  const edges = await import('../../packages/testing/dist/textEdgeFixtures.js');
   /** A made-up fixture written into the walk's output and opened. @param {string} name @param {Uint8Array} bytes */
   const openMade = async (name, bytes) => {
     const path = join(output, name);

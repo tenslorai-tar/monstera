@@ -819,7 +819,8 @@ try {
     // EVERY KIND OF FILE THE BUILT RENDERER HOLDS IS ONE ITS SCHEME SERVES (ADR-0296, KKKKKKKKK-5): a kind the build
     // starts emitting that `RENDERER_TYPES` does not name would be answered 404 in the packaged application only, since
     // the rendered suites serve the build over Vite's preview. Its control is the walk over the folder finding files.
-    const { RENDERER_TYPES } = await import(`file://${join(REPO_ROOT, 'apps', 'desktop', 'dist', 'windowPolicy.js').replaceAll('\\', '/')}`);
+    // A LITERAL SPECIFIER, so `proof:electronimports` can read what this loads.
+    const { RENDERER_TYPES } = await import('../../apps/desktop/dist/windowPolicy.js');
     const rendererFiles = readdirSync(join(REPO_ROOT, 'apps', 'desktop', 'dist', 'renderer'), { recursive: true, withFileTypes: true }).filter((entry) => entry.isFile());
     const unserved = [...new Set(rendererFiles.map((entry) => extname(entry.name).toLowerCase()))].filter((kind) => !RENDERER_TYPES.has(kind));
     check(

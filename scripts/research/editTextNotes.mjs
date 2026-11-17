@@ -19,9 +19,8 @@
 
 import { readdirSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 
-import { appRootOption, root, startWalk } from './liveWalk.mjs';
+import { appRootOption, startWalk } from './liveWalk.mjs';
 
 /** @param {string} name */
 function option(name) {
@@ -41,7 +40,7 @@ const files =
     : [basename(single)];
 
 /** The English text of every message, keyed back to its message: the notes are matched against these. */
-const { EN } = /** @type {{ EN: Record<string, string> }} */ (await import(pathToFileURL(join(root, 'packages', 'ui', 'dist', 'messages', 'en.js')).href));
+const { EN } = /** @type {{ EN: Record<string, string> }} */ (await import('../../packages/ui/dist/messages/en.js'));
 /** @type {Map<string, string>} */
 const keyOf = new Map(Object.entries(EN).map(([key, text]) => [text.trim(), key]));
 /** The message a shown text is, or UNKNOWN and its length. @param {string} text */

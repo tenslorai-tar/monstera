@@ -60,12 +60,14 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
  * @returns {import('vite').Plugin}
  */
 function pdfjsDecoders() {
-  const fromUi = createRequire(join(REPO_ROOT, 'packages', 'ui', 'package.json'));
+  // THE PACKAGE AS THE UI RESOLVES IT, through a literal specifier `proof:electronimports` can read; each decoder is then
+  // a file read as bytes and emitted, never a module this build loads.
+  const wasm = join(dirname(createRequire(join(REPO_ROOT, 'packages', 'ui', 'package.json')).resolve('pdfjs-dist/package.json')), 'wasm');
   return {
     name: 'monstera-pdfjs-decoders',
     generateBundle() {
       for (const name of PDFJS_DECODERS) {
-        this.emitFile({ type: 'asset', fileName: `${PDFJS_DECODERS_DIR}/${name}`, source: readFileSync(fromUi.resolve(`pdfjs-dist/wasm/${name}`)) });
+        this.emitFile({ type: 'asset', fileName: `${PDFJS_DECODERS_DIR}/${name}`, source: readFileSync(join(wasm, name)) });
       }
     },
   };
