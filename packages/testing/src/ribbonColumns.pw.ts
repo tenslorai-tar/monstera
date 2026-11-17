@@ -1,6 +1,6 @@
-import { expect, test } from '@playwright/test';
 
 import { openApp, openDocument } from './helpScreensHarness.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * No ribbon group leaves a SMALL tool alone in its column while it has others (the owner's review of 0.1.12.0: Organize ›

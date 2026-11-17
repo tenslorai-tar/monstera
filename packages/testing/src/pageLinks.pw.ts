@@ -1,8 +1,9 @@
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { SELECT_TOOL, armTool, samplePdf } from './helpScreensHarness.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * A page's links, drawn where they are and followed from there (ADR-0167, the owner's item 14c).

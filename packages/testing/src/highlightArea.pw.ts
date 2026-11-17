@@ -1,8 +1,8 @@
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { expect, test } from '@playwright/test';
 
 import { samplePdf } from './helpScreensHarness.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * Highlight area (the owner's O7), through the ribbon: the button sits in Comment's Markup group beside Highlight text,

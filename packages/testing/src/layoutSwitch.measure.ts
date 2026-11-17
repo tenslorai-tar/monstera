@@ -1,9 +1,10 @@
 import { PDFDocument, StandardFonts, rgb } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type CDPSession, type Page, expect, test } from '@playwright/test';
+import type { CDPSession, Page } from '@playwright/test';
 
 import { bridge } from './pageBridge.js';
 import { installRenderCounter, startCounting, stopCounting } from './renderCounter.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * WHAT A PAGE LAYOUT SWITCH COSTS, measured: a research instrument for group U (ADR-0284's switch frames), run by hand

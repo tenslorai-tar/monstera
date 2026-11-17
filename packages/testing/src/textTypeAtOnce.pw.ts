@@ -1,8 +1,9 @@
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { LOOKS, bridgeUnder } from './pageBridge.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * Keys typed the moment the caret is put in a block land in its words (N5, 2026-10-23): one reading of the text walk's

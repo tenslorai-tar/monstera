@@ -29,7 +29,7 @@ vi.mock('./renderPage.js', async (importOriginal) => ({
     rasterised.push([pdfjsPage, scale]);
     drawnAt.push(rotation);
     regions.push(region);
-    return Promise.resolve();
+    return Promise.resolve(false);
   },
 }) satisfies Partial<typeof import('./renderPage.js')>);
 

@@ -1,9 +1,10 @@
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Browser, type CDPSession, type Page, expect, test } from '@playwright/test';
+import type { Browser, CDPSession, Page } from '@playwright/test';
 
 import { bridge } from './pageBridge.js';
 import { pageShown } from './settled.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * WHAT A TEXT SELECTION COSTS THE MAIN THREAD, two bundles against each other in one browser session: a research

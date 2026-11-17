@@ -1,9 +1,10 @@
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { blockedPages } from './blockedPages.js';
 import { openApp, openDocument, openSection } from './helpScreensHarness.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * EVERY PROPERTY GROUP IN A CARD, drawn (Addendum 3, 2026-10-18): the Properties tab's views read on the real stylesheet.

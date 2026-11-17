@@ -1,6 +1,6 @@
-import { expect, test } from '@playwright/test';
 
 import { openApp, openDocument } from './helpScreensHarness.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * Home at 1280 x 800 (the owner's answer, cloud-4 item 9c): Comment and Signature stay on the ribbon, and Word, Excel

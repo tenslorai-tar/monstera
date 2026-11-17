@@ -1,9 +1,10 @@
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { blockedPages } from './blockedPages.js';
 import { bridge } from './pageBridge.js';
 import { settled } from './settled.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * The rulers, and the loupe beside them, once the reader has scrolled (the owner's review of 0.1.6.0: the vertical

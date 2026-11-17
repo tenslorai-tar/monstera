@@ -1,10 +1,11 @@
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Locator, type Page, expect, test } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 
 import { type Exchange, asksHeard, converse } from './assistantConverse.js';
 import { blockedPages } from './blockedPages.js';
 import { documentDrawn } from './documentDrawn.js';
 import { LOOKS, type Look, bridgeUnder } from './pageBridge.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * The Assistant pane's baselines (NEXT-UPDATE item 36): the conversation, the counter near the limit, the sentence over

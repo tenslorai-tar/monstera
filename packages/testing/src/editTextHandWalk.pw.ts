@@ -1,10 +1,11 @@
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { FRAME, SURFACE } from './editTextSteps.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
 import { runCommand } from './palette.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * THE HAND WALK and THE SPEED ROWS THE EDITOR OWNS (ADR-0271 sections 3, 4 and 7), on the pinned Chromium: what a person

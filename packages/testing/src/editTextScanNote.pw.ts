@@ -1,8 +1,8 @@
 import { PDFDocument } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { expect, test } from '@playwright/test';
 
 import { LOOKS, bridgeUnder } from './pageBridge.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * A picture page's note in Edit text offers to recognise its words (W7), and a press on that offer reaches it: Edit text's

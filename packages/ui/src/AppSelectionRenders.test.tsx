@@ -67,7 +67,7 @@ vi.mock('./documentView.js', () => ({
 
 vi.mock('./renderPage.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./renderPage.js')>()),
-  renderPage: () => Promise.resolve({ width: 595, height: 842, crop: [0, 0, 595, 842] as const, rotation: 0 }),
+  renderPage: () => Promise.resolve({ width: 595, height: 842, crop: [0, 0, 595, 842] as const, rotation: 0, picturesDropped: false }),
 }) satisfies Partial<typeof import('./renderPage.js')>);
 
 function Messages({ children }: { children: ReactNode }): ReactElement {

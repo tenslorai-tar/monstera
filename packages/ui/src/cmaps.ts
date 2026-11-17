@@ -46,8 +46,9 @@ function bytesOf(dataUrl: string): Uint8Array {
 
 /**
  * The factory PDF.js constructs and asks — `BaseBinaryDataFactory`'s shape, which it takes by duck type. It answers
- * CMaps alone: the standard fonts and the WASM decoders are not bundled (`useWasm: false`, and the standard fonts are
- * drawn by the system's), so any other kind is refused by name rather than answered with nothing.
+ * CMaps alone: the standard fonts are drawn by the system's, and the image decoders are PDF.js's JavaScript builds,
+ * imported by the worker from beside the page (`useWasm: false`, ADR-0296), so PDF.js never asks a factory for a WASM
+ * one. Any other kind is refused by name rather than answered with nothing.
  */
 export class BundledBinaryDataFactory {
   constructor(options: { readonly cMapUrl?: string | null }) {

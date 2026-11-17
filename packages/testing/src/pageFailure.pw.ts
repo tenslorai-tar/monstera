@@ -1,9 +1,9 @@
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { expect, test } from '@playwright/test';
 
 import { blockedPages } from './blockedPages.js';
 import { bridge } from './pageBridge.js';
 import { runCommand } from './palette.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * A page area main cannot serve says why and offers Try again (the owner's Part 7 B, 0.1.14.0).

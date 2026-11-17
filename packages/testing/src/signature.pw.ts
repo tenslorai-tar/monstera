@@ -1,8 +1,9 @@
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { blockedPages } from './blockedPages.js';
 import { bridge } from './pageBridge.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * The plain Signature, the way a person places one (ADR-0133): Home › Signature, the dialog in the pattern, *Use

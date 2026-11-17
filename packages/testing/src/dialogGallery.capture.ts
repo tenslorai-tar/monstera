@@ -1,11 +1,12 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { readLongFields } from './longFields.js';
 import { LOOKS, type Look, bridgeUnder } from './pageBridge.js';
 import { settled } from './settled.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * EVERY REGISTERED DIALOG IN EVERY SAMPLE STATE, photographed in each look for review by eye (`gallery.html`).

@@ -3,13 +3,14 @@ import { fileURLToPath } from 'node:url';
 
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { documentDrawn } from './documentDrawn.js';
 import { EVERY_FIELD_KIND, EVERY_FIELD_KIND_ROWS, formPdf } from './formFieldsFixture.js';
 import { runCommand } from './helpScreensHarness.js';
 import { LOOKS, type Look, bridgeUnder } from './pageBridge.js';
 import { settled } from './settled.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * §10.7's visual baselines: the start screen, each ribbon section, one dialog and

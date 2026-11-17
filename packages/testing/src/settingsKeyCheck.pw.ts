@@ -1,8 +1,8 @@
 import { AxeBuilder } from '@axe-core/playwright';
 import type { AiModelListAnswer } from '@monstera/contract';
-import { expect, test } from '@playwright/test';
 
 import { LOOKS, bridgeUnder } from './pageBridge.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * A provider key's Check in Settings › AI (the owner's item 17b, ADR-0158), through the real application: the button

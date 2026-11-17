@@ -1,7 +1,8 @@
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { openApp, openDocument } from './helpScreensHarness.js';
 import { runCommand } from './palette.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * The status bar's start says only what the tool in hand does (the owner's R24), through the real application on the

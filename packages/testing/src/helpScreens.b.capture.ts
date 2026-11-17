@@ -1,8 +1,9 @@
 import { PDFDocument, ParseSpeeds, StandardFonts } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Locator, type Page, expect, test } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 
 import { openApp, openDocument, openSection, runCommand, samplePdf, shoot } from './helpScreensHarness.js';
+import { expect, test } from './renderedTest.js';
 
 // GROUP B OF THE HELP CENTRE'S SCENES (export-as-pdfa … pdf-table-from-csv). Each test is one screenshot id, named as
 // its article names it, and drives the built renderer through the browser shim to the state the article describes.

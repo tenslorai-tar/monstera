@@ -2,11 +2,12 @@ import { readFileSync } from 'node:fs';
 
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { bridge } from './pageBridge.js';
 import { runCommand } from './palette.js';
 import { pageShown } from './settled.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * A DRAG ACROSS A WHOLE LINE MARKS THE WHOLE LINE (cloud run 18, F1): its two ends are the line's first and last glyph,

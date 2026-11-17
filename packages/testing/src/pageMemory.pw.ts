@@ -4,9 +4,10 @@ import { fileURLToPath } from 'node:url';
 
 import { PDFDocument } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { bridge } from './pageBridge.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * What a read through a document leaves held (the owner's review of 0.1.9.0, item D.a; `docs/JOURNAL.md`, 2026-10-02,

@@ -1,19 +1,23 @@
-import { dirname, join } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { readFile } from 'node:fs/promises';
+import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { minimumWindowFor } from '@monstera/shared';
-import { BrowserWindow, type Session, type WebContents, app, screen } from 'electron';
+import { BrowserWindow, type Session, type WebContents, app, protocol, screen } from 'electron';
 
 import { offerEditMenu } from './editMenu.js';
 import { type ShellFailureSink, reportRendererFailures } from './shellFailure.js';
 import { PLATFORM_DEFAULT, type WindowMemory, placementFor } from './windowState.js';
 import {
   CONTENT_SECURITY_POLICY,
+  RENDERER_SCHEME,
+  RENDERER_URL,
   RENDERER_WEB_PREFERENCES,
   WINDOW_BACKGROUND,
   devToolsAllowed,
   isPermittedNavigation,
   isPermittedPermission,
+  rendererFileFor,
 } from './windowPolicy.js';
 
 /**
@@ -38,6 +42,15 @@ const PRELOAD = join(HERE, 'preload.cjs');
 // build overwrites, so the file git keeps and the file Electron loads are the
 // same path and neither is authoritative.
 export const RENDERER_HTML = join(HERE, 'renderer', 'index.html');
+
+/** The renderer build the scheme serves: the folder `RENDERER_HTML` is in. */
+const RENDERER_ROOT = dirname(RENDERER_HTML);
+
+// REGISTERED AS THIS MODULE LOADS, because Electron takes a privileged scheme only before the application is ready,
+// and every process that makes the window imports this module first: the shell and both harnesses. STANDARD, so the
+// page's relative URLs and its module worker resolve against it; SECURE, as the `file:` page was a secure context;
+// with V8's CODE CACHE, which a custom scheme has only when asked and `file:` had by default.
+protocol.registerSchemesAsPrivileged([{ scheme: RENDERER_SCHEME, privileges: { standard: true, secure: true, codeCache: true } }]);
 
 /** How long after the last move or resize the window's place is written: a drag is one write, not hundreds. */
 const REMEMBER_AFTER_MS = 400;
@@ -64,32 +77,25 @@ export function applyPermissionPolicy(target: Session): void {
 }
 
 /**
- * Serves the Content-Security-Policy with every response in the session.
+ * Serves the renderer build from the application's own scheme, with the Content-Security-Policy on every response
+ * ([ADR-0296](../../../docs/DECISIONS/0296-the-renderer-is-served-from-its-own-scheme-and-a-picture-is-never-dropped-silently.md)).
  *
- * As a **header** rather than a `<meta>` tag: `frame-ancestors` and `sandbox`
- * are ignored in meta form, and `docs/FEATURES.md`'s deferred read-back row
- * names "the response header as received" as a thing it can compare against.
+ * THE ONE WRITER OF THE HEADER. It was a `webRequest.onHeadersReceived` hook on a `file://` page, and Chromium loads a
+ * `file:` worker's scripts without passing them through that hook: the PDF.js worker, which parses every document, had
+ * no policy (2026-11-17, `WebAssembly.compile` and `new Function` allowed in the worker and refused in the window). Every
+ * request of this scheme, the worker's and its imports included, is answered here.
  *
- * The header REPLACES rather than appends. Two `Content-Security-Policy`
- * headers intersect, which sounds safe and is how a policy nobody intended gets
- * enforced — and an appended one cannot loosen but can make the effective
- * policy impossible to state, which is worse for a value that is about to be
- * pinned as an invariant.
+ * As a **header** rather than a `<meta>` tag: `frame-ancestors` and `sandbox` are ignored in meta form, and a worker
+ * has no document to carry a tag. A request for anything that is not a file of the build, of a kind it emits, is a 404
+ * (`rendererFileFor`). Idempotent per session, since the harnesses make windows on the session the shell's code serves.
  */
-export function applyContentSecurityPolicy(target: Session): void {
-  target.webRequest.onHeadersReceived((details, callback) => {
-    // Rebuilt by filtering rather than by deleting keys: the header name is
-    // case-insensitive, so the one to drop is not known statically, and the
-    // filter states the rule once instead of mutating a copy.
-    const kept = Object.entries(details.responseHeaders ?? {}).filter(
-      ([name]) => name.toLowerCase() !== 'content-security-policy',
-    );
-    callback({
-      responseHeaders: {
-        ...Object.fromEntries(kept),
-        'Content-Security-Policy': [CONTENT_SECURITY_POLICY],
-      },
-    });
+export function serveRenderer(target: Session): void {
+  if (target.protocol.isProtocolHandled(RENDERER_SCHEME)) return;
+  target.protocol.handle(RENDERER_SCHEME, async (request) => {
+    const found = rendererFileFor(request.url, RENDERER_ROOT, { resolve, relative, isAbsolute, extname });
+    const bytes = found === null ? null : await readFile(found.file).catch(() => null);
+    if (found === null || bytes === null) return new Response(null, { status: 404, headers: { 'Content-Security-Policy': CONTENT_SECURITY_POLICY } });
+    return new Response(bytes, { status: 200, headers: { 'Content-Type': found.type, 'Content-Security-Policy': CONTENT_SECURITY_POLICY } });
   });
 }
 
@@ -143,7 +149,7 @@ export function createMainWindow(
   memory?: WindowMemory,
 ): BrowserWindow {
   applyPermissionPolicy(target);
-  applyContentSecurityPolicy(target);
+  serveRenderer(target);
 
   const initialFloor = minimumWindowFor(screen.getPrimaryDisplay().workAreaSize);
   const placement =
@@ -233,11 +239,11 @@ export function createMainWindow(
     screen.off('display-removed', refloor);
   });
 
-  lockNavigation(window.webContents, pathToFileURL(RENDERER_HTML).href);
+  lockNavigation(window.webContents, RENDERER_URL);
   window.once('ready-to-show', () => {
     window.show();
   });
-  void window.loadFile(RENDERER_HTML);
+  void window.loadURL(RENDERER_URL);
   return window;
 }
 

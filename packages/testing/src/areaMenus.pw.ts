@@ -1,6 +1,7 @@
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { openApp, openDocument } from './helpScreensHarness.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * The right-click menus draw each command's glyph in one column, as the menu row does (the owner's item 9b), on the

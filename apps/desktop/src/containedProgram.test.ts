@@ -16,8 +16,9 @@ import {
 } from './containedProgram.js';
 
 /**
- * Modules that start a process and are not shipped, by name and why. Each must still start one, and must be imported by
- * tests alone; both are asserted below, so an entry cannot outlive its reason or come to name shipped code.
+ * Modules that start a process and are not shipped, by name and why. Each must still start one, which is asserted
+ * below; that each is imported by tests alone is asserted by `proof:shippedmodules` over the built tree, which names the
+ * module itself (JJJJJJJJJ-4: this said both were asserted here after the importer search had moved there).
  */
 const TEST_ONLY_STARTERS: Readonly<Record<string, string>> = {
   'decodeForTests.ts':

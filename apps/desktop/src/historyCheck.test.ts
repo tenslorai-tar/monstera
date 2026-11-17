@@ -148,7 +148,9 @@ describe('a place that cannot be reached decides nothing', () => {
 
   it('a ledger kept before 2026-11-14 is read as empty, which starts every clock again and removes nothing', async () => {
     const { state, passAt } = world([section('p1', 's1', 'C:/docs/gone.pdf')]);
-    state.ledger = { lastPass: null, sections: { 'p1/s1': { seen: null, missingSince: 0 } } };
+    // MISSING PAST THE GRACE by the old ledger at the first pass's clock, so a ledger read rather than refused would
+    // remove the section at once (JJJJJJJJJ-3: at 0 it was minutes old, and an accepted ledger removed nothing either).
+    state.ledger = { lastPass: null, sections: { 'p1/s1': { seen: null, missingSince: 1_000_000 - GRACE_MS - HOUR } } };
     await passAt(0);
     expect(state.removed, 'missing since long ago by the old ledger, and removed by nothing').toStrictEqual([]);
     await passAt(24);

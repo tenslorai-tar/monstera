@@ -1,10 +1,10 @@
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { expect, test } from '@playwright/test';
 
 import { blockedPages } from './blockedPages.js';
 import { framesTold, installInspector, stopWatching, unfinishedNow, watchFrames } from './frameInspector.js';
 import { bridge } from './pageBridge.js';
 import { runCommand } from './palette.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * An edit never shows an unfinished screen, read frame by frame in a real browser.

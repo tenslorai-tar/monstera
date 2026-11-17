@@ -1,9 +1,9 @@
 import { PDFDocument } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { expect, test } from '@playwright/test';
 
 import { runCommand } from './helpScreensHarness.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * Convert a scan, each outcome a row of its own (the owner's N1): *"Buttons and text are so close to each other."* There

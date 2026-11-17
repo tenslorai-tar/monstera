@@ -1,10 +1,11 @@
 import { PDFDocument, StandardFonts, rgb } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import type { ShimFormField } from './browserShim.js';
 import { bridge } from './pageBridge.js';
 import { installRenderCounter, rendersOf, startCounting, stopCounting } from './renderCounter.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * The page layouts in a real browser (ADR-0284): where the cover page stands, the View menu's control, selecting text and

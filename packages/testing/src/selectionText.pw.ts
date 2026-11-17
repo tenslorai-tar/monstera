@@ -1,9 +1,10 @@
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { bridge } from './pageBridge.js';
 import { pageShown } from './settled.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * A SELECTION ACROSS LINES READS WITH A SPACE WHERE EACH LINE ENDS (cloud run 24, the launch recording of 1.1.2610.0): a

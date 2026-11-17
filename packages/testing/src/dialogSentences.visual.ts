@@ -1,6 +1,7 @@
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { LOOKS, bridgeUnder } from './pageBridge.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * Every sentence in every dialog is spaced by ONE token (MMMMMMM-5, the owner's decision of 2026-10-17, 5a).

@@ -58,6 +58,8 @@ export interface KeptAreaFiles {
   readonly makeDirectory: (path: string) => Promise<unknown>;
   readonly exists: (path: string) => Promise<boolean>;
   readonly copy: (from: string, to: string) => Promise<void>;
+  /** Moves `from` to `to` in one step, over any file there: how the kept file appears only whole. */
+  readonly rename: (from: string, to: string) => Promise<void>;
   readonly names: (directory: string) => Promise<readonly string[]>;
   readonly remove: (path: string) => Promise<void>;
   /** Leaves an empty file at `path`: the marker that a fingerprint's catalogue will not be kept this launch. */
@@ -107,6 +109,8 @@ export function createKeptCatalogue(parts: KeptCatalogueParts): { readonly start
       // A MARKER FROM AN EARLIER LAUNCH says nothing of this one, and a host that saw it would read its folders beside
       // the catalogue host this launch starts.
       await files.remove(unmade);
+      const copying = `${kept}.copying`;
+      await files.remove(copying);
       if (await files.exists(kept)) {
         holder.set({ area, fingerprint });
         return;
@@ -129,7 +133,11 @@ export function createKeptCatalogue(parts: KeptCatalogueParts): { readonly start
         outcome = await parts.run(fingerprint, async (written) => {
           // BY THE NAME THE FINGERPRINT GIVES, never one the host answered: `main` copies what it named.
           if (!written.endsWith(name)) throw new Error('the catalogue host wrote a file of another name');
-          await files.copy(written, kept);
+          // COPIED BESIDE ITS NAME AND RENAMED INTO PLACE: a host is told of the area before this, and waits for the
+          // name to exist, so the name must appear only whole. A copy straight to it is a file that exists before its
+          // bytes do (JJJJJJJJJ-2). Inside the kept area, so the copy has the area's access before the rename.
+          await files.copy(written, copying);
+          await files.rename(copying, kept);
         });
       } catch (error) {
         await notKept(`the catalogue host did not keep the font catalogue, so the hosts read their font folders: ${String(error)}`);

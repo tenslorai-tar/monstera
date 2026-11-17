@@ -1,12 +1,17 @@
+import { win32 } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import {
   CONTENT_SECURITY_POLICY,
   PERMITTED_PERMISSIONS,
+  RENDERER_TYPES,
+  RENDERER_URL,
   RENDERER_WEB_PREFERENCES,
   devToolsAllowed,
   isPermittedNavigation,
   isPermittedPermission,
+  rendererFileFor,
 } from './windowPolicy.js';
 
 describe('developer tools', () => {
@@ -76,6 +81,46 @@ describe('permissions', () => {
 
   it('is a set of exactly one, so widening it is a visible edit', () => {
     expect([...PERMITTED_PERMISSIONS]).toStrictEqual(['media']);
+  });
+});
+
+describe('the renderer scheme serves the build and nothing else (ADR-0296)', () => {
+  const root = 'C:\\app\\dist\\renderer';
+  const at = (url: string) => rendererFileFor(url, root, win32);
+
+  it('answers a file of the build with its type, the page, a module and the PDF.js decoders', () => {
+    expect(at(RENDERER_URL)).toStrictEqual({ file: 'C:\\app\\dist\\renderer\\index.html', type: 'text/html; charset=utf-8' });
+    expect(at('monstera://app/assets/pdf.worker-AbC.mjs')?.type).toBe('text/javascript; charset=utf-8');
+    expect(at('monstera://app/pdfjs-decoders/jbig2_nowasm_fallback.js')?.file).toBe('C:\\app\\dist\\renderer\\pdfjs-decoders\\jbig2_nowasm_fallback.js');
+    // AN ESCAPED NAME is the file it names.
+    expect(at('monstera://app/assets/a%20b.js')?.file).toBe('C:\\app\\dist\\renderer\\assets\\a b.js');
+    // A DOT SEGMENT THE PARSER RESOLVES stays inside: `/../main.js` is folded into the root, as Chromium folds it.
+    expect(at('monstera://app/%2e%2e/main.js')?.file).toBe('C:\\app\\dist\\renderer\\main.js');
+  });
+
+  // THE CONTROL: each of these would be answered by a handler that joined the path and served whatever it found, the
+  // shape a `file:` page had for free and this handler must refuse.
+  it.each([
+    // ESCAPED SEPARATORS, which the URL parser keeps as text, so the dots are seen only once the name is decoded.
+    ['a dotted escape through escaped slashes', 'monstera://app/assets/%2e%2e%2f%2e%2e%2fmain.js'],
+    ['a backslash escape', 'monstera://app/assets%5c..%5c..%5cmain.js'],
+    ['a drive inside the path', 'monstera://app/C:/Windows/win.ini'],
+    ['a stream after a name', 'monstera://app/index.html:hidden.js'],
+    ['a NUL', 'monstera://app/index.html%00.js'],
+    ['the root itself', 'monstera://app/'],
+    ['a kind the build does not emit', 'monstera://app/secrets.json'],
+    ['another host', 'monstera://other/index.html'],
+    ['another scheme', 'file:///C:/app/dist/renderer/index.html'],
+    ['a malformed escape', 'monstera://app/%E0%A4%A.js'],
+  ])('refuses %s', (_label, url) => {
+    expect(at(url)).toBeNull();
+  });
+
+  it('serves every kind it names by a type, and the page is the URL the window loads', () => {
+    expect([...RENDERER_TYPES.keys()].every((kind) => kind.startsWith('.') && kind === kind.toLowerCase())).toBe(true);
+    expect(RENDERER_URL).toBe('monstera://app/index.html');
+    expect(isPermittedNavigation(RENDERER_URL, RENDERER_URL)).toBe(true);
+    expect(isPermittedNavigation('monstera://app/index.html.evil', RENDERER_URL)).toBe(false);
   });
 });
 

@@ -1,10 +1,11 @@
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import type { ShimFormField } from './browserShim.js';
 import { bridgeUnder, LOOKS } from './pageBridge.js';
 import { runCommand } from './palette.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * Filling a form under the tools a person leaves on (ADR-0226), with real pointer events at real places.

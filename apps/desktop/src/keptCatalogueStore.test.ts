@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -41,6 +41,10 @@ function filesRecording(copies: [string, string][]): KeptAreaFiles {
     copy: (from, to) => {
       copies.push([from, to]);
       copyFileSync(from, to);
+      return Promise.resolve();
+    },
+    rename: (from, to) => {
+      renameSync(from, to);
       return Promise.resolve();
     },
     names: (directory) => Promise.resolve(readdirSync(directory)),
@@ -101,7 +105,9 @@ describe('the kept catalogue in main (ADR-0293)', () => {
     const given = parts({ area, files: filesRecording(copies), run: hostWriting('the catalogue', calls), holder });
     await createKeptCatalogue(given).start();
     expect(calls).toStrictEqual([FINGERPRINT]);
-    expect(copies.map(([, to]) => to)).toStrictEqual([join(area, keptCatalogueName(FINGERPRINT))]);
+    // COPIED BESIDE ITS NAME, never to it (JJJJJJJJJ-2): a host waiting for the name sees it only once a rename puts the
+    // whole file there. A copy to the name itself is a file that exists before its bytes do.
+    expect(copies.map(([, to]) => to)).toStrictEqual([`${join(area, keptCatalogueName(FINGERPRINT))}.copying`]);
     expect(readFileSync(join(area, keptCatalogueName(FINGERPRINT)), 'utf8')).toBe('the catalogue');
     expect(readdirSync(area).sort()).toStrictEqual([keptCatalogueName(FINGERPRINT), 'not-a-catalogue.txt'].sort());
     expect(holder.known()).toStrictEqual({ area, fingerprint: FINGERPRINT });

@@ -2,10 +2,11 @@ import { AxeBuilder } from '@axe-core/playwright';
 import { blocksOfEdit } from '@monstera/contract';
 import { asDocId, asDocVersion, tokensOf } from '@monstera/shared';
 import { PDFDocument } from '@cantoo/pdf-lib';
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { LOOKS, type Look, bridgeUnder } from './pageBridge.js';
 import { runCommand } from './palette.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * The Spelling tab (ADR-0156) on a rendered page, against the shim: the review opens beside the page, the word is

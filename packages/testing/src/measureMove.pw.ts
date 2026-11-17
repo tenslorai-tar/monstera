@@ -1,9 +1,10 @@
 import { PDFDocument, PDFName } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { SELECT_TOOL, armTool } from './helpScreensHarness.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * A MOVED MEASUREMENT IS ON SCREEN ONCE, WITH ITS READING, AT EVERY FRAME (the owner's R17, 2026-10-20).

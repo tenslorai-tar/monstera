@@ -1,4 +1,4 @@
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import {
   type Agreement,
@@ -14,6 +14,7 @@ import {
   spanCorners,
 } from './agreementLetters.js';
 import { runCommand } from './palette.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * EVERY READER OF A PAGE'S SELECTION, on the engine's letters (ADR-0280, Decision 5): what a search paints, what each

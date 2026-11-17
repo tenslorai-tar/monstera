@@ -1,10 +1,11 @@
 import { PDFDocument } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import type { BrowserShimOptions } from './browserShim.js';
 import { runCommand } from './helpScreensHarness.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * The Watermark window on pinned Chromium (W3): text typed in its first seconds must still be there once a font is

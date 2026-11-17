@@ -175,6 +175,12 @@ jobs:
       - name: Prove the board reader knows "not yet" from "cannot see"
         run: node scripts/ci/annotate.mjs scripts/lib/boardStatus.proof.mjs
 
+      # Every rendered case hears PDF.js drop a picture (ADR-0296): the rendered suites refuse a case that takes
+      # Playwright's own test, and this proves that refusal finds one, in every suite, and refuses when blind. Pure over
+      # folders it writes plus a read of packages/testing/src, so it needs no install.
+      - name: Prove every rendered case hears a picture PDF.js could not decode
+        run: node scripts/ci/annotate.mjs scripts/lib/renderedCases.proof.mjs
+
       # The rule every engine-host harness counts its children by. Pure over a
       # written-down listing, so it runs here: the Windows read it decides over
       # cannot, and the rule does not need it to be proven.

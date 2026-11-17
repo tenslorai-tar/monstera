@@ -1,11 +1,12 @@
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { FRAME, SURFACE, openWords } from './editTextSteps.js';
 import { LOOKS, bridge, bridgeUnder } from './pageBridge.js';
 import { runCommand } from './palette.js';
 import { pageShown } from './settled.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * A SHAKY CLICK ON TEXT PLACES A CARET (the owner's decision, 2026-10-27): a hand's click that drifts a pixel or two

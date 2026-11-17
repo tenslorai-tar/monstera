@@ -1,10 +1,11 @@
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { blockedPages } from './blockedPages.js';
 import { framesTold, installInspector, stopWatching, unfinishedNow, watchFrames } from './frameInspector.js';
 import { bridge } from './pageBridge.js';
 import { runCommand } from './palette.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * A tab switch shows the finished document from its first frame, read frame by frame in a real browser.

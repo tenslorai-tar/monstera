@@ -1,9 +1,10 @@
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Locator, type Page, expect, test } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 
 import { type SceneShim, openApp, openDocument, openSection, runCommand, samplePdf } from './helpScreensHarness.js';
 import { readLongFields } from './longFields.js';
 import { settled } from './settled.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * Six layout defects from the owner's screenshot review of 0.1.6.0, each asserted as the geometry or computed style it

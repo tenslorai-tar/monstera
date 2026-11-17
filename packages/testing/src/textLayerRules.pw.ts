@@ -1,6 +1,6 @@
-import { expect, test } from '@playwright/test';
 
 import { LINES, dragLetters, laidOut, openAgreement, paintedIn, selectSpan } from './agreementLetters.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * ADR-0280's TWO RULES, in Chromium, on the agreement page's Times lines with their letters stated as the engine reads

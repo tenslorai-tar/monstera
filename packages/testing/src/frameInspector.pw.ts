@@ -1,6 +1,6 @@
-import { expect, test } from '@playwright/test';
 
 import { installInspector, unfinishedNow } from './frameInspector.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * The frame inspector reads only what is ON SCREEN: a canvas with some part inside every ancestor that clips it and the

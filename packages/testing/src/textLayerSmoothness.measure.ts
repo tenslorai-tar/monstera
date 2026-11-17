@@ -1,9 +1,10 @@
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type CDPSession, type Page, expect, test } from '@playwright/test';
+import type { CDPSession, Page } from '@playwright/test';
 
 import { bridge } from './pageBridge.js';
 import { pageShown } from './settled.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * WHAT THE TEXT LAYER COSTS THE MAIN THREAD, measured, for ADR-0280's build against today's: a research instrument, run

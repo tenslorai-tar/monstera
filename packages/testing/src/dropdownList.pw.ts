@@ -1,9 +1,10 @@
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Locator, type Page, expect, test } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 
 import type { ShimFormField } from './browserShim.js';
 import { bridgeUnder, LOOKS } from './pageBridge.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * A dropdown's list, filling (the owner's R21, 2026-10-21): it opens AT its field — under it, or above it touching it

@@ -1,10 +1,11 @@
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { asksHeard, converse } from './assistantConverse.js';
 import { blockedPages } from './blockedPages.js';
 import { readsAtTextFloor } from './inkOnScreen.js';
 import { LOOKS, type Look, bridge, bridgeUnder } from './pageBridge.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * The Assistant pane as the owner's review of 0.1.6.0 redrew it, measured in a real browser: Context and Sources

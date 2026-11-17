@@ -1,10 +1,11 @@
 import { AxeBuilder } from '@axe-core/playwright';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Locator, type Page, expect, test } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 
 import { samplePdf } from './helpScreensHarness.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
 import { settled, startScreenListening } from './settled.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * The tool windows the owner had redrawn in the dialog pattern on 2 October — Cloud storage, Help, Keyboard

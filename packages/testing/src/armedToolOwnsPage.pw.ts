@@ -1,8 +1,8 @@
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { expect, test } from '@playwright/test';
 
 import { blockedPages } from './blockedPages.js';
 import { bridge } from './pageBridge.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * A tool that is armed owns the page, in every section (the owner's recording of 2026-10-07).

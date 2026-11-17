@@ -1,8 +1,9 @@
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { LOOKS, bridgeUnder } from './pageBridge.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * IN EDIT TEXT A CLICK NEVER SELECTS THE PAGE'S WORDS (cloud run 21, the owner's video of 2026-10-26): a click outside

@@ -3,9 +3,10 @@ import { join } from 'node:path';
 
 import { type PDFFont, PDFDocument, StandardFonts, rgb } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { LOOKS, type Look, bridgeUnder } from './pageBridge.js';
+import { expect, test } from './renderedTest.js';
 
 // THE v5 SIDE-BY-SIDES: each of the owner's v5 exports beside this build at the same screen, for the Stage 10
 // report. Run by hand through `scripts/test/capture.config.mjs`. The exports are read from the owner's design

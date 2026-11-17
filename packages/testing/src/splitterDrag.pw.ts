@@ -1,8 +1,8 @@
 import { PDFDocument } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { expect, test } from '@playwright/test';
 
 import { bridge } from './pageBridge.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * Dragging a panel edge adds no stylesheet to the document, in a real browser.

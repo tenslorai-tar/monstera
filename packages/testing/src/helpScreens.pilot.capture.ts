@@ -1,6 +1,6 @@
-import { expect, test } from '@playwright/test';
 
 import { openApp, openDocument, openSection, runCommand, shoot } from './helpScreensHarness.js';
+import { expect, test } from './renderedTest.js';
 
 // THE PILOT SCENES, which prove the harness before the rest are written: a dialog from the palette, a rail section,
 // and a dialog reached from a tool on the page. Each test is one screenshot id, named as the article names it.

@@ -1,9 +1,10 @@
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { blockedPages } from './blockedPages.js';
 import { bridge } from './pageBridge.js';
 import { installRenderCounter, rendersOf, startCounting, stopCounting } from './renderCounter.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * What React renders across a tab switch and across a scroll, counted (the owner's review of 0.1.9.0, items D.b and

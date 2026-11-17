@@ -3,10 +3,11 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Locator, type Page, expect, test } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 
 import { blockedPages } from './blockedPages.js';
 import { bridge } from './pageBridge.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * EVERY COMMAND'S STATE IS DRAWN THE MOMENT IT MOVES, in every surface that draws it (ADR-0258's correction of

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { displayLocationSchema } from '@monstera/contract';
 import { asDocId, asDocVersion, asFileHandle } from '@monstera/shared';
-import { type Locator, type Page, expect, test } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 
 import {
   type SceneShim,
@@ -15,6 +15,7 @@ import {
   samplePdf,
   shoot,
 } from './helpScreensHarness.js';
+import { expect, test } from './renderedTest.js';
 
 /** Where an exploring run leaves its snapshots: a folder in this machine's temporary directory, never a person's own path. */
 const EXPLORED = join(tmpdir(), 'monstera-help-explore');

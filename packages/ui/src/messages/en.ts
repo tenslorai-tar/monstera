@@ -1782,6 +1782,10 @@ export const TEXT_PROPERTIES_BOX = messageKey('surface.text-properties.box');
 export const PAGE_IMAGE_ONLY = messageKey('surface.page.image-only');
 /** What the page area says until its first page is drawn, in place of empty slots. */
 export const PAGE_OPENING = messageKey('surface.page.opening');
+/** A page drawn without a picture neither engine could decode (ADR-0296 Decision 4). */
+export const PAGE_PICTURE_NOT_SHOWN = messageKey('surface.page.picture-not-shown');
+/** A page, or part of it, whose draw failed (ADR-0296 Decision 4). */
+export const PAGE_NOT_DRAWN = messageKey('surface.page.not-drawn');
 export const FIND_REPLACE_WITH = messageKey('surface.find.replace-with');
 export const FIND_REPLACE_ALL = messageKey('surface.find.replace-all');
 export const FIND_REPLACED = messageKey('surface.find.replaced');
@@ -4879,6 +4883,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // and a message may not claim more than the reading behind it.
   [PAGE_IMAGE_ONLY]: 'This page is a picture, so there is no text to select or search.',
   [PAGE_OPENING]: 'Opening the document…',
+  // WHAT IS MISSING, never why in an engine's words: the file is not changed, and the person can still save, print or
+  // export it, where the picture travels with the file.
+  [PAGE_PICTURE_NOT_SHOWN]: 'A picture on this page could not be shown here. It is still in the file.',
+  [PAGE_NOT_DRAWN]: 'This page could not be drawn in full here. It is still in the file.',
   [WRITE_TEXT_BOX_LABEL]: 'Text box',
   // *TYPE ONTO THE PAGE* rather than *Text*, because the difference from the text box is exactly that there is no box
   // — the field's name is where a person using a screen reader learns which of the two they picked.

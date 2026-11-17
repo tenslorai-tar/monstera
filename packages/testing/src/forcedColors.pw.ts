@@ -1,8 +1,9 @@
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { blockedPages } from './blockedPages.js';
 import { bridge } from './pageBridge.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * THE PAGE IN WINDOWS HIGH CONTRAST (the live review's HC1): the document as it is, and its text layer invisible and

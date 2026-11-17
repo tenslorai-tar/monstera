@@ -1,8 +1,9 @@
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { blockedPages } from './blockedPages.js';
 import { bridge } from './pageBridge.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * Export to PowerPoint beside Word and Excel (the owner's review of 0.1.9.0): it lived only in Tools › Convert, behind

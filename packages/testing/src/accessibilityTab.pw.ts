@@ -1,10 +1,11 @@
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { EVERY_FIELD_KIND as FIELDS, formPdf } from './formFieldsFixture.js';
 import { openSection } from './helpScreensHarness.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
 import { runCommand } from './palette.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * Review's *Accessibility check* and *Reading order* choose the left panel's own Accessibility tab, at their view, and

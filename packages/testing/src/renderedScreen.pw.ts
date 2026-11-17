@@ -19,7 +19,7 @@ import {
   contrast,
   textContrastFloor,
 } from '@monstera/shared';
-import { type Locator, type Page, expect, test } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 
 // ONE BRIDGE for both Playwright runs — §10.7's baselines drive the renderer the same way (B3a),
 // and `LOOKS` is theirs too: §10.4's gate and §10.7's baselines check the same three themes, and
@@ -29,6 +29,7 @@ import { LOOKS, type Look, bridge, bridgeUnder } from './pageBridge.js';
 import { againstPaper } from './contrast.js';
 import { readsAtTextFloor } from './inkOnScreen.js';
 import { pageShown, popupPlaced, settled, startScreenListening } from './settled.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * §10.4's mandated gate: axe-core on a Playwright-rendered screen.

@@ -1,11 +1,12 @@
 import { AxeBuilder } from '@axe-core/playwright';
 import { displayLocationSchema } from '@monstera/contract';
 import { asDocId, asDocVersion, asFileHandle } from '@monstera/shared';
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { blockedPages } from './blockedPages.js';
 import { readsAtTextFloor } from './inkOnScreen.js';
 import { LOOKS, type Look, bridgeUnder } from './pageBridge.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * File › Recent in a real browser

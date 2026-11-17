@@ -1209,6 +1209,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
           () => false,
         ),
         copy: (from, to) => copyFile(from, to),
+        rename: (from, to) => rename(from, to),
         names: (directory) => readdir(directory),
         remove: (path) => rm(path, { force: true }),
         mark: (path) => writeFile(path, ''),

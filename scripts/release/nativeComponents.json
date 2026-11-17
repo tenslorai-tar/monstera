@@ -205,6 +205,25 @@
   ],
   "compiledIntoPackages": [
     {
+      "package": "pdfjs-dist",
+      "components": [
+        {
+          "name": "PDFium's JBIG2 and CCITT decoder",
+          "version": "as compiled into pdfjs-dist 6.2.108's wasm/jbig2_nowasm_fallback.js, which the renderer ships since ADR-0296 (the file names no version)",
+          "spdx": "BSD-3-Clause; Mozilla's wrapper Apache-2.0",
+          "source": "https://github.com/mozilla/pdf.js, pdfjs-dist 6.2.108 wasm/",
+          "texts": [{ "inPackage": "wasm/LICENSE_JBIG2" }, { "inPackage": "wasm/LICENSE_PDFJS_JBIG2" }]
+        },
+        {
+          "name": "OpenJPEG",
+          "version": "as compiled into pdfjs-dist 6.2.108's wasm/openjpeg_nowasm_fallback.js, which the renderer ships since ADR-0296 (the file names no version)",
+          "spdx": "BSD-2-Clause; Mozilla's wrapper BSD-2-Clause",
+          "source": "https://github.com/mozilla/pdf.js, pdfjs-dist 6.2.108 wasm/",
+          "texts": [{ "inPackage": "wasm/LICENSE_OPENJPEG" }, { "inPackage": "wasm/LICENSE_PDFJS_OPENJPEG" }]
+        }
+      ]
+    },
+    {
       "package": "@jsquash/webp",
       "components": [
         {

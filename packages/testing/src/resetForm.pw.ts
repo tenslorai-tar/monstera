@@ -1,11 +1,12 @@
 import { AxeBuilder } from '@axe-core/playwright';
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import type { ShimFormField } from './browserShim.js';
 import { openSection } from './helpScreensHarness.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * *Reset form* on the Forms ribbon (the owner's R23), on pinned Chromium against the compiled bundle: the button is on

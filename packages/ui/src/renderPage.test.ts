@@ -3,7 +3,7 @@ import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { holdPage } from './pageResidency.js';
-import { RenderCancelledError, pageGeometry, renderPage, renderRegion } from './renderPage.js';
+import { RenderCancelledError, pageGeometry, picturesDroppedFrom, renderPage, renderRegion } from './renderPage.js';
 
 /** A signal nothing aborts, for the cases about what a draw does rather than whether it is superseded. */
 const LIVE = new AbortController().signal;
@@ -26,6 +26,24 @@ const LIVE = new AbortController().signal;
  * from anything else in the fixture.
  */
 const VIEW: readonly [number, number, number, number] = [12, 24, 312, 424];
+
+/** A real page's two object tables, here empty, and its number: a draw reads them for pictures PDF.js dropped. */
+const NO_PICTURES_DROPPED = { objs: [] as unknown[][], commonObjs: [] as unknown[][], pageNumber: 1 };
+
+describe('picturesDroppedFrom: what PDF.js could not decode, read from its object tables (ADR-0296 Decision 3)', () => {
+  type Tables = Parameters<typeof picturesDroppedFrom>[0];
+  const page = (objs: unknown[][], commonObjs: unknown[][], pageNumber = 3): Tables => ({ objs, commonObjs, pageNumber }) as unknown as Tables;
+
+  it('counts a page image sent as null, and a shared one sent as null under an id naming THIS page', () => {
+    expect(picturesDroppedFrom(page([['img_p2_1', null], ['img_p2_2', { width: 1 }]], [['d0_img_p2_3', null]]))).toBe(2);
+  });
+
+  // CONTROL: what a null must not count. A decoded image, a shared image another page dropped (its own draw says so),
+  // and a shared object that is not an image.
+  it('counts nothing for a decoded picture, another page’s shared one, or a shared null that is no image of this page', () => {
+    expect(picturesDroppedFrom(page([['img_p2_1', { width: 1 }]], [['d0_img_p5_1', null], ['d0_img_p22_1', null], ['d0_s3', null]]))).toBe(0);
+  });
+});
 
 /** A document whose page reports a viewport and records the canvas it was given. */
 function documentWithViewport(
@@ -59,6 +77,7 @@ function documentWithViewport(
       // no-parameter case so the two can be told apart.
       return { width, height, rotation: options['rotation'] ?? 270 };
     },
+    ...NO_PICTURES_DROPPED,
     render: ({ canvas }: { canvas: HTMLCanvasElement }) => {
       sizeAtRender.push({ width: canvas.width, height: canvas.height });
       return { promise: Promise.resolve() };
@@ -165,6 +184,7 @@ describe('renderPage', () => {
       view: VIEW,
       cleanup: () => true,
       getViewport: () => ({ width: 301, height: 401, rotation: 0 }),
+      ...NO_PICTURES_DROPPED,
       render: ({ canvas: drawnOn }: { canvas: HTMLCanvasElement }) => {
         onScreen.push({ width: canvas.width, height: canvas.height });
         expect(drawnOn).not.toBe(canvas);
@@ -370,6 +390,7 @@ describe('renderRegion', () => {
       view: VIEW,
       cleanup: () => true,
       getViewport: (options: Record<string, unknown>) => ({ width: 2000, height: 3000, rotation: options['rotation'] ?? 0, options }),
+      ...NO_PICTURES_DROPPED,
       render: ({ canvas, transform, viewport }: { canvas: HTMLCanvasElement; transform?: unknown; viewport: unknown }) => {
         calls.push({ width: canvas.width, height: canvas.height, transform, viewport });
         return { promise: Promise.resolve(), cancel: () => undefined };
@@ -444,6 +465,7 @@ describe('renderPage and a superseded draw', () => {
       view: VIEW,
       cleanup: () => true,
       getViewport: () => ({ width: 100, height: 100, rotation: 0 }),
+      ...NO_PICTURES_DROPPED,
       render: () => {
         renders += 1;
         let reject: (error: Error) => void = () => undefined;

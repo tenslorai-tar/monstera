@@ -1,6 +1,7 @@
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { SAMPLE_DOC_ID, openApp, openDocument, runCommand } from './helpScreensHarness.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * A dialog asked while another is open WAITS for it (CR-COR-08), through the real application on the pinned Chromium.

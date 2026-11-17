@@ -90,3 +90,24 @@ is a one-bit `/CCITTFaxDecode` image.
   argue for, and the worker's own module imports from `file:` would still be answered with no header.
 - **Showing the note and not redrawing.** The second engine draws the pictures PDF.js cannot (PDFium decodes all three),
   so a note alone would leave a page worse than the application can draw it.
+
+## Correction, 2026-11-17, before the build — the page is NOT redrawn by the second engine; it says what it lacks
+
+Decision 4's first half is withdrawn, and the rejection above with it, before any of it shipped. **`document.renderPage`
+answers a finished page whether or not the second engine decoded the picture**: its answer is the page's pixels and
+nothing about what it left out (`channels.ts`), and PDFium's page render reports no picture it could not decode. Since
+the JavaScript decoders ship (Decision 2), what PDF.js still cannot decode is a picture whose data is broken, which the
+second engine is as likely to drop; redrawn by it, that page would have shown **no note**, the silent drop arriving one
+engine further on. *PDFium decodes all three* was asserted, not measured, and does not answer that.
+
+So **every page drawn without a picture says so on the page**: *A picture on this page could not be shown here. It is
+still in the file.*, at the page's foot, a tile's draw included; and a page whose draw failed says *This page could not
+be drawn in full here*, where it showed a blank slot. A person who wants the other engine has §6.1's setting. A redraw
+becomes right the day the second engine's answer can say what it left out; until then a note that is always true is
+the better page.
+
+**Not seen** (stated in `renderPage.ts`): an INLINE picture PDF.js cannot decode is warned about and sent to no object
+table, so the page cannot say it; a rendered case still fails on the warning.
+
+The WASM decoders' speed against the JavaScript builds, owed above, is not measured: under the shipped policy the WASM
+builds cannot run in the application at all, so there is no comparison to make there, and none was made outside it.

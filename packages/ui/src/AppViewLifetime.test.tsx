@@ -82,7 +82,7 @@ vi.mock('./renderPage.js', async (importOriginal) => ({
     const spine =
       canvas instanceof HTMLElement && canvas.classList.contains('m-page');
     if (spine) drawn.push(rotation);
-    return Promise.resolve({ width: 1, height: 1, crop: [0, 0, 1, 1] as const, rotation: 0 });
+    return Promise.resolve({ width: 1, height: 1, crop: [0, 0, 1, 1] as const, rotation: 0, picturesDropped: false });
   },
 }) satisfies Partial<typeof import('./renderPage.js')>);
 

@@ -1,7 +1,7 @@
 import { BRIDGE_KEY } from '@monstera/contract';
 import { BrowserWindow, type WebContents, app, session } from 'electron';
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,8 +13,8 @@ import type { ShellFailure } from './shellFailure.js';
 // one question (B3a) — and the two disagreed the moment the page became a build
 // artefact, in the direction where the harness loads a file that is no longer
 // there and the proof reports a load failure rather than a stale path.
-import { RENDERER_HTML, createMainWindow } from './window.js';
-import { RENDERER_WEB_PREFERENCES } from './windowPolicy.js';
+import { RENDERER_HTML, createMainWindow, serveRenderer } from './window.js';
+import { RENDERER_URL, RENDERER_WEB_PREFERENCES } from './windowPolicy.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -111,11 +111,53 @@ function isStyleElementsReport(value: unknown): value is Readback['styleElements
   );
 }
 
+/**
+ * What a module WORKER started from the renderer's page does under the policy (ADR-0296): the directives its eval and
+ * its WebAssembly compile violated, and whether it imported PDF.js's decoder from `'self'`. `started` is false where no
+ * message came back, which is told apart from a worker that answered with no violation.
+ */
+interface WorkerReading {
+  readonly started: boolean;
+  readonly evalViolated: boolean;
+  readonly wasmRefused: boolean;
+  readonly decoderImported: boolean;
+  readonly detail: string;
+}
+
+function isWorkerReading(value: unknown): value is WorkerReading {
+  if (typeof value !== 'object' || value === null) return false;
+  const { started, evalViolated, wasmRefused, decoderImported, detail } = value as Record<string, unknown>;
+  return (
+    typeof started === 'boolean' &&
+    typeof evalViolated === 'boolean' &&
+    typeof wasmRefused === 'boolean' &&
+    typeof decoderImported === 'boolean' &&
+    typeof detail === 'string'
+  );
+}
+
+/** The probe a worker runs, placed in the build for the length of the probe and served by the shipped handler. */
+const WORKER_PROBE_NAME = 'policy-probe-worker.js';
+const WORKER_PROBE = [
+  'const violated = [];',
+  "self.addEventListener('securitypolicyviolation', (event) => { violated.push(event.effectiveDirective); });",
+  'let wasmRefused = false;',
+  'let decoderImported = false;',
+  'let detail = "";',
+  "try { new Function('return 1')(); } catch (error) { detail += 'eval: ' + String(error) + '; '; }",
+  'try { await WebAssembly.compile(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0])); } catch (error) { wasmRefused = true; detail += String(error) + "; "; }',
+  "try { const decoder = await import('./pdfjs-decoders/jbig2_nowasm_fallback.js'); decoderImported = typeof (await decoder.default())._ccitt_decode === 'function'; } catch (error) { detail += 'decoder: ' + String(error); }",
+  'await new Promise((done) => { setTimeout(done, 200); });',
+  "postMessage({ evalViolated: violated.some((directive) => directive.startsWith('script-src')), wasmRefused, decoderImported, detail });",
+].join('\n');
+
 interface Readback {
   readonly delivered: string | null;
   readonly url: string | null;
   readonly connectBlocked: boolean;
   readonly evalBlocked: boolean;
+  /** The PDF.js worker's thread under the policy: a module worker started from the page (ADR-0296). */
+  readonly worker: WorkerReading;
   /** A font loaded from bytes, and the same font by a `data:` URL, under the delivered policy (ADR-0175). */
   readonly fonts: FontReading;
   /**
@@ -134,7 +176,7 @@ interface Readback {
   /**
    * Whether the React shell mounted, and what its surface computed to.
    *
-   * `mounted` answers `script-src 'self'` against a `file://` origin; the
+   * `mounted` answers `script-src 'self'` against the renderer's own scheme (a `file://` origin until ADR-0296); the
    * background answers `style-src 'self'` the same way. Both directives were
    * pinned and delivered and neither had ever been exercised.
    */
@@ -366,6 +408,8 @@ function isFontReading(value: unknown): value is FontReading {
  * @param target the session the shipped window uses, so the policy is the same
  */
 async function probeSandboxThroughPreload(target: Electron.Session): Promise<string> {
+  // THE RENDERER'S OWN SCHEME, served on this session as the shipped window's is.
+  serveRenderer(target);
   const probe = new BrowserWindow({
     show: false,
     webPreferences: {
@@ -404,7 +448,7 @@ async function probeSandboxThroughPreload(target: Electron.Session): Promise<str
       probe.webContents.once('did-finish-load', () => {
         resolve('loaded');
       });
-      void probe.loadFile(RENDERER_HTML);
+      void probe.loadURL(RENDERER_URL);
     }),
     settle(15_000).then(() => 'timed-out' as const),
   ]);
@@ -579,6 +623,38 @@ export async function reportRendererPolicy(): Promise<void> {
   const evalBlocked = violated.some((directive) => directive.startsWith('script-src'));
 
   // ---------------------------------------------------------------------------
+  // CSP in a WORKER: the thread PDF.js parses every document in (ADR-0296).
+  // ---------------------------------------------------------------------------
+  //
+  // Loaded from `file://`, the worker's scripts never passed the session's header hook and the worker ran with no
+  // policy: eval and WebAssembly allowed there, refused in the window (2026-11-17). The probe is a file of the build
+  // for as long as it runs, served by the shipped handler, so what it reads is what PDF.js's worker gets. Its control
+  // is the decoder import, which the policy allows from `'self'`: a worker that cannot start or cannot import anything
+  // reports no violation either, and that must not read as a policy.
+  const probeFile = join(dirname(RENDERER_HTML), WORKER_PROBE_NAME);
+  writeFileSync(probeFile, WORKER_PROBE);
+  let worker: WorkerReading;
+  try {
+    worker = await evaluate(
+      webContents,
+      `(async () => {
+         const worker = new Worker('./${WORKER_PROBE_NAME}', { type: 'module' });
+         const answer = await new Promise((done) => {
+           worker.onmessage = (event) => { done({ started: true, ...event.data }); };
+           worker.onerror = (event) => { done({ started: false, evalViolated: false, wasmRefused: false, decoderImported: false, detail: 'worker error: ' + String(event.message) }); };
+           setTimeout(() => { done({ started: false, evalViolated: false, wasmRefused: false, decoderImported: false, detail: 'no answer in 10 s' }); }, 10000);
+         });
+         worker.terminate();
+         return answer;
+       })()`,
+      isWorkerReading,
+      'worker policy',
+    );
+  } finally {
+    rmSync(probeFile, { force: true });
+  }
+
+  // ---------------------------------------------------------------------------
   // font-src: a font from BYTES loads, and the SAME bytes by a URL are refused (ADR-0175).
   // ---------------------------------------------------------------------------
   //
@@ -714,7 +790,7 @@ export async function reportRendererPolicy(): Promise<void> {
   //
   // `script-src 'self'` and `style-src 'self'` were two of the nine directives
   // this proof delivered and never exercised (style-src is also exercised against an
-  // injected element above since 2026-09-14), and `file://` is the reason they
+  // injected element above since 2026-09-14), and `file://`, the page's origin until ADR-0296, is the reason they
   // needed exercising: its origin is opaque, so whether `'self'` matches one is
   // not a thing to reason about. Both are now answered by an artefact rather
   // than by an argument.
@@ -948,6 +1024,7 @@ export async function reportRendererPolicy(): Promise<void> {
     preloadNodeReach,
     connectBlocked,
     evalBlocked,
+    worker,
     fonts,
     styleElements,
     shell,

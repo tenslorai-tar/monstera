@@ -74,7 +74,15 @@ import type { FieldProblem } from './forms/fieldCheck.js';
 import type { ListedField } from './forms/fieldFill.js';
 import { usePageFormFields } from './forms/usePageFormFields.js';
 import { useSelectedTextPages } from './useSelectedTextPages.js';
-import { ANNOTATION_SURFACE_LABEL, PAGE_IMAGE_ONLY, PAGE_LIST_LABEL, PAGE_OPENING, TEXT_EDIT_RECOGNISE } from './messages/en.js';
+import {
+  ANNOTATION_SURFACE_LABEL,
+  PAGE_IMAGE_ONLY,
+  PAGE_LIST_LABEL,
+  PAGE_NOT_DRAWN,
+  PAGE_OPENING,
+  PAGE_PICTURE_NOT_SHOWN,
+  TEXT_EDIT_RECOGNISE,
+} from './messages/en.js';
 import { Icon } from './primitives/Icon.js';
 import { useOnColor } from './primitives/useOnColor.js';
 import type { LiveReading, UiTool } from './registries/tools.js';
@@ -1980,6 +1988,15 @@ function PageSlotBody({
   // THE VIEW THE PIXELS ON SCREEN CAME FROM, set when a draw has presented: the drawing overlay holds a
   // released shape until this moves past the view it was released over (`AnnotationOverlay.drawnWith`).
   const [drawnWith, setDrawnWith] = useState<DocumentView | undefined>(undefined);
+  // WHAT THE PAGE ON SCREEN LACKS, said on it (ADR-0296 Decision 4): a picture neither engine could draw, or the page or
+  // a tile of it, whose draw failed. Set by each draw that presents or fails, so a later draw that is whole clears it.
+  const [missing, setMissing] = useState<'none' | 'pictures' | 'page'>('none');
+  const picturesDropped = useCallback(() => {
+    setMissing((now) => (now === 'page' ? now : 'pictures'));
+  }, []);
+  const tileFailed = useCallback(() => {
+    setMissing('page');
+  }, []);
   // THE MARK A RESHAPE IS DRAGGING ON THIS PAGE, which the page is drawn without while its live reading stands (the
   // owner's B1): otherwise its stored appearance shows the old reading beside the live one. Read from the reading the
   // overlay reports, which names the mark by its place in the walk; PDF.js names it by object, which the listing carries.
@@ -2215,6 +2232,8 @@ function PageSlotBody({
       onMeasured(page, measured);
       setDrawnWith(view);
       setPresentedWithout(leftOut);
+      // A PICTURE NEITHER ENGINE COULD DRAW is said on the page, never left out in silence (ADR-0296 Decision 4).
+      setMissing(drawn.picturesDropped ? 'pictures' : 'none');
       onPainted(page, true);
     };
 
@@ -2239,6 +2258,9 @@ function PageSlotBody({
         // a CI run only that a draw had thrown.
         canvas.current.dataset['failedReason'] = (error instanceof Error ? error.message : String(error)).slice(0, 200);
       }
+      // AND TO A PERSON, ON THE PAGE: the marker above is for whoever reads the element, and a blank slot told a person
+      // nothing (ADR-0296 Decision 4).
+      setMissing('page');
       onFailed(page);
     });
 
@@ -2348,6 +2370,8 @@ function PageSlotBody({
             leftOut={leftOut}
             onPresentedWithout={setPresentedWithout}
             onPresentedView={presentView}
+            onPicturesDropped={picturesDropped}
+            onTileFailed={tileFailed}
           />
         )
       ) : mounted ? (
@@ -2407,6 +2431,12 @@ function PageSlotBody({
           ) : null}
         </p>
       ) : null}
+      {/* WHAT THE PAGE LACKS, at its foot so it never sits over the note above (ADR-0296 Decision 4). */}
+      {missing === 'none' ? null : (
+        <p className="m-page-note m-page-note--foot" data-page-missing={missing}>
+          {i18n._(missing === 'pictures' ? PAGE_PICTURE_NOT_SHOWN : PAGE_NOT_DRAWN)}
+        </p>
+      )}
       {text === undefined || size === undefined ? null : (
         <TextLayer
           geometry={{ crop: size.crop, rotation: size.rotation, zoom }}
@@ -2683,8 +2713,14 @@ function PageTiles({
   leftOut,
   onPresentedWithout,
   onPresentedView,
+  onPicturesDropped,
+  onTileFailed,
 }: {
   readonly view: DocumentView;
+  /** Told when a tile was drawn without a picture PDF.js could not decode, for the page to say so (ADR-0296). */
+  readonly onPicturesDropped: () => void;
+  /** Told when a tile's draw failed, for the page to say so. */
+  readonly onTileFailed: () => void;
   /** The slot's: whether a tile may rasterise now. A tile on screen keeps its last drawing until it may. */
   readonly draw: boolean;
   /** The mark a reshape is dragging, which the tiles are drawn without (`renderRegion`'s `leftOut`, the owner's B1). */
@@ -2770,6 +2806,8 @@ function PageTiles({
           draw={draw}
           leftOut={leftOut}
           onPresented={onPresented}
+          onPicturesDropped={onPicturesDropped}
+          onFailed={onTileFailed}
           page={page}
           rotation={rotation}
           scale={scale}
@@ -2814,9 +2852,15 @@ function PageTile({
   zoom,
   leftOut,
   onPresented,
+  onPicturesDropped,
+  onFailed,
 }: {
   readonly view: DocumentView;
   readonly draw: boolean;
+  /** Told when this tile was drawn without a picture PDF.js could not decode (ADR-0296). */
+  readonly onPicturesDropped: () => void;
+  /** Told when this tile's draw failed. */
+  readonly onFailed: () => void;
   readonly page: number;
   readonly rotation: PageRotation;
   readonly tile: Tile;
@@ -2845,20 +2889,22 @@ function PageTile({
     delete target.dataset['failed'];
     const region = { x, y, width, height };
     void renderRegion(view.document, pdfjsPageOf(page), target, scale, rotation, region, superseded.signal, leftOut)
-      .then(() => {
+      .then((dropped) => {
         if (superseded.signal.aborted) return;
         setDrawn({ ...region, scale });
         onPresented(tileKey, leftOut, view);
+        if (dropped) onPicturesDropped();
       })
       .catch((error: unknown) => {
         if (error instanceof RenderCancelledError || superseded.signal.aborted) return;
-        // A TILE THAT WILL NOT DRAW SAYS SO, on the element, as a whole page does.
+        // A TILE THAT WILL NOT DRAW SAYS SO, on the element, as a whole page does, and on the page to a person.
         target.dataset['failed'] = 'true';
+        onFailed();
       });
     return (): void => {
       superseded.abort();
     };
-  }, [draw, height, leftOut, onPresented, page, rotation, scale, tileKey, view, width, x, y]);
+  }, [draw, height, leftOut, onFailed, onPicturesDropped, onPresented, page, rotation, scale, tileKey, view, width, x, y]);
 
   const per = drawn === undefined ? 0 : zoom / drawn.scale;
   return (

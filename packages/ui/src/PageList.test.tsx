@@ -74,6 +74,8 @@ const SCALE_2: ZoomMode = { kind: 'scale', scale: 2 };
 const rasterised: [number, number][] = [];
 /** The rotation each rasterisation was handed, in the same order. */
 const drawnAt: PageRotation[] = [];
+/** The PDF.js pages whose draw reports a picture it could not show (ADR-0296), set by a case. */
+const dropsPictures = new Set<number>();
 
 /**
  * MOCKED, because happy-dom implements no 2d context.
@@ -116,13 +118,14 @@ vi.mock('./renderPage.js', async (importOriginal) => ({
       // the identity here and lets a placement case assert the box it sent.
       crop: [0, 0, 100, 200] as const,
       rotation: 0,
+      picturesDropped: dropsPictures.has(pdfjsPage),
     });
   },
   // A TILED PAGE IS MEASURED, NOT DRAWN: the same viewport as above, with nothing rasterised.
   pageGeometry: (_document: unknown, _pdfjsPage: number, scale: number) =>
-    Promise.resolve({ width: 100 * scale, height: 200 * scale, crop: [0, 0, 100, 200] as const, rotation: 0 }),
+    Promise.resolve({ width: 100 * scale, height: 200 * scale, crop: [0, 0, 100, 200] as const, rotation: 0, picturesDropped: false }),
   // A TILE'S DRAW, which happy-dom cannot perform; nothing here asserts a tile's pixels.
-  renderRegion: () => Promise.resolve(),
+  renderRegion: () => Promise.resolve(false),
 }) satisfies Partial<typeof import('./renderPage.js')>);
 
 /**
@@ -462,6 +465,50 @@ describe('PageList', () => {
       [2, 1],
     ]);
     expect(container.querySelectorAll('canvas.m-page')).toHaveLength(2);
+  });
+
+  it('a page drawn WITHOUT A PICTURE says so on the page, and a whole page says nothing (ADR-0296 Decision 4)', async () => {
+    // PAGE 2 (PDF.js's number) reports a picture neither engine could draw; page 1 is whole.
+    dropsPictures.add(2);
+    try {
+      const { client } = clientAnswering();
+      const { container } = render(
+        <PageList
+          client={client}
+          view={viewDrawing()}
+          pageCount={5}
+          docId={DOC}
+          version={VERSION}
+          onCurrentPage={vi.fn()}
+          mode={SCALE_1}
+          onZoomStep={vi.fn()}
+          onShownZoom={vi.fn()}
+          goTo={undefined}
+          startAt={FIRST_PAGE.kernel}
+          onWentTo={vi.fn()}
+          loupe={false}
+          drawsPages
+          rulers={false}
+          showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
+          unit="in"
+          search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
+          secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous" coverPage={false}
+          menuAt={undefined}
+        />,
+      );
+      await settle();
+      expect(rasterised.map(([page]) => page)).toStrictEqual([1, 2]);
+      const notes = [...container.querySelectorAll('[data-page-missing]')];
+      // ONE NOTE, on the second slot, in words a person reads.
+      expect(notes).toHaveLength(1);
+      expect(notes[0]?.getAttribute('data-page-missing')).toBe('pictures');
+      expect(notes[0]?.closest('.m-page-slot')).toBe(container.querySelectorAll('.m-page-slot')[1]);
+      expect(notes[0]?.textContent).toContain('could not be shown');
+      // CONTROL: the first page, drawn whole, carries none.
+      expect(container.querySelectorAll('.m-page-slot')[0]?.querySelector('[data-page-missing]')).toBeNull();
+    } finally {
+      dropsPictures.clear();
+    }
   });
 
   it('PAGE SHARPNESS multiplies the DRAWING scale and never the shown size (E1’s explicit renderQuality)', async () => {

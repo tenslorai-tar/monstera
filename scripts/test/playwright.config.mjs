@@ -51,6 +51,7 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig, devices } from '@playwright/test';
 
 import { RENDERED_SUITE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
+import { refuseUnwatchedCases } from '../lib/renderedCases.mjs';
 import { BROWSERS_PATH } from '../provision/playwright.mjs';
 import { ACCESSIBILITY_OUTPUT_DIR, failureTrace } from './visualFailures.mjs';
 
@@ -77,6 +78,10 @@ process.env['PLAYWRIGHT_BROWSERS_PATH'] = BROWSERS_PATH;
 // and again in this session's 13d run). `buildFreshness.mjs` refuses that for the proofs that import `dist`; this is the
 // same guard for a whole test runner, and every config that imports this one (the visual suite) inherits it.
 refuseStaleBuild(REPO_ROOT, RENDERED_SUITE, 3);
+
+// EVERY RENDERED CASE HEARS A DROPPED PICTURE, or nothing runs (ADR-0296): a case with Playwright's own `test` draws
+// pages while PDF.js's report that it could not decode one goes nowhere. Every config that imports this one inherits it.
+refuseUnwatchedCases(join(REPO_ROOT, 'packages', 'testing', 'src'));
 
 export default defineConfig({
   testDir: join(REPO_ROOT, 'packages', 'testing', 'src'),

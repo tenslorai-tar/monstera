@@ -209,6 +209,71 @@ export const CONTENT_SECURITY_POLICY = [
 ].join('; ');
 
 /**
+ * The application's own scheme, which the renderer is served from
+ * ([ADR-0296](../../../docs/DECISIONS/0296-the-renderer-is-served-from-its-own-scheme-and-a-picture-is-never-dropped-silently.md)).
+ *
+ * NOT `file://`: Chromium loads a `file:` worker's scripts without passing them through the session's header hook, so
+ * the PDF.js worker, which parses every document, ran with no policy at all (measured 2026-11-17 in the pinned
+ * Electron: `WebAssembly.compile` and `new Function` allowed there, refused in the window). A scheme of our own puts
+ * every request, the worker's included, through one handler, and that handler writes the header.
+ */
+export const RENDERER_SCHEME = 'monstera';
+
+/** The page the window loads, and the one URL its navigation may reach. */
+export const RENDERER_URL = `${RENDERER_SCHEME}://app/index.html`;
+
+/**
+ * The media type of each kind of file the renderer build emits, and the only kinds served: a request for any other is
+ * refused, so a file that lands in the build by mistake is not served by default. A kind the build starts emitting is a
+ * line here, which `rendererFileFor`'s case for every emitted file catches.
+ */
+export const RENDERER_TYPES: ReadonlyMap<string, string> = new Map([
+  ['.html', 'text/html; charset=utf-8'],
+  ['.js', 'text/javascript; charset=utf-8'],
+  ['.mjs', 'text/javascript; charset=utf-8'],
+  ['.css', 'text/css; charset=utf-8'],
+  ['.png', 'image/png'],
+  ['.svg', 'image/svg+xml'],
+  ['.ttf', 'font/ttf'],
+  ['.woff2', 'font/woff2'],
+]);
+
+/**
+ * The file a request names inside the renderer build `root`, and its media type, or `null` for every request that is
+ * not one: another scheme or host, a path that leaves `root` once its dots and escapes are resolved, or a kind
+ * {@link RENDERER_TYPES} does not name. Takes Node's `path` functions so it can be asked in a plain test of either
+ * platform's rules.
+ */
+export function rendererFileFor(
+  url: string,
+  root: string,
+  path: { readonly resolve: (...parts: string[]) => string; readonly relative: (from: string, to: string) => string; readonly isAbsolute: (path: string) => boolean; readonly extname: (path: string) => string },
+): { readonly file: string; readonly type: string } | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== `${RENDERER_SCHEME}:` || parsed.host !== 'app') return null;
+  let name: string;
+  try {
+    name = decodeURIComponent(parsed.pathname);
+  } catch {
+    return null;
+  }
+  // A NUL, or a colon (a drive, or an NTFS stream after a name), is never a file of the build. The path is resolved
+  // below as RELATIVE to the root, so a leading pair of slashes cannot make it a share; what can leave the root is an
+  // escaped dot segment or separator the URL parser kept, which the containment check refuses.
+  if (name.includes('\0') || name.includes(':')) return null;
+  const file = path.resolve(root, `.${name}`);
+  const inside = path.relative(root, file);
+  if (inside === '' || inside.startsWith('..') || path.isAbsolute(inside)) return null;
+  const type = RENDERER_TYPES.get(path.extname(file).toLowerCase());
+  return type === undefined ? null : { file, type };
+}
+
+/**
  * Whether the renderer may navigate to a URL.
  *
  * An allowlist of one: the page the shell itself loaded. Everything else —

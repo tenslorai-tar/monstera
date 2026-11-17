@@ -1,10 +1,11 @@
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { blockedPages } from './blockedPages.js';
 import { bridge } from './pageBridge.js';
 import { runCommand } from './palette.js';
 import { commandsSettled, pageShown } from './settled.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * Each tool's pointer, and the highlighter's gesture, in a real browser (the owner's review of 0.1.6.0,

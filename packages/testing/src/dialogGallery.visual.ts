@@ -1,7 +1,8 @@
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { LOOKS, type Look, bridgeUnder } from './pageBridge.js';
 import { settled } from './settled.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * §10.7's visual baselines for EVERY REGISTERED DIALOG the application's own route does not already photograph

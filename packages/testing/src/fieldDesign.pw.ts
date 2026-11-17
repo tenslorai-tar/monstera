@@ -1,11 +1,12 @@
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Locator, type Page, expect, test } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 
 import type { ShimFormField } from './browserShim.js';
 import { openSection, runCommand } from './helpScreensHarness.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
 import { commandsSettled } from './settled.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * *Edit fields* (ADR-0226 Decision 7) with real pointer events at real places on pinned Chromium: a press selects, a drag

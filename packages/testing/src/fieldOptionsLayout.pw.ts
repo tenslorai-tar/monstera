@@ -1,10 +1,11 @@
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Locator, type Page, expect, test } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 
 import { EVERY_FIELD_KIND as FIELDS, EVERY_FIELD_KIND_ROWS, formPdf } from './formFieldsFixture.js';
 import { openSection, runCommand } from './helpScreensHarness.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
 import { showsWholeChoice } from './wholeChoice.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * A field's Properties › Options, laid out with room (the owner, 2026-10-23, C6), on pinned Chromium against the compiled

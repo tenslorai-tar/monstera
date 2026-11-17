@@ -1,9 +1,10 @@
 import { StandardFonts, PDFDocument, rgb } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { bridge } from './pageBridge.js';
 import { installRenderCounter, pagesRendered, rendersOf, startCounting, stopCounting } from './renderCounter.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * A long document scrolled from cold: what React renders as each page arrives, and the frames it costs (item 61).

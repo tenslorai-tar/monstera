@@ -1,7 +1,7 @@
 
 import { PDFDocument, StandardFonts, rgb } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Locator, type Page, expect, test } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 
 import {
   SAMPLE_DOC_ID,
@@ -12,6 +12,7 @@ import {
   runCommand,
   shoot,
 } from './helpScreensHarness.js';
+import { expect, test } from './renderedTest.js';
 
 /** The id `openApp` gives the sample document, so a scene that swaps the bytes keeps the same tab. */
 const SAMPLE_ID = asDocId(SAMPLE_DOC_ID);

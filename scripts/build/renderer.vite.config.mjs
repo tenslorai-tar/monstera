@@ -38,13 +38,38 @@
  * finds unreferenced.
  */
 
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
+import { PDFJS_DECODERS, PDFJS_DECODERS_DIR } from '../lib/pdfjsDecoders.mjs';
+
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+
+/**
+ * PDF.js's JavaScript decoders for CCITT, JBIG2 and JPEG 2000, emitted beside the bundle under their own names
+ * ([ADR-0296](../../docs/DECISIONS/0296-the-renderer-is-served-from-its-own-scheme-and-a-picture-is-never-dropped-silently.md)).
+ * PDF.js's worker imports `${wasmUrl}` + a FIXED file name, so the files cannot carry Vite's content hash, and nothing
+ * imports them for Vite to find. Without them every such picture was dropped whole and a page holding one drew blank.
+ * Read from `packages/ui`'s own `pdfjs-dist`, the copy the bundle's PDF.js comes from, so the decoders are that version's.
+ *
+ * @returns {import('vite').Plugin}
+ */
+function pdfjsDecoders() {
+  const fromUi = createRequire(join(REPO_ROOT, 'packages', 'ui', 'package.json'));
+  return {
+    name: 'monstera-pdfjs-decoders',
+    generateBundle() {
+      for (const name of PDFJS_DECODERS) {
+        this.emitFile({ type: 'asset', fileName: `${PDFJS_DECODERS_DIR}/${name}`, source: readFileSync(fromUi.resolve(`pdfjs-dist/wasm/${name}`)) });
+      }
+    },
+  };
+}
 
 export default defineConfig({
   root: join(REPO_ROOT, 'packages', 'ui'),
@@ -53,7 +78,7 @@ export default defineConfig({
   // child rendered again with it — one 53 ms render on an erasure. It memoizes each component by its inputs.
   // THE REACT COMPILER (ADR-0258), as ADR-0004 pinned it: each command's answer renders the shell, and without it every
   // child rendered again with it — one 53 ms render on an erasure. It memoizes each component by its inputs.
-  plugins: [react({ babel: { plugins: [['babel-plugin-react-compiler', {}]] } })],
+  plugins: [react({ babel: { plugins: [['babel-plugin-react-compiler', {}]] } }), pdfjsDecoders()],
   // PDF.js's packed CMaps (`packages/ui/src/cmaps.ts`): an extension Vite does not know, named so `?inline` makes each
   // a chunk the renderer imports rather than a file it would have to fetch, which the CSP refuses.
   assetsInclude: ['**/*.bcmap'],

@@ -128,7 +128,7 @@ vi.mock('./renderPage.js', async (importOriginal) => ({
   // either not mounted or throw on their first conversion. The omission was
   // invisible while nothing in this file looked at an overlay.
   renderPage: () =>
-    Promise.resolve({ width: 595, height: 842, crop: [0, 0, 595, 842] as const, rotation: 0 }),
+    Promise.resolve({ width: 595, height: 842, crop: [0, 0, 595, 842] as const, rotation: 0, picturesDropped: false }),
 }) satisfies Partial<typeof import('./renderPage.js')>);
 
 // A PASS-THROUGH SPY, so a case can count how many times App reports a refusal. The dialog host

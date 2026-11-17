@@ -1,7 +1,8 @@
 import { AxeBuilder } from '@axe-core/playwright';
-import { type Locator, expect, test } from '@playwright/test';
+import type { Locator } from '@playwright/test';
 
 import { openApp, openDocument } from './helpScreensHarness.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * The Help centre reads at the content size (the owner's item 19a), at the two window sizes it was asked at.

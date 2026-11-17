@@ -2,12 +2,13 @@ import { AxeBuilder } from '@axe-core/playwright';
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import type { ButtonStep } from '@monstera/contract';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Locator, type Page, expect, test } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 
 import type { ShimFormField } from './browserShim.js';
 import { openSection, runCommand } from './helpScreensHarness.js';
 import { LOOKS, type Look, bridgeUnder } from './pageBridge.js';
 import { showsWholeChoice } from './wholeChoice.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * A push button's actions (ADR-0259), through the real application on the pinned Chromium: set in Properties, then

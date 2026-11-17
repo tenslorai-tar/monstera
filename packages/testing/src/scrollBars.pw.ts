@@ -1,10 +1,11 @@
 import { type Rgb, contrast } from '@monstera/shared';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 import sharp from 'sharp';
 
 import { openDocument, samplePdf } from './helpScreensHarness.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * The scroll bars (the owner's item 9a), read from what the platform PAINTS, since a scroll bar's parts are not

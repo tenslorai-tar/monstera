@@ -3,10 +3,11 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { openWords } from './editTextSteps.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * OPENING EDIT TEXT CHANGES NOTHING VISIBLE (cloud run 19, the owner's video of 2026-10-24): a block clicked open looks

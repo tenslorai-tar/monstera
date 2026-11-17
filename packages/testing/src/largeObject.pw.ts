@@ -7,9 +7,9 @@ import {
 } from '@cantoo/pdf-lib';
 import { MAX_RANGE_BYTES } from '@monstera/contract';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { expect, test } from '@playwright/test';
 
 import { bridge } from './pageBridge.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * A page whose ONE object is larger than one read (the large-document breakages, table A's `MAX_RANGE_BYTES` row).

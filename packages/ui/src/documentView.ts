@@ -3,7 +3,7 @@ import type { DocId, DocVersion } from '@monstera/shared';
 import { GlobalWorkerOptions, PDFWorker, PasswordException, getDocument } from 'pdfjs-dist';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 // `?url` rather than a bare specifier: Vite emits the worker as its own asset
-// and gives back a relative URL, which is what a `file://` document needs. A
+// and gives back a relative URL, which resolves against the renderer's own scheme. A
 // bare import would inline the whole parser into the main bundle and run it on
 // the UI thread.
 import workerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
@@ -29,7 +29,21 @@ import { DocumentRangeTransport, type OnVersionMoved } from './documentTransport
  * instead. No amendment is owed, and the alternative it avoids is real: PDF.js
  * falls back to parsing on the UI thread when it cannot have a worker, which
  * would freeze the window for the whole of a large document's parse.
+ *
+ * **That reading was the window's policy letting the worker START. It said nothing of the worker's OWN policy**, and the
+ * worker had none: a `file:` worker's scripts never passed the session's header hook (measured 2026-11-17, eval and
+ * WebAssembly allowed in the worker). The renderer is now served from its own scheme, whose handler gives every
+ * response the header, and `proof:rendererpolicy` reads the policy inside a worker (ADR-0296).
  */
+
+/**
+ * Where PDF.js imports its JavaScript decoders from: the folder the renderer build emits them into, beside the page
+ * (`scripts/lib/pdfjsDecoders.mjs`, which the build reads and this cannot import). A folder named wrongly here blanks
+ * every CCITT, JBIG2 and JPEG 2000 picture, which `pictureDecoders.pw.ts` draws and reads back.
+ */
+function decodersUrl(): string {
+  return new URL('./pdfjs-decoders/', document.baseURI).href;
+}
 
 /**
  * The worker's URL, set once for the process.
@@ -190,9 +204,14 @@ export async function openDocumentView(options: {
     // before WebAssembly is ever reached. `useWorkerFetch: false` closes the
     // path one step earlier, and PDF.js falls back by `/Alternate` or `/N`.
     useWorkerFetch: false,
-    // Measured refused in the window AND in a worker under this policy, so the
-    // shipped `*_nowasm_fallback.js` decoders are what run.
+    // PDF.JS'S JAVASCRIPT DECODERS for CCITT, JBIG2 and JPEG 2000 (ADR-0296), never the WASM builds: invariant 27's
+    // `script-src 'self'` refuses `WebAssembly.compile` in the window and, since the renderer is served from its own
+    // scheme, in this worker too (measured 2026-11-17; under `file://` the worker had no policy at all). The decoders
+    // are imported from `wasmUrl`, where the build emits them (`decodersUrl`). This said *"the shipped
+    // `*_nowasm_fallback.js` decoders are what run"* from 2026-08-29, and none had shipped: every such picture was
+    // dropped whole, and a page holding one drew blank.
     useWasm: false,
+    wasmUrl: decodersUrl(),
     // No `isEvalSupported: false`: this version's `DocumentInitParameters` has
     // no such field, and asking for it is redundant anyway — `proof:rendererpolicy`
     // reads back a `script-src` violation for `new Function`, so the policy

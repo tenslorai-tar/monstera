@@ -3,9 +3,10 @@ import { join } from 'node:path';
 
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { LOOKS, type Look, bridgeUnder } from './pageBridge.js';
+import { expect, test } from './renderedTest.js';
 
 // STAGE 10's CAPTURE: the screens the owner's exports show, at the sizes they were drawn at, so the
 // build can be put beside the design. Run by hand through `scripts/test/capture.config.mjs`.

@@ -1,6 +1,7 @@
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { LOOKS, type Look, bridgeUnder } from './pageBridge.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * The start screen's logo glow (the owner, 2026-10-23), on pinned Chromium against the compiled bundle: the website's

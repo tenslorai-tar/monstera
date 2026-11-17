@@ -5,10 +5,13 @@ export { type ShellDependencies, startShell } from './main.js';
 export {
   CONTENT_SECURITY_POLICY,
   PERMITTED_PERMISSIONS,
+  RENDERER_SCHEME,
+  RENDERER_URL,
   RENDERER_WEB_PREFERENCES,
   WINDOW_BACKGROUND,
   isPermittedNavigation,
   isPermittedPermission,
+  rendererFileFor,
 } from './windowPolicy.js';
 export {
   type ShellFailure,
@@ -23,8 +26,8 @@ export {
   reportRendererFailures,
 } from './shellFailure.js';
 export {
-  applyContentSecurityPolicy,
   applyPermissionPolicy,
+  serveRenderer,
   createMainWindow,
   lockNavigation,
   senderCheckFor,

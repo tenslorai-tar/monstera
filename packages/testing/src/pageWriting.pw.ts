@@ -1,12 +1,13 @@
 import { AxeBuilder } from '@axe-core/playwright';
 import { PDFDocument } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Locator, type Page, expect, test } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 
 import type { BrowserShimOptions } from './browserShim.js';
 import { againstPaper } from './contrast.js';
 import { LOOKS, type Look, bridgeUnder } from './pageBridge.js';
 import { runCommand } from './palette.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * Words typed where they go (ADR-0154), in a real browser: the tools' cases see which request a gesture makes, and the

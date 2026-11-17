@@ -3,9 +3,9 @@ import { join } from 'node:path';
 
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { expect, test } from '@playwright/test';
 
 import { LOOKS, bridgeUnder } from './pageBridge.js';
+import { expect, test } from './renderedTest.js';
 
 // THE RIBBON AS IT IS DRAWN, section by section: every group's caption and every button's name, read
 // off the running renderer at the owner's 1920-wide size. Stage 10's design pass maps each label in

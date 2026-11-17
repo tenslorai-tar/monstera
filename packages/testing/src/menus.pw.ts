@@ -1,9 +1,10 @@
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Locator, type Page, expect, test } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 
 import { blockedPages } from './blockedPages.js';
 import { bridge } from './pageBridge.js';
 import { focusSettled, popupPlaced, settled } from './settled.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * The menus, in a real browser: every popup can be used where it overlaps the window's drag rows, and a disabled

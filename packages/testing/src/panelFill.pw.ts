@@ -1,9 +1,9 @@
 import { PDFDocument } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { expect, test } from '@playwright/test';
 
 import type { ShimFormField } from './browserShim.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * Every tab of the left panel fills the panel to its foot (the owner's N9): *"The Forms tab and the Bookmarks tab end

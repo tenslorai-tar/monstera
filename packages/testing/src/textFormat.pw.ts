@@ -5,11 +5,12 @@ import { fileURLToPath } from 'node:url';
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import { BUNDLED_FAMILIES } from '@monstera/contract';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { openWords, selectBox } from './editTextSteps.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
 import { commandsSettled } from './settled.js';
+import { expect, test } from './renderedTest.js';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 

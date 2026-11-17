@@ -22,11 +22,18 @@ export interface KeptWait {
 const KEPT_POLL_MS = 100;
 
 /**
- * The longest a host waits: past `HOST_CALL_DEADLINE`'s 120 s floor (`apps/desktop/src/budget.ts`), the deadline that
- * ends a catalogue host that never answers, after which `main` leaves its marker. So this is reached only where `main`
- * itself did not, and the host then reads its folders as it did before.
+ * The longest a host waits before it reads its folders itself, as it did before the wait existed.
+ *
+ * WELL INSIDE `HOST_CALL_DEADLINE`'s 120 s floor (`apps/desktop/src/budget.ts`), because the wait runs INSIDE a call
+ * `main` sent this host — a text host reads its fonts on its first call that sets text — and that call's deadline ends
+ * the host. This was 150 s, *past* the floor, on the reasoning that `main` leaves its marker first; but `main` names the
+ * area before the catalogue host has even connected, so a hung catalogue host's own deadline expires after the waiting
+ * host's, and the waiting host was the one ended (JJJJJJJJJ-1, the stage audit of 2026-11-17, from the code). 60 s and
+ * then the folders' read, 5 to 10 s before the kept file existed (the font list's 10,943 ms on a first launch, shell
+ * log, 2026-11-14, was three such reads at once), ends inside the floor. The catalogue host's own read took 4.9 to
+ * 5.5 s on a first launch (2026-11-15), so a working one is waited for whole.
  */
-const KEPT_WAIT_BOUND_MS = 150_000;
+const KEPT_WAIT_BOUND_MS = 60_000;
 
 const KEPT_WAIT: KeptWait = {
   now: () => Date.now(),

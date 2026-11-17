@@ -4503,6 +4503,12 @@ optgroup {
   pointer-events: none;
 }
 
+/* WHAT THE PAGE LACKS (ADR-0296), at its foot, so it never covers the note at its head. */
+.m-page-note--foot {
+  inset-block-start: auto;
+  inset-block-end: 0;
+}
+
 /* THE NOTE'S ONE ACTION (W7): a link-like button in the note's own words, taking the pointer the note itself passes on. */
 .m-page-note__action {
   padding: 0;

@@ -51,7 +51,7 @@ vi.mock('./renderPage.js', async (importOriginal) => ({
     signals.push(signal);
     // A 600 × 800 page, fitted the way the real one fits it: from its own width.
     const factor = typeof scale === 'number' ? scale : scale.fitWidth / 600;
-    const size = { width: 600 * factor, height: 800 * factor, crop: [0, 0, 600, 800] as const, rotation: 0 };
+    const size = { width: 600 * factor, height: 800 * factor, crop: [0, 0, 600, 800] as const, rotation: 0, picturesDropped: false };
     if (!holdDraws) return Promise.resolve(size);
     // A DRAW STILL UNDER WAY, finished by the case, which is the moment a redraw at a new width is in.
     return new Promise<typeof size>((resolve) => {

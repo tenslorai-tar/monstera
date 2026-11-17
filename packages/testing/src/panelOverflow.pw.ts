@@ -1,9 +1,10 @@
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { EVERY_FIELD_KIND as FIELDS, EVERY_FIELD_KIND_ROWS, LONG_WORDS as LONG, formPdf } from './formFieldsFixture.js';
 import { SELECT_TOOL, armTool, openSection, runCommand } from './helpScreensHarness.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * NO SIDE PANEL SCROLLS SIDEWAYS, at any width it can take (the owner's R16, 2026-10-20).

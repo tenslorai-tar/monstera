@@ -1,10 +1,11 @@
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Locator, type Page, expect, test } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 
 import { asksHeard, converse } from './assistantConverse.js';
 import { blockedPages } from './blockedPages.js';
 import { documentDrawn } from './documentDrawn.js';
 import { bridge } from './pageBridge.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * A CONVERSATION AT ITS END STAYS AT ITS END WHEN THE PANE'S HEIGHT CHANGES; one the person scrolled up stays where they

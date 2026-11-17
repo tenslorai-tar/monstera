@@ -1,6 +1,6 @@
-import { expect, test } from '@playwright/test';
 
 import { bridge } from './pageBridge.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * A dialog opened from the keyboard draws no ring around ITSELF, and its controls still draw theirs.

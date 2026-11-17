@@ -1,9 +1,9 @@
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { expect, test } from '@playwright/test';
 
 import { bridge } from './pageBridge.js';
 import { samplePdf } from './helpScreensHarness.js';
 import { pageShown, settled } from './settled.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * A SCROLL MOVES EACH PAGE'S RULER RUN AND REDRAWS NO MARK (cloud-4 item 9f).

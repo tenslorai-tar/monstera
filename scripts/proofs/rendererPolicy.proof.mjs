@@ -93,6 +93,8 @@ const RUNTIME_CASES = [
   'the renderer RECEIVES the policy the shell declares',
   'CONTROL: a policy the renderer does NOT have is not reported as delivered',
   'the renderer OBEYS it: no network under connect-src none, no eval',
+  'a WORKER obeys it too: no eval and no WebAssembly in the thread PDF.js parses in (ADR-0296)',
+  "CONTROL: that worker started and imported PDF.js's decoder from self, so it could have said otherwise",
   'a font from BYTES loads under the policy with no violation, which is how a run font arrives (ADR-0175)',
   'CONTROL: the SAME font by a data: URL is refused under font-src',
   'style-src ADMITS the splitter drag cursor by its granted hash, and the style APPLIES',
@@ -291,6 +293,7 @@ function pinnedPolicy(markdown) {
  *   delivered: string | null,
  *   connectBlocked: boolean,
  *   evalBlocked: boolean,
+ *   worker: { started: boolean, evalViolated: boolean, wasmRefused: boolean, decoderImported: boolean, detail: string },
  *   fonts: { fromBytes: string, byBytes: number, byUrl: string, violated: string[] },
  *   styleElements: {
  *     hashed: { blocked: boolean, cursor: string },
@@ -537,6 +540,22 @@ try {
         `A header can arrive and be IGNORED — Chromium drops a directive list it cannot parse, ` +
         `and a dropped policy is indistinguishable from an enforced one if all you compare is ` +
         `the string. This is the set-versus-enforced distinction invariant 25 refuses to elide.`,
+    );
+
+    check(
+      'a WORKER obeys it too: no eval and no WebAssembly in the thread PDF.js parses in (ADR-0296)',
+      seen.worker.evalViolated && seen.worker.wasmRefused,
+      `evalViolated=${String(seen.worker.evalViolated)} wasmRefused=${String(seen.worker.wasmRefused)} (${seen.worker.detail}). ` +
+        `A worker gets its policy from its own response, and a file: worker's scripts never passed the header hook: ` +
+        `the PDF.js worker ran with no policy until ADR-0296 served the renderer from its own scheme.`,
+    );
+
+    check(
+      "CONTROL: that worker started and imported PDF.js's decoder from self, so it could have said otherwise",
+      seen.worker.started && seen.worker.decoderImported,
+      `started=${String(seen.worker.started)} decoderImported=${String(seen.worker.decoderImported)} (${seen.worker.detail}). ` +
+        `A worker that never ran raises no violation either, which reads exactly like a policy; and the decoder is what ` +
+        `PDF.js imports for CCITT, JBIG2 and JPEG 2000 pictures, so a policy that refused it would blank those pages.`,
     );
 
     check(

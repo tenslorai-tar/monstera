@@ -1,6 +1,6 @@
-import { expect, test } from '@playwright/test';
 
 import { openApp, openDocument, openSection } from './helpScreensHarness.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * EDIT OBJECT in the shipped renderer, against the browser shim

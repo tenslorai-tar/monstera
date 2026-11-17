@@ -94,6 +94,11 @@ export interface RasterisedPage {
    * passed* is not that whenever the caller passed nothing.
    */
   readonly rotation: number;
+  /**
+   * Whether what is on the canvas LACKS a picture the page holds: PDF.js could not decode it
+   * ({@link picturesDroppedFrom}). The page says so (ADR-0296 Decision 4).
+   */
+  readonly picturesDropped: boolean;
 }
 
 /**
@@ -210,11 +215,16 @@ async function drawPage(
     drawn?.close();
     throw new RenderCancelledError(pageNumber);
   }
+  let picturesDropped = false;
   if (drawn === null) {
     const scratch = scratchFor(canvas, size);
     try {
-      await drawWithPdfjs(page, scratch, contextOf(scratch), viewport, undefined, signal, pageNumber, hiddenIn.has(document));
+      const dropped = await drawWithPdfjs(page, scratch, contextOf(scratch), viewport, undefined, signal, pageNumber, hiddenIn.has(document));
       present(canvas, shown, scratch, signal, pageNumber);
+      // A PICTURE PDF.JS DROPPED is said on the page (ADR-0296 Decision 4, as corrected). NOT REDRAWN by the second
+      // engine: `document.renderPage` answers a finished page whether or not that engine decoded the picture, so a page
+      // it drew without it too would have shown no note, which is the silent drop one engine further on.
+      picturesDropped = dropped > 0;
     } finally {
       release(scratch);
     }
@@ -229,7 +239,7 @@ async function drawPage(
       drawn.close();
     }
   }
-  return geometryOf(page, viewport, size);
+  return geometryOf(page, viewport, size, picturesDropped);
 }
 
 /**
@@ -348,7 +358,7 @@ function viewportOf(page: PdfPage, scale: number, rotation: PageRotation): Viewp
 export type PageRotation = number | undefined | { readonly turnedFromOwn: number };
 
 /** What a page came out as: its device size at the viewport's scale, its visible box and the rotation drawn. */
-function geometryOf(page: PdfPage, viewport: Viewport, size: { width: number; height: number }): RasterisedPage {
+function geometryOf(page: PdfPage, viewport: Viewport, size: { width: number; height: number }, picturesDropped: boolean): RasterisedPage {
   const [x0 = 0, y0 = 0, x1 = 0, y1 = 0] = page.view;
   return {
     width: size.width,
@@ -358,7 +368,34 @@ function geometryOf(page: PdfPage, viewport: Viewport, size: { width: number; he
     // passed nothing and PDF.js fell back to the page's own `/Rotate`, which is
     // the case an overlay must not get wrong.
     rotation: viewport.rotation,
+    picturesDropped,
   };
+}
+
+/**
+ * How many pictures PDF.js could not decode on `page`'s last draw (ADR-0296 Decision 3).
+ *
+ * PDF.js answers a failed decode by sending the picture's object as `null` — `Unable to decode image` in the worker, and
+ * the canvas then skips it — so a `null` in the page's object table, or in the document's shared one under an id that
+ * names this page, is that report reaching the drawing side. An image's id names the page that drew it,
+ * `img_p<index>_<n>`, with the document's id before it when it is shared between pages (pdfjs-dist 6.2.108,
+ * `buildPaintImageXObject`); a pattern is never `null`. Read straight after the draw, while the page is held.
+ *
+ * NOT SEEN HERE: an INLINE picture PDF.js cannot decode is warned about and sent nowhere, so no table holds it. A
+ * rendered case still fails on its warning (`renderedTest.ts`).
+ */
+export function picturesDroppedFrom(page: PdfPage): number {
+  const own = new RegExp(`(^|_)img_p${String(page.pageNumber - 1)}_\\d+$`, 'u');
+  let dropped = 0;
+  for (const entry of page.objs) {
+    const [, data] = entry as readonly unknown[];
+    if (data === null) dropped += 1;
+  }
+  for (const entry of page.commonObjs) {
+    const [id, data] = entry as readonly unknown[];
+    if (data === null && typeof id === 'string' && own.test(id)) dropped += 1;
+  }
+  return dropped;
 }
 
 /**
@@ -375,7 +412,7 @@ async function drawWithPdfjs(
   signal: AbortSignal,
   pageNumber: number,
   leavingOut: boolean,
-): Promise<void> {
+): Promise<number> {
   // STORAGE MODE ONLY WHILE A MARK IS LEFT OUT: it is the mode in which the worker reads `noView`, and every other draw
   // keeps the plain mode it always had.
   const task = page.render({
@@ -398,6 +435,8 @@ async function drawWithPdfjs(
   } finally {
     signal.removeEventListener('abort', cancel);
   }
+  // THE PICTURES IT COULD NOT DECODE, which a draw that finished drew without (ADR-0296 Decision 3).
+  return picturesDroppedFrom(page);
 }
 
 /**
@@ -413,7 +452,7 @@ export async function pageGeometry(
 ): Promise<RasterisedPage> {
   const page = await document.getPage(pageNumber);
   const viewport = viewportOf(page, scale, rotation);
-  return geometryOf(page, viewport, { width: Math.ceil(viewport.width), height: Math.ceil(viewport.height) });
+  return geometryOf(page, viewport, { width: Math.ceil(viewport.width), height: Math.ceil(viewport.height) }, false);
 }
 
 /**
@@ -473,6 +512,7 @@ export function drawWithout(document: PDFDocumentProxy, object: number | undefin
  *
  * PDF.js only: the second rasteriser answers whole pages, and a page drawn in pieces is one too large to ask it for.
  *
+ * @returns whether the region was drawn without a picture PDF.js could not decode (ADR-0296), for the page to say so.
  * @throws {@link RenderCancelledError} when `signal` aborted, `renderPage`'s rule.
  */
 export async function renderRegion(
@@ -484,18 +524,16 @@ export async function renderRegion(
   region: { readonly x: number; readonly y: number; readonly width: number; readonly height: number },
   signal: AbortSignal,
   leftOut?: number,
-): Promise<void> {
+): Promise<boolean> {
   // THE MARK A DRAG IS RESHAPING, `renderPage`'s rule.
   if (leftOut !== undefined) drawWithout(document, leftOut);
   // HELD FOR THE DRAW, `renderPage`'s reason: a tile decodes the page's images as a whole page does.
   const release = holdPage(document, pageNumber);
   try {
     // A SLOT AS A PAGE TAKES ONE (`drawSlots.ts`): a tile holds a scratch canvas and the decoded images as a page does.
-    const drawn = await withDrawSlot(signal, async () => {
-      await drawRegion(document, pageNumber, canvas, scale, rotation, region, signal);
-      return true;
-    });
+    const drawn = await withDrawSlot(signal, () => drawRegion(document, pageNumber, canvas, scale, rotation, region, signal));
     if (drawn === null) throw new RenderCancelledError(pageNumber);
+    return drawn.picturesDropped;
   } finally {
     release();
   }
@@ -509,7 +547,7 @@ async function drawRegion(
   rotation: PageRotation,
   region: { readonly x: number; readonly y: number; readonly width: number; readonly height: number },
   signal: AbortSignal,
-): Promise<void> {
+): Promise<{ readonly picturesDropped: boolean }> {
   const page = await document.getPage(pageNumber);
   residentPage(document, pageNumber, page);
   // BEFORE THE CANVAS IS TOUCHED, `renderPage`'s reason.
@@ -520,7 +558,7 @@ async function drawRegion(
   const shown = contextOf(canvas);
   const scratch = scratchFor(canvas, region);
   try {
-    await drawWithPdfjs(
+    const dropped = await drawWithPdfjs(
       page,
       scratch,
       contextOf(scratch),
@@ -531,6 +569,8 @@ async function drawRegion(
       hiddenIn.has(document),
     );
     present(canvas, shown, scratch, signal, pageNumber);
+    // A REGION IS PDF.JS'S ALONE: the second engine answers whole pages, so the page says what the region lacks.
+    return { picturesDropped: dropped > 0 };
   } finally {
     release(scratch);
   }

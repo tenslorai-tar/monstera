@@ -1,6 +1,7 @@
-import { type Locator, type Page, expect, test } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 
 import { openApp, openDocument, openSection } from './helpScreensHarness.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * A RIBBON MENU'S ITEMS DRAW THEIR COMMAND'S GLYPH — a group's More and a named menu alike, one component (`RibbonMore`).

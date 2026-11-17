@@ -30,9 +30,9 @@ vi.mock('./documentView.js', () => ({
 
 vi.mock('./renderPage.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./renderPage.js')>()),
-  renderPage: () => Promise.resolve({ width: 200, height: 200, crop: [0, 0, 200, 200] as const, rotation: 0 }),
-  pageGeometry: () => Promise.resolve({ width: 200, height: 200, crop: [0, 0, 200, 200] as const, rotation: 0 }),
-  renderRegion: () => Promise.resolve(),
+  renderPage: () => Promise.resolve({ width: 200, height: 200, crop: [0, 0, 200, 200] as const, rotation: 0, picturesDropped: false }),
+  pageGeometry: () => Promise.resolve({ width: 200, height: 200, crop: [0, 0, 200, 200] as const, rotation: 0, picturesDropped: false }),
+  renderRegion: () => Promise.resolve(false),
 }) satisfies Partial<typeof import('./renderPage.js')>);
 
 beforeEach(() => {

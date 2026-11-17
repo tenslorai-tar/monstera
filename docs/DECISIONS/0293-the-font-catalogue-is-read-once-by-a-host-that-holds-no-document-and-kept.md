@@ -124,3 +124,18 @@ Measured after, three fresh launches, the same instrument: the font list 4,933 t
 to 1,452 ms. The page's first read on a first launch is unchanged, 3.0 to 4.1 s, against about 2 s on a later launch:
 what still competes with it is the catalogue host's own read. Running that host at below-normal priority was measured
 and not kept: the font list, which waits on it, rose to 7.1 to 11.7 s, and the first read did not fall.
+
+## Correction, 2026-11-17 — the bound was past the deadline that ends the WAITING host, and the file appeared before its bytes
+
+Found by the stage audit of `7b03d0cf..dce699fd` (JJJJJJJJJ-1, -2, -5), from the code; neither was measured.
+
+- **The wait is bounded at 60 s, not 150 s.** The reasoning above, *reached only where `main` did not*, held for the
+  catalogue host and not for the host waiting: the wait runs inside a call `main` sent that host, whose deadline is
+  `HOST_CALL_DEADLINE`'s 120 s floor and 5 s more per MiB of open documents, and `main` names the area before the
+  catalogue host has connected. So a catalogue host that hung outlived the waiting host's deadline, and `main` ended a
+  document's MuPDF host or the compose host in its wait. 60 s and the folders' read end inside the floor.
+- **The sentence *what still competes with it is the catalogue host's own read* above is not established.** The journal
+  of 2026-11-15 measured where the extra time goes (PDFium's own read +601 ms, the wait behind the open's reads +337 ms)
+  and called contention with the catalogue host's read a fit, not proven. It is open there.
+- **`main` copies the host's file beside its name and renames it into place**, so a waiting host never sees the name
+  before the file is whole: a copy straight to it was a file that existed before its bytes did.

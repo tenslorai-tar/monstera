@@ -1,6 +1,7 @@
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { openApp, openDocument } from './helpScreensHarness.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * EVERY HOME TOOL, AT EVERY WIDTH (the owner's decision of 2026-11-06, ADR-0284's correction of that date): Home is

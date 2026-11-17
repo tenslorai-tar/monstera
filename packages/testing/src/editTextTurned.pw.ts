@@ -1,9 +1,10 @@
 import { PDFDocument, StandardFonts, degrees } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { FRAME, SURFACE, openWords } from './editTextSteps.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * A block set at an angle is edited where it stands (ADR-0273): text running up the page opens, takes typing and

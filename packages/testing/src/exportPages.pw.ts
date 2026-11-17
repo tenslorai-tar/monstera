@@ -1,8 +1,9 @@
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { bridge } from './pageBridge.js';
 import { runCommand, samplePdf } from './helpScreensHarness.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * EVERY EXPORT TO ANOTHER FORMAT, AND PRINT, SENDS THE PAGES ITS DIALOG'S ROW CHOSE (ADR-0161, cloud-4 item 9d).

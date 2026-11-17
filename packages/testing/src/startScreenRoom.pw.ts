@@ -1,8 +1,8 @@
 import { displayLocationSchema } from '@monstera/contract';
 import { asFileHandle } from '@monstera/shared';
-import { expect, test } from '@playwright/test';
 
 import { LOOKS, bridgeUnder } from './pageBridge.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * Room between the start screen's recent cards and its footer (the owner's item 19b), at the two sizes it was asked at.

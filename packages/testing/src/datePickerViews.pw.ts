@@ -1,10 +1,11 @@
 import { AxeBuilder } from '@axe-core/playwright';
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import type { ShimFormField } from './browserShim.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * The date field's calendar in its four views (the owner's R25), on pinned Chromium against the compiled bundle, in every

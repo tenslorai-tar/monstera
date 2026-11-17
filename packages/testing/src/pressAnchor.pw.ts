@@ -1,10 +1,11 @@
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Locator, type Page, expect, test } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 
 import { bridge } from './pageBridge.js';
 import { runCommand } from './palette.js';
 import { pageShown } from './settled.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * A drag that starts on a press Chromium places in two minds (F-C8, `holdPressedAnchor` in `TextLayer.tsx`).

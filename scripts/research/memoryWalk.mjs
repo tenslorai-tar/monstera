@@ -336,7 +336,8 @@ await step('M5. every document closed, then idle past a minute (Part 7 A, ADR-02
   // THE APPLICATION'S PAGE loading again, and the empty `data:` page the renewal passes through is not counted.
   let loads = 0;
   page.on('load', () => {
-    if (page.url().startsWith('file:')) loads += 1;
+    // THE APPLICATION'S OWN SCHEME (ADR-0296); the page was a `file:` URL before it.
+    if (page.url().startsWith('monstera:')) loads += 1;
   });
   /** The window's renderer process, as `main` names it. */
   const rendererPid = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.webContents.getOSProcessId());

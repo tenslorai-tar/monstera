@@ -9,12 +9,16 @@ import { fileURLToPath } from 'node:url';
 
 import { defineConfig, devices } from '@playwright/test';
 
+import { refuseUnwatchedCases } from '../lib/renderedCases.mjs';
 import { BROWSERS_PATH } from '../provision/playwright.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PORT = 4174;
 
 process.env['PLAYWRIGHT_BROWSERS_PATH'] = BROWSERS_PATH;
+
+// EVERY RENDERED CASE HEARS A DROPPED PICTURE (ADR-0296), as `playwright.config.mjs` refuses for the other suites.
+refuseUnwatchedCases(join(REPO_ROOT, 'packages', 'testing', 'src'));
 
 export default defineConfig({
   testDir: join(REPO_ROOT, 'packages', 'testing', 'src'),

@@ -92,7 +92,7 @@ import { isPdfPath } from './openExternalEditor.js';
 import { windowsUserName } from './userName.js';
 import { createCannotStartNotice } from './componentNotice.js';
 import { RENDERER_EXIT_MS } from './memoryRelease.js';
-import { RENDERER_HTML } from './window.js';
+import { RENDERER_URL } from './windowPolicy.js';
 import type { RendererWindow } from './memoryRelease.js';
 
 /**
@@ -271,7 +271,7 @@ startShell(() => {
       for (let waited = 0; waited < RENDERER_EXIT_MS && app.getAppMetrics().some((metric) => metric.pid === old); waited += 100) {
         await new Promise((done) => setTimeout(done, 100));
       }
-      await contents.loadFile(RENDERER_HTML);
+      await contents.loadURL(RENDERER_URL);
     },
   };
 

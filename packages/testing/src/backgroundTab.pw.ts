@@ -4,9 +4,10 @@ import { fileURLToPath } from 'node:url';
 
 import { PDFDocument } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Page, expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { bridge } from './pageBridge.js';
+import { expect, test } from './renderedTest.js';
 
 /**
  * A tab not on screen gives back its pages and keeps what brings it back quickly (the owner's run 4 item 13c; ADR-0129,
