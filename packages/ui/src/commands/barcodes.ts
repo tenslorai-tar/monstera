@@ -126,7 +126,7 @@ export function readBarcodesCommand(deps: ReadBarcodesDeps): UiCommand {
               else if (opened.value.kind !== 'opened') deps.toast('problem', TOAST_BARCODE_LINK_NOT_OPENED);
             });
           } else {
-            void readAll(deps, docId, pageCount, shown).then((all) => {
+            void readAll(deps, docId, pageCount).then((all) => {
               if (all === undefined) return;
               listed = all.barcodes;
               for (const [at, version] of all.versions) versions.set(at, version);
@@ -185,7 +185,6 @@ async function readAll(
   deps: ReadBarcodesDeps,
   docId: DocId,
   pageCount: number,
-  shown: number,
 ): Promise<{ readonly barcodes: readonly ListedBarcode[]; readonly versions: ReadonlyMap<number, DocVersion>; readonly truncated: boolean } | undefined> {
   const task = deps.track(TOAST_BARCODES_READING, pageCount);
   const barcodes: ListedBarcode[] = [];
@@ -211,8 +210,6 @@ async function readAll(
   } finally {
     task.end();
   }
-  // THE PAGE ON SHOW is the dialog's own `page`; nothing about the list depends on it.
-  void shown;
   return { barcodes, versions, truncated };
 }
 

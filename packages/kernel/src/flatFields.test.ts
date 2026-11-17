@@ -467,7 +467,8 @@ describe('Detect on a flattened form (F4)', () => {
   };
 
   const flattened = async (): Promise<Uint8Array> => {
-    const flat = mupdf.PDFDocument.openDocument(await buildFormTestPdf(), 'application/pdf') as mupdf.PDFDocument;
+    const flat = mupdf.Document.openDocument(await buildFormTestPdf(), 'application/pdf');
+    if (!(flat instanceof mupdf.PDFDocument)) throw new Error('the form fixture did not open as a PDF');
     flat.bake(false, true);
     return flat.saveToBuffer('').asUint8Array();
   };

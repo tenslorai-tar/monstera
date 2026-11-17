@@ -176,7 +176,7 @@ describe('importPageAsLayer', () => {
     const document = await PDFDocument.load(await imported(await target(1), await inheritingSource(), 0));
     const bbox = formsOn(document, 0).get('MonsteraLayer0')?.lookup(PDFName.of('BBox'), PDFArray);
 
-    expect(bbox?.asArray().map((entry) => (entry as PDFNumber).asNumber())).toStrictEqual([0, 0, 400, 200]);
+    expect(bbox?.asArray().map((entry) => (entry instanceof PDFNumber ? entry.asNumber() : NaN))).toStrictEqual([0, 0, 400, 200]);
   });
 
   it('places the CHOSEN source page, read back by its box', async () => {
@@ -189,7 +189,7 @@ describe('importPageAsLayer', () => {
     );
     const bbox = formsOn(document, 0).get('MonsteraLayer0')?.lookup(PDFName.of('BBox'), PDFArray);
 
-    expect(bbox?.asArray().map((entry) => (entry as PDFNumber).asNumber())).toStrictEqual([0, 0, 250, 120]);
+    expect(bbox?.asArray().map((entry) => (entry instanceof PDFNumber ? entry.asNumber() : NaN))).toStrictEqual([0, 0, 250, 120]);
   });
 
   it('REFUSES a source page the source does not have', async () => {

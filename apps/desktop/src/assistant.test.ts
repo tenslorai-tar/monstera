@@ -178,12 +178,9 @@ describe('the assistant', () => {
   });
 
   it('answers the model list for the provider whose key is stored', async () => {
-    const { fetchImpl } = provider([]);
-    const listing = ((url: string) => {
-      void url;
+    const listing = ((_url: string) => {
       return Promise.resolve(new Response(JSON.stringify({ data: [{ id: 'gpt-x' }] }), { status: 200 }));
     }) as unknown as typeof fetch;
-    void fetchImpl;
     const { assistant } = assistantWith(listing);
 
     const list = await assistant.models('openai');
@@ -195,8 +192,7 @@ describe('the assistant', () => {
 
 describe('an answer’s web sources (ADR-0108)', () => {
   /** A fetch answering one Anthropic stream that searched and cited two pages, one of them twice. */
-  const searching = ((url: string) => {
-    void url;
+  const searching = ((_url: string) => {
     const lines = [
       { type: 'content_block_start', content_block: { type: 'server_tool_use', name: 'web_search' } },
       { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Answer.' } },
@@ -257,8 +253,7 @@ describe('an answer’s web sources (ADR-0108)', () => {
 
   it('asks with the switch the person chose: Document only sends the provider no search tool', async () => {
     const bodies: unknown[] = [];
-    const recording = ((url: string, init?: { body?: string }) => {
-      void url;
+    const recording = ((_url: string, init?: { body?: string }) => {
       bodies.push(JSON.parse(init?.body ?? '{}'));
       return Promise.resolve(new Response('', { status: 200 }));
     }) as unknown as typeof fetch;

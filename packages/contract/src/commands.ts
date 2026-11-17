@@ -2608,13 +2608,11 @@ export type AnnotationKindName = z.infer<typeof annotationKindNameSchema>;
 /** Every kind a tool can write has a name a reader can use. */
 const _everyDraftIsNameable: AnnotationDraft['type'] extends AnnotationKindName ? true : never =
   true;
-void _everyDraftIsNameable;
 
 /** And no name exists that no tool writes — `'other'` being the one exception. */
 const _everyNameIsWritten: Exclude<AnnotationKindName, 'other'> extends AnnotationDraft['type']
   ? true
   : never = true;
-void _everyNameIsWritten;
 
 /**
  * What a reader may call an AcroForm field.
@@ -6007,8 +6005,7 @@ export const FIELD_ACTION_KINDS = [
 ] as const satisfies readonly FieldAction['kind'][];
 /** The two lists hold the same kinds: a kind added to the union and not here is a compile error. */
 type MissingActionKind = Exclude<FieldAction['kind'], (typeof FIELD_ACTION_KINDS)[number]>;
-const ACTION_KINDS_COMPLETE: [MissingActionKind] extends [never] ? true : never = true;
-void ACTION_KINDS_COMPLETE;
+const _actionKindsComplete: [MissingActionKind] extends [never] ? true : never = true;
 
 /** One action and when it runs. */
 export const buttonActionSchema = z.object({ trigger: fieldActionTriggerSchema, action: fieldActionSchema }).strict();
@@ -7797,8 +7794,6 @@ type WithheldFromRenderer =
 type LeftOver = Exclude<Command['kind'], RenderableCommand['kind']>;
 const _withheldIsExactlyThat: LeftOver extends WithheldFromRenderer ? true : never = true;
 const _andNothingElseIsWithheld: WithheldFromRenderer extends LeftOver ? true : never = true;
-void _withheldIsExactlyThat;
-void _andNothingElseIsWithheld;
 
 export type Command = z.infer<typeof commandSchema>;
 export type CommandKind = Command['kind'];
@@ -7893,7 +7888,6 @@ const NO_SOURCES: readonly DocId[] = Object.freeze([]);
  */
 export type NamesASecondDocument = 'mergeDocument' | 'replacePage' | 'importPageAsLayer';
 const _bothNamesAreCommandKinds: NamesASecondDocument extends CommandKind ? true : never = true;
-void _bothNamesAreCommandKinds;
 
 /**
  * The version a command's payload says it was composed against, if any.
@@ -7972,7 +7966,6 @@ export type NamesAnAnnotation =
   // the index points at, never about what the command then does to it.
   | 'replyToAnnotation';
 const _thatNameIsACommandKind: NamesAnAnnotation extends CommandKind ? true : never = true;
-void _thatNameIsACommandKind;
 
 /**
  * Which kinds {@link targetVersionOf} answers for on the WIDGET walk.
@@ -8003,7 +7996,6 @@ export type NamesAFormField =
   // A FLATTEN OF THE SELECTED FIELDS names them by their places in the walk (ADR-0226 Decision 16).
   | 'flattenFormFields';
 const _theFieldNameIsACommandKind: NamesAFormField extends CommandKind ? true : never = true;
-void _theFieldNameIsACommandKind;
 
 /**
  * Which kinds {@link targetVersionOf} answers for on the PAGE-OBJECT walk.
@@ -8033,7 +8025,6 @@ export type NamesATextObject =
   // The same walk's index, and the writer finds the object by kind and ordinal (ADR-0264 Decision 2).
   | 'editDrawnObject';
 const _theObjectNameIsACommandKind: NamesATextObject extends CommandKind ? true : never = true;
-void _theObjectNameIsACommandKind;
 
 /**
  * Which kinds {@link targetVersionOf} answers for on the PAGE TREE.
@@ -8046,7 +8037,6 @@ void _theObjectNameIsACommandKind;
  */
 export type NamesAPage = 'replacePage' | 'importPageAsLayer';
 const _thePageNameIsACommandKind: NamesAPage extends CommandKind ? true : never = true;
-void _thePageNameIsACommandKind;
 
 /**
  * Which kinds {@link targetVersionOf} answers for on a page's LINKS (ADR-0212).
@@ -8057,4 +8047,3 @@ void _thePageNameIsACommandKind;
  */
 export type NamesALink = 'setLinkOutline' | 'editLink';
 const _theLinkNameIsACommandKind: NamesALink extends CommandKind ? true : never = true;
-void _theLinkNameIsACommandKind;

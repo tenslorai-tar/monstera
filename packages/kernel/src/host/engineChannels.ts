@@ -1275,7 +1275,6 @@ type MupdfFileKind = z.infer<typeof mupdfFileCommandSchema>['kind'];
 // its capture without a round trip (`remoteEngine.ts`). A file-routed kind declared invertible is a compile error here,
 // and the repair is a file-requested capture, never a quiet one.
 const _fileRoutedKindsAreCheckpointed: (typeof declaredCommands)[MupdfFileKind]['invertible'] extends false ? true : never = true;
-void _fileRoutedKindsAreCheckpointed;
 
 /** What travels in place of a command, once its asset has been taken out: by frame, or for a file-routed kind by file. */
 export type MupdfWireCommand = z.infer<typeof mupdfCommandSchema> | z.infer<typeof mupdfFileCommandSchema>;
@@ -1407,7 +1406,6 @@ type Excludes<Listed, Whole extends Listed> = Whole;
 type ChannelKind = z.infer<typeof mupdfCommandSchema>['kind'] | MupdfFileKind;
 // AND NO KIND ON BOTH: a file-routed kind on the framed union would be a kind with two routes.
 const _noKindHasTwoRoutes: Extract<z.infer<typeof mupdfCommandSchema>['kind'], MupdfFileKind> extends never ? true : never = true;
-void _noKindHasTwoRoutes;
 export type MupdfChannelCoversEveryRoutedKind = Covers<ChannelKind, KindsRoutedTo<'mupdf'>>;
 export type MupdfChannelExcludesEveryOtherKind = Excludes<ChannelKind, KindsRoutedTo<'mupdf'>>;
 
@@ -1442,7 +1440,6 @@ export type PdfLibChannelExcludesEveryOtherKind = Excludes<PdfLibChannelKind, Ki
  * kept for bytes nothing sends would be a door left open on a wire that a hostile host can read.
  */
 const _noPdfLibKindCarriesBytes: Extract<AssetBearingKind, KindsRoutedTo<'pdf-lib'>> extends never ? true : never = true;
-void _noPdfLibKindCarriesBytes;
 
 /**
  * The signing command as `engine/prepareSignature` carries it to the MuPDF host

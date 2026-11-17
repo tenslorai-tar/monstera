@@ -156,8 +156,9 @@ function viewNamed(name: string): DocumentView {
     // ONE PAGE, because the scroller lays out `numPages` slots and an empty
     // document object gives it `undefined` — which renders no slots, draws
     // nothing, and would make every rotation case here pass for a renderer that
-    // had stopped drawing entirely.
-    document: { numPages: 1 } as DocumentView['document'],
+    // had stopped drawing entirely. A STAND-IN for PDF.js's proxy, which only
+    // `numPages` of is read here, so it passes through `unknown` on purpose.
+    document: { numPages: 1 } as unknown as DocumentView['document'],
     version: asDocVersion(1),
     close: () => {
       closes.push(name);

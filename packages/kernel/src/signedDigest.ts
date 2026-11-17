@@ -1,5 +1,7 @@
 import forge from 'node-forge';
 
+import { contextTagged } from './asn1Context.js';
+
 /**
  * The PKCS#7 detached signature `@signpdf/signer-p12`'s `P12Signer` writes, made from a DIGEST of the signed bytes
  * rather than from the bytes ([ADR-0248](../../../docs/DECISIONS/0248-a-signature-is-made-over-a-digest-read-from-the-prepared-file.md)).
@@ -127,7 +129,7 @@ export function signedDataOverDigest(credential: SigningCredential, contentDiges
       asn1.create(asn1.Class.UNIVERSAL, asn1.Type.INTEGER, false, forge.util.hexToBytes(certificate.serialNumber)),
     ]),
     algorithm(OID.sha256),
-    asn1.create(asn1.Class.CONTEXT_SPECIFIC, 0, true, attributes()),
+    contextTagged(0, attributes()),
     algorithm(OID.rsaEncryption),
     asn1.create(asn1.Class.UNIVERSAL, asn1.Type.OCTETSTRING, false, signature),
   ]);
@@ -140,13 +142,13 @@ export function signedDataOverDigest(credential: SigningCredential, contentDiges
     ]),
   ];
   if (certificates.length > 0) {
-    signedFields.push(asn1.create(asn1.Class.CONTEXT_SPECIFIC, 0, true, certificates.map((each) => pki.certificateToAsn1(each))));
+    signedFields.push(contextTagged(0, certificates.map((each) => pki.certificateToAsn1(each))));
   }
   signedFields.push(asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SET, true, [signerInfo]));
 
   const contentInfo = asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SEQUENCE, true, [
     asn1.create(asn1.Class.UNIVERSAL, asn1.Type.OID, false, asn1.oidToDer(OID.signedData).getBytes()),
-    asn1.create(asn1.Class.CONTEXT_SPECIFIC, 0, true, [asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SEQUENCE, true, signedFields)]),
+    contextTagged(0, [asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SEQUENCE, true, signedFields)]),
   ]);
   return Buffer.from(asn1.toDer(contentInfo).getBytes(), 'binary');
 }

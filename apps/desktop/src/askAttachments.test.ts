@@ -44,18 +44,13 @@ async function* pages(...texts: string[]): AsyncIterable<Uint8Array> {
 
 /** Readers over an in-memory disk, every contained reader present and recording its input. */
 function readersOver(disk: Record<string, Uint8Array>, overrides: Partial<AttachmentReaders> = {}) {
-  const pdfText = vi.fn((pdf: Uint8Array) => {
-    void pdf;
+  const pdfText = vi.fn((_pdf: Uint8Array) => {
     return Promise.resolve(pages('First page words.', 'Second page words.'));
   });
-  const officePdf = vi.fn((format: string, file: Uint8Array) => {
-    void format;
-    void file;
+  const officePdf = vi.fn((_format: string, _file: Uint8Array) => {
     return Promise.resolve({ output: pages('%PDF-converted'), discard: () => undefined, missing: [] });
   });
-  const pictureSize = vi.fn((bytes: Uint8Array, mediaType: string) => {
-    void bytes;
-    void mediaType;
+  const pictureSize = vi.fn((_bytes: Uint8Array, _mediaType: string) => {
     return Promise.resolve({ width: 1200, height: 900 });
   });
   const readers: AttachmentReaders = {

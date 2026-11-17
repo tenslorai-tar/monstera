@@ -98,8 +98,7 @@ const KEPT_FACE = z.strictObject({
  */
 type KeptFace = z.infer<typeof KEPT_FACE>;
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
-const FACE_FIELDS_MATCH: Same<keyof KeptFace, keyof CatalogueFace> = true;
-void FACE_FIELDS_MATCH;
+const _faceFieldsMatch: Same<keyof KeptFace, keyof CatalogueFace> = true;
 
 const KEPT_FILE = z.strictObject({
   reading: z.literal(KEPT_CATALOGUE_READING),

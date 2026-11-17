@@ -492,8 +492,7 @@ export function straightenedPages(
 
 /** The apply: {@link straightenedPages}, answering nothing, for `applyEnhancePages`' reason. */
 export const applyStraightenScans: Apply<'mupdf', 'straightenScans'> = async (session, command) => {
-  const report = await straightenedPages(session, command);
-  void report;
+  await straightenedPages(session, command);
 };
 
 /** Capture refuses: the prior state is the image and the page it was drawn on. */

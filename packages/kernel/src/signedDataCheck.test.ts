@@ -4,6 +4,7 @@ import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import forge from 'node-forge';
 import { beforeAll, describe, expect, it } from 'vitest';
 
+import { type ContextTag, contextTagged } from './asn1Context.js';
 import { applySignDocument } from './signpdfWriter.js';
 import { mupdfWriter } from './mupdfWriter.js';
 import { readSignatures } from './signatureRead.js';
@@ -55,8 +56,7 @@ const seq = (children: forge.asn1.Asn1[]): forge.asn1.Asn1 =>
   asn1.create(UNIVERSAL, asn1.Type.SEQUENCE, true, children);
 const set = (children: forge.asn1.Asn1[]): forge.asn1.Asn1 =>
   asn1.create(UNIVERSAL, asn1.Type.SET, true, children);
-const tagged = (tag: number, children: forge.asn1.Asn1[]): forge.asn1.Asn1 =>
-  asn1.create(asn1.Class.CONTEXT_SPECIFIC, tag, true, children);
+const tagged = (tag: ContextTag, children: forge.asn1.Asn1[]): forge.asn1.Asn1 => contextTagged(tag, children);
 const oidNode = (value: string): forge.asn1.Asn1 =>
   asn1.create(UNIVERSAL, asn1.Type.OID, false, asn1.oidToDer(value).getBytes());
 const nullNode = (): forge.asn1.Asn1 => asn1.create(UNIVERSAL, asn1.Type.NULL, false, '');

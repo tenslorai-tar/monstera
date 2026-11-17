@@ -3459,9 +3459,8 @@ describe('delete pages — the mutation-dialog gate', () => {
   });
 
   it('CONTROL: a REFUSED import shows no tab, and a dismissed one sends nothing', async () => {
-    const refusing = clientOver((id, params) => {
+    const refusing = clientOver((id) => {
       if (id === 'document.viewModel') return Promise.resolve(ok({ version: asDocVersion(1), pageCount: 4, rotations: [0], direction: 'L2R' as const }));
-      void params;
       return Promise.resolve(err({ code: 'document-busy' }));
     });
     const refused = layerWith(refusing, (id) =>

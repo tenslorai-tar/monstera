@@ -13,9 +13,16 @@ import type { FIELD_BORDER_STYLES, FIELD_CHECK_STYLES } from '@monstera/contract
 export type FieldBorderStyle = (typeof FIELD_BORDER_STYLES)[number];
 export type FieldCheckStyle = (typeof FIELD_CHECK_STYLES)[number];
 
+/**
+ * Every operator the shapes draw with, by its content-stream spelling. A NAME, not a string, so the pdf-lib side can map
+ * each one to its own operator in a table the compiler holds complete, and a misspelt operator is a compile error rather
+ * than a word cast into pdf-lib's enum.
+ */
+export type OpName = 'q' | 'Q' | 'g' | 'G' | 'rg' | 'RG' | 'k' | 'K' | 'w' | 'J' | 'j' | 'd' | 'm' | 'l' | 'c' | 're' | 'h' | 'S' | 'f';
+
 /** One operator and its numeric operands; `d` (a dash) carries its array beside them. */
 export interface Op {
-  readonly op: string;
+  readonly op: OpName;
   readonly args: readonly number[];
   readonly dash?: readonly number[];
 }
@@ -23,10 +30,13 @@ export interface Op {
 /** A colour as the file states one: one gray, three RGB or four CMYK components. */
 export type Components = readonly number[];
 
+/** The fill and the stroke operator for a colour of each component count. */
+const COLOUR_OPS = { 1: ['g', 'G'], 3: ['rg', 'RG'], 4: ['k', 'K'] } as const satisfies Record<number, readonly [OpName, OpName]>;
+
 /** The operator that sets `colour` for stroking or filling, by how many components it has. */
 function colourOp(colour: Components, stroke: boolean): Op {
-  const name = colour.length === 1 ? 'g' : colour.length === 4 ? 'k' : 'rg';
-  return { op: stroke ? name.toUpperCase() : name, args: colour };
+  const [fill, strokeOp] = COLOUR_OPS[colour.length === 1 ? 1 : colour.length === 4 ? 4 : 3];
+  return { op: stroke ? strokeOp : fill, args: colour };
 }
 
 const polygon = (points: readonly (readonly [number, number])[]): Op[] => [
@@ -51,7 +61,7 @@ export function borderOps(style: FieldBorderStyle, width: number, height: number
   if (style === 'underline') return [...line, { op: 'm', args: [0, half] }, { op: 'l', args: [width, half] }, { op: 'S', args: [] }, { op: 'Q', args: [] }];
   const frame: Op[] = [
     ...line,
-    ...(style === 'dashed' ? [{ op: 'd', args: [0], dash: [3] }] : []),
+    ...(style === 'dashed' ? ([{ op: 'd', args: [0], dash: [3] }] satisfies Op[]) : []),
     { op: 're', args: [half, half, width - borderWidth, height - borderWidth] },
     { op: 'S', args: [] },
     { op: 'Q', args: [] },
@@ -136,7 +146,8 @@ export function checkOps(style: FieldCheckStyle, width: number, height: number, 
   }
 }
 
-const fixed = (value: number): string => {
+/** A number as {@link opsText} writes an operand: to three places, trailing zeros dropped, never `-0`. */
+export const fixed = (value: number): string => {
   const text = value.toFixed(3).replace(/\.?0+$/u, '');
   return text === '-0' || text === '' ? '0' : text;
 };

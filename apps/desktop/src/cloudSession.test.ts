@@ -371,7 +371,9 @@ describe('cloud storage in main (ADR-0091)', () => {
         maxBytes: 1_000_000,
         fetchImpl: fake.fetchImpl,
         writeWorkingCopy: async (path, open) => {
-          for await (const chunk of await open()) void chunk;
+          for await (const _chunk of await open()) {
+            // DRAINED, as the real writer reads the stream to its end; the bytes are not this case's subject.
+          }
           written.push(path);
           return 'written';
         },

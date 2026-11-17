@@ -3,6 +3,7 @@ import {
   type PDFContext,
   PDFDict,
   PDFDocument,
+  PDFHexString,
   PDFName,
   type PDFObject as LibObject,
   PDFNumber,
@@ -515,7 +516,7 @@ describe('a page that leaves takes every reference to it (ADR-0155)', () => {
       const tree = dictAt(doc, dictAt(doc, catalogEntry(doc, 'Names')).get(PDFName.of('Dests')));
       expect(treeKeys(doc, tree)).toStrictEqual(['a']);
       const leaf = dictAt(doc, tree.lookup(PDFName.of('Kids'), PDFArray).get(0));
-      expect(leaf.lookup(PDFName.of('Limits'), PDFArray).asArray().map((key) => (key as PDFString).decodeText())).toStrictEqual(['a', 'a']);
+      expect(leaf.lookup(PDFName.of('Limits'), PDFArray).asArray().map((key) => (key instanceof PDFString || key instanceof PDFHexString ? key.decodeText() : undefined))).toStrictEqual(['a', 'a']);
     });
 
     it('a named page in /Names /Pages leaves its tree', async () => {

@@ -418,8 +418,7 @@ describe('a command whose bytes cannot cross the wire', () => {
     const { call, directory, incidents } = await joined();
     directory.set('abcd', png);
 
-    const { bytes, ...wire } = placement(png);
-    void bytes;
+    const { bytes: _bytes, ...wire } = placement(png);
     const answer = await call('engine/apply', {
       session: 'h1',
       command: wire,

@@ -5,7 +5,7 @@ import {
   PDFName,
   PDFNumber,
   PDFOperator,
-  type PDFOperatorNames,
+  PDFOperatorNames,
   type PDFRadioGroup,
   type PDFWidgetAnnotation,
   defaultRadioGroupAppearanceProvider,
@@ -13,7 +13,33 @@ import {
 } from '@cantoo/pdf-lib';
 
 import { borderStyleOfName, checkStyleOfCharacter, textColourOf } from './fieldActions.js';
-import { type Op, borderOps, checkOps } from './fieldMarks.js';
+import { type Op, type OpName, borderOps, checkOps } from './fieldMarks.js';
+
+/**
+ * pdf-lib's operator for each of the shapes' operators, held complete by the `Record`: an operator the shapes start to draw
+ * with is a compile error here until it is named. Each member spells its own key, which `fieldStyles.test.ts` asserts.
+ */
+export const PDF_LIB_OPERATORS: Readonly<Record<OpName, PDFOperatorNames>> = {
+  q: PDFOperatorNames.PushGraphicsState,
+  Q: PDFOperatorNames.PopGraphicsState,
+  g: PDFOperatorNames.NonStrokingColorGray,
+  G: PDFOperatorNames.StrokingColorGray,
+  rg: PDFOperatorNames.NonStrokingColorRgb,
+  RG: PDFOperatorNames.StrokingColorRgb,
+  k: PDFOperatorNames.NonStrokingColorCmyk,
+  K: PDFOperatorNames.StrokingColorCmyk,
+  w: PDFOperatorNames.SetLineWidth,
+  J: PDFOperatorNames.SetLineCapStyle,
+  j: PDFOperatorNames.SetLineJoinStyle,
+  d: PDFOperatorNames.SetLineDashPattern,
+  m: PDFOperatorNames.MoveTo,
+  l: PDFOperatorNames.LineTo,
+  c: PDFOperatorNames.AppendBezierCurve,
+  re: PDFOperatorNames.AppendRectangle,
+  h: PDFOperatorNames.ClosePath,
+  S: PDFOperatorNames.StrokePath,
+  f: PDFOperatorNames.FillNonZero,
+};
 
 /**
  * A tick box's and a radio's appearance in its border style and check style
@@ -27,8 +53,8 @@ import { type Op, borderOps, checkOps } from './fieldMarks.js';
 /** pdf-lib's operator for one of `fieldMarks.ts`' operators, a dash's array made in the widget's own document. */
 function operatorOf(each: Op, context: PDFContext): PDFOperator {
   const numbers = each.args.map((value) => PDFNumber.of(value));
-  if (each.dash === undefined) return PDFOperator.of(each.op as PDFOperatorNames, numbers);
-  return PDFOperator.of(each.op as PDFOperatorNames, [context.obj([...each.dash]), ...numbers]);
+  if (each.dash === undefined) return PDFOperator.of(PDF_LIB_OPERATORS[each.op], numbers);
+  return PDFOperator.of(PDF_LIB_OPERATORS[each.op], [context.obj([...each.dash]), ...numbers]);
 }
 
 /** Whether a widget names a style of its own (`/BS /S` other than solid, or `/MK /CA`): only then is it drawn here. */

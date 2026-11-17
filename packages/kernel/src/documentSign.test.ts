@@ -962,12 +962,12 @@ describe('a VISIBLE signature', () => {
       }),
     );
     const rect = visible.lookup(PDFName.of('Rect'), PDFArray).asArray();
-    expect(rect.map((value) => (value as PDFNumber).asNumber())).toStrictEqual([100, 100, 300, 180]);
+    expect(rect.map((value) => (value instanceof PDFNumber ? value.asNumber() : NaN))).toStrictEqual([100, 100, 300, 180]);
     expect(visible.lookupMaybe(PDFName.of('AP'), PDFDict)?.get(PDFName.of('N'))).toBeDefined();
 
     const invisible = await widgetOf(await withSignaturePlaceholder(unsigned, placeholder));
     const none = invisible.lookup(PDFName.of('Rect'), PDFArray).asArray();
-    expect(none.map((value) => (value as PDFNumber).asNumber())).toStrictEqual([0, 0, 0, 0]);
+    expect(none.map((value) => (value instanceof PDFNumber ? value.asNumber() : NaN))).toStrictEqual([0, 0, 0, 0]);
     expect(invisible.lookupMaybe(PDFName.of('AP'), PDFDict)).toBeUndefined();
   });
 

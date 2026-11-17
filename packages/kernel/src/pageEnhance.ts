@@ -303,8 +303,7 @@ export const invertEnhancePages: Invert<'mupdf', 'enhancePages'> = (_session, _i
  * true.
  */
 export const applyEnhancePages: Apply<'mupdf', 'enhancePages'> = async (session, command) => {
-  const report = await enhancedPages(session, command);
-  void report;
+  await enhancedPages(session, command);
 };
 
 /**

@@ -117,7 +117,8 @@ describe('a fill works the form out in the same command', () => {
       const saved = await mupdfWriter.serialise(session);
       expect((await texts(saved))['price']).toBe('1234.5');
       // THE APPEARANCE a reader draws when it runs no script: MuPDF's own stream, read from the saved file.
-      const document = mupdf.PDFDocument.openDocument(saved, 'application/pdf') as mupdf.PDFDocument;
+      const document = mupdf.Document.openDocument(saved, 'application/pdf');
+      if (!(document instanceof mupdf.PDFDocument)) throw new Error('the saved file did not open as a PDF');
       const widget = document.loadPage(0).getWidgets().find((each) => each.getName() === 'price');
       const drawn = widget?.getObject().get('AP', 'N').readStream().asString() ?? '';
       expect(drawn).toContain('1,234.50');

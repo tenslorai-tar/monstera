@@ -76,8 +76,6 @@ const _declarationsCoverTheContract: NamesASecondDocument extends DeclaredSource
   true;
 const _contractCoversTheDeclarations: DeclaredSources extends NamesASecondDocument ? true : never =
   true;
-void _declarationsCoverTheContract;
-void _contractCoversTheDeclarations;
 
 /**
  * The kinds this table declares as naming existing state.
@@ -135,8 +133,6 @@ const _targetsCoverTheDeclarations: DeclaredTargets extends
   | NamesALink
   ? true
   : never = true;
-void _declarationsCoverTheTargets;
-void _targetsCoverTheDeclarations;
 
 /** Every declared kind, as the table itself lists them. */
 const KINDS = Object.keys(declaredCommands) as readonly CommandKind[];

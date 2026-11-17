@@ -284,7 +284,6 @@ function answered<T>(
 const _noPdfLibKindReadsRuns: Extract<(typeof declaredCommands)[KindsRoutedTo<'pdf-lib'>]['reads'], 'pageRuns'> extends never
   ? true
   : never = true;
-void _noPdfLibKindReadsRuns;
 
 /** Why a file-routed kind's capture records nothing: its route, which `engineChannels.ts` ties to a checkpoint undo. */
 const FILE_ROUTED_CAPTURE =

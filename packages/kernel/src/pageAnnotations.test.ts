@@ -4635,10 +4635,10 @@ describe('a text box with styled words (ADR-0211): Monstera writes the appearanc
       return value instanceof PDFString ? value.asString() : '';
     };
     const normal = dict.lookup(PDFName.of('AP'), PDFDict).lookup(PDFName.of('N'));
-    if (!(normal instanceof PDFStream)) throw new Error('no appearance stream');
+    if (!(normal instanceof PDFRawStream)) throw new Error('no appearance stream read from the file');
     const fonts = normal.dict.lookup(PDFName.of('Resources'), PDFDict).lookup(PDFName.of('Font'), PDFDict);
     return {
-      content: Buffer.from(decodePDFRawStream(normal as PDFRawStream).decode()).toString('latin1'),
+      content: Buffer.from(decodePDFRawStream(normal).decode()).toString('latin1'),
       fonts: fonts.keys().map((key) => fonts.lookup(key, PDFDict).lookup(PDFName.of('BaseFont'))?.toString() ?? ''),
       ds: text('DS'),
       rc: text('RC'),

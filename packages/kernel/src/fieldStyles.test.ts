@@ -1,13 +1,14 @@
 import { PDFDocument as LibDocument } from '@cantoo/pdf-lib';
-import type { CommandOfKind, FormFieldHandle, FormFieldProperties } from '@monstera/contract';
+import { type CommandOfKind, FIELD_BORDER_STYLES, FIELD_CHECK_STYLES, type FormFieldHandle, type FormFieldProperties } from '@monstera/contract';
 import { asDocVersion } from '@monstera/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { bundledFontsFolder, readCatalogueOnce } from './bundledFontsForTests.js';
 
+import { PDF_LIB_OPERATORS } from './buttonAppearance.js';
 import { bindEditFaces, bindEditFolders, loadEditFaces } from './editFaces.js';
 import { FieldEditRefusedError } from './fieldEditRefusal.js';
-import { borderOps, checkOps, opsText } from './fieldMarks.js';
+import { borderOps, checkOps, fixed, opsText } from './fieldMarks.js';
 import { readFieldProperties } from './formFieldRead.js';
 import { applyFillFormField, readFormFields } from './formFields.js';
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
@@ -90,9 +91,28 @@ async function readOne(bytes: Uint8Array, handle: FormFieldHandle): Promise<NonN
 }
 
 /** `content` with each number to three places, as `opsText` writes it: pdf-lib writes a computed point in full. */
-const rounded = (content: string): string => content.replace(/-?\d+\.\d+/gu, (number) => opsText([{ op: '', args: [Number(number)] }]).trim());
+const rounded = (content: string): string => content.replace(/-?\d+\.\d+/gu, (number) => fixed(Number(number)));
 
 const isRefused = (reason: string) => (error: unknown) => error instanceof FieldEditRefusedError && error.reason === reason;
+
+describe('the shapes’ operators as pdf-lib writes them', () => {
+  it('maps each operator to pdf-lib’s member of the same spelling, so a button and a text field draw one shape', () => {
+    const wrong = Object.entries(PDF_LIB_OPERATORS).filter(([name, member]) => (member as string) !== name);
+    expect(wrong).toStrictEqual([]);
+  });
+
+  it('CONTROL: names every operator the shapes draw with, read from what the shapes emit', () => {
+    // A gray, an RGB and a CMYK colour, so every colour operator is among them.
+    const colours = [[0], [0, 0, 0], [0, 0, 0, 0]];
+    const drawn = new Set(
+      colours
+        .flatMap((colour) => [...FIELD_BORDER_STYLES.flatMap((style) => borderOps(style, 40, 20, 1, colour)), ...FIELD_CHECK_STYLES.flatMap((style) => checkOps(style, 20, 20, colour))])
+        .map((each) => each.op),
+    );
+    expect(drawn.size).toBeGreaterThan(5);
+    expect([...drawn].filter((name) => !(name in PDF_LIB_OPERATORS))).toStrictEqual([]);
+  });
+});
 
 describe('a field’s border style, check style and number range (A3.1)', () => {
   beforeAll(async () => {

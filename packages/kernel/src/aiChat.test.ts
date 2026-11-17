@@ -242,8 +242,7 @@ describe('streamChat', () => {
   });
 
   it('KEEPS what streamed when the stream ends badly', async () => {
-    const broken = ((url: string) => {
-      void url;
+    const broken = ((_url: string) => {
       // THE CHUNK IS DELIVERED BEFORE THE FAILURE, which needs two pulls: `error()` called
       // in `start` discards what was queued, and the case would then prove nothing about
       // text that had already reached the caller.

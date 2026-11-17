@@ -1590,18 +1590,17 @@ export class DocumentService {
    * image (ADR-0121 Decision 2) is copied from its file**, which the swap back
    * does not remove while the copy runs.
    *
-   * @param supervisor Proof the caller is the session supervisor.
+   * @param _supervisor Proof the caller is the session supervisor; its type is the whole check.
    * @param docId The open document.
    * @param destination Where the image goes. The caller granted it.
    * @returns The number of bytes written.
    * @throws DocumentNotOpenError when the document is closed or was never open.
    */
   async writeCanonicalImage(
-    supervisor: EngineSupervisor,
+    _supervisor: EngineSupervisor,
     docId: DocId,
     destination: string,
   ): Promise<number> {
-    void supervisor;
     const record = this.#records.get(docId);
     if (record === undefined) {
       // THE SAME REFUSAL EVERY OTHER PER-DOCUMENT OPERATION MAKES. A supervisor
@@ -1690,7 +1689,7 @@ export class DocumentService {
    * one method that is allowed to hand bytes out. A 64 KiB view of a 199 MB
    * document retains 199 MB. `slice` copies.
    *
-   * @param reader Proof the caller serves the renderer's reads. See {@link RangeReader}.
+   * @param _reader Proof the caller serves the renderer's reads; its type is the whole check. See {@link RangeReader}.
    * @param docId The open document.
    * @param expected The version the caller's transport is bound to.
    * @param begin First byte, inclusive.
@@ -1699,13 +1698,12 @@ export class DocumentService {
    * @throws RangeError when the range falls outside the document at `expected`.
    */
   readRange(
-    reader: RangeReader,
+    _reader: RangeReader,
     docId: DocId,
     expected: DocVersion,
     begin: number,
     end: number,
   ): RangeOutcome {
-    void reader;
     const record = this.#records.get(docId);
     if (record === undefined) throw new DocumentNotOpenError(docId, 'read a byte range');
 

@@ -52,7 +52,9 @@ async function written(command: CommandOfKind<'addLink'>): Promise<Uint8Array> {
 async function buildDocumentWithLinks(): Promise<PDFDocument> {
   const document = await PDFDocument.create();
   const first = document.addPage([200, 200]);
-  const second = document.addPage([200, 200]);
+  // THE SECOND PAGE CARRIES NONE, which is what makes the per-page case below a
+  // statement about the page rather than about the document.
+  document.addPage([200, 200]);
   document.addPage([200, 200]);
 
   // AN INTERNAL LINK TO THE THIRD PAGE, not the second: a destination one page
@@ -94,10 +96,6 @@ async function buildDocumentWithLinks(): Promise<PDFDocument> {
   annots.push(document.context.register(internal));
   annots.push(document.context.register(external));
   first.node.set(PDFName.of('Annots'), annots);
-
-  // THE SECOND PAGE CARRIES NONE, which is what makes the per-page case below a
-  // statement about the page rather than about the document.
-  void second;
 
   return document;
 }

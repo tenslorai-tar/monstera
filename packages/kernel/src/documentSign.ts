@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 
 import type { Command, CommandOfKind, TimestampAuthority } from '@monstera/contract';
 
+import { contextTagged, isContextTag } from './asn1Context.js';
 import type { CaptureResult } from './commandLog.js';
 import type { CommandExecution } from './commandRouting.js';
 import type { MupdfSession } from './engineSeam.js';
@@ -66,18 +67,10 @@ async function timestamped(
     throw new Error('the signer produced a PKCS#7 without exactly one SignerInfo');
   }
   // A DEFECT, not a refusal: the signer writes no unsigned attributes, so one
-  // already present means the signer changed underneath this code.
-  // `[1]` IS TAG NUMBER 1 IN THE CONTEXT CLASS. `@types/node-forge` types every
-  // node's tag as `asn1.Type`, whose members name the UNIVERSAL types, so the
-  // number is given the field's own type at the comparison. The enum member that
-  // is also 1 is `BOOLEAN`, and writing it here would describe a context tag as a
-  // boolean.
-  if (
-    fields.some(
-      (field) =>
-        field.tagClass === asn1.Class.CONTEXT_SPECIFIC && field.type === (1 as typeof field.type),
-    )
-  ) {
+  // already present means the signer changed underneath this code. `[1]` is tag
+  // number 1 in the context class (`asn1Context.ts` says why forge's types make
+  // that a lookup).
+  if (fields.some((field) => isContextTag(field, 1))) {
     throw new Error('the SignerInfo already carries unsigned attributes');
   }
   const signature = fields.find(
@@ -98,7 +91,7 @@ async function timestamped(
 
   fields.push(
     // [1] IMPLICIT UnsignedAttributes — a SET OF Attribute, tagged in place.
-    asn1.create(asn1.Class.CONTEXT_SPECIFIC, 1, true, [
+    contextTagged(1, [
       asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SEQUENCE, true, [
         asn1.create(
           asn1.Class.UNIVERSAL,

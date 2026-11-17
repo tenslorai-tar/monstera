@@ -26,7 +26,8 @@ async function created(fields: readonly CommandOfKind<'createFormField'>['fields
 
 /** The darkest pixels inside a rectangle of the page as MuPDF draws it at 4x, the border's inset left out. */
 function inkInside(bytes: Uint8Array, rect: { x0: number; y0: number; x1: number; y1: number }, round = false): number {
-  const document = mupdf.PDFDocument.openDocument(bytes, 'application/pdf') as mupdf.PDFDocument;
+  const document = mupdf.Document.openDocument(bytes, 'application/pdf');
+  if (!(document instanceof mupdf.PDFDocument)) throw new Error('the file did not open as a PDF');
   const page = document.loadPage(0);
   const scale = 4;
   const pixmap = page.toPixmap(mupdf.Matrix.scale(scale, scale), mupdf.ColorSpace.DeviceGray, false, true);
@@ -110,7 +111,8 @@ describe('a new button, signature field and date field (ADR-0226 Decision 13)', 
 
 /** The first widget's stored normal appearance, read by MuPDF's object reader: its box and its drawing. */
 function storedAppearance(bytes: Uint8Array): { box: number[]; drawing: string } {
-  const document = mupdf.PDFDocument.openDocument(bytes, 'application/pdf') as mupdf.PDFDocument;
+  const document = mupdf.Document.openDocument(bytes, 'application/pdf');
+  if (!(document instanceof mupdf.PDFDocument)) throw new Error('the file did not open as a PDF');
   const widget = document.loadPage(0).getWidgets()[0];
   if (widget === undefined) throw new Error('The page holds no widget, so there is no appearance to read.');
   const normal = widget.getObject().get('AP').get('N');

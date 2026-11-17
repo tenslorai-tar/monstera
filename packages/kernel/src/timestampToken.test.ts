@@ -3,6 +3,7 @@ import type { CommandOfKind, TimestampAuthority } from '@monstera/contract';
 import forge from 'node-forge';
 import { beforeAll, describe, expect, it } from 'vitest';
 
+import { contextTagged, isContextTag } from './asn1Context.js';
 import type { RequestTimestamp } from './documentSign.js';
 import { applySignDocument, signDocumentWith } from './signpdfWriter.js';
 import { mupdfWriter } from './mupdfWriter.js';
@@ -212,7 +213,7 @@ function reply(query: TimestampQuery, twist: Twist = {}): Uint8Array {
       integer(forge.util.hexToBytes(certificate.serialNumber)),
     ]),
     sha256Algorithm(),
-    asn1.create(asn1.Class.CONTEXT_SPECIFIC, 0, true, attributes),
+    contextTagged(0, attributes),
     seq([oidNode(oid('rsaEncryption')), asn1.create(asn1.Class.UNIVERSAL, asn1.Type.NULL, false, '')]),
     octets(signature),
   ]);
@@ -221,14 +222,14 @@ function reply(query: TimestampQuery, twist: Twist = {}): Uint8Array {
     set([sha256Algorithm()]),
     seq([
       oidNode(OID.tstInfo),
-      asn1.create(asn1.Class.CONTEXT_SPECIFIC, 0, true, [octets(signedTstInfo)]),
+      contextTagged(0, [octets(signedTstInfo)]),
     ]),
-    asn1.create(asn1.Class.CONTEXT_SPECIFIC, 0, true, certificateNodes),
+    contextTagged(0, certificateNodes),
     set([signerInfo]),
   ]);
   const token = seq([
     oidNode(oid('signedData')),
-    asn1.create(asn1.Class.CONTEXT_SPECIFIC, 0, true, [signedData]),
+    contextTagged(0, [signedData]),
   ]);
   const response = seq([seq([integer(asn1.integerToDer(twist.status ?? 0).getBytes())]), token]);
   return forge.util.binary.raw.decode(der(response));
@@ -448,9 +449,7 @@ describe('signing with a timestamp', () => {
     expect(asked).toStrictEqual(['digicert']);
 
     const fields = signerInfoOf(signed);
-    const unsignedAttributes = fields.find(
-      (field) => field.tagClass === asn1.Class.CONTEXT_SPECIFIC && field.type === (1 as typeof field.type),
-    );
+    const unsignedAttributes = fields.find((field) => isContextTag(field, 1));
     expect(unsignedAttributes, 'the SignerInfo carries unsigned attributes').toBeDefined();
     const attributes = unsignedAttributes?.value as forge.asn1.Asn1[];
     expect(attributes).toHaveLength(1);
@@ -494,9 +493,7 @@ describe('signing with a timestamp', () => {
 
     expect(asked).toStrictEqual([]);
     expect(
-      signerInfoOf(signed).some(
-        (field) => field.tagClass === asn1.Class.CONTEXT_SPECIFIC && field.type === (1 as typeof field.type),
-      ),
+      signerInfoOf(signed).some((field) => isContextTag(field, 1)),
     ).toBe(false);
   }, 120_000);
 
