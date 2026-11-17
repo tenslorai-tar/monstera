@@ -892,6 +892,98 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-11-17 — Stage audit of `dce699fd..7c23088c` — findings KKKKKKKKK-1 to KKKKKKKKK-12
+
+Owed before Fixes 2 and 3 could be committed: `7c23088c` alone staged 187 files. `npm run audit:scope`: 2 commits.
+
+**Method and coverage.** One read-only reviewer on `7c23088c`'s substance, every file but the 138 rendered cases whose
+only change moved `expect` and `test` to `renderedTest.js`; those this author checked by a scan that prints any changed
+line that is not such an import or blank, which printed none (its control: aimed at two files with real changes it
+printed 246 lines). **This author re-read every high and medium at its lines, and each holds**, and fixed each in the
+commit after this one, with a run. Not reached: whether the memory renewal's measured drop holds under the new scheme,
+and whether the debugger read-back sees the custom scheme's responses (`proof:rendererpolicy` passed, 30 cases, so it
+does).
+
+**No check was loosened.** **One high.**
+
+- **KKKKKKKKK-1** (high, fixed): `picturesDroppedFrom` counted a failed SHARED picture only under an id naming its own
+  page, but PDF.js shares a picture under the id of the page that first shared it and paints that one entry on every
+  later page, sending nothing: a logo repeated on every page was dropped with no note from the third page on, and the
+  unit control asserted that as right. Now a failed shared picture counts on a page whose operator list paints it, read
+  only when one failed. `renderPage.test.ts` and `pictureDecoders.pw.ts` (three pages of one picture, a note on each).
+- **KKKKKKKKK-2** (medium, fixed): the page note stuck or went stale: a tiled page's note was only ever raised, and a
+  slot that took another canvas's drawing (ADR-0261) showed its missing picture with no note. The drawing's flag now
+  travels with its pixels, and a tiled measure clears the note for the tiles to say again.
+- **KKKKKKKKK-3** (medium, fixed in the tests, stated for the page): an image MASK PDF.js cannot decode is dropped with
+  *ignoring XObject* and sent to no table, so the page cannot say it; `renderedTest.ts` now fails a case on that warning
+  too, and `picturesDroppedFrom` and ADR-0296's correction name it beside inline pictures.
+- **KKKKKKKKK-4** (medium, fixed): `renderedTest.ts` heard the `page` fixture alone, and eight files open pages of their
+  own. It now watches every page of the case's context and every context the browser makes; a case drawing the broken
+  picture only in a context of its own, declared `expected`, fails with the watcher removed (measured).
+- **KKKKKKKKK-5** (medium, fixed): nothing checked that every kind of file the build emits is one the scheme serves,
+  though a comment said a case did. `proof:rendererpolicy` reads the built renderer and fails on an unnamed kind.
+
+**Low.** **-6** (fixed): every read error was a quiet 404; now only a file that is not there is, and other failures are
+thrown. **-7** (fixed): `pdfjsDecoders.mjs` called itself the one statement of a name two files copy; it now names the
+copies and the proof each has. **-8** (fixed): four comments no longer true (the harness's `onHeadersReceived`,
+`index.html`'s `applyContentSecurityPolicy`, *neither engine*, *the page's own words drawn beside it*). **-9**
+(stated): the rendered probe worker takes another branch of the route than PDF.js's module worker; the worker's real
+policy is `proof:rendererpolicy`'s. **-10** (fixed): the all-black CCITT and JBIG2 fixtures could not tell a decode from
+zeroed bytes; each is now white on its left and black on its right. **-11** (stated): a killed policy harness leaves
+its probe file in the build, which a clean build empties and a walk's digest would refuse. **-12** (fixed): the
+rendered-case scan read one folder and missed a namespace import; it reads every folder below and both, 10 cases.
+
+### 1. Fixes classified
+
+Each fix states its mechanism above; none is a workaround. -1 and -2 are this range's own defects, made by the fix
+that introduced the note.
+
+### 2. The easy shape
+
+-1 is the easy shape: a picture on one page, never one shared by three. -2 is the whole-page draw, never a tile or a
+taken drawing. -10 is a decode that is either right or absent, never one that is quietly wrong.
+
+### 2a. How things are proven
+
+The rendered cases now judge every page a case opens, a widening; the policy proof gains one runtime case.
+
+### 3. Would CI have caught it?
+
+-1, -2 and -3 no: CI's fixtures had no shared broken picture, no tiled one and no broken mask. -4 no: no case drew a
+broken picture in a page of its own. -5 no today, since every emitted kind is served.
+
+### 4. Non-vacuous proofs
+
+-1's unit control asserted the defect; -10's fixtures could not separate a quiet wrong decode. Both fixed with cases
+that would fail on the old code.
+
+### 4a. Instruments' resolution
+
+`pictureCheck.mjs`' ink share carries its quarter-inked control; its tolerance, 0.03, against the 0.064 smallest page
+share MuPDF drew, separates a blank page from a drawn one on every page of the user's file.
+
+### 4b. Searches with a positive control
+
+`renderedCases.mjs` keeps its control, `renderedTest.ts`' own import; the scan of the 138 files had its control.
+
+### 4c. Derived extents
+
+`renderedCases.proof.mjs`' roster is a literal, 8 to 10 with two cases added. Nothing derives a count from its set.
+
+### 5. Executed or asserted
+
+-1 was read from PDF.js's source; the fix is run by a rendered case on three pages. -3's page-side limit is stated.
+
+### 6. Architecture before or underneath
+
+ADR-0296 came first (`dce699fd`); its correction of the redraw came before the build of it shipped.
+
+### 7. Documents against the code
+
+-7 and -8, fixed. ADR-0296's *Not seen* gains the image mask.
+
+---
+
 ## 2026-11-17 — Stage audit of `7b03d0cf..dce699fd` — findings JJJJJJJJJ-1 to JJJJJJJJJ-33
 
 Owed before ADR-0296's build could be committed: that commit stages 162 files and would have taken the range past
