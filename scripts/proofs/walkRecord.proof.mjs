@@ -16,13 +16,13 @@ import { join } from 'node:path';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
-import { FULL_WALK, commandIds, countsFor, programDigest, refusals, reportsOf, rowsFrom, writeRecord } from '../release/walkRecord.mjs';
+import { FULL_WALK, cleanBuild, commandIds, countsFor, programDigest, refusals, reportsOf, rowsFrom, writeRecord } from '../release/walkRecord.mjs';
 import { pictureRefusal } from '../research/walkPictures.mjs';
 import { stepTable, walkingRow } from '../research/walkSteps.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 40 });
+const roster = createRoster(failures, { cases: 42 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -271,13 +271,37 @@ async function main() {
 
   // THE PACK ASKS IT, after its own clean build: a gate no pack calls refuses nothing, and these cases would stay green.
   const pack = readFileSync(join(repoRoot(), 'scripts', 'release', 'packageMsix.mjs'), 'utf8');
-  const built = pack.indexOf("execFileSync('npm run build'");
+  const built = pack.indexOf('cleanBuild(REPO_ROOT)');
   const asked = pack.indexOf('refuseUnwalked(REPO_ROOT, commit)');
   const staged = pack.indexOf("step('runtime')");
   check(
     'the pack refuses through this gate after its clean build and before it stages anything',
     built > 0 && asked > built && staged > asked,
-    `npm run build at ${String(built)}, refuseUnwalked at ${String(asked)}, staging at ${String(staged)}`,
+    `cleanBuild at ${String(built)}, refuseUnwalked at ${String(asked)}, staging at ${String(staged)}`,
+  );
+
+  // THE CLEAN BUILD: every dist removed BEFORE the build, never after and never skipped. A build alone keeps the output
+  // of a deleted source, which is the walked-build-is-not-the-packed-build defect of 2026-11-18.
+  /** @type {string[]} */
+  const ran = [];
+  const said = cleanBuild('unused', (command) => {
+    ran.push(command);
+  });
+  check(
+    'the clean build removes every workspace’s dist, then builds, through the project’s verbs',
+    JSON.stringify(ran) === JSON.stringify(['npm run clean --workspaces --if-present', 'npm run build']) && JSON.stringify(said) === JSON.stringify(ran),
+    `ran ${JSON.stringify(ran)}`,
+  );
+
+  // THE FULL WALK BUILDS THROUGH IT TOO, before it starts the app, or it walks a build the pack never makes: the digests
+  // differ and the pack refuses, after the walk. Against the walk without the call this case is red.
+  const walker = readFileSync(join(repoRoot(), 'scripts', 'research', 'everyToolWalk.mjs'), 'utf8');
+  const walkBuilt = walker.indexOf('cleanBuild(root)');
+  const walkStarted = walker.indexOf("startWalk('every-tool'");
+  check(
+    'the full walk makes the clean build before it starts the app',
+    walkBuilt > 0 && walkStarted > walkBuilt,
+    `cleanBuild(root) at ${String(walkBuilt)}, startWalk at ${String(walkStarted)}`,
   );
 
   process.stdout.write(

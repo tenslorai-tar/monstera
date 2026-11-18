@@ -41,6 +41,7 @@ import { ADDED_FIRST, EFFECTS, FIELD_TYPED, LINK_TYPED, TYPED_WORD, outputsOf, r
 import { WALK_WINDOW, appRootOption, launchApp, nothingInFlight, root, startWalk } from './liveWalk.mjs';
 import { editTextOpening } from './textWalkSteps.mjs';
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
+import { cleanBuild } from '../release/walkRecord.mjs';
 import { bindNativeEngine } from '../lib/nativeEngine.mjs';
 import { pdfiumLibrary } from '../provision/pdfium.mjs';
 
@@ -290,6 +291,11 @@ function installedRunning() {
   return Number(listed.trim());
 }
 const installedAtStart = installedRunning();
+
+// THE BUILD THE PACK WILL MAKE, made here before anything is walked: the record binds the walk to the pack by the
+// build's digest, and only a clean build has the digest the pack's own clean build has (`cleanBuild`). Another
+// checkout given by `--app-root` is that checkout's to build.
+if (appRootOption(process.argv).appRoot === undefined) cleanBuild(root);
 
 const walk = await startWalk('every-tool', appRootOption(process.argv));
 const { app, page, output, open, saveTo, step, finish, sizeWindow } = walk;

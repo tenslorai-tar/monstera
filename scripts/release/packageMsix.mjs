@@ -71,7 +71,7 @@ import { Data, NtExecutable, NtExecutableResource, Resource } from 'resedit';
 
 import { STORE_ASSETS, writeStoreAssets } from '../brand/storeAssets.mjs';
 import { SHELL_LAUNCH, refuseStaleBuild } from '../lib/buildFreshness.mjs';
-import { refuseUnwalked } from './walkRecord.mjs';
+import { cleanBuild, refuseUnwalked } from './walkRecord.mjs';
 import { isMain } from '../lib/isMain.mjs';
 import { loadTypeScript } from '../lib/loadTypeScript.mjs';
 import { applicationIcon, carriesIcon } from '../lib/peIcons.mjs';
@@ -688,11 +688,9 @@ async function main() {
 
   // FROM A CLEAN BUILD, through the project's own verbs. `tsc` never deletes an output whose source is gone, so a
   // `dist/` carries modules nothing produces any more — measured 2026-09-29: a research probe from 2026-09-15 in the
-  // kernel's `dist/` — and a package copied from it would ship them.
+  // kernel's `dist/` — and a package copied from it would ship them. The full walk builds through the same function.
   step('clean build');
-  const heap = { ...process.env, NODE_OPTIONS: process.env['NODE_OPTIONS'] ?? '--max-old-space-size=8192' };
-  execFileSync('npm run clean --workspaces --if-present', { cwd: REPO_ROOT, stdio: 'inherit', shell: 'cmd.exe' });
-  execFileSync('npm run build', { cwd: REPO_ROOT, stdio: 'inherit', shell: 'cmd.exe', env: heap });
+  cleanBuild(REPO_ROOT);
   refuseStaleBuild(REPO_ROOT, SHELL_LAUNCH, 7);
 
   // A FULL WALK OF THIS BUILD, or no package (the owner's rule of 2026-11-02, ADR-0285): a record for this commit whose

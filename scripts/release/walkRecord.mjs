@@ -65,6 +65,24 @@ export function buildDigest(root) {
 }
 
 /**
+ * The build the pack stages and the full walk walks: every workspace's `dist/` removed, then the project's build. ONE
+ * function for both, because the digest binds them and only a clean build is reproducible: `tsc` never deletes an
+ * output whose source is gone, so an incremental `dist/` keeps it. Measured 2026-11-18: `chatHistory.ts` was deleted
+ * after 1.1.2613.0, the walk of 5b58a139 ran on a `dist/` still holding its output, and the pack's own clean build of
+ * the same commit had another digest; the pack refused, after the walk's eighty minutes.
+ * @param {string} root
+ * @param {(command: string, env: NodeJS.ProcessEnv) => void} [run] runs a project verb in `root`; a proof passes its own
+ * @returns {string[]} the verbs run, in order
+ */
+export function cleanBuild(root, run) {
+  const heap = { ...process.env, NODE_OPTIONS: process.env['NODE_OPTIONS'] ?? '--max-old-space-size=8192' };
+  const verbs = /** @type {const} */ (['npm run clean --workspaces --if-present', 'npm run build']);
+  const runVerb = run ?? ((command, env) => execFileSync(command, { cwd: root, stdio: 'inherit', shell: 'cmd.exe', env }));
+  for (const verb of verbs) runVerb(verb, heap);
+  return [...verbs];
+}
+
+/**
  * Every command id the registry generates into `docs/manual-test-checklist.md` (`App.test.tsx` holds that file equal
  * to the registry), one row each. Refuses a read that could not see: the list must hold `document.save`.
  * @param {string} checklist the file's text
