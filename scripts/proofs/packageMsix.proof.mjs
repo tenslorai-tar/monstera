@@ -19,7 +19,7 @@ import { spawn } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { STORE_ASSETS } from '../brand/storeAssets.mjs';
 import { loadTypeScript } from '../lib/loadTypeScript.mjs';
@@ -68,6 +68,8 @@ const RUNTIME_CASES = [
   "the packager's naming step leaves the executable saying it is Monstera, every string and both fixed versions, read back by its own parser (R3)",
   'CONTROL: the untouched electron.exe is refused, and the reason names its FileDescription "Electron"',
   'CONTROL: a named executable read against the NEXT version is refused, naming the fixed versions and the version strings',
+  "the start check passes an application whose window loads its page from a scheme of its own, as the shell's has since ADR-0296",
+  'CONTROL: told a page its window never loads, the check does not pass it, and names the page the window did load',
 ];
 
 /** Cases decidable without one. These run on every machine. */
@@ -391,19 +393,36 @@ try {
       "const { app, BrowserWindow } = require('electron');\nconst { join } = require('node:path');\n" +
       "app.whenReady().then(() => { void new BrowserWindow({ show: false }).loadFile(join(__dirname, 'renderer', 'index.html')); });\n";
     const mounts = '<!doctype html><title>start</title><div id="root"><p>mounted</p></div>\n';
-    const good = await startsToWindow({ command: ELECTRON_BINARY, args: [application('good', opens, mounts)], timeoutMs: 30_000 });
+    /** The page a folder's window loads with `loadFile`, as the check is told it. @param {string} folder */
+    const filePage = (folder) => pathToFileURL(join(folder, 'renderer', 'index.html')).href;
+    const goodApp = application('good', opens, mounts);
+    const good = await startsToWindow({ command: ELECTRON_BINARY, pageUrl: filePage(goodApp), args: [goodApp], timeoutMs: 30_000 });
     check(RUNTIME_CASES[3] ?? '', good.started, `${String(good.ms)} ms: ${good.reason}`);
-    const throws = await startsToWindow({
-      command: ELECTRON_BINARY,
-      args: [application('throws', "throw new Error('thrown before the window, as 0.1.7.0 threw');\n", mounts)],
-      timeoutMs: 10_000,
-    });
+    const throwsApp = application('throws', "throw new Error('thrown before the window, as 0.1.7.0 threw');\n", mounts);
+    const throws = await startsToWindow({ command: ELECTRON_BINARY, pageUrl: filePage(throwsApp), args: [throwsApp], timeoutMs: 10_000 });
     check(RUNTIME_CASES[4] ?? '', !throws.started && throws.reason.startsWith('no window loaded'), `${String(throws.ms)} ms: ${throws.reason}`);
-    const empty = await startsToWindow({
-      command: ELECTRON_BINARY,
-      args: [application('empty', opens, '<!doctype html><title>start</title><div id="root"></div>\n')],
-      timeoutMs: 10_000,
-    });
+    const emptyApp = application('empty', opens, '<!doctype html><title>start</title><div id="root"></div>\n');
+    const empty = await startsToWindow({ command: ELECTRON_BINARY, pageUrl: filePage(emptyApp), args: [emptyApp], timeoutMs: 10_000 });
+
+    // A PAGE SERVED FROM A SCHEME OF ITS OWN, the shell's shape since ADR-0296: the window loads `start://app/index.html`
+    // and a handler answers it from the folder. The check that held a `file:` pattern reported this one as never started.
+    const schemed =
+      "const { app, BrowserWindow, net, protocol } = require('electron');\nconst { join } = require('node:path');\n" +
+      "const { pathToFileURL } = require('node:url');\n" +
+      "protocol.registerSchemesAsPrivileged([{ scheme: 'start', privileges: { standard: true, secure: true } }]);\n" +
+      "app.whenReady().then(() => {\n" +
+      "  protocol.handle('start', () => net.fetch(pathToFileURL(join(__dirname, 'renderer', 'index.html')).href));\n" +
+      "  void new BrowserWindow({ show: false }).loadURL('start://app/index.html');\n" +
+      '});\n';
+    const schemedApp = application('schemed', schemed, mounts);
+    const ownScheme = await startsToWindow({ command: ELECTRON_BINARY, pageUrl: 'start://app/index.html', args: [schemedApp], timeoutMs: 30_000 });
+    check(RUNTIME_CASES[11] ?? '', ownScheme.started, `${String(ownScheme.ms)} ms: ${ownScheme.reason}`);
+    const elsewhere = await startsToWindow({ command: ELECTRON_BINARY, pageUrl: 'start://app/other.html', args: [schemedApp], timeoutMs: 10_000 });
+    check(
+      RUNTIME_CASES[12] ?? '',
+      !elsewhere.started && elsewhere.reason.includes('a window loaded start://app/index.html instead'),
+      `${String(elsewhere.ms)} ms: ${elsewhere.reason}`,
+    );
     check(RUNTIME_CASES[5] ?? '', !empty.started && empty.reason.includes('had not mounted'), `${String(empty.ms)} ms: ${empty.reason}`);
 
     // THE PORT FILE HELD BY ITS WRITER (`startCheck.mjs`' header): a second process opens a written port file with no

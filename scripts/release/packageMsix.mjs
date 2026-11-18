@@ -847,7 +847,11 @@ async function main() {
   // would be packed.
   step('start');
   const before = stageListing(stage);
-  const start = await startsToWindow({ command: join(stage, EXECUTABLE) });
+  // THE PAGE IS THE SHELL'S OWN `RENDERER_URL`, read from the clean build above: the check holds no address of its own.
+  refuseStaleBuild(REPO_ROOT, [['apps/desktop/src/windowPolicy.ts', 'apps/desktop/dist/windowPolicy.js', 'tsc']], 1);
+  /** @type {{ RENDERER_URL: string }} */
+  const policy = await import('../../apps/desktop/dist/windowPolicy.js');
+  const start = await startsToWindow({ command: join(stage, EXECUTABLE), pageUrl: policy.RENDERER_URL });
   if (!start.started) throw new Error(`The staged ${EXECUTABLE} does not start, so it is not packed: ${start.reason}`);
   const after = stageListing(stage);
   const changed = [...new Set([...before.keys(), ...after.keys()])].filter((path) => before.get(path) !== after.get(path));

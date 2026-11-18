@@ -15,8 +15,8 @@
  * Measured on the 0.1.7.0 stage, 2026-10-02: the process stayed alive for the full 25 s, opened its DevTools port, and
  * printed nothing on stdout or stderr — Electron reports an exception thrown in `main` in a dialog and nowhere else, even
  * with `ELECTRON_ENABLE_LOGGING`. So *no error was printed* is the reassuring answer a broken start also gives, and the
- * check waits for the positive instead: a page at the application's own `renderer/index.html`, whose `#root` has
- * children. `main` builds its whole dependency graph — the engine platforms, the reader surface — synchronously before
+ * check waits for the positive instead: a page at the URL the application's window loads (`pageUrl`, from the shell's
+ * own definition), whose `#root` has children. `main` builds its whole dependency graph — the engine platforms, the reader surface — synchronously before
  * `whenReady` creates the window (`main.ts`), so that page existing means the graph was built; the mount means the
  * renderer's bundle ran too.
  *
@@ -41,9 +41,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { endTree } from '../lib/childProcesses.mjs';
-
-/** The application's own page, as `window.ts` loads it. */
-const RENDERER_PAGE = /^file:\/\/\/.*\/renderer\/index\.html$/u;
 
 /**
  * The DevTools port Chromium wrote into `userData`, or `null` while there is none to read yet: the file is absent, or
@@ -93,11 +90,15 @@ async function evaluate(socketUrl, expression) {
 /**
  * Starts `command` and waits for its renderer to mount, then ends it.
  *
- * @param {{ readonly command: string, readonly args?: readonly string[], readonly timeoutMs?: number }} options
+ * @param {{ readonly command: string, readonly pageUrl: string, readonly args?: readonly string[], readonly timeoutMs?: number }} options
+ *   `pageUrl` is the page the application's window loads, exactly, from the application's own definition of it — the
+ *   packager passes the shell's built `RENDERER_URL`. This module holds no address of its own: it held one, a
+ *   `file:///…/renderer/index.html` pattern, and when the renderer moved to its own scheme (ADR-0296, 2026-11-17)
+ *   the staged application started and the check reported that no window had loaded its page (1.1.2614.0, 2026-11-18).
  *   `args` precede this function's own switches, so an application folder can be named first as Electron expects
  * @returns {Promise<{ readonly started: boolean, readonly ms: number, readonly reason: string }>}
  */
-export async function startsToWindow({ command, args = [], timeoutMs = 60_000 }) {
+export async function startsToWindow({ command, pageUrl, args = [], timeoutMs = 60_000 }) {
   const userData = mkdtempSync(join(tmpdir(), 'monstera-start-'));
   /** @type {NodeJS.ProcessEnv} */
   const env = { ...process.env, ELECTRON_ENABLE_LOGGING: '1' };
@@ -127,6 +128,8 @@ export async function startsToWindow({ command, args = [], timeoutMs = 60_000 })
   try {
     /** @type {string | null} */
     let pageSeen = null;
+    /** Every other page a window loaded, said when the application's never appears. @type {Set<string>} */
+    const otherPages = new Set();
     while (elapsed() < timeoutMs) {
       await new Promise((tick) => setTimeout(tick, 250));
       if (exitCode !== undefined) {
@@ -141,7 +144,8 @@ export async function startsToWindow({ command, args = [], timeoutMs = 60_000 })
       } catch {
         continue;
       }
-      const page = targets.find((target) => target.type === 'page' && RENDERER_PAGE.test(target.url));
+      for (const target of targets) if (target.type === 'page' && target.url !== pageUrl) otherPages.add(target.url);
+      const page = targets.find((target) => target.type === 'page' && target.url === pageUrl);
       if (page === undefined || page.webSocketDebuggerUrl === undefined) continue;
       pageSeen = page.url;
       const children = await evaluate(page.webSocketDebuggerUrl, "document.getElementById('root')?.childElementCount ?? 0").catch(() => 0);
@@ -152,8 +156,10 @@ export async function startsToWindow({ command, args = [], timeoutMs = 60_000 })
       ms: elapsed(),
       reason:
         pageSeen === null
-          ? `no window loaded the application's page within ${String(timeoutMs)} ms — main throws before creating it, and ` +
-            `Electron shows that only in a dialog. Its output ends:\n${output}`
+          ? `no window loaded the application's page, ${pageUrl}, within ${String(timeoutMs)} ms` +
+            (otherPages.size > 0
+              ? ` — a window loaded ${[...otherPages].join(', ')} instead. Its output ends:\n${output}`
+              : ` — main throws before creating it, and Electron shows that only in a dialog. Its output ends:\n${output}`)
           : `the window loaded ${pageSeen}, and its renderer had not mounted within ${String(timeoutMs)} ms. Its output ends:\n${output}`,
     };
   } finally {
