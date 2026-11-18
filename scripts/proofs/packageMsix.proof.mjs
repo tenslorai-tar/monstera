@@ -28,7 +28,7 @@ import { applicationIcon, carriesIcon, icoImages } from '../lib/peIcons.mjs';
 import { versionDiffers, versionResource } from '../lib/peVersion.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { partialOutcome } from '../lib/unverifiable.mjs';
-import { electronBinaryPath } from '../provision/electron.mjs';
+import { buildFor, electronBinaryPath, electronRoot, provisionElectron } from '../provision/electron.mjs';
 import { developerFile, developerFilesIn } from '../release/developerFiles.mjs';
 import { readPortFile, startsToWindow } from '../release/startCheck.mjs';
 import {
@@ -69,10 +69,11 @@ const RUNTIME_CASES = [
   'CONTROL: the untouched electron.exe is refused, and the reason names its FileDescription "Electron"',
   'CONTROL: a named executable read against the NEXT version is refused, naming the fixed versions and the version strings',
   'CONTROL: told a page its window never loads, the check does not pass it, and names the page the window did load',
+  'provisioning the runtime again removes a file its folder held that the pinned archive does not, and leaves the executable',
 ];
 
 /** Cases decidable without one. These run on every machine. */
-const PURE_CASES = 18;
+const PURE_CASES = 19;
 
 const roster = createRoster(failures, { cases: RUNTIME_PRESENT ? PURE_CASES + RUNTIME_CASES.length : PURE_CASES });
 
@@ -336,6 +337,18 @@ try {
     `${String(brandImages.length)} image(s); PNG: ${String(notIco)}`,
   );
 
+  // THE PACK PROVISIONS THE RUNTIME BEFORE IT COPIES IT, so what is staged is the pinned archive and never the folder as
+  // it sits (`packageMsix.mjs`, 2026-11-18: two files the archive does not hold had shipped). Against the pack that
+  // copied the folder unprovisioned, this case is red.
+  const packText = readFileSync(join(REPO_ROOT, 'scripts', 'release', 'packageMsix.mjs'), 'utf8');
+  const provisionedAt = packText.indexOf('await provisionElectron({ root: REPO_ROOT });');
+  const copiedAt = packText.indexOf('cpSync(electronRoot(REPO_ROOT), stage');
+  check(
+    'the pack provisions the runtime from its pinned archive immediately before it copies it into the stage',
+    provisionedAt > 0 && copiedAt > provisionedAt && !packText.slice(provisionedAt, copiedAt).includes('\n\n'),
+    `provisionElectron at ${String(provisionedAt)}, the copy at ${String(copiedAt)}`,
+  );
+
   if (RUNTIME_PRESENT) {
     const brand = readFileSync(BRAND_ICON);
     const plain = join(scratch, 'plain.exe');
@@ -460,6 +473,24 @@ try {
     const afterRelease = readPortFile(profile);
     check(RUNTIME_CASES[6] ?? '', whileHeld === null && afterRelease === '51234', `while held: ${String(whileHeld)}; after: ${String(afterRelease)}`);
     check(RUNTIME_CASES[7] ?? '', plainRead === 'EBUSY', `the plain read: ${plainRead}`);
+
+    // THE RUNTIME'S PROVISIONER REMOVES WHAT THE ARCHIVE DOES NOT HOLD, which the pack now rests on: a scratch root given
+    // the cached pinned archive and a provisioned folder already holding a stray, provisioned again. CONTROL: the stray
+    // is there before, so its absence after is the provisioner's doing.
+    const provisioned = join(scratch, 'provisioned');
+    const asset = buildFor().asset;
+    mkdirSync(join(provisioned, '.tools', 'electron-archives'), { recursive: true });
+    copyFileSync(join(REPO_ROOT, '.tools', 'electron-archives', asset), join(provisioned, '.tools', 'electron-archives', asset));
+    mkdirSync(electronRoot(provisioned), { recursive: true });
+    const stray = join(electronRoot(provisioned), 'electron.exe.before-swap');
+    writeFileSync(stray, 'a diagnostic left this here');
+    const strayBefore = existsSync(stray);
+    await provisionElectron({ root: provisioned });
+    check(
+      RUNTIME_CASES[12] ?? '',
+      strayBefore && !existsSync(stray) && existsSync(electronBinaryPath(provisioned)),
+      `stray before: ${String(strayBefore)}; after: ${String(existsSync(stray))}; executable: ${String(existsSync(electronBinaryPath(provisioned)))}`,
+    );
   }
 
   if (failures.length > 0) {

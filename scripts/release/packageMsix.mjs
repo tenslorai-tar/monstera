@@ -78,7 +78,7 @@ import { applicationIcon, carriesIcon } from '../lib/peIcons.mjs';
 import { versionDiffers } from '../lib/peVersion.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { shimPath } from '../lib/shimBinary.mjs';
-import { electronRoot } from '../provision/electron.mjs';
+import { electronRoot, provisionElectron } from '../provision/electron.mjs';
 import { fontsDirectory } from '../provision/fonts.mjs';
 import { gswin64cPath } from '../provision/ghostscript.mjs';
 import { x2tPath } from '../provision/onlyoffice.mjs';
@@ -712,7 +712,12 @@ async function main() {
   rmSync(work, { recursive: true, force: true });
   mkdirSync(stage, { recursive: true });
 
+  // THE RUNTIME IS THE PINNED ARCHIVE, extracted afresh by its provisioner just before it is copied — never the
+  // provisioned folder as it happens to sit, which is a working folder: anything written into it ships. Measured
+  // 2026-11-18: 1.1.2614.0 carried `electron.exe.before-swap` (228 MB, a diagnostic's renamed copy of 2026-11-08) and
+  // 1.1.2613.0 and 1.1.2614.0 carried `debug.log` (a crash reporter's line of 2026-11-06), neither in the archive.
   step('runtime');
+  await provisionElectron({ root: REPO_ROOT });
   cpSync(electronRoot(REPO_ROOT), stage, { recursive: true });
   renameSync(join(stage, 'electron.exe'), join(stage, EXECUTABLE));
   rmSync(join(stage, 'resources', 'default_app.asar'), { force: true });

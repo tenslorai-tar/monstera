@@ -892,6 +892,32 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-11-18 — Two files the pinned Electron archive does not hold were packed, one of them into the live release
+
+**Found** reading the size of 1.1.2614.0, packed from `1b9ab644`: 509.2 MB against 1.1.2613.0's 401.6 MB, all of it in
+the package's top level. Compared with the pinned archive's own entries (`electron-v43.8.3-win32-x64.zip`), two names
+the archive does not hold were in the packages:
+
+| file | in | what it is |
+|---|---|---|
+| `electron.exe.before-swap` | 1.1.2614.0 | 228 MB: the provisioned `electron.exe`, renamed aside on 2026-11-08 by a diagnostic of a flipped bit in a loaded program, which put a byte-identical copy in its place and kept the old one |
+| `debug.log` | 1.1.2613.0 (the Store's release) and 1.1.2614.0 | 157 bytes, one line from Chromium's crash reporter, dated 2026-11-06, that a file it looked for was absent. Read for this computer's user name, machine name and any drive path: none |
+
+**The mechanism.** The pack's runtime step copied `.tools/electron/43.8.3` as it sat. That folder is a working folder,
+the one development runs from, so anything written into it shipped. Its provisioner already rebuilds it from the
+verified archive on every run, deleting what is there; the pack never asked it to.
+
+**The fix.** The pack provisions the runtime immediately before it copies it, so the runtime staged is the pinned
+archive, extracted then. **Proof**, `proof:packagemsix`, two cases: the pack provisions before the copy (red against the
+pack before this commit), and provisioning a scratch root whose folder already holds a planted stray removes it and
+leaves the executable (the stray is there before, so its absence is the provisioner's doing).
+
+**1.1.2614.0 is withheld.** Both of its packages carry the 228 MB copy, so neither goes to the owner or the Store; its
+version stays recorded as packed, since B8 never reuses a number. The next packages are 1.1.2615.0. **1.1.2613.0**, live,
+carries the 157-byte log line and nothing else the archive does not hold; it is harmless and goes with the next release.
+
+---
+
 ## 2026-11-17 — A walk step's picture was of the walk's own window, wherever its effect happened
 
 **Found by the owner**, reading the full walk of 2026-11-17T13-16-52: rows 288 (*a newer version named: Update
