@@ -820,6 +820,14 @@ export interface BrowserShimOptions {
    */
   readonly textBlocks?: ChannelResult<'document.textBlocks'>['blocks'] | null;
   /**
+   * The blocks `document.textBlocks` answers once a command has been applied to the document, in place of `textBlocks`:
+   * the page as the write left it. Absent is `textBlocks` at every version. A surface that tells a block the document
+   * opened with from one a person's write changed (Edit text's past-the-page sentence, Fix 3 of 2026-11-17) can only be
+   * driven to the second state by a read that differs after the write, and a shim whose read never moved could reach
+   * only the first.
+   */
+  readonly textBlocksWritten?: ChannelResult<'document.textBlocks'>['blocks'];
+  /**
    * Which writer the shim's pages name (ADR-0176 Decision 1): `objects` unless a case says the page shows Type 3 text,
    * which is what a page a case wrote down is unless it says otherwise.
    */
@@ -1138,6 +1146,8 @@ const SHIM_PAST_THE_BOUND = 7 * 1024 * 1024;
  */
 export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim {
   const versions = new Map<string, number>();
+  /** The documents a command has been applied to, whose text read is `textBlocksWritten` where a case gives one. */
+  const written = new Set<string>();
   /** The person's library, as main would hold it for this page's life (`BrowserShimOptions.library`). */
   let libraryEntries: readonly LibraryEntry[] = options.library?.entries ?? [];
   const libraryPictures = new Map(options.library?.pictures ?? []);
@@ -1645,6 +1655,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
 
       const next = current + 1;
       versions.set(docId, next);
+      written.add(docId);
       // A BUTTON'S ACTIONS WRITTEN (ADR-0259) are what the next `document.buttonActions` reads, as the document's would be.
       if (command.kind === 'editFormFields') {
         for (const edit of command.edits) {
@@ -2759,10 +2770,11 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       // the honest answer for a shim with no engine behind it is the refusal a
       // machine without one gives — so a surface that assumed the read succeeds
       // fails in the browser shim first, which is where it is cheap.
-      const blocks = options.textBlocks;
-      if (blocks === undefined || blocks === null) {
+      const opened = options.textBlocks;
+      if (opened === undefined || opened === null) {
         return Promise.resolve(err({ code: 'engine-unavailable' }));
       }
+      const blocks = written.has(docId) ? (options.textBlocksWritten ?? opened) : opened;
       return Promise.resolve(
         // `unaddressable: 0` and `rotated: 0`, and they are claims rather than
         // placeholders: a shim's fixture is text a case wrote down, upright and

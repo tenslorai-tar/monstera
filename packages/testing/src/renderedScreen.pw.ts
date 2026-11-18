@@ -5151,15 +5151,20 @@ for (const look of LOOKS) {
   });
 }
 
-// A BLOCK WHOSE WORDS RUN PAST THE PAGE (the owner's Q7), in every theme: outlined apart and said on the page, and
-// open, every line in the editor, the one below the page's foot included and SEEN, with the sentence beside them.
+// A BLOCK A PERSON'S WRITE PUSHED PAST THE PAGE (the owner's Q7, as Fix 3 of 2026-11-17 scoped it), in every theme: the
+// editor reopens over the read after the write, every line in it, the one below the page's foot included and SEEN, with
+// the sentence beside them; put down, the block is outlined apart and said on the page. The block is read ON the page
+// until the write, because one the document opened with past an edge carries neither the outline nor the sentence: this
+// case read it past from the start until that rule, and went red on every look when the rule arrived.
 for (const look of LOOKS) {
-  test(`${look.name}: a block PAST THE PAGE is outlined apart, said, and opens with every line visible`, async ({ page }) => {
+  test(`${look.name}: a block a write PUSHED PAST THE PAGE reopens with every line visible, then is outlined apart and said`, async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     const bytes = await onePagePdf();
     const docId = asDocId('00000000-0000-4000-8000-0000000000e2');
-    // EIGHT LINES FROM 60 POINTS ABOVE THE FOOT, six of them below it, as a write that grew past the page reads: far
-    // enough that the last is out of the window until it is scrolled to.
+    // TWO LINES ON THE PAGE as opened, its foot 23 points above the page's; EIGHT FROM THE SAME TOP as the write leaves
+    // it, six below the foot: far enough that the last is out of the window until it is scrolled to.
     const lines = [
       'A paragraph near the foot',
       'and its second line',
@@ -5170,36 +5175,36 @@ for (const look of LOOKS) {
       'a seventh line',
       'THE LAST LINE TYPED',
     ];
-    const box = { x0: 100, y0: -115, x1: 340, y1: 60 };
+    const fitting = {
+      box: { x0: 100, y0: 600, x1: 400, y1: 700 },
+      lines: [
+        {
+          runs: [{ index: 1, text: 'A block that fits', style: BODY_RUN }],
+          box: { x0: 100, y0: 600, x1: 400, y1: 700 },
+          soft: false,
+          baseline: 603,
+        },
+      ],
+      style: BODY_RUN,
+      shape: LEFT_SHAPE,
+    };
+    /** The block's first `count` lines, 23 points apart from 60 points above the page's foot. @param count */
+    const nearFoot = (count: number) => ({
+      box: { x0: 100, y0: 46 - (count - 1) * 23, x1: 340, y1: 60 },
+      lines: lines.slice(0, count).map((text, at) => ({
+        runs: [{ index: 10 + at, text, style: BODY_RUN }],
+        box: { x0: 100, y0: 46 - at * 23, x1: 340, y1: 60 - at * 23 },
+        soft: false,
+        baseline: 49 - at * 23,
+      })),
+      style: BODY_RUN,
+      shape: LEFT_SHAPE,
+    });
     await bridgeUnder(page, look, {
       opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'past.pdf' }],
       documentBytes: new Map([[docId, bytes]]),
-      textBlocks: [
-        {
-          box: { x0: 100, y0: 600, x1: 400, y1: 700 },
-          lines: [
-            {
-              runs: [{ index: 1, text: 'A block that fits', style: BODY_RUN }],
-              box: { x0: 100, y0: 600, x1: 400, y1: 700 },
-              soft: false,
-              baseline: 603,
-            },
-          ],
-          style: BODY_RUN,
-          shape: LEFT_SHAPE,
-        },
-        {
-          box,
-          lines: lines.map((text, at) => ({
-            runs: [{ index: 10 + at, text, style: BODY_RUN }],
-            box: { x0: 100, y0: 46 - at * 23, x1: 340, y1: 60 - at * 23 },
-            soft: false,
-            baseline: 49 - at * 23,
-          })),
-          style: BODY_RUN,
-          shape: LEFT_SHAPE,
-        },
-      ],
+      textBlocks: [fitting, nearFoot(2)],
+      textBlocksWritten: [fitting, nearFoot(lines.length)],
     });
     await page.goto('/');
     await page.getByRole('button', { name: 'Open PDF…' }).click();
@@ -5217,21 +5222,22 @@ for (const look of LOOKS) {
         const style = getComputedStyle(element);
         return `${style.borderTopStyle} ${style.borderTopWidth}`;
       });
-    expect(await lineOf(past)).toBe('solid 2px');
-    expect(await lineOf(fits)).toBe('dashed 1px');
-    expect(await againstPaper(past, 'border-top-color')).toBeGreaterThanOrEqual(3);
-    // SAID WHERE IT IS SEEN: the block is scrolled to, and its sentence is in the window with it. A note at the page's
-    // top passed a text assertion here while it was scrolled out of sight.
-    await past.scrollIntoViewIfNeeded();
-    const said = page.locator('[data-text-block-past="1"]');
-    await expect(said).toHaveText('This text no longer fits on the page');
-    await expect(said).toBeInViewport();
+    // CONTROL: on the page as read before the write, outlined as any block is and said nowhere, so the solid line below is
+    // the write's doing.
+    expect(await lineOf(past)).toBe('dashed 1px');
+    await expect(page.locator('[data-text-block-past]')).toHaveCount(0);
 
+    // THE WRITE: words typed at the block's end and put down with Esc; the read after it has the block eight lines long.
     await openWords(page, past);
-    const editor = page.locator(SURFACE);
-    expect(await editor.evaluate((element) => (element as HTMLElement).innerText)).toBe(lines.join('\n'));
+    await page.keyboard.press('Control+End');
+    await page.keyboard.type(' and more');
+    await page.keyboard.press('Escape');
+
+    // REOPENED over the read after the write, the sentence beside the words.
     const status = page.locator('.m-kit-frame [role="status"]');
     await expect(status).toHaveText('This text no longer fits on the page');
+    const editor = page.locator(SURFACE);
+    expect(await editor.evaluate((element) => (element as HTMLElement).innerText)).toBe(lines.join('\n'));
     // IN THE WINDOW, above the words: below them it was past the foot they ran off, and out of sight.
     await expect(status).toBeInViewport();
     // THE LAST LINE CAN BE SEEN, not only present: scrolled to, it is in the window, and the point at its middle is the
@@ -5263,6 +5269,20 @@ for (const look of LOOKS) {
       blocking,
       blocking.map((violation) => `${String(violation.impact)}: ${violation.id} — ${violation.help}`).join('\n'),
     ).toEqual([]);
+
+    // PUT DOWN with nothing changed, the block is still the one the write pushed out: outlined apart, its CONTROL the
+    // block that fits, and said on the page.
+    await page.keyboard.press('Escape');
+    await expect(editor).toHaveCount(0);
+    expect(await lineOf(past)).toBe('solid 2px');
+    expect(await lineOf(fits)).toBe('dashed 1px');
+    expect(await againstPaper(past, 'border-top-color')).toBeGreaterThanOrEqual(3);
+    // SAID WHERE IT IS SEEN: the block is scrolled to, and its sentence is in the window with it. A note at the page's
+    // top passed a text assertion here while it was scrolled out of sight.
+    await past.scrollIntoViewIfNeeded();
+    const said = page.locator('[data-text-block-past="1"]');
+    await expect(said).toHaveText('This text no longer fits on the page');
+    await expect(said).toBeInViewport();
   });
 }
 
