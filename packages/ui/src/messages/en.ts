@@ -121,6 +121,7 @@ export const ORGANIZE_GRID_HINTS = [
   ORGANIZE_GRID_HINT_OPEN,
 ] as const;
 export const CONFIRM_REDACTION_TITLE = messageKey('setting.saving-confirm-redaction.title');
+export const SMALLER_COPY_SIZE_TITLE = messageKey('setting.saving-smaller-copy-size.title');
 export const BACKUP_COPIES_TITLE = messageKey('setting.saving-backup-copies.title');
 export const WARN_SIGNATURE_BREAK_TITLE = messageKey('setting.saving-warn-signature-break.title');
 export const WARN_SIGNATURE_BREAK_DESCRIPTION = messageKey('setting.saving-warn-signature-break.description');
@@ -568,6 +569,13 @@ export const OPTIMIZE_SIZES = messageKey('dialog.optimize.sizes');
 export const OPTIMIZE_NOT_SMALLER = messageKey('dialog.optimize.not-smaller');
 export const OPTIMIZE_SAVE = messageKey('dialog.optimize.save');
 export const OPTIMIZE_KEEPS = messageKey('dialog.optimize.keeps');
+export const OPTIMIZE_SIZE = messageKey('dialog.optimize.size');
+export const OPTIMIZE_SIZE_AMOUNT = messageKey('dialog.optimize.size-amount');
+export const OPTIMIZE_SIZE_UNIT = messageKey('dialog.optimize.size-unit');
+export const OPTIMIZE_UNIT_KB = messageKey('dialog.optimize.unit-kb');
+export const OPTIMIZE_UNIT_MB = messageKey('dialog.optimize.unit-mb');
+export const OPTIMIZE_SIZE_OUT_OF_BOUNDS = messageKey('dialog.optimize.size-out-of-bounds');
+export const OPTIMIZE_SMALLEST = messageKey('dialog.optimize.smallest');
 export const PDFA_REMOVALS_SAVED = messageKey('dialog.pdfa-removals.saved');
 export const PDFA_REMOVALS_LEFT_OUT = messageKey('dialog.pdfa-removals.left-out');
 export const PDFA_LEFT_OUT_POPUP = messageKey('dialog.pdfa-removals.popup');
@@ -3785,6 +3793,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [AUTOSAVE_DESCRIPTION]:
     'Saves each document with unsaved changes to its own file on a timer. Off unless you turn it on, because a save replaces the file.',
   [CONFIRM_REDACTION_TITLE]: 'Confirm before redacting',
+  [SMALLER_COPY_SIZE_TITLE]: 'The size last asked of a smaller copy',
   [BACKUP_COPIES_TITLE]: 'Backup copies to keep',
   [WARN_SIGNATURE_BREAK_TITLE]: 'Warn before a change breaks a signature',
   [WARN_SIGNATURE_BREAK_DESCRIPTION]:
@@ -6497,6 +6506,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [OPTIMIZE_NOT_SMALLER]: 'Now {before}. The copy would be {after}, which is not smaller, so it would not be saved.',
   [OPTIMIZE_SAVE]: 'Choose where to save…',
   [OPTIMIZE_KEEPS]: 'The open document is not changed. Only pictures are made smaller.',
+  [OPTIMIZE_SIZE]: 'A size I choose',
+  [OPTIMIZE_SIZE_AMOUNT]: 'Size',
+  [OPTIMIZE_SIZE_UNIT]: 'Unit',
+  [OPTIMIZE_UNIT_KB]: 'KB',
+  [OPTIMIZE_UNIT_MB]: 'MB',
+  [OPTIMIZE_SIZE_OUT_OF_BOUNDS]: 'Type a size from {least} to {most}.',
+  [OPTIMIZE_SMALLEST]: 'The smallest this file can go is {after}. Pictures are at their lowest. Save it anyway?',
   // THE LEVEL, NAMED: the file is what the person asked for, and this says which (the owner's N7).
   [PDFA_REMOVALS_SAVED]: 'Saved as PDF/A-{level}b.',
   [PDFA_REMOVALS_LEFT_OUT]: 'PDF/A cannot keep these, so they were left out:',

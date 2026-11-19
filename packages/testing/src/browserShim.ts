@@ -50,6 +50,7 @@ import {
   type MeasuredKind,
   type MeasureScale,
   type PageAdjustmentOutcome,
+  OPTIMIZE_STEP,
 } from '@monstera/contract';
 import {
   type DeclaredFailure,
@@ -1134,7 +1135,8 @@ const SHIM_AFFIX = 'SET UTF-8\n';
 const SHIM_WORDS = '3\ndocument\npage\nspelling\n';
 
 /** What the shim's Optimize answers per setting, out of 100,000 bytes — one size each. */
-const SHIM_OPTIMIZED = { high: 90_000, medium: 80_000, low: 50_000 } as const;
+/** What a copy of the shim's 100,000-byte document weighs at each step of `OPTIMIZE_LADDER`, lightest first. */
+const SHIM_OPTIMIZED = [90_000, 85_000, 80_000, 65_000, 50_000] as const;
 
 /** How far past its bound a refused file is in the shim: a size a dialog shows apart from the bound's. */
 const SHIM_PAST_THE_BOUND = 7 * 1024 * 1024;
@@ -2228,20 +2230,23 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     // OPTIMIZE'S SHIM (ADR-0087): no rewriter runs in a browser, so the sizes are fixed per
     // setting — distinct, so a case can tell which setting reached the channel — at the version
     // the shim holds, and a save at any other version answers `changed`, as main's does.
-    'document.optimizeMeasure': ({ docId, setting }) => {
+    'document.optimizeMeasure': ({ docId, target }) => {
       if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
       const version = versions.get(docId);
       if (version === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+      // A SIZE IS MET AS MAIN MEETS IT (ADR-0298): the lightest step that fits, else the last, which is the smallest here.
+      const fitting = target.kind === 'size' ? SHIM_OPTIMIZED.findIndex((size) => size <= target.bytes) : OPTIMIZE_STEP[target.setting];
+      const step = fitting === -1 ? SHIM_OPTIMIZED.length - 1 : fitting;
       return Promise.resolve(
-        ok({ kind: 'measured' as const, version: asDocVersion(version), before: 100_000, after: SHIM_OPTIMIZED[setting] }),
+        ok({ kind: 'measured' as const, version: asDocVersion(version), before: 100_000, after: SHIM_OPTIMIZED[step] ?? 0, step, fits: fitting !== -1 }),
       );
     },
-    'document.optimize': ({ docId, setting, version }) => {
+    'document.optimize': ({ docId, step, version }) => {
       if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
       const held = versions.get(docId);
       if (held === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
       if (held !== version) return Promise.resolve(ok({ kind: 'changed' as const }));
-      return Promise.resolve(ok({ kind: 'copied' as const, bytes: SHIM_OPTIMIZED[setting], before: 100_000, written: wrote() }));
+      return Promise.resolve(ok({ kind: 'copied' as const, bytes: SHIM_OPTIMIZED[step] ?? 0, before: 100_000, written: wrote() }));
     },
     // THE PRINT'S SHIM: a browser has no system print dialog to show, which is main's
     // `unavailable` answer for a platform without one.

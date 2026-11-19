@@ -99,6 +99,8 @@ describe('the registered settings', () => {
       'appearance.quick-toolbar-open',
       'appearance.ribbon-section',
       'editing.style-as-default',
+      // THE SIZE LAST ASKED OF A SMALLER COPY (ADR-0298 Decision 5): its control is that dialog's own size box.
+      'saving.smaller-copy-size',
       'viewing.split',
     ]);
 

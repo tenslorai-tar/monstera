@@ -4558,7 +4558,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
         exportPdfaCommand(exportDeps),
         // THE COPY OPENS AS A RECENT FILE DOES, by the handle main minted for the write (`openRecentDocument`).
         convertTextToCurvesCommand({ ...exportDeps, openCopy: openRecent }),
-        optimizeCommand({ client, onApplied: applied, ask, stamp, signatures, track, toast, settleMarks }),
+        optimizeCommand({ client, onApplied: applied, ask, stamp, signatures, track, toast, settleMarks, settings }),
         generateTocCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
         findDuplicatePagesCommand({ client, onApplied: applied, ask, stamp, signatures }),
         undoCommand({ client, onApplied: applied, ask, stamp, signatures, pagePlanning }),

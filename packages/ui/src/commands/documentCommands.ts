@@ -12,7 +12,7 @@ import {
   type FormDataFormat,
   type FormDataImportFormat,
   type FormFieldHandle,
-  type OptimizeSetting,
+  type OptimizeTarget,
   type PageInsert,
   type PageMarkKind,
   type PageMarksRead,
@@ -135,6 +135,7 @@ import { OCR_OUTCOME_DIALOG_ID, type RecognisedWalk } from '../dialogs/ocrOutcom
 import type { ScanReader } from '../dialogs/scanReader.js';
 import { PRINT_DIALOG_ID, type PrintAnswer } from '../dialogs/print.js';
 import { PRINT_QUALITY_DPI, PRINT_QUALITY_SETTING } from '../settings/rendering.js';
+import { SMALLER_COPY_SIZE_SETTING } from '../settings/saving.js';
 import { pdfjsPageOf } from '../pageNumbering.js';
 import { EXPORT_WORD_DIALOG_ID, type ExportWordAnswer } from '../dialogs/exportWord.js';
 import {
@@ -4079,6 +4080,8 @@ export function optimizeCommand(
      * stops the wait and the dialog is not opened again.
      */
     readonly track: TrackTask;
+    /** Where the size last typed is kept (ADR-0298 Decision 5). */
+    readonly settings: SettingsStore;
   },
 ): UiCommand {
   return {
@@ -4096,20 +4099,26 @@ export function optimizeCommand(
       // BEFORE THE MEASUREMENT, which names the version it measured: an *Apply* after it would make the copy *changed*.
       if (!(await deps.settleMarks(docId, 'export'))) return;
 
-      let setting: OptimizeSetting = 'high';
-      let measured: { before: number; after: number; version: DocVersion } | null = null;
+      let target: OptimizeTarget = { kind: 'setting', setting: 'high' };
+      let measured: { before: number; after: number; fits: boolean; step: number; version: DocVersion } | null = null;
       for (;;) {
+        const size = SMALLER_COPY_SIZE_SETTING.schema.safeParse(deps.settings.get(SMALLER_COPY_SIZE_SETTING.id));
         const chosen = (await deps.ask(OPTIMIZE_DIALOG_ID, {
-          setting,
-          measured: measured === null ? null : { before: measured.before, after: measured.after },
+          target,
+          size: size.success ? size.data : SMALLER_COPY_SIZE_SETTING.fallback,
+          measured: measured === null ? null : { before: measured.before, after: measured.after, fits: measured.fits },
         })) as OptimizeAnswer | undefined;
         if (chosen === undefined) return;
 
-        if (chosen.kind === 'measure' || measured === null || chosen.setting !== setting) {
+        // A SAVE IS OF THE MEASUREMENT ON SCREEN, whose step it writes (ADR-0298 Decision 4); with none, nothing is saved.
+        if (chosen.kind === 'measure' || measured === null) {
+          if (chosen.kind !== 'measure') continue;
+          // THE SIZE TYPED IS KEPT for the next time (ADR-0298 Decision 5), whether or not it can be met.
+          if (chosen.target.kind === 'size') deps.settings.set(SMALLER_COPY_SIZE_SETTING.id, chosen.target.bytes);
           const task = deps.track(OPTIMIZE_CHECKING, 1);
           let answer: Awaited<ReturnType<ContractClient['document.optimizeMeasure']>>;
           try {
-            answer = await deps.client['document.optimizeMeasure']({ docId, setting: chosen.setting });
+            answer = await deps.client['document.optimizeMeasure']({ docId, target: chosen.target });
             task.step(1);
           } finally {
             task.end();
@@ -4123,12 +4132,13 @@ export function optimizeCommand(
             void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: `optimize-${answer.value.kind}` });
             return;
           }
-          setting = chosen.setting;
-          measured = { before: answer.value.before, after: answer.value.after, version: answer.value.version };
+          target = chosen.target;
+          const { before, after, fits, step, version } = answer.value;
+          measured = { before, after, fits, step, version };
           continue;
         }
 
-        const saved = await deps.client['document.optimize']({ docId, setting, version: measured.version });
+        const saved = await deps.client['document.optimize']({ docId, step: measured.step, version: measured.version });
         if (!saved.ok) {
           reportProblem(deps, saved.error);
           return;
@@ -4143,7 +4153,7 @@ export function optimizeCommand(
           case 'not-smaller':
             // THE SIZES MOVED from the ones shown, which a deterministic rewrite of the same
             // version should not do — shown again, from main's own reading, and nothing written.
-            measured = { before: outcome.before, after: outcome.after, version: measured.version };
+            measured = { before: outcome.before, after: outcome.after, fits: measured.fits, step: measured.step, version: measured.version };
             continue;
           case 'changed':
           case 'unreadable':

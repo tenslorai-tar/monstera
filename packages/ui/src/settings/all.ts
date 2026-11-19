@@ -15,6 +15,7 @@ import {
   AUTOSAVE_SETTING,
   BACKUP_COPIES_SETTING,
   CONFIRM_REDACTION_SETTING,
+  SMALLER_COPY_SIZE_SETTING,
   WARN_SIGNATURE_BREAK_SETTING,
 } from './saving.js';
 import { SHORTCUTS_SETTING } from './keyboard.js';
@@ -190,6 +191,7 @@ export const ALL_SETTINGS: readonly SettingDefinition[] = [
   BACKUP_COPIES_SETTING,
   WARN_SIGNATURE_BREAK_SETTING,
   CONFIRM_REDACTION_SETTING,
+  SMALLER_COPY_SIZE_SETTING,
   SHORTCUTS_SETTING,
   LOG_DETAIL_SETTING,
   // THE UPDATE CHECK'S SWITCH, present only while the manifest has an address (ADR-0110): a switch for a check that

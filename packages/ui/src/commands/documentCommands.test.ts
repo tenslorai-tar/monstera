@@ -7,7 +7,7 @@ import {
   clientOver,
 } from '@monstera/contract';
 import { type DocId, type DocVersion, type MessageKey, asDocId, asDocVersion, asFileHandle, err, ok } from '@monstera/shared';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PAGE_BACKGROUND_DIALOG_ID } from '../dialogs/pageBackground.js';
 import {
@@ -4154,8 +4154,11 @@ describe('delete pages — the mutation-dialog gate', () => {
     });
   });
 
-  describe('save a smaller copy (ADR-0087)', () => {
-    const MEASURED = { kind: 'measured', version: asDocVersion(7), before: 200_000, after: 120_000 } as const;
+  describe('save a smaller copy (ADR-0087, ADR-0298)', () => {
+    const MEASURED = { kind: 'measured', version: asDocVersion(7), before: 200_000, after: 120_000, step: 2, fits: true } as const;
+    const HIGH = { kind: 'setting', setting: 'high' } as const;
+    const smallerSettings = (): SettingsStore => new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
+    let settings = smallerSettings();
 
     /**
      * Runs the command answering the dialog from `answers` in turn, recording every ask and every
@@ -4175,6 +4178,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       const tasks: string[] = [];
       await optimizeCommand({
         settleMarks: NOTHING_MARKED,
+        settings,
         client,
         stamp,
         signatures,
@@ -4198,36 +4202,70 @@ describe('delete pages — the mutation-dialog gate', () => {
       return { sent, asked, tasks };
     }
 
+    beforeEach(() => {
+      settings = smallerSettings();
+    });
+
+    const MEDIUM = { kind: 'setting', setting: 'medium' } as const;
+    const TWO_MB = 2 * 1024 * 1024;
+
     it('SHOWS the check as a running task, and ends it', async () => {
-      const { tasks } = await running({ 'document.optimizeMeasure': MEASURED }, [{ kind: 'measure', setting: 'high' }, undefined]);
+      const { tasks } = await running({ 'document.optimizeMeasure': MEASURED }, [{ kind: 'measure', target: HIGH }, undefined]);
       expect(tasks).toStrictEqual(['start:task.optimize-checking:1', 'step:1', 'end']);
     });
 
     it('a CANCELLED check opens the dialog again for nothing, and saves nothing', async () => {
-      const { asked, sent } = await running({ 'document.optimizeMeasure': MEASURED }, [{ kind: 'measure', setting: 'high' }], true);
+      const { asked, sent } = await running({ 'document.optimizeMeasure': MEASURED }, [{ kind: 'measure', target: HIGH }], true);
       expect(asked).toHaveLength(1);
       expect(sent.map((each) => each.id)).toStrictEqual(['document.optimizeMeasure']);
     });
 
-    it('measures the setting chosen, shows the sizes, and saves at THE VERSION MEASURED', async () => {
+    it('measures the setting chosen, shows the sizes, and saves THE STEP AND VERSION MEASURED', async () => {
       const { sent, asked } = await running(
         { 'document.optimizeMeasure': MEASURED, 'document.optimize': { kind: 'copied', bytes: 120_000, before: 200_000, written: WRITTEN } },
-        [
-          { kind: 'measure', setting: 'medium' },
-          { kind: 'save', setting: 'medium' },
-        ],
+        [{ kind: 'measure', target: MEDIUM }, { kind: 'save' }],
       );
 
       expect(asked).toStrictEqual([
-        { id: 'dialog.optimize', props: { setting: 'high', measured: null } },
-        { id: 'dialog.optimize', props: { setting: 'medium', measured: { before: 200_000, after: 120_000 } } },
+        { id: 'dialog.optimize', props: { target: HIGH, size: TWO_MB, measured: null } },
+        { id: 'dialog.optimize', props: { target: MEDIUM, size: TWO_MB, measured: { before: 200_000, after: 120_000, fits: true } } },
       ]);
       // THE VERSION IS THE MEASUREMENT'S, 7, and not the context's 1: it is what makes a save of
-      // an edited document answer `changed` rather than write sizes nobody was shown.
+      // an edited document answer `changed` rather than write sizes nobody was shown. THE STEP IS THE MEASUREMENT'S, 2,
+      // so the copy written is the copy measured (ADR-0298 Decision 4).
       expect(sent).toStrictEqual([
-        { id: 'document.optimizeMeasure', params: { docId: DOC, setting: 'medium' } },
-        { id: 'document.optimize', params: { docId: DOC, setting: 'medium', version: asDocVersion(7) } },
+        { id: 'document.optimizeMeasure', params: { docId: DOC, target: MEDIUM } },
+        { id: 'document.optimize', params: { docId: DOC, step: 2, version: asDocVersion(7) } },
       ]);
+    });
+
+    it('a SIZE is measured as typed, KEPT for next time, and its found step is the one saved', async () => {
+      const asked = { kind: 'size', bytes: 150_000 } as const;
+      const found = { ...MEASURED, step: 3, after: 140_000 } as const;
+      const { sent, asked: shown } = await running(
+        { 'document.optimizeMeasure': found, 'document.optimize': { kind: 'copied', bytes: 140_000, before: 200_000, written: WRITTEN } },
+        [{ kind: 'measure', target: asked }, { kind: 'save' }],
+      );
+      expect(settings.get('saving.smaller-copy-size')).toBe(150_000);
+      expect(shown.at(-1)).toStrictEqual({
+        id: 'dialog.optimize',
+        props: { target: asked, size: 150_000, measured: { before: 200_000, after: 140_000, fits: true } },
+      });
+      expect(sent).toStrictEqual([
+        { id: 'document.optimizeMeasure', params: { docId: DOC, target: asked } },
+        { id: 'document.optimize', params: { docId: DOC, step: 3, version: asDocVersion(7) } },
+      ]);
+    });
+
+    it('CONTROL: a named setting leaves the size kept as it was', async () => {
+      await running({ 'document.optimizeMeasure': MEASURED }, [{ kind: 'measure', target: MEDIUM }, undefined]);
+      expect(settings.get('saving.smaller-copy-size')).toBe(TWO_MB);
+    });
+
+    it('a SAVE with no measurement on show sends nothing and asks again', async () => {
+      const { sent, asked } = await running({}, [{ kind: 'save' }, undefined]);
+      expect(sent).toStrictEqual([]);
+      expect(asked).toHaveLength(2);
     });
 
     it('CONTROL: a dismissed dialog sends nothing at all', async () => {
@@ -4242,10 +4280,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         [{ 'document.optimizeMeasure': MEASURED, 'document.optimize': { kind: 'changed' } }, 'optimize-changed'],
         [{ 'document.optimizeMeasure': MEASURED, 'document.optimize': { kind: 'refused', openElsewhere: 1 } }, 'contested'],
       ] as const) {
-        const { asked } = await running(answered, [
-          { kind: 'measure', setting: 'high' },
-          { kind: 'save', setting: 'high' },
-        ]);
+        const { asked } = await running(answered, [{ kind: 'measure', target: HIGH }, { kind: 'save' }]);
         expect(asked.at(-1), outcome).toStrictEqual({ id: 'dialog.save-problem', props: { outcome } });
       }
     });
@@ -4253,11 +4288,11 @@ describe('delete pages — the mutation-dialog gate', () => {
     it('shows main’s own sizes again when it answers not-smaller, and writes nothing', async () => {
       const { asked } = await running(
         { 'document.optimizeMeasure': MEASURED, 'document.optimize': { kind: 'not-smaller', before: 200_000, after: 210_000 } },
-        [{ kind: 'measure', setting: 'low' }, { kind: 'save', setting: 'low' }, undefined],
+        [{ kind: 'measure', target: { kind: 'setting', setting: 'low' } }, { kind: 'save' }, undefined],
       );
       expect(asked.at(-1)).toStrictEqual({
         id: 'dialog.optimize',
-        props: { setting: 'low', measured: { before: 200_000, after: 210_000 } },
+        props: { target: { kind: 'setting', setting: 'low' }, size: TWO_MB, measured: { before: 200_000, after: 210_000, fits: true } },
       });
     });
   });
@@ -7763,14 +7798,11 @@ describe('every file write confirms, and its Show in folder reveals the file the
       name: 'a smaller copy',
       message: TOAST_SMALLER_COPY_SAVED,
       answers: {
-        'document.optimizeMeasure': { kind: 'measured', version: asDocVersion(7), before: 200, after: 100 },
+        'document.optimizeMeasure': { kind: 'measured', version: asDocVersion(7), before: 200, after: 100, step: 0, fits: true },
         'document.optimize': { ...COPIED, before: 200 },
       },
-      dialogs: [
-        { kind: 'measure', setting: 'high' },
-        { kind: 'save', setting: 'high' },
-      ],
-      run: (deps) => optimizeCommand(deps).run(CONTEXT),
+      dialogs: [{ kind: 'measure', target: { kind: 'setting', setting: 'high' } }, { kind: 'save' }],
+      run: (deps) => optimizeCommand({ ...deps, settings: new SettingsStore(new SettingsRegistry(ALL_SETTINGS)) }).run(CONTEXT),
     },
     ...([
       ['JSON', exportFormDataJsonCommand],

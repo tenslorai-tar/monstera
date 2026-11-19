@@ -5225,22 +5225,24 @@ describe('exportText — the document’s words, streamed one page at a time', (
     });
   });
 
-  describe('a smaller copy (ADR-0087)', () => {
+  describe('a smaller copy (ADR-0087, ADR-0298)', () => {
     const FLUSHED = new Uint8Array(1000).fill(0x25);
     const COPY = '%PDF-1.7 smaller';
+    const MEDIUM = { kind: 'setting', setting: 'medium' } as const;
+    const LOW = { kind: 'setting', setting: 'low' } as const;
 
-    /** A rewriter answering `bytes`, recording what it was given and every discard. */
-    function rewriter(answer: 'optimized' | 'unreadable' | 'unavailable', bytes = COPY.length) {
-      const given: { pdf: Uint8Array; setting: string }[] = [];
+    /** A rewriter answering `bytes` (or `bytes` of the step), recording what it was given and every discard. */
+    function rewriter(answer: 'optimized' | 'unreadable' | 'unavailable', bytes: number | ((step: number) => number) = COPY.length) {
+      const given: { pdf: Uint8Array; step: number }[] = [];
       const passwords: (string | undefined)[] = [];
       let discards = 0;
-      const source: OptimizeSource = (pdf, setting, opensWith) => {
-        given.push({ pdf, setting });
+      const source: OptimizeSource = (pdf, step, opensWith) => {
+        given.push({ pdf, step });
         passwords.push(opensWith?.reveal());
         if (answer !== 'optimized') return Promise.resolve({ kind: answer });
         return Promise.resolve({
           kind: 'optimized',
-          bytes,
+          bytes: typeof bytes === 'number' ? bytes : bytes(step),
           output: (async function* () {
             yield await Promise.resolve(new TextEncoder().encode(COPY));
           })(),
@@ -5263,8 +5265,8 @@ describe('exportText — the document’s words, streamed one page at a time', (
         unlockedWith: 'sample-only-0171',
       });
 
-      await commands.optimizeMeasure(textDoc, 'medium');
-      await commands.optimize(textDoc, 'medium', await versionOf(commands));
+      await commands.optimizeMeasure(textDoc, MEDIUM);
+      await commands.optimize(textDoc, 2, await versionOf(commands));
 
       // BOTH CALLS, since a copy is rewritten again at the write: either one without it read the pages undecrypted.
       expect(passwords).toStrictEqual(['sample-only-0171', 'sample-only-0171']);
@@ -5273,7 +5275,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
     it('CONTROL: a document no password opened hands the rewriter none', async () => {
       const { source, passwords } = rewriter('optimized', 600);
       const { commands } = exportingTo(null, { optimizer: source, flush: () => Promise.resolve(FLUSHED) });
-      await commands.optimizeMeasure(textDoc, 'medium');
+      await commands.optimizeMeasure(textDoc, MEDIUM);
       expect(passwords).toStrictEqual([undefined]);
     });
 
@@ -5284,11 +5286,37 @@ describe('exportText — the document’s words, streamed one page at a time', (
       const { source, given, discards } = rewriter('optimized', 600);
       const { commands } = exportingTo(null, { optimizer: source, flush: () => Promise.resolve(FLUSHED) });
 
-      const measured = await commands.optimizeMeasure(textDoc, 'medium');
+      const measured = await commands.optimizeMeasure(textDoc, MEDIUM);
 
-      expect(measured).toStrictEqual({ kind: 'measured', version: await versionOf(commands), before: 1000, after: 600 });
-      expect(given).toStrictEqual([{ pdf: FLUSHED, setting: 'medium' }]);
+      expect(measured).toStrictEqual({ kind: 'measured', version: await versionOf(commands), before: 1000, after: 600, step: 2, fits: true });
+      // MEDIUM IS ITS STEP OF THE LADDER, 2, rewritten once.
+      expect(given).toStrictEqual([{ pdf: FLUSHED, step: 2 }]);
       expect(discards()).toBe(1);
+    });
+
+    /** A ladder whose copies weigh 900, 800, 700, 600 and 500 bytes, lightest first. */
+    const LADDER_SIZES = (step: number): number => 900 - 100 * step;
+
+    it('meets a SIZE with the lightest step that fits, rewriting no further, keeping nothing', async () => {
+      const { source, given, discards } = rewriter('optimized', LADDER_SIZES);
+      const { commands } = exportingTo(null, { optimizer: source, flush: () => Promise.resolve(FLUSHED) });
+
+      const measured = await commands.optimizeMeasure(textDoc, { kind: 'size', bytes: 750 });
+
+      expect(measured).toStrictEqual({ kind: 'measured', version: await versionOf(commands), before: 1000, after: 700, step: 2, fits: true });
+      expect(given.map((each) => each.step)).toStrictEqual([0, 1, 2]);
+      expect(discards()).toBe(3);
+    });
+
+    it('a size NOTHING meets answers the smallest copy, not fitting, and is never refused', async () => {
+      const { source, given, discards } = rewriter('optimized', LADDER_SIZES);
+      const { commands } = exportingTo(null, { optimizer: source, flush: () => Promise.resolve(FLUSHED) });
+
+      const measured = await commands.optimizeMeasure(textDoc, { kind: 'size', bytes: 100 });
+
+      expect(measured).toStrictEqual({ kind: 'measured', version: await versionOf(commands), before: 1000, after: 500, step: 4, fits: false });
+      expect(given.map((each) => each.step)).toStrictEqual([0, 1, 2, 3, 4]);
+      expect(discards()).toBe(5);
     });
 
     it('WRITES the copy when it is smaller, at the version measured, and discards it after', async () => {
@@ -5296,7 +5324,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
       const { source, discards } = rewriter('optimized');
       const { commands } = exportingTo(null, { optimizer: source, flush: () => Promise.resolve(FLUSHED), copyTo: destination });
 
-      const outcome = await commands.optimize(textDoc, 'high', await versionOf(commands));
+      const outcome = await commands.optimize(textDoc, 0,await versionOf(commands));
 
       expect(outcome).toStrictEqual({ kind: 'copied', bytes: COPY.length, before: 1000, destination });
       expect(readFileSync(destination, 'latin1')).toBe(COPY);
@@ -5308,7 +5336,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
       const { source, discards } = rewriter('optimized', 1000);
       const { commands } = exportingTo(null, { optimizer: source, flush: () => Promise.resolve(FLUSHED), copyTo: destination });
 
-      expect(await commands.optimize(textDoc, 'high', await versionOf(commands))).toStrictEqual({
+      expect(await commands.optimize(textDoc, 0,await versionOf(commands))).toStrictEqual({
         kind: 'not-smaller',
         before: 1000,
         after: 1000,
@@ -5323,7 +5351,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
       const { commands } = exportingTo(null, { optimizer: source, flush: () => Promise.resolve(FLUSHED) });
 
       const moved = asDocVersion(Number(await versionOf(commands)) + 1);
-      expect(await commands.optimize(textDoc, 'high', moved)).toStrictEqual({ kind: 'changed' });
+      expect(await commands.optimize(textDoc, 0,moved)).toStrictEqual({ kind: 'changed' });
       expect(given).toStrictEqual([]);
     });
 
@@ -5337,17 +5365,17 @@ describe('exportText — the document’s words, streamed one page at a time', (
         checkTarget: () => Promise.resolve({ kind: 'contested', others: [asDocId('other')] }),
       });
 
-      expect((await commands.optimize(textDoc, 'high', await versionOf(commands)))?.kind).toBe('refused');
+      expect((await commands.optimize(textDoc, 0,await versionOf(commands)))?.kind).toBe('refused');
       expect(discards()).toBe(1);
     });
 
     it('passes on the HOST’S unreadable and unavailable, and answers unavailable itself with no host', async () => {
       for (const answer of ['unreadable', 'unavailable'] as const) {
         const { commands } = exportingTo(null, { optimizer: rewriter(answer).source, flush: () => Promise.resolve(FLUSHED) });
-        expect(await commands.optimizeMeasure(textDoc, 'low')).toStrictEqual({ kind: answer });
+        expect(await commands.optimizeMeasure(textDoc, LOW)).toStrictEqual({ kind: answer });
       }
       const { commands } = exportingTo(null, { optimizer: null });
-      expect(await commands.optimizeMeasure(textDoc, 'low')).toStrictEqual({ kind: 'unavailable' });
+      expect(await commands.optimizeMeasure(textDoc, LOW)).toStrictEqual({ kind: 'unavailable' });
     });
   });
 

@@ -39,7 +39,9 @@ import {
   MAX_TABLE_CELLS,
   type SERVICE_REFUSALS,
   type TABLE_ENGINES,
-  type OptimizeSetting,
+  OPTIMIZE_LADDER,
+  OPTIMIZE_STEP,
+  type OptimizeTarget,
   MAX_TEXT_LAYER_LINE,
   type PageImageFormat,
   type BoxedCharacter,
@@ -209,6 +211,7 @@ import {
   type LogEntry,
   pagesChangedBy,
   pagesChangedByRecorded,
+  stepThatFits,
 } from '@monstera/kernel';
 import type { BarcodeWriteFormat } from '@monstera/kernel/barcode';
 import type { ProtectionTerms } from './documentPasswords.js';
@@ -2867,7 +2870,8 @@ export type ExportTextOutcome =
  */
 export type OptimizeSource = (
   pdf: Uint8Array,
-  setting: OptimizeSetting,
+  /** The step of `OPTIMIZE_LADDER` to rewrite at (ADR-0298). */
+  step: number,
   // THE KEY `pdf` OPENS WITH, required so no caller leaves it out: without it the rewriter read an encrypted document
   // undecrypted and wrote a copy with no page (ADR-0171's addendum, measured 2026-10-05).
   opensWith: HeldPassword | undefined,
@@ -2887,7 +2891,16 @@ export type OptimizeSource = (
 
 /** What measuring an optimized copy answered. */
 export type OptimizeMeasurement =
-  | { readonly kind: 'measured'; readonly version: DocVersion; readonly before: number; readonly after: number }
+  | {
+      readonly kind: 'measured';
+      readonly version: DocVersion;
+      readonly before: number;
+      readonly after: number;
+      /** The step the copy was made at, which a save writes (ADR-0298 Decision 4). */
+      readonly step: number;
+      /** Whether the copy is no larger than the size asked for; `true` for a named setting. */
+      readonly fits: boolean;
+    }
   | { readonly kind: 'unreadable' }
   | { readonly kind: 'unavailable' };
 
@@ -5995,31 +6008,49 @@ export class DocumentCommands {
   }
 
   /**
-   * What an optimized copy at `setting` would weigh, against the document's bytes now
-   * (ADR-0087). Keeps nothing: the copy is discarded once its size is read.
+   * What an optimized copy for `target` would weigh, against the document's bytes now
+   * (ADR-0087). Keeps nothing: each copy is discarded once its size is read.
    *
    * `before` is the size of the bytes a save would write — `flush`'s — not of the file on disk,
    * because those are what is rewritten, and a document edited since it was opened would
    * otherwise be compared with a file that no longer describes it.
+   *
+   * A named setting is one rewrite at its step. A size is met by the lightest step whose copy fits,
+   * the steps tried from the lightest (`stepThatFits`, ADR-0298 Decision 2), and where none fits by
+   * the smallest copy, answered with `fits: false` so the person is offered it rather than refused.
    */
-  async optimizeMeasure(docId: DocId, setting: OptimizeSetting): Promise<OptimizeMeasurement> {
+  async optimizeMeasure(docId: DocId, target: OptimizeTarget): Promise<OptimizeMeasurement> {
     if (this.#documents.nameOf(docId) === undefined) throw new DocumentNotOpenError(docId, 'optimize');
     const optimizer = this.#optimizer;
     if (optimizer === null) return { kind: 'unavailable' };
 
     const { value } = await this.#documents.run(docId, async (context): Promise<OptimizeMeasurement> => {
       const pdf = await this.#currentBytes(docId);
-      const copy = await optimizer(pdf, setting, this.#engine.opensWith(docId));
-      if (copy.kind !== 'optimized') return copy;
-      await copy.discard();
-      return { kind: 'measured', version: context.version, before: pdf.length, after: copy.bytes };
+      const opensWith = this.#engine.opensWith(docId);
+      const sizeAt = async (step: number): Promise<number | { readonly kind: 'unreadable' | 'unavailable' }> => {
+        const copy = await optimizer(pdf, step, opensWith);
+        if (copy.kind !== 'optimized') return copy;
+        await copy.discard();
+        return copy.bytes;
+      };
+      const found =
+        target.kind === 'setting'
+          ? await (async () => {
+              const step = OPTIMIZE_STEP[target.setting];
+              const size = await sizeAt(step);
+              return typeof size === 'number' ? { step, size, fits: true } : size;
+            })()
+          : await stepThatFits(OPTIMIZE_LADDER.length, target.bytes, sizeAt);
+      if ('kind' in found) return found;
+      return { kind: 'measured', version: context.version, before: pdf.length, after: found.size, step: found.step, fits: found.fits };
     });
     return value;
   }
 
   /**
-   * Writes an optimized copy at `setting`, rewriting again, when the document is still at the
-   * `version` it was measured at and the copy is smaller (ADR-0087 Decision 1).
+   * Writes an optimized copy at `step`, rewriting again, when the document is still at the
+   * `version` it was measured at and the copy is smaller (ADR-0087 Decision 1). The step is the
+   * one the measurement answered (ADR-0298 Decision 4), so a size is never searched for twice.
    *
    * ## The version is checked twice, and the size once more
    *
@@ -6031,7 +6062,7 @@ export class DocumentCommands {
    *
    * It does NOT touch the document: no command, no log entry, no version bump.
    */
-  async optimize(docId: DocId, setting: OptimizeSetting, version: DocVersion): Promise<OptimizeOutcome | undefined> {
+  async optimize(docId: DocId, step: number, version: DocVersion): Promise<OptimizeOutcome | undefined> {
     const suggest = this.#documents.nameOf(docId);
     if (suggest === undefined) throw new DocumentNotOpenError(docId, 'optimize');
     const optimizer = this.#optimizer;
@@ -6046,7 +6077,7 @@ export class DocumentCommands {
     const { value } = await this.#documents.run(docId, async (context): Promise<OptimizeOutcome> => {
       if (context.version !== version) return { kind: 'changed' };
       const pdf = await this.#currentBytes(docId);
-      const copy = await optimizer(pdf, setting, this.#engine.opensWith(docId));
+      const copy = await optimizer(pdf, step, this.#engine.opensWith(docId));
       if (copy.kind !== 'optimized') return copy;
       // DISCARDED WHATEVER HAPPENS, not only on the not-smaller branch: a contested destination
       // answers before the stream is opened, and a copy of the person's document would otherwise

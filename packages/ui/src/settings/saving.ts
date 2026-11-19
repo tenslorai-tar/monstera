@@ -10,6 +10,7 @@ import {
   AUTOSAVE_TITLE,
   CONFIRM_REDACTION_DESCRIPTION,
   CONFIRM_REDACTION_TITLE,
+  SMALLER_COPY_SIZE_TITLE,
   WARN_SIGNATURE_BREAK_DESCRIPTION,
   WARN_SIGNATURE_BREAK_TITLE,
 } from '../messages/en.js';
@@ -91,4 +92,20 @@ export const CONFIRM_REDACTION_SETTING: SettingDefinition<z.ZodBoolean> = {
   schema: z.boolean(),
   fallback: true,
   category: 'saving',
+};
+
+/**
+ * The size, in bytes, last typed for *Save a smaller copy*'s *A size I choose*
+ * ([ADR-0298](../../../../docs/DECISIONS/0298-a-smaller-copy-may-be-asked-for-by-size.md) Decision 5). Two megabytes
+ * until one is typed: a common limit for a form's upload.
+ *
+ * REMEMBERED, never a row: its control is the dialog's own size box, where a person sees the size they are keeping.
+ */
+export const SMALLER_COPY_SIZE_SETTING: SettingDefinition<z.ZodNumber> = {
+  id: 'saving.smaller-copy-size',
+  title: SMALLER_COPY_SIZE_TITLE,
+  schema: z.number().int().min(1024).max(1024 * 1024 * 1024),
+  fallback: 2 * 1024 * 1024,
+  category: 'saving',
+  remembered: true,
 };

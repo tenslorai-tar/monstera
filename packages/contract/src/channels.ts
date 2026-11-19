@@ -133,7 +133,8 @@ import {
   MAX_COMPOSE_SKIPS,
   boxedCharacterSchema,
   importSkippedPartSchema,
-  OPTIMIZE_SETTING_NAMES,
+  optimizeStepSchema,
+  optimizeTargetSchema,
   URL_FETCH_REFUSALS,
   FILE_ACCESS,
   SAVE_WRITE_CAUSES,
@@ -3616,14 +3617,21 @@ export const channels = {
    * by one rewrite: at most 2.5 s on the corpus (2026-09-19).
    */
   'document.optimizeMeasure': channel(
-    'Measures the size of an optimized copy of the document at one setting, keeping nothing.',
-    z.object({ docId: docIdSchema, setting: z.enum(OPTIMIZE_SETTING_NAMES) }).strict(),
+    'Measures the size of an optimized copy of the document at one setting or for a size, keeping nothing.',
+    z.object({ docId: docIdSchema, target: optimizeTargetSchema }).strict(),
     z.discriminatedUnion('kind', [
       z.object({
         kind: z.literal('measured'),
         version: docVersionSchema,
         before: z.number().int().nonnegative(),
         after: z.number().int().nonnegative(),
+        /**
+         * The step of `OPTIMIZE_LADDER` the copy was made at, which `document.optimize` writes (ADR-0298 Decision 4): a
+         * named setting's own, or for a size the lightest that fits, or the floor where none does.
+         */
+        step: optimizeStepSchema,
+        /** Whether the copy is no larger than the size asked for; `true` for a named setting, which asks for none. */
+        fits: z.boolean(),
       }),
       /** MuPDF could not open the document to rewrite it — its encryption, for one. */
       z.object({ kind: z.literal('unreadable') }),
@@ -3634,8 +3642,9 @@ export const channels = {
   ),
 
   /**
-   * Writes an optimized copy of the document to a file the user picks, at the setting and the
-   * version `document.optimizeMeasure` answered (ADR-0087 Decision 1).
+   * Writes an optimized copy of the document to a file the user picks, at the step and the
+   * version `document.optimizeMeasure` answered (ADR-0087 Decision 1, ADR-0298 Decision 4): a step,
+   * never a size, so the copy written is the copy measured and not a second search.
    *
    * **A result that is not smaller is never written**: `not-smaller` carries both sizes, and no
    * picker opens when the version has moved (`changed`). The open document is not changed.
@@ -3643,7 +3652,7 @@ export const channels = {
   'document.optimize': channel(
     'Writes an optimized copy of the document to a file the user picks, only if it is smaller.',
     z
-      .object({ docId: docIdSchema, setting: z.enum(OPTIMIZE_SETTING_NAMES), version: docVersionSchema })
+      .object({ docId: docIdSchema, step: optimizeStepSchema, version: docVersionSchema })
       .strict(),
     z.discriminatedUnion('kind', [
       z.object({

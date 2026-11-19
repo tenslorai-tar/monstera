@@ -2722,11 +2722,18 @@ function convertTextToCurvesHandler(commands: DocumentCommands, mint: MintWritte
 
 /** Optimize's measurement (ADR-0087): the command's three answers as they are. */
 function optimizeMeasureHandler(commands: DocumentCommands): ContractHandlers['document.optimizeMeasure'] {
-  return async ({ docId, setting }): Promise<Awaited<ReturnType<ContractHandlers['document.optimizeMeasure']>>> => {
+  return async ({ docId, target }): Promise<Awaited<ReturnType<ContractHandlers['document.optimizeMeasure']>>> => {
     try {
-      const measured = await commands.optimizeMeasure(docId, setting);
+      const measured = await commands.optimizeMeasure(docId, target);
       if (measured.kind === 'measured') {
-        return ok({ kind: 'measured', version: measured.version, before: measured.before, after: measured.after } as const);
+        return ok({
+          kind: 'measured',
+          version: measured.version,
+          before: measured.before,
+          after: measured.after,
+          step: measured.step,
+          fits: measured.fits,
+        } as const);
       }
       return ok({ kind: measured.kind });
     } catch (thrown) {
@@ -2740,9 +2747,9 @@ function optimizeMeasureHandler(commands: DocumentCommands): ContractHandlers['d
 
 /** Optimize's copy (ADR-0087): a copy's outcomes, plus not-smaller, changed, unreadable and unavailable. */
 function optimizeHandler(commands: DocumentCommands, mint: MintWritten): ContractHandlers['document.optimize'] {
-  return async ({ docId, setting, version }): Promise<Awaited<ReturnType<ContractHandlers['document.optimize']>>> => {
+  return async ({ docId, step, version }): Promise<Awaited<ReturnType<ContractHandlers['document.optimize']>>> => {
     try {
-      const outcome = await commands.optimize(docId, setting, version);
+      const outcome = await commands.optimize(docId, step, version);
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
       switch (outcome.kind) {
         case 'copied':

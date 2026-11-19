@@ -789,10 +789,27 @@ export type ComposeRefusal = (typeof COMPOSE_REFUSALS)[number];
  * their structure tree. One table, read by the renderer for the names, by `main` for the numbers
  * it sends, and by the host's channel for the bounds.
  */
+export const OPTIMIZE_LADDER = [
+  { quality: 85, over: 300, to: 200 },
+  { quality: 78, over: 260, to: 175 },
+  { quality: 70, over: 225, to: 150 },
+  { quality: 60, over: 190, to: 125 },
+  { quality: 50, over: 150, to: 100 },
+] as const;
+
+/**
+ * The rewriter's steps from lightest to strongest
+ * ([ADR-0298](../../../docs/DECISIONS/0298-a-smaller-copy-may-be-asked-for-by-size.md) Decision 2): the three named
+ * settings and a step halfway between each two. A size a person types is met by the first step that fits; Low, the last,
+ * is the floor, below which pictures would become unreadable. Each named setting IS a step, so the two are one table.
+ */
+export const OPTIMIZE_STEP = { high: 0, medium: 2, low: 4 } as const;
+
+/** Each named setting's numbers, read from its step of {@link OPTIMIZE_LADDER}. */
 export const OPTIMIZE_SETTINGS = {
-  high: { quality: 85, over: 300, to: 200 },
-  medium: { quality: 70, over: 225, to: 150 },
-  low: { quality: 50, over: 150, to: 100 },
+  high: OPTIMIZE_LADDER[OPTIMIZE_STEP.high],
+  medium: OPTIMIZE_LADDER[OPTIMIZE_STEP.medium],
+  low: OPTIMIZE_LADDER[OPTIMIZE_STEP.low],
 } as const;
 
 /** The setting names, in the order the dialog offers them, *high* first. */
@@ -800,6 +817,21 @@ export const OPTIMIZE_SETTING_NAMES = ['high', 'medium', 'low'] as const satisfi
 
 /** One of {@link OPTIMIZE_SETTING_NAMES}. */
 export type OptimizeSetting = (typeof OPTIMIZE_SETTING_NAMES)[number];
+
+/** A step of {@link OPTIMIZE_LADDER}, by its index. */
+export const optimizeStepSchema = z.number().int().min(0).max(OPTIMIZE_LADDER.length - 1);
+
+/**
+ * What a smaller copy is asked for (ADR-0298 Decision 1): one named setting, or a size in bytes the copy should fit.
+ * The smallest size asked for is a kilobyte, the largest a gigabyte: past either, nothing a person types means a file.
+ */
+export const optimizeTargetSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('setting'), setting: z.enum(OPTIMIZE_SETTING_NAMES) }).strict(),
+  z.object({ kind: z.literal('size'), bytes: z.number().int().min(1024).max(1024 * 1024 * 1024) }).strict(),
+]);
+
+/** One of {@link optimizeTargetSchema}'s choices. */
+export type OptimizeTarget = z.infer<typeof optimizeTargetSchema>;
 
 /**
  * The secrets a person may store and the renderer may learn are STORED — never a

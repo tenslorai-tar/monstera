@@ -19,7 +19,7 @@ import {
   MAX_TABLE_CELLS,
   MAX_TABLE_CELL_TEXT,
   type NetworkOcrEngine,
-  OPTIMIZE_SETTINGS,
+  OPTIMIZE_LADDER,
   ENGINE_HOST_MAX_IN_FLIGHT,
   RECENT_PREVIEWS_STORED,
   REVIEW_PROMPTS_STORED,
@@ -4781,7 +4781,9 @@ function composeHostBinding(
     // input goes whatever the call answered, for `compose`'s reason. The count the host reported
     // is held to the file's size before anything is streamed, which separates *the host wrote
     // nothing* from *the read found nothing* without reading the copy into `main`.
-    optimize: async (pdf, setting, opensWith) => {
+    optimize: async (pdf, step, opensWith) => {
+      const setting = OPTIMIZE_LADDER[step];
+      if (setting === undefined) throw new RangeError(`the rewriter's ladder has no step ${String(step)}`);
       const built = await ensure();
       const area = { snapshotDirectory: built.paths.snapshot, outputDirectory: built.paths.output };
       const from = areas.mintName();
@@ -4797,7 +4799,7 @@ function composeHostBinding(
         from,
         password: opensWith?.reveal() ?? null,
         into,
-        ...OPTIMIZE_SETTINGS[setting],
+        ...setting,
       }).finally(() => rm(join(area.snapshotDirectory, from), { force: true }));
 
       if (!answer.ok) {
