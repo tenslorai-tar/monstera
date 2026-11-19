@@ -442,3 +442,16 @@ is rare, and showing old words is the defect ADR-0261 fixed.
 2. *"Keep waiting for the page, in that failure case only."* As built: the editor lets go when its area is drawn at the
    new version, and only where that draw fails, or there is nothing to draw it with, does it stay until the page's own
    redraw at the new version. Section 3's *the full page is never waited for* holds everywhere else.
+
+## Correction, 2026-11-19 — section 4 gains the first press's row
+
+The owner decided on 2026-11-12 that the first press on a block is budgeted on its own, and the row was never written
+here (the reviewer's list of 2026-11-15, item 4): section 4 had only *click until editable*, which is the second click.
+Section 4's table now reads with this row beside it:
+
+| Action | Budget |
+|---|---|
+| First press on a block until it shows selected (frame and handles drawn) | under 300 ms (warm) |
+
+The same gate as every other row: measured on the window's own clock, no slower than A. The JOURNAL's open item of
+9b89f297 measured 284 to 631 ms right after launch against this target; that item stays open.
