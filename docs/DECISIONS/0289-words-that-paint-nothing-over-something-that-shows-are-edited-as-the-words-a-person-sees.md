@@ -115,3 +115,24 @@ block was drawn in a typewriter face. Four mechanisms, each found in the saved f
 The owner's rules this keeps (2026-11-19): text nobody touched never moves or breaks, and an edited word uses the closest
 normal font at the recognised text's size. Not an amendment: who draws, where and in what colour is unchanged; what changed is
 which font counts as one that paints, and what size a recognised word is set at.
+
+## Correction, 2026-11-19, later: the layer writes the type's size, and the read reports it
+
+The correction above was proven on a level fixture and failed on the guide's scan in the running application: the paragraph,
+tilted by about a degree, was read as ONE line (ADR-0049's correction of this date), and its words' sizes, being their box
+heights, split it into fragments. Its mechanism 2 read the size again inside the writer from boxes, which is a second
+opinion about a thing the recognition layer decides. So the size is decided once, where the recogniser's lines are known:
+
+- **The layer sets every word of a recognised line at the line's type size** (`ocrTextLayer.ts`), read by one module from the
+  line's word boxes and letters (`recognisedSize.ts`: capitals and ascenders 0.72 em, x-height 0.52, descenders 0.21, the
+  median of the line), and stands each word on its baseline. Its font's box is now a descent below the baseline to an em above
+  it, so a reader's box of a word reaches from a descender's depth to above its capitals. A line of another script keeps each
+  word's box height, as before.
+- **The read reports a run's size along its upright** (`pdfiumFfi.ts`' `styleOf`, as `blockPitch` already did): a squeeze
+  narrows letters, not type, and read across, the layer's squeezed words came back at 29 to 56 per cent of their size.
+- **The writer takes the line's one size where the layer states one**, and reads it from the heights by the same module where
+  a layer written before this date sized each word by its box.
+
+**Stated limit:** a page recognised before 2026-11-19 still carries a size per word, which the block grouping measures word
+gaps in, so its paragraphs are offered in fragments. Recognising the page again replaces that reading (`ocrTextLayer.ts`;
+`ocrTextLayer.test.ts`' case *REPLACES the earlier reading*) and the page is then grouped as written here.

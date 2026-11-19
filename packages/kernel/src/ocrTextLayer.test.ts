@@ -12,6 +12,7 @@ import * as mupdf from './mupdfRaw.js';
 import { describe, expect, it } from 'vitest';
 
 import type { RecognisedLine, RecognisedPage } from './ocrRecognise.js';
+import { LATIN_ASCENT_EM, LATIN_DESCENT_EM } from './recognisedSize.js';
 import {
   GLYPHLESS_FONT_NAME,
   applyOcrPage,
@@ -133,8 +134,21 @@ const SAME_PLACE: Readonly<Record<number, Box>> = {
   270: [520, 640, 536, 720],
 };
 
-/** Where all four of {@link SAME_PLACE} must read back. */
-const ON_SCREEN = { x0: 72, y0: 76, x1: 152, y1: 92 };
+/**
+ * Where all four of {@link SAME_PLACE} must read back: *Monstera* stands on its box's foot (no descender) at its line's
+ * type size, 16 over the capitals' 0.72 em, and a reader's box of it is the font's, a descent below the baseline to an em
+ * above that (`recognisedSize.ts`, since 2026-11-19). In display space, y-down from the page's top at 792: the foot is 92.
+ */
+const MONSTERA_SIZE = 16 / LATIN_ASCENT_EM;
+/** A box read back, to the hundredth of a point the reader rounds to. */
+const onScreen = (box: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number } | undefined) =>
+  box === undefined ? undefined : { x0: Math.round(box.x0 * 10) / 10, y0: Math.round(box.y0 * 10) / 10, x1: Math.round(box.x1 * 10) / 10, y1: Math.round(box.y1 * 10) / 10 };
+const ON_SCREEN = {
+  x0: 72,
+  y0: Math.round((92 - (1 - LATIN_DESCENT_EM) * MONSTERA_SIZE) * 10) / 10,
+  x1: 152,
+  y1: Math.round((92 + LATIN_DESCENT_EM * MONSTERA_SIZE) * 10) / 10,
+};
 
 /** The same string drawn through a standard font, which is the defect. */
 async function throughStandardFont(text: string): Promise<Uint8Array> {
@@ -178,7 +192,7 @@ describe('writeRecognisedText', () => {
     // arithmetic rather than a run's: 792 − 716 and 792 − 700. A layer written
     // with the flip the wrong way round lands at 700..716 and this case is the
     // one that separates them.
-    expect(layerOf(bytes).lines[0]?.box).toEqual(ON_SCREEN);
+    expect(onScreen(layerOf(bytes).lines[0]?.box)).toEqual(ON_SCREEN);
   });
 
   it('PLACES IT THERE ON A ROTATED PAGE TOO, which it did not until 2026-09-11', async () => {
@@ -191,7 +205,7 @@ describe('writeRecognisedText', () => {
     for (const rotation of [90, 180, 270]) {
       const box = SAME_PLACE[rotation] ?? [0, 0, 0, 0];
       const bytes = await written([recognised(box, [{ text: 'Monstera', box }])], rotation);
-      expect(layerOf(bytes).lines[0]?.box, `/Rotate ${String(rotation)}`).toEqual(ON_SCREEN);
+      expect(onScreen(layerOf(bytes).lines[0]?.box), `/Rotate ${String(rotation)}`).toEqual(ON_SCREEN);
     }
   });
 
@@ -203,7 +217,7 @@ describe('writeRecognisedText', () => {
     const page = document.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
     page.node.set(PDFName.of('Rotate'), PDFNumber.of(-85));
     writeRecognisedText(page, glyphlessFont(document), [recognised(box, [{ text: 'Monstera', box }])]);
-    expect(layerOf(await document.save()).lines[0]?.box).toEqual(ON_SCREEN);
+    expect(onScreen(layerOf(await document.save()).lines[0]?.box)).toEqual(ON_SCREEN);
   });
 
   it('KEEPS THE SPACE BETWEEN TWO WORDS on a rotated page, which is what separates the turn', async () => {

@@ -31,6 +31,7 @@ import { GLYPHLESS_FONT_NAME } from './glyphlessFontName.js';
 import type { Apply, Invert } from './engineSeam.js';
 import type { RecognisedLine } from './ocrRecognise.js';
 import { appendRevision, openForWriting } from './pdfLibSession.js';
+import { LATIN_ASCENT_EM, LATIN_DESCENT_EM, fallsBelow, typeSizeOfWords } from './recognisedSize.js';
 
 /**
  * The invisible text layer a recognition writes — and the font that carries it.
@@ -134,6 +135,9 @@ export { GLYPHLESS_FONT_NAME };
  */
 const GLYPH_ADVANCE = 1000;
 
+/** How far the glyphless font's box reaches below the baseline, in ems: a Latin face's descent (`recognisedSize.ts`). */
+const GLYPHLESS_DESCENT = LATIN_DESCENT_EM;
+
 /**
  * An identity `/ToUnicode` CMap over the whole BMP.
  *
@@ -223,11 +227,13 @@ export function glyphlessFont(document: PDFDocument): PDFRef {
       Type: 'FontDescriptor',
       FontName: GLYPHLESS_FONT_NAME,
       Flags: 5,
-      FontBBox: [0, 0, GLYPH_ADVANCE, GLYPH_ADVANCE],
+      // ONE EM TALL, A DESCENT BELOW THE BASELINE: each word stands on its baseline (`writeRecognisedText`), so a reader's
+      // box of it reaches from a descender's depth to above its capitals, as the recogniser's box of the word did.
+      FontBBox: [0, -GLYPHLESS_DESCENT * GLYPH_ADVANCE, GLYPH_ADVANCE, (1 - GLYPHLESS_DESCENT) * GLYPH_ADVANCE],
       ItalicAngle: 0,
-      Ascent: GLYPH_ADVANCE,
-      Descent: 0,
-      CapHeight: GLYPH_ADVANCE,
+      Ascent: (1 - GLYPHLESS_DESCENT) * GLYPH_ADVANCE,
+      Descent: -GLYPHLESS_DESCENT * GLYPH_ADVANCE,
+      CapHeight: LATIN_ASCENT_EM * GLYPH_ADVANCE,
       StemV: 80,
     }),
   );
@@ -472,12 +478,21 @@ export function removeOcrLayers(page: PDFPage): number {
  * `3 Tr` is *neither fill nor stroke*. A white fill would be invisible on a
  * white page and a grey smear on a scan, and it would print.
  *
- * ## Each run is fitted to its own box, and the fit is exact by construction
+ * ## Each run is fitted to its own box across, and set at its LINE'S size
  *
- * The font size is the box's **height** and the horizontal squeeze is the box's
- * width over the run's natural width, so the run starts at the box's left edge
- * and ends at its right one. `/DW 1000` is what makes that arithmetic true for
- * every script (see {@link GLYPH_ADVANCE}).
+ * The horizontal squeeze is the box's width over the run's natural width, so the
+ * run starts at the box's left edge and ends at its right one. `/DW 1000` is what
+ * makes that arithmetic true for every script (see {@link GLYPH_ADVANCE}).
+ *
+ * The font size is the line's TYPE size, one for every word of a line the
+ * recogniser read, by the one reading of it (`typeSizeOfWords`), and each word
+ * stands on its baseline: its box's foot, raised by a descent where it has a
+ * descender. Until 2026-11-19 the size was each word's own box height, which is
+ * the word's letters and not its type: one line of 10.5-point text was written at
+ * 4.7 to 10.1 points, and the editor, the block grouping and the writer all read
+ * a dozen sizes on one line (`recognisedSize.ts`). A line no word of which that
+ * reading can measure (another script) keeps each word's box height, as before,
+ * standing on its foot by the font's own descent so the box is still the word's.
  *
  * A run whose box has no area, or which advances nothing — empty text, or text
  * that is only combining marks — is **skipped rather than clamped**: the squeeze
@@ -511,11 +526,22 @@ export function writeRecognisedText(
   const turn = ROTATED_RUN[quarterTurn(page)];
   const [a, b, c, d] = turn.matrix;
   const [originX, originY] = turn.corner;
+  // A WORD'S DISPLAY HEIGHT, which is its box's width on a quarter-turned page (see {@link ROTATED_RUN}).
+  const heightOf = (box: PlacedRun['box']): number => (turn.turned ? box[2] - box[0] : box[3] - box[1]);
+  const lineSizes = new Map(
+    lines.map((line) => [line, typeSizeOfWords(line.words.map((word) => ({ text: word.text, height: heightOf(word.box) })))] as const),
+  );
   for (const run of runs) {
-    // THE RUN'S DISPLAY WIDTH AND HEIGHT, which are the box's the other way round
-    // on a quarter-turned page (see {@link ROTATED_RUN}).
+    // THE RUN'S DISPLAY WIDTH, the box's other side on a quarter-turned page.
     const across = turn.turned ? run.box[3] - run.box[1] : run.box[2] - run.box[0];
-    const size = turn.turned ? run.box[2] - run.box[0] : run.box[3] - run.box[1];
+    const lineSize = run.line === undefined ? null : (lineSizes.get(run.line) ?? null);
+    const size = lineSize ?? heightOf(run.box);
+    // HOW FAR ITS BASELINE STANDS ABOVE ITS BOX'S FOOT, up the page's display upright (the matrix's second column): a
+    // descent where the word has a descender at its line's size, and the font's own descent for a box kept as the size,
+    // so that box spans exactly the font's descent to its ascent.
+    const rise = lineSize === null ? GLYPHLESS_DESCENT * size : fallsBelow(run.text) ? LATIN_DESCENT_EM * size : 0;
+    const x = run.box[originX] + c * rise;
+    const y = run.box[originY] + d * rise;
     const squeeze = (across / (advancingCodes(run.text) * size)) * 100;
     operators.push(
       setFontAndSize(name, size),
@@ -524,7 +550,7 @@ export function writeRecognisedText(
       // to the line matrix, so one wrong offset would shift every run after it —
       // and the boxes this is given are absolute, so translating them into
       // offsets is arithmetic with nothing to check it against.
-      setTextMatrix(a, b, c, d, run.box[originX], run.box[originY]),
+      setTextMatrix(a, b, c, d, x, y),
       showText(PDFHexString.of(codesOf(run.text))),
     );
     if (run.spaceAfter === true) {
@@ -532,7 +558,7 @@ export function writeRecognisedText(
       // of its width, so it takes no room from the next word and moves nothing else; only the character is there.
       operators.push(
         setCharacterSqueeze(1),
-        setTextMatrix(a, b, c, d, run.box[originX] + a * across, run.box[originY] + b * across),
+        setTextMatrix(a, b, c, d, x + a * across, y + b * across),
         showText(PDFHexString.of(SPACE_CODE)),
       );
     }

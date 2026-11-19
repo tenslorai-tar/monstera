@@ -60,8 +60,11 @@ async function recognition(): Promise<RecognisedPage> {
     let at = LEFT;
     const words = text.split(' ').map((word) => {
       const width = measure.widthOfTextAtSize(word, SIZE);
-      // A WORD'S BOX AS A RECOGNISER GIVES IT: from below its descenders to above its capitals, whatever letters it has.
-      const box: [number, number, number, number] = [at, baseline - 0.21 * SIZE, at + width, baseline + 0.72 * SIZE];
+      // A WORD'S BOX AS A RECOGNISER GIVES IT, its ink: up to its capitals or ascenders or only its x-height, and down to
+      // its descenders where it has any (Helvetica's proportions, which `recognisedSize.ts` reads).
+      const top = /[A-Z0-9bdfhiklt]/u.test(word) ? 0.72 : 0.52;
+      const bottom = /[gjpqy]/u.test(word) ? 0.21 : 0;
+      const box: [number, number, number, number] = [at, baseline - bottom * SIZE, at + width, baseline + top * SIZE];
       at += width + measure.widthOfTextAtSize(' ', SIZE);
       return { text: word, box, confidence: 95 };
     });
@@ -170,6 +173,21 @@ describe('a scan’s recognised paragraph, one word edited (the owner’s list o
   });
 
   const longer = [LINES[0].replace('the year', 'the season'), LINES[1], LINES[2]].join(' ');
+
+  it('the LAYER writes every word of a line at one size, the type’s, though the word boxes are many heights', async () => {
+    const { bytes, recognised } = await recognisedScan();
+    const heights = new Set(recognised.lines.flatMap((line) => line.words.map((word) => (word.box[3] - word.box[1]).toFixed(2))));
+    expect(heights.size).toBeGreaterThan(2);
+    const session = await mupdfWriter.open(bytes);
+    try {
+      const content = await withDocument(session, (document) => new TextDecoder('latin1').decode(joinedContent(pageContentStreams(document.findPage(0)))));
+      const sizes = [...content.matchAll(new RegExp(`/${GLYPHLESS_FONT_NAME}\\S* ([\\d.]+) Tf`, 'gu'))].map((match) => Number(match[1]));
+      expect(sizes.length).toBe(recognised.lines.reduce((sum, line) => sum + line.words.length, 0));
+      for (const size of sizes) expect(size).toBeCloseTo(SIZE, 6);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
 
   it('draws the words it sets in a NORMAL face, never the recognition layer’s own font', async () => {
     const written = await edited(longer);

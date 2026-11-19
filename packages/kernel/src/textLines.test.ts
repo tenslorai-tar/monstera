@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   type BlockableRun,
-  type GroupableRun,
+  type LineableRun,
   blockableOf,
   drawnWordsOf,
   groupInFrames,
@@ -212,11 +212,13 @@ describe('a block carries its soft ends and its shape (ADR-0179)', () => {
  * equality-based grouping also passes, and equality is the version this module
  * exists instead of.
  */
-const run = (index: number, text: string, bottom: number, top: number): GroupableRun => ({
+const run = (index: number, text: string, bottom: number, top: number, left = 100 * index, right = 100 * index + 80): LineableRun => ({
   index,
   text,
   bottom,
   top,
+  left,
+  right,
 });
 
 /**
@@ -312,6 +314,57 @@ describe('grouping runs into visual lines', () => {
       },
       { runs: [{ index: 2, text: 'C' }] },
     ]);
+  });
+
+  /**
+   * THE GUIDE'S SCAN, 2026-11-19, as PDFium read its recognised layer: three lines of a paragraph tilted by about a
+   * degree, every word at its own box, so each line's baseline falls word by word, 10 pt across, the lines 15 pt apart.
+   * Every word's box as the read gave it (left, bottom, right, top).
+   */
+  const boxes: readonly (readonly [string, number, number, number, number])[][] = [
+    [
+      ['The ', 63.9, 375.4, 78.5, 381.5], ['figures ', 84.8, 371.0, 113.6, 380.7], ['on ', 119.7, 374.7, 127.7, 378.1],
+      ['this ', 134.1, 374.3, 147.4, 380.4], ['page ', 153.8, 370.0, 173.3, 376.4], ['compare ', 179.9, 369.7, 216.9, 376.1],
+      ['the ', 223.5, 372.5, 235.0, 378.6], ['year ', 241.0, 369.0, 258.0, 375.1], ['with ', 264.0, 371.8, 279.7, 377.9],
+      ['the ', 285.7, 371.4, 297.3, 377.6], ['one ', 303.4, 371.1, 317.3, 374.7], ['before. ', 324.0, 370.7, 351.5, 377.1],
+      ['Each ', 360.1, 370.4, 379.6, 376.5], ['building ', 386.6, 365.0, 419.1, 375.5], ['is ', 425.8, 369.3, 430.4, 375.4],
+      ['reported ', 436.3, 365.1, 471.8, 374.0], ['separately ', 477.9, 363.4, 523.3, 373.1],
+    ],
+    [
+      ['that ', 64.0, 360.6, 78.0, 366.8], ['changes ', 84.1, 355.8, 120.3, 365.8], ['in ', 127.4, 360.0, 132.6, 365.8],
+      ['one ', 137.8, 359.2, 152.0, 362.8], ['are ', 158.6, 359.2, 170.5, 362.6], ['not ', 176.7, 358.9, 187.6, 364.1],
+      ['hidden ', 194.4, 358.1, 221.9, 364.5], ['by ', 228.6, 353.7, 236.1, 363.4], ['the ', 242.2, 357.4, 254.0, 363.5],
+      ['others. ', 260.1, 357.0, 286.9, 363.2], ['Notes ', 295.6, 356.3, 318.8, 362.6], ['below ', 325.5, 356.0, 351.4, 362.1],
+      ['the ', 355.6, 355.6, 367.1, 361.7], ['chart ', 373.2, 355.2, 393.2, 361.4], ['say ', 399.4, 350.9, 412.5, 357.3],
+      ['where', 418.4, 354.2, 443.7, 360.5], ['a ', 447.0, 350.5, 449.1, 358.1], ['figure ', 458.8, 349.7, 482.2, 359.4],
+      ['was', 487.9, 353.1, 502.7, 356.7],
+    ],
+    [
+      ['estimated ', 63.6, 345.2, 105.9, 351.3], ['rather ', 112.6, 344.4, 136.3, 350.6], ['than ', 142.1, 344.1, 159.3, 350.2],
+      ['metered, ', 166.3, 341.4, 201.8, 348.9], ['and ', 210.1, 343.0, 224.0, 348.9], ['which ', 230.1, 342.6, 253.8, 348.8],
+      ['actions ', 260.1, 341.9, 290.3, 348.0], ['are ', 296.5, 341.6, 308.4, 345.0], ['already ', 314.5, 336.7, 346.1, 346.8],
+      ['under ', 352.1, 340.5, 375.2, 346.3], ['way.', 381.3, 336.1, 397.5, 342.6],
+    ],
+  ];
+  let next = 0;
+  const numbered = boxes.map((line) => line.map(([text, left, bottom, right, top]) => run(next++, text, bottom, top, left, right)));
+  const tilted = numbered.flat();
+
+  it('keeps a TILTED paragraph’s lines apart: a word joins the words beside it, never the line’s grown extent', () => {
+    const lines = groupIntoLines(tilted);
+    expect(lines.map(covers)).toStrictEqual(numbered.map((line) => line.map((each) => each.index)));
+  });
+
+  it('CONTROL: those lines DO chain through the extent the whole line has grown to', () => {
+    // The rule this replaced, run over the same boxes: each line's extent reaches its last word's bottom, and the next
+    // line's first word overlaps it. So the case above separates the two rules rather than passing either.
+    const grown: { bottom: number; top: number; count: number }[] = [];
+    for (const each of tilted) {
+      const line = grown.find((held) => each.bottom < held.top && each.top > held.bottom);
+      if (line === undefined) grown.push({ bottom: each.bottom, top: each.top, count: 1 });
+      else Object.assign(line, { bottom: Math.min(line.bottom, each.bottom), top: Math.max(line.top, each.top), count: line.count + 1 });
+    }
+    expect(grown).toHaveLength(1);
   });
 
   it('answers nothing for a page with no text runs', () => {

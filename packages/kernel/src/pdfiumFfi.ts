@@ -1388,7 +1388,12 @@ function styleOf(bindings: Bound, object: unknown, programs: Map<string, Program
     name,
   });
   return {
-    size: (size[0] ?? 0) * Math.hypot(a, b),
+    // THE SIZE IS HOW TALL THE TYPE IS DRAWN, along the object's upright (`c`, `d`), as `blockPitch` reads it: a squeeze
+    // (`Tz`) narrows the letters and not the type, and it is in the matrix's first column only. Read along the first, a
+    // recognition layer's words, each squeezed to its box, came back at 29 to 56 per cent of their size (the guide's scan,
+    // 2026-11-19), and the block grouping measured every word gap in that size and split a paragraph into its words. For
+    // text drawn unsqueezed and unskewed the two columns are the same length, so nothing else moves.
+    size: (size[0] ?? 0) * Math.hypot(c, d),
     colour: { r: red[0] ?? 0, g: green[0] ?? 0, b: blue[0] ?? 0 },
     font: wireFontName(name),
     // THE DESCRIPTOR'S FLAG where it is set, and the family's name where it is not: a producer that leaves the flag

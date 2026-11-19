@@ -146,3 +146,13 @@ replace, before anything is written — holds on the page and more directly. The
 consequence *"the extent does not leave"* is withdrawn for placing that editor
 only. Decisions 1, 2 and 4 stand unchanged, and the lines this ADR groups are now
 joined into blocks by ADR-0096 Decision 4.
+
+## Correction, 2026-11-19 — a run joins the line whose runs BESIDE it it overlaps
+
+The lines were made by overlap with the extent a line had grown to. On a tilted scan's recognition layer, where each
+word stands at its own box, a line's baseline falls word by word (10 pt across the guide's scan, its lines 15 pt apart),
+so the grown extent reached the next line's first word, and that one the next: three lines read as one, their ends
+joined without a space, and an edit set the paragraph as one line past the page. A run now joins a line when it overlaps
+that line's runs nearest it across, which are the words beside it; on level text those are on its baseline as before,
+and the next line's first word stands under the line's first words and overlaps none of them. Overlap is still strict.
+`textLines.test.ts` holds the scan's own boxes, and a control that the grown extent chains them into one line.

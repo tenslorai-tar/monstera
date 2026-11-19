@@ -237,14 +237,24 @@ export interface EditableLine {
  *
  * @param runs the page's text runs, in reading order
  */
-export function groupIntoLines(runs: readonly GroupableRun[]): readonly EditableLine[] {
+export function groupIntoLines(runs: readonly LineableRun[]): readonly EditableLine[] {
   return overlapLines(runs).map((line) => ({
     runs: line.runs.map((run) => ({ index: run.index, text: run.text })),
   }));
 }
 
+/**
+ * The runs of `held` horizontally nearest `run`: those whose extent across is the least distance from its own, every
+ * run it overlaps across being at distance 0.
+ */
+function nearestAcross<T extends LineableRun>(held: readonly T[], run: LineableRun): T[] {
+  const distance = (each: T): number => Math.max(0, each.left - run.right, run.left - each.right);
+  const least = Math.min(...held.map(distance));
+  return held.filter((each) => distance(each) === least);
+}
+
 /** Lines under construction, each carrying the extent it has grown to. */
-function overlapLines<T extends GroupableRun>(
+function overlapLines<T extends LineableRun>(
   runs: readonly T[],
 ): { runs: T[]; bottom: number; top: number }[] {
   const open: { runs: T[]; bottom: number; top: number }[] = [];
@@ -253,7 +263,15 @@ function overlapLines<T extends GroupableRun>(
     // that merely touch at an edge are on two lines. A `<=` here would join the
     // descender of one line to the ascender of the next on tightly set text,
     // which is the failure mode the conservative direction exists to avoid.
-    const line = open.find((held) => run.bottom < held.top && run.top > held.bottom);
+    //
+    // WITH THE LINE'S RUNS NEAREST IT ACROSS, never with the extent the whole line has grown to. Words recognised on a
+    // tilted scan are each written at their own box (`ocrTextLayer.ts`), so a line's baseline falls word by word: on the
+    // guide's scan, tilted by about a degree, 10 pt from a line's first word to its last, with the lines 15 pt apart. The
+    // grown extent reached down to the next line's first word, and that one down to the next: a paragraph of three lines
+    // was read as one, its line ends joined without a space ("wasestimated"), and an edit set it as one line past the
+    // page (2026-11-19). A word's neighbours across are the words beside it on its own line, so a sloping line stays one
+    // line and the next line's first word, which stands under the line's FIRST words, overlaps none of them.
+    const line = open.find((held) => nearestAcross(held.runs, run).some((each) => run.bottom < each.top && run.top > each.bottom));
     if (line === undefined) {
       open.push({ runs: [run], bottom: run.bottom, top: run.top });
       continue;

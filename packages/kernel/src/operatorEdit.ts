@@ -37,6 +37,7 @@ import {
   textObjectCount,
   textObjectEnds,
 } from './textOperators.js';
+import { typeSizeOfWords } from './recognisedSize.js';
 import { codesFor, lettersOf } from './toUnicode.js';
 
 /**
@@ -1125,15 +1126,13 @@ function write(
     // width; measured with them, no line came back into step, so the edit redrew the whole paragraph. Each scan run's
     // operators are measured and drawn with ONE size for their line, and no squeeze.
     //
-    // THE LINE'S SIZE IS READ FROM THE BOXES OF ITS WORDS THAT REACH BOTH UP AND DOWN: a word holding a capital, a digit or
-    // one of `bdfhklt` and one of `gjpqy` spans its face's ascent to its descent, which is close to 0.93 of the size in the
-    // common Latin faces (Helvetica 0.93, Arial 0.94, Times 0.89), and the line takes the median of those. The TALLEST box
-    // is no measure: on a scan tilted by a degree a long word's box is taller by its slope (the guide's scan, 2026-11-19:
-    // 13.7 pt on a line of 10.5-point text). Nor are the words' WIDTHS in the face that draws them: that face is the
-    // closest normal one, not the scan's, and matching widths drew the same line at 8.8 pt. Where no word reaches both ways,
-    // the width reading stands in, and with no face to ask, the median box height.
-    const REACH = 0.93;
-    const reachesBoth = (text: string): boolean => /[A-Z0-9bdfhklt]/u.test(text) && /[gjpqy]/u.test(text);
+    // THE LINE'S SIZE: where its words are all set at one size, that one, which is how the recognition layer writes a line
+    // since 2026-11-19 (`ocrTextLayer.ts`). Where each word has a size of its own, a layer written before then, which set
+    // each word at its own box's height, the line's type size is read from those heights and the words' letters by the
+    // one reading of it (`typeSizeOfWords`), and failing that it is their median. Not the words' WIDTHS in the face that
+    // draws them: that face is the closest normal one, not the scan's, and matching widths drew a line of 10.5-point text
+    // at 8.8 pt; nor the tallest box, which a tilted scan makes taller by its slope.
+    const ONE_SIZE = 1.01;
     const setState = new Map<ShowOperator, ShowOperator['state']>();
     /**
      * WHERE EACH WHOLLY SCANNED LINE ENDS as the face that draws it sets it. The block wraps no shorter than the widest of
@@ -1149,22 +1148,10 @@ function write(
     for (const [at, line] of lines.entries()) {
       const scanned = line.filter((_run, index) => scanRuns[at]?.[index] === true);
       if (scanned.length === 0) continue;
-      const bySize = scanned.flatMap((run) => {
-        const op = ops[run.first];
-        if (op === undefined || faces === null || Array.from(run.run.text.trim()).length < 3) return [];
-        const pieces = faces.set(run.run.text.trim(), op, () => null);
-        if (pieces === null || pieces.length === 0) return [];
-        const atOnePoint = pieces.reduce((sum, piece) => sum + (advanceOf(piece.font, piece.codes, { ...op.state, size: 1, scale: 1, charSpacing: 0, wordSpacing: 0 }) ?? 0), 0);
-        const unit = placed(run.first).unit;
-        return atOnePoint > 0 && unit > 0 ? [(run.run.right - run.run.left) / (atOnePoint * unit)] : [];
-      });
-      const byReach = scanned.filter((run) => reachesBoth(run.run.text)).map((run) => (run.run.top - run.run.bottom) / REACH / Math.max(1e-9, placed(run.first).unit));
-      const size =
-        byReach.length > 0
-          ? median(byReach)
-          : bySize.length > 0
-            ? median(bySize)
-            : median(scanned.flatMap((run) => run.members.map((member) => ops[member]?.state.size ?? 0)));
+      const said = scanned.map((run) => ({ text: run.run.text, height: ops[run.first]?.state.size ?? 0 })).filter((word) => word.height > 0);
+      const heights = said.map((word) => word.height);
+      const oneSize = heights.length > 0 && Math.max(...heights) <= ONE_SIZE * Math.min(...heights);
+      const size = oneSize ? median(heights) : (typeSizeOfWords(said) ?? median(heights));
       for (const run of scanned) {
         for (const member of run.members) {
           const op = ops[member];
