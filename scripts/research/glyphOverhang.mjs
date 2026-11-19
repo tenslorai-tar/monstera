@@ -185,7 +185,15 @@ for (const [fontName, letter] of EDGE) {
     const document = open(bytes);
     try {
       const page = document.loadPage(0);
-      const [bx0 = 0, by0 = 0, bx1 = 0, by1 = 0] = boxOf(charBoxes(page)[0]?.quad ?? []);
+      const read = charBoxes(page);
+      // THE LETTER READ BEFORE THE MARK, or nothing after it says anything: an empty reading after a burn-in is REMOVED
+      // only where the page read the letter first. Without this a page the reader could not read printed REMOVED for
+      // every k, the reassuring answer of a blind instrument (the reviewer's list of 2026-11-15, item 18).
+      if (read.length === 0) {
+        process.stdout.write(`${fontName} | ${letter} | ${String(k)} | NOT READ BEFORE THE MARK, so nothing is said | -\n`);
+        continue;
+      }
+      const [bx0 = 0, by0 = 0, bx1 = 0, by1 = 0] = boxOf(read[0]?.quad ?? []);
       /** @type {[number, number, number, number]} */
       const mark = [bx1 - ((bx1 - bx0) * k) / 100, by0 - 1, bx1 + 2, by1 + 1];
       const before = inkOf(page, mark);
