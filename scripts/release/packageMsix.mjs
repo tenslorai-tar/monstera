@@ -301,6 +301,35 @@ export function refuseTag(tag, tagged, commit) {
   }
 }
 
+/**
+ * The commit `tag` names in `git ls-remote` output, or `null` where the output names no such tag: an annotated tag's
+ * peeled line (`^{}`) where there is one, since that is the commit, else the tag's own line, which for a lightweight tag
+ * is the commit. The one reading of that porcelain here (B3a).
+ *
+ * @param {string} listed `git ls-remote <remote> refs/tags/<tag> refs/tags/<tag>^{}`'s output
+ * @param {string} tag
+ */
+export function taggedIn(listed, tag) {
+  const lines = listed.split('\n').map((line) => line.trim().split(/\s+/u)).filter((parts) => parts.length === 2);
+  const peeled = lines.find(([, ref]) => ref === `refs/tags/${tag}^{}`);
+  const own = lines.find(([, ref]) => ref === `refs/tags/${tag}`);
+  return (peeled ?? own)?.[0] ?? null;
+}
+
+/**
+ * The commit `tag` names ON GITHUB, or `null` when there is no such tag there. A tag pushed from another checkout is
+ * not in this one until it is fetched, so the local reading alone let a second commit be packed under a version GitHub
+ * already gives to another (the reviewer's list of 2026-11-15, item 16, BBBBBBBBB-24). Refused where GitHub cannot be
+ * asked: an unanswered question is not an absent tag.
+ *
+ * @param {string} tag
+ */
+function taggedOnOrigin(tag) {
+  const asked = spawnSync('git', ['ls-remote', 'origin', `refs/tags/${tag}`, `refs/tags/${tag}^{}`], { cwd: REPO_ROOT, encoding: 'utf8' });
+  if (asked.status !== 0) throw new Error(`GitHub could not be asked whether ${tag} exists, so the pack stops: ${asked.stderr.trim() || `exit ${String(asked.status)}`}`);
+  return taggedIn(asked.stdout, tag);
+}
+
 /** The commit `tag` names in this checkout, or `null` when there is no such tag. @param {string} tag */
 function taggedCommit(tag) {
   const asked = spawnSync('git', ['rev-parse', '--verify', '--quiet', `refs/tags/${tag}^{commit}`], { cwd: REPO_ROOT, encoding: 'utf8' });
@@ -706,6 +735,7 @@ async function main() {
   const tag = contract.releaseTag(version);
   if (tag === null) throw new Error(`${version} names no tag, so About could not open this build's source.`);
   refuseTag(tag, taggedCommit(tag), commit);
+  refuseTag(tag, taggedOnOrigin(tag), commit);
 
   const work = join(REPO_ROOT, 'release', 'msix', flavour);
   const stage = join(work, 'layout');

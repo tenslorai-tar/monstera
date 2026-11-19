@@ -45,6 +45,7 @@ import {
   refuseHistory,
   refuseTag,
   refuseVersion,
+  taggedIn,
   unresolvedImports,
 } from '../release/packageMsix.mjs';
 
@@ -73,7 +74,7 @@ const RUNTIME_CASES = [
 ];
 
 /** Cases decidable without one. These run on every machine. */
-const PURE_CASES = 19;
+const PURE_CASES = 20;
 
 const roster = createRoster(failures, { cases: RUNTIME_PRESENT ? PURE_CASES + RUNTIME_CASES.length : PURE_CASES });
 
@@ -196,6 +197,21 @@ try {
     'a version whose tag names another commit is refused, naming both; one at this commit, or no tag yet, packs',
     sameCommit === null && untagged === null && moved !== null && moved.includes(first) && moved.includes(other),
     `same commit: ${String(sameCommit)}; untagged: ${String(untagged)}; moved: ${String(moved)}`,
+  );
+
+  // THE TAG AS GITHUB HAS IT (BBBBBBBBB-24): `git ls-remote` answers an annotated tag's object and, peeled, its commit;
+  // the commit is the answer. Read on 2026-11-19 for v1.1.2615.0: the tag object 5cca004d…, peeled 9d529327…. A
+  // lightweight tag has no peeled line, and its own line is the commit. CONTROL: the tag object alone is never taken for
+  // the commit where a peeled line is there, and output naming another tag answers none.
+  const object = 'c'.repeat(40);
+  const annotated = taggedIn(`${object}\trefs/tags/v1.1.2611.0\n${first}\trefs/tags/v1.1.2611.0^{}\n`, 'v1.1.2611.0');
+  const lightweight = taggedIn(`${first}\trefs/tags/v1.1.2611.0\n`, 'v1.1.2611.0');
+  const otherTag = taggedIn(`${first}\trefs/tags/v1.1.2612.0\n`, 'v1.1.2611.0');
+  const nothing = taggedIn('', 'v1.1.2611.0');
+  check(
+    'GitHub’s answer for a tag is its commit, peeled where annotated; another tag, or none, answers no commit',
+    annotated === first && lightweight === first && otherTag === null && nothing === null,
+    `annotated: ${String(annotated)}; lightweight: ${String(lightweight)}; another tag: ${String(otherTag)}; none: ${String(nothing)}`,
   );
 
   const specifiers = bareSpecifiers(
