@@ -627,7 +627,7 @@ export {
   stextOptionsFor,
 } from './textStructure.js';
 // A SCANNED TABLE'S SHAPE (ADR-0233), apart from its reader, which loads the engine.
-export { type ScanTable, type ScanTableLine, pageTablesOfScan, sawRulings } from './scanTableShape.js';
+export { type ScanTable, type ScanTableLine, pageTablesOfScan, sawColumnRulings, withRuledTables } from './scanTableShape.js';
 export { type StructureOutline, structureOutlineOf } from './structureOutline.js';
 // OFFICE EXPORTS (ADR-0072). Pure: strings in, zip chunks out, no engine.
 export { type OoxmlPart, ooxmlPackage, xmlText } from './ooxmlPackage.js';

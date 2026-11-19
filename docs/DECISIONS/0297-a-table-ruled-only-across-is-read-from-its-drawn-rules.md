@@ -70,3 +70,26 @@ light grey (RGB 204, 211, 222) a threshold puts with the paper, and a band's edg
 - **The Word export takes the same tables.** It reads a page's tables in the host from MuPDF's table read directly
   (`wordPictures.ts`), so it missed these tables too. The merge is one pure function, `withRuledTables`, called by main's
   `pageTables` and by the Word export's read alike, so the two exports cannot disagree about which tables a page holds.
+
+## Correction, 2026-11-19, while the feature was built: three decisions as built differ from the text above
+
+1. **Decision 1: no drawing device; the structured text's own vector blocks.** A callback device crashed the native
+   binding on a damaged corpus document (`_review/crashProbe.mjs`: any device callback, even one counting pictures,
+   ended the process; the structured-text walk read the same page whole). The rules, the characters and whether the page
+   holds a picture now all come from one walk of the structured text asked with `vectors` and `preserve-images`, each
+   vector block carrying its box, whether it is stroked and its colour. The existing fills read uses the same device
+   mechanism and has the same exposure; it is recorded for the next list, not changed here.
+2. **Decision 3 gains a condition: a run with words just past its ends is not a table.** A five-column table whose
+   every cell is shaded on its own lines its cells' shading up column by column; on a corpus page each column's run was
+   read as a table of its own inside the real one. A character within a quarter inch beyond either end, on the run's own
+   rows, makes the run one column of something wider.
+3. **Decision 5: the merge is by ROW and by overlap, and never drops a row the rules do not cover.** The generated page
+   in `acrossRulings.test.ts` (the Supply Agreement's table between its clauses) showed the engine's second failure: a
+   table joined with the heading and clauses around it, which a merge of whole tables *inside* a ruled one would keep.
+   And on a corpus page an engine table of 24 rows had 3 rows with words outside the ruled region, which a merge of whole
+   tables *overlapping* one would lose. So an engine row inside a ruled table gives way to it, and the engine's rows
+   outside every ruled table are kept, each run of them a table of its own.
+
+Measured over the corpus (16 documents, 59 pages, counts only): this read changes no page's answer through its rules
+across beyond the two sample documents' tables. The empty grids it answers on some pictures come from ADR-0233's pixel
+pass, under the same conditions as before this ADR; they are recorded for the next list.

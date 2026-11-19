@@ -8,9 +8,12 @@ import { readPageGeometry } from './pageGeometry.js';
 import { pageInDocument, pagesOf } from './pageScope.js';
 import { scaleWithinPixelBound } from './pageSnapshot.js';
 import { readPageTextJson } from './pageText.js';
+import { pageTablesOfScan, sawColumnRulings, withRuledTables } from './scanTableShape.js';
+import { readScanTables } from './scanTables.js';
 import {
   PICTURE_READ_OPTIONS,
   type PagePicture,
+  type PageTable,
   parsePageLayout,
   parsePageTables,
   printedBoxOf,
@@ -55,7 +58,16 @@ async function* wordPages(session: MupdfSession, chosen: PageSet, mode: WordMode
     // THE TABLE READ is the one Excel's automatic engine asks (ADR-0073), taken for the flow modes only: layout places
     // every line at its own box and needs no table. It finds a table in recognised handwriting too, because it
     // reads the text layer's alignment and not ruling lines (measured 2026-10-08: a 4×3 grid of invisible words, no lines).
-    const tables = mode === 'layout' ? [] : parsePageTables(await readPageTextJson(session, index, 'table')).tables;
+    // AND A TABLE RULED ONLY ACROSS, read from its rules where the engine saw no rule down, by the one merge main's Excel
+    // read takes too (ADR-0297), so the two exports find the same tables on a page.
+    const engine = mode === 'layout' ? [] : parsePageTables(await readPageTextJson(session, index, 'table')).tables;
+    // ONLY A RULED TABLE THAT HOLDS WORDS: a scan with no text layer has a grid and nothing in it, and the page's picture
+    // already shows it; an empty Word table over it would draw the grid twice.
+    const holdsWords = (table: PageTable): boolean => table.rows.some((row) => row.some((cell) => cell.lines.length > 0));
+    const tables =
+      mode === 'layout' || sawColumnRulings(engine)
+        ? engine
+        : withRuledTables(engine, pageTablesOfScan(await readScanTables(session, index)).filter(holdsWords));
     yield { index, text, size, pictures, tables };
   }
 }

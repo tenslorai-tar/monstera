@@ -157,7 +157,8 @@ import {
   parsePageTables,
   withCellFills,
   pageTablesOfScan,
-  sawRulings,
+  sawColumnRulings,
+  withRuledTables,
   parsePageText,
   pdfiumChannels,
   type ComposeChannels,
@@ -1541,15 +1542,15 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       const session = sessions.mupdf;
       if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
       const read = parsePageTables((await engineHost.pageText(session, page, 'table')).json);
-      // A SCAN'S RULINGS ARE PIXELS, which the engine's read cannot see (ADR-0233): on a page holding a picture where the
-      // engine saw no ruling, the rulings are read from the picture, and where they make a table, those are the page's
-      // tables. A page whose rulings are vectors keeps the engine's answer, so no table is read twice.
-      if (read.images > 0 && !sawRulings(read.tables)) {
-        const scanned = await engineHost.scanTables(session, page);
-        if (scanned.length > 0) return { ...read, tables: pageTablesOfScan(scanned) };
-      }
-      if (read.tables.length === 0) return read;
-      return { ...read, tables: withCellFills(read.tables, await engineHost.pageFills(session, page)) };
+      // RULINGS THE ENGINE CANNOT ENCLOSE: a scan's, which are pixels (ADR-0233), and a table ruled only across, whose rules
+      // enclose no cell (ADR-0297). Wherever the engine saw no rule DOWN, the page is asked for the tables this build reads
+      // from rulings, and an engine table lying wholly inside one gives way to it (`withRuledTables`, the one merge the
+      // Word export takes too). A table ruled down keeps the engine's answer, so no grid it reads exactly is read twice.
+      const tables = sawColumnRulings(read.tables)
+        ? read.tables
+        : withRuledTables(read.tables, pageTablesOfScan(await engineHost.scanTables(session, page)));
+      if (tables.length === 0) return { ...read, tables };
+      return { ...read, tables: withCellFills(tables, await engineHost.pageFills(session, page)) };
     },
     // WHETHER A PAGE TOOL WOULD CHANGE A PAGE (N3): the apply's own decision, read in the host without writing.
     pageAdjustment: (docId, sessions, page, adjustment) => {

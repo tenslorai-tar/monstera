@@ -717,9 +717,10 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
       // NOT EMPTY, or the equality below would hold for a handler that crossed nothing.
       expect(crossed).toHaveLength(1);
       expect(crossed).toStrictEqual(await readScanTables(scan.session, 0));
-      // CONTROL: a page whose grid is vectors and no picture still answers its grid through the same read — main decides
-      // when to ask (`sawRulings`), not this read — so the answer above is the scan's and the wire carries what it is given.
-      expect(await vector.scanTables(vector.token, 0)).toHaveLength(1);
+      // CONTROL: the same grid drawn in vectors on a page with no picture answers NOTHING through this read — its pixel pass
+      // runs only where the page draws a picture (ADR-0297 Decision 4), and a grid ruled down is MuPDF's to read — so the
+      // answer above is the scan's pixels, crossing the wire as read.
+      expect(await vector.scanTables(vector.token, 0)).toHaveLength(0);
     } finally {
       await mupdfWriter.close(scan.session);
       await mupdfWriter.close(vector.session);

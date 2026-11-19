@@ -40,6 +40,11 @@ const SLACK = 1;
 /** At or above this in every channel, a fill is paper rather than shading. */
 const WHITE = 0.98;
 
+/** Whether a colour is the paper's: the one rule for a cell's background and for a rule across (ADR-0297). */
+export function isPaper(rgb: readonly number[]): boolean {
+  return rgb.every((channel) => channel >= WHITE);
+}
+
 /** The box around every line of a cell's text, or `null` for a cell with none. */
 function textBox(cell: TableCell): PageFill['box'] | null {
   if (cell.lines.length === 0) return null;
@@ -67,7 +72,7 @@ export function cellFillOf(cell: TableCell, fills: readonly PageFill[]): CellFil
       bestArea = area;
     }
   }
-  if (best === null || best.rgb.every((channel) => channel >= WHITE)) return null;
+  if (best === null || isPaper(best.rgb)) return null;
   return best.rgb;
 }
 

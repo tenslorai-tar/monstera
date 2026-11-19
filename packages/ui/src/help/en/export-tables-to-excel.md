@@ -23,7 +23,8 @@ Export tables to Excel reads the tables in your document, lets you check and cor
 ## Good to know
 
 - Without a reader set up, the window uses the PDF's own text and says how to add one.
-- **Typed text** works on tables with ruled lines best; a table without lines may be split at its gaps.
+- **Typed text** works on tables with ruled lines best. A table ruled only across, with a shaded header row and a thin line under each row and no lines down, is read whole, header included. A table with no lines at all may be split at its gaps.
+- **Export to Word** finds the same tables on a page as this window does.
 - With Azure or Claude, only the pages you chose are sent, and the window says how many before anything is sent. The bar at the bottom shows how many pages have been read, and **Cancel** there stops after the page in hand and writes no file.
 - **Printed scan, read on this computer** reads the pages you chose first, with nothing leaving your computer, then finds the tables by their ruled lines, with each cell's words and borders. The words are also kept, unseen, in your document so it can be searched, and **Undo** (**Ctrl+Z**) takes out all the pages of one reading together. Cancel in the bar stops, and no file is written.
 - For handwritten tables, use Azure or Claude. Those send your pages to that service, which the window says before anything is sent. You need your own key, and the service bills you directly. See "Get and add keys for AI and online reading services".
