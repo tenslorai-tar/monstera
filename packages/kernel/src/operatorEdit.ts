@@ -1117,6 +1117,81 @@ function write(
         return ink === null || ink === undefined ? [] : run.members.map((member) => [ops[member], ink] as const);
       })),
     );
+    // A SCAN'S WORDS ARE SET AT THEIR LINE'S RECOGNISED SIZE, UNSQUEEZED, once they are to be seen (the owner's rule of
+    // 2026-11-19: an edited word uses the closest normal font at the recognised text's size). The recognition layer writes
+    // each word in a font whose letters paint nothing and advance one em each, at the word's own box height and squeezed
+    // to its box's width (`ocrTextLayer.ts`): a size and a squeeze that describe THAT font. Carried into a face that
+    // paints, they drew every word of the line at a size of its own (8.3 pt beside 10.1 pt) and 29 to 56 per cent of its
+    // width; measured with them, no line came back into step, so the edit redrew the whole paragraph. Each scan run's
+    // operators are measured and drawn with ONE size for their line, and no squeeze.
+    //
+    // THE LINE'S SIZE IS READ FROM THE BOXES OF ITS WORDS THAT REACH BOTH UP AND DOWN: a word holding a capital, a digit or
+    // one of `bdfhklt` and one of `gjpqy` spans its face's ascent to its descent, which is close to 0.93 of the size in the
+    // common Latin faces (Helvetica 0.93, Arial 0.94, Times 0.89), and the line takes the median of those. The TALLEST box
+    // is no measure: on a scan tilted by a degree a long word's box is taller by its slope (the guide's scan, 2026-11-19:
+    // 13.7 pt on a line of 10.5-point text). Nor are the words' WIDTHS in the face that draws them: that face is the
+    // closest normal one, not the scan's, and matching widths drew the same line at 8.8 pt. Where no word reaches both ways,
+    // the width reading stands in, and with no face to ask, the median box height.
+    const REACH = 0.93;
+    const reachesBoth = (text: string): boolean => /[A-Z0-9bdfhklt]/u.test(text) && /[gjpqy]/u.test(text);
+    const setState = new Map<ShowOperator, ShowOperator['state']>();
+    /**
+     * WHERE EACH WHOLLY SCANNED LINE ENDS as the face that draws it sets it. The block wraps no shorter than the widest of
+     * them: its words' boxes are the scan's own font, which no face here matches, so a line that filled the scan's measure
+     * came out a fraction of a point too wide in the closest normal face, its last word wrapped, and every line after it
+     * moved for an edit that did not reach them (the owner's rule: text nobody touched never moves).
+     */
+    const faceLineEnds: number[] = [];
+    const median = (values: readonly number[]): number => {
+      const sorted = values.filter((value) => Number.isFinite(value) && value > 0).sort((a, b) => a - b);
+      return sorted.length === 0 ? 0 : (sorted[Math.floor((sorted.length - 1) / 2)] ?? 0);
+    };
+    for (const [at, line] of lines.entries()) {
+      const scanned = line.filter((_run, index) => scanRuns[at]?.[index] === true);
+      if (scanned.length === 0) continue;
+      const bySize = scanned.flatMap((run) => {
+        const op = ops[run.first];
+        if (op === undefined || faces === null || Array.from(run.run.text.trim()).length < 3) return [];
+        const pieces = faces.set(run.run.text.trim(), op, () => null);
+        if (pieces === null || pieces.length === 0) return [];
+        const atOnePoint = pieces.reduce((sum, piece) => sum + (advanceOf(piece.font, piece.codes, { ...op.state, size: 1, scale: 1, charSpacing: 0, wordSpacing: 0 }) ?? 0), 0);
+        const unit = placed(run.first).unit;
+        return atOnePoint > 0 && unit > 0 ? [(run.run.right - run.run.left) / (atOnePoint * unit)] : [];
+      });
+      const byReach = scanned.filter((run) => reachesBoth(run.run.text)).map((run) => (run.run.top - run.run.bottom) / REACH / Math.max(1e-9, placed(run.first).unit));
+      const size =
+        byReach.length > 0
+          ? median(byReach)
+          : bySize.length > 0
+            ? median(bySize)
+            : median(scanned.flatMap((run) => run.members.map((member) => ops[member]?.state.size ?? 0)));
+      for (const run of scanned) {
+        for (const member of run.members) {
+          const op = ops[member];
+          if (op !== undefined) setState.set(op, { ...op.state, size, scale: 1 });
+        }
+      }
+      // THE LINE AS THE FACE THAT DRAWS IT SETS IT: its words at this size, a space of that face between each two.
+      const first = line[0];
+      if (scanned.length !== line.length || first === undefined || faces === null) continue;
+      const widthIn = (text: string, op: ShowOperator): number | null => {
+        const pieces = faces.set(text, op, () => null);
+        if (pieces === null) return null;
+        return pieces.reduce((sum, piece) => sum + (advanceOf(piece.font, piece.codes, { ...op.state, size, scale: 1, charSpacing: 0, wordSpacing: 0 }) ?? 0), 0);
+      };
+      const firstOp = ops[first.first];
+      const space = firstOp === undefined ? null : widthIn(' ', firstOp);
+      const words = line.map((run) => {
+        const op = ops[run.first];
+        return op === undefined ? null : widthIn(run.run.text.trim(), op);
+      });
+      if (space === null || words.some((width) => width === null)) continue;
+      const unit = placed(first.first).unit;
+      const set = (words as number[]).reduce((sum, width) => sum + width, 0) + space * (words.length - 1);
+      faceLineEnds.push(first.origin.x + set * unit);
+    }
+    /** The state `op`'s words are measured and set in: a scan's at its line's size, unsqueezed; any other as it stands. */
+    const stateOf = (op: ShowOperator): ShowOperator['state'] => setState.get(op) ?? op.state;
     const covers: PageBox[] = [];
     const ctm = ops[firstRun.first]?.state.ctm;
     // ONE INSERTED OBJECT DRAWS EVERY LINE, under the CTM where it stands. A line drawn under another CTM is reproduced
@@ -1137,7 +1212,7 @@ function write(
       const clips = clipIdentitiesAt(content, arrangeWith.kinds, starts);
       if (clips.some((each) => each !== clips[0])) throw new Refused({ reason: 'transformed', where: 'lines-under-different-ctms' });
     }
-    const inkRight = Math.max(...lines.flat().map((run) => run.right));
+    const inkRight = Math.max(...lines.flat().map((run) => run.right), ...faceLineEnds);
     const baselines = lines.map((line) => line[0]?.origin.y ?? 0);
     // WHAT THE PERSON DID TO THE BLOCK AS A WHOLE (ADR-0188): placed, so every line of it is set again under one `cm`, or
     // given a measure, so every paragraph of it is. Either way no line of it is left where it was.
@@ -1177,7 +1252,10 @@ function write(
     const fixedParagraphs: boolean[] = [];
     let fixedSoFar = true;
     for (const [at, line] of lines.entries()) {
-      fixedSoFar &&= line.every((run) => run.run.fixedPitch === true);
+      // A SCAN'S WORDS ARE NOT CODE: their recognition font says it is fixed-pitch (`/Flags 5`, `ocrTextLayer.ts`), and
+      // they are drawn in the face the edit gives them, never in it. Read as code, a recognised paragraph never wrapped:
+      // one changed word set all of it as one line past the block's right edge (the guide's scan, 2026-11-19).
+      fixedSoFar &&= line.every((run, index) => run.run.fixedPitch === true && scanRuns[at]?.[index] !== true);
       if (soft[at] !== true) {
         fixedParagraphs.push(fixedSoFar);
         fixedSoFar = true;
@@ -1368,8 +1446,7 @@ function write(
     // LINE wraps where the editor laid it out to, its column's edge or the page's margin (`oneLineReach`, `reach`), never
     // at its own old end: a tight box wrapped on its first added letter (the owner's test of milestone 1).
     const reach = lines.length === 1 && blockPlace?.reach !== undefined ? Math.max(inkRight, blockPlace.reach) : inkRight;
-    const blockRight = blockPlace?.width !== undefined ? blockLeft + blockPlace.width : reach;
-    const restOrigin = Math.min(...(lines.length > 1 ? lines.slice(1) : lines).map((line) => line[0]?.origin.x ?? 0));
+    const blockRight = blockPlace?.width !== undefined ? blockLeft + blockPlace.width : reach;    const restOrigin = Math.min(...(lines.length > 1 ? lines.slice(1) : lines).map((line) => line[0]?.origin.x ?? 0));
     // EACH OLD PARAGRAPH'S OWN EDGES (ADR-0179's correction of 2026-10-24), the editor's own reading of the same lines
     // (`paragraphEdges`), so a bulleted item and the plain paragraph after it in one block are each set from their own left.
     // In ink for comparing a line's start, and in origins for placing one, since an operator is placed by its origin: the
@@ -1541,7 +1618,7 @@ function write(
       const source = sourceOf(run);
       const font = fontOf(source);
       const unit = placed(run.first).unit;
-      const sizePt = source.state.size * unit;
+      const sizePt = stateOf(source).size * unit;
       const restyle: Restyle | undefined =
         set.bold === undefined && set.italic === undefined && set.family === undefined
           ? undefined
@@ -1599,11 +1676,13 @@ function write(
       insertBase === undefined ? marked?.restyle : marked?.restyle === undefined ? insertBase : { ...insertBase, ...marked.restyle };
     /** How far the pen moves for `pieces` in `source`'s state: a space no font carries moves it by a nominal space. */
     const pieceWidths =(source: ShowOperator, pieces: readonly FacePiece[], unit: number): number[] =>
-      pieces.map((piece) => (advanceOf(piece.font, piece.codes, source.state) ?? 0) * unit);
-    const widthOfPieces = (source: ShowOperator, pieces: readonly FacePiece[], unit: number): number =>
-      pieces.length === 0
-        ? (SPACE_EM * source.state.size + source.state.charSpacing + source.state.wordSpacing) * source.state.scale * unit
+      pieces.map((piece) => (advanceOf(piece.font, piece.codes, stateOf(source)) ?? 0) * unit);
+    const widthOfPieces = (source: ShowOperator, pieces: readonly FacePiece[], unit: number): number => {
+      const state = stateOf(source);
+      return pieces.length === 0
+        ? (SPACE_EM * state.size + state.charSpacing + state.wordSpacing) * state.scale * unit
         : pieceWidths(source, pieces, unit).reduce((total, each) => total + each, 0);
+    };
     /** How wide `text` is when it is set in the state of run `id`, from `at` in the new words: the plan's one question. */
     const measure: Measure = (id, mark, text, at) => {
       const run = byId.get(id) ?? firstRun;
@@ -1747,7 +1826,7 @@ function write(
       return cursor;
     };
     const segmentWidth = (segment: Segment): number =>
-      (advanceOf(segment.font, segment.codes, segment.source.state) ?? 0) *
+      (advanceOf(segment.font, segment.codes, stateOf(segment.source)) ?? 0) *
         placed(indexOf.get(segment.source) ?? -1).unit *
         (segment.style?.factor ?? 1) +
       (segment.style?.spacing ?? 0) * segment.codes.length;
@@ -2217,6 +2296,7 @@ function write(
      * so a mark's spacing would otherwise carry on into the words after it, the fill colour's reason (`tinted`).
      */
     let said: number | null = null;
+    let scaleSaid: number | null = null;
     for (const segment of segments) {
       const style = segment.style;
       if (segment.source !== replayed || tinted) {
@@ -2232,6 +2312,7 @@ function write(
           font = segment.source.state.font;
           fontSize = segment.source.state.size;
           if (settings.some((setting) => /(^|\s)Tr(\s|$)/u.test(setting))) modeSaid = null;
+          if (settings.some((setting) => /(^|\s)Tz(\s|$)/u.test(setting))) scaleSaid = null;
         }
         replayed = segment.source;
         tinted = false;
@@ -2254,7 +2335,16 @@ function write(
         parts.push(`${colour.map((channel) => num(channel / 255)).join(' ')} rg`);
         tinted = true;
       }
-      const size = segment.source.state.size * (style?.factor ?? 1);
+      // A SCAN'S WORD drawn visible UNSQUEEZED, where its source's settings squeezed it for the font that paints nothing
+      // (`stateOf`); and any segment after one goes back to its own source's squeeze. `scaleSaid` is the squeeze this
+      // object last said that its source's settings did not, so a page that never squeezed says nothing new.
+      const drawnState = stateOf(segment.source);
+      const wantedScale = drawnState.scale;
+      if (scaleSaid !== null ? Math.abs(scaleSaid - wantedScale) > 1e-6 : Math.abs(segment.source.state.scale - wantedScale) > 1e-6) {
+        parts.push(`${num(wantedScale * 100)} Tz`);
+        scaleSaid = Math.abs(segment.source.state.scale - wantedScale) > 1e-6 ? wantedScale : null;
+      }
+      const size = drawnState.size * (style?.factor ?? 1);
       if (segment.font.resource !== font || Math.abs(size - fontSize) > SAME) {
         parts.push(`${pdfName(segment.font.resource)} ${num(size)} Tf`);
         font = segment.font.resource;
@@ -2278,7 +2368,7 @@ function write(
       // THE RULES: this thick, under the baseline and through the words, in the words' colour where a mark set one and else
       // black — the page's own fill is not something its operators can be asked; a rule the words already carried keeps its
       // own colour. The highlight in its own colour. Each in the ONE band its kind is drawn in (`decorationBand`, B3a).
-      const pointSize = segment.source.state.size * unit * (style === undefined || style.factor === 0 ? 1 : style.factor);
+      const pointSize = drawnState.size * unit * (style === undefined || style.factor === 0 ? 1 : style.factor);
       const ink = (carried: readonly [number, number, number] | undefined): readonly number[] => style?.colour ?? carried ?? [0, 0, 0];
       const decorations: Partial<Record<DecorationKind, readonly number[]>> = {
         ...(style?.underline === true ? { under: ink(style.underInk) } : {}),
@@ -2414,7 +2504,7 @@ function write(
     const pastHidingClip = (at: number, text: string): { readonly at: number; readonly text: string } => {
       if (cm !== null || visual.length === 0 || !setsAClip) return { at, text };
       const extents = visual.map((line) => {
-        const size = Math.max(...line.segments.map((segment) => segment.source.state.size * placed(indexOf.get(segment.source) ?? -1).unit * (segment.style?.factor ?? 1)));
+        const size = Math.max(...line.segments.map((segment) => stateOf(segment.source).size * placed(indexOf.get(segment.source) ?? -1).unit * (segment.style?.factor ?? 1)));
         return {
           left: Math.min(...line.segments.map((segment) => segment.x)),
           right: Math.max(...line.segments.map((segment) => segment.x + segmentWidth(segment))),

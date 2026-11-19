@@ -88,3 +88,30 @@ page in the renderer, which would be a second opinion about what the writer will
 The first limit above says the fixture in `editCatalogue.mjs` *changes* because it draws one flat grey picture. That was read from
 the fixture's one-line description and not run. Its picture has ink where the words are, and all 25 catalogue cases pass on the
 rule unchanged. The limit itself stands: recognised words over a blank stretch of a scan now stay invisible.
+
+## Correction, 2026-11-19: a recognised word is drawn in a normal face, at its line's size
+
+Decision 2 said the new words are drawn "in the run's own font where it carries them". Run on the guide's scan after
+**Make scanned pages searchable**, one edited word re-laid its whole paragraph in small text of mixed sizes, and a one-word
+block was drawn in a typewriter face. Four mechanisms, each found in the saved file and each with a case in
+`textOperatorRecognised.test.ts` that goes red when it alone is undone:
+
+1. **The recognition layer's font was taken as a face that paints.** It is a CID font with no program whose glyphs are named
+   only by `Identity` (`ocrTextLayer.ts`), so a reader draws whatever its substitute has at those numbers: a fixed-pitch face in
+   MuPDF, another in PDF.js. `pageFonts.ts` now gives such a font `paintsNothing`, the flag this decision already gave a Type 3
+   font of empty letters, and the word goes to the closest normal font (Decision 5 of ADR-0176).
+2. **Each word kept the size and squeeze the layer wrote for it**, which describe that font: its box height, and its width over
+   one em a letter. In a face that paints they gave every word a size of its own and 29 to 56 per cent of its width. Each
+   wholly or partly scanned line is now measured and drawn at one size, unsqueezed: the median of its words that reach both up
+   and down (a capital, digit or `bdfhklt` and one of `gjpqy`), whose box spans 0.93 of the size in the common Latin faces.
+   The tallest box is no measure (a tilted scan makes a long word's box taller by its slope), nor are the words' widths in the
+   face that draws them (that face is not the scan's: it read 8.8 pt for 10.5 pt text).
+3. **The layer's font says it is fixed-pitch** (`/Flags 5`), so the paragraph was read as code and never wrapped. A scanned
+   run is no longer code.
+4. **The block wrapped at the scan's ink width**, which the closest normal face overruns by a fraction of a point on the
+   longest line, so its last word wrapped and every line after it moved for an edit that reached none of them. The block now
+   wraps no shorter than its widest wholly scanned line as that face sets it.
+
+The owner's rules this keeps (2026-11-19): text nobody touched never moves or breaks, and an edited word uses the closest
+normal font at the recognised text's size. Not an amendment: who draws, where and in what colour is unchanged; what changed is
+which font counts as one that paints, and what size a recognised word is set at.

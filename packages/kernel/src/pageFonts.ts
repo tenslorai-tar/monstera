@@ -53,8 +53,9 @@ export interface PageFont {
    */
   readonly outline?: (code: number) => readonly (readonly (readonly [number, number])[])[] | null;
   /**
-   * A Type 3 font every letter of which paints nothing (ADR-0289): words in it can be selected and cannot be seen, so it is
-   * no face for a word that is to be seen. Absent for every other font.
+   * A font whose letters paint nothing a reader can rely on (ADR-0289): a Type 3 font every letter of which paints
+   * nothing, and a CID font with no program whose glyphs are named only by `Identity` (a recognition layer's). Words in it
+   * can be selected and cannot be seen, so it is no face for a word that is to be seen. Absent for every other font.
    */
   readonly paintsNothing?: true;
   /**
@@ -357,6 +358,19 @@ function read(resource: string, font: PDFObject, standard: StandardFontTables): 
   } else if (descendant !== null) {
     width = cidWidths(descendant);
     draws = () => true;
+    // A CID FONT WITH NO PROGRAM WHOSE GLYPHS ARE NAMED ONLY BY `Identity` paints nothing a reader can rely on: its codes
+    // are glyph numbers of a program the file does not carry, so a reader draws whatever its substitute has at those
+    // numbers, or nothing. It is how a recognition layer writes words to be found and not seen (`ocrTextLayer.ts`'
+    // glyphless font is exactly this, and other recognisers write the same shape). As a face for a word that is to be
+    // SEEN it drew the guide's scan in a fixed-pitch substitute in MuPDF and a different one in PDF.js (2026-11-19), so it
+    // is treated as letters that paint nothing (ADR-0289): such a word goes to the closest normal font. A CID font with a
+    // registry's own ordering (Japan1, GB1, CNS1, Korea1) is drawn from the reader's own fonts for that ordering, and is
+    // not this.
+    const cidInfo = resolved(descendant.get('CIDSystemInfo'));
+    const ordering = cidInfo.isDictionary() ? resolved(cidInfo.get('Ordering')) : null;
+    const identity = ordering !== null && ordering.isString() && ordering.asString() === 'Identity';
+    const programless = !descriptor.isDictionary() || ['FontFile', 'FontFile2', 'FontFile3'].every((key) => descriptor.get(key).isNull());
+    paintsNothing = identity && programless;
   } else {
     width = simpleWidths(font, 0.001);
     draws = () => true;
