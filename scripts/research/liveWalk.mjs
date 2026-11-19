@@ -453,6 +453,11 @@ async function walkOn(walk, app, page, output, runCommand, build) {
     // WHICH WINDOW EACH PICTURE IS OF, in the record, so a reader checks the pass against the right one.
     record.pictures = pictures.length === 0 ? [{ file: screenshot, of: 'walk' }] : pictures;
     steps.push(record);
+    // THE RECORD AS IT STANDS, after every step and not only at `finish`: a full walk cut off at its 269th of 282 rows on
+    // 2026-11-19, when the session that ran it ended, left no report.json, and 77 minutes of passed rows counted for
+    // nothing. Written each time, an interrupted walk keeps every step it finished, and a walk run `--from` where it
+    // stopped supplies the rest; a step it did not finish is in neither, and its row reads not walked.
+    await writeFile(join(output, 'report.json'), `${JSON.stringify({ walk, build, steps, finished: false }, null, 2)}\n`);
     process.stdout.write(`${record.outcome === 'passed' ? 'ok  ' : 'FAIL'}  ${name}${record.problem === undefined ? '' : `\n      ${record.problem.split('\n')[0] ?? ''}`}\n`);
   };
 
@@ -472,7 +477,7 @@ async function walkOn(walk, app, page, output, runCommand, build) {
    */
   const finish = async () => {
     const passed = steps.filter((each) => each.outcome === 'passed').length;
-    await writeFile(join(output, 'report.json'), `${JSON.stringify({ walk, build, steps }, null, 2)}\n`);
+    await writeFile(join(output, 'report.json'), `${JSON.stringify({ walk, build, steps, finished: true }, null, 2)}\n`);
     const closing = Date.now();
     const shell = app.process();
     const tree = shell.pid === undefined ? [] : treeOf(shell.pid, listProcesses());
@@ -493,7 +498,7 @@ async function walkOn(walk, app, page, output, runCommand, build) {
     if (settled === 'held') {
       const asked = await page.locator('[role=dialog], [role=alertdialog]').allInnerTexts().catch(() => /** @type {string[]} */ ([]));
       const held = asked.map((text) => text.replaceAll(/\s+/gu, ' ').slice(0, 200)).join(' | ') || 'no dialog on screen';
-      await writeFile(join(output, 'report.json'), `${JSON.stringify({ walk, build, steps, closeHeld: held }, null, 2)}\n`);
+      await writeFile(join(output, 'report.json'), `${JSON.stringify({ walk, build, steps, finished: true, closeHeld: held }, null, 2)}\n`);
       process.stdout.write(`\nCLOSE HELD by the app for ${String(CLOSE_HELD_MS / 1000)} s: ${held}\n`);
     }
     // WHATEVER OF THE TREE IS STILL RUNNING is ended, by each process's own id, and the line says what was and what was not.
