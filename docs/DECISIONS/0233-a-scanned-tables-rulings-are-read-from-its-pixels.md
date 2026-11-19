@@ -89,3 +89,12 @@ page's read, each cell that holds no word read is recognised as its own rectangl
 caller names is the caller's and is read as asked. The confidence answered is then the mean over every word read,
 since the engine's own mean is its last rectangle's. The proof carries the control: the same page read as one rectangle
 gives no word, and with the cells read, the table reads whole.
+
+## Correction, 2026-11-19: the drawing's rules are rulings too, on any page
+
+Decisions 1 and 4 read rulings from pixels, only on a page holding a picture. A born-digital table drawn with light
+hairlines across and a shaded header band, and nothing down, is invisible to that read (a light grey is paper to the
+threshold, a band's edge is no line) and to MuPDF's. [ADR-0297](0297-a-table-ruled-only-across-is-read-from-its-drawn-rules.md)
+widens this read: `engine/scan-tables` also answers the tables the drawing's own horizontal rules make, on any page, and
+main asks it wherever the engine saw no rule down rather than only on a picture page. The pixel pass is unchanged and
+still runs only where the page draws a picture.

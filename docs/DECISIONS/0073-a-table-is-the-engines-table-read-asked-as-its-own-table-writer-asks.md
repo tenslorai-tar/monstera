@@ -143,3 +143,11 @@ it on the text exports and PDF/A recognise first and report it. The rejection's 
 Decision 5's gap is closed by [ADR-0233](0233-a-scanned-tables-rulings-are-read-from-its-pixels.md): on a page holding a
 picture where this read saw no ruling, the rulings are read from the page raster and each cell takes the characters in
 it. This read is unchanged and is still asked first; a page whose rulings are vectors keeps its answer.
+
+## Correction, 2026-11-19: a table ruled only across is not the engine's alone
+
+Decision 1's *a table is the engine's* held for a table ruled down. A table drawn with a shaded header band and hairlines
+across, and nothing down, encloses nothing for the hunt: the Supply Agreement's products table came back as no table
+and the annual report's Volunteers table as two tables without its header (measured 2026-11-19). Such a table is read
+from the drawing's own rules by [ADR-0297](0297-a-table-ruled-only-across-is-read-from-its-drawn-rules.md), and an engine
+table lying wholly inside one gives way to it. A table ruled down keeps this read's answer.
