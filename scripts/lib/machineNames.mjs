@@ -171,6 +171,28 @@ export function foundLines(text, identifiers) {
   return found.sort((a, b) => a.line - b.line);
 }
 
+/**
+ * A file's text, or `null` for bytes that are not text: UTF-8, and UTF-16 either way round, with or without its
+ * byte-order mark. Windows writes UTF-16 by itself (PowerShell's `>` and `Out-File`, `.reg` exports, some logs), and the
+ * scan once skipped every such file as binary for holding zero bytes, so a machine's names in one passed unseen (the
+ * reviewer's list of 2026-11-15, item 16, BBBBBBBBB-21). Without a mark, UTF-16 is known by its zero bytes falling on
+ * one side of every pair, which ASCII text in UTF-16 always does and a binary file nearly never.
+ *
+ * @param {Buffer} bytes @returns {string | null}
+ */
+export function textOf(bytes) {
+  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) return bytes.subarray(2).toString('utf16le');
+  if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) return Buffer.from(bytes.subarray(2)).swap16().toString('utf16le');
+  const head = bytes.subarray(0, 8000 - (Math.min(8000, bytes.length) % 2));
+  if (!head.includes(0)) return bytes.toString('utf8');
+  const zeros = [0, 1].map((side) => head.filter((_byte, at) => at % 2 === side && head[at] === 0).length);
+  const pairs = head.length / 2;
+  const even = bytes.length % 2 === 0;
+  if (even && zeros[1] === pairs && zeros[0] === 0) return bytes.toString('utf16le');
+  if (even && zeros[0] === pairs && zeros[1] === 0) return Buffer.from(bytes).swap16().toString('utf16le');
+  return null;
+}
+
 /** The control: an identifier found inside a UNC path on line 2, and not inside a longer word on line 3. */
 const CONTROL_IDENTIFIER = /** @type {Identifier} */ ({ kind: 'computer name', value: 'CONTROLHOST-PC' });
 const CONTROL_TEXT = 'nothing on this line\nmeasured through \\\\controlhost-pc\\C$\\f.txt\nnor in controlhost-pcs\n';
@@ -231,9 +253,10 @@ export function scan({ source = 'tree', identifiers = machineIdentifiers() } = {
       }
       continue;
     }
-    if (bytes.subarray(0, 8000).includes(0)) continue;
+    const text = textOf(bytes);
+    if (text === null) continue;
     read += 1;
-    for (const { line, kind } of foundLines(bytes.toString('utf8'), identifiers.checked)) {
+    for (const { line, kind } of foundLines(text, identifiers.checked)) {
       offending += 1;
       process.stdout.write(`  FAIL  ${file}:${String(line)} holds this machine's ${kind}\n`);
     }

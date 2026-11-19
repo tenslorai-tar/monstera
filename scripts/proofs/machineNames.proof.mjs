@@ -17,14 +17,14 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { beforePcSuffix, foundLines, identifiersFrom, machineIdentifiers } from '../lib/machineNames.mjs';
+import { beforePcSuffix, foundLines, identifiersFrom, machineIdentifiers, textOf } from '../lib/machineNames.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 
 const SCAN = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'lib', 'machineNames.mjs');
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 15 });
+const roster = createRoster(failures, { cases: 16 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -185,6 +185,26 @@ const own = machineIdentifiers().checked[0];
     `every one of this machine's ${String(all.length)} name(s) is refused on its line, and none is printed`,
     all.length > 0 && planted.status === 1 && refused && silent,
     `exit ${String(planted.status)}; refused each ${String(refused)}; printed none ${String(silent)}`,
+  );
+}
+{
+  // UTF-16 IS TEXT (BBBBBBBBB-21): PowerShell's `>` writes it, and the scan read every such file as binary and skipped it.
+  const line = 'first line\nC:\\Users\\SampleUser\\AppData\n';
+  const le = Buffer.from(line, 'utf16le');
+  const forms = {
+    'with its mark, little-endian': Buffer.concat([Buffer.from([0xff, 0xfe]), le]),
+    'with its mark, big-endian': Buffer.concat([Buffer.from([0xfe, 0xff]), Buffer.from(le).swap16()]),
+    'without a mark': le,
+  };
+  const read = Object.entries(forms).map(([form, bytes]) => [form, JSON.stringify(foundLines(textOf(bytes) ?? '', fixture.checked))]);
+  // CONTROL: the old reading of the same bytes, UTF-8 after a zero-byte test, finds nothing, which is the defect.
+  const oldReading = JSON.stringify(foundLines(le.toString('utf8'), fixture.checked));
+  // AND BINARY STAYS BINARY: bytes whose zeros fall on both sides of a pair are not read as text.
+  const binary = textOf(Buffer.from([0x4d, 0x5a, 0x00, 0x00, 0x90, 0x00, 0x03, 0x00]));
+  check(
+    'a user name in a UTF-16 file is found on its line, either way round, with or without its mark; binary is not read',
+    read.every(([, found]) => found === '[{"line":2,"kind":"user name"}]') && oldReading === '[]' && binary === null,
+    `${read.map(([form, found]) => `${form}: ${found}`).join('; ')}; the old reading: ${oldReading}; binary: ${String(binary)}`,
   );
 }
 {
