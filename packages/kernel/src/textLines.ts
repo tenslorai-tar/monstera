@@ -271,7 +271,15 @@ function overlapLines<T extends LineableRun>(
     // was read as one, its line ends joined without a space ("wasestimated"), and an edit set it as one line past the
     // page (2026-11-19). A word's neighbours across are the words beside it on its own line, so a sloping line stays one
     // line and the next line's first word, which stands under the line's FIRST words, overlaps none of them.
-    const line = open.find((held) => nearestAcross(held.runs, run).some((each) => run.bottom < each.top && run.top > each.bottom));
+    //
+    // THE GROWN EXTENT FIRST, as a filter and never as the rule: a run that overlaps a line's nearest runs overlaps the
+    // extent they are part of, so a line it does not reach is passed over without a look at its runs. Asked of every line
+    // first, the nearest-run reading cost the square of a page's runs: 1,431 ms where 335 ms had been, on
+    // `proof:pdfiumreadback`'s page of 9,800 objects (CI, 2026-11-19). Filtered, on this machine the same day: 1,048 and
+    // 1,065 ms, against 909 and 992 ms for the grown extent alone.
+    const line = open.find(
+      (held) => run.bottom < held.top && run.top > held.bottom && nearestAcross(held.runs, run).some((each) => run.bottom < each.top && run.top > each.bottom),
+    );
     if (line === undefined) {
       open.push({ runs: [run], bottom: run.bottom, top: run.top });
       continue;
