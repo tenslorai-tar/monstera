@@ -4213,8 +4213,14 @@ optgroup {
  * `position-visibility: anchors-visible` hides a box whose anchor is hidden: every toast and the conversion notice were
  * mounted, placed, and never seen (R28, measured 2026-10-21 in 0.1.16.0 and 0.1.17.0 with four documents open). With
  * two panes the last one, the right, names it; Side by Side, drawn over the layers and after them, names its own.
+ *
+ * **THE PAGE AREA, NOT THE PAGE PANE, since 2026-11-19.** The name sat on `.m-page-pane`, and Organize unmounts the pane
+ * for its grid of cards: the strip went on naming an anchor that no box carried, and Chromium hides an anchored box
+ * whose anchor is missing exactly as one whose anchor is hidden. "Pages saved" after Extract pages and "Saved" after
+ * Ctrl+S were mounted, placed and never drawn in Organize (the guide videos, 2026-11-19). `.m-canvas-area` is the page
+ * area in every view, the pane's and the grid's, and the active layer holds exactly one.
  */
-.m-document-layer[data-document-layer='active'] .m-page-pane,
+.m-document-layer[data-document-layer='active'] .m-canvas-area,
 .m-side .m-page-pane {
   anchor-name: --m-page-area;
 }
@@ -8622,6 +8628,11 @@ optgroup {
     calc(var(--m-toasts-clear, 0px) + var(--space-8))
   );
   inset-inline-end: calc(anchor(end, 0px) + var(--space-16));
+  /* NEVER HIDDEN BY ITS ANCHOR. Chromium's default, `anchors-visible`, hides the strip whenever the anchor it names is
+     missing or hidden, and that has silenced every message twice: a hidden tab's pane named last (R28) and Organize
+     unmounting the pane (2026-11-19). The anchor decides WHERE a message sits; whether it is seen is not its call. A
+     strip whose anchor is gone takes the fallbacks above, the window's corner, and is drawn there. */
+  position-visibility: always;
   z-index: 3;
   display: flex;
   flex-direction: column;

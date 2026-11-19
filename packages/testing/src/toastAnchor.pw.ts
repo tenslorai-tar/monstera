@@ -72,11 +72,32 @@ test('with the FIRST of two tabs on show, a toast is on top at its own centre, i
   const toast = await savedToast(page);
   expect(await onTop(page, toast)).toBe('the toast');
   // AT THE CORNER OF THE PAGE AREA ON SHOW, which is where the anchor puts it: not the window's corner fallback.
-  const pane = await page.locator('[data-document-layer="active"] .m-page-pane').last().boundingBox();
+  const pane = await page.locator('[data-document-layer="active"] .m-canvas-area').boundingBox();
   const box = await toast.boundingBox();
   if (pane === null || box === null) throw new Error('the page area or the toast has no box');
   expect(box.x + box.width).toBeLessThanOrEqual(pane.x + pane.width);
   expect(box.y + box.height).toBeLessThanOrEqual(pane.y + pane.height);
+});
+
+/**
+ * IN ORGANIZE, which unmounts the page pane for its grid of cards (the guide videos, 2026-11-19): the strip named an
+ * anchor no box carried, and "Pages saved" and "Saved" were mounted and never drawn. The anchor is now the page area
+ * every view has, and the strip is never hidden by its anchor. Asserted at its own centre and inside the page area on
+ * show, so neither the window-corner fallback nor a strip drawn over the Properties panel passes.
+ */
+test('in ORGANIZE, a toast is on top at its own centre, in the page area on show', async ({ page }) => {
+  await openBoth(page);
+  await page.getByRole('navigation').getByRole('button', { name: 'Organize', exact: true }).first().click();
+  await expect(page.locator('[data-document-layer="active"] .m-page-grid')).toBeVisible();
+  await expect(page.locator('[data-document-layer="active"] .m-page-pane')).toHaveCount(0);
+  const toast = await savedToast(page);
+  expect(await onTop(page, toast)).toBe('the toast');
+  const area = await page.locator('[data-document-layer="active"] .m-canvas-area').boundingBox();
+  const box = await toast.boundingBox();
+  if (area === null || box === null) throw new Error('the page area or the toast has no box');
+  expect(box.x).toBeGreaterThanOrEqual(area.x);
+  expect(box.x + box.width).toBeLessThanOrEqual(area.x + area.width);
+  expect(box.y + box.height).toBeLessThanOrEqual(area.y + area.height);
 });
 
 test('CONTROL: with the LAST tab on show, the toast is on top too', async ({ page }) => {
