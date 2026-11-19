@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { bundledFontsFolder, readCatalogueOnce } from './bundledFontsForTests.js';
 import { bindEditFaces, bindEditFolders } from './editFaces.js';
 import { GLYPHLESS_FONT_NAME } from './glyphlessFontName.js';
+import { ColorSpace, Matrix } from './mupdfRaw.js';
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
 import { applyOcrPage } from './ocrTextLayer.js';
 import type { RecognisedPage } from './ocrRecognise.js';
@@ -76,14 +77,20 @@ async function recognition(): Promise<RecognisedPage> {
   return { lines, confidence: 95, languages: ['eng'] };
 }
 
+/**
+ * A full stop 3 pt past the first line's last word's box, apart from its letters, as the guide's scan has: its recogniser's
+ * box stopped short of a comma and a stop (2026-11-19). `[x0, y0, x1, y1]` in page space.
+ */
+const STRAY_STOP = (right: number): readonly [number, number, number, number] => [right + 2, (BASELINES[0] ?? 0) - 1, right + 4, (BASELINES[0] ?? 0) + 3];
+
 /** The scan: a picture with a dark bar under every recognised word, and the recognition layer over it. */
 async function recognisedScan(): Promise<{ readonly bytes: Uint8Array; readonly recognised: RecognisedPage }> {
   const recognised = await recognition();
   const document = await PDFDocument.create({ updateMetadata: false });
   const page = document.addPage([WIDTH, HEIGHT]);
   const pixels = new Uint8Array(WIDTH * HEIGHT).fill(PAPER);
-  for (const word of recognised.lines.flatMap((line) => line.words)) {
-    const [x0, y0, x1, y1] = word.box;
+  const lastOfFirst = recognised.lines[0]?.words.at(-1)?.box[2] ?? 0;
+  for (const [x0, y0, x1, y1] of [...recognised.lines.flatMap((line) => line.words.map((word) => word.box)), STRAY_STOP(lastOfFirst)]) {
     for (let y = Math.round(HEIGHT - y1 + 1); y < Math.round(HEIGHT - y0 - 1); y += 1) {
       for (let x = Math.round(x0); x < Math.round(x1); x += 1) pixels[y * WIDTH + x] = INK;
     }
@@ -127,15 +134,32 @@ function runsOf(content: Uint8Array, recognised: RecognisedPage): { readonly run
 
 /** The paragraph edited to `text`; the page's content after, as written. */
 async function edited(text: string): Promise<string> {
+  return (await editedPage(text)).written;
+}
+
+/** The paragraph edited to `text`: the page's content after, and how many dark pixels MuPDF draws in `box` (page space). */
+async function editedPage(text: string | null, box?: readonly [number, number, number, number]): Promise<{ readonly written: string; readonly dark: number }> {
   const { bytes, recognised } = await recognisedScan();
   const session = await mupdfWriter.open(bytes);
   try {
     const before = await withDocument(session, (document) => joinedContent(pageContentStreams(document.findPage(0))));
     const { runs, lines } = runsOf(before, recognised);
-    const block: EditedBlock = { lines, soft: [true, true, false], text };
-    const command: CommandOfKind<'editTextOperators'> = { kind: 'editTextOperators', page: 0, ...blockEditOf([block]), fit: 'reflow', version: asDocVersion(1) };
-    await applyEditTextOperators(session, command, runs);
-    return await withDocument(session, (document) => new TextDecoder('latin1').decode(joinedContent(pageContentStreams(document.findPage(0)))));
+    if (text !== null) {
+      const block: EditedBlock = { lines, soft: [true, true, false], text };
+      const command: CommandOfKind<'editTextOperators'> = { kind: 'editTextOperators', page: 0, ...blockEditOf([block]), fit: 'reflow', version: asDocVersion(1) };
+      await applyEditTextOperators(session, command, runs);
+    }
+    return await withDocument(session, (document) => {
+      const written = new TextDecoder('latin1').decode(joinedContent(pageContentStreams(document.findPage(0))));
+      if (box === undefined) return { written, dark: 0 };
+      const pixmap = document.loadPage(0).toPixmap(Matrix.identity, ColorSpace.DeviceGray, false, true);
+      const [stride, pixels] = [pixmap.getStride(), pixmap.getPixels()];
+      let dark = 0;
+      for (let row = Math.floor(HEIGHT - box[3]); row < Math.ceil(HEIGHT - box[1]); row += 1) {
+        for (let x = Math.floor(box[0]); x < Math.ceil(box[2]); x += 1) if ((pixels[row * stride + x] ?? 255) < 128) dark += 1;
+      }
+      return { written, dark };
+    });
   } finally {
     await mupdfWriter.close(session);
   }
@@ -214,6 +238,15 @@ describe('a scan’s recognised paragraph, one word edited (the owner’s list o
     // MORE THAN ONE BASELINE: read as code it was set as one line (mechanism 3).
     expect(new Set(seen.map((each) => each.y.toFixed(1))).size).toBeGreaterThan(1);
     for (const each of seen) expect(each.x).toBeLessThan(RIGHT);
+  });
+
+  it('covers a trailing mark past its word’s box when the line is set again', async () => {
+    const lastOfFirst = (await recognition()).lines[0]?.words.at(-1)?.box[2] ?? 0;
+    const stop = STRAY_STOP(lastOfFirst);
+    // CONTROL: the picture holds the stop before the edit, so a zero after it is the cover's doing.
+    const untouched = await editedPage(null, stop);
+    expect(untouched.dark).toBeGreaterThan(0);
+    expect((await editedPage(longer, stop)).dark).toBe(0);
   });
 
   it('leaves a line the edit does not reach as recognised, invisible in the layer’s own font', async () => {

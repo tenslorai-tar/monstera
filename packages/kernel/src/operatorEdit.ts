@@ -646,6 +646,8 @@ function placesAtAll(place: EditedBlock['place']): boolean {
 const SEED_TEXT = '.';
 
 /** How far above and below its baseline a line of added text is taken to reach, in em: a face's ascent and descent, near enough for a centre. */
+/** How far past a scanned line's last word its cover reaches, in ems of the line's size: a trailing mark's room. */
+const TRAILING_REACH = 0.25;
 const ASCENT_EM = 0.8;
 const DESCENT_EM = 0.2;
 
@@ -2188,10 +2190,20 @@ function write(
       const from = kept.has(at) ? line.length : (keptRuns.get(at) ?? 0);
       for (const [index, run] of line.entries()) for (const decoration of claimedBy.get(run.run.index) ?? []) (index < from ? staying : going).add(decoration);
       if (kept.has(at)) continue;
+      // A SCANNED WORD'S COVER REACHES ACROSS TO THE NEXT WORD SET AGAIN, and the line's last a quarter of its size past its
+      // end: the gap between two words of a line set again is that line's own, and a recogniser's box can stop short of a
+      // word's trailing punctuation, which touches none of the letters the cover grows through. On the guide's scan a
+      // comma and a full stop 3 pt past their words' boxes stayed on the page under the new words (2026-11-19).
+      const coveredAt = line.flatMap((run, index) => (index >= from && scanRuns[at]?.[index] === true ? [run] : []));
+      const byLeft = [...coveredAt].sort((a, b) => a.run.left - b.run.left);
       for (const [index, run] of line.entries()) {
         if (index < from) continue;
         empty(run.members);
-        if (scanRuns[at]?.[index] === true) covers.push({ left: run.run.left, bottom: run.run.bottom, right: run.run.right, top: run.run.top });
+        if (scanRuns[at]?.[index] !== true) continue;
+        const next = byLeft[byLeft.indexOf(run) + 1];
+        const op = ops[run.first];
+        const quarter = op === undefined ? 0 : TRAILING_REACH * stateOf(op).size * run.origin.unit;
+        covers.push({ left: run.run.left, bottom: run.run.bottom, right: next === undefined ? run.run.right + quarter : Math.max(run.run.right, next.run.left), top: run.run.top });
       }
       // EVERY RUN KEPT, words added after them: nothing of the line is emptied, its spaces between runs among it.
       if (from < line.length) emptyBetween(line[from]?.first ?? 0, line.at(-1)?.last ?? -1);

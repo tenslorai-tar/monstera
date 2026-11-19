@@ -64,3 +64,14 @@ and not a shading. The questions that have an answer are:
 - **A median per strip round the ring instead of a plane.** Measured on the proof's own fixture, a neighbouring mark
   inside the ring made a strip's median ink and the cells took a colour between ink and paper; a plane fitted with the
   outliers left out does not.
+
+## Correction, 2026-11-19 — along a line set again, a word's cover reaches the next word
+
+The growth through touching ink does not reach a mark that touches no letter. On the guide's scan the recogniser's boxes
+stopped about 3 pt short of a comma and a full stop that end their words, and once a whole line was set again
+(ADR-0271's correction of 2026-10-26) both stayed on the page under the new words. A scanned word's cover on a line that is
+set again now reaches across to the next word set again, since the gap between two words of that line is the line's own,
+and the line's last word's cover reaches a quarter of its size past its end (`operatorEdit.ts`, `TRAILING_REACH`). It
+reaches only along the line, never up or down, so the rejected larger margin's fault, covering the neighbouring line, does
+not arise. `textOperatorRecognised.test.ts` holds a stop past a line's last word, gone after the edit and present before
+it; with the reach at zero it stays. The reach to the next word has no case of its own.
