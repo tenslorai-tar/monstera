@@ -1282,9 +1282,24 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'uncounted', props: { bytes: 968_704, before: 3_789, lost: [], compared: false, fontsLeft: 1 } },
   ],
   'dialog.optimize': [
-    { state: 'opened', props: { setting: 'medium', measured: null } },
-    { state: 'measured', props: { setting: 'medium', measured: { before: 8_400_000, after: 3_150_000 } } },
-    { state: 'not-smaller', props: { setting: 'high', measured: { before: 420_000, after: 431_000 } } },
+    { state: 'opened', props: { target: { kind: 'setting', setting: 'medium' }, size: 2 * 1024 * 1024, measured: null } },
+    {
+      state: 'measured',
+      props: { target: { kind: 'setting', setting: 'medium' }, size: 2 * 1024 * 1024, measured: { before: 8_400_000, after: 3_150_000, fits: true } },
+    },
+    {
+      state: 'not-smaller',
+      props: { target: { kind: 'setting', setting: 'high' }, size: 2 * 1024 * 1024, measured: { before: 420_000, after: 431_000, fits: true } },
+    },
+    // A SIZE ASKED FOR (ADR-0298): one it fits, and one it cannot reach, which offers the smallest it can go.
+    {
+      state: 'size-fits',
+      props: { target: { kind: 'size', bytes: 2 * 1024 * 1024 }, size: 2 * 1024 * 1024, measured: { before: 8_400_000, after: 1_960_000, fits: true } },
+    },
+    {
+      state: 'size-smallest',
+      props: { target: { kind: 'size', bytes: 1024 * 1024 }, size: 1024 * 1024, measured: { before: 8_400_000, after: 3_565_158, fits: false } },
+    },
   ],
   'dialog.page-barcodes': [
     {
