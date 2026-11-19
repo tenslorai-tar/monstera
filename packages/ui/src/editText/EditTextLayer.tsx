@@ -13,6 +13,7 @@ import {
   TEXT_EDIT_COVERS,
   TEXT_EDIT_FORMS_DEEPER,
   TEXT_EDIT_FORMS_MORE,
+  TEXT_EDIT_FORMS_UNNAMED,
   TEXT_EDIT_LAYER_LABEL,
   TEXT_EDIT_NONE,
   TEXT_EDIT_PAST_PAGE,
@@ -377,6 +378,9 @@ export function EditTextLayer({
     // TEXT IN FORMS PAST THE WALK'S BOUNDS, each reason in its own words (ADR-0269's correction of 2026-10-30).
     if (blocks.formsLeft.deeper) notes.push(<p key="forms-deeper">{_(TEXT_EDIT_FORMS_DEEPER)}</p>);
     if (blocks.formsLeft.more) notes.push(<p key="forms-more">{_(TEXT_EDIT_FORMS_MORE)}</p>);
+    // AND A FORM WHOSE NAME NO PATH CAN CARRY, which the walk leaves and said nowhere until 2026-11-19 (the reviewer's list
+    // of 2026-11-15, item 16, BBBBBBBBB-23): its text is not outlined, and the person is told so, in its own words.
+    if (blocks.formsLeft.unnamed) notes.push(<p key="forms-unnamed">{_(TEXT_EDIT_FORMS_UNNAMED)}</p>);
     // A WRITE THAT GREW OVER SOMETHING is said, not undone (B1.6): nothing else moves, so the person is told.
     if (covers) notes.push(<p key="covers" role="status">{_(TEXT_EDIT_COVERS)}</p>);
   }

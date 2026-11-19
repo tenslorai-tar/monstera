@@ -1685,6 +1685,7 @@ export const TEXT_EDIT_UNREADABLE = messageKey('surface.text-edit.unreadable');
 export const TEXT_EDIT_TRUNCATED = messageKey('surface.text-edit.truncated');
 export const TEXT_EDIT_FORMS_DEEPER = messageKey('surface.text-edit.forms-deeper');
 export const TEXT_EDIT_FORMS_MORE = messageKey('surface.text-edit.forms-more');
+export const TEXT_EDIT_FORMS_UNNAMED = messageKey('surface.text-edit.forms-unnamed');
 export const TEXT_EDIT_COVERS = messageKey('surface.text-edit.covers');
 export const TEXT_EDIT_RECOGNISE = messageKey('surface.text-edit.recognise');
 export const TEXT_EDIT_NOT_WRITABLE = messageKey('surface.text-edit.not-writable');
@@ -4777,6 +4778,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TEXT_EDIT_TRUNCATED]: 'This page has more text than can be outlined at once; some of it is not outlined.',
   [TEXT_EDIT_FORMS_DEEPER]: 'Some text on this page is placed too many layers deep to outline, so it is not outlined.',
   [TEXT_EDIT_FORMS_MORE]: 'This page repeats its drawings more often than can be outlined at once, so some of its text is not outlined.',
+  [TEXT_EDIT_FORMS_UNNAMED]: 'Some text on this page is in a drawing whose name is too long to follow, so it is not outlined.',
   [TEXT_EDIT_COVERS]: 'The words you wrote now run over something else on this page. Press Ctrl+Z to put them back as they were.',
   // A SCAN HAS NO TEXT TO EDIT UNTIL IT IS READ (ADR-0181 Decision 9): the button runs the recognise command for this page,
   // so the words it finds are the ones the editor then offers.

@@ -9,7 +9,7 @@ import { NO_BLOCK_FACES } from '../commands/documentCommands.js';
 import { pointOf } from '../editorKit/dom.js';
 import { formatOpenEditor } from '../editorKit/openEditor.js';
 import { activateCatalogue, i18n } from '../i18n.js';
-import { EN, TEXT_EDIT_FORMS_DEEPER, TEXT_EDIT_FORMS_MORE, TEXT_EDIT_HELD, TEXT_EDIT_ROOM_TIP, TEXT_EDIT_TRUNCATED } from '../messages/en.js';
+import { EN, TEXT_EDIT_FORMS_DEEPER, TEXT_EDIT_FORMS_MORE, TEXT_EDIT_FORMS_UNNAMED, TEXT_EDIT_HELD, TEXT_EDIT_ROOM_TIP, TEXT_EDIT_TRUNCATED } from '../messages/en.js';
 import type { TextBlock } from '../textBlock.js';
 import type { PatchArea } from './AreaPatch.js';
 import type { PageBlocks } from './editing.js';
@@ -391,6 +391,14 @@ describe('Edit text on the editor kit (ADR-0271)', () => {
     const none = notesFor({ deeper: false, more: false, unnamed: false });
     expect(none).not.toContain(deeper);
     expect(none).not.toContain(more);
+    // A FORM WHOSE NAME NO PATH CARRIES (BBBBBBBBB-23): its own sentence, and neither of the others. The control is `none`
+    // above, which says it nowhere.
+    const unnamed = EN[TEXT_EDIT_FORMS_UNNAMED];
+    const unreachable = notesFor({ deeper: false, more: false, unnamed: true });
+    expect(unreachable).toContain(unnamed);
+    expect(unreachable).not.toContain(deeper);
+    expect(unreachable).not.toContain(more);
+    expect(none).not.toContain(unnamed);
   });
 
   it('a written editor lets go when its AREA is drawn at the new version, and the area goes once the page is drawn there', async () => {
