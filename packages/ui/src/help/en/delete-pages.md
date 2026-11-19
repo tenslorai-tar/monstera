@@ -13,7 +13,7 @@ You can remove pages you no longer want from a document.
 To delete a list of pages:
 
 1. In the rail, choose **Organize**, then **Delete pages…** in the **Pages** group.
-2. In **Pages to delete**, type the pages, for example `1-3, 5`.
+2. **Pages to delete** opens holding the page you are on, already highlighted: press **Enter** to delete that page, or type the pages you want instead, for example `1-3, 5`. What you type replaces it.
 3. Choose **Delete pages**.
 
 To delete the pages you selected (or the page you are on):

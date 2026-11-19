@@ -120,6 +120,20 @@ describe('Dialog', () => {
     expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Words' }));
   });
 
+  it('opens on that field WITH WHAT IT HOLDS SELECTED, so the first key typed replaces it rather than joining it', () => {
+    // Delete pages opens holding the page on show. Focused with the caret beside "1", typing "7-8" gave "17-8" (the
+    // guide videos, 2026-11-19); selected, Enter still takes the 1 and a typed range replaces it.
+    render(
+      <Dialog closeLabel={CLOSE} onOpenChange={vi.fn()} open title={TITLE}>
+        <Input label={WORDS} onValueChange={vi.fn()} opensFocused value="12" />
+      </Dialog>,
+    );
+    const field = screen.getByRole('textbox', { name: 'Words' });
+    if (!(field instanceof HTMLInputElement)) throw new Error('the opening field is not an input');
+    expect(document.activeElement).toBe(field);
+    expect([field.selectionStart, field.selectionEnd]).toEqual([0, 2]);
+  });
+
   it('CONTROL: a text field its body does NOT name takes no focus — Settings and Help hold those', async () => {
     // Taking the first text field put focus in some setting's box, where a stray key edits it.
     render(

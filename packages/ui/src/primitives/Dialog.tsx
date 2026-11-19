@@ -125,6 +125,18 @@ function openingField(popup: HTMLElement | null): HTMLElement | null {
 }
 
 /**
+ * Focuses the opening field WITH WHAT IT HOLDS SELECTED. A field a dialog opens on may already hold an answer — Delete
+ * pages holds the page on show, Document properties the title — and `focus()` alone leaves a caret beside it, so the
+ * first key a person types joins the old value ("1" and "7-8" made "17-8", the guide videos of 2026-11-19). Selected,
+ * Enter still takes the value offered and the first key typed replaces it. An empty field is unaffected.
+ */
+function focusOpeningField(field: HTMLElement | null): void {
+  if (field === null) return;
+  field.focus();
+  if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) field.select();
+}
+
+/**
  * Where a body's `DialogFooter` is drawn: the popup's foot, after the body and outside it, so the body scrolls and the
  * footer never does. `undefined` outside a dialog (a body rendered on its own, as a unit test renders one), where the
  * footer stays in place; `null` for the one commit before the foot is attached.
@@ -161,7 +173,7 @@ export function Dialog({
   const attachPopup = useCallback(
     (element: HTMLDivElement | null): void => {
       popup.current = element;
-      if (element !== null && initialFocus === undefined) openingField(element)?.focus();
+      if (element !== null && initialFocus === undefined) focusOpeningField(openingField(element));
     },
     [initialFocus],
   );
