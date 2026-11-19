@@ -79,8 +79,15 @@ describe('codesFor', () => {
     const map: ToUnicode = { text: new Map([[0x10, 'f'], [0x11, 'l'], [0x20, 'fl'], [0x30, 'ffl'], [0x12, 'u']]), bytes: 1 };
     expect(codesFor(map, 'fflu')).toStrictEqual([0x30, 0x12]);
     expect(codesFor(map, 'flu')).toStrictEqual([0x20, 0x12]);
-    // AND WHERE THE LONGEST LEAVES THE REST UNDRAWABLE, the next: `ffl` then `x` has no code, so nothing draws it.
-    expect(codesFor(map, 'fflx')).toBeNull();
+    // AND WHERE THE LONGEST LEAVES THE REST UNDRAWABLE, the next. `ab` first leaves `c`, which no code draws; `a` first
+    // leaves `bc`, which one does. A rule that only ever took the longest answers null here, so this separates the two
+    // (the reviewer's list of 2026-11-15, item 15: the case it replaces, `fflx`, held a letter no code draws, and every
+    // rule answers null for that).
+    const overlapping: ToUnicode = { text: new Map([[0x01, 'ab'], [0x02, 'bc'], [0x03, 'a']]), bytes: 1 };
+    expect(codesFor(overlapping, 'abc')).toStrictEqual([0x03, 0x02]);
+    // CONTROL: with no `bc`, nothing draws the word, by either rule.
+    const shorter: ToUnicode = { text: new Map([[0x01, 'ab'], [0x03, 'a']]), bytes: 1 };
+    expect(codesFor(shorter, 'abc')).toBeNull();
     // A LETTER ALONE is still its own code.
     expect(codesFor(map, 'f')).toStrictEqual([0x10]);
   });
