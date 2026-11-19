@@ -754,6 +754,35 @@ describe('a host death is reported, and every document is put back through its o
   /** That ending, with `during` the document whose call the host was running, which was also the last call sent. */
   const ended = (during?: DocId): HostEnding => ({ termination: died, during, last: during });
 
+  it('reopens the documents ONE AT A TIME, so a rebuild never has more than one call outstanding (BBBBBBBBB-20)', async () => {
+    // THE HOST'S CLIENT ENDS THE CONNECTION AT 32 OUTSTANDING CALLS (ENGINE_HOST_MAX_IN_FLIGHT): every reopen sent at once
+    // ended the rebuilt host again for 33 documents. Two documents are enough to see whether the reopens overlap, which
+    // is the property: overlap at two is overlap at thirty-three.
+    const engine = new EngineSessions();
+    const { service, first, second } = await twoOpenDocuments(engine);
+    let open = 0;
+    let most = 0;
+    const surface = surfaces(service, {
+      reopen: async (docId) => {
+        open += 1;
+        most = Math.max(most, open);
+        // A REOPEN THAT TAKES TIME, so a second sent meanwhile would be seen in flight beside it.
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        open -= 1;
+        return someSessions(`reopened-${docId.slice(0, 4)}`);
+      },
+    });
+
+    await onEngineHostEnded(engine, ended(), surface);
+
+    expect(most).toBe(1);
+    // AND BOTH CAME BACK: one at a time is not one only.
+    expect(engine.sessions(first)).toBeDefined();
+    expect(engine.sessions(second)).toBeDefined();
+    await service.close(first);
+    await service.close(second);
+  });
+
   it('reports the death on the shell sink as its OWN event, not as a child process', async () => {
     const engine = new EngineSessions();
     const { service, first } = await twoOpenDocuments(engine);

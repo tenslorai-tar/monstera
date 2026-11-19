@@ -572,12 +572,33 @@ export async function onEngineHostEnded(
 
   const rebuilt = surfaces.rebuild();
 
+  // ONE DOCUMENT'S REOPEN AND REPLAY AT A TIME, across the documents. The host answers one call at a time whatever is
+  // sent, and its client ends the connection at ENGINE_HOST_MAX_IN_FLIGHT calls outstanding (32): every reopen sent at
+  // once ended the rebuilt host again for a person with 33 documents open, which rebuilt and ended it again until each
+  // was poisoned (the reviewer's list of 2026-11-15, item 16, BBBBBBBBB-20). In turn, nothing is slower, since the calls
+  // were served one by one already, and at most one rebuild call is outstanding. Taken INSIDE each lane entry, so a
+  // document's own queued work still waits for its rebuild, as Decision 9b has it.
+  let turn: Promise<void> = Promise.resolve();
+  const inTurn = async <T>(work: () => Promise<T>): Promise<T> => {
+    const ahead = turn;
+    let done = (): void => undefined;
+    turn = new Promise<void>((resolve) => {
+      done = resolve;
+    });
+    await ahead;
+    try {
+      return await work();
+    } finally {
+      done();
+    }
+  };
+
   // Every entry is queued here, in this loop, before the first await below.
   const entries = affected
     .filter((docId) => sessions.poisoned(docId) === undefined)
     .map(async (docId) => {
       try {
-        await surfaces.documents.run(docId, async (context) => {
+        await surfaces.documents.run(docId, (context) => inTurn(async () => {
           await rebuilt;
           sessions.hold(docId, await surfaces.reopen(docId));
           // THE REBUILD'S SECOND HALF, in the same lane entry (ADR-0115): the reopened session is the canonical image,
@@ -600,7 +621,7 @@ export async function onEngineHostEnded(
                 `the document takes no further changes until it is closed and opened again.`,
             });
           }
-        });
+        }));
       } catch (error) {
         // A closed document is the seam working, and a host that ended again is
         // that ending's to count and to reopen for. Anything else is a rebuild
